@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/pip list *)",
+      "Bash(mysql -u root -p123456 -e \"SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN \\('easytask','easyposweb'\\);\")",
+      "Bash(where mysql *)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/xampp/mysql/bin/**)",
+      "Bash(venv/Scripts/python -c ' *)",
+      "Bash(../venv/Scripts/python -c ' *)"
+    ]
+  }
+}

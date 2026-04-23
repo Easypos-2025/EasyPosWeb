@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/pip list *)",
+      "Bash(venv/Scripts/pip show *)",
+      "Bash(venv/Scripts/pip freeze)",
+      "Bash(../venv/Scripts/python -c \" import sqlalchemy from app.database import engine with engine.connect\\(\\) as conn: r = conn.execute\\(sqlalchemy.text\\('SELECT id, name FROM task_status LIMIT 20'\\)\\) for row in r: print\\(dict\\(row\\)\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.main import app print\\('Rutas registradas:'\\) for route in app.routes: if hasattr\\(route, 'path'\\) and 'dashboard' in route.path: print\\(' ', route.path, getattr\\(route, 'methods', ''\\)\\) print\\('Backend OK'\\) \")",
+      "Bash(curl -s http://localhost:8000/dashboard/stats -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s http://localhost:5173 -o /dev/null -w \"%{http_code}\")",
+      "PowerShell(Start-Process cmd -ArgumentList '/k', 'cd /d \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\" && ..\\\\venv\\\\Scripts\\\\uvicorn app.main:app --reload --port 8000')",
+      "PowerShell(Start-Process cmd -ArgumentList '/k', 'cd /d \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\" && npm run dev')",
+      "Bash(curl -s http://localhost:8000/docs -o /dev/null -w \"%{http_code}\")",
+      "PowerShell(Start-Process \"chrome\" \"http://localhost:5173\")",
+      "Bash(curl -s http://localhost:5174 -o /dev/null -w \"%{http_code}\")",
+      "PowerShell(netstat -ano)",
+      "Bash(../venv/Scripts/python -c \" from app.database import SessionLocal from app.models.business_profile_model import BusinessProfile db = SessionLocal\\(\\) for p in db.query\\(BusinessProfile\\).all\\(\\): print\\(p.id, p.name\\) db.close\\(\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.database import SessionLocal from app.models.company_model import Company from app.models.business_profile_model import BusinessProfile db = SessionLocal\\(\\) companies = db.query\\(Company\\).all\\(\\) profiles = {p.id: p.name for p in db.query\\(BusinessProfile\\).all\\(\\)} for c in companies[:15]: print\\(f'ID:{c.id_company} | {c.name[:30]:30s} | perfil_id:{c.business_profile_id} | perfil:{profiles.get\\(c.business_profile_id,\\\\\"sin perfil\\\\\"\\)}'\\) db.close\\(\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.database import SessionLocal from app.models.company_plan_model import CompanyPlan db = SessionLocal\\(\\) count = db.query\\(CompanyPlan\\).count\\(\\) print\\('Registros en company_plans:', count\\) db.close\\(\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.database import SessionLocal, Base, engine from app.models import CompanyPlan, Plan, Company Base.metadata.create_all\\(bind=engine, checkfirst=True\\) db = SessionLocal\\(\\) free_plan = db.query\\(Plan\\).filter\\(Plan.name == 'Free'\\).first\\(\\) print\\('Plan Free ID:', free_plan.id if free_plan else 'NO EXISTE'\\) companies = db.query\\(Company\\).all\\(\\) for c in companies: exists = db.query\\(CompanyPlan\\).filter\\(CompanyPlan.company_id == c.id_company, CompanyPlan.is_active == True\\).first\\(\\) if not exists: cp = CompanyPlan\\(company_id=c.id_company, plan_id=free_plan.id, expiration_date=None, is_active=True\\) db.add\\(cp\\) db.commit\\(\\) total = db.query\\(CompanyPlan\\).count\\(\\) print\\('Total registros company_plans:', total\\) db.close\\(\\) \")",
+      "Bash(../venv/Scripts/python -m pytest --co -q)",
+      "Bash(../venv/Scripts/python -c \" import sys sys.path.insert\\(0, '.'\\) from app.database import SessionLocal, Base, engine from app.models.company_plan_model import CompanyPlan from app.models.plan_model import Plan from app.models.company_model import Company Base.metadata.create_all\\(bind=engine, checkfirst=True\\) db = SessionLocal\\(\\) free = db.query\\(Plan\\).filter\\(Plan.name == 'Free'\\).first\\(\\) comps = db.query\\(Company\\).all\\(\\) added = 0 for c in comps: ex = db.query\\(CompanyPlan\\).filter_by\\(company_id=c.id_company, is_active=True\\).first\\(\\) if not ex and free: db.add\\(CompanyPlan\\(company_id=c.id_company, plan_id=free.id\\)\\) added += 1 db.commit\\(\\) print\\(f'Added={added}, Total={db.query\\(CompanyPlan\\).count\\(\\)}'\\) db.close\\(\\) \")",
+      "Bash(../venv/Scripts/python -c ' *)"
+    ]
+  }
+}

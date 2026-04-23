@@ -1,0 +1,136 @@
+
+
+/* =========================================
+RESET GLOBAL
+========================================= */
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+}
+
+/* =================================================
+RAÍZ
+================================================= */
+
+html {
+  /* --font-size se sobreescribe por applyTheme() cuando la empresa tiene su preferencia */
+  font-size: var(--font-size, 16px);
+  height: 100%;
+  width: 100%;
+}
+
+body, #app {
+  height: 100%;
+  width: 100%;
+  font-size: 1rem;          /* hereda de html → escala con --font-size */
+  color: var(--font-color, #1e293b);
+  background-color: var(--color-bg, #f1f5f9);
+}
+
+/* CONTENEDOR PRINCIPAL DEL LAYOUT */
+.layout-container {
+  height: 100%;
+  display: grid;
+}
+
+/* =========================================
+TIPOGRAFÍA BASE
+========================================= */
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+}
+
+/* =========================================
+SCROLL PERSONALIZADO (HORIZONTAL)
+========================================= */
+
+.custom-scroll-x {
+  overflow-x: auto;
+}
+
+/* Chrome, Edge, Safari */
+.custom-scroll-x::-webkit-scrollbar {
+  height: 15px; /* 🔥 más grueso */
+}
+
+.custom-scroll-x::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.05);
+  border-radius: 10px;
+}
+
+.custom-scroll-x::-webkit-scrollbar-thumb {
+  background: rgba(59,130,246,0.6);
+  border-radius: 10px;
+}
+
+.custom-scroll-x::-webkit-scrollbar-thumb:hover {
+  background: rgba(59,130,246,0.9);
+}
+
+/* Firefox */
+.custom-scroll-x {
+  scrollbar-width: auto;
+  scrollbar-color: rgba(59,130,246,0.7) rgba(255,255,255,0.05);
+}
+
+/* =========================================
+TOAST GLOBAL — centrado, grande, visible
+========================================= */
+
+.swal-toast-popup {
+  font-family: system-ui, sans-serif !important;
+  border-radius: 18px !important;
+  padding: 28px 36px !important;
+  min-width: 320px !important;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.18) !important;
+}
+
+.swal-toast-title {
+  font-size: 17px !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+}
+
+.swal-toast-bar {
+  height: 4px !important;
+  border-radius: 4px !important;
+}
+
+/* =========================================
+VALIDACIÓN — campo inválido
+========================================= */
+
+.field-invalid {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.15) !important;
+  outline: none !important;
+}
+
+input, select {
+  color: #000 !important;
+  background-color: #fff !important;
+}
+
+/* 🔥 INPUTS VISIBLES */
+input.form-control,
+select.form-control,
+textarea.form-control {
+  color: #000 !important;
+  background-color: #fff !important;
+}
+
+/* 🔥 PLACEHOLDER VISIBLE */
+input::placeholder {
+  color: #888 !important;
+  opacity: 1;
+}
+
+/* 🔥 CUANDO ESCRIBES */
+input:focus,
+input:active {
+  color: #000 !important;
+}

@@ -1,0 +1,20 @@
+# Normalizar saltos de línea automáticamente
+* text=auto
+
+# Forzar LF en archivos de código (funciona igual en todos los sistemas)
+*.vue  text eol=lf
+*.js   text eol=lf
+*.ts   text eol=lf
+*.py   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.env.example text eol=lf
+
+# Archivos binarios — no modificar
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.svg  binary

@@ -1,0 +1,33 @@
+/* =========================================
+VARIABLES DE TEMA (DINÁMICAS)
+Estos son los valores por defecto.
+Se sobreescriben por empresa vía applyTheme()
+========================================= */
+
+:root {
+
+  /* COLORES PRINCIPALES */
+  --color-primary:   #3b82f6;   /* azul */
+  --color-secondary: #1e3a5f;   /* navy */
+  --color-accent:    #f59e0b;   /* ámbar */
+
+  /* TEXTO */
+  --color-text:       #1e293b;  /* slate-800 */
+  --color-text-light: #f8fafc;  /* slate-50  */
+
+  /* FONDOS */
+  --color-bg:      #f1f5f9;   /* slate-100 */
+  --color-surface: #ffffff;
+
+  /* SIDEBAR */
+  --sidebar-bg:   #1e3a5f;    /* navy */
+  --sidebar-text: #cbd5e1;    /* slate-300 */
+
+  /* TOPBAR */
+  --topbar-bg:   #1e3a5f;     /* navy */
+  --topbar-text: #f8fafc;
+
+  /* TIPOGRAFÍA */
+  --font-size:  16px;
+  --font-color: #1e293b;
+}
