@@ -37,29 +37,25 @@ def get_theme_colors(
     if not is_system and current_user.company_id != company_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    from sqlalchemy import select
-    from app.models.company_theme_model import CompanyTheme as CT
+    theme = db.query(CompanyTheme).filter(CompanyTheme.company_id == company_id).first()
 
-    row = db.execute(
-        select(
-            CT.topbar_color, CT.sidebar_color, CT.bg_color,
-            CT.font_size, CT.font_color
-        ).where(CT.company_id == company_id)
-    ).first()
+    defaults = {
+        "topbar_color": "#1e3a5f", "sidebar_color": "#1a2535",
+        "bg_color": "#f1f5f9", "font_size": "16", "font_color": "#1e293b"
+    }
 
-    if not row:
-        return {
-            "topbar_color": "#1e3a5f", "sidebar_color": "#1a2535",
-            "bg_color": "#f1f5f9", "font_size": 16, "font_color": "#1e293b"
-        }
+    if not theme:
+        return defaults
 
     return {
-        "topbar_color":  row.topbar_color  or "#1e3a5f",
-        "sidebar_color": row.sidebar_color or "#1a2535",
-        "bg_color":      row.bg_color      or "#f1f5f9",
-        "font_size":     row.font_size     or 16,
-        "font_color":    row.font_color    or "#1e293b",
+        "topbar_color":  theme.topbar_color  or defaults["topbar_color"],
+        "sidebar_color": theme.sidebar_color or defaults["sidebar_color"],
+        "bg_color":      theme.bg_color      or defaults["bg_color"],
+        "font_size":     theme.font_size     or defaults["font_size"],
+        "font_color":    theme.font_color    or defaults["font_color"],
     }
+
+
 
 
 # =====================================================

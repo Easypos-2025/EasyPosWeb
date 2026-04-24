@@ -109,9 +109,9 @@ async function loadNotifications() {
   loadingNotif.value = true
   try {
     const res = await api.get("/task-comments/notifications/unread")
-    notifications.value = res.data
+    notifications.value = Array.isArray(res.data) ? res.data : []
   } catch {
-    // Sin notificaciones o usuario sin sesión activa — no bloquear
+    notifications.value = []   // siempre array aunque falle
   } finally {
     loadingNotif.value = false
   }

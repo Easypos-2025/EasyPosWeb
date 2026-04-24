@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Body
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.task_comment_model import TaskComment
+from app.models.task_model import Task
 from app.models.user_model import User
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
@@ -74,14 +75,18 @@ def get_unread_notifications(
 ):
     """Notificaciones no leídas para el Task Leader logueado (para el SidebarRight)."""
     user  = _get_user(authorization, db)
-    items = db.query(TaskComment).join(
-        __import__("app.models.task_model", fromlist=["Task"]).Task,
-        TaskComment.task_id == __import__("app.models.task_model", fromlist=["Task"]).Task.id
-    ).filter(
-        __import__("app.models.task_model", fromlist=["Task"]).Task.assigned_to == user.id,
-        TaskComment.is_notification == True,
-        TaskComment.is_read == False
-    ).order_by(TaskComment.created_at.desc()).limit(20).all()
+    items = (
+        db.query(TaskComment)
+        .join(Task, TaskComment.task_id == Task.id)
+        .filter(
+            Task.assigned_to      == user.id,
+            TaskComment.is_notification == True,
+            TaskComment.is_read   == False
+        )
+        .order_by(TaskComment.created_at.desc())
+        .limit(20)
+        .all()
+    )
     return [_ser(c) for c in items]
 
 

@@ -223,6 +223,23 @@ async function saveEdit() {
     return
   }
 
+  // Advertir si cambió el perfil de negocio
+  const original = companies.value.find(c => c.id === f.id)
+  if (original && original.business_profile_id !== f.business_profile_id) {
+    const { isConfirmed } = await window.Swal.fire({
+      title: "¿Cambiar perfil de negocio?",
+      html: `<p>Los usuarios de esta empresa pueden tener roles asignados al perfil <strong>${original.business_profile_name || 'anterior'}</strong>.</p>
+             <p>Al cambiar al perfil <strong>${profiles.value.find(p=>p.id===f.business_profile_id)?.name || 'nuevo'}</strong>, esos roles podrían no existir en el nuevo perfil.</p>
+             <p><small>Deberás revisar y reasignar los roles de los usuarios manualmente.</small></p>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, cambiar perfil",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#f59e0b"
+    })
+    if (!isConfirmed) return
+  }
+
   saving.value = true
   try {
     await api.put(`/companies/${f.id}`, f)
