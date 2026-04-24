@@ -212,7 +212,8 @@ Uso mayoritario desde **dispositivos móviles** — mobile-first en todo momento
 
 ## 6. Reglas de Desarrollo
 
-1. **Un módulo a la vez.** No iniciar el siguiente hasta que el actual esté terminado y aprobado.
+1. **Soporte tiende a cero.** Cada módulo, flujo y proceso debe diseñarse para que el Asociado pueda hacerlo solo, sin intervención del equipo EasyPosWeb. Antes de implementar cualquier proceso manual, preguntar: ¿puede automatizarse? ¿puede el Asociado hacerlo desde su propio panel?
+2. **Un módulo a la vez.** No iniciar el siguiente hasta que el actual esté terminado y aprobado.
 2. **Mobile-first siempre.** Verificar en móvil antes de declarar cualquier vista como completa.
 3. **No romper lo que funciona.** No modificar funcionalidad existente sin confirmación explícita.
 4. **Sin credenciales en código.** Nunca hardcodear contraseñas, claves JWT, URLs ni tokens — siempre variables de entorno.

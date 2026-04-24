@@ -20,7 +20,11 @@
       "Bash(../venv/Scripts/python -c \" from app.database import SessionLocal, Base, engine from app.models import CompanyPlan, Plan, Company Base.metadata.create_all\\(bind=engine, checkfirst=True\\) db = SessionLocal\\(\\) free_plan = db.query\\(Plan\\).filter\\(Plan.name == 'Free'\\).first\\(\\) print\\('Plan Free ID:', free_plan.id if free_plan else 'NO EXISTE'\\) companies = db.query\\(Company\\).all\\(\\) for c in companies: exists = db.query\\(CompanyPlan\\).filter\\(CompanyPlan.company_id == c.id_company, CompanyPlan.is_active == True\\).first\\(\\) if not exists: cp = CompanyPlan\\(company_id=c.id_company, plan_id=free_plan.id, expiration_date=None, is_active=True\\) db.add\\(cp\\) db.commit\\(\\) total = db.query\\(CompanyPlan\\).count\\(\\) print\\('Total registros company_plans:', total\\) db.close\\(\\) \")",
       "Bash(../venv/Scripts/python -m pytest --co -q)",
       "Bash(../venv/Scripts/python -c \" import sys sys.path.insert\\(0, '.'\\) from app.database import SessionLocal, Base, engine from app.models.company_plan_model import CompanyPlan from app.models.plan_model import Plan from app.models.company_model import Company Base.metadata.create_all\\(bind=engine, checkfirst=True\\) db = SessionLocal\\(\\) free = db.query\\(Plan\\).filter\\(Plan.name == 'Free'\\).first\\(\\) comps = db.query\\(Company\\).all\\(\\) added = 0 for c in comps: ex = db.query\\(CompanyPlan\\).filter_by\\(company_id=c.id_company, is_active=True\\).first\\(\\) if not ex and free: db.add\\(CompanyPlan\\(company_id=c.id_company, plan_id=free.id\\)\\) added += 1 db.commit\\(\\) print\\(f'Added={added}, Total={db.query\\(CompanyPlan\\).count\\(\\)}'\\) db.close\\(\\) \")",
-      "Bash(../venv/Scripts/python -c ' *)"
+      "Bash(../venv/Scripts/python -c ' *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(git add *)"
     ]
   }
 }

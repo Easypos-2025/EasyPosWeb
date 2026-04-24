@@ -163,6 +163,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "PlansView" }
       },
+      {
+        path: "/sysadmin/company-plans",
+        name: "CompanyPlansView",
+        component: () => import("@/views/sysadmin/CompanyPlansView.vue"),
+        requiresAuth: true,
+        meta: { title: "CompanyPlansView" }
+      },
 
 
 
