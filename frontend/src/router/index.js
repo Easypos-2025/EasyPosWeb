@@ -112,8 +112,62 @@ const routes = [
         requiresAuth: true,
         meta: { title: "TareasView" }
       },
-      /*
-      */
+      {
+        path: "/tasks/my-tasks",
+        name: "TaskLeaderView",
+        component: () => import("@/views/TaskLeaderView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskLeaderView" }
+      },
+      {
+        path: "/tasks/:taskId/evidencias",
+        name: "TaskEvidenciaView",
+        component: () => import("@/views/TaskEvidenciaView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskEvidenciaView" }
+      },
+      {
+        path: "/tasks/:taskId/materiales",
+        name: "TaskMaterialesView",
+        component: () => import("@/views/TaskMaterialesView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskMaterialesView" }
+      },
+      {
+        path: "/tasks/supervision",
+        name: "AuditorView",
+        component: () => import("@/views/AuditorView.vue"),
+        requiresAuth: true,
+        meta: { title: "AuditorView" }
+      },
+      {
+        path: "/tasks/:taskId/reportes",
+        name: "TaskReportesView",
+        component: () => import("@/views/TaskReportesView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskReportesView" }
+      },
+      {
+        path: "/assets/:assetId/historial",
+        name: "AssetHistoryView",
+        component: () => import("@/views/AssetHistoryView.vue"),
+        requiresAuth: true,
+        meta: { title: "AssetHistoryView" }
+      },
+      {
+        path: "/tasks/:taskId/analisis",
+        name: "TaskAnalisisView",
+        component: () => import("@/views/TaskAnalisisView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskAnalisisView" }
+      },
+      {
+        path: "/tasks/reporte-general",
+        name: "TaskReporteGeneralView",
+        component: () => import("@/views/TaskReporteGeneralView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskReporteGeneralView" }
+      },
       /* MÓDULOS SYSTEM
       /* PERFIL (CONFIGURACIÓN EMPRESA) */
       /* MÓDULOS EMPRESA*/  

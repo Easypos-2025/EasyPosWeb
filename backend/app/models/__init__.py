@@ -52,5 +52,7 @@ from app.models.business_profile_model import BusinessProfile
 from app.models.system_module_model import SystemModule
 from app.models.plan_model import Plan
 from app.models.company_plan_model import CompanyPlan
+from app.models.task_expense_model import TaskExpense
+from app.models.task_progress_report_model import TaskProgressReport
 
 

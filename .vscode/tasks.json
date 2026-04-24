@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend",
+      "type": "shell",
+      "command": "cd backend; ..\\venv\\Scripts\\python.exe -m uvicorn app.main:app --reload",
+      "isBackground": true,
+      "presentation": {
+        "panel": "shared",
+        "group": "dev",
+        "clear": true
+      }
+    },
+    {
+      "label": "Frontend",
+      "type": "shell",
+      "command": "cd frontend; npx vite build --watch",
+      "isBackground": true,
+      "presentation": {
+        "panel": "shared",
+        "group": "dev",
+        "clear": true
+      }
+    },
+    {
+      "label": "Ngrok",
+      "type": "shell",
+      "command": "C:\\Users\\Personal\\AppData\\Roaming\\npm\\ngrok.cmd http 8000",
+      "isBackground": true,
+      "presentation": {
+        "panel": "shared",
+        "group": "dev",
+        "clear": true
+      }
+    },
+    {
+      "label": "🚀 Iniciar Todo",
+      "dependsOn": ["Backend", "Frontend", "Ngrok"],
+      "dependsOrder": "parallel"
+    }
+  ]
+}

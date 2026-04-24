@@ -89,8 +89,10 @@
         <i class="bi bi-box-arrow-right"></i>
       </button>
 
-      <button class="btn-icon btn-menu-right" @click="emit('toggle-sidebar-right')" title="Panel lateral">
+      <button class="btn-icon btn-menu-right btn-notif-toggle"
+        @click="emit('toggle-sidebar-right')" title="Panel lateral">
         <i class="bi bi-layout-sidebar-reverse"></i>
+        <span v-if="unreadNotif > 0" class="notif-dot-topbar">{{ unreadNotif }}</span>
       </button>
 
     </div>
@@ -107,13 +109,25 @@ import api from "@/services/apis"
 
 const emit = defineEmits(["toggle-sidebar", "toggle-sidebar-right"])
 
-const logo         = ref("")
-const user         = ref(null)
-const searchQuery  = ref("")
-const theme        = getThemeState()
-const companyStore = useCompanyStore()
-const router       = useRouter()
-const companyPlan  = ref({ plan_name: "", expiration_date: null })
+const logo          = ref("")
+const user          = ref(null)
+const searchQuery   = ref("")
+const theme         = getThemeState()
+const companyStore  = useCompanyStore()
+const router        = useRouter()
+const companyPlan   = ref({ plan_name: "", expiration_date: null })
+const unreadNotif   = ref(0)
+
+async function loadUnreadCount() {
+  const token = localStorage.getItem("token")
+  if (!token) return
+  try {
+    const res = await api.get("/task-comments/notifications/unread")
+    unreadNotif.value = res.data.filter(n => !n.is_read).length
+  } catch {}
+}
+
+let notifTimer = null
 
 watchEffect(() => { if (theme.logo) logo.value = theme.logo })
 
@@ -161,8 +175,13 @@ onMounted(async () => {
     user.value = JSON.parse(stored)
     await companyStore.init(user.value)
     await loadPlan(companyStore.selectedCompany?.id)
+    loadUnreadCount()
+    notifTimer = setInterval(loadUnreadCount, 60000)
   }
 })
+
+import { onUnmounted } from "vue"
+onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
 </script>
 
 <style scoped>
@@ -378,6 +397,27 @@ onMounted(async () => {
 .btn-icon:hover      { background: rgba(255,255,255,0.12); }
 .btn-logout:hover    { background: rgba(239,68,68,0.25); }
 .btn-menu-right      { display: none; }
+
+.btn-notif-toggle   { position: relative; }
+
+.notif-dot-topbar {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
+  pointer-events: none;
+}
 
 .btn-support {
   opacity: 0.7;

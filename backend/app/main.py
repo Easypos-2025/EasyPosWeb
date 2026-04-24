@@ -34,6 +34,12 @@ from app.routers.type_currency_router import router as type_currency_router
 from app.routers.dashboard_router import router as dashboard_router
 from app.routers.plan_router import router as plan_router
 from app.routers.company_plan_router import router as company_plan_router
+from app.routers.task_evidence_router import router as task_evidence_router
+from app.routers.task_materials_router import router as task_materials_router
+from app.routers.task_materials_router import expenses_router as task_expenses_router
+from app.routers.task_comment_router import router as task_comment_router
+from app.routers.task_progress_router import router as task_progress_router
+from app.routers.task_progress_router import asset_history_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -63,6 +69,10 @@ app.router.redirect_slashes = True
 # ===============================
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
+
+UPLOADS_DIR = BASE_DIR / "backend" / "app" / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # ===============================
 # CORS
@@ -106,6 +116,12 @@ routers = [
     dashboard_router,
     plan_router,
     company_plan_router,
+    task_evidence_router,
+    task_materials_router,
+    task_expenses_router,
+    task_comment_router,
+    task_progress_router,
+    asset_history_router,
 ]
 
 for router in routers:

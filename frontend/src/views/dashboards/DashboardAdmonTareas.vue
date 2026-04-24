@@ -1,11 +1,7 @@
 <template>
-  <div class="dashboard-content">
-
+  <div>
     <KpiStrip :kpis="kpis" :loading="loading" />
     <div class="dash-title">Dashboard — Administrador de Tareas</div>
-
-    <!-- Área de contenido del perfil — se irá llenando según avance el módulo -->
-
   </div>
 </template>
 
@@ -15,44 +11,49 @@ import KpiStrip from "@/components/dashboard/KpiStrip.vue"
 import api from "@/services/apis"
 
 const loading = ref(true)
-const tasks   = ref([])
+const stats   = ref({
+  total: 0, pendiente: 0, asignada: 0,
+  progreso: 0, revision: 0, finalizada: 0,
+  cancelada: 0, atrasadas: 0
+})
 
 const kpis = computed(() => [
   {
-    icon:  "bi-clipboard-data",
-    label: "Total tareas",
-    value: tasks.value.length
-  },
-  {
     icon:  "bi-hourglass-split",
     label: "Pendientes",
-    value: tasks.value.filter(t => isPending(t)).length
+    value: stats.value.pendiente
   },
   {
     icon:  "bi-play-circle",
-    label: "En ejecución",
-    value: tasks.value.filter(t => isInProgress(t)).length
+    label: "En progreso",
+    value: stats.value.progreso
+  },
+  {
+    icon:  "bi-exclamation-triangle",
+    label: "Atrasadas",
+    value: stats.value.atrasadas
   },
   {
     icon:  "bi-check2-circle",
-    label: "Completadas",
-    value: tasks.value.filter(t => isDone(t)).length
-  }
+    label: "Finalizadas",
+    value: stats.value.finalizada
+  },
 ])
-
-function isPending(t)    { return !t.status || t.status.toLowerCase().includes("pendiente") }
-function isInProgress(t) { return t.status?.toLowerCase().includes("ejecuci") || t.status?.toLowerCase().includes("progreso") }
-function isDone(t)       { return t.status?.toLowerCase().includes("complet") || t.status?.toLowerCase().includes("finaliz") }
 
 onMounted(async () => {
   try {
-    const res = await api.get("/tasks/")
-    tasks.value = res.data
+    const res = await api.get("/tasks/stats")
+    stats.value = res.data
   } catch {}
   loading.value = false
 })
 </script>
 
 <style scoped>
-/* El padding lo provee .content en layout.css — no duplicar */
+.dash-title {
+  padding: 20px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
 </style>

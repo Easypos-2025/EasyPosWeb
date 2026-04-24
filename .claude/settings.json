@@ -24,7 +24,13 @@
       "Bash(git commit -m ' *)",
       "Bash(git remote *)",
       "Bash(grep -v \"^$\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(../venv/Scripts/python -c \" from app.main import app routes = [r.path for r in app.routes if hasattr\\(r,'path'\\) and 'task' in r.path] print\\('Rutas tasks:', routes\\) print\\('Backend OK'\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.main import app for r in app.routes: if hasattr\\(r,'path'\\) and \\('asset' in r.path or 'worker' in r.path\\): print\\(getattr\\(r,'methods',''\\), r.path\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.main import app routes = [\\(list\\(getattr\\(r,'methods',[]\\)\\), r.path\\) for r in app.routes if hasattr\\(r,'path'\\) and 'task' in r.path.lower\\(\\)] for m,p in routes: print\\(m, p\\) print\\('OK'\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.main import app for r in app.routes: if hasattr\\(r,'path'\\) and 'asset' in r.path.lower\\(\\): print\\(list\\(getattr\\(r,'methods',[]\\)\\), r.path\\) \")",
+      "Bash(../venv/Scripts/python -c \" from app.main import app task_routes = [\\(list\\(getattr\\(r,'methods',[]\\)\\), r.path\\) for r in app.routes if hasattr\\(r,'path'\\) and \\('task' in r.path.lower\\(\\) or 'asset' in r.path.lower\\(\\)\\)] for m,p in sorted\\(task_routes, key=lambda x: x[1]\\): print\\(m, p\\) \")"
     ]
   }
 }

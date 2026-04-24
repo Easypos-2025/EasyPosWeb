@@ -1,138 +1,59 @@
-"""
-========================================================
-MODELO TASK
-========================================================
-
-Representa las tareas del sistema de mantenimiento.
-
-Cada tarea tiene:
-
-- responsable
-- profesional ejecutor
-- presupuesto
-- costos reales
-"""
-
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Float
-from sqlalchemy import func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Float, func
 from app.database import Base
 
 
 class Task(Base):
-
     __tablename__ = "tasks"
 
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True
-    )
-    # =================================================
-    # ACTIVO RELACIONADO
-    # =================================================
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
+    # Multi-tenant — empresa a la que pertenece la tarea
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id_company"), nullable=True, index=True
+    )
+
+    # Activo relacionado (edificio, vehículo, equipo, etc.)
     asset_id: Mapped[int] = mapped_column(
-        ForeignKey("assets.id")
+        ForeignKey("assets.id"), nullable=True
     )
 
-    # =================================================
-    # TITULO
-    # =================================================
+    # Título y descripción
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, nullable=True)
 
-    title: Mapped[str] = mapped_column(
-        String(200)
+    # Estado (FK a task_status)
+    status_id: Mapped[int] = mapped_column(
+        ForeignKey("task_status.id"), default=1, nullable=True
     )
 
-    # =================================================
-    # DESCRIPCIÓN
-    # =================================================
+    # Porcentaje de avance (0-100)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
 
-    description: Mapped[str] = mapped_column(
-        Text
-    )
-
-    # =================================================
-    # ESTADO
-    # =================================================
-
-    status: Mapped[str] = mapped_column(
-        String(50),
-        default="PENDING"
-    )
-
-    # =================================================
-    # AVANCE
-    # =================================================
-
-    progress: Mapped[int] = mapped_column(
-        Integer,
-        default=0
-    )
-
-    # =================================================
-    # USUARIO QUE CREA LA TAREA
-    # =================================================
-
+    # Usuarios (Task Leader que crea + Task Leader asignado)
     created_by: Mapped[int] = mapped_column(
-        ForeignKey("user.id")
+        ForeignKey("users.id"), nullable=True
     )
-
-    # =================================================
-    # USUARIO RESPONSABLE
-    # =================================================
-
     assigned_to: Mapped[int] = mapped_column(
-        ForeignKey("user.id")
+        ForeignKey("users.id"), nullable=True
     )
 
-    # =================================================
-    # PROFESIONAL EJECUTOR
-    # =================================================
-
+    # Ejecutor principal (worker, sin acceso al sistema)
     worker_id: Mapped[int] = mapped_column(
-        ForeignKey("workers.id")
+        ForeignKey("workers.id"), nullable=True
     )
 
-    # =================================================
-    # PRESUPUESTO MANO DE OBRA
-    # =================================================
+    # Presupuesto y costos
+    budget_labor_cost: Mapped[float] = mapped_column(Float, default=0)
+    actual_labor_cost: Mapped[float] = mapped_column(Float, default=0)
 
-    budget_labor_cost: Mapped[float] = mapped_column(
-        Float,
-        default=0
+    # Fechas
+    start_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    due_date:   Mapped[object] = mapped_column(DateTime, nullable=True)
+    closed_at:  Mapped[object] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[object] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
-    # =================================================
-    # COSTO REAL MANO DE OBRA
-    # =================================================
-
-    actual_labor_cost: Mapped[float] = mapped_column(
-        Float,
-        default=0
-    )
-
-    # =================================================
-    # FECHA ENTREGA
-    # =================================================
-
-    due_date: Mapped[DateTime] = mapped_column(
-        DateTime
-    )
-
-    # =================================================
-    # FECHA CREACIÓN
-    # =================================================
-
-    created_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
-
-    # =================================================
-    # FECHA CIERRE
-    # =================================================
-
-    closed_at: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
-    )
+    # Relaciones
+    status = relationship("TaskStatus", foreign_keys=[status_id], lazy="joined")
