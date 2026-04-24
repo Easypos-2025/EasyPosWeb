@@ -13,6 +13,7 @@ Equipment
 Infrastructure
 """
 
+from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String
 from app.database import Base
@@ -32,6 +33,6 @@ class AssetCategory(Base):
         unique=True
     )
 
-    description: Mapped[str] = mapped_column(
-        String(255)
+    description: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
     )

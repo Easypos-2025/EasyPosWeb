@@ -4,6 +4,7 @@ SCHEMA ASSET
 ========================================================
 """
 
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -15,8 +16,8 @@ class AssetCreate(BaseModel):
 
     name: str
     category_id: int
-    description: str
-    location: str
+    description: Optional[str] = ""
+    location: Optional[str] = ""
 
 
 # =====================================================
@@ -27,8 +28,8 @@ class AssetUpdate(BaseModel):
 
     name: str
     category_id: int
-    description: str
-    location: str
+    description: Optional[str] = ""
+    location: Optional[str] = ""
 
 
 # =====================================================
@@ -40,9 +41,8 @@ class AssetResponse(BaseModel):
     id: int
     name: str
     category_id: int
-    description: str
-    location: str
+    description: Optional[str] = ""
+    location: Optional[str] = ""
 
     class Config:
         from_attributes = True
-        
