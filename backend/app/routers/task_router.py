@@ -70,9 +70,10 @@ def get_my_tasks(
 ):
     """Tareas asignadas al usuario logueado (Task Leader view)."""
     user  = _get_user(authorization, db)
+    sm    = _status_map(db)
     tasks = db.query(Task).filter(Task.assigned_to == user.id)\
-               .order_by(Task.due_date.asc()).all()
-    return [_serialize(t) for t in tasks]
+               .order_by(Task.due_date.asc().nulls_last()).all()
+    return [_serialize(t, sm) for t in tasks]
 
 
 # ─── ACTUALIZAR AVANCE RÁPIDO ──────────────────────────────────
@@ -100,7 +101,7 @@ def update_progress(
 
     db.commit()
     db.refresh(task)
-    return _serialize(task)
+    return _serialize(task, _status_map(db))
 
 
 # ─── GET ALL ───────────────────────────────────────────────────
@@ -110,19 +111,21 @@ def get_tasks(
     db: Session = Depends(get_db)
 ):
     user = _get_user(authorization, db)
-    q = db.query(Task)
+    sm   = _status_map(db)
+    q    = db.query(Task)
     if not _is_system(user, db):
         q = q.filter(Task.company_id == user.company_id)
-    return [_serialize(t) for t in q.order_by(Task.created_at.desc()).all()]
+    return [_serialize(t, sm) for t in q.order_by(Task.created_at.desc()).all()]
 
 
 # ─── GET BY ID ─────────────────────────────────────────────────
 @router.get("/{task_id}")
 def get_task(task_id: int, db: Session = Depends(get_db)):
+    sm   = _status_map(db)
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
-    return _serialize(task)
+    return _serialize(task, sm)
 
 
 # ─── CREATE ────────────────────────────────────────────────────
@@ -156,7 +159,7 @@ def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
-    return _serialize(task)
+    return _serialize(task, _status_map(db))
 
 
 # ─── UPDATE ────────────────────────────────────────────────────
@@ -192,7 +195,7 @@ def update_task(
 
     db.commit()
     db.refresh(task)
-    return _serialize(task)
+    return _serialize(task, _status_map(db))
 
 
 # ─── DELETE ────────────────────────────────────────────────────
@@ -221,7 +224,13 @@ def _parse_date(value):
         return None
 
 
-def _serialize(t: Task):
+def _status_map(db: Session) -> dict:
+    """Carga los nombres de estado una sola vez por request."""
+    return {s.id: s.name for s in db.query(TaskStatus).all()}
+
+
+def _serialize(t: Task, status_names: dict = None) -> dict:
+    sname = (status_names or {}).get(t.status_id, "—") if t.status_id else "—"
     return {
         "id":                 t.id,
         "company_id":         t.company_id,
@@ -229,14 +238,14 @@ def _serialize(t: Task):
         "description":        t.description,
         "asset_id":           t.asset_id,
         "status_id":          t.status_id,
-        "status_name":        t.status.name if t.status else "—",
+        "status_name":        sname,
         "assigned_to":        t.assigned_to,
         "worker_id":          t.worker_id,
-        "progress":           t.progress,
-        "budget_labor_cost":  t.budget_labor_cost,
-        "actual_labor_cost":  t.actual_labor_cost,
-        "start_date":         t.start_date.isoformat() if t.start_date else None,
-        "due_date":           t.due_date.isoformat() if t.due_date else None,
+        "progress":           t.progress or 0,
+        "budget_labor_cost":  t.budget_labor_cost or 0,
+        "actual_labor_cost":  t.actual_labor_cost or 0,
+        "start_date":         t.start_date.isoformat()[:10] if t.start_date else None,
+        "due_date":           t.due_date.isoformat()[:10] if t.due_date else None,
         "closed_at":          t.closed_at.isoformat() if t.closed_at else None,
         "created_at":         t.created_at.isoformat() if t.created_at else None,
     }

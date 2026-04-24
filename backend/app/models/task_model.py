@@ -55,5 +55,4 @@ class Task(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relaciones
-    status = relationship("TaskStatus", foreign_keys=[status_id], lazy="joined")
+    # Sin relación ORM para status — se resuelve en el router con dict lookup
