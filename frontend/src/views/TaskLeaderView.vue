@@ -7,35 +7,62 @@
         <h1 class="page-title">
           <i class="bi bi-person-check"></i> Mis Tareas
         </h1>
-        <p class="page-subtitle">Tareas asignadas a ti — actualiza el avance y el estado</p>
+        <p class="page-subtitle">
+          {{ isWorker ? 'Tareas asignadas a ti' : 'Todas las tareas — ' + tasks.length + ' registradas' }}
+        </p>
       </div>
     </div>
 
-    <!-- MINI KPIs -->
+    <!-- MINI KPIs (todos clickeables) -->
     <div class="mini-kpis">
-      <div class="mini-kpi">
+      <div class="mini-kpi" :class="{ 'kpi-active': activeTab === 'pending' }"
+        @click="setTab('pending')">
         <span class="mk-value">{{ counts.pendiente }}</span>
         <span class="mk-label">Pendientes</span>
       </div>
-      <div class="mini-kpi mk-progreso">
+      <div class="mini-kpi mk-progreso" :class="{ 'kpi-active': activeTab === 'progress' }"
+        @click="setTab('progress')">
         <span class="mk-value">{{ counts.progreso }}</span>
         <span class="mk-label">En Progreso</span>
       </div>
-      <div class="mini-kpi mk-revision">
+      <div class="mini-kpi mk-revision" :class="{ 'kpi-active': activeTab === 'revision' }"
+        @click="setTab('revision')">
         <span class="mk-value">{{ counts.revision }}</span>
         <span class="mk-label">En Revisión</span>
       </div>
-      <div class="mini-kpi mk-finalizada">
+      <div class="mini-kpi mk-finalizada" :class="{ 'kpi-active': activeTab === 'done' }"
+        @click="setTab('done')">
         <span class="mk-value">{{ counts.finalizada }}</span>
         <span class="mk-label">Finalizadas</span>
       </div>
-      <div class="mini-kpi mk-atrasada">
+      <div class="mini-kpi mk-atrasada" :class="{ 'kpi-active': activeTab === 'overdue' }"
+        @click="setTab('overdue')">
         <span class="mk-value">{{ counts.atrasadas }}</span>
-        <span class="mk-label">Atrasadas</span>
+        <span class="mk-label">⚡ Atrasadas</span>
+      </div>
+      <div class="mini-kpi mk-sinasig" :class="{ 'kpi-active': activeTab === 'unassigned' }"
+        @click="setTab('unassigned')">
+        <span class="mk-value">{{ counts.sinEjecutor }}</span>
+        <span class="mk-label">Sin Ejecutor</span>
       </div>
     </div>
 
-    <!-- FILTRO RÁPIDO -->
+    <!-- FILTROS ADICIONALES (solo para roles no-Worker) -->
+    <div v-if="!isWorker" class="filter-bar">
+      <select v-model="filterWorker" class="form-select form-select-sm" style="max-width:220px">
+        <option :value="null">Todos los ejecutores</option>
+        <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+      </select>
+      <button
+        v-if="filterWorker !== null || activeTab !== 'all'"
+        class="btn btn-sm btn-outline-secondary"
+        @click="filterWorker = null; activeTab = 'all'"
+      >
+        <i class="bi bi-x-circle"></i> Limpiar filtros
+      </button>
+    </div>
+
+    <!-- FILTER TABS -->
     <div class="filter-tabs">
       <button
         v-for="tab in tabs" :key="tab.value"
@@ -50,13 +77,13 @@
 
     <!-- LOADING -->
     <div v-if="loading" class="loading-center">
-      <i class="bi bi-arrow-repeat spin"></i> Cargando tus tareas...
+      <i class="bi bi-arrow-repeat spin"></i> Cargando tareas...
     </div>
 
     <!-- SIN TAREAS -->
     <div v-else-if="filtered.length === 0" class="empty-state">
       <i class="bi bi-clipboard-check"></i>
-      <p>No tienes tareas en este estado</p>
+      <p>No hay tareas con estos filtros</p>
     </div>
 
     <!-- TARJETAS DE TAREAS -->
@@ -65,9 +92,11 @@
         v-for="task in filtered"
         :key="task.id"
         class="task-card"
-        :class="{ 'card-overdue': isOverdue(task) }"
+        :style="{ borderLeftColor: cardBorderColor(task) }"
+        @click="goToDetail(task)"
+        title="Ver detalle de la tarea"
       >
-        <!-- CABECERA DE LA TARJETA -->
+        <!-- CABECERA -->
         <div class="card-header">
           <span class="status-badge" :class="statusClass(task.status_id)">
             {{ task.status_name }}
@@ -77,79 +106,63 @@
           </span>
         </div>
 
-        <!-- TÍTULO Y DESCRIPCIÓN -->
+        <!-- TÍTULO -->
         <h3 class="card-title">{{ task.title }}</h3>
-        <p v-if="task.description" class="card-desc">{{ task.description }}</p>
 
-        <!-- INFO SECUNDARIA -->
-        <div class="card-meta">
-          <span v-if="task.asset_id">
-            <i class="bi bi-building"></i> {{ assetName(task.asset_id) }}
+        <!-- ACTIVO (línea completa) -->
+        <div v-if="task.asset_id" class="card-asset">
+          <i class="bi bi-building"></i> {{ assetName(task.asset_id) }}
+        </div>
+
+        <!-- RESPONSABLE / EJECUTOR -->
+        <div class="card-workers" v-if="task.assigned_to_name || task.worker_name">
+          <span v-if="task.assigned_to_name" class="worker-chip">
+            <i class="bi bi-person-check"></i> {{ task.assigned_to_name }}
           </span>
-          <span v-if="task.due_date" :class="isOverdue(task) ? 'meta-danger' : ''">
-            <i class="bi bi-calendar3"></i> {{ fmtDate(task.due_date) }}
-          </span>
-          <span v-if="task.budget_labor_cost > 0">
-            <i class="bi bi-cash"></i> ${{ task.budget_labor_cost.toLocaleString('es-CO') }}
+          <span v-if="task.worker_name" class="worker-chip worker-chip-exec">
+            <i class="bi bi-tools"></i> {{ task.worker_name }}
           </span>
         </div>
 
-        <!-- BARRA DE AVANCE -->
-        <div class="progress-section">
-          <div class="progress-header">
-            <span>Avance</span>
-            <strong>{{ task.progress }}%</strong>
-          </div>
-          <div class="progress-track">
-            <div
-              class="progress-fill"
-              :class="task.progress === 100 ? 'fill-green' : 'fill-blue'"
-              :style="{ width: task.progress + '%' }"
-            ></div>
-          </div>
+        <!-- PRESUPUESTO -->
+        <div v-if="task.budget_labor_cost > 0" class="card-budget">
+          <i class="bi bi-cash"></i>
+          ${{ task.budget_labor_cost.toLocaleString('es-CO') }}
         </div>
 
-        <!-- ACCIONES -->
-        <div class="card-actions">
+        <!-- ACCIONES (stop propagation para no activar goToDetail) -->
+        <div class="card-actions" @click.stop>
           <button
+            v-if="isWorker"
             class="btn-action-main"
-            @click="openUpdate(task)"
+            @click.stop="openUpdate(task)"
             :disabled="[5,6].includes(task.status_id)"
             :title="[5,6].includes(task.status_id) ? 'Tarea cerrada' : 'Actualizar avance'"
           >
-            <i class="bi bi-pencil-square"></i>
-            Actualizar avance
+            <i class="bi bi-pencil-square"></i> Actualizar avance
           </button>
-
-          <!-- Evidencias -->
           <button
-            class="btn-action-sec"
-            @click="$router.push(`/tasks/${task.id}/evidencias`)"
-            title="Ver y agregar evidencias"
+            v-else
+            class="btn-action-main"
+            @click.stop="goToDetail(task)"
           >
+            <i class="bi bi-eye"></i> Ver / Editar
+          </button>
+          <button class="btn-action-sec"
+            @click.stop="$router.push('/tasks/' + task.id + '/evidencias')"
+            title="Evidencias">
             <i class="bi bi-camera"></i>
-            Evidencias
           </button>
-
-          <!-- Materiales y Gastos -->
           <button class="btn-action-sec"
-            @click="$router.push(`/tasks/${task.id}/materiales`)"
+            @click.stop="$router.push('/tasks/' + task.id + '/materiales')"
             title="Materiales y gastos">
-            <i class="bi bi-tools"></i> Materiales
-          </button>
-
-          <!-- Reportes de avance -->
-          <button class="btn-action-sec"
-            @click="$router.push(`/tasks/${task.id}/reportes`)"
-            title="Reportes de avance">
-            <i class="bi bi-bar-chart-steps"></i> Reportes
+            <i class="bi bi-tools"></i>
           </button>
         </div>
-
       </div>
     </div>
 
-    <!-- MODAL ACTUALIZAR AVANCE -->
+    <!-- MODAL ACTUALIZAR AVANCE (solo Worker role) -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal-box">
         <div class="modal-header-bar">
@@ -222,74 +235,121 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
-const tasks   = ref([])
-const assets  = ref([])
+const router = useRouter()
+
+// ── Detección de rol ─────────────────────────────────────────
+const userInfo = JSON.parse(localStorage.getItem("user") || "{}")
+const isWorker = (userInfo.role || "").toLowerCase().includes("worker")
+
+// ── Estado ──────────────────────────────────────────────────
+const tasks    = ref([])
+const assets   = ref([])
+const workers  = ref([])
 const statuses = ref([])
 const loading  = ref(true)
 const saving   = ref(false)
-const showModal = ref(false)
-const editing   = ref({})
-const activeTab = ref("all")
+const showModal  = ref(false)
+const editing    = ref({})
+const activeTab  = ref("all")
+const filterWorker = ref(null)
 
 const updateForm = ref({ progress: 0, status_id: 1 })
 
-// ── Contadores ───────────────────────────────────────────────────
+// ── Contadores ───────────────────────────────────────────────
 const counts = computed(() => ({
-  pendiente:  tasks.value.filter(t => t.status_id === 1).length,
-  progreso:   tasks.value.filter(t => t.status_id === 3).length,
-  revision:   tasks.value.filter(t => t.status_id === 4).length,
-  finalizada: tasks.value.filter(t => t.status_id === 5).length,
-  atrasadas:  tasks.value.filter(t => isOverdue(t)).length,
+  pendiente:   tasks.value.filter(t => t.status_id === 1).length,
+  progreso:    tasks.value.filter(t => t.status_id === 3).length,
+  revision:    tasks.value.filter(t => t.status_id === 4).length,
+  finalizada:  tasks.value.filter(t => t.status_id === 5).length,
+  atrasadas:   tasks.value.filter(t => isOverdue(t)).length,
+  sinEjecutor: tasks.value.filter(t => !t.worker_id && ![5,6].includes(t.status_id)).length,
 }))
 
 const tabs = computed(() => [
-  { label: "Todas",        value: "all",       count: tasks.value.length },
-  { label: "Pendientes",   value: "pending",   count: counts.value.pendiente },
-  { label: "En Progreso",  value: "progress",  count: counts.value.progreso },
-  { label: "En Revisión",  value: "revision",  count: counts.value.revision },
-  { label: "Finalizadas",  value: "done",      count: counts.value.finalizada },
+  { label: "Todas",          value: "all",        count: tasks.value.length },
+  { label: "Pendientes",     value: "pending",    count: counts.value.pendiente },
+  { label: "En Progreso",    value: "progress",   count: counts.value.progreso },
+  { label: "En Revisión",    value: "revision",   count: counts.value.revision },
+  { label: "Finalizadas",    value: "done",       count: counts.value.finalizada },
+  { label: "⚡ Atrasadas",   value: "overdue",    count: counts.value.atrasadas },
+  { label: "Sin Ejecutor",   value: "unassigned", count: counts.value.sinEjecutor },
 ])
 
+// ── Filtrado combinado ───────────────────────────────────────
 const filtered = computed(() => {
-  const map = { all: null, pending: 1, progress: 3, revision: 4, done: 5 }
-  const sid = map[activeTab.value]
-  return sid === null
-    ? tasks.value
-    : tasks.value.filter(t => t.status_id === sid)
+  let list = tasks.value
+
+  if (activeTab.value === "overdue") {
+    list = list.filter(t => isOverdue(t))
+  } else if (activeTab.value === "unassigned") {
+    list = list.filter(t => !t.worker_id && ![5,6].includes(t.status_id))
+  } else {
+    const tabMap = { all: null, pending: 1, progress: 3, revision: 4, done: 5 }
+    const sid = tabMap[activeTab.value]
+    if (sid !== null && sid !== undefined) list = list.filter(t => t.status_id === sid)
+  }
+
+  if (!isWorker && filterWorker.value !== null) {
+    list = list.filter(t => t.worker_id === filterWorker.value)
+  }
+
+  return list
 })
 
 const statusesActivos = computed(() =>
-  statuses.value.filter(s => s.id !== 6)  // excluir Cancelada (solo admin puede cancelar)
+  statuses.value.filter(s => s.id !== 6)
 )
 
-// ── Helpers ──────────────────────────────────────────────────────
-const STATUS_CLASSES = {
-  1: "badge-orange", 2: "badge-blue", 3: "badge-green",
-  4: "badge-purple", 5: "badge-darkgreen", 6: "badge-red",
-}
-function statusClass(id) { return STATUS_CLASSES[id] || "badge-gray" }
-function assetName(id)   { return assets.value.find(a => a.id === id)?.name || "—" }
-function isOverdue(t)    { return t.due_date && new Date(t.due_date) < new Date() && ![5,6].includes(t.status_id) }
-function fmtDate(iso) {
-  if (!iso) return ""
-  return new Date(iso).toLocaleDateString("es-CO", { day:"2-digit", month:"short", year:"numeric" })
+// ── Helpers ──────────────────────────────────────────────────
+const STATUS_COLORS = {
+  1: "#f97316", 2: "#3b82f6", 3: "#22c55e",
+  4: "#7c3aed", 5: "#065f46", 6: "#ef4444",
 }
 
-// ── Datos ────────────────────────────────────────────────────────
+const STATUS_CLASSES = {
+  1: "badge-orange", 2: "badge-blue",      3: "badge-green",
+  4: "badge-purple", 5: "badge-darkgreen", 6: "badge-red",
+}
+
+function cardBorderColor(task) {
+  if (isOverdue(task)) return "#ef4444"
+  return STATUS_COLORS[task.status_id] || "#e2e8f0"
+}
+
+function statusClass(id) { return STATUS_CLASSES[id] || "badge-gray" }
+function assetName(id)   { return assets.value.find(a => a.id === id)?.name || "—" }
+function isOverdue(t)    {
+  return t.due_date && new Date(t.due_date) < new Date() && ![5, 6].includes(t.status_id)
+}
+function fmtDate(iso) {
+  if (!iso) return ""
+  return new Date(iso).toLocaleDateString("es-CO", {
+    day: "2-digit", month: "short", year: "numeric"
+  })
+}
+function setTab(tab) { activeTab.value = tab }
+
+// ── Carga de datos ───────────────────────────────────────────
 async function load() {
   loading.value = true
   try {
-    const [myRes, assetsRes, statusRes] = await Promise.all([
-      api.get("/tasks/my-tasks"),
+    const endpoint = isWorker ? "/tasks/my-tasks" : "/tasks/"
+    const promises = [
+      api.get(endpoint),
       api.get("/tasks/assets-list"),
       api.get("/task-status/"),
-    ])
-    tasks.value   = myRes.data
-    assets.value  = assetsRes.data
-    statuses.value = statusRes.data
+    ]
+    if (!isWorker) promises.push(api.get("/workers/"))
+
+    const results = await Promise.all(promises)
+    tasks.value    = results[0].data
+    assets.value   = results[1].data
+    statuses.value = results[2].data
+    if (!isWorker) workers.value = results[3].data
   } catch {
     showToast("Error cargando tareas", "error")
   } finally {
@@ -297,9 +357,14 @@ async function load() {
   }
 }
 
-// ── Actualizar avance ────────────────────────────────────────────
+// ── Navegación ───────────────────────────────────────────────
+function goToDetail(task) {
+  router.push(`/tasks/${task.id}/detalle`)
+}
+
+// ── Actualizar avance (solo Worker role) ─────────────────────
 function openUpdate(task) {
-  editing.value = task
+  editing.value    = task
   updateForm.value = { progress: task.progress, status_id: task.status_id }
   showModal.value  = true
 }
@@ -330,12 +395,15 @@ onMounted(load)
 /* MINI KPIS */
 .mini-kpis { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
 .mini-kpi {
-  flex: 1; min-width: 100px;
+  flex: 1; min-width: 100px; cursor: pointer;
   background: #fff; border-radius: 12px; padding: 12px 16px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.07);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   border-top: 3px solid #e2e8f0;
+  transition: box-shadow 0.15s, transform 0.15s;
 }
+.mini-kpi:hover  { box-shadow: 0 3px 10px rgba(0,0,0,0.12); transform: translateY(-1px); }
+.kpi-active      { box-shadow: 0 3px 10px rgba(0,0,0,0.15); transform: translateY(-2px); }
 .mk-value    { font-size: 22px; font-weight: 800; color: #1e293b; }
 .mk-label    { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; }
 .mk-progreso  { border-top-color: #22c55e; }
@@ -343,6 +411,12 @@ onMounted(load)
 .mk-finalizada{ border-top-color: #065f46; }
 .mk-atrasada  { border-top-color: #ef4444; }
 .mk-atrasada .mk-value { color: #ef4444; }
+.mk-atrasada.kpi-active { background: #fef2f2; }
+.mk-sinasig   { border-top-color: #94a3b8; }
+.mk-sinasig .mk-value { color: #64748b; }
+
+/* FILTER BAR */
+.filter-bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
 
 /* FILTER TABS */
 .filter-tabs { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
@@ -353,9 +427,10 @@ onMounted(load)
   display: flex; align-items: center; gap: 6px;
   transition: all 0.15s;
 }
-.filter-tab:hover { border-color: #3b82f6; background: #eff6ff; }
+.filter-tab:hover  { border-color: #3b82f6; background: #eff6ff; }
 .filter-tab.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
 .filter-tab.active .tab-count { background: rgba(255,255,255,0.25); }
+.filter-overdue.active { background: #ef4444; border-color: #ef4444; }
 .tab-count { font-size: 11px; background: #e2e8f0; color: #475569; border-radius: 10px; padding: 1px 7px; }
 
 /* STATES */
@@ -364,36 +439,36 @@ onMounted(load)
 .empty-state .bi { font-size: 42px; display: block; margin-bottom: 12px; }
 
 /* GRID DE TARJETAS */
-.task-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.task-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 
 .task-card {
-  background: #fff; border-radius: 14px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
-  padding: 18px; display: flex; flex-direction: column; gap: 10px;
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
   border-left: 4px solid #e2e8f0;
-  transition: box-shadow 0.2s;
+  transition: box-shadow 0.2s, transform 0.15s;
+  cursor: pointer;
 }
-.task-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
-.card-overdue   { border-left-color: #ef4444; }
+.task-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.13); transform: translateY(-2px); }
 
 .card-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .overdue-chip { font-size: 11px; color: #ef4444; font-weight: 700; display:flex; align-items:center; gap:3px; }
 
-.card-title { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0; line-height: 1.3; }
-.card-desc  { font-size: 13px; color: #64748b; margin: 0; line-height: 1.4;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-title  { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0; line-height: 1.3; }
+.card-asset  { font-size: 12px; color: #475569; display:flex; align-items:center; gap:4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-budget { font-size: 12px; color: #16a34a; font-weight: 600;
+  display:flex; align-items:center; gap:4px; }
 
-.card-meta  { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #94a3b8; }
-.card-meta span { display: flex; align-items: center; gap: 4px; }
-.meta-danger { color: #ef4444 !important; }
+/* WORKER INFO */
+.card-workers { display: flex; flex-wrap: wrap; gap: 6px; }
+.worker-chip  {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 500; color: #1e40af;
+  background: #dbeafe; border-radius: 20px; padding: 2px 10px;
+}
+.worker-chip-exec { color: #065f46; background: #d1fae5; }
 
-/* PROGRESS */
-.progress-section { display: flex; flex-direction: column; gap: 5px; }
-.progress-header  { display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
-.progress-track   { height: 7px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
-.progress-fill    { height: 100%; border-radius: 4px; transition: width 0.4s; }
-.fill-blue  { background: #3b82f6; }
-.fill-green { background: #22c55e; }
 
 /* ACCIONES */
 .card-actions { display: flex; gap: 8px; margin-top: 4px; }
@@ -409,7 +484,7 @@ onMounted(load)
 .btn-action-sec {
   padding: 8px 12px; border-radius: 8px;
   background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
-  font-size: 13px; cursor: pointer;
+  font-size: 14px; cursor: pointer;
   display: flex; align-items: center; gap: 6px;
   transition: background 0.15s;
 }
@@ -447,7 +522,6 @@ onMounted(load)
 
 .progress-number { color: #3b82f6; font-size: 16px; margin-left: 6px; }
 .range-marks { display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; margin-top:-2px; }
-
 .alert-info { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 14px; font-size:13px; color:#1e40af; display:flex; align-items:center; gap:8px; }
 
 .btn-close-x { background:none; border:none; font-size:18px; cursor:pointer; color:#94a3b8; }
@@ -455,7 +529,6 @@ onMounted(load)
 .spin { display:inline-block; animation:spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
-/* RESPONSIVE */
 @media (max-width: 640px) {
   .task-grid { grid-template-columns: 1fr; }
   .mini-kpis { gap: 8px; }

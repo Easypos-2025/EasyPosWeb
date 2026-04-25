@@ -18,77 +18,15 @@
       </div>
       <button class="btn btn-primary" @click="showForm = !showForm">
         <i class="bi" :class="showForm ? 'bi-x-lg' : 'bi-plus-lg'"></i>
-        {{ showForm ? 'Cancelar' : 'Agregar evidencia' }}
+        {{ showForm ? 'Cerrar formulario' : 'Agregar evidencia' }}
       </button>
     </div>
 
-    <!-- FORMULARIO NUEVA EVIDENCIA -->
+    <!-- FORMULARIO NUEVA EVIDENCIA (componente unificado) -->
     <transition name="slide">
       <div v-if="showForm" class="evidence-form-card">
         <h3 class="form-title">Nueva evidencia</h3>
-
-        <!-- Tipo -->
-        <div class="type-selector">
-          <button
-            v-for="t in types" :key="t.value"
-            class="type-btn"
-            :class="{ active: newEv.file_type === t.value }"
-            @click="newEv.file_type = t.value; resetFile()"
-          >
-            <i :class="`bi ${t.icon}`"></i>
-            {{ t.label }}
-          </button>
-        </div>
-
-        <!-- Descripción siempre presente -->
-        <div class="fg">
-          <label>
-            {{ newEv.file_type === 'text' ? 'Texto de la evidencia *' : 'Descripción (opcional)' }}
-          </label>
-          <textarea
-            v-model="newEv.description"
-            class="form-control"
-            :rows="newEv.file_type === 'text' ? 4 : 2"
-            :placeholder="newEv.file_type === 'text'
-              ? 'Escribe aquí la descripción detallada de la evidencia...'
-              : 'Descripción del archivo...'"
-          ></textarea>
-        </div>
-
-        <!-- File picker (no texto) -->
-        <div v-if="newEv.file_type !== 'text'" class="fg">
-          <label>
-            Archivo
-            <span class="hint">
-              {{ newEv.file_type === 'image' ? '(JPG, PNG, WEBP — máx 50MB)'
-                : newEv.file_type === 'video' ? '(MP4, MOV, WEBM — máx 50MB)'
-                : '(MP3, M4A, WAV — máx 50MB)' }}
-            </span>
-          </label>
-          <label class="file-drop" :class="{ 'has-file': selectedFile }">
-            <i class="bi" :class="fileIcon"></i>
-            <span>{{ selectedFile ? selectedFile.name : 'Toca para seleccionar' }}</span>
-            <input
-              ref="fileInput"
-              type="file"
-              :accept="acceptAttr"
-              @change="onFileChange"
-              hidden
-            />
-          </label>
-          <!-- Preview imagen -->
-          <img v-if="previewUrl && newEv.file_type === 'image'"
-            :src="previewUrl" class="img-preview" />
-          <audio v-if="previewUrl && newEv.file_type === 'audio'"
-            :src="previewUrl" controls class="audio-preview" />
-        </div>
-
-        <div class="form-actions">
-          <button class="btn btn-primary" @click="submit" :disabled="uploading">
-            <i v-if="uploading" class="bi bi-arrow-repeat spin"></i>
-            {{ uploading ? 'Subiendo...' : 'Guardar evidencia' }}
-          </button>
-        </div>
+        <EvidenceUploader :task-id="taskId" @uploaded="onUploaded" />
       </div>
     </transition>
 
@@ -116,7 +54,7 @@
           class="gtab" :class="{ active: galleryTab === t.value }"
           @click="galleryTab = t.value"
         >
-          <i :class="`bi ${t.icon}`"></i> {{ t.label }} ({{ typeCount(t.value) }})
+          <i :class="'bi ' + t.icon"></i> {{ t.label }} ({{ typeCount(t.value) }})
         </button>
       </div>
 
@@ -206,72 +144,43 @@ import { ref, computed, onMounted } from "vue"
 import { useRoute } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import EvidenceUploader from "@/components/EvidenceUploader.vue"
 
 const route    = useRoute()
 const taskId   = route.params.taskId
 const apiBase  = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 
-const task      = ref(null)
-const evidences = ref([])
-const loading   = ref(true)
-const uploading = ref(false)
-const showForm  = ref(false)
-const galleryTab = ref("all")
+const task        = ref(null)
+const evidences   = ref([])
+const loading     = ref(true)
+const showForm    = ref(false)
+const galleryTab  = ref("all")
 const lightboxUrl = ref("")
-const selectedFile = ref(null)
-const previewUrl   = ref("")
-const fileInput    = ref(null)
 
-const newEv = ref({ file_type: "image", description: "" })
-
-const types = [
-  { value: "image", label: "Imagen",  icon: "bi-image" },
-  { value: "video", label: "Video",   icon: "bi-play-circle" },
-  { value: "audio", label: "Audio",   icon: "bi-mic" },
-  { value: "text",  label: "Texto",   icon: "bi-text-paragraph" },
+const allTypes = [
+  { value: "image", label: "Imagen", icon: "bi-image"          },
+  { value: "video", label: "Video",  icon: "bi-play-circle"    },
+  { value: "audio", label: "Audio",  icon: "bi-music-note-beamed" },
+  { value: "text",  label: "Texto",  icon: "bi-text-paragraph" },
 ]
 
-const acceptAttr = computed(() => ({
-  image: "image/jpeg,image/png,image/webp,image/gif",
-  video: "video/mp4,video/quicktime,video/webm",
-  audio: "audio/mpeg,audio/mp4,audio/ogg,audio/wav",
-}[newEv.value.file_type] || "*"))
-
-const fileIcon = computed(() => ({
-  image: "bi-image",
-  video: "bi-play-circle",
-  audio: "bi-mic",
-}[newEv.value.file_type] || "bi-file"))
-
 const usedTypes = computed(() =>
-  types.filter(t => evidences.value.some(e => e.file_type === t.value))
+  allTypes.filter(t => evidences.value.some(e => e.file_type === t.value))
 )
 
 function typeCount(type) { return evidences.value.filter(e => e.file_type === type).length }
-function hasType(type)   {
+function hasType(type) {
   return galleryTab.value === "all"
     ? evidences.value.some(e => e.file_type === type)
     : galleryTab.value === type && evidences.value.some(e => e.file_type === type)
 }
-function byType(type)    { return evidences.value.filter(e => e.file_type === type) }
-function fmtDate(iso)    {
+function byType(type) { return evidences.value.filter(e => e.file_type === type) }
+function fmtDate(iso) {
   if (!iso) return ""
-  return new Date(iso).toLocaleString("es-CO", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" })
-}
-
-function resetFile() {
-  selectedFile.value = null
-  previewUrl.value   = ""
-  if (fileInput.value) fileInput.value.value = ""
-}
-
-function onFileChange(e) {
-  const f = e.target.files[0]
-  if (!f) return
-  selectedFile.value = f
-  if (newEv.value.file_type === "image" || newEv.value.file_type === "audio") {
-    previewUrl.value = URL.createObjectURL(f)
-  }
+  return new Date(iso).toLocaleString("es-CO", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  })
 }
 
 function openLightbox(url) { lightboxUrl.value = url }
@@ -292,35 +201,10 @@ async function load() {
   }
 }
 
-async function submit() {
-  if (newEv.value.file_type === "text" && !newEv.value.description.trim()) {
-    showToast("El texto no puede estar vacío", "warning"); return
-  }
-  if (newEv.value.file_type !== "text" && !selectedFile.value) {
-    showToast("Selecciona un archivo", "warning"); return
-  }
-
-  uploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append("file_type",   newEv.value.file_type)
-    fd.append("description", newEv.value.description)
-    if (selectedFile.value) fd.append("file", selectedFile.value)
-
-    await api.post(`/task-evidence/${taskId}`, fd, {
-      headers: { "Content-Type": "multipart/form-data" }
-    })
-
-    showToast("Evidencia guardada", "success")
-    newEv.value  = { file_type: "image", description: "" }
-    resetFile()
-    showForm.value = false
-    await load()
-  } catch (e) {
-    showToast(e.response?.data?.detail || "Error subiendo evidencia", "error")
-  } finally {
-    uploading.value = false
-  }
+async function onUploaded() {
+  showForm.value = false
+  const res      = await api.get(`/task-evidence/${taskId}`)
+  evidences.value = res.data
 }
 
 async function deleteEvidence(ev) {
@@ -336,7 +220,8 @@ async function deleteEvidence(ev) {
   try {
     await api.delete(`/task-evidence/${ev.id}`)
     showToast("Evidencia eliminada", "success")
-    await load()
+    const res = await api.get(`/task-evidence/${taskId}`)
+    evidences.value = res.data
   } catch {
     showToast("Error eliminando", "error")
   }
@@ -355,34 +240,8 @@ onMounted(load)
 .page-subtitle  { font-size:13px; color:#64748b; margin:0; }
 
 /* FORM CARD */
-.evidence-form-card { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,0.08); padding:20px 24px; margin-bottom:20px; display:flex; flex-direction:column; gap:14px; }
-.form-title { font-size:15px; font-weight:700; color:#1e293b; margin:0; }
-
-.type-selector { display:flex; gap:8px; flex-wrap:wrap; }
-.type-btn {
-  display:flex; align-items:center; gap:6px; padding:8px 16px;
-  border:1px solid #e2e8f0; border-radius:20px; background:#f8fafc;
-  font-size:13px; font-weight:500; cursor:pointer; transition:all 0.15s;
-}
-.type-btn:hover  { border-color:#3b82f6; color:#3b82f6; }
-.type-btn.active { background:#3b82f6; border-color:#3b82f6; color:#fff; }
-
-.fg label { font-size:13px; font-weight:600; color:#374151; margin-bottom:4px; display:block; }
-.hint     { font-weight:400; color:#94a3b8; font-size:12px; }
-
-.file-drop {
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:8px; padding:24px; border:2px dashed #cbd5e1; border-radius:12px;
-  cursor:pointer; transition:border-color 0.15s; color:#94a3b8; background:#f8fafc;
-}
-.file-drop .bi { font-size:28px; }
-.file-drop:hover    { border-color:#3b82f6; color:#3b82f6; }
-.file-drop.has-file { border-color:#22c55e; color:#16a34a; background:#f0fdf4; }
-
-.img-preview   { max-height:180px; border-radius:10px; object-fit:contain; max-width:100%; }
-.audio-preview { width:100%; margin-top:8px; }
-
-.form-actions { display:flex; justify-content:flex-end; }
+.evidence-form-card { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,0.08); padding:20px 24px; margin-bottom:20px; }
+.form-title { font-size:15px; font-weight:700; color:#1e293b; margin:0 0 14px; }
 
 /* GALERÍA */
 .loading-center { padding:60px; text-align:center; color:#94a3b8; }
@@ -426,6 +285,7 @@ onMounted(load)
 .audio-content { flex:1; display:flex; flex-direction:column; gap:6px; }
 .audio-content audio { width:100%; }
 .audio-desc { font-size:13px; color:#1e293b; margin:0; }
+.audio-item .btn-del-ev { position:static; opacity:1; align-self:flex-start; }
 
 /* TEXTOS */
 .text-list { display:flex; flex-direction:column; gap:12px; }

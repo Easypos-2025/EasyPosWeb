@@ -10,18 +10,22 @@
       <div class="kpi-icon-wrap">
         <i :class="`bi ${kpi.icon}`"></i>
       </div>
-      <span class="kpi-value">
-        <span v-if="loading" class="kpi-skeleton"></span>
-        <template v-else>{{ kpi.value }}</template>
-      </span>
+      <div class="kpi-text">
+        <span class="kpi-value">
+          <span v-if="loading" class="kpi-skeleton"></span>
+          <template v-else>{{ kpi.value }}</template>
+        </span>
+        <span v-if="showLabels && kpi.label" class="kpi-label">{{ kpi.label }}</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 defineProps({
-  kpis:    { type: Array,   default: () => [] },
-  loading: { type: Boolean, default: false }
+  kpis:       { type: Array,   default: () => [] },
+  loading:    { type: Boolean, default: false },
+  showLabels: { type: Boolean, default: false },
 })
 </script>
 
@@ -47,6 +51,20 @@ defineProps({
   padding: 5px 16px;
   position: relative;
   min-height: 0;
+}
+
+.kpi-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kpi-label {
+  font-size: 10px;
+  color: rgba(255,255,255,0.65);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1;
 }
 
 /* Divisor vertical */

@@ -1,5 +1,6 @@
 import os
 import uuid
+import aiofiles
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
@@ -14,11 +15,14 @@ from app.models.user_session_model import UserSession
 
 router = APIRouter(prefix="/task-evidence", tags=["TaskEvidence"])
 
-UPLOADS_BASE = Path(__file__).resolve().parent.parent / "uploads"
-ALLOWED_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-ALLOWED_VIDEO = {".mp4", ".mov", ".avi", ".webm"}
-ALLOWED_AUDIO = {".mp3", ".m4a", ".ogg", ".wav", ".aac"}
-MAX_SIZE_MB   = 50
+UPLOADS_BASE    = Path(__file__).resolve().parent.parent / "uploads"
+ALLOWED_IMAGE   = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+ALLOWED_VIDEO   = {".mp4", ".mov", ".avi", ".webm"}
+ALLOWED_AUDIO   = {".mp3", ".m4a", ".ogg", ".wav", ".aac"}
+MAX_IMAGE_MB    = 10
+MAX_VIDEO_MB    = 20   # reducido de 50 — evita cuelgues en uploads largos
+MAX_AUDIO_MB    = 15
+CHUNK_SIZE      = 1024 * 256   # 256 KB por chunk
 
 
 def _get_user(authorization: str, db: Session):
@@ -37,25 +41,28 @@ def _get_user(authorization: str, db: Session):
     return user
 
 
+def _max_mb(file_type: str) -> int:
+    return {"image": MAX_IMAGE_MB, "video": MAX_VIDEO_MB, "audio": MAX_AUDIO_MB}.get(file_type, 10)
+
+
 # ── GET: evidencias de una tarea ────────────────────────────────
 @router.get("/{task_id}")
 def get_evidence(task_id: int, db: Session = Depends(get_db)):
     items = db.query(TaskEvidence).filter(
         TaskEvidence.task_id == task_id
     ).order_by(TaskEvidence.created_at.asc()).all()
-
     return [_serialize(e) for e in items]
 
 
-# ── POST: subir nueva evidencia ─────────────────────────────────
+# ── POST: subir nueva evidencia (async streaming) ───────────────
 @router.post("/{task_id}")
 async def add_evidence(
     task_id:     int,
-    file_type:   str  = Form(...),          # image | video | audio | text
-    description: str  = Form(""),
-    file:        UploadFile = File(None),   # None si es tipo text
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    file_type:   str       = Form(...),
+    description: str       = Form(""),
+    file:        UploadFile = File(None),
+    authorization: str     = Header(None),
+    db: Session            = Depends(get_db)
 ):
     user = _get_user(authorization, db)
 
@@ -73,26 +80,47 @@ async def add_evidence(
         if not file:
             raise HTTPException(status_code=400, detail="Se requiere un archivo")
 
-        content  = await file.read()
-        size_mb  = len(content) / (1024 * 1024)
-        if size_mb > MAX_SIZE_MB:
-            raise HTTPException(status_code=413, detail=f"El archivo supera los {MAX_SIZE_MB} MB")
-
-        ext = Path(file.filename).suffix.lower()
+        ext = Path(file.filename or "").suffix.lower()
 
         if file_type == "image" and ext not in ALLOWED_IMAGE:
-            raise HTTPException(status_code=400, detail="Formato de imagen no permitido (jpg, png, webp)")
+            raise HTTPException(status_code=400, detail="Formato no permitido. Usa JPG, PNG o WEBP")
         if file_type == "video" and ext not in ALLOWED_VIDEO:
-            raise HTTPException(status_code=400, detail="Formato de video no permitido (mp4, mov, webm)")
+            raise HTTPException(status_code=400, detail="Formato no permitido. Usa MP4, MOV o WEBM")
         if file_type == "audio" and ext not in ALLOWED_AUDIO:
-            raise HTTPException(status_code=400, detail="Formato de audio no permitido (mp3, m4a, wav)")
+            raise HTTPException(status_code=400, detail="Formato no permitido. Usa MP3, M4A o WAV")
 
         folder = UPLOADS_BASE / f"{file_type}s"
         folder.mkdir(parents=True, exist_ok=True)
 
         filename  = f"{task_id}_{uuid.uuid4().hex[:8]}{ext}"
         full_path = folder / filename
-        full_path.write_bytes(content)
+        max_bytes = _max_mb(file_type) * 1024 * 1024
+        written   = 0
+
+        # Escritura async en chunks — no bloquea el event loop
+        try:
+            async with aiofiles.open(full_path, "wb") as out:
+                while True:
+                    chunk = await file.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        # Eliminar archivo parcial antes de rechazar
+                        await out.close()
+                        if full_path.exists():
+                            full_path.unlink()
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"El archivo supera el límite de {_max_mb(file_type)} MB para {file_type}"
+                        )
+                    await out.write(chunk)
+        except HTTPException:
+            raise
+        except Exception as e:
+            if full_path.exists():
+                full_path.unlink()
+            raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
 
         file_path = f"/uploads/{file_type}s/{filename}"
 
@@ -121,7 +149,6 @@ def delete_evidence(
     if not ev:
         raise HTTPException(status_code=404, detail="Evidencia no encontrada")
 
-    # Eliminar archivo del disco si existe
     if ev.file_path:
         file_on_disk = UPLOADS_BASE.parent / ev.file_path.lstrip("/")
         if file_on_disk.exists():

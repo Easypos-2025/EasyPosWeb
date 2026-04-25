@@ -161,6 +161,13 @@ const routes = [
         meta: { title: "AssetHistoryView" }
       },
       {
+        path: "/tasks/:taskId/detalle",
+        name: "TareaDetalleView",
+        component: () => import("@/views/TareaDetalleView.vue"),
+        requiresAuth: true,
+        meta: { title: "TareaDetalleView" }
+      },
+      {
         path: "/tasks/:taskId/analisis",
         name: "TaskAnalisisView",
         component: () => import("@/views/TaskAnalisisView.vue"),

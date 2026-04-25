@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.worker_model import Worker
+from app.models.task_model import Task
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
 
@@ -79,6 +80,14 @@ def delete_worker(
     w = db.query(Worker).filter(Worker.id == worker_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Ejecutor no encontrado")
+
+    tareas = db.query(Task).filter(Task.worker_id == worker_id).count()
+    if tareas > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"No se puede eliminar: el ejecutor tiene {tareas} tarea(s) asignada(s)"
+        )
+
     db.delete(w)
     db.commit()
     return {"message": "Ejecutor eliminado"}

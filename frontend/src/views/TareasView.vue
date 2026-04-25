@@ -34,6 +34,7 @@
             <th>#</th>
             <th>Título</th>
             <th>Activo</th>
+            <th>Ejecutor</th>
             <th class="text-center">Estado</th>
             <th class="text-center">Avance</th>
             <th>Fecha límite</th>
@@ -48,6 +49,7 @@
               <div v-if="t.description" class="task-desc">{{ t.description }}</div>
             </td>
             <td class="text-muted">{{ assetName(t.asset_id) }}</td>
+            <td class="text-muted">{{ workerName(t.worker_id) }}</td>
             <td class="text-center">
               <span class="status-badge" :class="statusClass(t.status_id)">
                 {{ t.status_name }}
@@ -81,7 +83,7 @@
             </td>
           </tr>
           <tr v-if="filtered.length === 0">
-            <td colspan="7" class="text-center text-muted py-4">
+            <td colspan="8" class="text-center text-muted py-4">
               <i class="bi bi-clipboard-x" style="font-size:28px;display:block;margin-bottom:8px"></i>
               No hay tareas con estos filtros
             </td>
@@ -147,10 +149,7 @@
             <div class="fg">
               <div class="d-flex justify-content-between align-items-center mb-1">
                 <label class="mb-0">Ejecutor / Profesional</label>
-                <router-link to="/configuration/workers" class="btn-add-worker" target="_blank"
-                  title="Ir a gestión de ejecutores">
-                  <i class="bi bi-person-plus"></i> Gestionar
-                </router-link>
+                <WorkersModal @updated="reloadWorkers" />
               </div>
               <select v-model="form.worker_id" class="form-select">
                 <option :value="null">— Sin ejecutor —</option>
@@ -211,6 +210,7 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
+import WorkersModal from "@/components/WorkersModal.vue"
 
 // ── Estado ──────────────────────────────────────────────────────
 const tasks    = ref([])
@@ -261,6 +261,16 @@ function statusClass(id) { return STATUS_CLASSES[id] || "badge-gray" }
 function assetName(id) {
   const a = assets.value.find(x => x.id === id)
   return a ? a.name : "—"
+}
+
+function workerName(id) {
+  const w = workers.value.find(x => x.id === id)
+  return w ? w.name : "—"
+}
+
+async function reloadWorkers() {
+  const res = await api.get("/workers/")
+  workers.value = res.data
 }
 
 function fmtDate(iso) {

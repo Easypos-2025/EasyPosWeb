@@ -31,7 +31,32 @@
       "Bash(../venv/Scripts/python -c \" from app.main import app routes = [\\(list\\(getattr\\(r,'methods',[]\\)\\), r.path\\) for r in app.routes if hasattr\\(r,'path'\\) and 'task' in r.path.lower\\(\\)] for m,p in routes: print\\(m, p\\) print\\('OK'\\) \")",
       "Bash(../venv/Scripts/python -c \" from app.main import app for r in app.routes: if hasattr\\(r,'path'\\) and 'asset' in r.path.lower\\(\\): print\\(list\\(getattr\\(r,'methods',[]\\)\\), r.path\\) \")",
       "Bash(../venv/Scripts/python -c \" from app.main import app task_routes = [\\(list\\(getattr\\(r,'methods',[]\\)\\), r.path\\) for r in app.routes if hasattr\\(r,'path'\\) and \\('task' in r.path.lower\\(\\) or 'asset' in r.path.lower\\(\\)\\)] for m,p in sorted\\(task_routes, key=lambda x: x[1]\\): print\\(m, p\\) \")",
-      "Bash(../venv/Scripts/python -c \" from app.main import app from app.routers.task_router import _status_map, _serialize from app.database import SessionLocal db = SessionLocal\\(\\) sm = _status_map\\(db\\) print\\('Status map:', sm\\) db.close\\(\\) print\\('Backend OK - sin errores de importación'\\) \")"
+      "Bash(../venv/Scripts/python -c \" from app.main import app from app.routers.task_router import _status_map, _serialize from app.database import SessionLocal db = SessionLocal\\(\\) sm = _status_map\\(db\\) print\\('Status map:', sm\\) db.close\\(\\) print\\('Backend OK - sin errores de importación'\\) \")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8000/company-theme/3\" -H \"Authorization: Bearer test\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8000/company-theme/3\" -H \"Authorization: Bearer faketoken\")",
+      "Bash(../venv/Scripts/pip show *)",
+      "Bash(python -m py_compile backend/app/routers/assets_router.py backend/app/routers/asset_category_router.py backend/app/schemas/asset_schema.py backend/app/models/asset_model.py backend/app/models/asset_category_model.py)",
+      "Bash(python -m py_compile backend/app/models/role_model.py backend/app/routers/role_router.py)",
+      "Bash(python -c \"import sqlalchemy.orm; print\\('OK:', sqlalchemy.__version__\\)\")",
+      "Bash(where python *)",
+      "Bash(pip show *)",
+      "Bash(pip3 show *)",
+      "Bash(python3 -c \"import sqlalchemy; print\\(sqlalchemy.__version__\\)\")",
+      "Bash(\"C:/Program Files/Python313/python.exe\" -c \"import sqlalchemy; print\\(sqlalchemy.__version__\\)\")",
+      "Bash(python -m py_compile backend/app/routers/task_router.py backend/app/routers/worker_router.py backend/app/models/worker_model.py)",
+      "Bash(python -m py_compile backend/app/models/profession_model.py backend/app/models/worker_model.py backend/app/routers/profession_router.py backend/app/routers/worker_router.py backend/app/main.py)",
+      "Bash(python -m py_compile backend/app/models/role_model.py backend/app/routers/role_router.py backend/app/routers/task_router.py)",
+      "Bash(mysql -u root -p123456 easyposweb -e \"INSERT INTO system_modules \\(name, route, icon, parent_id, is_active, order_index, is_sysadmin\\) VALUES \\('Ejecutores', '/configuration/workers', 'bi-people-fill', NULL, 1, 0, 0\\); SELECT id, name, route, parent_id, order_index FROM system_modules WHERE route = '/configuration/workers';\")",
+      "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"INSERT INTO system_modules \\(name, route, icon, parent_id, is_active, order_index, is_sysadmin\\) VALUES \\('Ejecutores', '/configuration/workers', 'bi-people-fill', NULL, 1, 0, 0\\); SELECT id, name, route, parent_id, order_index FROM system_modules WHERE route = '/configuration/workers';\")",
+      "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"DELETE FROM system_modules WHERE id = 43; SELECT id, name, route, icon, parent_id, order_index, is_active FROM system_modules WHERE route = '/configuration/workers';\")",
+      "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"DESCRIBE tasks; SHOW COLUMNS FROM workers; SHOW TABLES LIKE 'professions';\")",
+      "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"SELECT * FROM professions; SELECT * FROM workers;\")",
+      "Bash('C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe' -u root -p123456 easyposweb -e ' *)",
+      "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"SHOW COLUMNS FROM workers; SELECT w.id, w.name, p.name AS profession, w.phone FROM workers w LEFT JOIN professions p ON p.id = w.profession_id;\")",
+      "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='easyposweb' AND TABLE_NAME='tasks' ORDER BY ORDINAL_POSITION;\")",
+      "Bash(python -c \"import aiofiles; print\\('aiofiles OK:', aiofiles.__version__\\)\")",
+      "Bash(pip install *)",
+      "Bash(\"d:/AAA Proyectos Claude-Code/EasyPosWeb/venv/Scripts/pip.exe\" install aiofiles)"
     ]
   }
 }

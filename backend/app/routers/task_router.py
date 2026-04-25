@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Body
+from fastapi import APIRouter, Depends, Header, HTTPException, Body, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
+from typing import Optional
 
 from app.database import get_db
 from app.models.task_model import Task
 from app.models.task_status_model import TaskStatus
 from app.models.asset_model import Asset
 from app.models.user_model import User
+from app.models.worker_model import Worker
 from app.models.role_model import Role
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
@@ -60,6 +62,10 @@ def get_task_stats(
             Task.due_date < hoy,
             Task.status_id.notin_([5, 6])
         ).count(),
+        "sin_ejecutor": base.filter(
+            Task.worker_id == None,
+            Task.status_id.notin_([5, 6])
+        ).count(),
     }
 
 
@@ -74,18 +80,19 @@ def get_assets_for_tasks(
     return [{"id": a.id, "name": a.name} for a in assets]
 
 
-# ─── MIS TAREAS (Task Leader) ──────────────────────────────────
+# ─── MIS TAREAS (Task Leader / Worker role) ────────────────────
 @router.get("/my-tasks")
 def get_my_tasks(
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Tareas asignadas al usuario logueado (Task Leader view)."""
     user  = _get_user(authorization, db)
     sm    = _status_map(db)
+    wm    = _worker_map(db)
+    um    = _user_map(db)
     tasks = db.query(Task).filter(Task.assigned_to == user.id)\
                .order_by(Task.due_date.is_(None), Task.due_date.asc()).all()
-    return [_serialize(t, sm) for t in tasks]
+    return [_serialize(t, sm, wm, um) for t in tasks]
 
 
 # ─── ACTUALIZAR AVANCE RÁPIDO ──────────────────────────────────
@@ -96,7 +103,6 @@ def update_progress(
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Actualización rápida de avance y estado desde la vista Task Leader."""
     user = _get_user(authorization, db)
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -113,31 +119,44 @@ def update_progress(
 
     db.commit()
     db.refresh(task)
-    return _serialize(task, _status_map(db))
+    sm = _status_map(db)
+    wm = _worker_map(db)
+    um = _user_map(db)
+    return _serialize(task, sm, wm, um)
 
 
-# ─── GET ALL ───────────────────────────────────────────────────
+# ─── GET ALL (con filtros opcionales) ─────────────────────────
 @router.get("/")
 def get_tasks(
+    status_id: Optional[int] = Query(None),
+    worker_id: Optional[int] = Query(None),
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
     user = _get_user(authorization, db)
     sm   = _status_map(db)
+    wm   = _worker_map(db)
+    um   = _user_map(db)
     q    = db.query(Task)
     if not _is_system(user, db):
         q = q.filter(Task.company_id == user.company_id)
-    return [_serialize(t, sm) for t in q.order_by(Task.created_at.desc()).all()]
+    if status_id is not None:
+        q = q.filter(Task.status_id == status_id)
+    if worker_id is not None:
+        q = q.filter(Task.worker_id == worker_id)
+    return [_serialize(t, sm, wm, um) for t in q.order_by(Task.created_at.desc()).all()]
 
 
 # ─── GET BY ID ─────────────────────────────────────────────────
 @router.get("/{task_id}")
 def get_task(task_id: int, db: Session = Depends(get_db)):
     sm   = _status_map(db)
+    wm   = _worker_map(db)
+    um   = _user_map(db)
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
-    return _serialize(task, sm)
+    return _serialize(task, sm, wm, um)
 
 
 # ─── CREATE ────────────────────────────────────────────────────
@@ -176,7 +195,10 @@ def create_task(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
 
-    return _serialize(task, _status_map(db))
+    sm = _status_map(db)
+    wm = _worker_map(db)
+    um = _user_map(db)
+    return _serialize(task, sm, wm, um)
 
 
 # ─── UPDATE ────────────────────────────────────────────────────
@@ -206,7 +228,6 @@ def update_task(
     if "due_date" in data:
         task.due_date = _parse_date(data["due_date"])
 
-    # Auto-cerrar si pasa a Finalizada o Cancelada
     if data.get("status_id") in [5, 6] and not task.closed_at:
         task.closed_at = datetime.now()
 
@@ -217,7 +238,10 @@ def update_task(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
 
-    return _serialize(task, _status_map(db))
+    sm = _status_map(db)
+    wm = _worker_map(db)
+    um = _user_map(db)
+    return _serialize(task, sm, wm, um)
 
 
 # ─── DELETE ────────────────────────────────────────────────────
@@ -247,11 +271,23 @@ def _parse_date(value):
 
 
 def _status_map(db: Session) -> dict:
-    """Carga los nombres de estado una sola vez por request."""
     return {s.id: s.name for s in db.query(TaskStatus).all()}
 
 
-def _serialize(t: Task, status_names: dict = None) -> dict:
+def _worker_map(db: Session) -> dict:
+    return {w.id: w.name for w in db.query(Worker).all()}
+
+
+def _user_map(db: Session) -> dict:
+    return {u.id: u.nombre for u in db.query(User).all()}
+
+
+def _serialize(
+    t: Task,
+    status_names: dict = None,
+    worker_names: dict = None,
+    user_names:   dict = None
+) -> dict:
     sname = (status_names or {}).get(t.status_id, "—") if t.status_id else "—"
     return {
         "id":                 t.id,
@@ -262,7 +298,9 @@ def _serialize(t: Task, status_names: dict = None) -> dict:
         "status_id":          t.status_id,
         "status_name":        sname,
         "assigned_to":        t.assigned_to,
+        "assigned_to_name":   (user_names or {}).get(t.assigned_to) if t.assigned_to else None,
         "worker_id":          t.worker_id,
+        "worker_name":        (worker_names or {}).get(t.worker_id) if t.worker_id else None,
         "progress":           t.progress or 0,
         "budget_labor_cost":  t.budget_labor_cost or 0,
         "actual_labor_cost":  t.actual_labor_cost or 0,
