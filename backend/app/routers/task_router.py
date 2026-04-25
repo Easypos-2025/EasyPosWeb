@@ -5,6 +5,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.task_model import Task
 from app.models.task_status_model import TaskStatus
+from app.models.asset_model import Asset
 from app.models.user_model import User
 from app.models.role_model import Role
 from app.auth.jwt_handler import decode_access_token
@@ -62,6 +63,17 @@ def get_task_stats(
     }
 
 
+# ─── ACTIVOS disponibles (para selects en formularios de tareas) ─
+@router.get("/assets-list")
+def get_assets_for_tasks(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    _get_user(authorization, db)
+    assets = db.query(Asset).order_by(Asset.name).all()
+    return [{"id": a.id, "name": a.name} for a in assets]
+
+
 # ─── MIS TAREAS (Task Leader) ──────────────────────────────────
 @router.get("/my-tasks")
 def get_my_tasks(
@@ -72,7 +84,7 @@ def get_my_tasks(
     user  = _get_user(authorization, db)
     sm    = _status_map(db)
     tasks = db.query(Task).filter(Task.assigned_to == user.id)\
-               .order_by(Task.due_date.asc().nulls_last()).all()
+               .order_by(Task.due_date.is_(None), Task.due_date.asc()).all()
     return [_serialize(t, sm) for t in tasks]
 
 
@@ -156,9 +168,14 @@ def create_task(
     if not task.title:
         raise HTTPException(status_code=400, detail="El título es obligatorio")
 
-    db.add(task)
-    db.commit()
-    db.refresh(task)
+    try:
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
+
     return _serialize(task, _status_map(db))
 
 
@@ -193,8 +210,13 @@ def update_task(
     if data.get("status_id") in [5, 6] and not task.closed_at:
         task.closed_at = datetime.now()
 
-    db.commit()
-    db.refresh(task)
+    try:
+        db.commit()
+        db.refresh(task)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
+
     return _serialize(task, _status_map(db))
 
 

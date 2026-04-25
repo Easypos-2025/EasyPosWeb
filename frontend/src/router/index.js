@@ -88,15 +88,21 @@ const routes = [
         meta: { title: "UsersView" }
       },
 
-/*
+      {
+        path: "/configuration/assets",
+        name: "assets",
+        component: () => import("@/views/AssetsView.vue"),
+        requiresAuth: true,
+        meta: { title: "AssetsView" }
+      },
+
       {
         path: "/configuration/workers",
-        name: "workers",
-        component: WorkesView,
+        name: "WorkersView",
+        component: () => import("@/views/WorkersView.vue"),
         requiresAuth: true,
-        meta: { title: "WorkesView" }
+        meta: { title: "WorkersView" }
       },
-*/
       {
         path: "/configuration/roles",
         name: "roles",

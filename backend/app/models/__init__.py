@@ -54,5 +54,6 @@ from app.models.plan_model import Plan
 from app.models.company_plan_model import CompanyPlan
 from app.models.task_expense_model import TaskExpense
 from app.models.task_progress_report_model import TaskProgressReport
+from app.models.profession_model import Profession
 
 

@@ -284,7 +284,7 @@ async function load() {
   try {
     const [myRes, assetsRes, statusRes] = await Promise.all([
       api.get("/tasks/my-tasks"),
-      api.get("/assets/"),
+      api.get("/tasks/assets-list"),
       api.get("/task-status/"),
     ])
     tasks.value   = myRes.data

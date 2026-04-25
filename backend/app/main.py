@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -14,6 +15,7 @@ from app import models
 from app.routers.asset_category_router import router as asset_category_router
 from app.routers.assets_router import router as assets_router
 from app.routers.worker_router import router as worker_router
+from app.routers.profession_router import router as profession_router
 from app.routers.task_router import router as task_router
 from app.routers.task_status_router import router as task_status_router
 from app.routers.auth_router import router as auth_router
@@ -67,7 +69,7 @@ app.router.redirect_slashes = True
 # ===============================
 # STATIC FILES
 # ===============================
-if ASSETS_DIR.exists():
+if ASSETS_DIR.exists() and os.getenv("SERVE_FRONTEND") == "true":
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 UPLOADS_DIR = BASE_DIR / "backend" / "app" / "uploads"
@@ -96,6 +98,7 @@ routers = [
     asset_category_router,
     assets_router,
     worker_router,
+    profession_router,
     task_router,
     task_status_router,
     auth_router,

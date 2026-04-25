@@ -145,11 +145,17 @@
 
             <!-- Ejecutor (Worker) -->
             <div class="fg">
-              <label>Ejecutor / Profesional</label>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="mb-0">Ejecutor / Profesional</label>
+                <router-link to="/configuration/workers" class="btn-add-worker" target="_blank"
+                  title="Ir a gestión de ejecutores">
+                  <i class="bi bi-person-plus"></i> Gestionar
+                </router-link>
+              </div>
               <select v-model="form.worker_id" class="form-select">
                 <option :value="null">— Sin ejecutor —</option>
                 <option v-for="w in workers" :key="w.id" :value="w.id">
-                  {{ w.name }} ({{ w.profession }})
+                  {{ w.name }}{{ w.profession_name ? ' — ' + w.profession_name : '' }}
                 </option>
               </select>
             </div>
@@ -218,6 +224,7 @@ const showModal = ref(false)
 const editMode  = ref(false)
 const search    = ref("")
 const filterStatus = ref("")
+
 
 const emptyForm = () => ({
   title: "", description: "", asset_id: null, status_id: 1,
@@ -430,4 +437,7 @@ onMounted(loadAll)
 
 .spin { display:inline-block; animation:spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+.btn-add-worker { background:none; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; padding:2px 8px; color:#64748b; text-decoration:none; display:flex; align-items:center; gap:4px; }
+.btn-add-worker:hover { background:#f1f5f9; color:#1e293b; }
 </style>
