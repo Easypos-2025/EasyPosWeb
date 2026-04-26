@@ -16,8 +16,7 @@ import "./styles/layout.css"
 import './styles/variables.css'
 import "./styles/forms.css"
 import { createPinia } from "pinia"
-//import "cropperjs/dist/cropper.css"
-import "cropperjs/dist/cropper.css?url"
+import "cropperjs/dist/cropper.css"
 
 const app = createApp(App)
 const pinia = createPinia()
