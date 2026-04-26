@@ -101,7 +101,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watchEffect } from "vue"
+import { ref, onMounted, onUnmounted, watchEffect } from "vue"
 import { useRouter } from "vue-router"
 import { getThemeState } from "@/utils/theme"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -180,7 +180,6 @@ onMounted(async () => {
   }
 })
 
-import { onUnmounted } from "vue"
 onUnmounted(() => { if (notifTimer) clearInterval(notifTimer) })
 </script>
 

@@ -70,7 +70,7 @@
             />
             <p v-if="ev.description" class="thumb-desc">{{ ev.description }}</p>
             <span class="thumb-date">{{ fmtDate(ev.created_at) }}</span>
-            <button class="btn-del-ev" @click="deleteEvidence(ev)" title="Eliminar">
+            <button v-if="!isWorker" class="btn-del-ev" @click="deleteEvidence(ev)" title="Eliminar">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -86,7 +86,7 @@
             <div class="media-meta">
               <p v-if="ev.description">{{ ev.description }}</p>
               <span>{{ fmtDate(ev.created_at) }}</span>
-              <button class="btn-del-ev" @click="deleteEvidence(ev)">
+              <button v-if="!isWorker" class="btn-del-ev" @click="deleteEvidence(ev)">
                 <i class="bi bi-trash"></i>
               </button>
             </div>
@@ -105,7 +105,7 @@
               <audio :src="apiBase + ev.file_path" controls />
               <span class="thumb-date">{{ fmtDate(ev.created_at) }}</span>
             </div>
-            <button class="btn-del-ev" @click="deleteEvidence(ev)">
+            <button v-if="!isWorker" class="btn-del-ev" @click="deleteEvidence(ev)">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -120,7 +120,7 @@
             <div class="text-body">{{ ev.description }}</div>
             <div class="text-footer">
               <span>{{ fmtDate(ev.created_at) }}</span>
-              <button class="btn-del-ev" @click="deleteEvidence(ev)">
+              <button v-if="!isWorker" class="btn-del-ev" @click="deleteEvidence(ev)">
                 <i class="bi bi-trash"></i>
               </button>
             </div>
@@ -149,6 +149,9 @@ import EvidenceUploader from "@/components/EvidenceUploader.vue"
 const route    = useRoute()
 const taskId   = route.params.taskId
 const apiBase  = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+
+const userInfo = JSON.parse(localStorage.getItem("user") || "{}")
+const isWorker = (userInfo.role || "").toLowerCase().includes("worker")
 
 const task        = ref(null)
 const evidences   = ref([])

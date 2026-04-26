@@ -56,7 +56,13 @@
       "Bash(\"C:/Program Files/MySQL/MySQL Workbench 8.0 CE/mysql.exe\" -u root -p123456 easyposweb -e \"SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='easyposweb' AND TABLE_NAME='tasks' ORDER BY ORDINAL_POSITION;\")",
       "Bash(python -c \"import aiofiles; print\\('aiofiles OK:', aiofiles.__version__\\)\")",
       "Bash(pip install *)",
-      "Bash(\"d:/AAA Proyectos Claude-Code/EasyPosWeb/venv/Scripts/pip.exe\" install aiofiles)"
+      "Bash(\"d:/AAA Proyectos Claude-Code/EasyPosWeb/venv/Scripts/pip.exe\" install aiofiles)",
+      "Bash(cat backend/.gitignore)",
+      "Bash(cat .gitignore)",
+      "Bash(python -m pip freeze)",
+      "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")",
+      "Bash(python -c \"import ast, sys; ast.parse\\(open\\('backend/app/main.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(git commit *)"
     ]
   }
 }

@@ -50,6 +50,15 @@
       >
         <i class="bi bi-x-circle"></i> Limpiar
       </button>
+      <!-- TOGGLE VISTA -->
+      <div class="view-toggle ms-auto">
+        <button class="vt-btn" :class="{ active: viewMode === 'card' }" @click="viewMode = 'card'" title="Vista tarjetas">
+          <i class="bi bi-grid"></i>
+        </button>
+        <button class="vt-btn" :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'" title="Vista lista">
+          <i class="bi bi-list-ul"></i>
+        </button>
+      </div>
     </div>
 
     <!-- FILTER TABS -->
@@ -76,8 +85,8 @@
       <p>No hay tareas con estos filtros</p>
     </div>
 
-    <!-- GRID DE TARJETAS -->
-    <div v-else class="task-grid">
+    <!-- VISTA TARJETAS -->
+    <div v-else-if="viewMode === 'card'" class="task-grid">
       <div
         v-for="task in filtered"
         :key="task.id"
@@ -86,7 +95,6 @@
         @click="$router.push('/tasks/' + task.id + '/detalle')"
         title="Ver detalle"
       >
-        <!-- CABECERA -->
         <div class="card-header">
           <span class="status-badge" :class="statusClass(task.status_id)">
             {{ task.status_name }}
@@ -95,16 +103,10 @@
             <i class="bi bi-exclamation-triangle-fill"></i>
           </span>
         </div>
-
-        <!-- TÍTULO -->
         <h3 class="card-title">{{ task.title }}</h3>
-
-        <!-- ACTIVO -->
         <div v-if="task.asset_id" class="card-asset">
           <i class="bi bi-building"></i> {{ assetName(task.asset_id) }}
         </div>
-
-        <!-- RESPONSABLE / EJECUTOR -->
         <div class="card-workers" v-if="task.assigned_to_name || task.worker_name">
           <span v-if="task.assigned_to_name" class="worker-chip">
             <i class="bi bi-person-check"></i> {{ task.assigned_to_name }}
@@ -113,14 +115,10 @@
             <i class="bi bi-tools"></i> {{ task.worker_name }}
           </span>
         </div>
-
-        <!-- PRESUPUESTO -->
         <div v-if="task.budget_labor_cost > 0" class="card-budget">
           <i class="bi bi-cash"></i>
           ${{ task.budget_labor_cost.toLocaleString('es-CO') }}
         </div>
-
-        <!-- ACCIONES -->
         <div class="card-actions" @click.stop>
           <button class="btn-action-main"
             @click.stop="$router.push('/tasks/' + task.id + '/detalle')">
@@ -132,6 +130,45 @@
             <i class="bi bi-camera"></i>
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- VISTA LISTA -->
+    <div v-else class="task-list">
+      <div class="tl-header">
+        <span class="tl-col tl-estado">Estado</span>
+        <span class="tl-col tl-titulo">Título</span>
+        <span class="tl-col tl-activo">Activo</span>
+        <span class="tl-col tl-acciones"></span>
+      </div>
+      <div
+        v-for="task in filtered"
+        :key="task.id"
+        class="tl-row"
+        :class="{ 'tl-overdue': isOverdue(task) }"
+        :style="{ borderLeftColor: cardBorderColor(task) }"
+      >
+        <span class="tl-col tl-estado">
+          <span class="status-badge" :class="statusClass(task.status_id)">{{ task.status_name }}</span>
+        </span>
+        <span class="tl-col tl-titulo">
+          <span class="tl-title-text">{{ task.title }}</span>
+          <span v-if="isOverdue(task)" class="overdue-chip"><i class="bi bi-exclamation-triangle-fill"></i></span>
+        </span>
+        <span class="tl-col tl-activo">
+          <i v-if="task.asset_id" class="bi bi-building tl-activo-icon"></i>
+          {{ task.asset_id ? assetName(task.asset_id) : '—' }}
+        </span>
+        <span class="tl-col tl-acciones" @click.stop>
+          <button class="tl-btn tl-btn-eye"
+            @click="$router.push('/tasks/' + task.id + '/detalle')" title="Ver / Editar">
+            <i class="bi bi-eye"></i>
+          </button>
+          <button class="tl-btn tl-btn-cam"
+            @click="$router.push('/tasks/' + task.id + '/evidencias')" title="Evidencias">
+            <i class="bi bi-camera"></i>
+          </button>
+        </span>
       </div>
     </div>
   </div>
@@ -155,6 +192,7 @@ const loadingStats = ref(true)
 const loadingTasks = ref(true)
 const activeTab    = ref("all")
 const filterWorker = ref(null)
+const viewMode     = ref("card")
 
 // ── KPI Strip — porcentajes ──────────────────────────────────
 const pct = (n) => {
@@ -270,6 +308,12 @@ onMounted(async () => {
 /* FILTER BAR */
 .filter-bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
 
+/* TOGGLE VISTA */
+.view-toggle { display:flex; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+.vt-btn { padding:5px 10px; background:#f8fafc; border:none; cursor:pointer; color:#64748b; font-size:15px; transition:all 0.15s; }
+.vt-btn:hover  { background:#e2e8f0; }
+.vt-btn.active { background:#3b82f6; color:#fff; }
+
 /* FILTER TABS */
 .filter-tabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
 .filter-tab {
@@ -340,6 +384,46 @@ onMounted(async () => {
 .badge-red       { background:#fef2f2; color:#b91c1c; }
 .badge-gray      { background:#f1f5f9; color:#64748b; }
 
+/* VISTA LISTA */
+.task-list { display:flex; flex-direction:column; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+.tl-header {
+  display:grid; grid-template-columns:115px 1fr 1fr 72px;
+  gap:8px; padding:6px 12px; background:#f1f5f9;
+  font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:0.5px; color:#94a3b8;
+}
+.tl-row {
+  display:grid; grid-template-columns:115px 1fr 1fr 72px;
+  gap:8px; padding:6px 12px; border-top:1px solid #f1f5f9;
+  border-left:3px solid transparent; background:#fff;
+  align-items:center; transition:background 0.12s;
+}
+.tl-row:hover { background:#f8fafc; }
+.tl-overdue   { background:#fef2f2; }
+.tl-overdue:hover { background:#fee2e2; }
+.tl-col { font-size:12px; color:#374151; display:flex; align-items:center; gap:4px; min-width:0; }
+.tl-titulo {
+  gap:5px; background:#eff6ff; border-radius:5px; padding:2px 7px;
+}
+.tl-title-text { font-size:13px; font-weight:700; color:#1e293b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tl-activo {
+  font-size:12px; color:#475569; font-weight:500;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  background:#f0fdf4; border-radius:5px; padding:2px 7px;
+}
+.tl-activo-icon { color:#94a3b8; flex-shrink:0; }
+.tl-acciones { gap:4px; justify-content:flex-end; }
+.tl-btn {
+  width:28px; height:28px; border:none; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:13px; cursor:pointer; transition:opacity 0.15s; flex-shrink:0;
+}
+.tl-btn:hover { opacity:0.82; }
+.tl-btn-eye  { background:#dbeafe; color:#1d4ed8; }
+.tl-btn-cam  { background:#d1fae5; color:#065f46; }
+.tl-btn-pen  { background:#dbeafe; color:#1d4ed8; }
+.tl-btn-tool { background:#ffedd5; color:#c2410c; }
+
 .spin { display:inline-block; animation:spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
@@ -347,5 +431,7 @@ onMounted(async () => {
   .task-grid { grid-template-columns:1fr 1fr; }
   .mini-kpis { gap:6px; }
   .mini-kpi  { min-width:60px; }
+  .tl-header { display:none; }
+  .tl-row    { grid-template-columns:1fr; gap:4px; }
 }
 </style>
