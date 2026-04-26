@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import Base, engine
+from app.database import Base, engine, SessionLocal
 from app import models
 
 # ===============================
@@ -42,6 +42,11 @@ from app.routers.task_materials_router import expenses_router as task_expenses_r
 from app.routers.task_comment_router import router as task_comment_router
 from app.routers.task_progress_router import router as task_progress_router
 from app.routers.task_progress_router import asset_history_router
+from app.routers.novelty_router import router as novelty_router
+from app.routers.support_ticket_router import router as support_ticket_router
+from app.routers.topbar_menu_router import router as topbar_menu_router
+from app.routers.system_config_router import router as system_config_router
+from app.routers.footer_router import router as footer_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -56,6 +61,51 @@ ASSETS_DIR = FRONTEND_DIST / "assets"
 # ===============================
 Base.metadata.create_all(bind=engine)
 
+
+def _init_db_data():
+    from sqlalchemy import text
+    from app.models.system_config_model import SystemConfig
+    from app.models.topbar_menu_item_model import TopbarMenuItem
+
+    db = SessionLocal()
+    try:
+        # Agregar columna last_seen si no existe (migración segura)
+        try:
+            db.execute(text("ALTER TABLE user_sessions ADD COLUMN last_seen DATETIME NULL"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Datos iniciales system_config
+        defaults_config = [
+            ("footer_ticker_interval_sec", "45", "Segundos entre cada asociado en el ticker del footer", "integer"),
+            ("footer_new_associates_days", "30", "Días para considerar un asociado como nuevo",          "integer"),
+            ("footer_ticker_enabled",      "1",  "Habilitar ticker de nuevos asociados",                 "boolean"),
+        ]
+        for key, value, desc, ctype in defaults_config:
+            if not db.query(SystemConfig).filter(SystemConfig.config_key == key).first():
+                db.add(SystemConfig(config_key=key, config_value=value, description=desc, config_type=ctype))
+
+        # Datos iniciales topbar_menu_items
+        defaults_menu = [
+            ("Registro Novedades",    "novedades", "bi-exclamation-triangle", "/novedades",         True,  None, True, 1),
+            ("Abrir Ticket Soporte",  "ticket",    "bi-ticket-detailed",      "/soporte/ticket",    True,  2,    True, 2),
+            ("Ayuda",                 "ayuda",     "bi-question-circle",      None,                 False, None, True, 3),
+            ("Solicitar Productos",   "productos", "bi-bag-plus",             None,                 False, None, True, 4),
+            ("Cláusulas Legales",     "clausulas", "bi-shield-check",         "/clausulas-legales", False, None, True, 5),
+        ]
+        for name, key, icon, route, has_ev, min_plan, is_act, order in defaults_menu:
+            if not db.query(TopbarMenuItem).filter(TopbarMenuItem.key == key).first():
+                db.add(TopbarMenuItem(
+                    name=name, key=key, icon=icon, route=route,
+                    has_evidence=has_ev, min_plan_id=min_plan,
+                    is_active=is_act, order_index=order
+                ))
+
+        db.commit()
+    finally:
+        db.close()
+
 # ===============================
 # APP
 # ===============================
@@ -63,6 +113,8 @@ app = FastAPI(
     title="EasyPosWeb API",
     version="1.0"
 )
+
+_init_db_data()
 
 app.router.redirect_slashes = True
 
@@ -127,6 +179,11 @@ routers = [
     task_comment_router,
     task_progress_router,
     asset_history_router,
+    novelty_router,
+    support_ticket_router,
+    topbar_menu_router,
+    system_config_router,
+    footer_router,
 ]
 
 for router in routers:

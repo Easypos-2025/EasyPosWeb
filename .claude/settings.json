@@ -62,7 +62,9 @@
       "Bash(python -m pip freeze)",
       "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")",
       "Bash(python -c \"import ast, sys; ast.parse\\(open\\('backend/app/main.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(xargs grep *)",
+      "Bash(grep -E \"\\\\.vue$\")"
     ]
   }
 }

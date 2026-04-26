@@ -346,6 +346,32 @@ def logout(
 def health_check():
     return {"status": "ok"}
 
+# =====================================================
+# HEARTBEAT — actualiza last_seen de la sesión activa
+# =====================================================
+
+@router.patch("/heartbeat/")
+def heartbeat(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Token requerido")
+
+    token = authorization.replace("Bearer ", "")
+
+    session = db.query(UserSession).filter(
+        UserSession.token == token,
+        UserSession.is_active == True
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
+
+    session.last_seen = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
+
     
     
 # =====================================================

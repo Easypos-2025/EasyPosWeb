@@ -245,6 +245,34 @@ const routes = [
         component: () => import("@/views/ProfilesView.vue"),
         meta: { title: "ProfilesView" }
       },
+
+      {
+        path: "/novedades",
+        name: "NovedadesView",
+        component: () => import("@/views/NovedadesView.vue"),
+        meta: { title: "Registro de Novedades" }
+      },
+
+      {
+        path: "/soporte/ticket",
+        name: "SoporteTicketView",
+        component: () => import("@/views/SoporteTicketView.vue"),
+        meta: { title: "Tickets de Soporte" }
+      },
+
+      {
+        path: "/sysadmin/topbar-menu",
+        name: "TopbarMenuManagerView",
+        component: () => import("@/views/sysadmin/TopbarMenuManagerView.vue"),
+        meta: { title: "Gestión Menú Topbar" }
+      },
+
+      {
+        path: "/sysadmin/system-config",
+        name: "SystemConfigView",
+        component: () => import("@/views/sysadmin/SystemConfigView.vue"),
+        meta: { title: "Configuración del Sistema" }
+      },
      
 
       /**

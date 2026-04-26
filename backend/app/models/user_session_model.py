@@ -39,3 +39,9 @@ class UserSession(Base):
         DateTime,
         default=datetime.utcnow
     )
+
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=True,
+        default=None
+    )

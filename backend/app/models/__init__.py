@@ -55,5 +55,10 @@ from app.models.company_plan_model import CompanyPlan
 from app.models.task_expense_model import TaskExpense
 from app.models.task_progress_report_model import TaskProgressReport
 from app.models.profession_model import Profession
+from app.models.topbar_menu_item_model import TopbarMenuItem
+from app.models.novelty_model import Novelty, NoveltyEvidence
+from app.models.support_ticket_model import SupportTicket, TicketEvidence
+from app.models.help_article_model import HelpArticle
+from app.models.system_config_model import SystemConfig
 
 
