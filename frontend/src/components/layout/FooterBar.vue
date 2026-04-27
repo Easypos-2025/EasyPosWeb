@@ -37,17 +37,6 @@
           <span>{{ onlineCompanies }}</span>
         </div>
 
-        <!-- Chip 2: nuevos asociados -->
-        <div
-          v-if="associates.length > 0"
-          class="chip"
-          :class="{ 'flash-green': chip2Flash }"
-          title="Nuevos asociados este mes"
-        >
-          <i class="bi bi-stars"></i>
-          <span>{{ associates.length }}</span>
-        </div>
-
         <!-- Chip 3: usuarios conectados — siempre verde -->
         <div
           v-if="onlineUsers !== null"
@@ -107,13 +96,11 @@ const intervalSec     = ref(45)
 
 const chipsVisible = computed(() =>
   (companyStore.isSystem && onlineCompanies.value !== null) ||
-  associates.value.length > 0 ||
   onlineUsers.value !== null
 )
 
-// ── Flash chips 1 y 2 ────────────────────────────────
+// ── Flash chip 1 ─────────────────────────────────────
 const chip1Flash = ref(false)
-const chip2Flash = ref(false)
 
 function triggerFlash(chipRef) {
   chipRef.value = true
@@ -176,12 +163,10 @@ function startTicker() {
   if (associates.value.length === 0) return
 
   showToastAssociate(associates.value[tickerIndex.value])
-  triggerFlash(chip2Flash)
 
   tickerTimer = setInterval(() => {
     tickerIndex.value = (tickerIndex.value + 1) % associates.value.length
     showToastAssociate(associates.value[tickerIndex.value])
-    triggerFlash(chip2Flash)
   }, intervalSec.value * 1000)
 }
 

@@ -64,7 +64,14 @@
       "Bash(python -c \"import ast, sys; ast.parse\\(open\\('backend/app/main.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(git commit *)",
       "Bash(xargs grep *)",
-      "Bash(grep -E \"\\\\.vue$\")"
+      "Bash(grep -E \"\\\\.vue$\")",
+      "Bash(ls \"d:\\\\\\\\AAA Proyectos Claude-Code\\\\\\\\EasyPosWeb\\\\\\\\src\")",
+      "Read(//mnt/d/AAA Proyectos Claude-Code/EasyPosWeb/**)",
+      "PowerShell(dir \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\components\" -Recurse | Where-Object { $_.Name -match \"footer|Footer|task|Task\" } | Select-Object FullName)",
+      "PowerShell(dir \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\" -Recurse | Where-Object { $_.Name -match \"footer|Footer|task|Task\" } | Select-Object FullName)",
+      "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\components\\\\layout\" -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\" -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\router\" | ForEach-Object { $_.Name })"
     ]
   }
 }
