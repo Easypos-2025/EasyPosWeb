@@ -53,11 +53,17 @@ const sidebarRightOpen = ref(false)
 
 const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value
-  if (window.innerWidth < 768) sidebarCollapsed.value = false
+  if (window.innerWidth < 768) {
+    sidebarCollapsed.value = false
+    if (sidebarOpen.value) sidebarRightOpen.value = false
+  }
 }
 
 const toggleSidebarRight = () => {
   sidebarRightOpen.value = !sidebarRightOpen.value
+  if (window.innerWidth < 768 && sidebarRightOpen.value) {
+    sidebarOpen.value = false
+  }
 }
 
 const expandSidebar = () => { sidebarCollapsed.value = false }
