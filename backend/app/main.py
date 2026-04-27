@@ -118,12 +118,6 @@ _init_db_data()
 
 app.router.redirect_slashes = True
 
-# ===============================
-# STATIC FILES
-# ===============================
-if ASSETS_DIR.exists() and os.getenv("SERVE_FRONTEND") == "true":
-    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
-
 UPLOADS_DIR = BASE_DIR / "backend" / "app" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -188,6 +182,10 @@ routers = [
 
 for router in routers:
     app.include_router(router)
+
+# STATIC FILES — registrado después de routers para que /assets/ API tenga prioridad
+if ASSETS_DIR.exists() and os.getenv("SERVE_FRONTEND") == "true":
+    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 # ===============================
 # SPA FRONTEND
