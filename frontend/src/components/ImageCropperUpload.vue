@@ -96,7 +96,7 @@ function onFileChange(e) {
   nextTick(() => {
     if (cropper) { cropper.destroy(); cropper = null }
     cropper = new Cropper(imgEl.value, {
-      aspectRatio: 4 / 3,
+      aspectRatio: NaN,
       viewMode: 1,
       autoCropArea: 0.9,
       responsive: true,

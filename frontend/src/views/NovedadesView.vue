@@ -110,31 +110,68 @@
       <div v-if="showFormModal" class="modal-overlay" @click.self="closeFormModal">
         <div class="modal-box">
           <div class="modal-header-bar">
-            <h2>{{ editMode ? 'Editar Novedad' : 'Nueva Novedad' }}</h2>
+            <h2>{{ showUploadSection ? 'Agregar Evidencias' : (editMode ? 'Editar Novedad' : 'Nueva Novedad') }}</h2>
             <button class="btn-close-x" @click="closeFormModal"><i class="bi bi-x-lg"></i></button>
           </div>
 
-          <div class="modal-body">
-            <div class="form-group" :class="{ 'has-error': errors.title }">
-              <label>Título <span class="req">*</span></label>
-              <input v-model="form.title" type="text" placeholder="Describe brevemente la novedad" maxlength="200" />
-              <span v-if="errors.title" class="error-msg">{{ errors.title }}</span>
+          <!-- Formulario título + descripción -->
+          <template v-if="!showUploadSection">
+            <div class="modal-body">
+              <div class="form-group" :class="{ 'has-error': errors.title }">
+                <label>Título <span class="req">*</span></label>
+                <input v-model="form.title" type="text" placeholder="Describe brevemente la novedad" maxlength="200" />
+                <span v-if="errors.title" class="error-msg">{{ errors.title }}</span>
+              </div>
+
+              <div class="form-group" :class="{ 'has-error': errors.description }">
+                <label>Descripción detallada <span class="req">*</span></label>
+                <textarea v-model="form.description" rows="5" placeholder="Explica con detalle la situación encontrada..."></textarea>
+                <span v-if="errors.description" class="error-msg">{{ errors.description }}</span>
+              </div>
             </div>
 
-            <div class="form-group" :class="{ 'has-error': errors.description }">
-              <label>Descripción detallada <span class="req">*</span></label>
-              <textarea v-model="form.description" rows="5" placeholder="Explica con detalle la situación encontrada..."></textarea>
-              <span v-if="errors.description" class="error-msg">{{ errors.description }}</span>
+            <div class="modal-footer-bar">
+              <button class="btn-secondary" @click="closeFormModal">Cancelar</button>
+              <button class="btn-primary" :disabled="saving" @click="save">
+                <span v-if="saving"><i class="bi bi-hourglass-split"></i> Guardando...</span>
+                <span v-else><i class="bi bi-check-lg"></i> {{ editMode ? 'Actualizar' : 'Registrar' }}</span>
+              </button>
             </div>
-          </div>
+          </template>
 
-          <div class="modal-footer-bar">
-            <button class="btn-secondary" @click="closeFormModal">Cancelar</button>
-            <button class="btn-primary" :disabled="saving" @click="save">
-              <span v-if="saving"><i class="bi bi-hourglass-split"></i> Guardando...</span>
-              <span v-else><i class="bi bi-check-lg"></i> {{ editMode ? 'Actualizar' : 'Registrar' }}</span>
-            </button>
-          </div>
+          <!-- Sección de upload tras crear -->
+          <template v-else>
+            <div class="modal-body">
+              <div class="creation-success">
+                <i class="bi bi-check-circle-fill"></i>
+                <p>Novedad registrada. Adjunta las evidencias fotográficas.</p>
+              </div>
+              <div class="evidence-section">
+                <div class="evidence-section-header">
+                  <h4><i class="bi bi-images"></i> Evidencias ({{ creationEvidences.length }})</h4>
+                  <ImageCropperUpload
+                    :novelty-id="createdNoveltyId"
+                    @uploaded="onCreationEvidenceUploaded"
+                  />
+                </div>
+                <div v-if="creationEvidences.length" class="evidence-grid">
+                  <div v-for="ev in creationEvidences" :key="ev.id" class="ev-item">
+                    <img :src="apiBase + ev.file_url" class="ev-thumb" alt="Evidencia" />
+                  </div>
+                </div>
+                <div v-else class="no-evidence">
+                  <i class="bi bi-camera"></i>
+                  <p>Presiona <strong>Foto</strong> para adjuntar imágenes</p>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer-bar">
+              <button class="btn-primary" style="margin-left:auto" @click="closeFormModal">
+                <i class="bi bi-check-lg"></i> Finalizar
+              </button>
+            </div>
+          </template>
+
         </div>
       </div>
     </Teleport>
@@ -275,13 +312,16 @@ const filterDateTo   = ref("")
 const usersList      = ref([])     // para select de usuario (SYSADMIN)
 
 // ── Modales ─────────────────────────────────────────
-const showFormModal  = ref(false)
-const showDetail     = ref(false)
-const editMode       = ref(false)
-const activeNovelty  = ref(null)
-const evidences      = ref([])
-const changingStatus = ref(false)
-const lightboxUrl    = ref(null)
+const showFormModal      = ref(false)
+const showDetail         = ref(false)
+const editMode           = ref(false)
+const activeNovelty      = ref(null)
+const evidences          = ref([])
+const changingStatus     = ref(false)
+const lightboxUrl        = ref(null)
+const showUploadSection  = ref(false)
+const createdNoveltyId   = ref(null)
+const creationEvidences  = ref([])
 
 const errors = ref({ title: "", description: "" })
 
@@ -376,7 +416,10 @@ function openEditFromDetail() {
 }
 
 function closeFormModal() {
-  showFormModal.value = false
+  showFormModal.value  = false
+  showUploadSection.value = false
+  createdNoveltyId.value  = null
+  creationEvidences.value = []
 }
 
 function validate() {
@@ -402,10 +445,10 @@ async function save() {
       showToast("Novedad actualizada", "success")
     } else {
       const res = await api.post("/novelties", { title: form.value.title, description: form.value.description })
-      closeFormModal()
       await load()
-      // Abrir detalle automáticamente para que el usuario pueda agregar evidencias de inmediato
-      await openDetail(res.data)
+      createdNoveltyId.value  = res.data.id
+      creationEvidences.value = []
+      showUploadSection.value = true
       showToast("Novedad registrada — agrega las evidencias fotográficas", "success")
       return
     }
@@ -483,6 +526,12 @@ async function onEvidenceUploaded(evidence) {
   evidences.value.push(evidence)
   const idx = novelties.value.findIndex(n => n.id === activeNovelty.value.id)
   if (idx !== -1) novelties.value[idx].evidence_count = evidences.value.length
+}
+
+function onCreationEvidenceUploaded(evidence) {
+  creationEvidences.value.push(evidence)
+  const idx = novelties.value.findIndex(n => n.id === createdNoveltyId.value)
+  if (idx !== -1) novelties.value[idx].evidence_count = creationEvidences.value.length
 }
 
 async function deleteEvidence(ev) {
@@ -862,6 +911,20 @@ onMounted(async () => {
   padding: 14px 20px;
   border-top: 1px solid var(--border, #e2e8f0);
 }
+
+/* Éxito creación */
+.creation-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.3);
+  border-radius: 10px;
+  color: #16a34a;
+}
+.creation-success .bi { font-size: 20px; flex-shrink: 0; }
+.creation-success p   { margin: 0; font-size: 13px; font-weight: 500; }
 
 /* Formulario */
 .form-group { display: flex; flex-direction: column; gap: 6px; }
