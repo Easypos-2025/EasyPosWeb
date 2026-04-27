@@ -46,8 +46,16 @@ def get_task_stats(
 ):
     user = _get_user(authorization, db)
     base = db.query(Task)
-    if not _is_system(user, db):
+
+    role      = db.query(Role).filter(Role.id == user.role_id).first()
+    role_name = (role.name or "").lower() if role else ""
+    is_sys    = role.is_system if role else False
+    can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
+
+    if not is_sys:
         base = base.filter(Task.company_id == user.company_id)
+    if not can_see_all:
+        base = base.filter(Task.assigned_to == user.id)
 
     hoy = datetime.now()
     return {
@@ -200,8 +208,19 @@ def get_tasks(
     wm   = _worker_map(db)
     um   = _user_map(db)
     q    = db.query(Task)
-    if not _is_system(user, db):
+
+    role      = db.query(Role).filter(Role.id == user.role_id).first()
+    role_name = (role.name or "").lower() if role else ""
+    is_sys    = role.is_system if role else False
+    can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
+
+    if not is_sys:
         q = q.filter(Task.company_id == user.company_id)
+
+    # Worker / Task Leader: solo sus propias tareas
+    if not can_see_all:
+        q = q.filter(Task.assigned_to == user.id)
+
     if status_id is not None:
         q = q.filter(Task.status_id == status_id)
     if worker_id is not None:
