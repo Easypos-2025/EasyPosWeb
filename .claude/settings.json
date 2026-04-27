@@ -71,7 +71,31 @@
       "PowerShell(dir \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\" -Recurse | Where-Object { $_.Name -match \"footer|Footer|task|Task\" } | Select-Object FullName)",
       "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\components\\\\layout\" -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })",
       "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\" -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })",
-      "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\router\" | ForEach-Object { $_.Name })"
+      "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\router\" | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\" | ForEach-Object { $_.Name })",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"find /var/www/easyposweb/backend -name '*.py' | grep -i asset\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cat /var/www/easyposweb/backend/app/routers/assets_router.py\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"grep -n 'assets' /var/www/easyposweb/backend/app/main.py\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cat /var/www/easyposweb/backend/app/main.py\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"grep SERVE_FRONTEND /var/www/easyposweb/backend/.env 2>/dev/null || grep -r SERVE_FRONTEND /etc/systemd/system/easyposweb* 2>/dev/null || echo 'no encontrado'\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && systemctl restart easyposweb\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"systemctl restart easyposweb && systemctl is-active easyposweb\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cat /etc/nginx/sites-enabled/easyposweb 2>/dev/null || cat /etc/nginx/sites-enabled/default 2>/dev/null || ls /etc/nginx/sites-enabled/\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 'sed -i '\\\\''s|try_files $uri =404;|try_files $uri @backend;|'\\\\'' /etc/nginx/sites-enabled/easyposweb && nginx -t && systemctl reload nginx')",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"grep 'location /assets' /etc/nginx/sites-enabled/easyposweb -A2\")",
+      "Bash(npm install *)",
+      "Bash(npx vue-tsc *)",
+      "Bash(npm run *)",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb\")",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git stash && git pull && cd frontend && npm run build && systemctl restart easyposweb\")",
+      "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb -n 50 --no-pager\")",
+      "Bash(ssh root@209.38.152.254 \"mysql -u easyposweb -peasypos2025 easyposweb -e \\\\\"SHOW TABLES LIKE 'novelty%';\\\\\" && ls -la /var/www/easyposweb/backend/app/uploads/\")",
+      "Bash(ssh root@209.38.152.254 \"mysql -u root easyposweb -e \\\\\"SHOW TABLES LIKE 'novelty%';\\\\\" && ls -la /var/www/easyposweb/backend/app/uploads/\")",
+      "Bash(ssh root@209.38.152.254 \"cat /var/www/easyposweb/frontend/.env.production 2>/dev/null || cat /var/www/easyposweb/frontend/.env 2>/dev/null || echo 'No env file found'\")",
+      "Bash(ssh root@209.38.152.254 \"find /var/www/easyposweb/frontend -name '.env*' 2>/dev/null && grep -r 'VITE_API_URL' /var/www/easyposweb/frontend/dist/ 2>/dev/null | head -5\")",
+      "Bash(ssh root@209.38.152.254 \"cat /var/www/easyposweb/frontend/.env.example\")",
+      "Bash(ssh root@209.38.152.254 \"grep -o 'VITE_API_URL.*\\\\\"[^\\\\\"]*\\\\\"' /var/www/easyposweb/frontend/dist/assets/apis-*.js 2>/dev/null | head -3 || grep -o 'baseURL:\\\\\"[^\\\\\"]*\\\\\"' /var/www/easyposweb/frontend/dist/assets/apis-*.js 2>/dev/null | head -3\")"
     ]
   }
 }

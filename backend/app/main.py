@@ -48,6 +48,7 @@ from app.routers.topbar_menu_router import router as topbar_menu_router
 from app.routers.system_config_router import router as system_config_router
 from app.routers.footer_router import router as footer_router
 from app.routers.clients_router import router as clients_router
+from app.routers.invitation_router import router as invitation_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -206,6 +207,7 @@ routers = [
     system_config_router,
     footer_router,
     clients_router,
+    invitation_router,
 ]
 
 for router in routers:

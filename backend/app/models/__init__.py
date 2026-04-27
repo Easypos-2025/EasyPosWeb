@@ -61,5 +61,6 @@ from app.models.support_ticket_model import SupportTicket, TicketEvidence
 from app.models.help_article_model import HelpArticle
 from app.models.system_config_model import SystemConfig
 from app.models.client_model import Client
+from app.models.invitation_model import InvitationToken
 
 

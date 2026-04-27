@@ -115,6 +115,58 @@
 
     </form>
 
+    <!-- ── INVITACIÓN POR LINK ── -->
+    <div v-if="can('Users', 'can_create')" class="invite-section">
+      <div class="invite-section-header">
+        <div>
+          <strong><i class="bi bi-link-45deg"></i> Invitar por link</strong>
+          <small>Genera un link de registro válido por 48 h</small>
+        </div>
+        <button class="btn btn-outline-primary btn-sm" @click="openInviteModal">
+          <i class="bi bi-plus-lg"></i> Generar invitación
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal invitación -->
+    <Teleport to="body">
+      <div v-if="showInviteModal" class="inv-overlay" @click.self="closeInviteModal">
+        <div class="inv-card">
+          <div class="inv-header">
+            <h3><i class="bi bi-link-45deg"></i> Generar link de invitación</h3>
+            <button class="inv-close" @click="closeInviteModal"><i class="bi bi-x-lg"></i></button>
+          </div>
+
+          <div class="inv-body" v-if="!inviteLink">
+            <label class="inv-label">Selecciona el rol que tendrá el invitado</label>
+            <select v-model="inviteRoleId" class="form-control">
+              <option :value="null" disabled>-- Selecciona un rol --</option>
+              <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
+            </select>
+            <button class="btn btn-primary mt-3 w-100" :disabled="!inviteRoleId || generatingInvite" @click="generateInvite">
+              <i v-if="generatingInvite" class="bi bi-hourglass-split"></i>
+              <i v-else class="bi bi-link-45deg"></i>
+              {{ generatingInvite ? 'Generando...' : 'Generar link' }}
+            </button>
+          </div>
+
+          <div class="inv-body" v-else>
+            <p class="inv-success-msg"><i class="bi bi-check-circle-fill text-success"></i> Link generado — válido por 48 horas</p>
+            <div class="inv-link-box">
+              <span class="inv-link-text">{{ inviteLink }}</span>
+              <button class="inv-copy-btn" @click="copyInviteLink" :title="copied ? 'Copiado!' : 'Copiar link'">
+                <i :class="copied ? 'bi bi-check-lg' : 'bi bi-clipboard'"></i>
+              </button>
+            </div>
+            <p class="inv-hint">Comparte este link por WhatsApp, correo o mensaje directo.</p>
+            <button class="btn btn-outline-secondary btn-sm mt-2" @click="resetInvite">
+              <i class="bi bi-arrow-counterclockwise"></i> Generar otro
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <hr />
 
     <!-- LISTADO -->
@@ -249,6 +301,40 @@ const planInfo = ref({ current: 0, max: -1, plan_name: "", can_add: true })
 const usersRaw = ref([])
 const selectedCompany = ref(null)
 const permissions = ref([])
+
+// ── Invitación por link ──────────────────────────────
+const showInviteModal  = ref(false)
+const inviteRoleId     = ref(null)
+const inviteLink       = ref("")
+const generatingInvite = ref(false)
+const copied           = ref(false)
+
+function openInviteModal()  { showInviteModal.value = true }
+function closeInviteModal() { showInviteModal.value = false; resetInvite() }
+function resetInvite()      { inviteLink.value = ""; inviteRoleId.value = null; copied.value = false }
+
+async function generateInvite() {
+  if (!inviteRoleId.value) return
+  generatingInvite.value = true
+  try {
+    const res = await api.post("/invitations", { role_id: inviteRoleId.value })
+    inviteLink.value = `${window.location.origin}/invite/${res.data.token}`
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error generando invitación", "error")
+  } finally {
+    generatingInvite.value = false
+  }
+}
+
+async function copyInviteLink() {
+  try {
+    await navigator.clipboard.writeText(inviteLink.value)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } catch {
+    showToast("No se pudo copiar, cópialo manualmente", "warning")
+  }
+}
 
 
 
@@ -619,4 +705,74 @@ onMounted(async () => {
   align-items: center;
   gap: 4px;
 }
+
+/* ── Invitación ── */
+.invite-section {
+  margin: 16px 0;
+  padding: 14px 16px;
+  background: #f0f7ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+}
+.invite-section-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.invite-section-header strong {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14px; color: #1e40af;
+}
+.invite-section-header small {
+  display: block; font-size: 12px; color: #64748b; font-weight: 400; margin-top: 2px;
+}
+
+.inv-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1500; padding: 16px;
+}
+.inv-card {
+  background: #fff; border-radius: 14px;
+  width: 100%; max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.inv-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.inv-header h3 {
+  font-size: 16px; font-weight: 700; color: #1e293b; margin: 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.inv-close {
+  background: none; border: none; font-size: 16px;
+  cursor: pointer; color: #94a3b8;
+}
+.inv-close:hover { color: #1e293b; }
+.inv-body { padding: 20px; display: flex; flex-direction: column; }
+.inv-label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+
+.inv-success-msg {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 12px;
+}
+.inv-link-box {
+  display: flex; align-items: center; gap: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 10px 12px;
+}
+.inv-link-text {
+  flex: 1; font-size: 12px; color: #475569;
+  word-break: break-all; line-height: 1.4;
+}
+.inv-copy-btn {
+  background: #3b82f6; border: none; color: #fff;
+  border-radius: 6px; padding: 6px 10px;
+  cursor: pointer; font-size: 14px; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.inv-copy-btn:hover { background: #2563eb; }
+.inv-hint { font-size: 12px; color: #94a3b8; margin: 8px 0 0; }
 </style>

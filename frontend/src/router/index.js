@@ -47,6 +47,13 @@ const routes = [
   },
 
   {
+    path: "/invite/:token",
+    name: "InviteRegister",
+    component: () => import("@/views/InviteRegisterView.vue"),
+    meta: { title: "Registro por invitación" }
+  },
+
+  {
     path: "/reset-password",
     name: "reset-password",
     component: ResetPassword,
@@ -323,7 +330,8 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/login" ||
     to.path === "/forgot-password" ||
     to.path === "/reset-password" ||
-    to.path === "/business-profiles"
+    to.path === "/business-profiles" ||
+    to.path.startsWith("/invite/")
   ) {
     return next()
   }
