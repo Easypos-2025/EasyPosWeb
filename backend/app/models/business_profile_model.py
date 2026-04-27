@@ -14,6 +14,7 @@ class BusinessProfile(Base):
     landing_description  = Column(Text, nullable=True)
     icon                 = Column(String(100), default="bi-building")
     color_accent         = Column(String(30), default="#0d6efd")
+    show_in_landing      = Column(Boolean, default=True)
 
 
 # 🔹 Base
@@ -25,6 +26,7 @@ class BusinessProfileBase(BaseModel):
     landing_description: Optional[str] = None
     icon: Optional[str] = "bi-building"
     color_accent: Optional[str] = "#0d6efd"
+    show_in_landing: Optional[bool] = True
 
 
 # 🔹 Crear
@@ -41,6 +43,7 @@ class BusinessProfileUpdate(BaseModel):
     landing_description: Optional[str] = None
     icon: Optional[str] = None
     color_accent: Optional[str] = None
+    show_in_landing: Optional[bool] = None
 
 
 # 🔹 Respuesta

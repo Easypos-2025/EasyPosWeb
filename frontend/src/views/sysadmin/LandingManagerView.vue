@@ -109,6 +109,13 @@
               <textarea v-model="prof.landing_description" class="form-ctrl-sm form-textarea-sm"
                         rows="3" placeholder="Texto que verán los visitantes en el slider..."></textarea>
             </div>
+            <div class="form-group show-landing-toggle">
+              <label class="check-label">
+                <input type="checkbox" v-model="prof.show_in_landing"
+                       @change="saveProfile(prof)" />
+                <span>Mostrar en slider de la landing</span>
+              </label>
+            </div>
             <button class="btn-save-profile" @click="saveProfile(prof)">
               <i class="bi bi-floppy-fill me-1"></i> Guardar
             </button>

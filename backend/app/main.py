@@ -138,6 +138,7 @@ def _init_db_data():
             "ALTER TABLE business_profiles ADD COLUMN landing_description TEXT NULL",
             "ALTER TABLE business_profiles ADD COLUMN icon VARCHAR(100) DEFAULT 'bi-building'",
             "ALTER TABLE business_profiles ADD COLUMN color_accent VARCHAR(30) DEFAULT '#0d6efd'",
+            "ALTER TABLE business_profiles ADD COLUMN show_in_landing TINYINT(1) DEFAULT 1",
         ]:
             try:
                 db.execute(text(col_sql))
@@ -234,6 +235,66 @@ def _init_db_data():
         for s in seed_sections:
             if not db.query(LandingSection).filter(LandingSection.section_key == s["section_key"]).first():
                 db.add(LandingSection(**s))
+        db.commit()
+
+        # ── SEED: iconos, colores e imágenes por tipo de perfil ───────
+        from app.models.business_profile_model import BusinessProfile as BP
+        profile_defaults = [
+            # (keywords_en_nombre, icon, color, image_url, show_in_landing, landing_desc)
+            (
+                ["restaurante", "restaurant", "comida", "food"],
+                "bi-shop-window", "#f59e0b",
+                "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80",
+                True,
+                "Solución integral para restaurantes: ventas, mesas, domicilios, menú diario, recetas y control de caja."
+            ),
+            (
+                ["fruver", "fruta", "verdura", "mercado"],
+                "bi-basket2-fill", "#10b981",
+                "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&q=80",
+                True,
+                "Control de ventas e inventario para fruterías y verduleras. Rápido, sencillo y desde cualquier dispositivo."
+            ),
+            (
+                ["drogueria", "droguería", "farmacia", "pharmacy"],
+                "bi-capsule", "#6366f1",
+                "https://images.unsplash.com/photo-1585435557343-3b092031a831?w=800&q=80",
+                True,
+                "Gestión de ventas, inventario y clientes para droguerías y farmacias. Con o sin Pos Electrónico."
+            ),
+            (
+                ["tarea", "task", "admon", "administrador", "obra", "proyecto"],
+                "bi-clipboard-check-fill", "#2563eb",
+                "https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=800&q=80",
+                True,
+                "Asignación, seguimiento y control de tareas por equipos. Evidencias, materiales y reportes en tiempo real."
+            ),
+            (
+                ["sysadmin", "system", "admin"],
+                "bi-shield-fill-check", "#ef4444",
+                "",
+                False,
+                ""
+            ),
+        ]
+        all_profiles = db.query(BP).all()
+        for p in all_profiles:
+            name_lower = p.name.lower()
+            for keywords, icon, color, img, show, desc in profile_defaults:
+                if any(k in name_lower for k in keywords):
+                    if not p.icon or p.icon == "bi-building":
+                        p.icon = icon
+                    if not p.color_accent or p.color_accent == "#0d6efd":
+                        p.color_accent = color
+                    if not p.image_url and img:
+                        p.image_url = img
+                    if p.show_in_landing is None:
+                        p.show_in_landing = show
+                    elif any(k in name_lower for k in ["sysadmin", "system"]):
+                        p.show_in_landing = False
+                    if not p.landing_description and desc:
+                        p.landing_description = desc
+                    break
         db.commit()
 
         # ── SEED: plan_features ────────────────────────────────────────

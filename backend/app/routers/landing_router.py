@@ -99,6 +99,7 @@ def _ser_profile(p: BusinessProfile):
         "icon":                p.icon,
         "color_accent":        p.color_accent,
         "is_active":           p.is_active,
+        "show_in_landing":     p.show_in_landing,
     }
 
 
@@ -121,7 +122,10 @@ def get_sections(db: Session = Depends(get_db)):
 def get_profiles(db: Session = Depends(get_db)):
     profiles = (
         db.query(BusinessProfile)
-        .filter(BusinessProfile.is_active == True)
+        .filter(
+            BusinessProfile.is_active == True,
+            BusinessProfile.show_in_landing == True,
+        )
         .all()
     )
     return [_ser_profile(p) for p in profiles]
@@ -290,7 +294,7 @@ def admin_update_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
 
-    for field in ["image_url", "landing_description", "icon", "color_accent"]:
+    for field in ["image_url", "landing_description", "icon", "color_accent", "show_in_landing"]:
         if field in data:
             setattr(profile, field, data[field])
 

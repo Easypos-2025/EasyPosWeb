@@ -3,7 +3,7 @@
 
     <!-- ── IZQUIERDA: marca + estado + chips (en línea) ── -->
     <div class="footer-left">
-      <div class="footer-brand">
+      <router-link to="/landing" class="footer-brand" title="Ver página de inicio">
         <img
           src="/src/assets/logo.png"
           class="footer-logo"
@@ -11,7 +11,7 @@
           @error="e => e.target.style.display='none'"
         />
         <span class="footer-brand-name">EasyPosWeb</span>
-      </div>
+      </router-link>
 
       <span class="footer-sep">|</span>
       <span class="footer-version">v{{ version }}</span>
@@ -231,7 +231,8 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.footer-brand       { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.footer-brand       { display: flex; align-items: center; gap: 6px; flex-shrink: 0; text-decoration: none; opacity: .85; transition: opacity .2s; }
+.footer-brand:hover { opacity: 1; }
 .footer-logo        { height: 22px; width: auto; object-fit: contain; opacity: 0.85; }
 .footer-brand-name  { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: rgba(255,255,255,0.8); white-space: nowrap; }
 .footer-sep         { opacity: 0.2; font-size: 11px; flex-shrink: 0; }
