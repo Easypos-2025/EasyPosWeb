@@ -110,68 +110,89 @@
       <div v-if="showFormModal" class="modal-overlay" @click.self="closeFormModal">
         <div class="modal-box">
           <div class="modal-header-bar">
-            <h2>{{ showUploadSection ? 'Agregar Evidencias' : (editMode ? 'Editar Novedad' : 'Nueva Novedad') }}</h2>
+            <h2>{{ editMode ? 'Editar Novedad' : 'Nueva Novedad' }}</h2>
             <button class="btn-close-x" @click="closeFormModal"><i class="bi bi-x-lg"></i></button>
           </div>
 
-          <!-- Formulario título + descripción -->
-          <template v-if="!showUploadSection">
-            <div class="modal-body">
-              <div class="form-group" :class="{ 'has-error': errors.title }">
-                <label>Título <span class="req">*</span></label>
-                <input v-model="form.title" type="text" placeholder="Describe brevemente la novedad" maxlength="200" />
-                <span v-if="errors.title" class="error-msg">{{ errors.title }}</span>
-              </div>
-
-              <div class="form-group" :class="{ 'has-error': errors.description }">
-                <label>Descripción detallada <span class="req">*</span></label>
-                <textarea v-model="form.description" rows="5" placeholder="Explica con detalle la situación encontrada..."></textarea>
-                <span v-if="errors.description" class="error-msg">{{ errors.description }}</span>
-              </div>
+          <div class="modal-body">
+            <div class="form-group" :class="{ 'has-error': errors.title }">
+              <label>Título <span class="req">*</span></label>
+              <input v-model="form.title" type="text" placeholder="Describe brevemente la novedad" maxlength="200" />
+              <span v-if="errors.title" class="error-msg">{{ errors.title }}</span>
             </div>
 
-            <div class="modal-footer-bar">
-              <button class="btn-secondary" @click="closeFormModal">Cancelar</button>
-              <button class="btn-primary" :disabled="saving" @click="save">
-                <span v-if="saving"><i class="bi bi-hourglass-split"></i> Guardando...</span>
-                <span v-else><i class="bi bi-check-lg"></i> {{ editMode ? 'Actualizar' : 'Registrar' }}</span>
-              </button>
+            <div class="form-group" :class="{ 'has-error': errors.description }">
+              <label>Descripción detallada <span class="req">*</span></label>
+              <textarea v-model="form.description" rows="4" placeholder="Explica con detalle la situación encontrada..."></textarea>
+              <span v-if="errors.description" class="error-msg">{{ errors.description }}</span>
             </div>
-          </template>
 
-          <!-- Sección de upload tras crear -->
-          <template v-else>
-            <div class="modal-body">
-              <div class="creation-success">
-                <i class="bi bi-check-circle-fill"></i>
-                <p>Novedad registrada. Adjunta las evidencias fotográficas.</p>
-              </div>
-              <div class="evidence-section">
-                <div class="evidence-section-header">
-                  <h4><i class="bi bi-images"></i> Evidencias ({{ creationEvidences.length }})</h4>
-                  <ImageCropperUpload
-                    :novelty-id="createdNoveltyId"
-                    @uploaded="onCreationEvidenceUploaded"
-                  />
-                </div>
-                <div v-if="creationEvidences.length" class="evidence-grid">
-                  <div v-for="ev in creationEvidences" :key="ev.id" class="ev-item">
-                    <img :src="apiBase + ev.file_url" class="ev-thumb" alt="Evidencia" />
-                  </div>
-                </div>
-                <div v-else class="no-evidence">
+            <!-- Sección de fotos — solo al crear -->
+            <div v-if="!editMode" class="form-photo-section">
+              <div class="form-photo-header">
+                <span class="form-photo-label"><i class="bi bi-images"></i> Evidencias fotográficas <small>(opcional)</small></span>
+                <label class="btn-upload-ev" title="Agregar foto">
                   <i class="bi bi-camera"></i>
-                  <p>Presiona <strong>Foto</strong> para adjuntar imágenes</p>
+                  <span>Foto</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style="display:none"
+                    ref="formFileInput"
+                    @change="onFormFileChange"
+                  />
+                </label>
+              </div>
+              <div v-if="pendingPhotos.length" class="evidence-grid" style="margin-top:10px">
+                <div v-for="(p, i) in pendingPhotos" :key="i" class="ev-item">
+                  <img :src="p.previewUrl" class="ev-thumb" alt="Foto" />
+                  <button class="btn-del-ev" @click.stop="removePendingPhoto(i)" title="Quitar foto">
+                    <i class="bi bi-trash3"></i>
+                  </button>
                 </div>
               </div>
+              <div v-else class="no-evidence" style="padding:14px 0 0">
+                <i class="bi bi-camera"></i>
+                <p>Presiona <strong>Foto</strong> para adjuntar imágenes</p>
+              </div>
             </div>
-            <div class="modal-footer-bar">
-              <button class="btn-primary" style="margin-left:auto" @click="closeFormModal">
-                <i class="bi bi-check-lg"></i> Finalizar
+          </div>
+
+          <div class="modal-footer-bar">
+            <button class="btn-secondary" @click="closeFormModal">Cancelar</button>
+            <button class="btn-primary" :disabled="saving" @click="save">
+              <span v-if="saving"><i class="bi bi-hourglass-split"></i> Guardando...</span>
+              <span v-else><i class="bi bi-check-lg"></i> {{ editMode ? 'Actualizar' : 'Registrar' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Cropper inline del formulario -->
+    <Teleport to="body">
+      <div v-if="showFormCropper" class="cropper-overlay">
+        <div class="cropper-modal">
+          <div class="cropper-header">
+            <h3><i class="bi bi-crop"></i> Recortar imagen</h3>
+            <button class="cropper-close" @click="cancelFormCrop"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="cropper-area">
+            <img ref="formImgEl" :src="formRawSrc" alt="preview" style="max-width:100%;display:block" />
+          </div>
+          <div class="cropper-footer">
+            <div class="cropper-tools">
+              <button class="tool-btn" @click="formCropperInst?.rotate(-90)" title="Rotar izquierda"><i class="bi bi-arrow-counterclockwise"></i></button>
+              <button class="tool-btn" @click="formCropperInst?.rotate(90)"  title="Rotar derecha"><i class="bi bi-arrow-clockwise"></i></button>
+              <button class="tool-btn" @click="formCropperInst?.reset()"     title="Resetear"><i class="bi bi-arrow-repeat"></i></button>
+            </div>
+            <div class="cropper-actions">
+              <button class="btn-cancel-crop" @click="cancelFormCrop">Cancelar</button>
+              <button class="btn-confirm-crop" @click="confirmFormCrop">
+                <i class="bi bi-check-lg"></i> Agregar foto
               </button>
             </div>
-          </template>
-
+          </div>
         </div>
       </div>
     </Teleport>
@@ -283,7 +304,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from "vue"
+import { ref, computed, onMounted, nextTick } from "vue"
+import Cropper from "cropperjs"
+import "cropperjs/dist/cropper.css"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -312,16 +335,21 @@ const filterDateTo   = ref("")
 const usersList      = ref([])     // para select de usuario (SYSADMIN)
 
 // ── Modales ─────────────────────────────────────────
-const showFormModal      = ref(false)
-const showDetail         = ref(false)
-const editMode           = ref(false)
-const activeNovelty      = ref(null)
-const evidences          = ref([])
-const changingStatus     = ref(false)
-const lightboxUrl        = ref(null)
-const showUploadSection  = ref(false)
-const createdNoveltyId   = ref(null)
-const creationEvidences  = ref([])
+const showFormModal   = ref(false)
+const showDetail      = ref(false)
+const editMode        = ref(false)
+const activeNovelty   = ref(null)
+const evidences       = ref([])
+const changingStatus  = ref(false)
+const lightboxUrl     = ref(null)
+
+// ── Cropper inline del formulario ───────────────────
+const pendingPhotos   = ref([])
+const showFormCropper = ref(false)
+const formRawSrc      = ref("")
+const formImgEl       = ref(null)
+const formFileInput   = ref(null)
+let   formCropperInst = null
 
 const errors = ref({ title: "", description: "" })
 
@@ -416,10 +444,60 @@ function openEditFromDetail() {
 }
 
 function closeFormModal() {
-  showFormModal.value  = false
-  showUploadSection.value = false
-  createdNoveltyId.value  = null
-  creationEvidences.value = []
+  showFormModal.value = false
+  for (const p of pendingPhotos.value) URL.revokeObjectURL(p.previewUrl)
+  pendingPhotos.value = []
+  if (formCropperInst) { formCropperInst.destroy(); formCropperInst = null }
+}
+
+// ── Cropper inline ───────────────────────────────────
+function onFormFileChange(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  if (formRawSrc.value) URL.revokeObjectURL(formRawSrc.value)
+  formRawSrc.value = URL.createObjectURL(file)
+  showFormCropper.value = true
+  e.target.value = ""
+  nextTick(() => {
+    if (formCropperInst) { formCropperInst.destroy(); formCropperInst = null }
+    formCropperInst = new Cropper(formImgEl.value, {
+      aspectRatio: NaN,
+      viewMode: 1,
+      autoCropArea: 0.9,
+      responsive: true,
+      guides: true,
+      center: true,
+      highlight: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+    })
+  })
+}
+
+async function confirmFormCrop() {
+  if (!formCropperInst) return
+  const canvas = formCropperInst.getCroppedCanvas({
+    maxWidth: 1200, maxHeight: 900,
+    fillColor: "#fff",
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: "high",
+  })
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.88))
+  const previewUrl = URL.createObjectURL(blob)
+  pendingPhotos.value.push({ blob, previewUrl })
+  cancelFormCrop()
+}
+
+function cancelFormCrop() {
+  if (formCropperInst) { formCropperInst.destroy(); formCropperInst = null }
+  showFormCropper.value = false
+  URL.revokeObjectURL(formRawSrc.value)
+  formRawSrc.value = ""
+}
+
+function removePendingPhoto(index) {
+  URL.revokeObjectURL(pendingPhotos.value[index].previewUrl)
+  pendingPhotos.value.splice(index, 1)
 }
 
 function validate() {
@@ -445,11 +523,14 @@ async function save() {
       showToast("Novedad actualizada", "success")
     } else {
       const res = await api.post("/novelties", { title: form.value.title, description: form.value.description })
+      for (const p of pendingPhotos.value) {
+        const fd = new FormData()
+        fd.append("file", p.blob, `novedad_${res.data.id}_${Date.now()}.jpg`)
+        await api.post(`/novelties/${res.data.id}/evidence`, fd)
+      }
+      closeFormModal()
       await load()
-      createdNoveltyId.value  = res.data.id
-      creationEvidences.value = []
-      showUploadSection.value = true
-      showToast("Novedad registrada — agrega las evidencias fotográficas", "success")
+      showToast("Novedad registrada", "success")
       return
     }
     closeFormModal()
@@ -528,11 +609,6 @@ async function onEvidenceUploaded(evidence) {
   if (idx !== -1) novelties.value[idx].evidence_count = evidences.value.length
 }
 
-function onCreationEvidenceUploaded(evidence) {
-  creationEvidences.value.push(evidence)
-  const idx = novelties.value.findIndex(n => n.id === createdNoveltyId.value)
-  if (idx !== -1) novelties.value[idx].evidence_count = creationEvidences.value.length
-}
 
 async function deleteEvidence(ev) {
   const { isConfirmed } = await window.Swal.fire({
@@ -912,19 +988,100 @@ onMounted(async () => {
   border-top: 1px solid var(--border, #e2e8f0);
 }
 
-/* Éxito creación */
-.creation-success {
+/* Sección fotos en formulario */
+.form-photo-section {
+  border-top: 1px solid var(--border, #e2e8f0);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.form-photo-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: rgba(34,197,94,0.1);
-  border: 1px solid rgba(34,197,94,0.3);
-  border-radius: 10px;
-  color: #16a34a;
+  justify-content: space-between;
 }
-.creation-success .bi { font-size: 20px; flex-shrink: 0; }
-.creation-success p   { margin: 0; font-size: 13px; font-weight: 500; }
+.form-photo-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main, #374151);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.form-photo-label small { font-weight: 400; opacity: 0.6; }
+
+/* Cropper overlay */
+.cropper-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+}
+.cropper-modal {
+  background: #fff;
+  border-radius: 16px;
+  width: 680px;
+  max-width: 96vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 70px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+.cropper-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+.cropper-header h3 {
+  font-size: 15px; font-weight: 700; color: #1e293b; margin: 0;
+  display: flex; align-items: center; gap: 7px;
+}
+.cropper-close {
+  background: none; border: none; font-size: 17px;
+  cursor: pointer; color: #94a3b8;
+}
+.cropper-close:hover { color: #1e293b; }
+.cropper-area {
+  flex: 1; overflow: hidden;
+  background: #0f172a;
+  min-height: 0; max-height: 480px;
+}
+.cropper-area img { max-height: 480px; width: 100%; object-fit: contain; }
+.cropper-footer {
+  padding: 12px 20px;
+  border-top: 1px solid #f1f5f9;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; flex-wrap: wrap; gap: 10px;
+}
+.cropper-tools { display: flex; gap: 6px; }
+.tool-btn {
+  width: 34px; height: 34px;
+  border: 1px solid #e2e8f0; border-radius: 8px;
+  background: #f8fafc; color: #475569;
+  font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.tool-btn:hover { background: #e2e8f0; color: #1e293b; }
+.cropper-actions { display: flex; gap: 8px; }
+.btn-cancel-crop {
+  padding: 7px 16px; border-radius: 8px;
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  color: #475569; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background 0.15s;
+}
+.btn-cancel-crop:hover { background: #e2e8f0; }
+.btn-confirm-crop {
+  padding: 7px 18px; border-radius: 8px;
+  background: #3b82f6; color: #fff;
+  border: none; font-size: 13px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; gap: 6px;
+  transition: background 0.15s;
+}
+.btn-confirm-crop:hover { background: #2563eb; }
 
 /* Formulario */
 .form-group { display: flex; flex-direction: column; gap: 6px; }
