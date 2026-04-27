@@ -95,7 +95,7 @@
 IMPORTS
 ================================================= */
 
-import { ref } from "vue"
+import { ref, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "../services/apis"
 
@@ -105,6 +105,17 @@ VARIABLES
 
 const email = ref(localStorage.getItem("lastUser") || "")
 const password = ref("")
+
+onMounted(() => {
+  const regEmail = sessionStorage.getItem("reg_email")
+  const regPass  = sessionStorage.getItem("reg_password")
+  if (regEmail) {
+    email.value    = regEmail
+    password.value = regPass || ""
+    sessionStorage.removeItem("reg_email")
+    sessionStorage.removeItem("reg_password")
+  }
+})
 const errorMsg = ref("")
 const showPassword = ref(false)
 

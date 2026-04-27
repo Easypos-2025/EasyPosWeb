@@ -15,7 +15,9 @@
         <h2>¡Cuenta creada!</h2>
         <p>Tu empresa <strong>{{ successCompany }}</strong> ya está registrada en EasyPosWeb.</p>
         <p class="success-sub">Inicia sesión con el correo <strong>{{ successEmail }}</strong></p>
-        <a href="/login" class="btn-go-login">Iniciar Sesión</a>
+        <button class="btn-go-login" @click="router.push('/login')">
+          <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión
+        </button>
       </div>
 
       <!-- FORMULARIO -->
@@ -182,6 +184,7 @@
 
 <script>
 import { ref, reactive, computed, onMounted } from "vue"
+import { useRouter } from "vue-router"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -189,6 +192,7 @@ export default {
   name: "RegisterAssociateView",
 
   setup() {
+    const router    = useRouter()
     const step      = ref(1)
     const success   = ref(false)
     const submitting = ref(false)
@@ -293,6 +297,8 @@ export default {
         if (!res.ok) throw new Error(data.detail || "Error al registrar")
         successCompany.value = data.company
         successEmail.value   = data.email
+        sessionStorage.setItem("reg_email",    form.admin_email)
+        sessionStorage.setItem("reg_password", form.admin_password)
         success.value = true
       } catch (e) {
         apiError.value = e.message
@@ -304,6 +310,7 @@ export default {
     onMounted(loadProfiles)
 
     return {
+      router,
       step, success, submitting, showPass, showPass2,
       apiError, profiles, loadingProfiles,
       successCompany, successEmail,
@@ -469,10 +476,11 @@ export default {
 .reg-success p  { color: #64748b; margin-bottom: 8px; }
 .success-sub { font-size: .9rem; }
 .btn-go-login {
-  display: inline-block; margin-top: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-top: 20px;
   background: #2563eb; color: #fff;
   padding: 13px 32px; border-radius: 10px; font-weight: 700;
-  text-decoration: none; transition: all .2s;
+  border: none; cursor: pointer; transition: all .2s;
 }
 .btn-go-login:hover { background: #1d4ed8; color: #fff; }
 
