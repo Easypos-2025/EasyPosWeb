@@ -115,19 +115,6 @@
 
     </form>
 
-    <!-- ── INVITACIÓN POR LINK ── -->
-    <div v-if="isSysAdmin || isAdmin" class="invite-section">
-      <div class="invite-section-header">
-        <div>
-          <strong><i class="bi bi-link-45deg"></i> Invitar por link</strong>
-          <small>Genera un link de registro válido por 48 h</small>
-        </div>
-        <button class="btn btn-outline-primary btn-sm" @click="openInviteModal">
-          <i class="bi bi-plus-lg"></i> Generar invitación
-        </button>
-      </div>
-    </div>
-
     <!-- Modal invitación -->
     <Teleport to="body">
       <div v-if="showInviteModal" class="inv-overlay" @click.self="closeInviteModal">
@@ -176,7 +163,17 @@
     <hr />
 
     <!-- LISTADO -->
-    <h4>Usuarios</h4>
+    <div class="users-list-header">
+      <h4 class="mb-0">Usuarios</h4>
+      <button
+        v-if="isSysAdmin || isAdmin"
+        class="btn btn-outline-primary btn-sm"
+        @click="openInviteModal"
+        title="Generar link de invitación (válido 48 h)"
+      >
+        <i class="bi bi-link-45deg"></i> Invitar por link
+      </button>
+    </div>
 
     <div class="mb-3">
       <input v-model="search" class="form-control" placeholder="Buscar..." />
@@ -747,23 +744,13 @@ onMounted(async () => {
   gap: 4px;
 }
 
-/* ── Invitación ── */
-.invite-section {
-  margin: 16px 0;
-  padding: 14px 16px;
-  background: #f0f7ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 10px;
-}
-.invite-section-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-}
-.invite-section-header strong {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 14px; color: #1e40af;
-}
-.invite-section-header small {
-  display: block; font-size: 12px; color: #64748b; font-weight: 400; margin-top: 2px;
+/* ── Encabezado lista usuarios ── */
+.users-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .inv-overlay {
