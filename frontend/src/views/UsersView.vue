@@ -139,10 +139,16 @@
 
           <div class="inv-body" v-if="!inviteLink">
             <label class="inv-label">Selecciona el rol que tendrá el invitado</label>
-            <select v-model="inviteRoleId" class="form-control">
+            <div v-if="loadingInviteRoles" style="padding:10px 0;color:#64748b;font-size:13px">
+              <i class="bi bi-hourglass-split"></i> Cargando roles...
+            </div>
+            <select v-else v-model="inviteRoleId" class="form-control">
               <option :value="null" disabled>-- Selecciona un rol --</option>
               <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
             </select>
+            <p v-if="!loadingInviteRoles && roles.length === 0" style="font-size:12px;color:#ef4444;margin-top:6px">
+              <i class="bi bi-exclamation-triangle"></i> No se encontraron roles. Verifica que la empresa tenga roles creados.
+            </p>
             <button class="btn btn-primary mt-3 w-100" :disabled="!inviteRoleId || generatingInvite" @click="generateInvite">
               <i v-if="generatingInvite" class="bi bi-hourglass-split"></i>
               <i v-else class="bi bi-link-45deg"></i>
@@ -285,6 +291,7 @@
 import { ref, onMounted, computed } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import { useCompanyStore } from "@/stores/companyStore"
 
 
 const search = ref("")
@@ -294,6 +301,7 @@ const companies = ref([])
 const showModal = ref(false)
 const showDeleteModal = ref(false)
 const userToDelete = ref(null)
+const companyStore = useCompanyStore()
 const currentUser = JSON.parse(localStorage.getItem("user")) || {}
 const isSysAdmin  = currentUser.is_system
 const isAdmin     = (currentUser.role || "").toLowerCase().includes("admin")
@@ -309,8 +317,27 @@ const inviteRoleId     = ref(null)
 const inviteLink       = ref("")
 const generatingInvite = ref(false)
 const copied           = ref(false)
+const loadingInviteRoles = ref(false)
 
-function openInviteModal()  { showInviteModal.value = true }
+async function openInviteModal() {
+  showInviteModal.value = true
+  loadingInviteRoles.value = true
+  try {
+    let url = "/roles/"
+    if (isSysAdmin) {
+      // Para SYSADMIN: usar la empresa seleccionada en el companyStore
+      const cid = companyStore.selectedCompany?.id
+        || JSON.parse(localStorage.getItem("selected_company") || "null")?.id
+      if (cid) url = `/roles/?company_id=${cid}`
+    }
+    const res = await api.get(url)
+    roles.value = res.data
+  } catch {
+    showToast("Error cargando roles", "error")
+  } finally {
+    loadingInviteRoles.value = false
+  }
+}
 function closeInviteModal() { showInviteModal.value = false; resetInvite() }
 function resetInvite()      { inviteLink.value = ""; inviteRoleId.value = null; copied.value = false }
 
