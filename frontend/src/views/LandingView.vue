@@ -48,7 +48,7 @@
           <div
             class="slider-track"
             :style="trackStyle"
-            @transitionend="onTransitionEnd"
+            @transitionend.self="onTransitionEnd"
           >
             <div
               v-for="(profile, idx) in displayProfiles"
@@ -705,34 +705,45 @@ export default {
     }
 
     // ── Slider: navegación ─────────────────────────────────────
+    let isResetting = false
+
     function goToSlide(i) {
+      if (isResetting) return
       activeSlide.value = i + 1
       resetTimer()
     }
     function nextSlide() {
-      if (profiles.value.length <= 1) return
+      if (profiles.value.length <= 1 || isResetting) return
       activeSlide.value++
       resetTimer()
     }
     function prevSlide() {
-      if (profiles.value.length <= 1) return
+      if (profiles.value.length <= 1 || isResetting) return
       activeSlide.value--
       resetTimer()
     }
 
-    // ── Cuando termina la transición CSS: salto silencioso ─────
-    function onTransitionEnd(e) {
+    // ── Salto silencioso al terminar transición (loop infinito) ─
+    // .self en el template asegura que solo se dispara desde el track, no hijos.
+    // nextTick + doble rAF garantiza que el browser pinte la posición SIN transición
+    // antes de re-habilitarla, evitando el efecto "todos los slides volando".
+    async function onTransitionEnd(e) {
       if (e.propertyName !== "transform") return
       const n = profiles.value.length
-      if (n <= 1) return
-      if (activeSlide.value === 0) {
+      if (n <= 1 || isResetting) return
+
+      if (activeSlide.value === 0 || activeSlide.value === n + 1) {
+        isResetting = true
         disableTransition.value = true
-        activeSlide.value = n
-        nextTick(() => requestAnimationFrame(() => { disableTransition.value = false }))
-      } else if (activeSlide.value === n + 1) {
-        disableTransition.value = true
-        activeSlide.value = 1
-        nextTick(() => requestAnimationFrame(() => { disableTransition.value = false }))
+        activeSlide.value = activeSlide.value === 0 ? n : 1
+
+        await nextTick()                          // Vue aplica: transition:none + posición real
+        requestAnimationFrame(() => {             // browser está por pintar ese estado
+          requestAnimationFrame(() => {           // browser ya pintó sin animación
+            disableTransition.value = false       // re-habilitar transición de forma segura
+            isResetting = false
+          })
+        })
       }
     }
 

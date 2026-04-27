@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Body
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -107,6 +108,9 @@ def _ser_profile(p: BusinessProfile):
 # ENDPOINTS PÚBLICOS (sin autenticación)
 # ══════════════════════════════════════════════════════
 
+_NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+
+
 @router.get("/sections")
 def get_sections(db: Session = Depends(get_db)):
     sections = (
@@ -115,7 +119,7 @@ def get_sections(db: Session = Depends(get_db)):
         .order_by(LandingSection.order_index)
         .all()
     )
-    return [_ser_section(s) for s in sections]
+    return JSONResponse(content=[_ser_section(s) for s in sections], headers=_NO_CACHE)
 
 
 @router.get("/profiles")
@@ -128,7 +132,7 @@ def get_profiles(db: Session = Depends(get_db)):
         )
         .all()
     )
-    return [_ser_profile(p) for p in profiles]
+    return JSONResponse(content=[_ser_profile(p) for p in profiles], headers=_NO_CACHE)
 
 
 @router.get("/plans")
@@ -147,20 +151,19 @@ def get_plans_with_features(db: Session = Depends(get_db)):
             categories[f.category] = []
         categories[f.category].append(_ser_feature(f))
 
-    return {
-        "plans": [
-            {
-                "id":    p.id,
-                "name":  p.name,
-                "price": p.price,
-            }
-            for p in plans
-        ],
-        "feature_groups": [
-            {"category": cat, "features": feats}
-            for cat, feats in categories.items()
-        ],
-    }
+    return JSONResponse(
+        content={
+            "plans": [
+                {"id": p.id, "name": p.name, "price": p.price}
+                for p in plans
+            ],
+            "feature_groups": [
+                {"category": cat, "features": feats}
+                for cat, feats in categories.items()
+            ],
+        },
+        headers=_NO_CACHE,
+    )
 
 
 @router.post("/contact")
