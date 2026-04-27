@@ -108,9 +108,11 @@ def _init_db_data():
 
         # Datos iniciales system_config
         defaults_config = [
-            ("footer_ticker_interval_sec", "45", "Segundos entre cada asociado en el ticker del footer", "integer"),
-            ("footer_new_associates_days", "30", "Días para considerar un asociado como nuevo",          "integer"),
-            ("footer_ticker_enabled",      "1",  "Habilitar ticker de nuevos asociados",                 "boolean"),
+            ("footer_ticker_interval_sec",      "45",    "Segundos entre cada asociado en el ticker del footer",                   "integer"),
+            ("footer_new_associates_days",      "30",    "Días para considerar un asociado como nuevo",                           "integer"),
+            ("footer_ticker_enabled",           "1",     "Habilitar ticker de nuevos asociados",                                  "boolean"),
+            ("topbar_notif_interval_ms",        "60000", "Intervalo en ms para verificar notificaciones en el topbar (default 60s)", "integer"),
+            ("topbar_heartbeat_interval_ms",    "180000","Intervalo en ms para heartbeat de sesión en el topbar (default 3min)",    "integer"),
         ]
         for key, value, desc, ctype in defaults_config:
             if not db.query(SystemConfig).filter(SystemConfig.config_key == key).first():

@@ -149,6 +149,16 @@
         </Transition>
       </div>
 
+      <!-- Ver sitio web -->
+      <a
+        href="/landing"
+        target="_blank"
+        class="btn-icon btn-website"
+        title="Ver sitio web"
+      >
+        <i class="bi bi-globe2"></i>
+      </a>
+
       <!-- Logout — separado del dropdown por margen -->
       <button class="btn-icon btn-logout" @click="logout" title="Cerrar sesión">
         <i class="bi bi-box-arrow-right"></i>
@@ -294,6 +304,14 @@ watchEffect(() => { if (theme.logo) logo.value = theme.logo })
 let notifTimer     = null
 let heartbeatTimer = null
 
+async function getConfigMs(key, fallback) {
+  try {
+    const res = await api.get(`/system-config/${key}`)
+    const val = parseInt(res.data?.config_value)
+    return isNaN(val) || val < 5000 ? fallback : val
+  } catch { return fallback }
+}
+
 onMounted(async () => {
   const stored = localStorage.getItem("user")
   if (stored) {
@@ -303,8 +321,13 @@ onMounted(async () => {
     await loadMenuItems()
     loadUnreadCount()
     sendHeartbeat()
-    notifTimer     = setInterval(loadUnreadCount, 60_000)
-    heartbeatTimer = setInterval(sendHeartbeat, 180_000)
+
+    const [notifMs, hbMs] = await Promise.all([
+      getConfigMs("topbar_notif_interval_ms",     60_000),
+      getConfigMs("topbar_heartbeat_interval_ms", 180_000),
+    ])
+    notifTimer     = setInterval(loadUnreadCount, notifMs)
+    heartbeatTimer = setInterval(sendHeartbeat,   hbMs)
   }
   document.addEventListener("click", handleOutsideClick)
 })
@@ -562,6 +585,8 @@ onUnmounted(() => {
 }
 
 .btn-icon:hover   { background: rgba(255,255,255,0.12); }
+.btn-website       { margin-left: 2px; color: inherit; text-decoration: none; }
+.btn-website:hover { background: rgba(37,99,235,0.25); color: #93c5fd; }
 .btn-logout       { margin-left: 6px; }
 .btn-logout:hover { background: rgba(239,68,68,0.25); }
 

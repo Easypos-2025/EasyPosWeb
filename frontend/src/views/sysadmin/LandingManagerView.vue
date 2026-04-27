@@ -465,6 +465,7 @@ export default {
           landing_description: prof.landing_description,
           icon: prof.icon,
           color_accent: prof.color_accent,
+          show_in_landing: prof.show_in_landing,
         })
         showToast("Perfil actualizado", "success")
       } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }

@@ -48,5 +48,11 @@
   - `is_sysadmin = 0` salvo que sea exclusiva de SYSADMIN.
   - Sin esta entrada la vista no aparece en el menú ni funciona el sistema de permisos por roles.
 
-## 9. HOJA DE RUTA
+## 9. REGLA: NUEVO PERFIL DE NEGOCIO → BARRA DE INDICADORES OBLIGATORIA
+- **Auto-KPI-Bar**: Todo dashboard de perfil de negocio nuevo (incluyendo SYSADMIN) debe incluir una barra de indicadores (KPI bar) al inicio de la vista.
+- La barra muestra tarjetas de métricas clave del perfil (ej: totales, pendientes, alertas).
+- Todos los perfiles actuales ya la tienen; es regla global para perfiles futuros.
+- La barra de indicadores debe ser responsive y alineada al diseño del perfil activo.
+
+## 10. HOJA DE RUTA
 1. DB Status + Dashboard KPIs. | 2. CRUD Tareas. | 3. Vista Task Leader. | 4. Evidencias/Materiales. | 5. Vista Auditor. | 6. Reportes & PDF. | 7. Mensajería.

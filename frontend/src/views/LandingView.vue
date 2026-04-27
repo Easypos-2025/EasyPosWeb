@@ -23,7 +23,6 @@
           <i :class="mobileOpen ? 'bi bi-x-lg' : 'bi bi-list'"></i>
         </button>
       </div>
-      <!-- Mobile menu -->
       <div class="nav-mobile" :class="{ open: mobileOpen }">
         <a href="#perfiles"  @click="mobileOpen=false">Perfiles</a>
         <a href="#modulos"   @click="mobileOpen=false">Módulos</a>
@@ -36,65 +35,82 @@
     </nav>
 
     <!-- ══════════════════════════════════════════════
-         SLIDER PERFILES DE NEGOCIO  (primera sección)
+         SLIDER PERFILES DE NEGOCIO — FULL SCREEN
     ══════════════════════════════════════════════ -->
     <section id="perfiles" class="section-perfiles">
-      <div class="section-header text-center">
-        <span class="section-badge">Perfiles de Negocio</span>
-        <h2 class="section-title">{{ sections.profiles_intro?.title }}</h2>
-        <p class="section-subtitle">{{ sections.profiles_intro?.subtitle }}</p>
-      </div>
+      <template v-if="profiles.length">
+        <!-- Floating label top-left -->
+        <div class="slider-floating-label">
+          <i class="bi bi-grid-3x3-gap-fill me-2"></i>Perfiles de Negocio
+        </div>
 
-      <div v-if="profiles.length" class="profiles-slider">
-        <div class="slider-track" :style="{ transform: `translateX(-${activeSlide * 100}%)` }">
-          <div v-for="profile in profiles" :key="profile.id" class="slide-item">
-            <div class="profile-card" :style="{ '--accent': profile.color_accent }">
-              <div class="profile-image-wrap">
-                <img v-if="profile.image_url" :src="profile.image_url" :alt="profile.name" class="profile-img" />
-                <div v-else class="profile-img-placeholder">
+        <div class="profiles-slider">
+          <div
+            class="slider-track"
+            :style="trackStyle"
+            @transitionend="onTransitionEnd"
+          >
+            <div
+              v-for="(profile, idx) in displayProfiles"
+              :key="`${profile.id}-${idx}`"
+              class="slide-item"
+              :style="getSlideBackground(profile)"
+            >
+              <div class="slide-overlay"></div>
+              <div class="slide-content">
+                <div class="slide-tag">
                   <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
+                  <span>{{ profile.name }}</span>
                 </div>
-              </div>
-              <div class="profile-info">
-                <div class="profile-icon-badge">
-                  <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
-                </div>
-                <h3 class="profile-name">{{ profile.name }}</h3>
-                <p class="profile-desc">
+                <h2 class="slide-name">{{ profile.name }}</h2>
+                <p class="slide-desc">
                   {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
                 </p>
-                <a href="/register" class="btn-profile-cta">
-                  Probar Gratis <i class="bi bi-arrow-right ms-1"></i>
-                </a>
+                <div class="slide-actions">
+                  <a href="/register" class="btn-slide-cta">
+                    <i class="bi bi-rocket-takeoff-fill me-2"></i>Probar Gratis
+                  </a>
+                  <a href="#planes" class="btn-slide-outline">
+                    Ver planes <i class="bi bi-arrow-down ms-1"></i>
+                  </a>
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- Dots -->
+          <div class="slider-dots">
+            <button
+              v-for="(p, i) in profiles"
+              :key="i"
+              class="slider-dot"
+              :class="{ active: i === realActiveIndex }"
+              @click="goToSlide(i)"
+            ></button>
+          </div>
+
+          <!-- Arrows -->
+          <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
+          <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
+
+          <!-- Counter -->
+          <div class="slide-counter">{{ realActiveIndex + 1 }} / {{ profiles.length }}</div>
+
+          <!-- Scroll hint -->
+          <div class="slide-scroll-hint">
+            <i class="bi bi-chevron-down"></i>
+          </div>
         </div>
+      </template>
 
-        <!-- Dots -->
-        <div class="slider-dots">
-          <button
-            v-for="(p, i) in profiles"
-            :key="i"
-            class="slider-dot"
-            :class="{ active: i === activeSlide }"
-            @click="goToSlide(i)"
-          ></button>
-        </div>
-
-        <!-- Arrows -->
-        <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
-        <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
-      </div>
-
-      <div v-else class="text-center py-5 text-muted">
-        <i class="bi bi-buildings fs-1"></i>
-        <p class="mt-2">Cargando perfiles...</p>
+      <div v-else class="slide-loading">
+        <i class="bi bi-buildings"></i>
+        <p>Cargando perfiles...</p>
       </div>
     </section>
 
     <!-- ══════════════════════════════════════════════
-         HERO  (segunda sección)
+         HERO
     ══════════════════════════════════════════════ -->
     <section class="hero-section">
       <div class="hero-bg-shapes">
@@ -207,6 +223,102 @@
     </section>
 
     <!-- ══════════════════════════════════════════════
+         VERSIÓN ESCRITORIO
+    ══════════════════════════════════════════════ -->
+    <section class="section-desktop" id="escritorio">
+      <div class="desktop-inner">
+        <div class="desktop-left">
+          <span class="section-badge purple">También disponible</span>
+          <h2>EasyPosWeb en tu PC<br><span class="desktop-accent">Versión de Escritorio</span></h2>
+          <p>Además de la plataforma web, EasyPosWeb cuenta con una aplicación de escritorio instalable. Sin navegador, sin dependencia de internet constante — acceso directo desde tu computador con toda la potencia del sistema.</p>
+          <ul class="desktop-list">
+            <li><i class="bi bi-check-circle-fill"></i> Funciona sin internet (modo offline)</li>
+            <li><i class="bi bi-check-circle-fill"></i> Instalación directa en Windows</li>
+            <li><i class="bi bi-check-circle-fill"></i> Rendimiento nativo en tu equipo</li>
+            <li><i class="bi bi-check-circle-fill"></i> Sincronización automática al recuperar conexión</li>
+            <li><i class="bi bi-check-circle-fill"></i> Ideal para negocios con internet inestable</li>
+            <li><i class="bi bi-check-circle-fill"></i> Misma interfaz que la versión web</li>
+          </ul>
+          <div class="desktop-cta-wrap">
+            <a href="#contacto" class="btn-desktop-cta">
+              <i class="bi bi-envelope-fill me-2"></i>Solicitar versión escritorio
+            </a>
+            <a href="#planes" class="btn-desktop-outline">
+              Ver Plan Escritorio <i class="bi bi-arrow-down ms-1"></i>
+            </a>
+          </div>
+        </div>
+        <div class="desktop-right">
+          <div class="desktop-mockup">
+            <div class="mockup-bar">
+              <div class="bar-dot red"></div>
+              <div class="bar-dot yellow"></div>
+              <div class="bar-dot green"></div>
+              <div class="bar-title">EasyPosWeb · Escritorio</div>
+              <div class="bar-actions">
+                <div class="bar-btn"></div>
+                <div class="bar-btn"></div>
+              </div>
+            </div>
+            <div class="mockup-body">
+              <div class="mockup-sidebar">
+                <div class="sidebar-logo"></div>
+                <div class="sidebar-item active"></div>
+                <div class="sidebar-item"></div>
+                <div class="sidebar-item"></div>
+                <div class="sidebar-item"></div>
+                <div class="sidebar-item"></div>
+                <div class="sidebar-spacer"></div>
+                <div class="sidebar-item small"></div>
+              </div>
+              <div class="mockup-content">
+                <div class="content-topbar">
+                  <div class="topbar-title"></div>
+                  <div class="topbar-actions">
+                    <div class="topbar-btn primary"></div>
+                    <div class="topbar-btn"></div>
+                  </div>
+                </div>
+                <div class="content-kpis">
+                  <div class="kpi-card blue">
+                    <div class="kpi-val"></div>
+                    <div class="kpi-lbl"></div>
+                  </div>
+                  <div class="kpi-card green">
+                    <div class="kpi-val"></div>
+                    <div class="kpi-lbl"></div>
+                  </div>
+                  <div class="kpi-card orange">
+                    <div class="kpi-val"></div>
+                    <div class="kpi-lbl"></div>
+                  </div>
+                </div>
+                <div class="content-table">
+                  <div class="table-header"></div>
+                  <div class="table-row"></div>
+                  <div class="table-row alt"></div>
+                  <div class="table-row"></div>
+                  <div class="table-row alt"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="desktop-badge-float">
+            <i class="bi bi-laptop-fill"></i>
+            <div>
+              <strong>App de escritorio</strong>
+              <span>Disponible</span>
+            </div>
+          </div>
+          <div class="desktop-offline-badge">
+            <i class="bi bi-wifi-off"></i>
+            <span>Funciona offline</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════
          PLAN GRATIS — CTA DESTACADO
     ══════════════════════════════════════════════ -->
     <section class="section-free-plan">
@@ -241,10 +353,13 @@
       <div class="section-header text-center">
         <span class="section-badge green">Precios</span>
         <h2 class="section-title">Planes para cada etapa de tu negocio</h2>
-        <p class="section-subtitle">Comienza gratis y escala cuando lo necesites</p>
+        <p class="section-subtitle">Comienza gratis y escala cuando lo necesites · También disponible en versión escritorio</p>
       </div>
 
-      <!-- Cards de precios -->
+      <!-- Cards planes web/cloud -->
+      <div class="plans-group-label">
+        <i class="bi bi-cloud-fill me-2"></i>Planes Web / Cloud
+      </div>
       <div class="pricing-cards" v-if="planData.plans?.length">
         <div
           v-for="(plan, i) in planData.plans"
@@ -268,7 +383,7 @@
         </div>
       </div>
 
-      <!-- Tabla comparativa de features -->
+      <!-- Tabla comparativa web -->
       <div class="features-table-wrap" v-if="planData.feature_groups?.length">
         <table class="features-table">
           <thead>
@@ -296,6 +411,62 @@
             </template>
           </tbody>
         </table>
+      </div>
+
+      <!-- Planes Escritorio y Mixto -->
+      <div class="desktop-plans-wrap">
+        <div class="desktop-plans-header">
+          <div class="plans-group-label desktop-variant">
+            <i class="bi bi-laptop-fill me-2"></i>Planes con Versión Escritorio
+          </div>
+          <p>Si tu negocio requiere operar sin internet o necesitas una solución instalada en tu equipo, estos planes son para ti.</p>
+        </div>
+        <div class="desktop-plan-cards">
+
+          <!-- Plan Escritorio -->
+          <div class="desktop-plan-card">
+            <div class="dplan-icon"><i class="bi bi-laptop"></i></div>
+            <div class="dplan-name">Plan Escritorio</div>
+            <div class="dplan-tag">Solo app instalada</div>
+            <p class="dplan-desc">Aplicación instalada directamente en tu PC. Opera sin internet, sincroniza cuando se conecta. Ideal para negocios con conectividad limitada o inestable.</p>
+            <ul class="dplan-features">
+              <li><i class="bi bi-check-circle-fill"></i> Acceso sin internet (offline)</li>
+              <li><i class="bi bi-check-circle-fill"></i> Instalación en Windows</li>
+              <li><i class="bi bi-check-circle-fill"></i> Sincronización automática</li>
+              <li><i class="bi bi-check-circle-fill"></i> Actualizaciones incluidas</li>
+              <li><i class="bi bi-check-circle-fill"></i> Soporte técnico</li>
+            </ul>
+            <a href="#contacto" class="btn-dplan">
+              Consultar precio <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+          </div>
+
+          <!-- Plan Mixto -->
+          <div class="desktop-plan-card featured">
+            <div class="dplan-badge">
+              <i class="bi bi-star-fill me-1"></i>Recomendado
+            </div>
+            <div class="dplan-icon mixed">
+              <i class="bi bi-laptop-fill"></i>
+              <i class="bi bi-plus-lg mx-1 plus-icon"></i>
+              <i class="bi bi-cloud-fill"></i>
+            </div>
+            <div class="dplan-name">Plan Mixto</div>
+            <div class="dplan-tag featured-tag">Escritorio + Web</div>
+            <p class="dplan-desc">Lo mejor de ambos mundos: app de escritorio instalada en tu PC más acceso web completo desde cualquier dispositivo. Sincronización en tiempo real.</p>
+            <ul class="dplan-features">
+              <li><i class="bi bi-check-circle-fill"></i> App escritorio + acceso web</li>
+              <li><i class="bi bi-check-circle-fill"></i> Múltiples dispositivos simultáneos</li>
+              <li><i class="bi bi-check-circle-fill"></i> Sincronización en tiempo real</li>
+              <li><i class="bi bi-check-circle-fill"></i> Opera offline y en línea</li>
+              <li><i class="bi bi-check-circle-fill"></i> Soporte prioritario</li>
+            </ul>
+            <a href="#contacto" class="btn-dplan featured">
+              Consultar precio <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+          </div>
+
+        </div>
       </div>
     </section>
 
@@ -325,28 +496,23 @@
       </div>
       <div class="payment-methods">
         <div class="payment-card coming-soon">
-          <i class="bi bi-bank2"></i>
-          <span>PSE</span>
+          <i class="bi bi-bank2"></i><span>PSE</span>
           <div class="soon-tag">Próximamente</div>
         </div>
         <div class="payment-card coming-soon">
-          <i class="bi bi-phone-fill"></i>
-          <span>Nequi</span>
+          <i class="bi bi-phone-fill"></i><span>Nequi</span>
           <div class="soon-tag">Próximamente</div>
         </div>
         <div class="payment-card coming-soon">
-          <i class="bi bi-wallet2"></i>
-          <span>Daviplata</span>
+          <i class="bi bi-wallet2"></i><span>Daviplata</span>
           <div class="soon-tag">Próximamente</div>
         </div>
         <div class="payment-card coming-soon">
-          <i class="bi bi-credit-card-2-front-fill"></i>
-          <span>Tarjeta Débito / Crédito</span>
+          <i class="bi bi-credit-card-2-front-fill"></i><span>Tarjeta Débito / Crédito</span>
           <div class="soon-tag">Próximamente</div>
         </div>
         <div class="payment-card coming-soon">
-          <i class="bi bi-cash-stack"></i>
-          <span>Efectivo / Consignación</span>
+          <i class="bi bi-cash-stack"></i><span>Efectivo / Consignación</span>
           <div class="soon-tag">Próximamente</div>
         </div>
       </div>
@@ -410,12 +576,10 @@
               <span v-else><i class="bi bi-send-fill me-2"></i>Enviar Mensaje</span>
             </button>
             <div v-if="contactSuccess" class="contact-success">
-              <i class="bi bi-check-circle-fill me-2"></i>
-              Mensaje enviado. Te contactaremos pronto.
+              <i class="bi bi-check-circle-fill me-2"></i>Mensaje enviado. Te contactaremos pronto.
             </div>
             <div v-if="contactError" class="contact-error">
-              <i class="bi bi-exclamation-circle-fill me-2"></i>
-              {{ contactError }}
+              <i class="bi bi-exclamation-circle-fill me-2"></i>{{ contactError }}
             </div>
           </form>
         </div>
@@ -437,6 +601,7 @@
             <a href="#modulos">Módulos</a>
             <a href="#planes">Planes</a>
             <a href="#perfiles">Perfiles</a>
+            <a href="#escritorio">Versión Escritorio</a>
           </div>
           <div class="footer-col">
             <h5>Empresa</h5>
@@ -464,7 +629,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue"
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -476,77 +641,131 @@ const FEATURE_ICONS = [
   "bi-percent"
 ]
 
-const MULTIDEVICE_ICONS = [
-  "bi-laptop", "bi-phone", "bi-tablet", "bi-wifi", "bi-globe2"
+// Gradientes de respaldo cuando el perfil no tiene imagen
+const SLIDE_GRADIENTS = [
+  "linear-gradient(145deg, #0f2460 0%, #1a3a8a 50%, #1565c0 100%)",
+  "linear-gradient(145deg, #0a3d22 0%, #1b6b3a 50%, #22874a 100%)",
+  "linear-gradient(145deg, #3b0764 0%, #5b21b6 50%, #7c3aed 100%)",
+  "linear-gradient(145deg, #7c1d0a 0%, #b91c1c 50%, #dc2626 100%)",
+  "linear-gradient(145deg, #7c2d12 0%, #c2410c 50%, #ea580c 100%)",
+  "linear-gradient(145deg, #042f2e 0%, #065f46 50%, #059669 100%)",
 ]
 
 export default {
   name: "LandingView",
 
   setup() {
-    const sections       = reactive({})
-    const profiles       = ref([])
-    const planData       = reactive({ plans: [], feature_groups: [] })
-    const activeSlide    = ref(0)
-    const sliderTimer    = ref(null)
-    const mobileOpen     = ref(false)
-    const featuresGrid   = ref(null)
-    const submitting     = ref(false)
-    const contactSuccess = ref(false)
-    const contactError   = ref("")
+    const sections          = reactive({})
+    const profiles          = ref([])
+    const planData          = reactive({ plans: [], feature_groups: [] })
+    const activeSlide       = ref(1)
+    const disableTransition = ref(false)
+    const sliderTimer       = ref(null)
+    const mobileOpen        = ref(false)
+    const featuresGrid      = ref(null)
+    const submitting        = ref(false)
+    const contactSuccess    = ref(false)
+    const contactError      = ref("")
 
-    const form = reactive({ name: "", email: "", phone: "", company: "", message: "" })
+    const form       = reactive({ name: "", email: "", phone: "", company: "", message: "" })
     const formErrors = reactive({ name: "", email: "", message: "" })
 
     const currentYear = new Date().getFullYear()
 
-    // ── Computed: parsear body_text (pipe-separated) ─────────
-    const featureItems = computed(() => {
-      return (sections.features?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
+    // ── Computed: perfil activo "real" (sin contar clones) ─────
+    const realActiveIndex = computed(() => {
+      const n = profiles.value.length
+      if (n <= 1) return 0
+      if (activeSlide.value <= 0) return n - 1
+      if (activeSlide.value >= n + 1) return 0
+      return activeSlide.value - 1
     })
 
-    const freePlanItems = computed(() => {
-      return (sections.free_plan?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
+    // ── Lista de slides con clones para loop infinito ──────────
+    const displayProfiles = computed(() => {
+      const p = profiles.value
+      if (p.length <= 1) return p
+      return [p[p.length - 1], ...p, p[0]]
     })
 
-    const aboutItems = computed(() => {
-      return (sections.about?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
-    })
+    // ── Estilo del track con transición controlada ─────────────
+    const trackStyle = computed(() => ({
+      transform: `translateX(-${activeSlide.value * 100}%)`,
+      transition: disableTransition.value ? "none" : "transform 0.7s cubic-bezier(0.4,0,0.2,1)",
+    }))
 
-    const multideviceItems = computed(() => {
-      return (sections.multidevice?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
-    })
+    // ── Fondo de cada slide ────────────────────────────────────
+    function getSlideBackground(profile) {
+      if (profile.image_url) {
+        return { backgroundImage: `url(${profile.image_url})` }
+      }
+      const id = profile.id ?? 0
+      const gradient = SLIDE_GRADIENTS[id % SLIDE_GRADIENTS.length]
+      return { background: gradient }
+    }
 
-    const featureIcons = computed(() => FEATURE_ICONS)
-
-    // ── Slider ───────────────────────────────────────────────
+    // ── Slider: navegación ─────────────────────────────────────
     function goToSlide(i) {
-      activeSlide.value = i
+      activeSlide.value = i + 1
       resetTimer()
     }
     function nextSlide() {
-      activeSlide.value = (activeSlide.value + 1) % profiles.value.length
+      if (profiles.value.length <= 1) return
+      activeSlide.value++
       resetTimer()
     }
     function prevSlide() {
-      activeSlide.value = (activeSlide.value - 1 + profiles.value.length) % profiles.value.length
+      if (profiles.value.length <= 1) return
+      activeSlide.value--
       resetTimer()
     }
+
+    // ── Cuando termina la transición CSS: salto silencioso ─────
+    function onTransitionEnd(e) {
+      if (e.propertyName !== "transform") return
+      const n = profiles.value.length
+      if (n <= 1) return
+      if (activeSlide.value === 0) {
+        disableTransition.value = true
+        activeSlide.value = n
+        nextTick(() => requestAnimationFrame(() => { disableTransition.value = false }))
+      } else if (activeSlide.value === n + 1) {
+        disableTransition.value = true
+        activeSlide.value = 1
+        nextTick(() => requestAnimationFrame(() => { disableTransition.value = false }))
+      }
+    }
+
+    // ── Auto-play timer ────────────────────────────────────────
     function startTimer() {
       sliderTimer.value = setInterval(() => {
         if (profiles.value.length > 1) nextSlide()
-      }, 5000)
+      }, 5500)
     }
     function resetTimer() {
       clearInterval(sliderTimer.value)
       startTimer()
     }
 
-    // ── Format helpers ────────────────────────────────────────
+    // ── Computed: parsear body_text (pipe-separated) ───────────
+    const featureItems = computed(() =>
+      (sections.features?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const freePlanItems = computed(() =>
+      (sections.free_plan?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const aboutItems = computed(() =>
+      (sections.about?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const multideviceItems = computed(() =>
+      (sections.multidevice?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const featureIcons = computed(() => FEATURE_ICONS)
+
+    // ── Helpers de formato ────────────────────────────────────
     function formatPrice(price) {
       return new Intl.NumberFormat("es-CO").format(price)
     }
-
     function renderVal(val) {
       if (!val || val === "") return "—"
       const v = val.toLowerCase()
@@ -559,13 +778,12 @@ export default {
     function validateForm() {
       let ok = true
       formErrors.name = formErrors.email = formErrors.message = ""
-      if (!form.name.trim()) { formErrors.name = "El nombre es obligatorio"; ok = false }
-      if (!form.email.trim()) { formErrors.email = "El email es obligatorio"; ok = false }
+      if (!form.name.trim())    { formErrors.name    = "El nombre es obligatorio"; ok = false }
+      if (!form.email.trim())   { formErrors.email   = "El email es obligatorio";  ok = false }
       else if (!/\S+@\S+\.\S+/.test(form.email)) { formErrors.email = "Email inválido"; ok = false }
       if (!form.message.trim()) { formErrors.message = "El mensaje es obligatorio"; ok = false }
       return ok
     }
-
     async function submitContact() {
       if (!validateForm()) return
       submitting.value = true
@@ -594,32 +812,36 @@ export default {
     function initReveal() {
       const cards = document.querySelectorAll(".reveal")
       if (!cards.length) return
-      const obs = new IntersectionObserver((entries) => {
-        entries.forEach(e => {
-          if (e.isIntersecting) e.target.classList.add("revealed")
-        })
-      }, { threshold: 0.1 })
+      const obs = new IntersectionObserver(
+        entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add("revealed") }),
+        { threshold: 0.1 }
+      )
       cards.forEach(c => obs.observe(c))
     }
 
-    // ── Fetch data ────────────────────────────────────────────
+    // ── Carga de datos ────────────────────────────────────────
     async function loadData() {
       try {
+        const NO_CACHE = { cache: "no-store" }
         const [secRes, profRes, planRes] = await Promise.all([
-          fetch(`${API}/landing/sections`),
-          fetch(`${API}/landing/profiles`),
-          fetch(`${API}/landing/plans`),
+          fetch(`${API}/landing/sections`, NO_CACHE),
+          fetch(`${API}/landing/profiles`, NO_CACHE),
+          fetch(`${API}/landing/plans`,    NO_CACHE),
         ])
         const [secData, profData, pData] = await Promise.all([
           secRes.json(), profRes.json(), planRes.json()
         ])
-
         secData.forEach(s => { sections[s.section_key] = s })
         profiles.value = profData
-        planData.plans         = pData.plans         || []
+        planData.plans          = pData.plans          || []
         planData.feature_groups = pData.feature_groups || []
 
-        if (profData.length > 1) startTimer()
+        if (profData.length > 1) {
+          activeSlide.value = 1
+          startTimer()
+        } else {
+          activeSlide.value = 0
+        }
       } catch (e) {
         console.error("Error cargando landing:", e)
       }
@@ -629,7 +851,6 @@ export default {
       await loadData()
       setTimeout(initReveal, 300)
     })
-
     onBeforeUnmount(() => clearInterval(sliderTimer.value))
 
     return {
@@ -637,7 +858,8 @@ export default {
       featuresGrid, featureItems, freePlanItems, aboutItems,
       multideviceItems, featureIcons, form, formErrors,
       submitting, contactSuccess, contactError, currentYear,
-      goToSlide, nextSlide, prevSlide,
+      displayProfiles, realActiveIndex, trackStyle,
+      getSlideBackground, goToSlide, nextSlide, prevSlide, onTransitionEnd,
       formatPrice, renderVal, submitContact,
     }
   }
@@ -716,6 +938,221 @@ export default {
 .nav-mobile.open { display: flex; }
 
 /* ════════════════════════════════════════════════════
+   SLIDER PERFILES — FULL SCREEN
+════════════════════════════════════════════════════ */
+.section-perfiles {
+  height: 100vh;
+  padding-top: 68px;
+  position: relative;
+  overflow: hidden;
+  background: #0f172a;
+}
+
+/* Floating label */
+.slider-floating-label {
+  position: absolute;
+  top: calc(68px + 20px);
+  left: 32px;
+  z-index: 20;
+  background: rgba(0,0,0,.4);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,.18);
+  color: rgba(255,255,255,.9);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.profiles-slider {
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.slider-track {
+  display: flex;
+  height: 100%;
+  will-change: transform;
+}
+
+.slide-item {
+  min-width: 100%;
+  height: 100%;
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+/* Overlay degradado desde abajo */
+.slide-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,.04) 0%,
+    rgba(0,0,0,.1)  30%,
+    rgba(0,0,0,.55) 60%,
+    rgba(0,0,0,.88) 100%
+  );
+}
+
+/* Contenido en la parte inferior */
+.slide-content {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0 8% 90px;
+  color: #fff;
+  max-width: 860px;
+}
+
+.slide-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,.14);
+  border: 1px solid rgba(255,255,255,.28);
+  backdrop-filter: blur(8px);
+  color: rgba(255,255,255,.95);
+  padding: 8px 18px;
+  border-radius: 24px;
+  font-size: .82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 20px;
+}
+
+.slide-name {
+  font-size: clamp(2.2rem, 5.5vw, 4.2rem);
+  font-weight: 900;
+  margin: 0 0 18px;
+  line-height: 1.08;
+  text-shadow: 0 2px 24px rgba(0,0,0,.5);
+  letter-spacing: -.02em;
+}
+
+.slide-desc {
+  font-size: clamp(.95rem, 1.5vw, 1.2rem);
+  color: rgba(255,255,255,.82);
+  margin-bottom: 32px;
+  max-width: 580px;
+  line-height: 1.72;
+  text-shadow: 0 1px 10px rgba(0,0,0,.4);
+}
+
+.slide-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+
+.btn-slide-cta {
+  display: inline-flex; align-items: center;
+  background: var(--primary); color: #fff;
+  padding: 14px 30px; border-radius: 10px;
+  font-weight: 700; font-size: 1rem;
+  text-decoration: none; transition: all .25s;
+  box-shadow: 0 4px 24px rgba(37,99,235,.5);
+}
+.btn-slide-cta:hover { background: var(--primary-dark); transform: translateY(-2px); color: #fff; }
+
+.btn-slide-outline {
+  display: inline-flex; align-items: center;
+  border: 1.5px solid rgba(255,255,255,.4); color: rgba(255,255,255,.9);
+  padding: 14px 28px; border-radius: 10px;
+  font-weight: 600; font-size: 1rem;
+  text-decoration: none; transition: all .25s;
+  backdrop-filter: blur(4px);
+}
+.btn-slide-outline:hover { background: rgba(255,255,255,.12); color: #fff; }
+
+/* Dots */
+.slider-dots {
+  position: absolute;
+  bottom: 36px;
+  right: 8%;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+.slider-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.55);
+  background: transparent;
+  cursor: pointer;
+  transition: all .25s;
+  padding: 0;
+}
+.slider-dot.active {
+  background: #fff;
+  border-color: #fff;
+  width: 28px;
+  border-radius: 4px;
+}
+
+/* Arrows */
+.slider-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.35);
+  background: rgba(0,0,0,.28);
+  backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 1.2rem; color: #fff;
+  transition: all .2s; z-index: 10;
+}
+.slider-arrow:hover { background: var(--primary); border-color: var(--primary); }
+.slider-arrow.left  { left: 24px; }
+.slider-arrow.right { right: 24px; }
+
+/* Counter */
+.slide-counter {
+  position: absolute;
+  top: calc(68px + 20px);
+  right: 8%;
+  color: rgba(255,255,255,.75);
+  font-size: .82rem; font-weight: 700;
+  z-index: 10;
+  background: rgba(0,0,0,.32);
+  backdrop-filter: blur(10px);
+  padding: 5px 14px;
+  border-radius: 20px;
+}
+
+/* Scroll hint */
+.slide-scroll-hint {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,.55);
+  font-size: 1.4rem;
+  animation: bounceDown 2.2s ease-in-out infinite;
+  z-index: 10;
+  pointer-events: none;
+}
+@keyframes bounceDown {
+  0%,100% { transform: translateX(-50%) translateY(0); opacity: .55; }
+  50%      { transform: translateX(-50%) translateY(9px); opacity: .95; }
+}
+
+/* Loading state */
+.slide-loading {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  gap: 12px;
+}
+.slide-loading i { font-size: 3rem; }
+
+/* ════════════════════════════════════════════════════
    HERO
 ════════════════════════════════════════════════════ */
 .hero-section {
@@ -733,12 +1170,10 @@ export default {
 .shape-1 { width: 500px; height: 500px; top: -100px; right: -100px; animation-delay: 0s; }
 .shape-2 { width: 300px; height: 300px; bottom: 50px; left: 30%; animation-delay: 2s; background: rgba(16,185,129,.1); }
 .shape-3 { width: 200px; height: 200px; top: 40%; right: 20%; animation-delay: 4s; background: rgba(245,158,11,.08); }
-
 @keyframes floatShape {
   0%,100% { transform: translate(0,0) scale(1); }
   50%      { transform: translate(20px,-30px) scale(1.05); }
 }
-
 .hero-content { position: relative; z-index: 1; max-width: 580px; color: #fff; }
 .hero-badge {
   display: inline-flex; align-items: center; gap: 6px;
@@ -752,9 +1187,7 @@ export default {
   background: linear-gradient(135deg, #fff 0%, #93c5fd 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
-.hero-subtitle {
-  font-size: 1.1rem; color: #94a3b8; margin-bottom: 32px; line-height: 1.7;
-}
+.hero-subtitle { font-size: 1.1rem; color: #94a3b8; margin-bottom: 32px; line-height: 1.7; }
 .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 40px; }
 .btn-hero-primary {
   display: inline-flex; align-items: center;
@@ -780,8 +1213,6 @@ export default {
 .stat-number { display: block; font-size: 1.6rem; font-weight: 800; color: #93c5fd; }
 .stat-label  { font-size: .75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
 .stat-divider { width: 1px; height: 36px; background: rgba(255,255,255,.15); }
-
-/* Device mockup */
 .hero-devices { position: relative; z-index: 1; flex-shrink: 0; }
 .device-mockup {
   width: 280px; background: #1e293b; border-radius: 16px;
@@ -789,40 +1220,26 @@ export default {
   box-shadow: 0 24px 60px rgba(0,0,0,.5);
 }
 .device-screen { background: #0f172a; }
-.screen-topbar {
-  height: 36px; background: #2563eb;
-  border-radius: 0; margin-bottom: 0;
-}
+.screen-topbar { height: 36px; background: #2563eb; }
 .screen-content { padding: 16px; }
-.screen-line {
-  height: 8px; background: #1e293b; border-radius: 4px;
-}
-.w-75 { width: 75%; }
-.w-50 { width: 50%; }
-.w-60 { width: 60%; }
-.w-100 { width: 100%; }
+.screen-line { height: 8px; background: #1e293b; border-radius: 4px; }
+.w-75 { width: 75%; } .w-50 { width: 50%; } .w-60 { width: 60%; } .w-100 { width: 100%; }
 .screen-cards { display: flex; gap: 8px; margin-top: 12px; }
 .screen-card { flex: 1; height: 48px; border-radius: 6px; }
 .screen-card.green  { background: #10b981; }
 .screen-card.blue   { background: #2563eb; }
 .screen-card.orange { background: #f59e0b; }
 .animate-float { animation: floatDevice 4s ease-in-out infinite; }
-@keyframes floatDevice {
-  0%,100% { transform: translateY(0); }
-  50%      { transform: translateY(-12px); }
-}
+@keyframes floatDevice { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
 
 /* ════════════════════════════════════════════════════
    ANIMACIONES HERO
 ════════════════════════════════════════════════════ */
-@keyframes fadeIn   { from { opacity: 0; }                to { opacity: 1; } }
-@keyframes slideUp  { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-
+@keyframes fadeIn  { from { opacity: 0; }  to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 .animate-fade-in  { animation: fadeIn  .8s ease both; }
 .animate-slide-up { animation: slideUp .8s ease both; }
-.delay-1 { animation-delay: .2s; }
-.delay-2 { animation-delay: .4s; }
-.delay-3 { animation-delay: .6s; }
+.delay-1 { animation-delay: .2s; } .delay-2 { animation-delay: .4s; } .delay-3 { animation-delay: .6s; }
 
 /* ════════════════════════════════════════════════════
    SECCIÓN COMUNES
@@ -836,79 +1253,10 @@ export default {
 .section-badge.blue   { background: rgba(37,99,235,.1); color: var(--primary); }
 .section-badge.green  { background: rgba(16,185,129,.1); color: #059669; }
 .section-badge.orange { background: rgba(245,158,11,.1); color: #d97706; }
+.section-badge.purple { background: rgba(139,92,246,.12); color: #7c3aed; }
 .section-badge.white  { background: rgba(255,255,255,.15); color: #fff; }
 .section-title    { font-size: clamp(1.6rem,3vw,2.2rem); font-weight: 800; margin-bottom: 12px; }
-.section-subtitle { color: var(--gray); font-size: 1rem; max-width: 600px; margin: 0 auto; }
-
-/* ════════════════════════════════════════════════════
-   PERFILES SLIDER
-════════════════════════════════════════════════════ */
-.section-perfiles {
-  min-height: 100vh;
-  padding: 68px 24px 60px;
-  background: var(--light);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.profiles-slider  { max-width: 900px; margin: 0 auto; position: relative; overflow: hidden; }
-.slider-track {
-  display: flex; transition: transform .5s cubic-bezier(.4,0,.2,1);
-}
-.slide-item { min-width: 100%; padding: 0 8px; }
-.profile-card {
-  display: flex; gap: 40px; align-items: center;
-  background: #fff; border-radius: 20px; padding: 40px;
-  box-shadow: var(--shadow-lg);
-  border-top: 4px solid var(--accent, var(--primary));
-}
-.profile-image-wrap { flex-shrink: 0; }
-.profile-img {
-  width: 220px; height: 160px; object-fit: cover; border-radius: 12px;
-}
-.profile-img-placeholder {
-  width: 220px; height: 160px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent, #2563eb) 0%, rgba(37,99,235,.3) 100%);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 4rem; color: rgba(255,255,255,.9);
-}
-.profile-info { flex: 1; }
-.profile-icon-badge {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent, #2563eb), rgba(37,99,235,.5));
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 1.5rem; margin-bottom: 12px;
-}
-.profile-name { font-size: 1.6rem; font-weight: 800; margin-bottom: 10px; }
-.profile-desc { color: var(--gray); line-height: 1.7; margin-bottom: 20px; }
-.btn-profile-cta {
-  display: inline-flex; align-items: center;
-  background: var(--primary); color: #fff;
-  padding: 10px 22px; border-radius: 8px; font-weight: 600; font-size: .9rem;
-  text-decoration: none; transition: all .2s;
-}
-.btn-profile-cta:hover { background: var(--primary-dark); transform: translateX(4px); color: #fff; }
-
-.slider-dots { display: flex; justify-content: center; gap: 8px; margin-top: 24px; }
-.slider-dot {
-  width: 8px; height: 8px; border-radius: 50%; border: none;
-  background: #cbd5e1; cursor: pointer; transition: all .25s; padding: 0;
-}
-.slider-dot.active { background: var(--primary); width: 24px; border-radius: 4px; }
-
-.slider-arrow {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  width: 44px; height: 44px; border-radius: 50%; border: none;
-  background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.15);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; font-size: 1.1rem; color: var(--dark);
-  transition: all .2s; z-index: 2;
-}
-.slider-arrow:hover { background: var(--primary); color: #fff; }
-.slider-arrow.left  { left: -20px; }
-.slider-arrow.right { right: -20px; }
+.section-subtitle { color: var(--gray); font-size: 1rem; max-width: 640px; margin: 0 auto; }
 
 /* ════════════════════════════════════════════════════
    MÓDULOS
@@ -921,7 +1269,7 @@ export default {
 .feature-card {
   background: #fff; border: 1px solid #e2e8f0; border-radius: var(--radius);
   padding: 20px; display: flex; align-items: flex-start; gap: 14px;
-  box-shadow: var(--shadow); transition: all .3s; cursor: default;
+  box-shadow: var(--shadow); cursor: default;
   opacity: 0; transform: translateY(20px);
   transition: opacity .5s var(--delay, 0s), transform .5s var(--delay, 0s), box-shadow .2s;
 }
@@ -945,10 +1293,7 @@ export default {
 .strip-left h3 { font-size: 1.7rem; font-weight: 800; margin-bottom: 10px; }
 .strip-left p  { color: #94a3b8; margin-bottom: 20px; }
 .strip-list { list-style: none; padding: 0; margin-bottom: 24px; }
-.strip-list li {
-  display: flex; align-items: center; gap: 6px;
-  color: #cbd5e1; font-size: .9rem; margin-bottom: 8px;
-}
+.strip-list li { display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: .9rem; margin-bottom: 8px; }
 .strip-list .bi-check-circle-fill { color: var(--accent); }
 .btn-strip-cta {
   display: inline-flex; align-items: center;
@@ -968,15 +1313,131 @@ export default {
 .mini-device.tablet { font-size: 2rem; }
 
 /* ════════════════════════════════════════════════════
+   SECCIÓN VERSIÓN ESCRITORIO
+════════════════════════════════════════════════════ */
+.section-desktop {
+  padding: 96px 24px;
+  background: linear-gradient(145deg, #0a0f1e 0%, #0f172a 50%, #111827 100%);
+  overflow: hidden;
+}
+.desktop-inner {
+  max-width: 1180px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 72px; align-items: center;
+}
+.desktop-left { color: #fff; }
+.desktop-left h2 {
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  font-weight: 900; margin: 16px 0 18px; line-height: 1.15;
+}
+.desktop-accent { color: #a78bfa; }
+.desktop-left p { color: #94a3b8; line-height: 1.75; margin-bottom: 28px; font-size: 1.05rem; }
+.desktop-list {
+  list-style: none; padding: 0; margin-bottom: 36px;
+  display: flex; flex-direction: column; gap: 13px;
+}
+.desktop-list li { display: flex; align-items: center; gap: 12px; color: #cbd5e1; font-size: .95rem; }
+.desktop-list .bi-check-circle-fill { color: #10b981; font-size: 1.1rem; flex-shrink: 0; }
+.desktop-cta-wrap { display: flex; gap: 14px; flex-wrap: wrap; }
+.btn-desktop-cta {
+  display: inline-flex; align-items: center;
+  background: #7c3aed; color: #fff;
+  padding: 14px 26px; border-radius: 10px; font-weight: 700; font-size: .95rem;
+  text-decoration: none; transition: all .25s;
+  box-shadow: 0 4px 20px rgba(124,58,237,.4);
+}
+.btn-desktop-cta:hover { background: #6d28d9; transform: translateY(-2px); color: #fff; }
+.btn-desktop-outline {
+  display: inline-flex; align-items: center;
+  border: 1.5px solid rgba(255,255,255,.3); color: rgba(255,255,255,.85);
+  padding: 14px 24px; border-radius: 10px; font-weight: 600; font-size: .95rem;
+  text-decoration: none; transition: all .25s;
+}
+.btn-desktop-outline:hover { background: rgba(255,255,255,.08); color: #fff; }
+
+/* Mockup escritorio */
+.desktop-right { position: relative; }
+.desktop-mockup {
+  background: #1e293b; border-radius: 14px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 28px 64px rgba(0,0,0,.55);
+}
+.mockup-bar {
+  background: #0f172a; padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.bar-dot { width: 12px; height: 12px; border-radius: 50%; }
+.bar-dot.red    { background: #ef4444; }
+.bar-dot.yellow { background: #f59e0b; }
+.bar-dot.green  { background: #10b981; }
+.bar-title { flex: 1; text-align: center; color: #475569; font-size: .75rem; font-weight: 600; }
+.bar-actions { display: flex; gap: 6px; }
+.bar-btn { width: 20px; height: 8px; background: rgba(255,255,255,.07); border-radius: 2px; }
+.mockup-body { display: flex; height: 300px; }
+.mockup-sidebar {
+  width: 58px; background: #0f172a; padding: 14px 8px;
+  display: flex; flex-direction: column; gap: 8px;
+  border-right: 1px solid rgba(255,255,255,.06);
+}
+.sidebar-logo { height: 32px; border-radius: 8px; background: #2563eb; margin-bottom: 8px; }
+.sidebar-item { height: 34px; border-radius: 7px; background: rgba(255,255,255,.06); }
+.sidebar-item.active { background: rgba(37,99,235,.6); }
+.sidebar-item.small { height: 26px; }
+.sidebar-spacer { flex: 1; }
+.mockup-content { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.content-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.topbar-title { width: 35%; height: 20px; background: rgba(255,255,255,.08); border-radius: 4px; }
+.topbar-actions { display: flex; gap: 8px; }
+.topbar-btn { height: 22px; width: 70px; border-radius: 5px; background: rgba(255,255,255,.07); }
+.topbar-btn.primary { background: rgba(37,99,235,.5); }
+.content-kpis { display: flex; gap: 8px; }
+.kpi-card {
+  flex: 1; border-radius: 8px; padding: 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.kpi-card.blue   { background: rgba(37,99,235,.25); }
+.kpi-card.green  { background: rgba(16,185,129,.25); }
+.kpi-card.orange { background: rgba(245,158,11,.25); }
+.kpi-val { height: 16px; background: rgba(255,255,255,.2); border-radius: 3px; width: 70%; }
+.kpi-lbl { height: 8px;  background: rgba(255,255,255,.12); border-radius: 3px; width: 50%; }
+.content-table { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.table-header { height: 18px; background: rgba(255,255,255,.1); border-radius: 4px; margin-bottom: 2px; }
+.table-row { height: 20px; background: rgba(255,255,255,.04); border-radius: 4px; }
+.table-row.alt { background: rgba(255,255,255,.07); }
+
+/* Badges flotantes */
+.desktop-badge-float {
+  position: absolute; top: -18px; right: -18px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff; padding: 12px 18px; border-radius: 14px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 8px 28px rgba(124,58,237,.5);
+}
+.desktop-badge-float i { font-size: 1.6rem; }
+.desktop-badge-float div { display: flex; flex-direction: column; }
+.desktop-badge-float strong { font-size: .88rem; font-weight: 800; }
+.desktop-badge-float span  { font-size: .75rem; opacity: .8; }
+.desktop-offline-badge {
+  position: absolute; bottom: -14px; left: 20px;
+  background: rgba(16,185,129,.9); color: #fff;
+  padding: 8px 16px; border-radius: 20px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: .8rem; font-weight: 700;
+  box-shadow: 0 4px 16px rgba(16,185,129,.4);
+}
+
+/* ════════════════════════════════════════════════════
    PLAN GRATIS CTA
 ════════════════════════════════════════════════════ */
 .section-free-plan {
   background: linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%);
   padding: 96px 24px;
 }
-.free-plan-inner {
-  max-width: 720px; margin: 0 auto; text-align: center; color: #fff;
-}
+.free-plan-inner { max-width: 720px; margin: 0 auto; text-align: center; color: #fff; }
 .free-plan-badge {
   display: inline-flex; align-items: center;
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
@@ -998,8 +1459,7 @@ export default {
 .free-plan-list li {
   display: flex; align-items: center; gap: 12px;
   background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.15);
-  border-radius: 10px; padding: 12px 20px; font-size: 1rem;
-  text-align: left;
+  border-radius: 10px; padding: 12px 20px; font-size: 1rem; text-align: left;
 }
 .free-plan-list .bi-check-circle-fill { color: #6ee7b7; font-size: 1.2rem; flex-shrink: 0; }
 .btn-free-primary {
@@ -1009,15 +1469,21 @@ export default {
   text-decoration: none; transition: all .25s; box-shadow: 0 4px 20px rgba(0,0,0,.2);
 }
 .btn-free-primary:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(0,0,0,.25); color: #064e3b; }
-.free-plan-note {
-  color: #a7f3d0; font-size: .82rem; margin-top: 12px;
-}
+.free-plan-note { color: #a7f3d0; font-size: .82rem; margin-top: 12px; }
 
 /* ════════════════════════════════════════════════════
    PLANES
 ════════════════════════════════════════════════════ */
 .section-planes { padding: 96px 24px; background: var(--light); }
 .section-planes .section-header { max-width: 1200px; margin: 0 auto 48px; }
+
+.plans-group-label {
+  max-width: 900px; margin: 0 auto 20px;
+  font-size: .8rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--gray);
+  display: flex; align-items: center;
+}
+.plans-group-label.desktop-variant { color: #7c3aed; margin-top: 8px; margin-bottom: 12px; }
 
 .pricing-cards {
   max-width: 900px; margin: 0 auto 60px;
@@ -1061,15 +1527,14 @@ export default {
 .btn-pricing-featured:hover { background: rgba(255,255,255,.35); color: #fff; }
 
 .features-table-wrap {
-  max-width: 1000px; margin: 0 auto;
+  max-width: 1000px; margin: 0 auto 48px;
   overflow-x: auto; border-radius: 16px;
   box-shadow: var(--shadow-lg); border: 1px solid #e2e8f0;
 }
 .features-table { width: 100%; border-collapse: collapse; background: #fff; }
 .features-table thead th {
   background: var(--dark2); color: #fff;
-  padding: 14px 16px; font-size: .85rem; font-weight: 700;
-  text-align: center;
+  padding: 14px 16px; font-size: .85rem; font-weight: 700; text-align: center;
 }
 .feat-col-name { text-align: left !important; width: 35%; }
 .feat-col-plan  { min-width: 110px; }
@@ -1081,13 +1546,76 @@ export default {
 .feat-row { border-bottom: 1px solid #f1f5f9; }
 .feat-row:hover { background: #f8fafc; }
 .feat-name { padding: 12px 16px; font-size: .88rem; color: var(--dark); }
-.feat-val  {
-  padding: 12px 16px; text-align: center;
-  font-size: .9rem; font-weight: 600; color: var(--gray);
-}
+.feat-val  { padding: 12px 16px; text-align: center; font-size: .9rem; font-weight: 600; color: var(--gray); }
 .feat-row td.feat-val:nth-child(2) { background: rgba(16,185,129,.04); }
 .feat-row td.feat-val:nth-child(4) { background: rgba(37,99,235,.04); }
 .feat-row td.feat-val:nth-child(5) { background: rgba(139,92,246,.06); }
+
+/* Planes Escritorio / Mixto */
+.desktop-plans-wrap {
+  max-width: 1000px; margin: 0 auto;
+  background: #fff; border-radius: 20px;
+  border: 2px dashed #e2e8f0;
+  padding: 36px 36px 40px;
+}
+.desktop-plans-header { margin-bottom: 28px; }
+.desktop-plans-header p { color: var(--gray); font-size: .95rem; margin: 6px 0 0; }
+.desktop-plan-cards {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+}
+.desktop-plan-card {
+  background: var(--light); border-radius: 16px; padding: 30px;
+  border: 1px solid #e2e8f0; position: relative; transition: all .25s;
+}
+.desktop-plan-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.desktop-plan-card.featured {
+  background: var(--dark2); border-color: var(--dark2); color: #fff;
+}
+.dplan-badge {
+  position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff; padding: 4px 16px; border-radius: 20px;
+  font-size: .72rem; font-weight: 700; white-space: nowrap;
+}
+.dplan-icon {
+  font-size: 2rem; color: var(--primary); margin-bottom: 14px;
+  display: flex; align-items: center;
+}
+.dplan-icon.mixed { color: #a78bfa; }
+.plus-icon { font-size: 1.2rem; color: #64748b; }
+.dplan-name {
+  font-size: 1.35rem; font-weight: 800; margin-bottom: 4px;
+}
+.dplan-tag {
+  display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--gray);
+  background: rgba(0,0,0,.06); padding: 3px 10px; border-radius: 6px;
+  margin-bottom: 14px;
+}
+.dplan-tag.featured-tag {
+  background: rgba(167,139,250,.2); color: #a78bfa;
+}
+.dplan-desc {
+  font-size: .9rem; line-height: 1.65; margin-bottom: 22px;
+  color: var(--gray);
+}
+.desktop-plan-card.featured .dplan-desc { color: #94a3b8; }
+.dplan-features {
+  list-style: none; padding: 0; margin-bottom: 26px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.dplan-features li { display: flex; align-items: center; gap: 10px; font-size: .88rem; color: var(--gray); }
+.desktop-plan-card.featured .dplan-features li { color: #cbd5e1; }
+.dplan-features .bi-check-circle-fill { color: var(--accent); flex-shrink: 0; }
+.btn-dplan {
+  display: inline-flex; align-items: center;
+  padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: .9rem;
+  text-decoration: none; transition: all .2s;
+  background: var(--primary); color: #fff;
+}
+.btn-dplan:hover { background: var(--primary-dark); transform: translateX(3px); color: #fff; }
+.btn-dplan.featured { background: #7c3aed; }
+.btn-dplan.featured:hover { background: #6d28d9; }
 
 /* ════════════════════════════════════════════════════
    NOTAS IMPORTANTES
@@ -1123,8 +1651,7 @@ export default {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   border: 1px solid #e2e8f0; box-shadow: var(--shadow);
   min-width: 160px; position: relative;
-  font-size: .9rem; font-weight: 600; color: var(--gray);
-  transition: all .2s;
+  font-size: .9rem; font-weight: 600; color: var(--gray); transition: all .2s;
 }
 .payment-card i { font-size: 2rem; color: var(--primary); }
 .payment-card.coming-soon { opacity: .75; cursor: not-allowed; }
@@ -1149,17 +1676,11 @@ export default {
 .contact-title { font-size: 1.9rem; font-weight: 800; margin: 16px 0 10px; }
 .contact-subtitle { color: #94a3b8; margin-bottom: 32px; line-height: 1.7; }
 .contact-details { display: flex; flex-direction: column; gap: 16px; }
-.contact-item {
-  display: flex; align-items: center; gap: 12px;
-  color: #cbd5e1; font-size: .95rem;
-}
+.contact-item { display: flex; align-items: center; gap: 12px; color: #cbd5e1; font-size: .95rem; }
 .contact-item i { color: #93c5fd; font-size: 1.2rem; flex-shrink: 0; }
-
 .contact-form-wrap {
-  background: rgba(255,255,255,.05);
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 20px; padding: 36px;
-  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 20px; padding: 36px; backdrop-filter: blur(10px);
 }
 .contact-form { display: flex; flex-direction: column; gap: 18px; }
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -1228,24 +1749,33 @@ export default {
   .hero-stats { justify-content: center; }
   .pricing-cards { grid-template-columns: repeat(2, 1fr); }
   .pricing-card.featured { transform: scale(1); }
+  .desktop-inner { grid-template-columns: 1fr; gap: 48px; }
+  .desktop-right { display: none; }
 }
 
 @media (max-width: 768px) {
   .nav-links, .nav-actions { display: none; }
   .nav-hamburger { display: block; }
-  .profile-card { flex-direction: column; text-align: center; }
-  .profile-img-placeholder, .profile-img { width: 100%; height: 180px; }
-  .slider-arrow { display: none; }
+  .slider-arrow { width: 40px; height: 40px; font-size: 1rem; }
+  .slider-arrow.left  { left: 12px; }
+  .slider-arrow.right { right: 12px; }
+  .slide-content { padding: 0 6% 100px; }
+  .slide-name { font-size: 2rem; }
+  .slide-desc { font-size: .95rem; }
   .multidevice-strip { flex-direction: column; text-align: center; }
   .contact-grid { grid-template-columns: 1fr; }
   .form-row-2 { grid-template-columns: 1fr; }
   .pricing-cards { grid-template-columns: 1fr 1fr; }
   .devices-row { display: none; }
+  .desktop-plan-cards { grid-template-columns: 1fr; }
+  .desktop-plans-wrap { padding: 28px 20px 32px; }
 }
 
 @media (max-width: 480px) {
   .pricing-cards { grid-template-columns: 1fr; }
   .hero-title { font-size: 1.8rem; }
   .payment-methods { flex-direction: column; align-items: center; }
+  .slide-actions { flex-direction: column; }
+  .btn-slide-cta, .btn-slide-outline { justify-content: center; }
 }
 </style>

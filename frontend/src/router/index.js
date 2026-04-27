@@ -40,6 +40,13 @@ const routes = [
   },
 
   {
+    path: "/landing/perfil/:id",
+    name: "LandingProfile",
+    component: () => import("@/views/LandingProfileView.vue"),
+    meta: { title: "EasyPosWeb — Propuesta personalizada" }
+  },
+
+  {
     path: "/login",
     name: "login",
     component: LoginView,
@@ -355,7 +362,8 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/reset-password" ||
     to.path === "/business-profiles" ||
     to.path === "/register" ||
-    to.path.startsWith("/invite/")
+    to.path.startsWith("/invite/") ||
+    to.path.startsWith("/landing/perfil/")
   ) {
     return next()
   }
