@@ -62,5 +62,8 @@ from app.models.help_article_model import HelpArticle
 from app.models.system_config_model import SystemConfig
 from app.models.client_model import Client
 from app.models.invitation_model import InvitationToken
+from app.models.landing_section_model import LandingSection
+from app.models.plan_feature_model import PlanFeature
+from app.models.landing_contact_model import LandingContact
 
 

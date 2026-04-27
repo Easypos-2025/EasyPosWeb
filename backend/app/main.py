@@ -49,6 +49,7 @@ from app.routers.system_config_router import router as system_config_router
 from app.routers.footer_router import router as footer_router
 from app.routers.clients_router import router as clients_router
 from app.routers.invitation_router import router as invitation_router
+from app.routers.landing_router import router as landing_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -131,6 +132,184 @@ def _init_db_data():
                 ))
 
         db.commit()
+        # ── MIGRACIONES SEGURAS: columnas nuevas en business_profiles ──
+        for col_sql in [
+            "ALTER TABLE business_profiles ADD COLUMN image_url VARCHAR(500) NULL",
+            "ALTER TABLE business_profiles ADD COLUMN landing_description TEXT NULL",
+            "ALTER TABLE business_profiles ADD COLUMN icon VARCHAR(100) DEFAULT 'bi-building'",
+            "ALTER TABLE business_profiles ADD COLUMN color_accent VARCHAR(30) DEFAULT '#0d6efd'",
+        ]:
+            try:
+                db.execute(text(col_sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # ── SEED: landing_sections ──────────────────────────────────────
+        from app.models.landing_section_model import LandingSection
+        seed_sections = [
+            {
+                "section_key": "hero",
+                "title": "Tu negocio, en línea. Sin complicaciones.",
+                "subtitle": "Vende, controla inventario y genera reportes desde cualquier dispositivo. Sin instalaciones, sin costos de mantenimiento. Empieza gratis hoy.",
+                "cta_text": "Empezar Gratis",
+                "cta_url": "/invite",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 1,
+                "section_type": "hero",
+            },
+            {
+                "section_key": "profiles_intro",
+                "title": "Un sistema para cada tipo de negocio",
+                "subtitle": "EasyPosWeb se adapta al perfil de tu empresa. Conoce nuestras soluciones especializadas.",
+                "cta_text": "",
+                "cta_url": "",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 2,
+                "section_type": "slider",
+            },
+            {
+                "section_key": "features",
+                "title": "Todo lo que necesitas para operar tu negocio",
+                "subtitle": "EasyPosWeb no es un programa contable. Es una herramienta operativa para el control diario de ventas, inventarios y cuadres de caja.",
+                "body_text": "Control Ventas POS Electrónico (DIAN opcional)|Control Ventas por Recibo (No DIAN)|Control de Clientes|Cuentas por Cobrar — Ventas a Crédito|Impresión Tirilla de Venta y Domiciliario|Pedidos de clientes con ajuste antes de facturar|Todas las formas de pago|Inventario de Productos|Costo y utilidad versus ventas|Reportes de Ventas por categorías a Excel|Cuadres de caja diario|Registro de Gastos, Compras y Vales|Control de usuarios y permisos|Productos por Categorías|Reporte de utilidad por periodo|Reporte por forma de pago por periodo|Asignación de Descuentos por tipificación o valor",
+                "cta_text": "",
+                "cta_url": "",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 3,
+                "section_type": "features",
+            },
+            {
+                "section_key": "free_plan",
+                "title": "Comienza GRATIS. Sin tarjeta de crédito.",
+                "subtitle": "TODO ESTO DE FORMA GRATUITA Y EN LÍNEA",
+                "body_text": "Genera e Imprime tus Ventas|Controla tus inventarios por Categoría|Crea tu base de datos de clientes|Realiza tu cuadre de caja|Genera tus reportes a Excel",
+                "cta_text": "Regístrate Gratis",
+                "cta_url": "/invite",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 4,
+                "section_type": "cta",
+            },
+            {
+                "section_key": "multidevice",
+                "title": "Desde tu PC, celular o tablet",
+                "subtitle": "¿No tienes computador? No te preocupes. Accede desde cualquier dispositivo con internet.",
+                "body_text": "Desde tu PC, Celular o Tablet|Sin inversiones costosas en equipos|Sin instalaciones eléctricas adicionales|Sin ocupar espacio|Acceso 24/7 desde cualquier lugar",
+                "cta_text": "Ir a easyposweb.com",
+                "cta_url": "http://easyposweb.com",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 5,
+                "section_type": "features",
+            },
+            {
+                "section_key": "about",
+                "title": "Notas Importantes",
+                "subtitle": "",
+                "body_text": "EasyPos no es un programa Contable — es operativo para ventas, inventarios y cuadres de caja.|No necesita internet para funcionar, excepto el módulo POS Electrónico.|Se paga anualmente con todos los módulos incluidos (excepto POS Electrónico).|Incluye soporte, capacitaciones y actualizaciones durante todo el año.|Las copias de seguridad están incluidas.|El valor de la licencia se conserva igual para el año siguiente.",
+                "cta_text": "",
+                "cta_url": "",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 6,
+                "section_type": "about",
+            },
+            {
+                "section_key": "contact",
+                "title": "¿Tienes preguntas? Escríbenos",
+                "subtitle": "Nuestro equipo te responde en menos de 24 horas.",
+                "body_text": "",
+                "cta_text": "",
+                "cta_url": "",
+                "image_url": "",
+                "is_active": True,
+                "order_index": 7,
+                "section_type": "contact",
+            },
+        ]
+        for s in seed_sections:
+            if not db.query(LandingSection).filter(LandingSection.section_key == s["section_key"]).first():
+                db.add(LandingSection(**s))
+        db.commit()
+
+        # ── SEED: plan_features ────────────────────────────────────────
+        from app.models.plan_feature_model import PlanFeature
+        if db.query(PlanFeature).count() == 0:
+            seed_features = [
+                # Módulos Básicos
+                ("Módulos Básicos", "Administrativo",     "X",   "X",   "X",   "X",   1),
+                ("Módulos Básicos", "Ventas / Recibo",    "X",   "X",   "X",   "X",   2),
+                ("Módulos Básicos", "Registro Clientes",  "x",   "x",   "x",   "x",   3),
+                ("Módulos Básicos", "Cierre Caja",        "x",   "x",   "x",   "x",   4),
+                ("Módulos Básicos", "Reporte Ventas",     "x",   "x",   "x",   "x",   5),
+                ("Módulos Básicos", "Categorías",         "5",   "10",  "Ilim","Ilim", 6),
+                ("Módulos Básicos", "Productos",          "25",  "50",  "Ilim","Ilim", 7),
+                ("Módulos Básicos", "Usuarios",           "1",   "5",   "10",  "Ilim", 8),
+                ("Módulos Básicos", "Facturas x Mes",     "300", "200", "600", "Ilim", 9),
+                # Módulos Avanzados
+                ("Módulos Avanzados", "Inventarios",         None, "x", "x", "x", 1),
+                ("Módulos Avanzados", "Receta Productos",    None, "x", "x", "x", 2),
+                ("Módulos Avanzados", "Ingresos - Egresos",  None, "x", "x", "x", 3),
+                ("Módulos Avanzados", "Reportes Varios",     None, "x", "x", "x", 4),
+                ("Módulos Avanzados", "Gastos",              None, "x", "x", "x", 5),
+                ("Módulos Avanzados", "Ventas x Periodo",    None, "x", "x", "x", 6),
+                ("Módulos Avanzados", "Ventas x Vendedor",   None, "x", "x", "x", 7),
+                ("Módulos Avanzados", "Cuentas x Cobrar",    None, "x", "x", "x", 8),
+                ("Módulos Avanzados", "Armar Menú Diario",   None, "x", "x", "x", 9),
+                ("Módulos Avanzados", "Registro Historia",   None, "x", "x", "x", 10),
+                # Módulos Especiales
+                ("Módulos Especiales", "Domicilios",         None, None, "x", "x", 1),
+                ("Módulos Especiales", "Servicio a Mesa",    None, None, "x", "x", 2),
+                ("Módulos Especiales", "Separados",          None, None, "x", "x", 3),
+                ("Módulos Especiales", "Combos",             None, None, "x", "x", 4),
+                ("Módulos Especiales", "Reporte Productos",  None, None, "x", "x", 5),
+                ("Módulos Especiales", "Reporte Utilidad",   None, None, "x", "x", 6),
+                ("Módulos Especiales", "Proveedores",        None, None, "x", "x", 7),
+                ("Módulos Especiales", "Control Propinas",   None, None, "x", "x", 8),
+                ("Módulos Especiales", "Cambio Productos",   None, None, "x", "x", 9),
+                # Módulos Elite
+                ("Módulos Elite", "Control Precios",     None, None, None, "x", 1),
+                ("Módulos Elite", "POS Electrónico",     None, None, None, "x", 2),
+                ("Módulos Elite", "Módulo Escritorio",   None, None, None, "x", 3),
+                ("Módulos Elite", "Insumos Preparados",  None, None, None, "x", 4),
+                ("Módulos Elite", "Factura / Recibo",    None, None, None, "x", 5),
+            ]
+            for cat, name, vf, vb, vs, vp, idx in seed_features:
+                db.add(PlanFeature(
+                    category=cat, feature_name=name,
+                    val_free=vf, val_basic=vb, val_standard=vs, val_premium=vp,
+                    order_index=idx, is_active=True
+                ))
+            db.commit()
+
+        # ── SEED: system_config email_sender_landing ───────────────────
+        if not db.query(SystemConfig).filter(SystemConfig.config_key == "email_sender_landing").first():
+            db.add(SystemConfig(
+                config_key="email_sender_landing",
+                config_value="easypos.co@gmail.com",
+                description="Email desde donde se envían los correos de contacto de la landing",
+                config_type="string"
+            ))
+            db.commit()
+
+        # ── SEED: módulo landing-manager en system_modules ─────────────
+        from app.models.system_module_model import SystemModule
+        if not db.query(SystemModule).filter(SystemModule.route == "/sysadmin/landing-manager").first():
+            db.add(SystemModule(
+                name="Gestión Landing Page",
+                route="/sysadmin/landing-manager",
+                icon="bi-layout-text-window-reverse",
+                parent_id=None,
+                is_active=True,
+                order_index=0,
+                is_sysadmin=True
+            ))
+            db.commit()
+
     finally:
         db.close()
 
@@ -148,6 +327,8 @@ app.router.redirect_slashes = True
 
 UPLOADS_DIR = BASE_DIR / "backend" / "app" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+(UPLOADS_DIR / "landing").mkdir(parents=True, exist_ok=True)
+(UPLOADS_DIR / "profiles").mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # ===============================
@@ -208,6 +389,7 @@ routers = [
     footer_router,
     clients_router,
     invitation_router,
+    landing_router,
 ]
 
 for router in routers:

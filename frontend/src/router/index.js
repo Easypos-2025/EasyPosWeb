@@ -33,6 +33,13 @@ const routes = [
      LOGIN
   ========================================= */
   {
+    path: "/landing",
+    name: "landing",
+    component: () => import("@/views/LandingView.vue"),
+    meta: { title: "EasyPosWeb — Tu negocio en línea" }
+  },
+
+  {
     path: "/login",
     name: "login",
     component: LoginView,
@@ -296,6 +303,14 @@ const routes = [
         component: () => import("@/views/sysadmin/SystemConfigView.vue"),
         meta: { title: "Configuración del Sistema" }
       },
+
+      {
+        path: "/sysadmin/landing-manager",
+        name: "LandingManagerView",
+        component: () => import("@/views/sysadmin/LandingManagerView.vue"),
+        requiresAuth: true,
+        meta: { title: "Gestión Landing Page" }
+      },
      
 
       /**
@@ -328,6 +343,7 @@ router.beforeEach(async (to, from, next) => {
   ========================================= */
   if (
     to.path === "/login" ||
+    to.path === "/landing" ||
     to.path === "/forgot-password" ||
     to.path === "/reset-password" ||
     to.path === "/business-profiles" ||
