@@ -26,6 +26,7 @@ from app.auth.jwt_handler import create_access_token, decode_access_token
 from app.schemas.auth_schema import LoginRequest
 from app.models.company_model import Company
 from app.auth.password_utils import hash_password
+from app.models.business_profile_model import BusinessProfile
 import re
 from app.models.user_session_model import UserSession
 from fastapi import Request
@@ -440,10 +441,11 @@ def get_current_user(
         )
 
     # =========================================
-    # OBTENER ROL
+    # OBTENER ROL Y EMPRESA
     # =========================================
 
-    role = db.query(Role).filter(Role.id == user.role_id).first()
+    role    = db.query(Role).filter(Role.id == user.role_id).first()
+    company = db.query(Company).filter(Company.id_company == user.company_id).first()
 
     # =========================================
     # RESPUESTA
@@ -456,9 +458,8 @@ def get_current_user(
         "role": role.name if role else None,
         "company_id": user.company_id,
         "is_active": user.is_active,
-
-        # 💥 NUEVO (NO ROMPE NADA)
-        "is_system": role.is_system if role else False
+        "is_system": role.is_system if role else False,
+        "business_profile_id": company.business_profile_id if company else None,
     }
     
     

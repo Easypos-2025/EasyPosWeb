@@ -16,8 +16,8 @@
           <a href="#contacto"   class="nav-link-item">Contacto</a>
         </div>
         <div class="nav-actions">
-          <a href="/login"  class="btn-nav-outline">Iniciar Sesión</a>
-          <a href="/invite" class="btn-nav-solid">Empezar Gratis</a>
+          <a href="/login"    class="btn-nav-outline">Iniciar Sesión</a>
+          <a href="/register" class="btn-nav-solid">Empezar Gratis</a>
         </div>
         <button class="nav-hamburger" @click="mobileOpen = !mobileOpen">
           <i :class="mobileOpen ? 'bi bi-x-lg' : 'bi bi-list'"></i>
@@ -30,13 +30,71 @@
         <a href="#planes"    @click="mobileOpen=false">Planes</a>
         <a href="#contacto"  @click="mobileOpen=false">Contacto</a>
         <hr>
-        <a href="/login"  class="btn-nav-outline w-100 text-center mb-2">Iniciar Sesión</a>
-        <a href="/invite" class="btn-nav-solid  w-100 text-center">Empezar Gratis</a>
+        <a href="/login"    class="btn-nav-outline w-100 text-center mb-2">Iniciar Sesión</a>
+        <a href="/register" class="btn-nav-solid  w-100 text-center">Empezar Gratis</a>
       </div>
     </nav>
 
     <!-- ══════════════════════════════════════════════
-         HERO
+         SLIDER PERFILES DE NEGOCIO  (primera sección)
+    ══════════════════════════════════════════════ -->
+    <section id="perfiles" class="section-perfiles">
+      <div class="section-header text-center">
+        <span class="section-badge">Perfiles de Negocio</span>
+        <h2 class="section-title">{{ sections.profiles_intro?.title }}</h2>
+        <p class="section-subtitle">{{ sections.profiles_intro?.subtitle }}</p>
+      </div>
+
+      <div v-if="profiles.length" class="profiles-slider">
+        <div class="slider-track" :style="{ transform: `translateX(-${activeSlide * 100}%)` }">
+          <div v-for="profile in profiles" :key="profile.id" class="slide-item">
+            <div class="profile-card" :style="{ '--accent': profile.color_accent }">
+              <div class="profile-image-wrap">
+                <img v-if="profile.image_url" :src="profile.image_url" :alt="profile.name" class="profile-img" />
+                <div v-else class="profile-img-placeholder">
+                  <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
+                </div>
+              </div>
+              <div class="profile-info">
+                <div class="profile-icon-badge">
+                  <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
+                </div>
+                <h3 class="profile-name">{{ profile.name }}</h3>
+                <p class="profile-desc">
+                  {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
+                </p>
+                <a href="/register" class="btn-profile-cta">
+                  Probar Gratis <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dots -->
+        <div class="slider-dots">
+          <button
+            v-for="(p, i) in profiles"
+            :key="i"
+            class="slider-dot"
+            :class="{ active: i === activeSlide }"
+            @click="goToSlide(i)"
+          ></button>
+        </div>
+
+        <!-- Arrows -->
+        <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
+        <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
+      </div>
+
+      <div v-else class="text-center py-5 text-muted">
+        <i class="bi bi-buildings fs-1"></i>
+        <p class="mt-2">Cargando perfiles...</p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════
+         HERO  (segunda sección)
     ══════════════════════════════════════════════ -->
     <section class="hero-section">
       <div class="hero-bg-shapes">
@@ -55,7 +113,7 @@
           {{ sections.hero?.subtitle }}
         </p>
         <div class="hero-actions animate-slide-up delay-2">
-          <a :href="sections.hero?.cta_url || '/invite'" class="btn-hero-primary">
+          <a :href="sections.hero?.cta_url || '/register'" class="btn-hero-primary">
             <i class="bi bi-rocket-takeoff-fill me-2"></i>
             {{ sections.hero?.cta_text || 'Empezar Gratis' }}
           </a>
@@ -97,64 +155,6 @@
             </div>
           </div>
         </div>
-      </div>
-    </section>
-
-    <!-- ══════════════════════════════════════════════
-         SLIDER PERFILES DE NEGOCIO
-    ══════════════════════════════════════════════ -->
-    <section id="perfiles" class="section-perfiles">
-      <div class="section-header text-center">
-        <span class="section-badge">Perfiles de Negocio</span>
-        <h2 class="section-title">{{ sections.profiles_intro?.title }}</h2>
-        <p class="section-subtitle">{{ sections.profiles_intro?.subtitle }}</p>
-      </div>
-
-      <div v-if="profiles.length" class="profiles-slider">
-        <div class="slider-track" :style="{ transform: `translateX(-${activeSlide * 100}%)` }">
-          <div v-for="profile in profiles" :key="profile.id" class="slide-item">
-            <div class="profile-card" :style="{ '--accent': profile.color_accent }">
-              <div class="profile-image-wrap">
-                <img v-if="profile.image_url" :src="profile.image_url" :alt="profile.name" class="profile-img" />
-                <div v-else class="profile-img-placeholder">
-                  <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
-                </div>
-              </div>
-              <div class="profile-info">
-                <div class="profile-icon-badge">
-                  <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
-                </div>
-                <h3 class="profile-name">{{ profile.name }}</h3>
-                <p class="profile-desc">
-                  {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
-                </p>
-                <a href="/invite" class="btn-profile-cta">
-                  Probar Gratis <i class="bi bi-arrow-right ms-1"></i>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Dots -->
-        <div class="slider-dots">
-          <button
-            v-for="(p, i) in profiles"
-            :key="i"
-            class="slider-dot"
-            :class="{ active: i === activeSlide }"
-            @click="goToSlide(i)"
-          ></button>
-        </div>
-
-        <!-- Arrows -->
-        <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
-        <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
-      </div>
-
-      <div v-else class="text-center py-5 text-muted">
-        <i class="bi bi-buildings fs-1"></i>
-        <p class="mt-2">Cargando perfiles...</p>
       </div>
     </section>
 
@@ -223,7 +223,7 @@
           </li>
         </ul>
         <div class="free-plan-cta-wrap">
-          <a :href="sections.free_plan?.cta_url || '/invite'" class="btn-free-primary">
+          <a :href="sections.free_plan?.cta_url || '/register'" class="btn-free-primary">
             <i class="bi bi-rocket-takeoff-fill me-2"></i>
             {{ sections.free_plan?.cta_text || 'Registrarse Gratis' }}
           </a>
@@ -262,7 +262,7 @@
               <span class="price-period">/mes</span>
             </template>
           </div>
-          <a href="/invite" class="btn-pricing" :class="{ 'btn-pricing-featured': i === 2 }">
+          <a href="/register" class="btn-pricing" :class="{ 'btn-pricing-featured': i === 2 }">
             {{ i === 0 ? 'Empezar Gratis' : 'Comenzar' }}
           </a>
         </div>
@@ -843,8 +843,15 @@ export default {
 /* ════════════════════════════════════════════════════
    PERFILES SLIDER
 ════════════════════════════════════════════════════ */
-.section-perfiles { padding: 96px 24px; background: var(--light); overflow: hidden; }
-.section-perfiles .section-header { padding-top: 0; }
+.section-perfiles {
+  min-height: 100vh;
+  padding: 68px 24px 60px;
+  background: var(--light);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 
 .profiles-slider  { max-width: 900px; margin: 0 auto; position: relative; overflow: hidden; }
 .slider-track {

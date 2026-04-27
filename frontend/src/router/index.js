@@ -61,6 +61,13 @@ const routes = [
   },
 
   {
+    path: "/register",
+    name: "RegisterAssociate",
+    component: () => import("@/views/RegisterAssociateView.vue"),
+    meta: { title: "Crear cuenta — EasyPosWeb" }
+  },
+
+  {
     path: "/reset-password",
     name: "reset-password",
     component: ResetPassword,
@@ -347,6 +354,7 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/forgot-password" ||
     to.path === "/reset-password" ||
     to.path === "/business-profiles" ||
+    to.path === "/register" ||
     to.path.startsWith("/invite/")
   ) {
     return next()

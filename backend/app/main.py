@@ -50,6 +50,7 @@ from app.routers.footer_router import router as footer_router
 from app.routers.clients_router import router as clients_router
 from app.routers.invitation_router import router as invitation_router
 from app.routers.landing_router import router as landing_router
+from app.routers.register_router import router as register_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -154,7 +155,7 @@ def _init_db_data():
                 "title": "Tu negocio, en línea. Sin complicaciones.",
                 "subtitle": "Vende, controla inventario y genera reportes desde cualquier dispositivo. Sin instalaciones, sin costos de mantenimiento. Empieza gratis hoy.",
                 "cta_text": "Empezar Gratis",
-                "cta_url": "/invite",
+                "cta_url": "/register",
                 "image_url": "",
                 "is_active": True,
                 "order_index": 1,
@@ -189,7 +190,7 @@ def _init_db_data():
                 "subtitle": "TODO ESTO DE FORMA GRATUITA Y EN LÍNEA",
                 "body_text": "Genera e Imprime tus Ventas|Controla tus inventarios por Categoría|Crea tu base de datos de clientes|Realiza tu cuadre de caja|Genera tus reportes a Excel",
                 "cta_text": "Regístrate Gratis",
-                "cta_url": "/invite",
+                "cta_url": "/register",
                 "image_url": "",
                 "is_active": True,
                 "order_index": 4,
@@ -451,6 +452,7 @@ routers = [
     clients_router,
     invitation_router,
     landing_router,
+    register_router,
 ]
 
 for router in routers:
