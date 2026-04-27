@@ -348,24 +348,7 @@
 <script>
 import { ref, reactive, computed, onMounted } from "vue"
 import { showToast } from "@/utils/toast"
-
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
-
-function authHeader() {
-  return { Authorization: `Bearer ${localStorage.getItem("token")}` }
-}
-
-async function apiFetch(url, opts = {}) {
-  const res = await fetch(`${API}${url}`, {
-    ...opts,
-    headers: { "Content-Type": "application/json", ...authHeader(), ...(opts.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || "Error en la solicitud")
-  }
-  return res.json()
-}
+import api from "@/services/apis"
 
 export default {
   name: "LandingManagerView",
@@ -393,8 +376,9 @@ export default {
     async function loadSections() {
       loadingSections.value = true
       try {
-        sections.value = await apiFetch("/landing/admin/sections")
-      } catch (e) { showToast(e.message, "error") }
+        const res = await api.get("/landing/admin/sections")
+        sections.value = res.data
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
       finally { loadingSections.value = false }
     }
 
@@ -418,32 +402,26 @@ export default {
       savingSection.value = true
       try {
         if (sectionModal.isNew) {
-          const created = await apiFetch("/landing/admin/sections", {
-            method: "POST", body: JSON.stringify(sectionModal.data)
-          })
-          sections.value.push(created)
+          const res = await api.post("/landing/admin/sections", sectionModal.data)
+          sections.value.push(res.data)
         } else {
-          const updated = await apiFetch(`/landing/admin/sections/${sectionModal.data.section_key}`, {
-            method: "PUT", body: JSON.stringify(sectionModal.data)
-          })
+          const res = await api.put(`/landing/admin/sections/${sectionModal.data.section_key}`, sectionModal.data)
           const idx = sections.value.findIndex(s => s.section_key === sectionModal.data.section_key)
-          if (idx !== -1) sections.value[idx] = updated
+          if (idx !== -1) sections.value[idx] = res.data
         }
         showToast("Sección guardada correctamente", "success")
         sectionModal.open = false
-      } catch (e) { showToast(e.message, "error") }
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
       finally { savingSection.value = false }
     }
 
     async function toggleSection(sec) {
       try {
-        const updated = await apiFetch(`/landing/admin/sections/${sec.section_key}`, {
-          method: "PUT", body: JSON.stringify({ is_active: !sec.is_active })
-        })
+        const res = await api.put(`/landing/admin/sections/${sec.section_key}`, { is_active: !sec.is_active })
         const idx = sections.value.findIndex(s => s.section_key === sec.section_key)
-        if (idx !== -1) sections.value[idx] = updated
-        showToast(`Sección ${updated.is_active ? "activada" : "desactivada"}`, "success")
-      } catch (e) { showToast(e.message, "error") }
+        if (idx !== -1) sections.value[idx] = res.data
+        showToast(`Sección ${res.data.is_active ? "activada" : "desactivada"}`, "success")
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
     async function uploadSectionImage(event) {
@@ -452,11 +430,10 @@ export default {
       const fd = new FormData()
       fd.append("file", file)
       try {
-        const res = await fetch(`${API}/landing/admin/upload`, {
-          method: "POST", headers: { ...authHeader() }, body: fd
+        const res = await api.post("/landing/admin/upload", fd, {
+          headers: { "Content-Type": "multipart/form-data" }
         })
-        const data = await res.json()
-        sectionModal.data.image_url = data.url
+        sectionModal.data.image_url = res.data.url
         showToast("Imagen subida", "success")
       } catch (e) { showToast("Error subiendo imagen", "error") }
     }
@@ -468,24 +445,22 @@ export default {
     async function loadProfiles() {
       loadingProfiles.value = true
       try {
-        profiles.value = await apiFetch("/landing/admin/profiles")
-      } catch (e) { showToast(e.message, "error") }
+        const res = await api.get("/landing/admin/profiles")
+        profiles.value = res.data
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
       finally { loadingProfiles.value = false }
     }
 
     async function saveProfile(prof) {
       try {
-        await apiFetch(`/landing/admin/profiles/${prof.id}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            image_url: prof.image_url,
-            landing_description: prof.landing_description,
-            icon: prof.icon,
-            color_accent: prof.color_accent,
-          })
+        await api.put(`/landing/admin/profiles/${prof.id}`, {
+          image_url: prof.image_url,
+          landing_description: prof.landing_description,
+          icon: prof.icon,
+          color_accent: prof.color_accent,
         })
         showToast("Perfil actualizado", "success")
-      } catch (e) { showToast(e.message, "error") }
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
     async function uploadProfileImage(event, prof) {
@@ -494,11 +469,10 @@ export default {
       const fd = new FormData()
       fd.append("file", file)
       try {
-        const res = await fetch(`${API}/landing/admin/upload`, {
-          method: "POST", headers: { ...authHeader() }, body: fd
+        const res = await api.post("/landing/admin/upload", fd, {
+          headers: { "Content-Type": "multipart/form-data" }
         })
-        const data = await res.json()
-        prof.image_url = data.url
+        prof.image_url = res.data.url
         await saveProfile(prof)
         showToast("Imagen actualizada", "success")
       } catch (e) { showToast("Error subiendo imagen", "error") }
@@ -527,8 +501,9 @@ export default {
     async function loadFeatures() {
       loadingFeatures.value = true
       try {
-        features.value = await apiFetch("/landing/admin/plan-features")
-      } catch (e) { showToast(e.message, "error") }
+        const res = await api.get("/landing/admin/plan-features")
+        features.value = res.data
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
       finally { loadingFeatures.value = false }
     }
 
@@ -542,30 +517,26 @@ export default {
 
     async function saveFeature(feat) {
       try {
-        await apiFetch(`/landing/admin/plan-features/${feat.id}`, {
-          method: "PUT", body: JSON.stringify(feat)
-        })
-      } catch (e) { showToast(e.message, "error") }
+        await api.put(`/landing/admin/plan-features/${feat.id}`, feat)
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
     async function createFeature() {
       try {
-        const created = await apiFetch("/landing/admin/plan-features", {
-          method: "POST", body: JSON.stringify(featureModal.data)
-        })
-        features.value.push(created)
+        const res = await api.post("/landing/admin/plan-features", featureModal.data)
+        features.value.push(res.data)
         featureModal.open = false
         showToast("Fila agregada", "success")
-      } catch (e) { showToast(e.message, "error") }
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
     async function deleteFeature(id) {
       if (!confirm("¿Eliminar esta fila del plan?")) return
       try {
-        await apiFetch(`/landing/admin/plan-features/${id}`, { method: "DELETE" })
+        await api.delete(`/landing/admin/plan-features/${id}`)
         features.value = features.value.filter(f => f.id !== id)
         showToast("Fila eliminada", "success")
-      } catch (e) { showToast(e.message, "error") }
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
     // ── Contactos ─────────────────────────────────────
@@ -576,16 +547,17 @@ export default {
     async function loadContacts() {
       loadingContacts.value = true
       try {
-        contacts.value = await apiFetch("/landing/admin/contacts")
-      } catch (e) { showToast(e.message, "error") }
+        const res = await api.get("/landing/admin/contacts")
+        contacts.value = res.data
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
       finally { loadingContacts.value = false }
     }
 
     async function markRead(c) {
       try {
-        await apiFetch(`/landing/admin/contacts/${c.id}/read`, { method: "PUT" })
+        await api.put(`/landing/admin/contacts/${c.id}/read`)
         c.is_read = true
-      } catch (e) { showToast(e.message, "error") }
+      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
     function formatDate(dt) {
