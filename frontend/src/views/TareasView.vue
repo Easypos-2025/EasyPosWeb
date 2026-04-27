@@ -289,22 +289,30 @@ function clearError(e) { e.target.classList.remove("field-invalid") }
 async function loadAll() {
   loading.value = true
   try {
-    const [tasksRes, statusRes, assetsRes, workersRes, usersRes] = await Promise.all([
+    const [tasksRes, statusRes, assetsRes, workersRes] = await Promise.all([
       api.get("/tasks/"),
       api.get("/task-status/"),
       api.get("/assets/"),
       api.get("/workers/"),
-      api.get("/users/"),
     ])
     tasks.value    = tasksRes.data
     statuses.value = statusRes.data
     assets.value   = assetsRes.data
     workers.value  = workersRes.data
-    users.value    = usersRes.data
   } catch (e) {
-    showToast("Error cargando datos", "error")
+    const status = e.response?.status
+    const detail = e.response?.data?.detail || e.message || "Sin detalle"
+    showToast(`Error cargando datos (${status ?? "red"}: ${detail})`, "error")
   } finally {
     loading.value = false
+  }
+
+  // /users/ es admin-only — fallo silencioso para no bloquear la vista
+  try {
+    const usersRes = await api.get("/users/")
+    users.value = usersRes.data
+  } catch {
+    users.value = []
   }
 }
 

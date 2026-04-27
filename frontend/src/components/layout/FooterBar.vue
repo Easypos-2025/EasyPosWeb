@@ -350,10 +350,9 @@ onUnmounted(() => {
 
 /* ── RESPONSIVE ── */
 @media (max-width: 768px) {
-  .footer-copy    { display: none; }
-  .footer-version { display: none; }
+  .footer-copy       { display: none; }
   .footer-brand-name { display: none; }
-  .footer-content { padding: 0 10px; }
-  .assoc-toast    { width: 220px; right: 10px; bottom: 48px; }
+  .footer-content    { padding: 0 10px; }
+  .assoc-toast       { width: 220px; right: 10px; bottom: 48px; }
 }
 </style>
