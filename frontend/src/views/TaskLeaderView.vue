@@ -177,12 +177,16 @@
           <span class="status-badge" :class="statusClass(task.status_id)">{{ task.status_name }}</span>
         </span>
         <span class="tl-col tl-titulo">
-          <span class="tl-title-text">{{ task.title }}</span>
+          <TaskTooltip :task="task" :asset-name="assetName(task.asset_id)">
+            <span class="tl-title-text">{{ task.title }}</span>
+          </TaskTooltip>
           <span v-if="isOverdue(task)" class="overdue-chip"><i class="bi bi-exclamation-triangle-fill"></i></span>
         </span>
         <span class="tl-col tl-activo">
-          <i v-if="task.asset_id" class="bi bi-building tl-activo-icon"></i>
-          {{ task.asset_id ? assetName(task.asset_id) : '—' }}
+          <TaskTooltip :task="task" :asset-name="assetName(task.asset_id)">
+            <i v-if="task.asset_id" class="bi bi-building tl-activo-icon"></i>
+            {{ task.asset_id ? assetName(task.asset_id) : '—' }}
+          </TaskTooltip>
         </span>
         <span class="tl-col tl-acciones" @click.stop>
           <button v-if="isWorker" class="tl-btn tl-btn-pen"
@@ -283,6 +287,7 @@ import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import TaskTooltip from "@/components/TaskTooltip.vue"
 
 const router = useRouter()
 

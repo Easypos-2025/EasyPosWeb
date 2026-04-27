@@ -16,6 +16,7 @@ class AssetCreate(BaseModel):
 
     name: str
     category_id: int
+    client_id: Optional[int] = None
     description: Optional[str] = ""
     location: Optional[str] = ""
 
@@ -28,6 +29,7 @@ class AssetUpdate(BaseModel):
 
     name: str
     category_id: int
+    client_id: Optional[int] = None
     description: Optional[str] = ""
     location: Optional[str] = ""
 
@@ -41,6 +43,7 @@ class AssetResponse(BaseModel):
     id: int
     name: str
     category_id: int
+    client_id: Optional[int] = None
     description: Optional[str] = ""
     location: Optional[str] = ""
 

@@ -4,16 +4,22 @@
     <!-- FILTROS -->
     <div class="card p-3 mt-3">
       <div class="row g-2 align-items-end">
-        <div class="col-md-5 col-12">
+        <div class="col-md-4 col-12">
           <input type="text" class="form-control" placeholder="Buscar activo..." v-model="search" />
         </div>
-        <div class="col-md-4 col-6">
+        <div class="col-md-3 col-6">
           <select class="form-select" v-model="filterCategory">
             <option value="">Todas las categorías</option>
             <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
-        <div class="col-md-3 col-6 text-end">
+        <div class="col-md-3 col-6">
+          <select class="form-select" v-model="filterClient">
+            <option value="">Todos los clientes</option>
+            <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </div>
+        <div class="col-md-2 col-12 text-end">
           <button class="btn btn-primary" @click="openCreate">
             <i class="bi bi-plus-lg"></i> Nuevo activo
           </button>
@@ -28,6 +34,7 @@
           <tr>
             <th>Nombre</th>
             <th>Categoría</th>
+            <th>Cliente</th>
             <th>Ubicación</th>
             <th>Descripción</th>
             <th style="width:120px">Acciones</th>
@@ -36,9 +43,10 @@
         <tbody>
           <tr v-for="a in filtered" :key="a.id">
             <td>{{ a.name }}</td>
-            <td>{{ categoryName(a.category_id) }}</td>
+            <td>{{ a.category_name || categoryName(a.category_id) }}</td>
+            <td>{{ a.client_name || '—' }}</td>
             <td>{{ a.location || '—' }}</td>
-            <td class="text-truncate" style="max-width:220px">{{ a.description || '—' }}</td>
+            <td class="text-truncate" style="max-width:200px">{{ a.description || '—' }}</td>
             <td>
               <button class="btn btn-warning btn-sm me-1" @click="openEdit(a)">
                 <i class="bi bi-pencil"></i> Editar
@@ -49,7 +57,7 @@
             </td>
           </tr>
           <tr v-if="filtered.length === 0">
-            <td colspan="5" class="text-center text-muted py-4">No hay resultados</td>
+            <td colspan="6" class="text-center text-muted py-4">No hay resultados</td>
           </tr>
         </tbody>
       </table>
@@ -73,6 +81,13 @@
             <select v-model="editForm.category_id" data-v="category" class="form-select" @change="clearError($event)">
               <option value="">— Seleccionar —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Cliente</label>
+            <select v-model="editForm.client_id" class="form-select">
+              <option :value="null">— Sin cliente —</option>
+              <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
           <div class="fg">
@@ -103,19 +118,22 @@ import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 
-const assets     = ref([])
-const categories = ref([])
-const search          = ref("")
-const filterCategory  = ref("")
-const showModal  = ref(false)
-const saving     = ref(false)
-const editForm   = ref({})
+const assets        = ref([])
+const categories    = ref([])
+const clients       = ref([])
+const search        = ref("")
+const filterCategory = ref("")
+const filterClient  = ref("")
+const showModal     = ref(false)
+const saving        = ref(false)
+const editForm      = ref({})
 
 const filtered = computed(() =>
   assets.value.filter(a => {
     const matchSearch   = (a.name || "").toLowerCase().includes(search.value.toLowerCase())
     const matchCategory = !filterCategory.value || a.category_id === filterCategory.value
-    return matchSearch && matchCategory
+    const matchClient   = !filterClient.value || a.client_id === filterClient.value
+    return matchSearch && matchCategory && matchClient
   })
 )
 
@@ -125,19 +143,21 @@ function categoryName(id) {
 
 async function load() {
   try {
-    const [aRes, cRes] = await Promise.all([
+    const [aRes, cRes, clRes] = await Promise.all([
       api.get("/assets/"),
       api.get("/asset-categories/"),
+      api.get("/clients"),
     ])
     assets.value     = aRes.data
     categories.value = cRes.data
+    clients.value    = clRes.data.filter(c => c.is_active)
   } catch {
     showToast("Error cargando activos", "error")
   }
 }
 
 function openCreate() {
-  editForm.value = { id: null, name: "", category_id: "", location: "", description: "" }
+  editForm.value = { id: null, name: "", category_id: "", client_id: null, location: "", description: "" }
   showModal.value = true
 }
 

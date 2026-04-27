@@ -24,15 +24,30 @@
           </p>
         </div>
       </div>
-      <div class="header-actions" v-if="!isWorkerRole && task">
-        <button class="btn btn-danger btn-sm" @click="handleDelete">
-          <i class="bi bi-trash"></i>
-        </button>
-        <button class="btn btn-primary" @click="saveTask" :disabled="saving">
-          <i v-if="saving" class="bi bi-arrow-repeat spin"></i>
-          <i v-else class="bi bi-floppy"></i>
-          {{ saving ? 'Guardando...' : 'Guardar cambios' }}
-        </button>
+      <div class="header-actions" v-if="task">
+        <!-- Factura / Recibo — visual, sin funcionalidad aún -->
+        <div class="billing-group" title="Disponible próximamente">
+          <button class="btn-billing btn-factura" disabled>
+            <i class="bi bi-file-earmark-text"></i>
+            <span>Factura</span>
+            <span class="soon-chip">DIAN</span>
+          </button>
+          <button class="btn-billing btn-recibo" disabled>
+            <i class="bi bi-receipt"></i>
+            <span>Recibo</span>
+          </button>
+        </div>
+
+        <template v-if="!isWorkerRole">
+          <button class="btn btn-danger btn-sm" @click="handleDelete">
+            <i class="bi bi-trash"></i>
+          </button>
+          <button class="btn btn-primary" @click="saveTask" :disabled="saving">
+            <i v-if="saving" class="bi bi-arrow-repeat spin"></i>
+            <i v-else class="bi bi-floppy"></i>
+            {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+          </button>
+        </template>
       </div>
     </div>
 
@@ -797,5 +812,31 @@ onMounted(load)
   .span2       { grid-column:span 1; }
   .form-row4   { grid-template-columns:1fr 1fr; }
   .fg.col2     { grid-column:span 2; }
+}
+
+/* ── BOTONES FACTURA / RECIBO ── */
+.billing-group {
+  display: flex;
+  gap: 6px;
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn-billing {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  border: 1.5px solid; cursor: not-allowed;
+  position: relative;
+}
+.btn-factura {
+  background: #eff6ff; border-color: #3b82f6; color: #1d4ed8;
+}
+.btn-recibo {
+  background: #f0fdf4; border-color: #22c55e; color: #15803d;
+}
+.soon-chip {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.5px;
+  background: #3b82f6; color: #fff;
+  padding: 1px 5px; border-radius: 6px; margin-left: 2px;
 }
 </style>

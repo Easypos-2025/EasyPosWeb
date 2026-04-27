@@ -1,7 +1,9 @@
 import uuid
 from pathlib import Path
+from datetime import datetime, date
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,9 +21,9 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 CHUNK = 256 * 1024                  # 256 KB
 
-ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf", ".mp4", ".mov"}
+# Solo imágenes para evidencias de novedades
+ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 IMG_EXT     = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-VIDEO_EXT   = {".mp4", ".mov"}
 
 
 # ── Auth helper ─────────────────────────────────────────────────────────────
@@ -77,9 +79,34 @@ def _ser_ev(ev: NoveltyEvidence) -> dict:
     }
 
 
+# ── GET /novelties/users-list (solo SYSADMIN/Admin) ─────────────────────────
+@router.get("/users-list")
+def list_novelty_users(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    user    = _get_user(authorization, db)
+    can_all = _can_manage_all(user, db)
+    if not can_all:
+        raise HTTPException(status_code=403, detail="Sin permiso")
+
+    user_ids = (
+        db.query(Novelty.user_id)
+        .filter(Novelty.company_id == user.company_id)
+        .distinct()
+        .all()
+    )
+    ids = [r[0] for r in user_ids]
+    users = db.query(User).filter(User.id.in_(ids)).order_by(User.nombre).all()
+    return [{"id": u.id, "nombre": u.nombre} for u in users]
+
+
 # ── GET /novelties ───────────────────────────────────────────────────────────
 @router.get("")
 def list_novelties(
+    filter_user_id: Optional[int] = Query(None),
+    date_from:      Optional[str] = Query(None),
+    date_to:        Optional[str] = Query(None),
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
@@ -89,6 +116,21 @@ def list_novelties(
     query = db.query(Novelty).filter(Novelty.company_id == user.company_id)
     if not can_all:
         query = query.filter(Novelty.user_id == user.id)
+    elif filter_user_id:
+        query = query.filter(Novelty.user_id == filter_user_id)
+
+    if date_from:
+        try:
+            df = datetime.fromisoformat(date_from[:10])
+            query = query.filter(Novelty.created_at >= df)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            dt = datetime.fromisoformat(date_to[:10]).replace(hour=23, minute=59, second=59)
+            query = query.filter(Novelty.created_at <= dt)
+        except ValueError:
+            pass
 
     novelties = query.order_by(Novelty.created_at.desc()).all()
 
@@ -235,9 +277,12 @@ async def upload_evidence(
 
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXT:
-        raise HTTPException(status_code=415, detail=f"Formato no permitido: {ext}")
+        raise HTTPException(
+            status_code=415,
+            detail=f"Solo se permiten imágenes (jpg, jpeg, png, webp, gif). Formato recibido: {ext}"
+        )
 
-    file_type = "image" if ext in IMG_EXT else "video" if ext in VIDEO_EXT else "document"
+    file_type = "image"
 
     filename  = f"{novelty_id}_{uuid.uuid4().hex}{ext}"
     file_path = UPLOADS_DIR / filename

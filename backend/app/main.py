@@ -47,6 +47,7 @@ from app.routers.support_ticket_router import router as support_ticket_router
 from app.routers.topbar_menu_router import router as topbar_menu_router
 from app.routers.system_config_router import router as system_config_router
 from app.routers.footer_router import router as footer_router
+from app.routers.clients_router import router as clients_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -75,6 +76,32 @@ def _init_db_data():
             db.commit()
         except Exception:
             db.rollback()
+
+        # Agregar client_id en assets si no existe
+        try:
+            db.execute(text("ALTER TABLE assets ADD COLUMN client_id INT NULL"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Registrar módulo Clientes en system_modules si no existe
+        from app.models.system_module_model import SystemModule
+        if not db.query(SystemModule).filter(SystemModule.route == "/configuration/clients").first():
+            db.add(SystemModule(
+                name="Clientes", route="/configuration/clients",
+                icon="bi-people", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=False
+            ))
+            db.commit()
+
+        # Registrar módulo Completar Tareas en system_modules si no existe
+        if not db.query(SystemModule).filter(SystemModule.route == "/tasks/completar-info").first():
+            db.add(SystemModule(
+                name="Completar Información Tareas", route="/tasks/completar-info",
+                icon="bi-clipboard-check", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=False
+            ))
+            db.commit()
 
         # Datos iniciales system_config
         defaults_config = [
@@ -178,6 +205,7 @@ routers = [
     topbar_menu_router,
     system_config_router,
     footer_router,
+    clients_router,
 ]
 
 for router in routers:

@@ -21,6 +21,28 @@
         <i class="bi bi-search"></i>
         <input v-model="search" type="text" placeholder="Buscar por título..." />
       </div>
+
+      <!-- Filtro por usuario (solo SYSADMIN / Admin) -->
+      <select v-if="canManageAll" v-model="filterUserId" class="filter-select" @change="applyFilters">
+        <option :value="null">Todos los usuarios</option>
+        <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+      </select>
+
+      <!-- Filtros de fecha (todos los roles) -->
+      <div class="date-filters">
+        <input v-model="filterDateFrom" type="date" class="filter-date" title="Desde" @change="applyFilters" />
+        <span class="date-sep">–</span>
+        <input v-model="filterDateTo" type="date" class="filter-date" title="Hasta" @change="applyFilters" />
+        <button
+          v-if="filterDateFrom || filterDateTo || filterUserId"
+          class="btn-clear-filter"
+          @click="clearFilters"
+          title="Limpiar filtros de fecha"
+        >
+          <i class="bi bi-x-circle"></i>
+        </button>
+      </div>
+
       <div class="status-tabs">
         <button
           v-for="tab in statusTabs"
@@ -165,18 +187,10 @@
             <div class="evidence-section">
               <div class="evidence-section-header">
                 <h4><i class="bi bi-images"></i> Evidencias ({{ evidences.length }})</h4>
-                <label class="btn-upload-ev" :class="{ loading: uploadingEv }" title="Subir foto o video">
-                  <i v-if="uploadingEv" class="bi bi-hourglass-split"></i>
-                  <i v-else class="bi bi-cloud-upload"></i>
-                  <span>{{ uploadingEv ? 'Subiendo...' : 'Agregar' }}</span>
-                  <input
-                    type="file"
-                    accept="image/*,video/mp4,video/quicktime,.pdf"
-                    style="display:none"
-                    @change="uploadEvidence"
-                    :disabled="uploadingEv"
-                  />
-                </label>
+                <ImageCropperUpload
+                  :novelty-id="activeNovelty.id"
+                  @uploaded="onEvidenceUploaded"
+                />
               </div>
 
               <!-- Grid de evidencias -->
@@ -187,26 +201,20 @@
                   class="ev-item"
                 >
                   <img
-                    v-if="ev.file_type === 'image'"
                     :src="apiBase + ev.file_url"
                     class="ev-thumb"
                     @click="openLightbox(apiBase + ev.file_url)"
                     alt="Evidencia"
                   />
-                  <div v-else-if="ev.file_type === 'video'" class="ev-video-thumb" @click="openVideoModal(apiBase + ev.file_url)">
-                    <i class="bi bi-play-circle-fill"></i>
-                    <span>Video</span>
-                  </div>
-                  <div v-else class="ev-doc-thumb">
-                    <i class="bi bi-file-earmark"></i>
-                    <a :href="apiBase + ev.file_url" target="_blank">Ver</a>
-                  </div>
                   <button class="btn-del-ev" @click.stop="deleteEvidence(ev)" title="Eliminar evidencia">
                     <i class="bi bi-trash3"></i>
                   </button>
                 </div>
               </div>
-              <p v-else class="no-evidence">Aún no hay evidencias adjuntas.</p>
+              <div v-else class="no-evidence">
+                <i class="bi bi-camera"></i>
+                <p>Sin evidencias aún — presiona <strong>Foto</strong> para adjuntar imágenes</p>
+              </div>
             </div>
           </div>
 
@@ -233,22 +241,16 @@
       </div>
     </Teleport>
 
-    <!-- Visor video -->
-    <Teleport to="body">
-      <div v-if="videoUrl" class="lightbox" @click="videoUrl = null">
-        <video :src="videoUrl" class="lightbox-video" controls autoplay @click.stop></video>
-        <button class="lightbox-close" @click="videoUrl = null"><i class="bi bi-x-lg"></i></button>
-      </div>
-    </Teleport>
 
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
+import ImageCropperUpload from "@/components/ImageCropperUpload.vue"
 
 const companyStore = useCompanyStore()
 const apiBase      = import.meta.env.VITE_API_URL || ""
@@ -262,11 +264,15 @@ const canManageAll  = computed(() => {
 })
 
 // ── Data ────────────────────────────────────────────
-const novelties    = ref([])
-const loading      = ref(true)
-const saving       = ref(false)
-const search       = ref("")
-const filterStatus = ref("all")
+const novelties      = ref([])
+const loading        = ref(true)
+const saving         = ref(false)
+const search         = ref("")
+const filterStatus   = ref("all")
+const filterUserId   = ref(null)   // solo SYSADMIN/Admin
+const filterDateFrom = ref("")
+const filterDateTo   = ref("")
+const usersList      = ref([])     // para select de usuario (SYSADMIN)
 
 // ── Modales ─────────────────────────────────────────
 const showFormModal  = ref(false)
@@ -274,10 +280,8 @@ const showDetail     = ref(false)
 const editMode       = ref(false)
 const activeNovelty  = ref(null)
 const evidences      = ref([])
-const uploadingEv    = ref(false)
 const changingStatus = ref(false)
 const lightboxUrl    = ref(null)
-const videoUrl       = ref(null)
 
 const errors = ref({ title: "", description: "" })
 
@@ -325,13 +329,34 @@ function countByStatus(status) {
 async function load() {
   loading.value = true
   try {
-    const res     = await api.get("/novelties")
+    const params = new URLSearchParams()
+    if (filterUserId.value)   params.append("filter_user_id", filterUserId.value)
+    if (filterDateFrom.value) params.append("date_from", filterDateFrom.value)
+    if (filterDateTo.value)   params.append("date_to", filterDateTo.value)
+    const res = await api.get(`/novelties?${params.toString()}`)
     novelties.value = res.data
   } catch {
     showToast("Error cargando novedades", "error")
   } finally {
     loading.value = false
   }
+}
+
+async function loadUsersList() {
+  try {
+    const res = await api.get("/novelties/users-list")
+    usersList.value = Array.isArray(res.data) ? res.data : []
+  } catch {
+    usersList.value = []
+  }
+}
+
+function applyFilters() { load() }
+function clearFilters() {
+  filterUserId.value   = null
+  filterDateFrom.value = ""
+  filterDateTo.value   = ""
+  load()
 }
 
 // ── Formulario crear/editar ──────────────────────────
@@ -376,8 +401,13 @@ async function save() {
       await api.put(`/novelties/${form.value.id}`, { title: form.value.title, description: form.value.description })
       showToast("Novedad actualizada", "success")
     } else {
-      await api.post("/novelties", { title: form.value.title, description: form.value.description })
-      showToast("Novedad registrada", "success")
+      const res = await api.post("/novelties", { title: form.value.title, description: form.value.description })
+      closeFormModal()
+      await load()
+      // Abrir detalle automáticamente para que el usuario pueda agregar evidencias de inmediato
+      await openDetail(res.data)
+      showToast("Novedad registrada — agrega las evidencias fotográficas", "success")
+      return
     }
     closeFormModal()
     await load()
@@ -449,28 +479,10 @@ async function loadEvidences(noveltyId) {
   } catch {}
 }
 
-async function uploadEvidence(e) {
-  const file = e.target.files[0]
-  if (!file || !activeNovelty.value) return
-  e.target.value = ""
-
-  uploadingEv.value = true
-  const fd = new FormData()
-  fd.append("file", file)
-  try {
-    await api.post(`/novelties/${activeNovelty.value.id}/evidence`, fd, {
-      headers: { "Content-Type": "multipart/form-data" }
-    })
-    await loadEvidences(activeNovelty.value.id)
-    // Actualizar contador en la lista
-    const idx = novelties.value.findIndex(n => n.id === activeNovelty.value.id)
-    if (idx !== -1) novelties.value[idx].evidence_count = evidences.value.length
-    showToast("Evidencia subida", "success")
-  } catch (err) {
-    showToast(err.response?.data?.detail || "Error al subir archivo", "error")
-  } finally {
-    uploadingEv.value = false
-  }
+async function onEvidenceUploaded(evidence) {
+  evidences.value.push(evidence)
+  const idx = novelties.value.findIndex(n => n.id === activeNovelty.value.id)
+  if (idx !== -1) novelties.value[idx].evidence_count = evidences.value.length
 }
 
 async function deleteEvidence(ev) {
@@ -496,7 +508,6 @@ async function deleteEvidence(ev) {
 
 // ── Lightbox / Video ─────────────────────────────────
 function openLightbox(url) { lightboxUrl.value = url }
-function openVideoModal(url) { videoUrl.value = url }
 
 // ── Helpers ──────────────────────────────────────────
 function fmtDate(iso) {
@@ -510,6 +521,7 @@ onMounted(async () => {
   const stored = localStorage.getItem("user")
   if (stored) storedUser.value = JSON.parse(stored)
   await load()
+  if (canManageAll.value) await loadUsersList()
 })
 </script>
 
@@ -585,6 +597,32 @@ onMounted(async () => {
 }
 
 .search-box .bi { opacity: 0.4; font-size: 14px; }
+
+.filter-select {
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--card-bg, #fff);
+  font-size: 13px; color: var(--text-main, #1e293b);
+  min-width: 170px;
+}
+
+.date-filters {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.filter-date {
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--card-bg, #fff);
+  font-size: 13px; color: var(--text-main, #1e293b);
+}
+.date-sep { color: #94a3b8; font-size: 13px; }
+.btn-clear-filter {
+  background: none; border: none; color: #94a3b8;
+  font-size: 16px; cursor: pointer; padding: 4px;
+  border-radius: 6px; display: flex; align-items: center;
+  transition: color 0.15s;
+}
+.btn-clear-filter:hover { color: #ef4444; }
 
 .status-tabs {
   display: flex;
@@ -998,12 +1036,16 @@ onMounted(async () => {
 .ev-item:hover .btn-del-ev { opacity: 1; }
 
 .no-evidence {
-  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 16px;
   color: var(--text-muted, #94a3b8);
   text-align: center;
-  padding: 20px;
-  margin: 0;
 }
+.no-evidence .bi { font-size: 28px; opacity: 0.4; }
+.no-evidence p   { font-size: 12px; margin: 0; line-height: 1.5; }
 
 /* Botones */
 .btn-primary {

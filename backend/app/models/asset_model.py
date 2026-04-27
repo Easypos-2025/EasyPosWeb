@@ -21,6 +21,8 @@ class Asset(Base):
 
     category_id: Mapped[int] = mapped_column(ForeignKey("asset_categories.id"))
 
+    client_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clients.id"), nullable=True)
+
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     location: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)

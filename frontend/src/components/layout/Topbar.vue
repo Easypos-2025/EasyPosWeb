@@ -14,17 +14,46 @@
 
       <div v-if="logo" class="topbar-divider"></div>
 
+      <!-- Desktop: select normal -->
       <select
         v-if="companyStore.companies.length > 1"
         :value="companyStore.selectedCompany?.id"
         @change="onCompanyChange"
-        class="company-select"
+        class="company-select company-select-desktop"
         title="Cambiar empresa"
       >
         <option v-for="c in companyStore.companies" :key="c.id" :value="c.id">
           {{ c.name }}
         </option>
       </select>
+
+      <!-- Móvil: icono compacto + dropdown -->
+      <div
+        v-if="companyStore.companies.length > 1"
+        class="company-select-mobile"
+        ref="companyDropRef"
+      >
+        <button class="btn-company-mobile" @click.stop="toggleCompanyDrop" title="Cambiar empresa">
+          <i class="bi bi-buildings"></i>
+          <i class="bi bi-chevron-down company-arr"></i>
+        </button>
+        <Transition name="dropdown-fade">
+          <div v-if="companyDropOpen" class="dropdown-panel company-drop-panel">
+            <div class="dropdown-header">Seleccionar empresa</div>
+            <button
+              v-for="c in companyStore.companies"
+              :key="c.id"
+              class="dropdown-item"
+              :class="{ 'item-active-co': companyStore.selectedCompany?.id === c.id }"
+              @click="selectCompanyMobile(c)"
+            >
+              <span class="item-icon"><i class="bi bi-building"></i></span>
+              <span class="item-name">{{ c.name }}</span>
+              <i v-if="companyStore.selectedCompany?.id === c.id" class="bi bi-check2 item-check"></i>
+            </button>
+          </div>
+        </Transition>
+      </div>
 
       <!-- Plan + campana de notificaciones (juntos, zona central) -->
       <div class="plan-notif-group">
@@ -138,8 +167,10 @@ const router       = useRouter()
 const companyPlan  = ref({ plan_name: "", expiration_date: null })
 const unreadNotif  = ref(0)
 const menuItems    = ref([])
-const dropdownOpen = ref(false)
-const dropdownRef  = ref(null)
+const dropdownOpen    = ref(false)
+const dropdownRef     = ref(null)
+const companyDropOpen = ref(false)
+const companyDropRef  = ref(null)
 
 // ── Notificaciones ──────────────────────────────────
 async function loadUnreadCount() {
@@ -193,6 +224,19 @@ function handleOutsideClick(e) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
     dropdownOpen.value = false
   }
+  if (companyDropRef.value && !companyDropRef.value.contains(e.target)) {
+    companyDropOpen.value = false
+  }
+}
+
+function toggleCompanyDrop() {
+  companyDropOpen.value = !companyDropOpen.value
+}
+
+async function selectCompanyMobile(company) {
+  companyDropOpen.value = false
+  await companyStore.setCompany(company)
+  await loadPlan(company.id)
 }
 
 // ── Heartbeat (cada 3 min) ──────────────────────────
@@ -299,7 +343,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.company-select {
+.company-select-desktop {
   background: rgba(255,255,255,0.12);
   border: 1px solid rgba(255,255,255,0.2);
   border-radius: 6px;
@@ -314,11 +358,43 @@ onUnmounted(() => {
   flex-shrink: 0;
   text-align: center;
 }
-
-.company-select option {
+.company-select-desktop option {
   background: var(--topbar-bg);
   color: var(--topbar-text);
 }
+
+/* Versión móvil — solo icono + flecha */
+.company-select-mobile {
+  display: none;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.btn-company-mobile {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  color: var(--topbar-text);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 17px;
+  transition: background 0.15s;
+}
+.btn-company-mobile:hover { background: rgba(255,255,255,0.2); }
+.company-arr { font-size: 10px; opacity: 0.75; }
+
+.company-drop-panel {
+  left: 0;
+  right: auto;
+  min-width: 200px;
+}
+
+.item-active-co { background: rgba(255,255,255,0.1); }
+.item-active-co .item-name { font-weight: 700; }
+.item-check { margin-left: auto; color: #22c55e; font-size: 14px; }
 
 /* Plan + campana juntos */
 .plan-notif-group {
@@ -592,16 +668,19 @@ onUnmounted(() => {
 
 /* ── RESPONSIVE ── */
 @media (max-width: 768px) {
-  .btn-menu-left    { display: flex; }
-  .user-text        { display: none; }
-  .company-title    { font-size: 13px; max-width: 100px; }
-  .company-profile-type { display: none; }
-  .topbar-divider   { display: none; }
-  .brand-logo       { height: 34px; }
-  .plan-name        { display: none; }
-  .plan-exp         { display: none; }
-  .plan-badge       { padding: 3px 6px; }
-  .sysadmin-badge   { display: none; }
+  .btn-menu-left         { display: flex; }
+  .user-text             { display: none; }
+  .company-title         { font-size: 13px; max-width: 100px; }
+  .company-profile-type  { display: none; }
+  .topbar-divider        { display: none; }
+  .brand-logo            { height: 34px; }
+  .plan-name             { display: none; }
+  .plan-exp              { display: none; }
+  .plan-badge            { padding: 3px 6px; }
+  .sysadmin-badge        { display: none; }
+  /* intercambio select empresa */
+  .company-select-desktop { display: none; }
+  .company-select-mobile  { display: block; }
 }
 
 @media (min-width: 769px) and (max-width: 1100px) {

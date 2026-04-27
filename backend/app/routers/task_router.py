@@ -51,22 +51,84 @@ def get_task_stats(
 
     hoy = datetime.now()
     return {
-        "total":      base.count(),
-        "pendiente":  base.filter(Task.status_id == 1).count(),
-        "asignada":   base.filter(Task.status_id == 2).count(),
-        "progreso":   base.filter(Task.status_id == 3).count(),
-        "revision":   base.filter(Task.status_id == 4).count(),
-        "finalizada": base.filter(Task.status_id == 5).count(),
-        "cancelada":  base.filter(Task.status_id == 6).count(),
-        "atrasadas":  base.filter(
+        "total":           base.count(),
+        "pendiente":       base.filter(Task.status_id == 1).count(),
+        "asignada":        base.filter(Task.status_id == 2).count(),
+        "progreso":        base.filter(Task.status_id == 3).count(),
+        "revision":        base.filter(Task.status_id == 4).count(),
+        "finalizada":      base.filter(Task.status_id == 5).count(),
+        "cancelada":       base.filter(Task.status_id == 6).count(),
+        "atrasadas":       base.filter(
             Task.due_date < hoy,
             Task.status_id.notin_([5, 6])
         ).count(),
-        "sin_ejecutor": base.filter(
+        "sin_ejecutor":    base.filter(
             Task.worker_id == None,
             Task.status_id.notin_([5, 6])
         ).count(),
+        # Tareas pendiente=1 sin responsable asignado
+        "sin_asignar":     base.filter(
+            Task.status_id == 1,
+            Task.assigned_to == None
+        ).count(),
+        # Tareas asignadas=2 con información incompleta (sin ejecutor o sin fecha límite)
+        "info_incompleta": base.filter(
+            Task.status_id == 2,
+            (Task.worker_id == None) | (Task.due_date == None)
+        ).count(),
     }
+
+
+# ─── TAREAS CON INFORMACIÓN INCOMPLETA ────────────────────────
+@router.get("/incomplete-info")
+def get_incomplete_tasks(
+    mine: bool = Query(False),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Devuelve tareas que necesitan completar información:
+    - Sin asignar: status=1 AND assigned_to IS NULL
+    - Info incompleta: status=2 AND (worker_id IS NULL OR due_date IS NULL)
+    Si mine=True, solo las asignadas al usuario autenticado.
+    """
+    user = _get_user(authorization, db)
+    sm   = _status_map(db)
+    wm   = _worker_map(db)
+    um   = _user_map(db)
+
+    q = db.query(Task)
+    if not _is_system(user, db):
+        q = q.filter(Task.company_id == user.company_id)
+
+    if mine:
+        q = q.filter(Task.assigned_to == user.id)
+
+    sin_asignar = q.filter(
+        Task.status_id == 1,
+        Task.assigned_to == None
+    ).all()
+
+    info_incompleta = q.filter(
+        Task.status_id == 2,
+        (Task.worker_id == None) | (Task.due_date == None)
+    ).all()
+
+    return {
+        "sin_asignar":     [_serialize(t, sm, wm, um) for t in sin_asignar],
+        "info_incompleta": [_serialize(t, sm, wm, um) for t in info_incompleta],
+    }
+
+
+# ─── USUARIOS disponibles para asignación de tareas ───────────
+@router.get("/users-list")
+def get_users_for_tasks(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    user = _get_user(authorization, db)
+    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.nombre).all()
+    return [{"id": u.id, "nombre": u.nombre, "email": u.email} for u in users]
 
 
 # ─── ACTIVOS disponibles (para selects en formularios de tareas) ─

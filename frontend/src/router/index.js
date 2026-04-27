@@ -97,6 +97,14 @@ const routes = [
       },
 
       {
+        path: "/configuration/clients",
+        name: "ClientsView",
+        component: () => import("@/views/ClientsView.vue"),
+        requiresAuth: true,
+        meta: { title: "ClientsView" }
+      },
+
+      {
         path: "/configuration/workers",
         name: "WorkersView",
         component: () => import("@/views/WorkersView.vue"),
@@ -124,6 +132,14 @@ const routes = [
         component: () => import("@/views/TaskLeaderView.vue"),
         requiresAuth: true,
         meta: { title: "TaskLeaderView" }
+      },
+
+      {
+        path: "/tasks/completar-info",
+        name: "TaskCompletarInfoView",
+        component: () => import("@/views/TaskCompletarInfoView.vue"),
+        requiresAuth: true,
+        meta: { title: "TaskCompletarInfoView" }
       },
       {
         path: "/tasks/:taskId/evidencias",

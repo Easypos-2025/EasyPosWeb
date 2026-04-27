@@ -44,7 +44,42 @@
       </div>
     </div>
 
-    <!-- ── SLOTS 2 y 3: PUBLICIDAD (ocultos si vacíos) ── -->
+    <!-- ── SLOT 2: TAREAS A COMPLETAR (Task Leader) ── -->
+    <div class="slot slot-incomplete" v-if="incompleteTasks.length > 0">
+      <div class="slot-header">
+        <span class="slot-title">
+          <i class="bi bi-clipboard-x"></i>
+          Completar info
+          <span class="notif-badge inc-badge">{{ incompleteTasks.length }}</span>
+        </span>
+        <button class="btn-go-complete" @click="goToCompletarInfo" title="Ver todas">
+          <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+      <div class="incomplete-list">
+        <div
+          v-for="t in incompleteTasks.slice(0,4)"
+          :key="t.id"
+          class="inc-item"
+          @click="goToCompletarInfo"
+        >
+          <div class="inc-dot"></div>
+          <div class="inc-body">
+            <p class="inc-text">{{ t.title }}</p>
+            <span class="inc-meta">
+              <i v-if="t.status_id === 1" class="bi bi-person-x"></i>
+              <i v-else class="bi bi-exclamation-circle"></i>
+              {{ t.status_id === 1 ? 'Sin asignar' : 'Info incompleta' }}
+            </span>
+          </div>
+        </div>
+        <div v-if="incompleteTasks.length > 4" class="inc-more">
+          +{{ incompleteTasks.length - 4 }} más pendientes
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SLOTS 3 y 4: PUBLICIDAD (ocultos si vacíos) ── -->
     <template v-for="(slot, index) in adSlots" :key="index">
       <div class="slot slot-ad" v-if="slot.active">
 
@@ -111,7 +146,7 @@ async function loadNotifications() {
     const res = await api.get("/task-comments/notifications/unread")
     notifications.value = Array.isArray(res.data) ? res.data : []
   } catch {
-    notifications.value = []   // siempre array aunque falle
+    notifications.value = []
   } finally {
     loadingNotif.value = false
   }
@@ -140,10 +175,35 @@ function fmtAgo(iso) {
   return `hace ${Math.floor(hrs / 24)} d`
 }
 
+// ── Tareas con info incompleta (para Task Leaders y Admin) ─────
+const incompleteTasks = ref([])
+
+async function loadIncompleteTasks() {
+  const token = localStorage.getItem("token")
+  if (!token) return
+  try {
+    const res = await api.get("/tasks/incomplete-info?mine=true")
+    const d = res.data
+    incompleteTasks.value = [
+      ...(d.sin_asignar || []),
+      ...(d.info_incompleta || []),
+    ]
+  } catch {
+    incompleteTasks.value = []
+  }
+}
+
+function goToCompletarInfo() {
+  router.push("/tasks/completar-info")
+}
+
 onMounted(() => {
   loadNotifications()
-  // Actualizar notificaciones cada 60 segundos
-  refreshTimer = setInterval(loadNotifications, 60000)
+  loadIncompleteTasks()
+  refreshTimer = setInterval(() => {
+    loadNotifications()
+    loadIncompleteTasks()
+  }, 60000)
 })
 
 onUnmounted(() => {
@@ -300,6 +360,45 @@ onUnmounted(() => {
   gap: 6px;
 }
 .notif-empty .bi { font-size: 20px; }
+
+/* ── TAREAS INCOMPLETAS ── */
+.slot-incomplete {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.inc-badge { background: #f59e0b !important; }
+.btn-go-complete {
+  background: none; border: none;
+  color: rgba(255,255,255,0.5); font-size: 13px;
+  cursor: pointer; padding: 2px 4px; border-radius: 4px;
+  transition: color 0.15s;
+}
+.btn-go-complete:hover { color: #fbbf24; }
+.incomplete-list {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+  max-height: 180px;
+}
+.inc-item {
+  display: flex; gap: 8px;
+  padding: 8px 10px 6px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  transition: background 0.15s;
+}
+.inc-item:hover { background: rgba(245,158,11,0.1); }
+.inc-dot {
+  width: 6px; height: 6px;
+  background: #f59e0b; border-radius: 50%;
+  flex-shrink: 0; margin-top: 5px;
+}
+.inc-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.inc-text { font-size: 11px; color: rgba(255,255,255,0.85); margin: 0; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inc-meta { font-size: 10px; color: rgba(255,255,255,0.4); display: flex; align-items: center; gap: 3px; }
+.inc-more { padding: 5px 10px; font-size: 10px; color: rgba(255,255,255,0.35); text-align: center; }
 
 /* ── PUBLICIDAD ── */
 .slot-ad {

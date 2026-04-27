@@ -10,7 +10,7 @@ import Swal from "sweetalert2"
  * @param {string} type     'success' | 'error' | 'warning' | 'info'
  * @param {number} timer    Milisegundos antes de cerrar (default 2500)
  */
-export function showToast(message, type = "success", timer = 2500) {
+export function showToast(message, type = "success", timer = 1500) {
   Swal.fire({
     title: message,
     icon: type === "warning" ? "warning"
@@ -20,7 +20,7 @@ export function showToast(message, type = "success", timer = 2500) {
     timer,
     timerProgressBar: true,
     showConfirmButton: false,
-    position: "center",
+    position: "bottom",
     customClass: {
       popup: "swal-toast-popup",
       title: "swal-toast-title"

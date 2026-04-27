@@ -35,6 +35,16 @@
         <span class="mk-value">{{ counts.sinEjecutor }}</span>
         <span class="mk-label">Sin Ejecutor</span>
       </div>
+      <div class="mini-kpi mk-sinasignar" :class="{ 'kpi-active': activeTab === 'sin_asignar' }"
+        @click="setTab('sin_asignar')">
+        <span class="mk-value">{{ stats.sin_asignar || 0 }}</span>
+        <span class="mk-label">Sin Asignar</span>
+      </div>
+      <div class="mini-kpi mk-incompleta" :class="{ 'kpi-active': activeTab === 'info_incompleta' }"
+        @click="$router.push('/tasks/completar-info')">
+        <span class="mk-value">{{ stats.info_incompleta || 0 }}</span>
+        <span class="mk-label">Info Incompleta</span>
+      </div>
     </div>
 
     <!-- FILTROS -->
@@ -152,12 +162,16 @@
           <span class="status-badge" :class="statusClass(task.status_id)">{{ task.status_name }}</span>
         </span>
         <span class="tl-col tl-titulo">
-          <span class="tl-title-text">{{ task.title }}</span>
+          <TaskTooltip :task="task" :asset-name="assetName(task.asset_id)">
+            <span class="tl-title-text">{{ task.title }}</span>
+          </TaskTooltip>
           <span v-if="isOverdue(task)" class="overdue-chip"><i class="bi bi-exclamation-triangle-fill"></i></span>
         </span>
         <span class="tl-col tl-activo">
-          <i v-if="task.asset_id" class="bi bi-building tl-activo-icon"></i>
-          {{ task.asset_id ? assetName(task.asset_id) : '—' }}
+          <TaskTooltip :task="task" :asset-name="assetName(task.asset_id)">
+            <i v-if="task.asset_id" class="bi bi-building tl-activo-icon"></i>
+            {{ task.asset_id ? assetName(task.asset_id) : '—' }}
+          </TaskTooltip>
         </span>
         <span class="tl-col tl-acciones" @click.stop>
           <button class="tl-btn tl-btn-eye"
@@ -178,13 +192,15 @@
 import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import KpiStrip from "@/components/dashboard/KpiStrip.vue"
+import TaskTooltip from "@/components/TaskTooltip.vue"
 import api from "@/services/apis"
 
 const router = useRouter()
 
 // ── Estado ──────────────────────────────────────────────────
 const stats       = ref({ total:0, pendiente:0, progreso:0, revision:0,
-                           finalizada:0, cancelada:0, atrasadas:0, sin_ejecutor:0 })
+                           finalizada:0, cancelada:0, atrasadas:0, sin_ejecutor:0,
+                           sin_asignar:0, info_incompleta:0 })
 const tasks       = ref([])
 const assets      = ref([])
 const workers     = ref([])
@@ -237,6 +253,8 @@ const filtered = computed(() => {
     list = list.filter(t => isOverdue(t))
   } else if (activeTab.value === "unassigned") {
     list = list.filter(t => !t.worker_id && ![5,6].includes(t.status_id))
+  } else if (activeTab.value === "sin_asignar") {
+    list = list.filter(t => t.status_id === 1 && !t.assigned_to)
   } else {
     const tabMap = { all: null, pending: 1, progress: 3, revision: 4, done: 5 }
     const sid = tabMap[activeTab.value]
@@ -304,6 +322,10 @@ onMounted(async () => {
 .mk-atrasada .mk-value { color:#ef4444; }
 .mk-sinasig    { border-top-color:#94a3b8; }
 .mk-sinasig .mk-value  { color:#64748b; }
+.mk-sinasignar { border-top-color:#f97316; }
+.mk-sinasignar .mk-value { color:#ea580c; }
+.mk-incompleta { border-top-color:#f59e0b; cursor:pointer; }
+.mk-incompleta .mk-value { color:#d97706; }
 
 /* FILTER BAR */
 .filter-bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
