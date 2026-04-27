@@ -67,7 +67,13 @@
                 <i :class="showPass ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               </button>
             </div>
-            <span v-if="errors.password" class="field-error">{{ errors.password }}</span>
+            <div class="password-rules">
+              <small :class="passwordRules.length  ? 'rule-ok' : 'rule-bad'">✔ Mínimo 8 caracteres</small>
+              <small :class="passwordRules.upper   ? 'rule-ok' : 'rule-bad'">✔ Al menos una mayúscula</small>
+              <small :class="passwordRules.lower   ? 'rule-ok' : 'rule-bad'">✔ Al menos una minúscula</small>
+              <small :class="passwordRules.number  ? 'rule-ok' : 'rule-bad'">✔ Al menos un número</small>
+              <small :class="passwordRules.special ? 'rule-ok' : 'rule-bad'">✔ Al menos un carácter especial</small>
+            </div>
           </div>
 
           <div class="field-group" :class="{ error: errors.confirm }">
@@ -82,7 +88,9 @@
                 <i :class="showConfirm ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               </button>
             </div>
-            <span v-if="errors.confirm" class="field-error">{{ errors.confirm }}</span>
+            <small v-if="form.confirm" :class="matchPassword ? 'rule-ok' : 'rule-bad'">
+              {{ matchPassword ? '✔ Las contraseñas coinciden' : '✖ Las contraseñas no coinciden' }}
+            </small>
           </div>
 
           <div v-if="apiError" class="api-error">
@@ -105,7 +113,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue"
 import { useRoute } from "vue-router"
 import api from "@/services/apis"
 
@@ -123,6 +131,19 @@ const info        = ref(null)
 
 const form   = ref({ nombre: "", email: "", password: "", confirm: "" })
 const errors = ref({ nombre: "", email: "", password: "", confirm: "" })
+
+const passwordRules = computed(() => {
+  const v = form.value.password
+  return {
+    length:  v.length >= 8,
+    upper:   /[A-Z]/.test(v),
+    lower:   /[a-z]/.test(v),
+    number:  /[0-9]/.test(v),
+    special: /[!@#$%^&*(),.?":{}|<>]/.test(v),
+  }
+})
+const isPasswordValid = computed(() => Object.values(passwordRules.value).every(v => v))
+const matchPassword   = computed(() => form.value.password && form.value.password === form.value.confirm)
 
 onMounted(async () => {
   try {
@@ -144,10 +165,10 @@ function validate() {
   if (!form.value.email.trim() || !form.value.email.includes("@")) {
     errors.value.email = "Email inválido"; ok = false
   }
-  if (form.value.password.length < 8) {
-    errors.value.password = "Mínimo 8 caracteres"; ok = false
+  if (!isPasswordValid.value) {
+    errors.value.password = "La contraseña no cumple los requisitos de seguridad"; ok = false
   }
-  if (form.value.password !== form.value.confirm) {
+  if (!matchPassword.value) {
     errors.value.confirm = "Las contraseñas no coinciden"; ok = false
   }
   return ok
@@ -282,6 +303,16 @@ function fmtDate(iso) {
 .field-group.error input { border-color: #ef4444; }
 
 .field-error { font-size: 11px; color: #ef4444; }
+
+.password-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 7px;
+}
+.password-rules small { font-size: 12px; line-height: 1.4; }
+.rule-ok  { color: #16a34a; }
+.rule-bad { color: #ef4444; }
 
 .pass-wrap { position: relative; }
 .pass-wrap input { padding-right: 42px; }
