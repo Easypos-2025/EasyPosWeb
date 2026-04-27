@@ -116,7 +116,7 @@
     </form>
 
     <!-- ── INVITACIÓN POR LINK ── -->
-    <div v-if="can('Users', 'can_create')" class="invite-section">
+    <div v-if="isSysAdmin || isAdmin" class="invite-section">
       <div class="invite-section-header">
         <div>
           <strong><i class="bi bi-link-45deg"></i> Invitar por link</strong>
@@ -295,7 +295,8 @@ const showModal = ref(false)
 const showDeleteModal = ref(false)
 const userToDelete = ref(null)
 const currentUser = JSON.parse(localStorage.getItem("user")) || {}
-const isSysAdmin = currentUser.is_system
+const isSysAdmin  = currentUser.is_system
+const isAdmin     = (currentUser.role || "").toLowerCase().includes("admin")
 
 const planInfo = ref({ current: 0, max: -1, plan_name: "", can_add: true })
 const usersRaw = ref([])

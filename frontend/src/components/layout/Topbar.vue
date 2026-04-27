@@ -132,7 +132,16 @@
               <span v-if="isItemPending(item)" class="badge-soon">Próximo</span>
             </button>
 
-            <div v-if="menuItems.length === 0" class="dropdown-empty">
+            <!-- Invitar usuario — solo admin/sysadmin -->
+            <template v-if="canInvite">
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item" @click="goInvite">
+                <span class="item-icon"><i class="bi bi-link-45deg"></i></span>
+                <span class="item-name">Invitar usuario</span>
+              </button>
+            </template>
+
+            <div v-if="menuItems.length === 0 && !canInvite" class="dropdown-empty">
               <i class="bi bi-inbox"></i>
               Sin opciones disponibles
             </div>
@@ -151,7 +160,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watchEffect } from "vue"
+import { ref, computed, onMounted, onUnmounted, watchEffect } from "vue"
 import { useRouter } from "vue-router"
 import { getThemeState } from "@/utils/theme"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -190,6 +199,17 @@ async function loadPlan(companyId) {
   } catch {
     companyPlan.value = { plan_name: "", expiration_date: null }
   }
+}
+
+const canInvite = computed(() => {
+  if (companyStore.isSystem) return true
+  const role = user.value?.role?.toLowerCase() || ""
+  return role.includes("admin")
+})
+
+function goInvite() {
+  dropdownOpen.value = false
+  router.push("/configuration/users")
 }
 
 // ── Menú dinámico topbar ────────────────────────────
@@ -664,6 +684,12 @@ onUnmounted(() => {
 .dropdown-fade-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+  margin: 4px 6px;
 }
 
 /* ── RESPONSIVE ── */
