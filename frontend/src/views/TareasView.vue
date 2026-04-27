@@ -288,32 +288,33 @@ function clearError(e) { e.target.classList.remove("field-invalid") }
 // ── Carga de datos ───────────────────────────────────────────────
 async function loadAll() {
   loading.value = true
-  try {
-    const [tasksRes, statusRes, assetsRes, workersRes] = await Promise.all([
-      api.get("/tasks/"),
-      api.get("/task-status/"),
-      api.get("/assets/"),
-      api.get("/workers/"),
-    ])
-    tasks.value    = tasksRes.data
-    statuses.value = statusRes.data
-    assets.value   = assetsRes.data
-    workers.value  = workersRes.data
-  } catch (e) {
-    const status = e.response?.status
-    const detail = e.response?.data?.detail || e.message || "Sin detalle"
-    showToast(`Error cargando datos (${status ?? "red"}: ${detail})`, "error")
-  } finally {
-    loading.value = false
+
+  const [tasksRes, statusRes, assetsRes, workersRes] = await Promise.allSettled([
+    api.get("/tasks/"),
+    api.get("/task-status/"),
+    api.get("/assets/"),
+    api.get("/workers/"),
+  ])
+
+  if (tasksRes.status   === "fulfilled") tasks.value    = tasksRes.value.data
+  if (statusRes.status  === "fulfilled") statuses.value = statusRes.value.data
+  if (assetsRes.status  === "fulfilled") assets.value   = assetsRes.value.data
+  if (workersRes.status === "fulfilled") workers.value  = workersRes.value.data
+
+  const failed = [tasksRes, statusRes, assetsRes, workersRes].find(r => r.status === "rejected")
+  if (failed) {
+    const err = failed.reason
+    const status = err.response?.status ?? "ERR"
+    const url    = err.config?.url ?? "?"
+    showToast(`Error en ${url} (${status})`, "error")
   }
 
-  // /users/ es admin-only — fallo silencioso para no bloquear la vista
+  loading.value = false
+
   try {
     const usersRes = await api.get("/users/")
     users.value = usersRes.data
-  } catch {
-    users.value = []
-  }
+  } catch { users.value = [] }
 }
 
 // ── Crear / Editar ───────────────────────────────────────────────
