@@ -318,7 +318,12 @@ async function generateInvite() {
   if (!inviteRoleId.value) return
   generatingInvite.value = true
   try {
-    const res = await api.post("/invitations", { role_id: inviteRoleId.value })
+    const payload = { role_id: inviteRoleId.value }
+    // Si SYSADMIN tiene empresa seleccionada, la incluye
+    if (isSysAdmin && selectedCompany.value && selectedCompany.value !== "all") {
+      payload.company_id = selectedCompany.value
+    }
+    const res = await api.post("/invitations", payload)
     inviteLink.value = `${window.location.origin}/invite/${res.data.token}`
   } catch (e) {
     showToast(e.response?.data?.detail || "Error generando invitación", "error")
@@ -417,11 +422,20 @@ const filteredUsers = computed(() => {
 })
 
 
-const loadRoles = async () => {
-  //"➡️ loadRoles START")
-  const res = await api.get("/roles/")
-  //console.log("✅ loadRoles OK")
-  roles.value = res.data
+const loadRoles = async (companyId = null) => {
+  try {
+    let url = "/roles/"
+    if (isSysAdmin) {
+      const cid = companyId
+        || (selectedCompany.value && selectedCompany.value !== "all" ? selectedCompany.value : null)
+        || JSON.parse(localStorage.getItem("selected_company") || "null")?.id
+      if (cid) url = `/roles/?company_id=${cid}`
+    }
+    const res = await api.get(url)
+    roles.value = res.data
+  } catch {
+    roles.value = []
+  }
 }
 
 const loadUsers = async (companyId = null) => {
@@ -457,9 +471,7 @@ const handleCompanyChange = async () => {
 
   if (selectedCompany.value === null) {
     await loadUsers(currentUser.company_id)
-    //console.log("SELECTED:", selectedCompany.value)
-    //console.log("USER COMPANY:", currentUser.company_id)
-
+    await loadRoles(currentUser.company_id)
     return
   }
 
@@ -469,6 +481,7 @@ const handleCompanyChange = async () => {
   }
 
   await loadUsers(selectedCompany.value)
+  await loadRoles(selectedCompany.value)
 }
 
 

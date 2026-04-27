@@ -56,13 +56,20 @@ def create_invitation(
     if not _can_invite(user, db):
         raise HTTPException(status_code=403, detail="Sin permiso para generar invitaciones")
 
-    role_id = data.get("role_id")
+    role_id    = data.get("role_id")
+    company_id = data.get("company_id")  # SYSADMIN puede especificar empresa destino
     if not role_id:
         raise HTTPException(status_code=400, detail="role_id es requerido")
 
+    # Determinar empresa destino
+    is_sys = _can_invite(user, db) and (
+        db.query(Role).filter(Role.id == user.role_id).first().is_system
+    )
+    target_company_id = company_id if (is_sys and company_id) else user.company_id
+
     role = db.query(Role).filter(
         Role.id == role_id,
-        Role.company_id == user.company_id
+        Role.company_id == target_company_id
     ).first()
     if not role:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
@@ -72,7 +79,7 @@ def create_invitation(
 
     inv = InvitationToken(
         token=token,
-        company_id=user.company_id,
+        company_id=target_company_id,
         role_id=role_id,
         created_by=user.id,
         expires_at=expires_at,
