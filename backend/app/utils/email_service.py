@@ -1,3 +1,12 @@
+"""
+Email Service — EasyPosWeb
+Estrategia:
+  - Si RESEND_API_KEY está configurada → usa Resend HTTP API (sin SMTP, sin bloqueos de puerto).
+  - Si no → fallback a SMTP (útil en desarrollo local).
+
+DigitalOcean bloquea puertos SMTP salientes (25/587) en VPS nuevos;
+por eso en producción se usa Resend (HTTPS puerto 443).
+"""
 import os
 import smtplib
 from email.mime.text import MIMEText
@@ -6,21 +15,44 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 
-SMTP_SERVER   = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
-EMAIL_SENDER  = os.getenv("EMAIL_SENDER", "")
+SMTP_SERVER    = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT      = int(os.getenv("SMTP_PORT", "587"))
+EMAIL_SENDER   = os.getenv("EMAIL_SENDER", "")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
-FRONTEND_URL  = os.getenv("FRONTEND_URL", "http://localhost:5173")
-DISPLAY_NAME  = "EasyPosWeb <easypos.co@gmail.com>"
+FRONTEND_URL   = os.getenv("FRONTEND_URL", "http://localhost:5173")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_ADDRESS   = os.getenv("EMAIL_FROM", "EasyPosWeb <noreply@easyposweb.com>")
 
-
-SMTP_TIMEOUT = 15  # segundos — evita colgar el worker indefinidamente
+SMTP_TIMEOUT = 15
 
 
 def _send(to: str, subject: str, body_html: str):
+    """Envía un correo usando Resend API (producción) o SMTP (desarrollo)."""
+    if RESEND_API_KEY:
+        _send_resend(to, subject, body_html)
+    else:
+        _send_smtp(to, subject, body_html)
+
+
+def _send_resend(to: str, subject: str, body_html: str):
+    try:
+        import resend
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            "from":    FROM_ADDRESS,
+            "to":      [to],
+            "subject": subject,
+            "html":    body_html,
+        })
+        print(f"RESEND EMAIL ENVIADO A: {to}")
+    except Exception as e:
+        print(f"RESEND ERROR: {e}")
+
+
+def _send_smtp(to: str, subject: str, body_html: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = DISPLAY_NAME
+    msg["From"]    = f"EasyPosWeb <{EMAIL_SENDER}>"
     msg["To"]      = to
     msg.attach(MIMEText(body_html, "html"))
     try:
@@ -29,10 +61,12 @@ def _send(to: str, subject: str, body_html: str):
         server.login(EMAIL_SENDER, EMAIL_PASSWORD)
         server.sendmail(EMAIL_SENDER, to, msg.as_string())
         server.quit()
-        print(f"EMAIL ENVIADO A: {to}")
+        print(f"SMTP EMAIL ENVIADO A: {to}")
     except Exception as e:
-        print(f"ERROR EMAIL: {e}")
+        print(f"SMTP ERROR: {e}")
 
+
+# ── Funciones de negocio ──────────────────────────────────────────────────────
 
 def send_reset_email(to_email: str, token: str):
     reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
@@ -43,7 +77,7 @@ def send_reset_email(to_email: str, token: str):
     <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
     <p><a href="{reset_link}" style="background:#0d6efd;color:#fff;padding:10px 20px;
        border-radius:5px;text-decoration:none;">Restablecer contraseña</a></p>
-    <p style="color:#888;font-size:12px;">Este enlace expirará en 30 minutos.
+    <p style="color:#888;font-size:12px;">Este enlace expirará en 60 minutos.
     Si no solicitaste este cambio, ignora este mensaje.</p>
     </body></html>
     """
@@ -51,7 +85,7 @@ def send_reset_email(to_email: str, token: str):
 
 
 def send_payment_received(company_name: str, plan_name: str, amount: float, admin_email: str):
-    """Notifica a EasyPosWeb (interno) que un asociado registró un plan de pago."""
+    """Notifica internamente que un asociado registró un plan de pago."""
     body = f"""
     <html><body style="font-family:Arial,sans-serif;color:#333;">
     <h3 style="color:#f97316;">&#128179; Nuevo registro con plan de pago — EasyPosWeb</h3>
@@ -70,17 +104,18 @@ def send_payment_received(company_name: str, plan_name: str, amount: float, admi
     </p>
     </body></html>
     """
-    _send(EMAIL_SENDER, f"[EasyPosWeb] Pago pendiente: {company_name} — {plan_name}", body)
+    _send(EMAIL_SENDER or "easypos.co@gmail.com",
+          f"[EasyPosWeb] Pago pendiente: {company_name} — {plan_name}", body)
 
 
 def send_payment_approved(to_email: str, company_name: str, plan_name: str):
-    """Notifica al asociado que su pago fue aprobado y su plan está activo."""
+    """Notifica al asociado que su pago fue aprobado."""
     body = f"""
     <html><body style="font-family:Arial,sans-serif;color:#333;">
     <h3 style="color:#10b981;">&#10003; ¡Pago aprobado! Tu plan está activo — EasyPosWeb</h3>
     <p>Hola,</p>
-    <p>Nos complace informarte que el pago de activación de <strong>{company_name}</strong>
-       ha sido <strong>aprobado exitosamente</strong>.</p>
+    <p>El pago de activación de <strong>{company_name}</strong> fue
+       <strong>aprobado exitosamente</strong>.</p>
     <table style="width:100%;border-collapse:collapse;margin:16px 0;">
       <tr style="background:#f0fdf4;"><td style="padding:10px;font-weight:bold;">Plan activado:</td>
           <td style="padding:10px;">{plan_name}</td></tr>
@@ -106,20 +141,17 @@ def send_payment_rejected(to_email: str, company_name: str, plan_name: str, reas
     <html><body style="font-family:Arial,sans-serif;color:#333;">
     <h3 style="color:#ef4444;">&#9888; Comprobante de pago no aprobado — EasyPosWeb</h3>
     <p>Hola,</p>
-    <p>Hemos revisado el comprobante de pago enviado para <strong>{company_name}</strong>
-       (plan <strong>{plan_name}</strong>) y no pudimos aprobarlo por el siguiente motivo:</p>
+    <p>Revisamos el comprobante de <strong>{company_name}</strong>
+       (plan <strong>{plan_name}</strong>) y no pudimos aprobarlo:</p>
     <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;margin:16px 0;border-radius:4px;">
       <strong>Motivo:</strong> {reason}
     </div>
-    <p>Por favor, ingresa a tu cuenta, revisa la información y vuelve a enviar tu comprobante.</p>
+    <p>Por favor ingresa a tu cuenta, corrige la información y vuelve a enviar tu comprobante.</p>
     <p style="margin-top:16px;">
       <a href="{FRONTEND_URL}/login"
          style="background:#2563eb;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">
         Reintentar pago
       </a>
-    </p>
-    <p style="color:#888;font-size:12px;margin-top:20px;">
-      Si crees que esto es un error, abre un ticket de soporte desde tu dashboard.
     </p>
     </body></html>
     """
@@ -145,4 +177,5 @@ def send_contact_email(name: str, email: str, message: str,
     <p style="background:#f8f9fa;padding:12px;border-radius:6px;">{message}</p>
     </body></html>
     """
-    _send(EMAIL_SENDER, f"Contacto Web: {name} — {company or email}", body)
+    _send(EMAIL_SENDER or "easypos.co@gmail.com",
+          f"Contacto Web: {name} — {company or email}", body)
