@@ -416,7 +416,13 @@ export default {
             website:               form.website,
           }),
         })
-        const data = await res.json()
+
+        let data
+        try {
+          data = await res.json()
+        } catch {
+          throw new Error("El servidor no respondió correctamente. Intenta de nuevo.")
+        }
         if (!res.ok) throw new Error(data.detail || "Error al registrar")
 
         successData.value = data
