@@ -13,7 +13,7 @@ Al registrar crea en una sola transacción:
 """
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
@@ -76,6 +76,7 @@ class AssociateRegisterRequest(BaseModel):
 def register_associate(
     data: AssociateRegisterRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     # ── Anti-bot: campo honeypot relleno → rechazar silenciosamente ──
@@ -197,24 +198,22 @@ def register_associate(
     except HTTPException:
         db.rollback()
         raise
-    except Exception:
+    except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=500,
             detail="Error al crear la cuenta. Intenta de nuevo."
-        )
+        ) from e
 
-    # ── Email de alerta interna (plan de pago) ────────────────────────
+    # ── Email de alerta interna en background (no bloquea la respuesta) ─
     if is_paid:
-        try:
-            send_payment_received(
-                company_name=data.company_name,
-                plan_name=plan.name,
-                amount=plan.price,
-                admin_email=data.admin_email,
-            )
-        except Exception:
-            pass  # El registro ya fue exitoso — no bloquear por fallo de email
+        background_tasks.add_task(
+            send_payment_received,
+            company_name = data.company_name,
+            plan_name    = plan.name,
+            amount       = plan.price,
+            admin_email  = data.admin_email,
+        )
 
     return {
         "message": "Cuenta creada exitosamente",

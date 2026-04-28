@@ -14,6 +14,9 @@ FRONTEND_URL  = os.getenv("FRONTEND_URL", "http://localhost:5173")
 DISPLAY_NAME  = "EasyPosWeb <easypos.co@gmail.com>"
 
 
+SMTP_TIMEOUT = 15  # segundos — evita colgar el worker indefinidamente
+
+
 def _send(to: str, subject: str, body_html: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -21,7 +24,7 @@ def _send(to: str, subject: str, body_html: str):
     msg["To"]      = to
     msg.attach(MIMEText(body_html, "html"))
     try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=SMTP_TIMEOUT)
         server.starttls()
         server.login(EMAIL_SENDER, EMAIL_PASSWORD)
         server.sendmail(EMAIL_SENDER, to, msg.as_string())

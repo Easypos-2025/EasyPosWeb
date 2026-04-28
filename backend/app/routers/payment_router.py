@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -511,6 +511,7 @@ def pending_count(
 @router.put("/{payment_id}/approve")
 def approve_payment(
     payment_id: int,
+    background_tasks: BackgroundTasks,
     sysadmin: User = Depends(require_sysadmin),
     db: Session = Depends(get_db),
 ):
@@ -570,14 +571,12 @@ def approve_payment(
     db.commit()
 
     if admin and company and plan:
-        try:
-            send_payment_approved(
-                to_email     = admin.email,
-                company_name = company.name,
-                plan_name    = plan.name,
-            )
-        except Exception:
-            pass
+        background_tasks.add_task(
+            send_payment_approved,
+            to_email     = admin.email,
+            company_name = company.name,
+            plan_name    = plan.name,
+        )
 
     return {"message": "Pago aprobado. Plan activado correctamente."}
 
@@ -597,6 +596,7 @@ class RejectRequest(BaseModel):
 def reject_payment(
     payment_id: int,
     body: RejectRequest,
+    background_tasks: BackgroundTasks,
     sysadmin: User = Depends(require_sysadmin),
     db: Session = Depends(get_db),
 ):
@@ -629,14 +629,12 @@ def reject_payment(
     db.commit()
 
     if admin and company and plan:
-        try:
-            send_payment_rejected(
-                to_email     = admin.email,
-                company_name = company.name,
-                plan_name    = plan.name,
-                reason       = body.reason,
-            )
-        except Exception:
-            pass
+        background_tasks.add_task(
+            send_payment_rejected,
+            to_email     = admin.email,
+            company_name = company.name,
+            plan_name    = plan.name,
+            reason       = body.reason,
+        )
 
     return {"message": "Pago rechazado. Se notificó al asociado."}

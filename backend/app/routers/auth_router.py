@@ -9,7 +9,7 @@ Manejo de autenticación del sistema
 # IMPORTS
 # =====================================================
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.user_model import User
@@ -158,9 +158,11 @@ class ForgotPasswordRequest(BaseModel):
           email: str
           
 @router.post("/forgot-password/")
-  #def forgot_password(data: LoginRequest, db: Session = Depends(get_db)):
-
-def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    data: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     #print("🔥 ENDPOINT FORGOT PASSWORD EJECUTADO")
     # 🔐 RESPUESTA SEGURA (SIEMPRE IGUAL)
     response_message = {
@@ -217,12 +219,10 @@ def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     db.add(reset_token)
     db.commit()
 
-    # =========================================
-    # 🔥 AQUÍ IRÁ EMAIL (SIGUIENTE PASO)
-    # =========================================
+    # Enviar email en background — el cliente recibe respuesta inmediata
+    # sin esperar la conexión SMTP
+    background_tasks.add_task(send_reset_email, user.email, token)
 
-    send_reset_email(user.email, token)
-    #print("ANTES DE ENVIAR EMAIL")
     return response_message
 
 # =====================================================
