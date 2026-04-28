@@ -129,6 +129,13 @@ class Company(Base):
         default=1
     )
 
+    payment_status: Mapped[str] = mapped_column(
+        String(30),
+        default="active",
+        nullable=False,
+        server_default="active"
+    )
+
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP,
         server_default=func.now()
