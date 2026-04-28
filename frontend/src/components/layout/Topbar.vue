@@ -151,8 +151,9 @@
 
       <!-- Ver sitio web -->
       <a
-        href="/landing"
+        :href="siteUrl"
         target="_blank"
+        rel="noopener"
         class="btn-icon btn-website"
         title="Ver sitio web"
       >
@@ -177,6 +178,8 @@ import { useCompanyStore } from "@/stores/companyStore"
 import api from "@/services/apis"
 
 const emit = defineEmits(["toggle-sidebar", "toggle-sidebar-right"])
+
+const siteUrl = (import.meta.env.VITE_SITE_URL || window.location.origin) + "/landing"
 
 const logo         = ref("")
 const user         = ref(null)
