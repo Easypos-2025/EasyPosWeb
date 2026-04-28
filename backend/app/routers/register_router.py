@@ -6,26 +6,29 @@ Al registrar crea en una sola transacción:
   1. Company
   2. Role "Admin"
   3. User (administrador)
-  4. CompanyPlan  (plan Free por defecto)
+  4. CompanyPlan  (plan seleccionado)
   5. RoleModules  (todos los módulos del perfil con permisos completos)
   6. CompanyTheme (colores por defecto)
+  7. CompanyPayment (solo si el plan es de pago)
 """
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.auth.password_utils import hash_password
 from app.database import get_db
 from app.models.business_profile_module import BusinessProfileModule
 from app.models.company_model import Company
+from app.models.company_payment_model import CompanyPayment
 from app.models.company_plan_model import CompanyPlan
 from app.models.company_theme_model import CompanyTheme
 from app.models.plan_model import Plan
 from app.models.role_model import Role
 from app.models.role_module_model import RoleModule
 from app.models.user_model import User
+from app.utils.email_service import send_payment_received
 
 router = APIRouter(prefix="/register", tags=["Register"])
 
@@ -39,55 +42,87 @@ DEFAULT_THEME = {
     "font_color":    "#1e293b",
 }
 
+# Campo honeypot — si viene relleno es un bot
+HONEYPOT_FIELD = "website"
+
 
 class AssociateRegisterRequest(BaseModel):
     company_name: str
     identification_number: str
     business_profile_id: int
+    plan_id: int
     admin_nombre: str
     admin_email: str
     admin_password: str
+    # Campo honeypot — debe venir vacío siempre
+    website: str = ""
+
+    @field_validator("company_name", "identification_number", "admin_nombre", "admin_email")
+    @classmethod
+    def no_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Este campo es obligatorio")
+        return v.strip()
+
+    @field_validator("admin_email")
+    @classmethod
+    def valid_email(cls, v: str) -> str:
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Correo inválido")
+        return v.lower()
 
 
 @router.post("/associate/")
-def register_associate(data: AssociateRegisterRequest, db: Session = Depends(get_db)):
+def register_associate(
+    data: AssociateRegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    # ── Anti-bot: campo honeypot relleno → rechazar silenciosamente ──
+    if data.website:
+        raise HTTPException(status_code=400, detail="Solicitud no válida")
 
-    # ── Validaciones previas ─────────────────────────────────────
+    # ── Validación de contraseña ─────────────────────────────────────
     if not re.match(PW_REGEX, data.admin_password):
         raise HTTPException(
             status_code=400,
             detail="La contraseña debe tener mín. 8 caracteres, una mayúscula, una minúscula, un número y un símbolo (@$!%*?&)"
         )
 
-    if db.query(User).filter(User.email == data.admin_email.strip().lower()).first():
+    # ── Unicidad ─────────────────────────────────────────────────────
+    if db.query(User).filter(User.email == data.admin_email).first():
         raise HTTPException(status_code=400, detail="El correo ya está registrado")
 
     if db.query(Company).filter(
-        Company.identification_number == data.identification_number.strip()
+        Company.identification_number == data.identification_number
     ).first():
         raise HTTPException(status_code=400, detail="El NIT ya está registrado")
 
-    free_plan = db.query(Plan).filter(Plan.price == 0, Plan.is_active == True).first()
-    if not free_plan:
-        raise HTTPException(status_code=500, detail="No hay planes disponibles. Contacta al administrador.")
+    # ── Validar plan ─────────────────────────────────────────────────
+    plan = db.query(Plan).filter(Plan.id == data.plan_id, Plan.is_active == True).first()
+    if not plan:
+        raise HTTPException(status_code=400, detail="Plan no disponible. Selecciona otro.")
 
-    # Verificar que el perfil de negocio tenga módulos configurados
+    is_paid = plan.price > 0
+
+    # ── Módulos del perfil ────────────────────────────────────────────
     profile_modules = db.query(BusinessProfileModule).filter(
         BusinessProfileModule.business_profile_id == data.business_profile_id
     ).all()
 
     try:
-        # ── 1. Empresa ───────────────────────────────────────────
+        # 1. Empresa
         company = Company(
-            name=data.company_name.strip(),
-            identification_number=data.identification_number.strip(),
+            name=data.company_name,
+            identification_number=data.identification_number,
             business_profile_id=data.business_profile_id,
             state=1,
+            payment_status="pending_payment" if is_paid else "active",
         )
         db.add(company)
         db.flush()
 
-        # ── 2. Rol Admin ─────────────────────────────────────────
+        # 2. Rol Admin
         role = Role(
             name="Admin",
             description="Administrador principal",
@@ -97,10 +132,10 @@ def register_associate(data: AssociateRegisterRequest, db: Session = Depends(get
         db.add(role)
         db.flush()
 
-        # ── 3. Usuario administrador ─────────────────────────────
+        # 3. Usuario administrador
         user = User(
-            nombre=data.admin_nombre.strip(),
-            email=data.admin_email.strip().lower(),
+            nombre=data.admin_nombre,
+            email=data.admin_email,
             password_hash=hash_password(data.admin_password),
             role_id=role.id,
             company_id=company.id_company,
@@ -109,14 +144,14 @@ def register_associate(data: AssociateRegisterRequest, db: Session = Depends(get
         db.add(user)
         db.flush()
 
-        # ── 4. Plan (Free por defecto) ───────────────────────────
+        # 4. Plan
         db.add(CompanyPlan(
             company_id=company.id_company,
-            plan_id=free_plan.id,
+            plan_id=plan.id,
             is_active=True,
         ))
 
-        # ── 5. Permisos: todos los módulos del perfil con acceso completo ──
+        # 5. Permisos
         for bpm in profile_modules:
             db.add(RoleModule(
                 role_id=role.id,
@@ -127,7 +162,7 @@ def register_associate(data: AssociateRegisterRequest, db: Session = Depends(get
                 can_delete=True,
             ))
 
-        # ── 6. Tema visual por defecto ───────────────────────────
+        # 6. Tema visual
         db.add(CompanyTheme(
             company_id=company.id_company,
             topbar_color=DEFAULT_THEME["topbar_color"],
@@ -138,8 +173,20 @@ def register_associate(data: AssociateRegisterRequest, db: Session = Depends(get
             logo=None,
         ))
 
+        # 7. Registro de pago pendiente (solo planes de pago)
+        if is_paid:
+            db.add(CompanyPayment(
+                company_id=company.id_company,
+                plan_id=plan.id,
+                amount=plan.price,
+                status="pending",
+            ))
+
         db.commit()
 
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -147,8 +194,23 @@ def register_associate(data: AssociateRegisterRequest, db: Session = Depends(get
             detail="Error al crear la cuenta. Intenta de nuevo."
         )
 
+    # ── Email de alerta interna (plan de pago) ────────────────────────
+    if is_paid:
+        try:
+            send_payment_received(
+                company_name=data.company_name,
+                plan_name=plan.name,
+                amount=plan.price,
+                admin_email=data.admin_email,
+            )
+        except Exception:
+            pass  # El registro ya fue exitoso — no bloquear por fallo de email
+
     return {
         "message": "Cuenta creada exitosamente",
         "company": data.company_name,
         "email": data.admin_email,
+        "payment_status": "pending_payment" if is_paid else "active",
+        "plan_name": plan.name,
+        "is_paid": is_paid,
     }

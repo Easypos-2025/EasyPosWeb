@@ -65,5 +65,6 @@ from app.models.invitation_model import InvitationToken
 from app.models.landing_section_model import LandingSection
 from app.models.plan_feature_model import PlanFeature
 from app.models.landing_contact_model import LandingContact
+from app.models.company_payment_model import CompanyPayment
 
 

@@ -460,6 +460,7 @@ def get_current_user(
         "is_active": user.is_active,
         "is_system": role.is_system if role else False,
         "business_profile_id": company.business_profile_id if company else None,
+        "payment_status": getattr(company, "payment_status", "active") if company else "active",
     }
     
     

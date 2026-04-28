@@ -82,6 +82,13 @@ const routes = [
   },
 
   {
+    path: "/payment-pending",
+    name: "PaymentPending",
+    component: () => import("@/views/PaymentPendingView.vue"),
+    meta: { title: "Activa tu plan — EasyPosWeb" }
+  },
+
+  {
     path: "/reset-password",
     name: "reset-password",
     component: ResetPassword,
@@ -332,11 +339,14 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Gestión Landing Page" }
       },
-     
 
-      /**
-       * 
-       */
+      {
+        path: "/sysadmin/payment-review",
+        name: "PaymentReviewView",
+        component: () => import("@/views/sysadmin/PaymentReviewView.vue"),
+        requiresAuth: true,
+        meta: { title: "Revisión de Pagos" }
+      },
 ]
   }
 
@@ -370,6 +380,7 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/reset-password" ||
     to.path === "/business-profiles" ||
     to.path === "/register" ||
+    to.path === "/payment-pending" ||
     to.path.startsWith("/invite/") ||
     to.path.startsWith("/landing/perfil/")
   ) {
@@ -386,8 +397,11 @@ router.beforeEach(async (to, from, next) => {
   /* =========================================
      2. VALIDAR SESIÓN EN BACKEND
   ========================================= */
+  let meData = null
   try {
-    await api.get("/auth/me/")
+    const meRes = await api.get("/auth/me/")
+    meData = meRes.data
+    localStorage.setItem("user", JSON.stringify({ ...JSON.parse(localStorage.getItem("user") || "{}"), ...meData }))
   } catch (error) {
     localStorage.removeItem("token")
     localStorage.removeItem("menu")
@@ -395,7 +409,19 @@ router.beforeEach(async (to, from, next) => {
     return next("/login")
   }
 
-  /* ========================================= 
+  /* =========================================
+     2b. GUARD DE PAGO PENDIENTE
+     Si la empresa no está activa → solo puede ir a /payment-pending y /soporte/ticket
+  ========================================= */
+  const paymentStatus = meData?.payment_status ?? "active"
+  const isSystem      = meData?.is_system ?? false
+  const allowedWithPending = ["/payment-pending", "/soporte/ticket"]
+
+  if (!isSystem && paymentStatus !== "active" && !allowedWithPending.includes(to.path)) {
+    return next("/payment-pending")
+  }
+
+  /* =========================================
      3. SI ESTÁ LOGUEADO Y VA A LOGIN
   ========================================= */
   if (to.path === "/login") {

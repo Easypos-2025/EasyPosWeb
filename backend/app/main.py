@@ -1,9 +1,11 @@
 import os
+import time
+import collections
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine, SessionLocal
@@ -51,6 +53,7 @@ from app.routers.clients_router import router as clients_router
 from app.routers.invitation_router import router as invitation_router
 from app.routers.landing_router import router as landing_router
 from app.routers.register_router import router as register_router
+from app.routers.payment_router import router as payment_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -374,8 +377,62 @@ def _init_db_data():
             ))
             db.commit()
 
+        # ── MIGRACIÓN: columna payment_status en companies ──────────────
+        try:
+            db.execute(text(
+                "ALTER TABLE companies ADD COLUMN payment_status "
+                "VARCHAR(30) NOT NULL DEFAULT 'active'"
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # ── SEED: módulo Revisión de Pagos en system_modules ───────────
+        if not db.query(SystemModule).filter(SystemModule.route == "/sysadmin/payment-review").first():
+            db.add(SystemModule(
+                name="Revisión de Pagos",
+                route="/sysadmin/payment-review",
+                icon="bi-credit-card-2-back",
+                parent_id=None,
+                is_active=True,
+                order_index=0,
+                is_sysadmin=True
+            ))
+            db.commit()
+
     finally:
         db.close()
+
+# ===============================
+# RATE LIMITER (in-memory, single server)
+# ===============================
+# Rutas públicas sensibles con su límite (max_requests, window_seconds)
+_RATE_LIMITS: dict[str, tuple[int, int]] = {
+    "/register/associate/": (5, 3600),   # 5 registros/IP/hora
+    "/payments/submit-receipt": (10, 3600),  # 10 intentos/IP/hora
+    "/auth/login": (20, 900),            # 20 intentos/IP/15 min
+    "/auth/forgot-password": (5, 3600),  # 5/IP/hora
+}
+# ip → ruta → deque de timestamps
+_rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
+    lambda: collections.defaultdict(collections.deque)
+)
+
+
+def _check_rate_limit(ip: str, path: str) -> bool:
+    """Retorna True si la request está permitida, False si excede el límite."""
+    for route, (max_req, window) in _RATE_LIMITS.items():
+        if path.startswith(route):
+            now = time.time()
+            dq = _rate_store[ip][route]
+            while dq and dq[0] < now - window:
+                dq.popleft()
+            if len(dq) >= max_req:
+                return False
+            dq.append(now)
+            return True
+    return True
+
 
 # ===============================
 # APP
@@ -385,6 +442,19 @@ app = FastAPI(
     version="1.0"
 )
 
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+    ip = ip.split(",")[0].strip()
+    if not _check_rate_limit(ip, request.url.path):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Demasiadas solicitudes. Intenta más tarde."}
+        )
+    return await call_next(request)
+
+
 _init_db_data()
 
 app.router.redirect_slashes = True
@@ -393,6 +463,7 @@ UPLOADS_DIR = BASE_DIR / "backend" / "app" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 (UPLOADS_DIR / "landing").mkdir(parents=True, exist_ok=True)
 (UPLOADS_DIR / "profiles").mkdir(parents=True, exist_ok=True)
+(UPLOADS_DIR / "payments").mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # ===============================
@@ -455,6 +526,7 @@ routers = [
     invitation_router,
     landing_router,
     register_router,
+    payment_router,
 ]
 
 for router in routers:

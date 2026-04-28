@@ -1,8 +1,8 @@
 <template>
   <div class="reg-page">
-
     <div class="reg-card">
 
+      <!-- LOGO -->
       <div class="reg-brand">
         <a href="/landing">
           <span class="b-easy">Easy</span><span class="b-pos">Pos</span><span class="b-web">Web</span>
@@ -13,49 +13,47 @@
       <div v-if="success" class="reg-success">
         <div class="success-icon"><i class="bi bi-check-circle-fill"></i></div>
         <h2>¡Cuenta creada!</h2>
-        <p>Tu empresa <strong>{{ successCompany }}</strong> ya está registrada en EasyPosWeb.</p>
-        <p class="success-sub">Inicia sesión con el correo <strong>{{ successEmail }}</strong></p>
-        <button class="btn-go-login" @click="router.push('/login')">
-          <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión
-        </button>
+        <p>Tu empresa <strong>{{ successData.company }}</strong> ya está registrada.</p>
+        <template v-if="successData.is_paid">
+          <p class="success-sub">
+            Seleccionaste el plan <strong>{{ successData.plan_name }}</strong>.
+            Inicia sesión para completar el pago y activar tu cuenta.
+          </p>
+          <button class="btn-go-login" @click="router.push('/login')">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión y Pagar
+          </button>
+        </template>
+        <template v-else>
+          <p class="success-sub">Inicia sesión con <strong>{{ successData.email }}</strong></p>
+          <button class="btn-go-login" @click="router.push('/login')">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión
+          </button>
+        </template>
       </div>
 
       <!-- FORMULARIO -->
       <template v-else>
-        <!-- Progreso -->
+
+        <!-- BARRA DE PROGRESO -->
         <div class="reg-progress">
-          <div class="prog-step" :class="{ active: step === 1, done: step > 1 }">
-            <div class="prog-circle">
-              <i v-if="step > 1" class="bi bi-check-lg"></i>
-              <span v-else>1</span>
+          <template v-for="(label, idx) in stepLabels" :key="idx">
+            <div class="prog-step" :class="{ active: step === idx + 1, done: step > idx + 1 }">
+              <div class="prog-circle">
+                <i v-if="step > idx + 1" class="bi bi-check-lg"></i>
+                <span v-else>{{ idx + 1 }}</span>
+              </div>
+              <span class="prog-label">{{ label }}</span>
             </div>
-            <span class="prog-label">Tu Empresa</span>
-          </div>
-          <div class="prog-line" :class="{ done: step > 1 }"></div>
-          <div class="prog-step" :class="{ active: step === 2 }">
-            <div class="prog-circle"><span>2</span></div>
-            <span class="prog-label">Tu Cuenta</span>
-          </div>
+            <div v-if="idx < stepLabels.length - 1"
+                 class="prog-line" :class="{ done: step > idx + 1 }"></div>
+          </template>
         </div>
 
-        <!-- PASO 1 -->
-        <form v-if="step === 1" class="reg-form" @submit.prevent="goStep2">
-          <h2 class="reg-title">Datos de tu empresa</h2>
-
-          <div class="field-group" :class="{ error: err.company_name }">
-            <label>Nombre de la empresa <span class="req">*</span></label>
-            <input v-model="form.company_name" type="text" placeholder="Ej. Restaurante El Sabor" maxlength="150" />
-            <span v-if="err.company_name" class="field-error">{{ err.company_name }}</span>
-          </div>
-
-          <div class="field-group" :class="{ error: err.identification_number }">
-            <label>NIT / Identificación <span class="req">*</span></label>
-            <input v-model="form.identification_number" type="text" placeholder="Ej. 900123456" maxlength="50" />
-            <span v-if="err.identification_number" class="field-error">{{ err.identification_number }}</span>
-          </div>
+        <!-- ══ PASO 1: Perfil de negocio ══ -->
+        <form v-if="step === 1" class="reg-form" @submit.prevent="goStep(2)">
+          <h2 class="reg-title">¿Qué tipo de negocio tienes?</h2>
 
           <div class="field-group" :class="{ error: err.business_profile_id }">
-            <label>Tipo de negocio <span class="req">*</span></label>
             <div v-if="loadingProfiles" class="loading-profiles">
               <i class="bi bi-hourglass-split"></i> Cargando perfiles...
             </div>
@@ -66,10 +64,12 @@
                 type="button"
                 class="profile-btn"
                 :class="{ selected: form.business_profile_id === p.id }"
-                :style="form.business_profile_id === p.id ? { borderColor: p.color_accent, background: p.color_accent + '18' } : {}"
+                :style="form.business_profile_id === p.id
+                  ? { borderColor: p.color_accent, background: p.color_accent + '18' } : {}"
                 @click="form.business_profile_id = p.id"
               >
-                <i :class="`bi ${p.icon || 'bi-building'}`" :style="{ color: p.color_accent || '#2563eb' }"></i>
+                <i :class="`bi ${p.icon || 'bi-building'}`"
+                   :style="{ color: p.color_accent || '#2563eb' }"></i>
                 <span>{{ p.name }}</span>
               </button>
             </div>
@@ -79,17 +79,87 @@
           <button type="submit" class="btn-primary">
             Continuar <i class="bi bi-arrow-right ms-1"></i>
           </button>
-
           <p class="reg-login-link">¿Ya tienes cuenta? <a href="/login">Inicia sesión</a></p>
         </form>
 
-        <!-- PASO 2 -->
-        <form v-else-if="step === 2" class="reg-form" @submit.prevent="submitRegister">
+        <!-- ══ PASO 2: Seleccionar Plan ══ -->
+        <form v-else-if="step === 2" class="reg-form" @submit.prevent="goStep(3)">
+          <h2 class="reg-title">Selecciona tu plan</h2>
+
+          <div class="field-group" :class="{ error: err.plan_id }">
+            <div v-if="loadingPlans" class="loading-profiles">
+              <i class="bi bi-hourglass-split"></i> Cargando planes...
+            </div>
+            <div v-else class="plan-grid">
+              <button
+                v-for="p in plans"
+                :key="p.id"
+                type="button"
+                class="plan-btn"
+                :class="{ selected: form.plan_id === p.id, free: p.price === 0 }"
+                @click="form.plan_id = p.id"
+              >
+                <div class="plan-badge" v-if="p.price === 0">GRATIS</div>
+                <div class="plan-name">{{ p.name }}</div>
+                <div class="plan-price">
+                  <span v-if="p.price === 0" class="price-free">$0</span>
+                  <span v-else class="price-paid">
+                    {{ new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(p.price) }}
+                    <small>/año</small>
+                  </span>
+                </div>
+                <div class="plan-desc">{{ p.description || '' }}</div>
+              </button>
+            </div>
+            <span v-if="err.plan_id" class="field-error">{{ err.plan_id }}</span>
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn-back" @click="step = 1">
+              <i class="bi bi-arrow-left me-1"></i> Atrás
+            </button>
+            <button type="submit" class="btn-primary">
+              Continuar <i class="bi bi-arrow-right ms-1"></i>
+            </button>
+          </div>
+        </form>
+
+        <!-- ══ PASO 3: Datos de empresa ══ -->
+        <form v-else-if="step === 3" class="reg-form" @submit.prevent="goStep(4)">
+          <h2 class="reg-title">Datos de tu empresa</h2>
+
+          <div class="field-group" :class="{ error: err.company_name }">
+            <label>Nombre de la empresa <span class="req">*</span></label>
+            <input v-model="form.company_name" type="text"
+                   placeholder="Ej. Restaurante El Sabor" maxlength="150" />
+            <span v-if="err.company_name" class="field-error">{{ err.company_name }}</span>
+          </div>
+
+          <div class="field-group" :class="{ error: err.identification_number }">
+            <label>NIT / Identificación <span class="req">*</span></label>
+            <input v-model="form.identification_number" type="text"
+                   placeholder="Ej. 900123456" maxlength="50" />
+            <span v-if="err.identification_number" class="field-error">{{ err.identification_number }}</span>
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn-back" @click="step = 2">
+              <i class="bi bi-arrow-left me-1"></i> Atrás
+            </button>
+            <button type="submit" class="btn-primary">
+              Continuar <i class="bi bi-arrow-right ms-1"></i>
+            </button>
+          </div>
+        </form>
+
+        <!-- ══ PASO 4: Datos de cuenta ══ -->
+        <form v-else-if="step === 4" class="reg-form" @submit.prevent="submitRegister">
           <h2 class="reg-title">Tu acceso de administrador</h2>
 
           <div class="field-group" :class="{ error: err.admin_nombre }">
             <label>Tu nombre completo <span class="req">*</span></label>
-            <input v-model="form.admin_nombre" type="text" placeholder="Ej. Juan Pérez" maxlength="100" />
+            <input v-model="form.admin_nombre" type="text"
+                   placeholder="Ej. Juan Pérez" maxlength="100" />
             <span v-if="err.admin_nombre" class="field-error">{{ err.admin_nombre }}</span>
           </div>
 
@@ -102,18 +172,17 @@
           <div class="field-group" :class="{ error: err.admin_password }">
             <label>Contraseña <span class="req">*</span></label>
             <div class="pass-wrap">
-              <input
-                v-model="form.admin_password"
-                :type="showPass ? 'text' : 'password'"
-                placeholder="Mín. 8 caracteres"
-              />
+              <input v-model="form.admin_password"
+                     :type="showPass ? 'text' : 'password'"
+                     placeholder="Mín. 8 caracteres" />
               <button type="button" class="pass-toggle" @click="showPass = !showPass">
                 <i :class="showPass ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               </button>
             </div>
             <div class="pass-strength" v-if="form.admin_password">
               <div class="strength-bar">
-                <div class="strength-fill" :style="{ width: pwStrength.pct + '%', background: pwStrength.color }"></div>
+                <div class="strength-fill"
+                     :style="{ width: pwStrength.pct + '%', background: pwStrength.color }"></div>
               </div>
               <span class="strength-label" :style="{ color: pwStrength.color }">{{ pwStrength.label }}</span>
             </div>
@@ -145,11 +214,9 @@
           <div class="field-group" :class="{ error: err.admin_confirm }">
             <label>Confirmar contraseña <span class="req">*</span></label>
             <div class="pass-wrap">
-              <input
-                v-model="form.admin_confirm"
-                :type="showPass2 ? 'text' : 'password'"
-                placeholder="Repite la contraseña"
-              />
+              <input v-model="form.admin_confirm"
+                     :type="showPass2 ? 'text' : 'password'"
+                     placeholder="Repite la contraseña" />
               <button type="button" class="pass-toggle" @click="showPass2 = !showPass2">
                 <i :class="showPass2 ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               </button>
@@ -157,27 +224,44 @@
             <span v-if="err.admin_confirm" class="field-error">{{ err.admin_confirm }}</span>
           </div>
 
+          <!-- Honeypot oculto anti-bot -->
+          <input v-model="form.website" type="text" name="website"
+                 autocomplete="off" tabindex="-1" aria-hidden="true"
+                 style="position:absolute;left:-9999px;opacity:0;height:0;width:0;" />
+
           <div v-if="apiError" class="api-error">
             <i class="bi bi-exclamation-circle-fill me-2"></i>{{ apiError }}
           </div>
 
+          <!-- Resumen del plan seleccionado -->
+          <div class="plan-summary" v-if="selectedPlan">
+            <i class="bi bi-gift-fill me-1" v-if="selectedPlan.price === 0"></i>
+            <i class="bi bi-credit-card me-1" v-else></i>
+            Plan: <strong>{{ selectedPlan.name }}</strong>
+            <span v-if="selectedPlan.price === 0"> — Gratis, sin tarjeta de crédito</span>
+            <span v-else>
+              —
+              {{ new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(selectedPlan.price) }}/año
+              (pagas al activar)
+            </span>
+          </div>
+
           <div class="btn-row">
-            <button type="button" class="btn-back" @click="step = 1">
+            <button type="button" class="btn-back" @click="step = 3">
               <i class="bi bi-arrow-left me-1"></i> Atrás
             </button>
             <button type="submit" class="btn-primary" :disabled="submitting">
-              <span v-if="submitting"><i class="bi bi-hourglass-split me-1"></i>Creando cuenta...</span>
-              <span v-else"><i class="bi bi-rocket-takeoff-fill me-1"></i>Crear Cuenta Gratis</span>
+              <span v-if="submitting">
+                <i class="bi bi-hourglass-split me-1"></i>Creando cuenta...
+              </span>
+              <span v-else>
+                <i class="bi bi-rocket-takeoff-fill me-1"></i>Terminar Registro
+              </span>
             </button>
           </div>
-
-          <p class="reg-plan-note">
-            <i class="bi bi-gift-fill me-1"></i>
-            Ingresas con el <strong>Plan Gratuito</strong>. Sin tarjeta de crédito.
-          </p>
         </form>
-      </template>
 
+      </template>
     </div>
   </div>
 </template>
@@ -192,73 +276,82 @@ export default {
   name: "RegisterAssociateView",
 
   setup() {
-    const router    = useRouter()
-    const step      = ref(1)
-    const success   = ref(false)
+    const router     = useRouter()
+    const step       = ref(1)
+    const success    = ref(false)
     const submitting = ref(false)
-    const showPass  = ref(false)
-    const showPass2 = ref(false)
-    const apiError  = ref("")
-    const profiles  = ref([])
+    const showPass   = ref(false)
+    const showPass2  = ref(false)
+    const apiError   = ref("")
+    const profiles   = ref([])
+    const plans      = ref([])
     const loadingProfiles = ref(true)
-    const successCompany = ref("")
-    const successEmail   = ref("")
+    const loadingPlans    = ref(true)
+    const successData = ref({})
+
+    const stepLabels = ["Perfil", "Plan", "Empresa", "Cuenta"]
 
     const form = reactive({
+      business_profile_id: null,
+      plan_id: null,
       company_name: "",
       identification_number: "",
-      business_profile_id: null,
       admin_nombre: "",
       admin_email: "",
       admin_password: "",
       admin_confirm: "",
+      website: "",        // honeypot
     })
 
     const err = reactive({
+      business_profile_id: "",
+      plan_id: "",
       company_name: "",
       identification_number: "",
-      business_profile_id: "",
       admin_nombre: "",
       admin_email: "",
       admin_password: "",
       admin_confirm: "",
     })
+
+    const selectedPlan = computed(() => plans.value.find(p => p.id === form.plan_id) || null)
 
     const pwStrength = computed(() => {
       const p = form.admin_password
       let score = 0
-      if (p.length >= 8)        score++
-      if (/[A-Z]/.test(p))      score++
-      if (/[a-z]/.test(p))      score++
-      if (/\d/.test(p))         score++
-      if (/[@$!%*?&]/.test(p))  score++
+      if (p.length >= 8)       score++
+      if (/[A-Z]/.test(p))     score++
+      if (/[a-z]/.test(p))     score++
+      if (/\d/.test(p))        score++
+      if (/[@$!%*?&]/.test(p)) score++
       if (score <= 2) return { pct: 33,  color: "#ef4444", label: "Débil" }
       if (score <= 3) return { pct: 66,  color: "#f59e0b", label: "Media" }
       return { pct: 100, color: "#10b981", label: "Fuerte" }
     })
 
-    async function loadProfiles() {
-      try {
-        const res = await fetch(`${API}/landing/profiles`)
-        profiles.value = await res.json()
-      } catch {
-        profiles.value = []
-      } finally {
-        loadingProfiles.value = false
-      }
-    }
+    function clearErr() { Object.keys(err).forEach(k => err[k] = "") }
 
-    function clearErr() {
-      Object.keys(err).forEach(k => err[k] = "")
-    }
-
-    function goStep2() {
+    function goStep(target) {
       clearErr()
+      apiError.value = ""
       let ok = true
-      if (!form.company_name.trim()) { err.company_name = "El nombre de la empresa es obligatorio"; ok = false }
-      if (!form.identification_number.trim()) { err.identification_number = "El NIT es obligatorio"; ok = false }
-      if (!form.business_profile_id) { err.business_profile_id = "Selecciona el tipo de negocio"; ok = false }
-      if (ok) step.value = 2
+
+      if (step.value === 1) {
+        if (!form.business_profile_id) {
+          err.business_profile_id = "Selecciona el tipo de negocio"
+          ok = false
+        }
+      } else if (step.value === 2) {
+        if (!form.plan_id) {
+          err.plan_id = "Selecciona un plan"
+          ok = false
+        }
+      } else if (step.value === 3) {
+        if (!form.company_name.trim()) { err.company_name = "El nombre es obligatorio"; ok = false }
+        if (!form.identification_number.trim()) { err.identification_number = "El NIT es obligatorio"; ok = false }
+      }
+
+      if (ok) step.value = target
     }
 
     async function submitRegister() {
@@ -266,17 +359,21 @@ export default {
       apiError.value = ""
       let ok = true
 
+      // Re-validar todos los pasos anteriores en caso de navegación
+      if (!form.business_profile_id) { step.value = 1; err.business_profile_id = "Selecciona el tipo de negocio"; return }
+      if (!form.plan_id)             { step.value = 2; err.plan_id = "Selecciona un plan"; return }
+      if (!form.company_name.trim()) { step.value = 3; err.company_name = "El nombre es obligatorio"; return }
+      if (!form.identification_number.trim()) { step.value = 3; err.identification_number = "El NIT es obligatorio"; return }
+
       if (!form.admin_nombre.trim()) { err.admin_nombre = "El nombre es obligatorio"; ok = false }
       if (!form.admin_email.trim()) {
         err.admin_email = "El correo es obligatorio"; ok = false
       } else if (!/\S+@\S+\.\S+/.test(form.admin_email)) {
         err.admin_email = "Correo inválido"; ok = false
       }
-
       const pwOk = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/.test(form.admin_password)
       if (!pwOk) { err.admin_password = "La contraseña no cumple los requisitos"; ok = false }
       if (form.admin_password !== form.admin_confirm) { err.admin_confirm = "Las contraseñas no coinciden"; ok = false }
-
       if (!ok) return
 
       submitting.value = true
@@ -285,18 +382,20 @@ export default {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            company_name: form.company_name,
+            company_name:          form.company_name,
             identification_number: form.identification_number,
-            business_profile_id: form.business_profile_id,
-            admin_nombre: form.admin_nombre,
-            admin_email: form.admin_email,
-            admin_password: form.admin_password,
+            business_profile_id:   form.business_profile_id,
+            plan_id:               form.plan_id,
+            admin_nombre:          form.admin_nombre,
+            admin_email:           form.admin_email,
+            admin_password:        form.admin_password,
+            website:               form.website,  // honeypot
           }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.detail || "Error al registrar")
-        successCompany.value = data.company
-        successEmail.value   = data.email
+
+        successData.value = data
         sessionStorage.setItem("reg_email",    form.admin_email)
         sessionStorage.setItem("reg_password", form.admin_password)
         success.value = true
@@ -307,15 +406,34 @@ export default {
       }
     }
 
-    onMounted(loadProfiles)
+    async function loadProfiles() {
+      try {
+        const res = await fetch(`${API}/landing/profiles`)
+        profiles.value = await res.json()
+      } catch { profiles.value = [] }
+      finally { loadingProfiles.value = false }
+    }
+
+    async function loadPlans() {
+      try {
+        const res = await fetch(`${API}/plans/`)
+        const all = await res.json()
+        plans.value = all.filter(p => p.is_active)
+        // Pre-seleccionar el plan Free
+        const free = plans.value.find(p => p.price === 0)
+        if (free) form.plan_id = free.id
+      } catch { plans.value = [] }
+      finally { loadingPlans.value = false }
+    }
+
+    onMounted(() => { loadProfiles(); loadPlans() })
 
     return {
-      router,
-      step, success, submitting, showPass, showPass2,
-      apiError, profiles, loadingProfiles,
-      successCompany, successEmail,
+      router, step, stepLabels, success, submitting, showPass, showPass2,
+      apiError, profiles, plans, loadingProfiles, loadingPlans,
+      successData, selectedPlan,
       form, err, pwStrength,
-      goStep2, submitRegister,
+      goStep, submitRegister,
     }
   }
 }
@@ -335,86 +453,110 @@ export default {
   border-radius: 20px;
   padding: 40px;
   width: 100%;
-  max-width: 540px;
+  max-width: 560px;
   box-shadow: 0 24px 60px rgba(0,0,0,.4);
 }
 
-.reg-brand {
-  text-align: center;
-  margin-bottom: 28px;
-}
+/* LOGO */
+.reg-brand { text-align: center; margin-bottom: 28px; }
 .reg-brand a { text-decoration: none; font-size: 1.8rem; font-weight: 800; letter-spacing: -.5px; }
 .b-easy { color: #2563eb; }
-.b-pos  { color: #0f172a; }
+.b-pos  { color: #f97316; }   /* naranja — igual al resto de la app */
 .b-web  { color: #10b981; }
 
-/* Progress */
+/* BARRA DE PROGRESO */
 .reg-progress {
-  display: flex; align-items: center; justify-content: center;
-  gap: 0; margin-bottom: 28px;
+  display: flex; align-items: flex-start; justify-content: center;
+  margin-bottom: 28px; gap: 0;
 }
 .prog-step { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .prog-circle {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 34px; height: 34px; border-radius: 50%;
   border: 2px solid #e2e8f0;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: .9rem; color: #94a3b8;
+  font-weight: 700; font-size: .85rem; color: #94a3b8;
   transition: all .3s;
 }
 .prog-step.active .prog-circle { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
 .prog-step.done   .prog-circle { border-color: #10b981; background: #10b981; color: #fff; }
-.prog-label { font-size: .75rem; color: #94a3b8; font-weight: 600; }
+.prog-label { font-size: .7rem; color: #94a3b8; font-weight: 600; white-space: nowrap; }
 .prog-step.active .prog-label { color: #2563eb; }
 .prog-step.done   .prog-label { color: #10b981; }
 .prog-line {
   flex: 1; height: 2px; background: #e2e8f0;
-  margin: 0 12px; margin-bottom: 22px; transition: background .3s;
-  min-width: 60px;
+  margin: 16px 6px 0; min-width: 28px; transition: background .3s;
 }
 .prog-line.done { background: #10b981; }
 
-.reg-title { font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-bottom: 20px; }
+.reg-title { font-size: 1.2rem; font-weight: 800; color: #0f172a; margin-bottom: 18px; }
+.reg-form  { display: flex; flex-direction: column; gap: 16px; }
 
-.reg-form { display: flex; flex-direction: column; gap: 16px; }
-
+/* CAMPOS */
 .field-group { display: flex; flex-direction: column; gap: 6px; }
 .field-group label { font-size: .84rem; font-weight: 600; color: #334155; }
 .field-group.error label { color: #ef4444; }
 .req { color: #ef4444; }
-
 .field-group input {
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px; padding: 10px 14px;
-  font-size: .9rem; transition: border-color .2s;
-  outline: none; color: #0f172a;
+  border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 14px; font-size: .9rem;
+  transition: border-color .2s; outline: none; color: #0f172a;
 }
 .field-group input:focus { border-color: #2563eb; }
 .field-group.error input { border-color: #ef4444; }
 .field-error { color: #ef4444; font-size: .78rem; }
 
-/* Profile grid */
+/* GRID PERFILES */
 .loading-profiles { color: #94a3b8; font-size: .88rem; padding: 8px 0; }
 .profile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 10px;
 }
 .profile-btn {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  border: 2px solid #e2e8f0; border-radius: 10px; padding: 14px 10px;
+  border: 2px solid #e2e8f0; border-radius: 10px; padding: 14px 8px;
   background: #fff; cursor: pointer; transition: all .2s;
-  font-size: .82rem; font-weight: 600; color: #334155;
+  font-size: .78rem; font-weight: 600; color: #334155; text-align: center;
+  word-break: break-word; line-height: 1.3;
 }
-.profile-btn i { font-size: 1.6rem; }
+.profile-btn i { font-size: 1.5rem; }
 .profile-btn:hover { border-color: #2563eb; background: #eff6ff; }
 .profile-btn.selected { font-weight: 700; }
 
-/* Password */
+/* GRID PLANES */
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+.plan-btn {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  border: 2px solid #e2e8f0; border-radius: 12px; padding: 16px 8px 12px;
+  background: #fff; cursor: pointer; transition: all .2s;
+  text-align: center;
+}
+.plan-btn:hover { border-color: #2563eb; background: #eff6ff; }
+.plan-btn.selected { border-color: #2563eb; background: #eff6ff; }
+.plan-btn.selected.free { border-color: #10b981; background: #f0fdf4; }
+.plan-badge {
+  position: absolute; top: -1px; right: -1px;
+  background: #10b981; color: #fff;
+  font-size: .6rem; font-weight: 800; padding: 2px 6px;
+  border-radius: 0 10px 0 8px; letter-spacing: .5px;
+}
+.plan-name { font-weight: 800; font-size: .88rem; color: #0f172a; }
+.plan-price { font-size: .82rem; }
+.price-free { color: #10b981; font-weight: 800; font-size: 1rem; }
+.price-paid { color: #2563eb; font-weight: 700; }
+.price-paid small { font-size: .7rem; color: #64748b; }
+.plan-desc { font-size: .7rem; color: #64748b; line-height: 1.3; }
+
+/* CONTRASEÑA */
 .pass-wrap { position: relative; }
 .pass-wrap input {
-  width: 100%; padding-right: 42px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px; padding-top: 10px; padding-bottom: 10px; padding-left: 14px;
+  width: 100%; padding: 10px 42px 10px 14px;
+  border: 1.5px solid #e2e8f0; border-radius: 8px;
   font-size: .9rem; outline: none; color: #0f172a; box-sizing: border-box;
 }
 .pass-wrap input:focus { border-color: #2563eb; }
@@ -423,12 +565,10 @@ export default {
   position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
   background: none; border: none; cursor: pointer; color: #64748b; font-size: 1rem;
 }
-
 .pass-strength { margin-top: 6px; display: flex; align-items: center; gap: 10px; }
 .strength-bar { flex: 1; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; }
 .strength-fill { height: 100%; border-radius: 2px; transition: all .3s; }
 .strength-label { font-size: .75rem; font-weight: 700; white-space: nowrap; }
-
 .pass-rules { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; }
 .pass-rules li {
   display: flex; align-items: center; gap: 6px;
@@ -437,20 +577,28 @@ export default {
 .pass-rules li.ok { color: #10b981; }
 .pass-rules li i { font-size: .85rem; }
 
-/* Buttons */
+/* RESUMEN PLAN */
+.plan-summary {
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 10px 14px;
+  font-size: .82rem; color: #475569;
+}
+
+/* BOTONES */
 .btn-primary {
   background: #2563eb; color: #fff; border: none;
   padding: 13px; border-radius: 10px; font-weight: 700; font-size: .95rem;
-  cursor: pointer; transition: all .2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; transition: all .2s;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
 }
 .btn-primary:hover:not(:disabled) { background: #1d4ed8; transform: translateY(-1px); }
 .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
-
 .btn-row { display: flex; gap: 12px; }
 .btn-back {
   border: 1.5px solid #e2e8f0; background: #fff; color: #64748b;
   padding: 13px 18px; border-radius: 10px; font-weight: 600; font-size: .9rem;
-  cursor: pointer; transition: all .2s; display: flex; align-items: center;
+  cursor: pointer; transition: all .2s;
+  display: flex; align-items: center;
 }
 .btn-back:hover { border-color: #94a3b8; color: #334155; }
 .btn-row .btn-primary { flex: 1; }
@@ -459,17 +607,10 @@ export default {
   background: #fef2f2; border: 1px solid #fecaca;
   color: #dc2626; padding: 12px 14px; border-radius: 8px; font-size: .88rem;
 }
-
 .reg-login-link { text-align: center; font-size: .84rem; color: #64748b; margin: 4px 0 0; }
 .reg-login-link a { color: #2563eb; font-weight: 600; text-decoration: none; }
 
-.reg-plan-note {
-  text-align: center; font-size: .8rem; color: #64748b;
-  background: #f0fdf4; border: 1px solid #bbf7d0;
-  border-radius: 8px; padding: 10px 14px; margin: 4px 0 0;
-}
-
-/* Success */
+/* ÉXITO */
 .reg-success { text-align: center; padding: 20px 0; }
 .success-icon { font-size: 4rem; color: #10b981; margin-bottom: 16px; }
 .reg-success h2 { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
@@ -482,10 +623,13 @@ export default {
   padding: 13px 32px; border-radius: 10px; font-weight: 700;
   border: none; cursor: pointer; transition: all .2s;
 }
-.btn-go-login:hover { background: #1d4ed8; color: #fff; }
+.btn-go-login:hover { background: #1d4ed8; }
 
-@media (max-width: 480px) {
-  .reg-card { padding: 28px 20px; }
+/* MÓVIL */
+@media (max-width: 540px) {
+  .reg-card { padding: 24px 16px; }
   .profile-grid { grid-template-columns: repeat(2, 1fr); }
+  .plan-grid    { grid-template-columns: repeat(2, 1fr); }
+  .prog-line    { min-width: 16px; }
 }
 </style>
