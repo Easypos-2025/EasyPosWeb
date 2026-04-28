@@ -885,15 +885,22 @@ export default {
     }
 
     let sseSource = null
+    let pollTimer = null
 
     onMounted(async () => {
       await loadData()
       setTimeout(initReveal, 300)
+
+      // SSE: recarga inmediata cuando el admin cambia datos
       sseSource = new EventSource(`${API}/landing/events`)
       sseSource.addEventListener("landing_updated", () => loadData())
+
+      // Polling de respaldo: por si el SSE falla (proxy, Cloudflare, etc.)
+      pollTimer = setInterval(() => loadData(), 45000)
     })
     onBeforeUnmount(() => {
       clearInterval(sliderTimer.value)
+      clearInterval(pollTimer)
       if (sseSource) sseSource.close()
     })
 
