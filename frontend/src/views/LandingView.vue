@@ -622,8 +622,10 @@
       <div class="footer-bottom">
         <p>© {{ currentYear }} EasyPosWeb · easyposweb.com · easypos.co@gmail.com</p>
         <p v-if="lastUpdated" class="footer-version">
-          <i class="bi bi-arrow-clockwise"></i>
-          Actualizado: {{ lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
+          <i class="bi bi-clock-history"></i>
+          Última actualización:
+          {{ lastUpdated.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) }}
+          {{ lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
         </p>
         <div class="footer-socials">
           <a href="#" title="Facebook"><i class="bi bi-facebook"></i></a>
@@ -947,7 +949,7 @@ export default {
 }
 .nav-brand { text-decoration: none; font-size: 1.5rem; font-weight: 800; letter-spacing: -.5px; }
 .brand-easy { color: var(--primary); }
-.brand-pos  { color: var(--dark); }
+.brand-pos  { color: var(--orange); }
 .brand-web  { color: var(--accent); }
 .nav-links  { display: flex; gap: 24px; flex: 1; }
 .nav-link-item {
@@ -1781,7 +1783,13 @@ export default {
 .footer-socials { display: flex; gap: 16px; }
 .footer-socials a { color: #64748b; font-size: 1.2rem; transition: color .2s; }
 .footer-socials a:hover { color: #fff; }
-.footer-version { color: #475569; font-size: .78rem; display: flex; align-items: center; gap: 5px; }
+.footer-version {
+  color: #475569; font-size: .78rem;
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  padding: 4px 12px; border-radius: 20px;
+}
 
 /* ════════════════════════════════════════════════════
    RESPONSIVE
