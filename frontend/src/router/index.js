@@ -92,10 +92,10 @@ const routes = [
 
     children: [
 
-      /* REDIRECCIÓN INICIAL */
+      /* REDIRECCIÓN INICIAL — / → landing pública */
       {
         path: "",
-        redirect: "dashboard"
+        redirect: "/landing"
       },
 
       /* DASHBOARD */
