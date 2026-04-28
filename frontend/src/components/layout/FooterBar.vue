@@ -49,28 +49,22 @@
       </template>
     </div>
 
-    <!-- ── DERECHA: copyright ── -->
-    <span class="footer-copy">© 2020 EasyPosWeb</span>
-
-    <!-- ── TOAST FLOTANTE: info del asociado nuevo (20 seg) ── -->
-    <Transition name="assoc-toast">
-      <div v-if="associateToast" class="assoc-toast">
-        <div class="assoc-toast-body">
-          <i class="bi bi-stars assoc-icon"></i>
-          <div class="assoc-info">
-            <span class="assoc-label">Nuevo asociado</span>
-            <span class="assoc-name">{{ associateToast.name }}</span>
-            <span class="assoc-meta">
-              {{ associateToast.business_profile || 'General' }}
-              <span class="assoc-sep">·</span>
-              {{ associateToast.plan }}
-            </span>
-          </div>
-        </div>
-        <!-- Barra de progreso fija en 20 seg -->
-        <div :key="toastKey" class="assoc-progress"></div>
+    <!-- ── CENTRO: nuevo asociado inline ── -->
+    <Transition name="assoc-slide">
+      <div v-if="associateToast" class="assoc-inline">
+        <i class="bi bi-stars assoc-icon"></i>
+        <span class="assoc-label">Nuevo:</span>
+        <span class="assoc-name">{{ associateToast.name }}</span>
+        <span class="assoc-sep">·</span>
+        <span class="assoc-meta">{{ associateToast.business_profile || 'General' }}</span>
+        <span class="assoc-sep">·</span>
+        <span class="assoc-meta">{{ associateToast.plan }}</span>
+        <div :key="toastKey" class="assoc-bar"></div>
       </div>
     </Transition>
+
+    <!-- ── DERECHA: copyright ── -->
+    <span class="footer-copy">© 2020 EasyPosWeb</span>
 
   </div>
 </template>
@@ -275,64 +269,34 @@ onUnmounted(() => {
 /* ── COPYRIGHT ── */
 .footer-copy { margin-left: auto; white-space: nowrap; opacity: 0.35; font-size: 11px; flex-shrink: 0; padding-left: 12px; }
 
-/* ── TOAST FLOTANTE ── */
-.assoc-toast {
-  position: fixed;
-  bottom: 50px;
-  right: 20px;
-  width: 260px;
-  background: #1e293b;
-  border: 1px solid rgba(52,211,153,0.35);
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  z-index: 500;
-}
-
-.assoc-toast-body {
+/* ── NUEVO ASOCIADO INLINE ── */
+.assoc-inline {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-}
-
-.assoc-icon { font-size: 20px; color: #34d399; flex-shrink: 0; }
-
-.assoc-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-
-.assoc-label {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: #34d399;
-  opacity: 0.8;
-}
-
-.assoc-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: rgba(255,255,255,0.95);
-  white-space: nowrap;
+  gap: 5px;
+  margin-left: auto;
+  margin-right: 12px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  position: relative;
+  max-width: 340px;
+  flex-shrink: 1;
+  min-width: 0;
+  border-left: 2px solid rgba(52,211,153,0.4);
+  padding-left: 8px;
+  height: 28px;
 }
 
-.assoc-meta {
-  font-size: 11px;
-  color: rgba(255,255,255,0.45);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.assoc-sep { opacity: 0.35; }
+.assoc-icon  { font-size: 12px; color: #34d399; flex-shrink: 0; }
+.assoc-label { font-size: 10px; font-weight: 700; color: #34d399; white-space: nowrap; flex-shrink: 0; }
+.assoc-name  { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.assoc-meta  { font-size: 10px; color: rgba(255,255,255,0.4); white-space: nowrap; flex-shrink: 0; }
+.assoc-sep   { opacity: 0.25; font-size: 10px; flex-shrink: 0; }
 
-/* Barra de progreso: 20 seg fijos */
-.assoc-progress {
-  height: 3px;
+/* Barra de progreso pegada al borde inferior del inline */
+.assoc-bar {
+  position: absolute;
+  bottom: 0; left: 0;
+  height: 2px;
   background: linear-gradient(90deg, #34d399, #059669);
   width: 100%;
   animation: shrink-bar 20s linear forwards;
@@ -343,17 +307,18 @@ onUnmounted(() => {
   to   { width: 0%;   }
 }
 
-/* Transición del toast */
-.assoc-toast-enter-active,
-.assoc-toast-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
-.assoc-toast-enter-from,
-.assoc-toast-leave-to     { opacity: 0; transform: translateY(10px); }
+/* Transición fade+slide lateral */
+.assoc-slide-enter-active,
+.assoc-slide-leave-active { transition: opacity 0.35s ease, transform 0.35s ease; }
+.assoc-slide-enter-from,
+.assoc-slide-leave-to     { opacity: 0; transform: translateX(16px); }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 768px) {
   .footer-copy       { display: none; }
   .footer-brand-name { display: none; }
   .footer-content    { padding: 0 10px; }
-  .assoc-toast       { width: 220px; right: 10px; bottom: 48px; }
+  .assoc-inline      { max-width: 180px; margin-right: 6px; }
+  .assoc-meta        { display: none; }
 }
 </style>
