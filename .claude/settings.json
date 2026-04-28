@@ -119,7 +119,20 @@
       "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && cd .. && systemctl restart easyposweb && echo '=== DEPLOY OK ==='\")",
       "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb -n 50 --no-pager 2>&1 | grep -A 5 'ERROR\\\\|Error\\\\|500\\\\|register' | tail -40\")",
       "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb --since '10 minutes ago' --no-pager 2>&1 | tail -60\")",
-      "Bash(ssh root@209.38.152.254 \"systemctl status easyposweb --no-pager && echo '---' && journalctl -u easyposweb -n 80 --no-pager 2>&1 | tail -60\")"
+      "Bash(ssh root@209.38.152.254 \"systemctl status easyposweb --no-pager && echo '---' && journalctl -u easyposweb -n 80 --no-pager 2>&1 | tail -60\")",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && cd .. && systemctl restart easyposweb && echo '=== DEPLOY OK ==='\")",
+      "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb --since '30 minutes ago' --no-pager 2>&1 | grep -i 'forgot\\\\|reset\\\\|password\\\\|500\\\\|ERROR\\\\|error' | tail -30\")",
+      "Bash(ssh root@209.38.152.254 \"cat /var/www/easyposweb/frontend/.env 2>/dev/null; echo '---'; cat /var/www/easyposweb/frontend/.env.production 2>/dev/null || echo 'NO .env.production'\")",
+      "Bash(ssh root@209.38.152.254 \"grep -r 'VITE_API_URL\\\\|127.0.0.1:8000\\\\|easyposweb.com' /var/www/easyposweb/frontend/dist/assets/index-*.js 2>/dev/null | head -3 | cut -c1-200\")",
+      "Bash(ssh root@209.38.152.254 \"curl -s -X POST https://easyposweb.com/auth/forgot-password/ -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"test@test.com\\\\\"}' -w '\\\\nHTTP_CODE:%{http_code}' 2>&1\")",
+      "Bash(ssh root@209.38.152.254 \"curl -s -X POST https://easyposweb.com/register/associate/ -H 'Content-Type: application/json' -d '{\\\\\"company_name\\\\\":\\\\\"Test\\\\\",\\\\\"identification_number\\\\\":\\\\\"999888\\\\\",\\\\\"business_profile_id\\\\\":1,\\\\\"plan_id\\\\\":1,\\\\\"admin_nombre\\\\\":\\\\\"Test\\\\\",\\\\\"admin_email\\\\\":\\\\\"test_nuevo@test.com\\\\\",\\\\\"admin_password\\\\\":\\\\\"Jhon123*\\\\\",\\\\\"website\\\\\":\\\\\"\\\\\"}' -w '\\\\nHTTP_CODE:%{http_code}' 2>&1\")",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && cd .. && systemctl restart easyposweb && echo OK\")",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git pull && systemctl restart easyposweb && echo OK\")",
+      "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb --since '10 minutes ago' --no-pager 2>&1 | grep -i 'email\\\\|smtp\\\\|ERROR\\\\|error\\\\|mail\\\\|gmail' | tail -20\")",
+      "Bash(ssh root@209.38.152.254 \"grep -E 'SMTP|EMAIL|email' /var/www/easyposweb/.env 2>/dev/null | grep -v PASSWORD || echo 'No .env en raiz'; grep -E 'SMTP|EMAIL|email' /var/www/easyposweb/backend/.env 2>/dev/null | grep -v PASSWORD || echo 'No .env en backend'\")",
+      "Bash(ssh root@209.38.152.254 'python3 -c \" *)",
+      "Bash(ssh root@209.38.152.254 'cd /var/www/easyposweb && source backend/venv/bin/activate && python3 -c \" *)",
+      "Bash(ssh root@209.38.152.254 \"nc -zv smtp.gmail.com 587 2>&1; nc -zv smtp-relay.brevo.com 587 2>&1; nc -zv smtp.resend.com 465 2>&1\")"
     ]
   }
 }
