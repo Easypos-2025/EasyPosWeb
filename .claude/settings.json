@@ -102,7 +102,18 @@
       "Bash(npx vite *)",
       "Bash(ssh -i \"C:/Users/Personal/.ssh/id_ed25519\" -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb && echo 'DEPLOY OK'\")",
       "Bash(ssh -i \"C:/Users/Personal/.ssh/id_ed25519\" -o StrictHostKeyChecking=no root@209.38.152.254 \"cat /etc/nginx/sites-available/easyposweb 2>/dev/null || cat /etc/nginx/conf.d/*.conf 2>/dev/null | head -60\")",
-      "Bash(ssh -i *)"
+      "Bash(ssh -i *)",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb && echo 'DEPLOY OK'\")",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb && echo 'DEPLOY OK'\")",
+      "Bash(ssh root@209.38.152.254 \"cat /etc/systemd/system/easyposweb.service\")",
+      "Bash(ssh root@209.38.152.254 \"sed -i 's/-w 2/-w 1/' /etc/systemd/system/easyposweb.service && systemctl daemon-reload && systemctl restart easyposweb && echo 'Reiniciado con 1 worker'\")",
+      "Bash(ssh root@209.38.152.254 \"systemctl is-active easyposweb\")",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb && echo 'DEPLOY OK'\")",
+      "Bash(ssh root@209.38.152.254 'mysql -u root easyposweb -e \" *)",
+      "Bash(ssh root@209.38.152.254 \"mysql -u root easyposweb -e \\\\\"SELECT bpm.business_profile_id, bp.name as perfil, COUNT\\(bpm.module_id\\) as modulos FROM business_profile_modules bpm JOIN business_profiles bp ON bp.id = bpm.business_profile_id GROUP BY bpm.business_profile_id, bp.name;\\\\\"\")",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT bpm.business_profile_id, bp.name as perfil, COUNT\\(bpm.module_id\\) as modulos FROM business_profile_modules bpm JOIN business_profiles bp ON bp.id = bpm.business_profile_id GROUP BY bpm.business_profile_id, bp.name;'\")",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT id, nombre, email, company_id, role_id FROM users ORDER BY company_id, id;'\")",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT r.id, r.name, r.company_id, r.is_system FROM roles r ORDER BY r.company_id, r.id;'\")"
     ]
   }
 }
