@@ -94,8 +94,11 @@
           <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
           <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
 
-          <!-- Counter -->
-          <div class="slide-counter">{{ realActiveIndex + 1 }} / {{ profiles.length }}</div>
+          <!-- Counter + pausa -->
+          <div class="slide-counter">
+            <i v-if="isPaused" class="bi bi-pause-circle-fill me-1" title="Auto-play pausado — presiona una flecha para reanudar"></i>
+            {{ realActiveIndex + 1 }} / {{ profiles.length }}
+          </div>
 
           <!-- Scroll hint -->
           <div class="slide-scroll-hint">
@@ -618,6 +621,10 @@
       </div>
       <div class="footer-bottom">
         <p>© {{ currentYear }} EasyPosWeb · easyposweb.com · easypos.co@gmail.com</p>
+        <p v-if="lastUpdated" class="footer-version">
+          <i class="bi bi-arrow-clockwise"></i>
+          Actualizado: {{ lastUpdated.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
+        </p>
         <div class="footer-socials">
           <a href="#" title="Facebook"><i class="bi bi-facebook"></i></a>
           <a href="#" title="WhatsApp"><i class="bi bi-whatsapp"></i></a>
@@ -662,6 +669,8 @@ export default {
     const activeSlide       = ref(1)
     const disableTransition = ref(false)
     const sliderTimer       = ref(null)
+    const isPaused          = ref(false)
+    const lastUpdated       = ref(null)
     const mobileOpen        = ref(false)
     const featuresGrid      = ref(null)
     const submitting        = ref(false)
@@ -756,10 +765,12 @@ export default {
     }
     function resetTimer() {
       clearInterval(sliderTimer.value)
+      isPaused.value = false
       startTimer()
     }
     function pauseTimer() {
       clearInterval(sliderTimer.value)
+      isPaused.value = true
     }
 
     // ── Computed: parsear body_text (pipe-separated) ───────────
@@ -837,16 +848,20 @@ export default {
     // ── Carga de datos — perfiles primero, resto en background ──
     async function loadData() {
       const NC = { cache: "no-store" }
+      const isFirstLoad = profiles.value.length === 0
 
       // FASE 1: solo perfiles → desbloquea el hero/slider de inmediato
       try {
         const profData = await fetch(`${API}/landing/profiles`, NC).then(r => r.json())
         profiles.value = profData
-        if (profData.length > 1) {
-          activeSlide.value = 1
-          startTimer()
-        } else {
-          activeSlide.value = 0
+        lastUpdated.value = new Date()
+        if (isFirstLoad) {
+          if (profData.length > 1) {
+            activeSlide.value = 1
+            startTimer()
+          } else {
+            activeSlide.value = 0
+          }
         }
       } catch (e) {
         console.error("Error cargando perfiles:", e)
@@ -881,7 +896,7 @@ export default {
     })
 
     return {
-      sections, profiles, planData, activeSlide, mobileOpen,
+      sections, profiles, planData, activeSlide, isPaused, lastUpdated, mobileOpen,
       featuresGrid, featureItems, freePlanItems, aboutItems,
       multideviceItems, featureIcons, form, formErrors,
       submitting, contactSuccess, contactError, currentYear,
@@ -1013,6 +1028,7 @@ export default {
   background-position: center;
   background-repeat: no-repeat;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 /* Overlay degradado desde abajo */
@@ -1765,6 +1781,7 @@ export default {
 .footer-socials { display: flex; gap: 16px; }
 .footer-socials a { color: #64748b; font-size: 1.2rem; transition: color .2s; }
 .footer-socials a:hover { color: #fff; }
+.footer-version { color: #475569; font-size: .78rem; display: flex; align-items: center; gap: 5px; }
 
 /* ════════════════════════════════════════════════════
    RESPONSIVE
