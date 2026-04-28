@@ -207,13 +207,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   height: 40px;
-  flex-shrink: 0;
   background: #111827;
   color: rgba(255,255,255,0.65);
   font-size: 12px;
   letter-spacing: 0.2px;
   padding: 0 16px;
-  position: relative;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
 }
 
 /* ── IZQUIERDA ── */

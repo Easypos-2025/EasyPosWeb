@@ -88,25 +88,12 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
 </script>
 
 <style>
-/* ── Raíz: ocupa exactamente el viewport visible, incluyendo barra URL móvil ── */
-.page {
-  position: fixed;
-  inset: 0;          /* top:0 right:0 bottom:0 left:0 */
-  display: flex;
-  flex-direction: column;
-}
-
-/* ── Zona central: ocupa todo el espacio entre topbar y footer ── */
 .layout {
   display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .layout .sidebar-left {
   width: 220px;
-  flex-shrink: 0;
   transition: width 0.25s ease;
 }
 
@@ -114,17 +101,12 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
   width: 70px;
 }
 
-/* ── Contenido: el único que hace scroll ── */
+/* El content scroll normalmente; padding-bottom evita que el footer fijo tape el contenido */
 .content {
   flex: 1;
-  min-height: 0;
   overflow-y: auto;
+  padding-bottom: 40px;
   transition: all 0.25s ease;
-}
-
-/* ── Footer: siempre visible al pie ── */
-.footer {
-  flex-shrink: 0;
 }
 
 .sidebar-menu i {
