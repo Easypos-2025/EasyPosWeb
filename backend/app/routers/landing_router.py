@@ -1,10 +1,34 @@
+import asyncio
 import os
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Body
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
+
+# ── SSE subscribers ────────────────────────────────────────────────────────────
+_sse_subscribers: set[asyncio.Queue] = set()
+
+async def _sse_generator(queue: asyncio.Queue):
+    try:
+        yield "event: connected\ndata: ok\n\n"
+        while True:
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=25)
+                yield msg
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"
+    finally:
+        _sse_subscribers.discard(queue)
+
+def _notify_landing_changed():
+    msg = "event: landing_updated\ndata: ok\n\n"
+    for q in list(_sse_subscribers):
+        try:
+            q.put_nowait(msg)
+        except (asyncio.QueueFull, Exception):
+            _sse_subscribers.discard(q)
 
 from app.database import get_db
 from app.models.landing_section_model import LandingSection
@@ -166,6 +190,17 @@ def get_plans_with_features(db: Session = Depends(get_db)):
     )
 
 
+@router.get("/events")
+async def landing_events():
+    queue: asyncio.Queue = asyncio.Queue(maxsize=20)
+    _sse_subscribers.add(queue)
+    return StreamingResponse(
+        _sse_generator(queue),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/contact")
 def submit_contact(data: dict = Body(...), db: Session = Depends(get_db)):
     name    = (data.get("name") or "").strip()
@@ -209,7 +244,7 @@ def admin_get_sections(authorization: str = Header(None), db: Session = Depends(
 
 
 @router.post("/admin/sections")
-def admin_create_section(
+async def admin_create_section(
     data: dict = Body(...),
     authorization: str = Header(None),
     db: Session = Depends(get_db)
@@ -236,11 +271,12 @@ def admin_create_section(
     db.add(section)
     db.commit()
     db.refresh(section)
+    _notify_landing_changed()
     return _ser_section(section)
 
 
 @router.put("/admin/sections/{section_key}")
-def admin_update_section(
+async def admin_update_section(
     section_key: str,
     data: dict = Body(...),
     authorization: str = Header(None),
@@ -258,11 +294,12 @@ def admin_update_section(
 
     db.commit()
     db.refresh(section)
+    _notify_landing_changed()
     return _ser_section(section)
 
 
 @router.delete("/admin/sections/{section_key}")
-def admin_delete_section(
+async def admin_delete_section(
     section_key: str,
     authorization: str = Header(None),
     db: Session = Depends(get_db)
@@ -273,6 +310,7 @@ def admin_delete_section(
         raise HTTPException(status_code=404, detail="Sección no encontrada")
     db.delete(section)
     db.commit()
+    _notify_landing_changed()
     return {"message": "Sección eliminada"}
 
 
@@ -286,7 +324,7 @@ def admin_get_profiles(authorization: str = Header(None), db: Session = Depends(
 
 
 @router.put("/admin/profiles/{profile_id}")
-def admin_update_profile(
+async def admin_update_profile(
     profile_id: int,
     data: dict = Body(...),
     authorization: str = Header(None),
@@ -303,6 +341,7 @@ def admin_update_profile(
 
     db.commit()
     db.refresh(profile)
+    _notify_landing_changed()
     return _ser_profile(profile)
 
 
@@ -316,7 +355,7 @@ def admin_get_features(authorization: str = Header(None), db: Session = Depends(
 
 
 @router.post("/admin/plan-features")
-def admin_create_feature(
+async def admin_create_feature(
     data: dict = Body(...),
     authorization: str = Header(None),
     db: Session = Depends(get_db)
@@ -338,11 +377,12 @@ def admin_create_feature(
     db.add(feature)
     db.commit()
     db.refresh(feature)
+    _notify_landing_changed()
     return _ser_feature(feature)
 
 
 @router.put("/admin/plan-features/{feature_id}")
-def admin_update_feature(
+async def admin_update_feature(
     feature_id: int,
     data: dict = Body(...),
     authorization: str = Header(None),
@@ -360,11 +400,12 @@ def admin_update_feature(
 
     db.commit()
     db.refresh(feature)
+    _notify_landing_changed()
     return _ser_feature(feature)
 
 
 @router.delete("/admin/plan-features/{feature_id}")
-def admin_delete_feature(
+async def admin_delete_feature(
     feature_id: int,
     authorization: str = Header(None),
     db: Session = Depends(get_db)
@@ -375,6 +416,7 @@ def admin_delete_feature(
         raise HTTPException(status_code=404, detail="Feature no encontrada")
     db.delete(feature)
     db.commit()
+    _notify_landing_changed()
     return {"message": "Feature eliminada"}
 
 

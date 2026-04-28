@@ -55,6 +55,7 @@
               :key="`${profile.id}-${idx}`"
               class="slide-item"
               :style="getSlideBackground(profile)"
+              @click="pauseTimer"
             >
               <div class="slide-overlay"></div>
               <div class="slide-content">
@@ -757,6 +758,9 @@ export default {
       clearInterval(sliderTimer.value)
       startTimer()
     }
+    function pauseTimer() {
+      clearInterval(sliderTimer.value)
+    }
 
     // ── Computed: parsear body_text (pipe-separated) ───────────
     const featureItems = computed(() =>
@@ -863,11 +867,18 @@ export default {
       }
     }
 
+    let sseSource = null
+
     onMounted(async () => {
       await loadData()
       setTimeout(initReveal, 300)
+      sseSource = new EventSource(`${API}/landing/events`)
+      sseSource.addEventListener("landing_updated", () => loadData())
     })
-    onBeforeUnmount(() => clearInterval(sliderTimer.value))
+    onBeforeUnmount(() => {
+      clearInterval(sliderTimer.value)
+      if (sseSource) sseSource.close()
+    })
 
     return {
       sections, profiles, planData, activeSlide, mobileOpen,
@@ -875,7 +886,7 @@ export default {
       multideviceItems, featureIcons, form, formErrors,
       submitting, contactSuccess, contactError, currentYear,
       displayProfiles, realActiveIndex, trackStyle,
-      getSlideBackground, goToSlide, nextSlide, prevSlide, onTransitionEnd,
+      getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
       formatPrice, renderVal, submitContact,
     }
   }
@@ -1775,6 +1786,7 @@ export default {
   .slider-arrow { width: 40px; height: 40px; font-size: 1rem; }
   .slider-arrow.left  { left: 12px; }
   .slider-arrow.right { right: 12px; }
+  .slide-item { background-position: top center; }
   .slide-content { padding: 0 6% 100px; }
   .slide-name { font-size: 2rem; }
   .slide-desc { font-size: .95rem; }
