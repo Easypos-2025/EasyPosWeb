@@ -20,7 +20,7 @@ export function showToast(message, type = "success", timer = 1500) {
     timer,
     timerProgressBar: true,
     showConfirmButton: false,
-    position: "bottom",
+    position: "bottom-end",
     customClass: {
       popup: "swal-toast-popup",
       title: "swal-toast-title"

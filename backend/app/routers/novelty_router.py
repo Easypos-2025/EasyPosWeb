@@ -43,6 +43,20 @@ def _get_user(authorization: str, db: Session) -> User:
     return user
 
 
+def _is_sys(user: User, db: Session) -> bool:
+    role = db.query(Role).filter(Role.id == user.role_id).first()
+    return bool(role and role.is_system)
+
+def _find_novelty(novelty_id: int, user: User, db: Session) -> Novelty:
+    """Busca una novedad; SYSADMIN puede acceder a cualquier empresa."""
+    q = db.query(Novelty).filter(Novelty.id == novelty_id)
+    if not _is_sys(user, db):
+        q = q.filter(Novelty.company_id == user.company_id)
+    n = q.first()
+    if not n:
+        raise HTTPException(status_code=404, detail="Novedad no encontrada")
+    return n
+
 def _can_manage_all(user: User, db: Session) -> bool:
     role = db.query(Role).filter(Role.id == user.role_id).first()
     if not role:
@@ -186,13 +200,7 @@ def update_novelty(
 ):
     user    = _get_user(authorization, db)
     can_all = _can_manage_all(user, db)
-
-    n = db.query(Novelty).filter(
-        Novelty.id == novelty_id,
-        Novelty.company_id == user.company_id
-    ).first()
-    if not n:
-        raise HTTPException(status_code=404, detail="Novedad no encontrada")
+    n       = _find_novelty(novelty_id, user, db)
     if not can_all and n.user_id != user.id:
         raise HTTPException(status_code=403, detail="Sin permiso para editar esta novedad")
 
@@ -221,13 +229,7 @@ def delete_novelty(
 ):
     user    = _get_user(authorization, db)
     can_all = _can_manage_all(user, db)
-
-    n = db.query(Novelty).filter(
-        Novelty.id == novelty_id,
-        Novelty.company_id == user.company_id
-    ).first()
-    if not n:
-        raise HTTPException(status_code=404, detail="Novedad no encontrada")
+    n       = _find_novelty(novelty_id, user, db)
     if not can_all and n.user_id != user.id:
         raise HTTPException(status_code=403, detail="Sin permiso para eliminar esta novedad")
 
@@ -251,12 +253,7 @@ def list_evidence(
     db: Session = Depends(get_db)
 ):
     user = _get_user(authorization, db)
-    n    = db.query(Novelty).filter(
-        Novelty.id == novelty_id,
-        Novelty.company_id == user.company_id
-    ).first()
-    if not n:
-        raise HTTPException(status_code=404, detail="Novedad no encontrada")
+    n    = _find_novelty(novelty_id, user, db)
 
     evs = db.query(NoveltyEvidence).filter(
         NoveltyEvidence.novelty_id == novelty_id
@@ -273,12 +270,7 @@ async def upload_evidence(
     db: Session = Depends(get_db)
 ):
     user = _get_user(authorization, db)
-    n    = db.query(Novelty).filter(
-        Novelty.id == novelty_id,
-        Novelty.company_id == user.company_id
-    ).first()
-    if not n:
-        raise HTTPException(status_code=404, detail="Novedad no encontrada")
+    _find_novelty(novelty_id, user, db)
 
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXT:
@@ -335,12 +327,7 @@ def delete_evidence(
     if not ev:
         raise HTTPException(status_code=404, detail="Evidencia no encontrada")
 
-    n = db.query(Novelty).filter(
-        Novelty.id == ev.novelty_id,
-        Novelty.company_id == user.company_id
-    ).first()
-    if not n:
-        raise HTTPException(status_code=403, detail="Sin acceso")
+    _find_novelty(ev.novelty_id, user, db)
 
     fp = UPLOADS_DIR / Path(ev.file_url).name
     fp.unlink(missing_ok=True)
