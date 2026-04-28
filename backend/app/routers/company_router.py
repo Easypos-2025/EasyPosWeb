@@ -17,11 +17,13 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth.dependencies import get_current_user
+from app.models.business_profile_module import BusinessProfileModule
 from app.models.company_model import Company
 from app.models.business_profile_model import BusinessProfile
 from app.models.user_model import User
 from app.models.company_theme_model import CompanyTheme
 from app.models.role_model import Role
+from app.models.role_module_model import RoleModule
 
 # =====================================================
 # ROUTER
@@ -43,13 +45,56 @@ def create_company(
     db: Session = Depends(get_db)
 ):
     """
-    Crea una nueva compañía
+    Crea una nueva compañía y auto-asigna Role Admin con todos los módulos del perfil.
     """
     company = Company(**data)
     db.add(company)
+    db.flush()
+
+    # Auto-crear Role Admin si no existe para esta empresa
+    admin_role = db.query(Role).filter(
+        Role.company_id == company.id_company,
+        Role.name == "Admin"
+    ).first()
+
+    if not admin_role:
+        admin_role = Role(
+            name="Admin",
+            description="Administrador principal",
+            company_id=company.id_company,
+            is_system=False,
+        )
+        db.add(admin_role)
+        db.flush()
+
+    # Asignar todos los módulos del perfil de negocio al Role Admin
+    profile_modules = db.query(BusinessProfileModule).filter(
+        BusinessProfileModule.business_profile_id == company.business_profile_id
+    ).all()
+
+    existing_module_ids = {
+        rm.module_id for rm in db.query(RoleModule).filter(RoleModule.role_id == admin_role.id).all()
+    }
+
+    for bpm in profile_modules:
+        if bpm.module_id not in existing_module_ids:
+            db.add(RoleModule(
+                role_id=admin_role.id,
+                module_id=bpm.module_id,
+                can_view=True,
+                can_create=True,
+                can_edit=True,
+                can_delete=True,
+            ))
+
     db.commit()
     db.refresh(company)
-    return company
+    return {
+        "id": company.id_company,
+        "name": company.name,
+        "admin_role_id": admin_role.id,
+        "modules_assigned": len(profile_modules),
+    }
 
 
 # =====================================================

@@ -525,12 +525,15 @@ const createUser = async () => {
   }
 
   const currentUser = JSON.parse(localStorage.getItem("user"))
+  const targetCompanyId = selectedCompany.value && selectedCompany.value !== "all"
+    ? selectedCompany.value
+    : currentUser.company_id
 
   try {
-    await api.post("/users/", { ...form.value, company_id: currentUser.company_id }) 
+    await api.post("/users/", { ...form.value, company_id: targetCompanyId })
     showToast("Usuario creado","success")
     resetForm()
-    loadUsers()
+    loadUsers(targetCompanyId)
     loadPlanLimit()
   } catch (e) {
     const errors = e.response?.data?.detail

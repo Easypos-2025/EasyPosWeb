@@ -90,13 +90,14 @@ def list_novelty_users(
     if not can_all:
         raise HTTPException(status_code=403, detail="Sin permiso")
 
-    user_ids = (
-        db.query(Novelty.user_id)
-        .filter(Novelty.company_id == user.company_id)
-        .distinct()
-        .all()
-    )
-    ids = [r[0] for r in user_ids]
+    role     = db.query(Role).filter(Role.id == user.role_id).first()
+    is_sys   = role.is_system if role else False
+
+    q = db.query(Novelty.user_id).distinct()
+    if not is_sys:
+        q = q.filter(Novelty.company_id == user.company_id)
+
+    ids   = [r[0] for r in q.all()]
     users = db.query(User).filter(User.id.in_(ids)).order_by(User.nombre).all()
     return [{"id": u.id, "nombre": u.nombre} for u in users]
 
@@ -112,11 +113,15 @@ def list_novelties(
 ):
     user    = _get_user(authorization, db)
     can_all = _can_manage_all(user, db)
+    role    = db.query(Role).filter(Role.id == user.role_id).first()
+    is_sys  = role.is_system if role else False
 
-    query = db.query(Novelty).filter(Novelty.company_id == user.company_id)
+    query = db.query(Novelty)
     if not can_all:
-        query = query.filter(Novelty.user_id == user.id)
-    elif filter_user_id:
+        query = query.filter(Novelty.company_id == user.company_id, Novelty.user_id == user.id)
+    elif not is_sys:
+        query = query.filter(Novelty.company_id == user.company_id)
+    if can_all and filter_user_id:
         query = query.filter(Novelty.user_id == filter_user_id)
 
     if date_from:
