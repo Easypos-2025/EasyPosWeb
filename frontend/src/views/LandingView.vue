@@ -830,23 +830,14 @@ export default {
       cards.forEach(c => obs.observe(c))
     }
 
-    // ── Carga de datos ────────────────────────────────────────
+    // ── Carga de datos — perfiles primero, resto en background ──
     async function loadData() {
-      try {
-        const NO_CACHE = { cache: "no-store" }
-        const [secRes, profRes, planRes] = await Promise.all([
-          fetch(`${API}/landing/sections`, NO_CACHE),
-          fetch(`${API}/landing/profiles`, NO_CACHE),
-          fetch(`${API}/landing/plans`,    NO_CACHE),
-        ])
-        const [secData, profData, pData] = await Promise.all([
-          secRes.json(), profRes.json(), planRes.json()
-        ])
-        secData.forEach(s => { sections[s.section_key] = s })
-        profiles.value = profData
-        planData.plans          = pData.plans          || []
-        planData.feature_groups = pData.feature_groups || []
+      const NC = { cache: "no-store" }
 
+      // FASE 1: solo perfiles → desbloquea el hero/slider de inmediato
+      try {
+        const profData = await fetch(`${API}/landing/profiles`, NC).then(r => r.json())
+        profiles.value = profData
         if (profData.length > 1) {
           activeSlide.value = 1
           startTimer()
@@ -854,7 +845,21 @@ export default {
           activeSlide.value = 0
         }
       } catch (e) {
-        console.error("Error cargando landing:", e)
+        console.error("Error cargando perfiles:", e)
+      }
+
+      // FASE 2: secciones y planes en background (el usuario ya ve el hero)
+      try {
+        const [secRes, planRes] = await Promise.all([
+          fetch(`${API}/landing/sections`, NC),
+          fetch(`${API}/landing/plans`,    NC),
+        ])
+        const [secData, pData] = await Promise.all([secRes.json(), planRes.json()])
+        secData.forEach(s => { sections[s.section_key] = s })
+        planData.plans          = pData.plans          || []
+        planData.feature_groups = pData.feature_groups || []
+      } catch (e) {
+        console.error("Error cargando secciones/planes:", e)
       }
     }
 

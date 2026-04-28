@@ -528,29 +528,34 @@ export default {
       cards.forEach(c => obs.observe(c))
     }
 
-    // ── Carga de datos ────────────────────────────────────────
+    // ── Carga de datos — perfil primero, resto en background ────
     async function loadData() {
       loading.value = true
       const profileId = route.params.id
+      const NC = { cache: "no-store" }
+
+      // FASE 1: solo perfiles → muestra el hero de inmediato
       try {
-        const NO_CACHE = { cache: "no-store" }
-        const [secRes, profRes, planRes] = await Promise.all([
-          fetch(`${API}/landing/sections`, NO_CACHE),
-          fetch(`${API}/landing/profiles`, NO_CACHE),
-          fetch(`${API}/landing/plans`,    NO_CACHE),
-        ])
-        const [secData, profData, pData] = await Promise.all([
-          secRes.json(), profRes.json(), planRes.json()
-        ])
-        secData.forEach(s => { sections[s.section_key] = s })
-        const found = profData.find(p => String(p.id) === String(profileId))
-        profile.value = found || null
-        planData.plans          = pData.plans          || []
-        planData.feature_groups = pData.feature_groups || []
+        const profData = await fetch(`${API}/landing/profiles`, NC).then(r => r.json())
+        profile.value = profData.find(p => String(p.id) === String(profileId)) || null
       } catch (e) {
         console.error("Error cargando perfil:", e)
       } finally {
         loading.value = false
+      }
+
+      // FASE 2: secciones y planes en background
+      try {
+        const [secRes, planRes] = await Promise.all([
+          fetch(`${API}/landing/sections`, NC),
+          fetch(`${API}/landing/plans`,    NC),
+        ])
+        const [secData, pData] = await Promise.all([secRes.json(), planRes.json()])
+        secData.forEach(s => { sections[s.section_key] = s })
+        planData.plans          = pData.plans          || []
+        planData.feature_groups = pData.feature_groups || []
+      } catch (e) {
+        console.error("Error cargando secciones/planes:", e)
       }
     }
 
