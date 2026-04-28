@@ -15,16 +15,16 @@ RAÍZ
 ================================================= */
 
 html {
-  /* --font-size se sobreescribe por applyTheme() cuando la empresa tiene su preferencia */
   font-size: var(--font-size, 16px);
   height: 100%;
-  height: 100dvh;  /* dynamic viewport: descuenta barra URL en móvil */
   width: 100%;
+  overflow: hidden; /* solo .content hace scroll, nunca el documento */
 }
 
 body, #app {
   height: 100%;
   width: 100%;
+  overflow: hidden; /* bloquea scroll en body — el scroll va dentro de .content */
   font-size: 1rem;
   color: var(--font-color, #1e293b);
   background-color: var(--color-bg, #f1f5f9);

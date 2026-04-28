@@ -93,7 +93,7 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
   display: flex;
   flex-direction: column;
   height: 100%;
-  height: 100dvh; /* móvil: excluye barra URL dinámica del browser */
+  overflow: hidden;
 }
 
 /* ── Zona central: ocupa todo el espacio entre topbar y footer ── */
