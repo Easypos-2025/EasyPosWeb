@@ -93,23 +93,15 @@
 
     </div>
 
-    <!-- ── DERECHA: usuario + menú dropdown + logout ── -->
+    <!-- ── DERECHA: soporte + sitio web + usuario ── -->
     <div class="topbar-right">
 
-      <div class="user-info">
-        <i class="bi bi-person-circle"></i>
-        <div class="user-text">
-          <span class="user-name">{{ user?.nombre }}</span>
-          <span class="user-role">{{ user?.role }}</span>
-        </div>
-      </div>
-
-      <!-- Dropdown dinámico -->
+      <!-- Dropdown Soporte -->
       <div class="dropdown-wrap" ref="dropdownRef">
         <button
           class="btn-icon btn-support"
           @click.stop="toggleDropdown"
-          title="Opciones"
+          title="Soporte"
         >
           <i class="bi bi-headset"></i>
           <span class="btn-label">Soporte <i class="bi bi-chevron-down btn-arr"></i></span>
@@ -117,7 +109,7 @@
 
         <Transition name="dropdown-fade">
           <div v-if="dropdownOpen" class="dropdown-panel">
-            <div class="dropdown-header">Opciones</div>
+            <div class="dropdown-header">Soporte</div>
 
             <button
               v-for="item in menuItems"
@@ -132,7 +124,6 @@
               <span v-if="isItemPending(item)" class="badge-soon">Próximo</span>
             </button>
 
-            <!-- Invitar usuario — solo admin/sysadmin -->
             <template v-if="canInvite">
               <div class="dropdown-divider"></div>
               <button class="dropdown-item" @click="goInvite">
@@ -150,20 +141,51 @@
       </div>
 
       <!-- Ver sitio web -->
-      <a
-        :href="siteUrl"
-        target="_blank"
-        rel="noopener"
-        class="btn-icon btn-website"
-        title="Ver sitio web"
-      >
+      <a :href="siteUrl" target="_blank" rel="noopener"
+         class="btn-icon btn-website" title="Ver sitio web">
         <i class="bi bi-globe2"></i>
       </a>
 
-      <!-- Logout — separado del dropdown por margen -->
-      <button class="btn-icon btn-logout" @click="logout" title="Cerrar sesión">
-        <i class="bi bi-box-arrow-right"></i>
-      </button>
+      <!-- Dropdown Usuario -->
+      <div class="dropdown-wrap" ref="userDropRef">
+        <button
+          class="btn-user-drop"
+          @click.stop="toggleUserDropdown"
+          title="Mi cuenta"
+        >
+          <i class="bi bi-person-circle"></i>
+          <div class="user-text">
+            <span class="user-name">{{ user?.nombre }}</span>
+            <span class="user-role">{{ user?.role }}</span>
+          </div>
+          <i class="bi bi-chevron-down user-arr"></i>
+        </button>
+
+        <Transition name="dropdown-fade">
+          <div v-if="userDropOpen" class="dropdown-panel user-drop-panel">
+            <div class="dropdown-header">Mi cuenta</div>
+
+            <!-- Perfil — deshabilitado si pago pendiente -->
+            <button
+              class="dropdown-item"
+              :class="{ 'item-disabled': !isPaymentActive }"
+              :title="!isPaymentActive ? 'Disponible una vez activo tu plan' : 'Ir a mi perfil'"
+              @click="goProfile"
+            >
+              <span class="item-icon"><i class="bi bi-person-badge"></i></span>
+              <span class="item-name">Mi Perfil</span>
+              <span v-if="!isPaymentActive" class="badge-soon">Inactivo</span>
+            </button>
+
+            <div class="dropdown-divider"></div>
+
+            <button class="dropdown-item item-logout" @click="logout">
+              <span class="item-icon"><i class="bi bi-box-arrow-right"></i></span>
+              <span class="item-name">Cerrar Sesión</span>
+            </button>
+          </div>
+        </Transition>
+      </div>
 
     </div>
 
@@ -191,8 +213,15 @@ const unreadNotif  = ref(0)
 const menuItems    = ref([])
 const dropdownOpen    = ref(false)
 const dropdownRef     = ref(null)
+const userDropOpen    = ref(false)
+const userDropRef     = ref(null)
 const companyDropOpen = ref(false)
 const companyDropRef  = ref(null)
+
+const isPaymentActive = computed(() => {
+  const ps = user.value?.payment_status ?? "active"
+  return ps === "active"
+})
 
 // ── Notificaciones ──────────────────────────────────
 async function loadUnreadCount() {
@@ -251,11 +280,26 @@ function handleMenuAction(item) {
 // ── Dropdown ────────────────────────────────────────
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
+  if (dropdownOpen.value) userDropOpen.value = false
+}
+
+function toggleUserDropdown() {
+  userDropOpen.value = !userDropOpen.value
+  if (userDropOpen.value) dropdownOpen.value = false
+}
+
+function goProfile() {
+  if (!isPaymentActive.value) return
+  userDropOpen.value = false
+  router.push("/profiles")
 }
 
 function handleOutsideClick(e) {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
     dropdownOpen.value = false
+  }
+  if (userDropRef.value && !userDropRef.value.contains(e.target)) {
+    userDropOpen.value = false
   }
   if (companyDropRef.value && !companyDropRef.value.contains(e.target)) {
     companyDropOpen.value = false
@@ -319,6 +363,11 @@ onMounted(async () => {
   const stored = localStorage.getItem("user")
   if (stored) {
     user.value = JSON.parse(stored)
+    // Sincronizar payment_status desde localStorage (ya actualizado por router guard)
+    watchEffect(() => {
+      const fresh = localStorage.getItem("user")
+      if (fresh) user.value = JSON.parse(fresh)
+    })
     await companyStore.init(user.value)
     await loadPlan(companyStore.selectedCompany?.id)
     await loadMenuItems()
@@ -590,8 +639,26 @@ onUnmounted(() => {
 .btn-icon:hover   { background: rgba(255,255,255,0.12); }
 .btn-website       { margin-left: 2px; color: inherit; text-decoration: none; }
 .btn-website:hover { background: rgba(37,99,235,0.25); color: #93c5fd; }
-.btn-logout       { margin-left: 6px; }
-.btn-logout:hover { background: rgba(239,68,68,0.25); }
+/* Dropdown usuario */
+.btn-user-drop {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  color: var(--topbar-text);
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.btn-user-drop:hover { background: rgba(255,255,255,0.18); }
+.btn-user-drop .bi-person-circle { font-size: 22px; flex-shrink: 0; }
+.user-arr { font-size: 9px; opacity: 0.65; flex-shrink: 0; }
+
+.user-drop-panel { right: 0; min-width: 200px; }
+
+.item-logout { color: #fca5a5; }
+.item-logout:hover { background: rgba(239,68,68,0.2) !important; color: #fca5a5; }
 
 /* Dropdown Soporte */
 .dropdown-wrap { position: relative; }
@@ -724,6 +791,7 @@ onUnmounted(() => {
 @media (max-width: 768px) {
   .btn-menu-left         { display: flex; }
   .user-text             { display: none; }
+  .user-arr              { display: none; }
   .company-title         { font-size: 13px; max-width: 100px; }
   .company-profile-type  { display: none; }
   .topbar-divider        { display: none; }

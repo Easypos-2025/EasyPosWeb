@@ -377,12 +377,43 @@ def _init_db_data():
             ))
             db.commit()
 
-        # ── MIGRACIÓN: columna payment_status en companies ──────────────
+        # ── MIGRACIÓN: columnas nuevas en companies ─────────────────────
+        for col_sql in [
+            "ALTER TABLE companies ADD COLUMN payment_status VARCHAR(30) NOT NULL DEFAULT 'active'",
+            "ALTER TABLE companies ADD COLUMN upgrade_status VARCHAR(30) NULL DEFAULT NULL",
+        ]:
+            try:
+                db.execute(text(col_sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # ── MIGRACIÓN: columnas nuevas en company_payments ───────────────
+        for col_sql in [
+            "ALTER TABLE company_payments ADD COLUMN payment_type VARCHAR(20) NOT NULL DEFAULT 'activation'",
+            "ALTER TABLE company_payments ADD COLUMN currency_code VARCHAR(3) NOT NULL DEFAULT 'COP'",
+        ]:
+            try:
+                db.execute(text(col_sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # ── MIGRACIÓN: tabla plan_prices (multi-moneda) ──────────────────
         try:
-            db.execute(text(
-                "ALTER TABLE companies ADD COLUMN payment_status "
-                "VARCHAR(30) NOT NULL DEFAULT 'active'"
-            ))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS plan_prices (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    plan_id INT NOT NULL,
+                    currency_code VARCHAR(3) NOT NULL,
+                    amount FLOAT NOT NULL,
+                    is_active TINYINT(1) DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_plan_currency (plan_id, currency_code),
+                    FOREIGN KEY (plan_id) REFERENCES plans(id)
+                )
+            """))
             db.commit()
         except Exception:
             db.rollback()

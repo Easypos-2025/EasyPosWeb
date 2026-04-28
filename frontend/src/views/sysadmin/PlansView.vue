@@ -51,6 +51,9 @@
                 <button class="btn btn-warning btn-sm" @click="openEdit(plan)" title="Editar">
                   <i class="bi bi-pencil"></i> Editar
                 </button>
+                <button class="btn btn-info btn-sm" @click="openPrices(plan)" title="Precios por moneda">
+                  <i class="bi bi-currency-exchange"></i>
+                </button>
                 <button class="btn btn-danger btn-sm" @click="confirmDelete(plan)" title="Eliminar">
                   <i class="bi bi-trash"></i>
                 </button>
@@ -124,6 +127,76 @@
       </div>
     </div>
 
+    <!-- MODAL PRECIOS POR MONEDA -->
+    <div v-if="showPricesModal" class="modal-overlay" @click.self="showPricesModal = false">
+      <div class="modal-box prices-modal">
+        <div class="modal-header">
+          <h2><i class="bi bi-currency-exchange me-2"></i>Precios de "{{ pricesPlan?.name }}" por moneda</h2>
+          <button class="btn-icon-sm" @click="showPricesModal = false"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <p class="prices-note">
+          El precio base (COP) es el valor de la columna "Precio" del plan.
+          Aquí puedes agregar o editar precios en otras monedas para usuarios de otros países.
+        </p>
+
+        <div class="prices-table-wrap">
+          <table class="data-table" v-if="planPrices.length">
+            <thead>
+              <tr>
+                <th>Moneda</th><th class="text-right">Valor</th><th class="text-center">Activo</th><th class="text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="pp in planPrices" :key="pp.id">
+                <td><strong>{{ pp.currency_code }}</strong></td>
+                <td class="text-right">{{ pp.amount.toLocaleString('es-CO') }}</td>
+                <td class="text-center">
+                  <span class="badge" :class="pp.is_active ? 'badge-green' : 'badge-gray'">
+                    {{ pp.is_active ? 'Activo' : 'Inactivo' }}
+                  </span>
+                </td>
+                <td class="text-center">
+                  <button class="btn-action btn-delete" @click="deletePrice(pp.currency_code)">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="text-muted text-center" style="padding:16px">
+            No hay precios en otras monedas. El sistema usa COP por defecto.
+          </p>
+        </div>
+
+        <!-- Agregar nuevo precio -->
+        <div class="add-price-form">
+          <h4>Agregar / actualizar precio</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Moneda</label>
+              <select v-model="newPriceCurrency" class="form-input">
+                <option value="">-- Seleccionar --</option>
+                <option v-for="c in availableCurrencies" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Valor</label>
+              <input v-model.number="newPriceAmount" type="number" min="0" class="form-input" placeholder="Ej: 50000" />
+            </div>
+          </div>
+          <button class="btn-primary" :disabled="!newPriceCurrency || !newPriceAmount || savingPrice" @click="savePrice">
+            <i v-if="savingPrice" class="bi bi-arrow-repeat spin"></i>
+            {{ savingPrice ? 'Guardando...' : 'Guardar precio' }}
+          </button>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-secondary" @click="showPricesModal = false">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -131,6 +204,8 @@
 import { ref, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+
+import { SUPPORTED_CURRENCIES } from "@/utils/currency"
 
 const plans   = ref([])
 const loading = ref(true)
@@ -145,6 +220,15 @@ const emptyForm = () => ({
 })
 
 const form = ref(emptyForm())
+
+// Precios por moneda
+const showPricesModal  = ref(false)
+const pricesPlan       = ref(null)
+const planPrices       = ref([])
+const newPriceCurrency = ref("")
+const newPriceAmount   = ref(0)
+const savingPrice      = ref(false)
+const availableCurrencies = SUPPORTED_CURRENCIES
 
 async function load() {
   loading.value = true
@@ -217,6 +301,44 @@ async function confirmDelete(plan) {
   }
 }
 
+async function openPrices(plan) {
+  pricesPlan.value      = plan
+  newPriceCurrency.value = ""
+  newPriceAmount.value   = 0
+  showPricesModal.value  = true
+  try {
+    const res = await api.get(`/plans/${plan.id}/prices`)
+    planPrices.value = res.data
+  } catch { planPrices.value = [] }
+}
+
+async function savePrice() {
+  if (!newPriceCurrency.value || !newPriceAmount.value) return
+  savingPrice.value = true
+  try {
+    await api.put(`/plans/${pricesPlan.value.id}/prices/${newPriceCurrency.value}`, {
+      amount: newPriceAmount.value, is_active: true,
+    })
+    showToast(`Precio en ${newPriceCurrency.value} guardado`, "success")
+    const res = await api.get(`/plans/${pricesPlan.value.id}/prices`)
+    planPrices.value = res.data
+    newPriceCurrency.value = ""
+    newPriceAmount.value   = 0
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error guardando precio", "error")
+  } finally { savingPrice.value = false }
+}
+
+async function deletePrice(currency) {
+  try {
+    await api.delete(`/plans/${pricesPlan.value.id}/prices/${currency}`)
+    showToast(`Precio en ${currency} eliminado`, "success")
+    planPrices.value = planPrices.value.filter(p => p.currency_code !== currency)
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error eliminando precio", "error")
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -247,6 +369,15 @@ onMounted(load)
 .btn-action  { background: none; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px 9px; cursor: pointer; font-size: 14px; transition: all 0.15s; }
 .btn-edit:hover   { background: #eff6ff; border-color: #3b82f6; color: #3b82f6; }
 .btn-delete:hover { background: #fef2f2; border-color: #ef4444; color: #ef4444; }
+
+/* Modal precios */
+.prices-modal { max-width: 560px; }
+.prices-note  { font-size: .82rem; color: #64748b; margin-bottom: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+.prices-table-wrap { margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+.add-price-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+.add-price-form h4 { font-size: .88rem; font-weight: 700; color: #334155; margin-bottom: 12px; }
+.btn-info { background: none; border: 1px solid #0ea5e9; color: #0ea5e9; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 13px; }
+.btn-info:hover { background: #e0f2fe; }
 
 /* MODAL */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }

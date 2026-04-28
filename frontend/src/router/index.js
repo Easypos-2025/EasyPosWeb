@@ -415,9 +415,11 @@ router.beforeEach(async (to, from, next) => {
   ========================================= */
   const paymentStatus = meData?.payment_status ?? "active"
   const isSystem      = meData?.is_system ?? false
-  const allowedWithPending = ["/payment-pending", "/soporte/ticket"]
+  // Estados que requieren ir a /payment-pending (bloquean el dashboard)
+  const blockedStatuses   = ["pending_payment", "payment_submitted", "payment_rejected", "expired"]
+  const allowedWithBlocked = ["/payment-pending", "/soporte/ticket"]
 
-  if (!isSystem && paymentStatus !== "active" && !allowedWithPending.includes(to.path)) {
+  if (!isSystem && blockedStatuses.includes(paymentStatus) && !allowedWithBlocked.includes(to.path)) {
     return next("/payment-pending")
   }
 

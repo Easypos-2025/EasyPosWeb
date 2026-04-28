@@ -86,6 +86,20 @@
         <form v-else-if="step === 2" class="reg-form" @submit.prevent="goStep(3)">
           <h2 class="reg-title">Selecciona tu plan</h2>
 
+          <!-- Selector de moneda -->
+          <div class="currency-row">
+            <i class="bi bi-currency-exchange"></i>
+            <label>Moneda:</label>
+            <select v-model="selectedCurrency" class="currency-select" @change="onCurrencyChange">
+              <option v-for="code in SUPPORTED_CURRENCIES" :key="code" :value="code">
+                {{ code }} — {{ CURRENCY_NAMES[code] }}
+              </option>
+            </select>
+            <span v-if="detectedCurrency === selectedCurrency" class="currency-auto">
+              <i class="bi bi-geo-alt-fill"></i> detectado automáticamente
+            </span>
+          </div>
+
           <div class="field-group" :class="{ error: err.plan_id }">
             <div v-if="loadingPlans" class="loading-profiles">
               <i class="bi bi-hourglass-split"></i> Cargando planes...
@@ -102,10 +116,9 @@
                 <div class="plan-badge" v-if="p.price === 0">GRATIS</div>
                 <div class="plan-name">{{ p.name }}</div>
                 <div class="plan-price">
-                  <span v-if="p.price === 0" class="price-free">$0</span>
+                  <span v-if="p.price === 0" class="price-free">Gratis</span>
                   <span v-else class="price-paid">
-                    {{ new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(p.price) }}
-                    <small>/año</small>
+                    {{ planPriceLabel(p) }}<small>/año</small>
                   </span>
                 </div>
                 <div class="plan-desc">{{ p.description || '' }}</div>
@@ -269,6 +282,7 @@
 <script>
 import { ref, reactive, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
+import { detectCurrency, formatMoney, CURRENCY_NAMES, SUPPORTED_CURRENCIES } from "@/utils/currency"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -288,6 +302,8 @@ export default {
     const loadingProfiles = ref(true)
     const loadingPlans    = ref(true)
     const successData = ref({})
+    const detectedCurrency = ref(detectCurrency())
+    const selectedCurrency = ref(detectCurrency())
 
     const stepLabels = ["Perfil", "Plan", "Empresa", "Cuenta"]
 
@@ -315,6 +331,13 @@ export default {
     })
 
     const selectedPlan = computed(() => plans.value.find(p => p.id === form.plan_id) || null)
+
+    function planPrice(p) {
+      return p.price_in_currency ?? p.price
+    }
+    function planPriceLabel(p) {
+      return formatMoney(planPrice(p), selectedCurrency.value)
+    }
 
     const pwStrength = computed(() => {
       const p = form.admin_password
@@ -386,10 +409,11 @@ export default {
             identification_number: form.identification_number,
             business_profile_id:   form.business_profile_id,
             plan_id:               form.plan_id,
+            currency_code:         selectedCurrency.value,
             admin_nombre:          form.admin_nombre,
             admin_email:           form.admin_email,
             admin_password:        form.admin_password,
-            website:               form.website,  // honeypot
+            website:               form.website,
           }),
         })
         const data = await res.json()
@@ -416,14 +440,17 @@ export default {
 
     async function loadPlans() {
       try {
-        const res = await fetch(`${API}/plans/`)
-        const all = await res.json()
-        plans.value = all.filter(p => p.is_active)
-        // Pre-seleccionar el plan Free
+        const res = await fetch(`${API}/plans/with-prices?currency=${selectedCurrency.value}`)
+        plans.value = await res.json()
         const free = plans.value.find(p => p.price === 0)
-        if (free) form.plan_id = free.id
+        if (free && !form.plan_id) form.plan_id = free.id
       } catch { plans.value = [] }
       finally { loadingPlans.value = false }
+    }
+
+    async function onCurrencyChange() {
+      loadingPlans.value = true
+      await loadPlans()
     }
 
     onMounted(() => { loadProfiles(); loadPlans() })
@@ -432,8 +459,11 @@ export default {
       router, step, stepLabels, success, submitting, showPass, showPass2,
       apiError, profiles, plans, loadingProfiles, loadingPlans,
       successData, selectedPlan,
+      detectedCurrency, selectedCurrency,
+      CURRENCY_NAMES, SUPPORTED_CURRENCIES,
       form, err, pwStrength,
-      goStep, submitRegister,
+      planPrice, planPriceLabel, formatMoney,
+      goStep, submitRegister, onCurrencyChange,
     }
   }
 }
@@ -522,6 +552,22 @@ export default {
 .profile-btn i { font-size: 1.5rem; }
 .profile-btn:hover { border-color: #2563eb; background: #eff6ff; }
 .profile-btn.selected { font-weight: 700; }
+
+/* SELECTOR MONEDA */
+.currency-row {
+  display: flex; align-items: center; gap: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 8px 12px; flex-wrap: wrap;
+  font-size: .82rem; color: #475569;
+}
+.currency-row .bi-currency-exchange { color: #2563eb; font-size: 1rem; }
+.currency-row label { font-weight: 600; flex-shrink: 0; }
+.currency-select {
+  border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 4px 8px; font-size: .8rem; color: #334155;
+  outline: none; background: #fff; cursor: pointer; flex: 1; min-width: 160px;
+}
+.currency-auto { font-size: .72rem; color: #10b981; display: flex; align-items: center; gap: 3px; }
 
 /* GRID PLANES */
 .plan-grid {

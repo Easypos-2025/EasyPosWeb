@@ -21,6 +21,12 @@ class CompanyPayment(Base):
 
     amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
+    # Tipo: activation | upgrade | renewal | downgrade
+    payment_type: Mapped[str] = mapped_column(String(20), nullable=False, default="activation")
+
+    # Moneda en que se acordó el pago
+    currency_code: Mapped[str] = mapped_column(String(3), nullable=False, default="COP")
+
     # Estados: pending | submitted | approved | rejected
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
 

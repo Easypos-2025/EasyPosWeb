@@ -136,6 +136,13 @@ class Company(Base):
         server_default="active"
     )
 
+    # NULL = sin upgrade en curso | 'upgrade_pending' = esperando aprobación
+    upgrade_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=True,
+        default=None
+    )
+
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP,
         server_default=func.now()

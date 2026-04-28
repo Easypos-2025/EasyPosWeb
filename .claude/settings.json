@@ -113,7 +113,13 @@
       "Bash(ssh root@209.38.152.254 \"mysql -u root easyposweb -e \\\\\"SELECT bpm.business_profile_id, bp.name as perfil, COUNT\\(bpm.module_id\\) as modulos FROM business_profile_modules bpm JOIN business_profiles bp ON bp.id = bpm.business_profile_id GROUP BY bpm.business_profile_id, bp.name;\\\\\"\")",
       "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT bpm.business_profile_id, bp.name as perfil, COUNT\\(bpm.module_id\\) as modulos FROM business_profile_modules bpm JOIN business_profiles bp ON bp.id = bpm.business_profile_id GROUP BY bpm.business_profile_id, bp.name;'\")",
       "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT id, nombre, email, company_id, role_id FROM users ORDER BY company_id, id;'\")",
-      "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT r.id, r.name, r.company_id, r.is_system FROM roles r ORDER BY r.company_id, r.id;'\")"
+      "Bash(ssh -o StrictHostKeyChecking=accept-new root@209.38.152.254 \"mysql -u root easyposweb -e 'SELECT r.id, r.name, r.company_id, r.is_system FROM roles r ORDER BY r.company_id, r.id;'\")",
+      "Bash(node --input-type=module --eval \"import\\('./src/router/index.js'\\)\")",
+      "Bash(python -c \"from app.models.company_payment_model import CompanyPayment; from app.routers.payment_router import router; from app.routers.register_router import router; print\\('OK'\\)\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && cd .. && systemctl restart easyposweb && echo '=== DEPLOY OK ==='\")",
+      "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb -n 50 --no-pager 2>&1 | grep -A 5 'ERROR\\\\|Error\\\\|500\\\\|register' | tail -40\")",
+      "Bash(ssh root@209.38.152.254 \"journalctl -u easyposweb --since '10 minutes ago' --no-pager 2>&1 | tail -60\")",
+      "Bash(ssh root@209.38.152.254 \"systemctl status easyposweb --no-pager && echo '---' && journalctl -u easyposweb -n 80 --no-pager 2>&1 | tail -60\")"
     ]
   }
 }

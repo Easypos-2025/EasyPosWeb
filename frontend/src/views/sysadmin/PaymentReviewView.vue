@@ -5,11 +5,20 @@
     <div class="pr-header">
       <div>
         <h1 class="pr-title"><i class="bi bi-credit-card-2-back me-2"></i>Revisión de Pagos</h1>
-        <p class="pr-sub">Pagos pendientes de activación de planes de asociados.</p>
+        <p class="pr-sub">Pagos pendientes de activación, upgrade, renovación y cambio de plan.</p>
       </div>
-      <button class="btn-refresh" @click="load" :disabled="loading">
-        <i class="bi bi-arrow-clockwise" :class="{ spin: loading }"></i> Actualizar
-      </button>
+      <div class="pr-header-right">
+        <select v-model="filterType" class="filter-select" @change="load">
+          <option value="">Todos los tipos</option>
+          <option value="activation">Activación</option>
+          <option value="upgrade">Upgrade</option>
+          <option value="renewal">Renovación</option>
+          <option value="downgrade">Downgrade</option>
+        </select>
+        <button class="btn-refresh" @click="load" :disabled="loading">
+          <i class="bi bi-arrow-clockwise" :class="{ spin: loading }"></i> Actualizar
+        </button>
+      </div>
     </div>
 
     <!-- CARGANDO -->
@@ -31,9 +40,14 @@
             <div class="pr-company-name">{{ p.company.name }}</div>
             <div class="pr-company-nit">NIT: {{ p.company.nit }}</div>
           </div>
-          <span class="pr-badge" :class="p.status">
-            {{ statusLabel[p.status] || p.status }}
-          </span>
+          <div class="pr-badges">
+            <span class="pr-type-badge" :class="p.payment_type">
+              {{ typeLabel[p.payment_type] || p.payment_type }}
+            </span>
+            <span class="pr-badge" :class="p.status">
+              {{ statusLabel[p.status] || p.status }}
+            </span>
+          </div>
         </div>
 
         <div class="pr-info-grid">
@@ -43,7 +57,12 @@
           </div>
           <div class="pr-info-row">
             <span class="pr-info-label">Monto:</span>
-            <span class="pr-info-val amount">{{ formatCurrency(p.amount) }}</span>
+            <span class="pr-info-val amount">
+              {{ formatCurrency(p.amount) }}
+              <small v-if="p.currency_code && p.currency_code !== 'COP'" class="currency-tag">
+                {{ p.currency_code }}
+              </small>
+            </span>
           </div>
           <div class="pr-info-row">
             <span class="pr-info-label">Admin:</span>
@@ -160,12 +179,19 @@ export default {
     const rejectReason  = ref("")
     const rejectErr     = ref("")
     const apiBase       = API_URL
+    const filterType    = ref("")
 
     const statusLabel = {
       pending:   "Pendiente",
       submitted: "Comprobante enviado",
       approved:  "Aprobado",
       rejected:  "Rechazado",
+    }
+    const typeLabel = {
+      activation: "Activación",
+      upgrade:    "Upgrade",
+      renewal:    "Renovación",
+      downgrade:  "Downgrade",
     }
 
     function formatCurrency(amount) {
@@ -184,7 +210,10 @@ export default {
     async function load() {
       loading.value = true
       try {
-        const res = await api.get("/payments/pending")
+        const url = filterType.value
+          ? `/payments/pending?payment_type=${filterType.value}`
+          : "/payments/pending"
+        const res = await api.get(url)
         payments.value = res.data
       } catch {
         payments.value = []
@@ -246,7 +275,7 @@ export default {
     return {
       loading, payments, actioning, approveTarget,
       rejectTarget, rejectReason, rejectErr, apiBase,
-      statusLabel, formatCurrency, formatDate,
+      filterType, statusLabel, typeLabel, formatCurrency, formatDate,
       load, confirmApprove, doApprove, openReject, closeReject, doReject,
     }
   }
@@ -262,6 +291,14 @@ export default {
 }
 .pr-title { font-size: 1.4rem; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
 .pr-sub   { color: #64748b; font-size: .88rem; margin: 0; }
+
+.pr-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.filter-select {
+  border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 7px 12px; font-size: .84rem; color: #334155;
+  outline: none; background: #fff; cursor: pointer;
+}
 
 .btn-refresh {
   border: 1.5px solid #e2e8f0; background: #fff; color: #475569;
@@ -285,6 +322,20 @@ export default {
 }
 .pr-company-name { font-weight: 800; font-size: 1rem; color: #0f172a; }
 .pr-company-nit  { font-size: .78rem; color: #94a3b8; margin-top: 2px; }
+
+.pr-badges { display: flex; gap: 6px; flex-shrink: 0; flex-direction: column; align-items: flex-end; }
+
+/* BADGE TIPO */
+.pr-type-badge {
+  padding: 3px 8px; border-radius: 20px; font-size: .68rem;
+  font-weight: 700; white-space: nowrap;
+}
+.pr-type-badge.activation { background: #eff6ff; color: #2563eb; }
+.pr-type-badge.upgrade    { background: #f0fdf4; color: #16a34a; }
+.pr-type-badge.renewal    { background: #fdf4ff; color: #9333ea; }
+.pr-type-badge.downgrade  { background: #fff7ed; color: #f97316; }
+
+.currency-tag { font-size: .68rem; background: #e2e8f0; color: #475569; border-radius: 4px; padding: 1px 4px; margin-left: 4px; }
 
 /* BADGE ESTADO */
 .pr-badge {

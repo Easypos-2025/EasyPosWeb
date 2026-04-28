@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.user_model import User
 from app.models.role_model import Role
+from app.models.company_plan_model import CompanyPlan
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import secrets
 from app.models.password_reset_token import PasswordResetToken
 from pydantic import BaseModel
@@ -376,6 +377,52 @@ def heartbeat(
     
     
 # =====================================================
+# HELPER: Detecta si el plan venció y actualiza payment_status
+# =====================================================
+
+def _resolve_payment_status(company, db: Session) -> str:
+    """
+    Si el plan activo venció → cambia payment_status a 'expired' en DB y retorna 'expired'.
+    Evita necesitar un cron job: se detecta en cada llamada a /me/.
+    Solo aplica a empresas que NO están en flujo de pago pendiente.
+    """
+    if not company:
+        return "active"
+
+    current = getattr(company, "payment_status", "active") or "active"
+
+    # Si ya está en flujo de pago/pendiente no pisar ese estado
+    if current in ("pending_payment", "payment_submitted", "payment_rejected"):
+        return current
+
+    # Buscar el plan activo con fecha de vencimiento
+    active_plan = (
+        db.query(CompanyPlan)
+        .filter(
+            CompanyPlan.company_id == company.id_company,
+            CompanyPlan.is_active == True,
+        )
+        .order_by(CompanyPlan.id.desc())
+        .first()
+    )
+
+    if (
+        active_plan
+        and active_plan.expiration_date
+        and active_plan.expiration_date < date.today()
+        and current == "active"
+    ):
+        company.payment_status = "expired"
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+        return "expired"
+
+    return current
+
+
+# =====================================================
 # USUARIO ACTUAL
 # =====================================================
 
@@ -460,7 +507,8 @@ def get_current_user(
         "is_active": user.is_active,
         "is_system": role.is_system if role else False,
         "business_profile_id": company.business_profile_id if company else None,
-        "payment_status": getattr(company, "payment_status", "active") if company else "active",
+        "payment_status": _resolve_payment_status(company, db),
+        "upgrade_status": getattr(company, "upgrade_status", None) if company else None,
     }
     
     

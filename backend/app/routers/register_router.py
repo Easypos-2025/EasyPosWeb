@@ -51,11 +51,11 @@ class AssociateRegisterRequest(BaseModel):
     identification_number: str
     business_profile_id: int
     plan_id: int
+    currency_code: str = "COP"
     admin_nombre: str
     admin_email: str
     admin_password: str
-    # Campo honeypot — debe venir vacío siempre
-    website: str = ""
+    website: str = ""   # honeypot anti-bot
 
     @field_validator("company_name", "identification_number", "admin_nombre", "admin_email")
     @classmethod
@@ -175,11 +175,21 @@ def register_associate(
 
         # 7. Registro de pago pendiente (solo planes de pago)
         if is_paid:
+            from app.models.plan_price_model import PlanPrice as PP
+            currency = data.currency_code.upper()[:3]
+            pp = db.query(PP).filter(
+                PP.plan_id == plan.id,
+                PP.currency_code == currency,
+                PP.is_active == True,
+            ).first()
+            amount = pp.amount if pp else plan.price
             db.add(CompanyPayment(
                 company_id=company.id_company,
                 plan_id=plan.id,
-                amount=plan.price,
+                amount=amount,
+                currency_code=currency,
                 status="pending",
+                payment_type="activation",
             ))
 
         db.commit()

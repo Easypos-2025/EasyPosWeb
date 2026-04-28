@@ -58,9 +58,19 @@
       <!-- FORMULARIO PRINCIPAL -->
       <template v-else>
         <div class="pp-header">
-          <div class="pp-icon orange"><i class="bi bi-credit-card-2-front"></i></div>
-          <h2>Activa tu plan <strong>{{ payment?.plan?.name }}</strong></h2>
-          <p>Realiza el pago por transferencia bancaria y sube tu comprobante para activar tu cuenta.</p>
+          <div class="pp-icon" :class="paymentStatus === 'expired' ? 'red' : 'orange'">
+            <i :class="paymentStatus === 'expired' ? 'bi bi-alarm' : 'bi bi-credit-card-2-front'"></i>
+          </div>
+          <h2 v-if="paymentStatus === 'expired'">
+            Tu plan <strong>{{ payment?.plan?.name }}</strong> venció
+          </h2>
+          <h2 v-else>Activa tu plan <strong>{{ payment?.plan?.name }}</strong></h2>
+          <p v-if="paymentStatus === 'expired'">
+            Para continuar usando EasyPosWeb, renueva tu plan realizando el pago y subiendo el comprobante.
+          </p>
+          <p v-else>
+            Realiza el pago por transferencia bancaria y sube tu comprobante para activar tu cuenta.
+          </p>
         </div>
 
         <!-- Razón de rechazo si venía rechazado -->
@@ -373,6 +383,7 @@ export default {
 }
 .pp-icon.orange { background: #fff7ed; color: #f97316; }
 .pp-icon.green  { background: #f0fdf4; color: #10b981; }
+.pp-icon.red    { background: #fef2f2; color: #ef4444; }
 
 /* ENCABEZADO */
 .pp-header { text-align: center; margin-bottom: 24px; }

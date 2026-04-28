@@ -1,28 +1,34 @@
 """
-Payment Router — gestión de pagos de activación de planes.
+Payment Router — gestión de pagos de planes.
 
-Endpoints de asociado (JWT requerido):
-  GET  /payments/my-status           → estado actual del pago de mi empresa
-  POST /payments/submit-receipt      → sube comprobante y cambia estado a 'submitted'
+Asociado:
+  GET  /payments/my-status              → estado del pago activo de mi empresa
+  GET  /payments/available-upgrades     → planes superiores disponibles para upgrade
+  POST /payments/submit-receipt         → sube comprobante (activación / renovación)
+  POST /payments/request-upgrade        → solicita upgrade de plan (no bloqueante)
+  POST /payments/submit-upgrade-receipt → sube comprobante de upgrade
+  POST /payments/request-downgrade      → solicita cambio a plan inferior (con aceptación legal)
 
-Endpoints SYSADMIN (JWT SYSADMIN requerido):
-  GET  /payments/pending             → lista pagos pending/submitted
-  PUT  /payments/{id}/approve        → aprueba pago → empresa queda 'active'
-  PUT  /payments/{id}/reject         → rechaza pago + razón → email al asociado
+SYSADMIN:
+  GET  /payments/pending                → lista pagos pending/submitted (todos los tipos)
+  GET  /payments/pending-count          → conteo para KPI dashboard
+  PUT  /payments/{id}/approve           → aprueba → activa empresa + fija expiration_date
+  PUT  /payments/{id}/reject            → rechaza + razón + email al asociado
 """
 import uuid
-import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_sysadmin, get_db
 from app.models.company_model import Company
 from app.models.company_payment_model import CompanyPayment
+from app.models.company_plan_model import CompanyPlan
 from app.models.plan_model import Plan
+from app.models.plan_price_model import PlanPrice
 from app.models.user_model import User
 from app.utils.email_service import send_payment_approved, send_payment_rejected
 
@@ -31,18 +37,14 @@ router = APIRouter(prefix="/payments", tags=["Payments"])
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 PAYMENTS_DIR = BASE_DIR / "backend" / "app" / "uploads" / "payments"
 
-ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
-
-VALID_TRANSITIONS = {
-    "pending":          ["submitted"],
-    "submitted":        [],           # Solo SYSADMIN puede cambiar desde aquí
-    "approved":         [],
-    "rejected":         ["submitted"],
-}
+ALLOWED_MIME   = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+MAX_FILE_SIZE  = 5 * 1024 * 1024   # 5 MB
+PLAN_DURATION_DAYS = 365
 
 
-def _get_company_payment(company_id: int, db: Session) -> CompanyPayment | None:
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_latest_payment(company_id: int, db: Session) -> CompanyPayment | None:
     return (
         db.query(CompanyPayment)
         .filter(CompanyPayment.company_id == company_id)
@@ -51,7 +53,84 @@ def _get_company_payment(company_id: int, db: Session) -> CompanyPayment | None:
     )
 
 
-# ─── Asociado: ver estado de su pago ──────────────────────────────────────────
+def _get_active_plan(company_id: int, db: Session) -> CompanyPlan | None:
+    return (
+        db.query(CompanyPlan)
+        .filter(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)
+        .order_by(CompanyPlan.id.desc())
+        .first()
+    )
+
+
+def _plan_price_for(plan: Plan, currency_code: str, db: Session) -> float:
+    pp = db.query(PlanPrice).filter(
+        PlanPrice.plan_id == plan.id,
+        PlanPrice.currency_code == currency_code.upper(),
+        PlanPrice.is_active == True,
+    ).first()
+    return pp.amount if pp else plan.price
+
+
+async def _save_receipt(file: UploadFile, payment: CompanyPayment) -> str:
+    """Valida, guarda y retorna la ruta relativa del comprobante."""
+    if file.content_type not in ALLOWED_MIME:
+        raise HTTPException(
+            status_code=400,
+            detail="Tipo de archivo no permitido. Usa JPG, PNG, WEBP o PDF."
+        )
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="El archivo supera el límite de 5 MB.")
+
+    ext = {
+        "image/jpeg": ".jpg", "image/png": ".png",
+        "image/webp": ".webp", "application/pdf": ".pdf",
+    }.get(file.content_type, ".bin")
+    filename = f"{uuid.uuid4().hex}{ext}"
+    PAYMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Eliminar comprobante anterior si existe
+    if payment.receipt_url:
+        old = PAYMENTS_DIR / payment.receipt_url.split("/")[-1]
+        old.unlink(missing_ok=True)
+
+    (PAYMENTS_DIR / filename).write_bytes(content)
+    return f"/uploads/payments/{filename}"
+
+
+def _serialize_payment(p: CompanyPayment, db: Session) -> dict:
+    company = db.get(Company, p.company_id)
+    plan    = db.get(Plan, p.plan_id)
+    admin   = (
+        db.query(User)
+        .filter(User.company_id == p.company_id)
+        .order_by(User.id)
+        .first()
+    )
+    return {
+        "id":            p.id,
+        "payment_type":  p.payment_type,
+        "currency_code": p.currency_code,
+        "status":        p.status,
+        "amount":        p.amount,
+        "receipt_url":   p.receipt_url,
+        "submitted_at":  p.submitted_at,
+        "created_at":    p.created_at,
+        "company": {
+            "id":   company.id_company if company else None,
+            "name": company.name if company else "—",
+            "nit":  company.identification_number if company else "—",
+        },
+        "plan": {
+            "id":   plan.id if plan else None,
+            "name": plan.name if plan else "—",
+        },
+        "admin_email": admin.email if admin else "—",
+        "admin_name":  admin.nombre if admin else "—",
+    }
+
+
+# ── Asociado: estado de su pago ───────────────────────────────────────────────
 
 @router.get("/my-status")
 def get_my_payment_status(
@@ -62,29 +141,102 @@ def get_my_payment_status(
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    payment = _get_company_payment(company.id_company, db)
-    plan = db.get(Plan, payment.plan_id) if payment else None
+    payment      = _get_latest_payment(company.id_company, db)
+    active_plan  = _get_active_plan(company.id_company, db)
+    plan         = db.get(Plan, payment.plan_id) if payment else None
+    active_plan_data = db.get(Plan, active_plan.plan_id) if active_plan else None
 
     return {
         "payment_status": company.payment_status,
+        "upgrade_status": company.upgrade_status,
         "payment": {
-            "id":               payment.id if payment else None,
-            "status":           payment.status if payment else None,
-            "amount":           payment.amount if payment else None,
-            "receipt_url":      payment.receipt_url if payment else None,
-            "rejection_reason": payment.rejection_reason if payment else None,
-            "submitted_at":     payment.submitted_at if payment else None,
-            "reviewed_at":      payment.reviewed_at if payment else None,
+            "id":               payment.id,
+            "payment_type":     payment.payment_type,
+            "status":           payment.status,
+            "amount":           payment.amount,
+            "currency_code":    payment.currency_code,
+            "receipt_url":      payment.receipt_url,
+            "rejection_reason": payment.rejection_reason,
+            "submitted_at":     payment.submitted_at,
         } if payment else None,
         "plan": {
             "id":    plan.id if plan else None,
             "name":  plan.name if plan else None,
             "price": plan.price if plan else None,
         } if plan else None,
+        "active_plan": {
+            "id":              active_plan_data.id if active_plan_data else None,
+            "name":            active_plan_data.name if active_plan_data else None,
+            "expiration_date": str(active_plan.expiration_date) if active_plan and active_plan.expiration_date else None,
+        } if active_plan else None,
     }
 
 
-# ─── Asociado: subir comprobante ──────────────────────────────────────────────
+# ── Asociado: planes disponibles para upgrade ──────────────────────────────────
+
+@router.get("/available-upgrades")
+def available_upgrades(
+    currency: str = "COP",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    active_plan = _get_active_plan(current_user.company_id, db)
+    current_price = 0.0
+    if active_plan:
+        plan = db.get(Plan, active_plan.plan_id)
+        if plan:
+            current_price = plan.price
+
+    all_plans = db.query(Plan).filter(Plan.is_active == True).all()
+    upgrades = []
+    for p in all_plans:
+        if p.price > current_price:
+            price_in_currency = _plan_price_for(p, currency, db)
+            upgrades.append({
+                "id":          p.id,
+                "name":        p.name,
+                "description": p.description,
+                "price":       price_in_currency,
+                "currency":    currency.upper(),
+                "max_users":   p.max_users,
+            })
+    upgrades.sort(key=lambda x: x["price"])
+    return upgrades
+
+
+# ── Asociado: planes disponibles para downgrade ────────────────────────────────
+
+@router.get("/available-downgrades")
+def available_downgrades(
+    currency: str = "COP",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    active_plan = _get_active_plan(current_user.company_id, db)
+    current_price = 0.0
+    if active_plan:
+        plan = db.get(Plan, active_plan.plan_id)
+        if plan:
+            current_price = plan.price
+
+    all_plans = db.query(Plan).filter(Plan.is_active == True).all()
+    result = []
+    for p in all_plans:
+        if p.price < current_price:
+            price_in_currency = _plan_price_for(p, currency, db)
+            result.append({
+                "id":          p.id,
+                "name":        p.name,
+                "description": p.description,
+                "price":       price_in_currency,
+                "currency":    currency.upper(),
+                "is_free":     p.price == 0,
+            })
+    result.sort(key=lambda x: x["price"], reverse=True)
+    return result
+
+
+# ── Asociado: subir comprobante (activación / renovación — bloquea) ────────────
 
 @router.post("/submit-receipt")
 async def submit_receipt(
@@ -96,108 +248,252 @@ async def submit_receipt(
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    if company.payment_status not in ("pending_payment", "payment_rejected"):
+    allowed_statuses = ("pending_payment", "payment_rejected", "expired")
+    if company.payment_status not in allowed_statuses:
         raise HTTPException(status_code=400, detail="Tu empresa no tiene un pago pendiente")
 
-    payment = _get_company_payment(company.id_company, db)
+    payment = _get_latest_payment(company.id_company, db)
     if not payment:
         raise HTTPException(status_code=404, detail="Registro de pago no encontrado")
 
-    if payment.status not in VALID_TRANSITIONS or "submitted" not in VALID_TRANSITIONS[payment.status]:
+    if payment.status not in ("pending", "rejected"):
         raise HTTPException(status_code=400, detail="No puedes enviar un comprobante en este estado")
 
-    # Validar MIME
-    if file.content_type not in ALLOWED_MIME:
-        raise HTTPException(
-            status_code=400,
-            detail="Tipo de archivo no permitido. Sube una imagen (JPG, PNG, WEBP) o PDF."
-        )
-
-    # Leer y validar tamaño
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="El archivo supera el límite de 5 MB")
-
-    # Guardar con UUID (sin nombre del usuario en el path)
-    ext = {
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/webp": ".webp",
-        "application/pdf": ".pdf",
-    }.get(file.content_type, ".bin")
-    filename = f"{uuid.uuid4().hex}{ext}"
-    PAYMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = PAYMENTS_DIR / filename
-    dest.write_bytes(content)
-
-    # Eliminar comprobante anterior si existe
-    if payment.receipt_url:
-        old_name = payment.receipt_url.split("/")[-1]
-        old_path = PAYMENTS_DIR / old_name
-        if old_path.exists():
-            old_path.unlink(missing_ok=True)
-
-    # Actualizar registro
-    payment.receipt_url = f"/uploads/payments/{filename}"
-    payment.status = "submitted"
+    payment.receipt_url  = await _save_receipt(file, payment)
+    payment.status       = "submitted"
     payment.submitted_at = datetime.now(timezone.utc)
     payment.rejection_reason = None
-    company.payment_status = "payment_submitted"
+    company.payment_status   = "payment_submitted"
 
     db.commit()
-
     return {"message": "Comprobante enviado. Estamos revisando tu pago.", "status": "submitted"}
 
 
-# ─── SYSADMIN: listar pagos pendientes/enviados ────────────────────────────────
+# ── Asociado: solicitar upgrade de plan ────────────────────────────────────────
+
+class UpgradeRequest(BaseModel):
+    plan_id: int
+    currency_code: str = "COP"
+
+
+@router.post("/request-upgrade")
+def request_upgrade(
+    body: UpgradeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    company = db.get(Company, current_user.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    if company.upgrade_status == "upgrade_pending":
+        raise HTTPException(status_code=400, detail="Ya tienes un upgrade en proceso")
+
+    new_plan = db.get(Plan, body.plan_id)
+    if not new_plan or not new_plan.is_active:
+        raise HTTPException(status_code=400, detail="Plan no disponible")
+
+    # Verificar que es realmente superior
+    active_plan = _get_active_plan(company.id_company, db)
+    current_price = 0.0
+    if active_plan:
+        cp = db.get(Plan, active_plan.plan_id)
+        if cp:
+            current_price = cp.price
+
+    if new_plan.price <= current_price:
+        raise HTTPException(status_code=400, detail="El plan seleccionado no es superior al actual")
+
+    amount = _plan_price_for(new_plan, body.currency_code, db)
+
+    db.add(CompanyPayment(
+        company_id    = company.id_company,
+        plan_id       = new_plan.id,
+        amount        = amount,
+        currency_code = body.currency_code.upper(),
+        status        = "pending",
+        payment_type  = "upgrade",
+    ))
+    company.upgrade_status = "upgrade_pending"
+    db.commit()
+
+    return {
+        "message": f"Solicitud de upgrade al plan {new_plan.name} registrada.",
+        "plan_name": new_plan.name,
+        "amount": amount,
+        "currency": body.currency_code.upper(),
+    }
+
+
+# ── Asociado: subir comprobante de upgrade (NO bloqueante) ────────────────────
+
+@router.post("/submit-upgrade-receipt")
+async def submit_upgrade_receipt(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    company = db.get(Company, current_user.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    if company.upgrade_status != "upgrade_pending":
+        raise HTTPException(status_code=400, detail="No tienes un upgrade pendiente")
+
+    # Buscar el payment de upgrade más reciente
+    payment = (
+        db.query(CompanyPayment)
+        .filter(
+            CompanyPayment.company_id == company.id_company,
+            CompanyPayment.payment_type == "upgrade",
+            CompanyPayment.status.in_(["pending", "rejected"]),
+        )
+        .order_by(CompanyPayment.id.desc())
+        .first()
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Registro de upgrade no encontrado")
+
+    payment.receipt_url  = await _save_receipt(file, payment)
+    payment.status       = "submitted"
+    payment.submitted_at = datetime.now(timezone.utc)
+    payment.rejection_reason = None
+
+    db.commit()
+    return {"message": "Comprobante de upgrade enviado. Seguirás con tu plan actual mientras revisamos.", "status": "submitted"}
+
+
+# ── Asociado: solicitar downgrade (inmediato si es Free, pago si es de pago) ─
+
+class DowngradeRequest(BaseModel):
+    plan_id: int
+    currency_code: str = "COP"
+    legal_accepted: bool  # Checkbox de cláusula legal
+
+    def model_post_init(self, __context):
+        if not self.legal_accepted:
+            raise ValueError("Debes aceptar las condiciones para cambiar de plan")
+
+
+@router.post("/request-downgrade")
+def request_downgrade(
+    body: DowngradeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    company = db.get(Company, current_user.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    new_plan = db.get(Plan, body.plan_id)
+    if not new_plan or not new_plan.is_active:
+        raise HTTPException(status_code=400, detail="Plan no disponible")
+
+    active_cp = _get_active_plan(company.id_company, db)
+    current_price = 0.0
+    if active_cp:
+        cp = db.get(Plan, active_cp.plan_id)
+        if cp:
+            current_price = cp.price
+
+    if new_plan.price >= current_price:
+        raise HTTPException(status_code=400, detail="El plan seleccionado no es inferior al actual")
+
+    # Desactivar plan actual
+    if active_cp:
+        active_cp.is_active = False
+
+    if new_plan.price == 0:
+        # Downgrade a Free: inmediato, sin pago
+        db.add(CompanyPlan(
+            company_id=company.id_company,
+            plan_id=new_plan.id,
+            is_active=True,
+        ))
+        company.payment_status = "active"
+        company.upgrade_status = None
+        db.commit()
+        return {"message": f"Cambiado al plan {new_plan.name} exitosamente.", "requires_payment": False}
+
+    else:
+        # Downgrade a plan de pago inferior: requiere pago
+        amount = _plan_price_for(new_plan, body.currency_code, db)
+        db.add(CompanyPayment(
+            company_id    = company.id_company,
+            plan_id       = new_plan.id,
+            amount        = amount,
+            currency_code = body.currency_code.upper(),
+            status        = "pending",
+            payment_type  = "downgrade",
+        ))
+        company.payment_status = "pending_payment"
+        db.commit()
+        return {"message": f"Solicitud de cambio al plan {new_plan.name} registrada. Completa el pago.", "requires_payment": True}
+
+
+# ── Asociado: solicitar renovación (plan vencido — bloquea) ───────────────────
+
+class RenewalRequest(BaseModel):
+    currency_code: str = "COP"
+
+
+@router.post("/request-renewal")
+def request_renewal(
+    body: RenewalRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    company = db.get(Company, current_user.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    if company.payment_status != "expired":
+        raise HTTPException(status_code=400, detail="Tu plan no ha vencido")
+
+    active_cp = _get_active_plan(company.id_company, db)
+    if not active_cp:
+        raise HTTPException(status_code=404, detail="Plan activo no encontrado")
+
+    plan   = db.get(Plan, active_cp.plan_id)
+    amount = _plan_price_for(plan, body.currency_code, db)
+
+    db.add(CompanyPayment(
+        company_id    = company.id_company,
+        plan_id       = plan.id,
+        amount        = amount,
+        currency_code = body.currency_code.upper(),
+        status        = "pending",
+        payment_type  = "renewal",
+    ))
+    company.payment_status = "pending_payment"
+    db.commit()
+
+    return {
+        "message": f"Solicitud de renovación del plan {plan.name} registrada.",
+        "plan_name": plan.name,
+        "amount": amount,
+    }
+
+
+# ── SYSADMIN: listar pagos pendientes ─────────────────────────────────────────
 
 @router.get("/pending")
 def list_pending_payments(
+    payment_type: str = None,   # filtro opcional: activation|upgrade|renewal|downgrade
     _: User = Depends(require_sysadmin),
     db: Session = Depends(get_db),
 ):
-    payments = (
-        db.query(CompanyPayment)
-        .filter(CompanyPayment.status.in_(["pending", "submitted"]))
-        .order_by(CompanyPayment.created_at.desc())
-        .all()
+    q = db.query(CompanyPayment).filter(
+        CompanyPayment.status.in_(["pending", "submitted"])
     )
+    if payment_type:
+        q = q.filter(CompanyPayment.payment_type == payment_type)
 
-    result = []
-    for p in payments:
-        company = db.get(Company, p.company_id)
-        plan    = db.get(Plan, p.plan_id)
-        # Email del admin de la empresa
-        admin = (
-            db.query(User)
-            .filter(User.company_id == p.company_id)
-            .order_by(User.id)
-            .first()
-        )
-        result.append({
-            "id":            p.id,
-            "status":        p.status,
-            "amount":        p.amount,
-            "receipt_url":   p.receipt_url,
-            "submitted_at":  p.submitted_at,
-            "created_at":    p.created_at,
-            "company": {
-                "id":   company.id_company if company else None,
-                "name": company.name if company else "—",
-                "nit":  company.identification_number if company else "—",
-            },
-            "plan": {
-                "id":   plan.id if plan else None,
-                "name": plan.name if plan else "—",
-            },
-            "admin_email": admin.email if admin else "—",
-            "admin_name":  admin.nombre if admin else "—",
-        })
-
-    return result
+    payments = q.order_by(CompanyPayment.created_at.desc()).all()
+    return [_serialize_payment(p, db) for p in payments]
 
 
-# ─── SYSADMIN: contar pagos pendientes (para KPI) ─────────────────────────────
+# ── SYSADMIN: conteo KPI ──────────────────────────────────────────────────────
 
 @router.get("/pending-count")
 def pending_count(
@@ -210,7 +506,7 @@ def pending_count(
     return {"count": count}
 
 
-# ─── SYSADMIN: aprobar pago ────────────────────────────────────────────────────
+# ── SYSADMIN: aprobar pago ────────────────────────────────────────────────────
 
 @router.put("/{payment_id}/approve")
 def approve_payment(
@@ -230,8 +526,7 @@ def approve_payment(
     admin   = (
         db.query(User)
         .filter(User.company_id == payment.company_id)
-        .order_by(User.id)
-        .first()
+        .order_by(User.id).first()
     )
 
     payment.status      = "approved"
@@ -239,24 +534,55 @@ def approve_payment(
     payment.reviewed_by = sysadmin.id
 
     if company:
-        company.payment_status = "active"
+        ptype = payment.payment_type
+
+        if ptype in ("activation", "renewal", "downgrade"):
+            # Desactivar planes anteriores y crear uno nuevo con vencimiento
+            db.query(CompanyPlan).filter(
+                CompanyPlan.company_id == company.id_company,
+                CompanyPlan.is_active == True,
+            ).update({"is_active": False})
+
+            db.add(CompanyPlan(
+                company_id      = company.id_company,
+                plan_id         = payment.plan_id,
+                is_active       = True,
+                expiration_date = date.today() + timedelta(days=PLAN_DURATION_DAYS),
+            ))
+            company.payment_status = "active"
+
+        elif ptype == "upgrade":
+            # Desactivar plan actual y activar el nuevo
+            db.query(CompanyPlan).filter(
+                CompanyPlan.company_id == company.id_company,
+                CompanyPlan.is_active == True,
+            ).update({"is_active": False})
+
+            db.add(CompanyPlan(
+                company_id      = company.id_company,
+                plan_id         = payment.plan_id,
+                is_active       = True,
+                expiration_date = date.today() + timedelta(days=PLAN_DURATION_DAYS),
+            ))
+            company.upgrade_status = None
+            # payment_status no cambia (ya estaba 'active')
 
     db.commit()
 
     if admin and company and plan:
         try:
             send_payment_approved(
-                to_email=admin.email,
-                company_name=company.name,
-                plan_name=plan.name,
+                to_email     = admin.email,
+                company_name = company.name,
+                plan_name    = plan.name,
             )
         except Exception:
             pass
 
-    return {"message": "Pago aprobado. La empresa ya está activa."}
+    return {"message": "Pago aprobado. Plan activado correctamente."}
 
 
-# ─── SYSADMIN: rechazar pago ───────────────────────────────────────────────────
+# ── SYSADMIN: rechazar pago ───────────────────────────────────────────────────
 
 class RejectRequest(BaseModel):
     reason: str
@@ -286,8 +612,7 @@ def reject_payment(
     admin   = (
         db.query(User)
         .filter(User.company_id == payment.company_id)
-        .order_by(User.id)
-        .first()
+        .order_by(User.id).first()
     )
 
     payment.status           = "rejected"
@@ -296,17 +621,20 @@ def reject_payment(
     payment.reviewed_by      = sysadmin.id
 
     if company:
-        company.payment_status = "payment_rejected"
+        if payment.payment_type == "upgrade":
+            company.upgrade_status = None
+        elif payment.payment_type in ("activation", "renewal"):
+            company.payment_status = "payment_rejected"
 
     db.commit()
 
     if admin and company and plan:
         try:
             send_payment_rejected(
-                to_email=admin.email,
-                company_name=company.name,
-                plan_name=plan.name,
-                reason=body.reason,
+                to_email     = admin.email,
+                company_name = company.name,
+                plan_name    = plan.name,
+                reason       = body.reason,
             )
         except Exception:
             pass
