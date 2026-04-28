@@ -6,7 +6,7 @@
     ══════════════════════════════════════════════ -->
     <nav class="landing-nav">
       <div class="nav-inner">
-        <a class="nav-brand" href="/landing">
+        <a class="nav-brand" href="/">
           <span class="brand-easy">Easy</span><span class="brand-pos">Pos</span><span class="brand-web">Web</span>
         </a>
         <div class="nav-links">

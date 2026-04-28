@@ -6,7 +6,7 @@
     ══════════════════════════════════════════════ -->
     <nav class="landing-nav">
       <div class="nav-inner">
-        <a class="nav-brand" href="/landing">
+        <a class="nav-brand" href="/">
           <span class="brand-easy">Easy</span><span class="brand-pos">Pos</span><span class="brand-web">Web</span>
         </a>
         <div class="nav-links">
@@ -69,7 +69,7 @@
         <i class="bi bi-exclamation-triangle-fill"></i>
         <h2>Perfil no encontrado</h2>
         <p>El perfil de negocio solicitado no existe o no está disponible.</p>
-        <a href="/landing" class="btn-slide-cta">Ver todos los perfiles</a>
+        <a href="/" class="btn-slide-cta">Ver todos los perfiles</a>
       </div>
 
       <!-- Perfil encontrado -->
@@ -367,11 +367,11 @@
     <footer class="landing-footer">
       <div class="footer-top">
         <div class="footer-brand">
-          <a class="nav-brand" href="/landing">
+          <a class="nav-brand" href="/">
             <span class="brand-easy">Easy</span><span class="brand-pos">Pos</span><span class="brand-web">Web</span>
           </a>
           <p class="footer-tagline">Tu negocio, en línea. Sin complicaciones.</p>
-          <a href="/landing" class="footer-back-link">
+          <a href="/" class="footer-back-link">
             <i class="bi bi-arrow-left me-1"></i>Ver todos los perfiles
           </a>
         </div>

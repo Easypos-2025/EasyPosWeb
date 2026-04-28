@@ -179,7 +179,7 @@ import api from "@/services/apis"
 
 const emit = defineEmits(["toggle-sidebar", "toggle-sidebar-right"])
 
-const siteUrl = (import.meta.env.VITE_SITE_URL || window.location.origin) + "/landing"
+const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin
 
 const logo         = ref("")
 const user         = ref(null)

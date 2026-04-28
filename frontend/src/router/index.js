@@ -32,11 +32,18 @@ const routes = [
   /* =========================================
      LOGIN
   ========================================= */
+  /* Landing en raíz — la URL queda como easyposweb.com sin /landing */
   {
-    path: "/landing",
+    path: "/",
     name: "landing",
     component: () => import("@/views/LandingView.vue"),
     meta: { title: "EasyPosWeb — Tu negocio en línea" }
+  },
+
+  /* /landing redirige a / para no romper bookmarks ni links internos */
+  {
+    path: "/landing",
+    redirect: "/"
   },
 
   {
@@ -92,10 +99,10 @@ const routes = [
 
     children: [
 
-      /* REDIRECCIÓN INICIAL — / → landing pública */
+      /* REDIRECCIÓN INICIAL */
       {
         path: "",
-        redirect: "/landing"
+        redirect: "/dashboard"
       },
 
       /* DASHBOARD */
@@ -356,6 +363,7 @@ router.beforeEach(async (to, from, next) => {
      🔥 EXCEPCIONES PÚBLICAS
   ========================================= */
   if (
+    to.path === "/" ||
     to.path === "/login" ||
     to.path === "/landing" ||
     to.path === "/forgot-password" ||
