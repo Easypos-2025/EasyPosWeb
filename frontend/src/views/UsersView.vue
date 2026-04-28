@@ -305,7 +305,8 @@ const isAdmin     = (currentUser.role || "").toLowerCase().includes("admin")
 
 const planInfo = ref({ current: 0, max: -1, plan_name: "", can_add: true })
 const usersRaw = ref([])
-const selectedCompany = ref(null)
+// SYSADMIN empieza sin filtro de empresa; no-SYSADMIN siempre su empresa
+const selectedCompany = ref(isSysAdmin ? null : (currentUser.company_id ?? null))
 const permissions = ref([])
 
 // ── Invitación por link ──────────────────────────────
@@ -426,23 +427,18 @@ const resetForm = () => {
 }
 
 const filteredUsers = computed(() => {
-  //
   return usersRaw.value.filter(u => {
+    // No-SYSADMIN: siempre filtrar por su propia empresa, sin excepción
+    const matchCompany = isSysAdmin
+      ? (selectedCompany.value === null || selectedCompany.value === "all" || u.company_id == selectedCompany.value)
+      : u.company_id == currentUser.company_id
 
-    // 🔥 EMPRESA
-    const matchCompany =
-      selectedCompany.value === null ||
-      selectedCompany.value === "all" ||
-      u.company_id == selectedCompany.value
-
-    // 🔥 BUSQUEDA
     const matchName =
       !search.value ||
       u.nombre.toLowerCase().includes(search.value.toLowerCase())
-    //console.log("➡️ filteredUsers return",matchCompany && matchName)
+
     return matchCompany && matchName
   })
-
 })
 
 
