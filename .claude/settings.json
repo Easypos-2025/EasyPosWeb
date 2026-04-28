@@ -95,7 +95,14 @@
       "Bash(ssh root@209.38.152.254 \"cat /var/www/easyposweb/frontend/.env.production 2>/dev/null || cat /var/www/easyposweb/frontend/.env 2>/dev/null || echo 'No env file found'\")",
       "Bash(ssh root@209.38.152.254 \"find /var/www/easyposweb/frontend -name '.env*' 2>/dev/null && grep -r 'VITE_API_URL' /var/www/easyposweb/frontend/dist/ 2>/dev/null | head -5\")",
       "Bash(ssh root@209.38.152.254 \"cat /var/www/easyposweb/frontend/.env.example\")",
-      "Bash(ssh root@209.38.152.254 \"grep -o 'VITE_API_URL.*\\\\\"[^\\\\\"]*\\\\\"' /var/www/easyposweb/frontend/dist/assets/apis-*.js 2>/dev/null | head -3 || grep -o 'baseURL:\\\\\"[^\\\\\"]*\\\\\"' /var/www/easyposweb/frontend/dist/assets/apis-*.js 2>/dev/null | head -3\")"
+      "Bash(ssh root@209.38.152.254 \"grep -o 'VITE_API_URL.*\\\\\"[^\\\\\"]*\\\\\"' /var/www/easyposweb/frontend/dist/assets/apis-*.js 2>/dev/null | head -3 || grep -o 'baseURL:\\\\\"[^\\\\\"]*\\\\\"' /var/www/easyposweb/frontend/dist/assets/apis-*.js 2>/dev/null | head -3\")",
+      "Bash(ssh root@209.38.152.254 \"cd /var/www/easyposweb && git pull && systemctl restart easyposweb && echo 'OK'\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb && systemctl is-active easyposweb\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('scripts',{}\\)\\)\")",
+      "Bash(npx vite *)",
+      "Bash(ssh -i \"C:/Users/Personal/.ssh/id_ed25519\" -o StrictHostKeyChecking=no root@209.38.152.254 \"cd /var/www/easyposweb && git pull && cd frontend && npm run build && systemctl restart easyposweb && echo 'DEPLOY OK'\")",
+      "Bash(ssh -i \"C:/Users/Personal/.ssh/id_ed25519\" -o StrictHostKeyChecking=no root@209.38.152.254 \"cat /etc/nginx/sites-available/easyposweb 2>/dev/null || cat /etc/nginx/conf.d/*.conf 2>/dev/null | head -60\")",
+      "Bash(ssh -i *)"
     ]
   }
 }
