@@ -88,19 +88,19 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
 </script>
 
 <style>
-/* ── Raíz: columna que llena el viewport ── */
+/* ── Raíz: ocupa exactamente el viewport visible, incluyendo barra URL móvil ── */
 .page {
+  position: fixed;
+  inset: 0;          /* top:0 right:0 bottom:0 left:0 */
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
 }
 
 /* ── Zona central: ocupa todo el espacio entre topbar y footer ── */
 .layout {
   display: flex;
   flex: 1;
-  min-height: 0;   /* imprescindible para que flex hijos puedan hacer scroll */
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -114,7 +114,7 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
   width: 70px;
 }
 
-/* ── Contenido: scroll aquí, no en el footer ── */
+/* ── Contenido: el único que hace scroll ── */
 .content {
   flex: 1;
   min-height: 0;
@@ -122,7 +122,7 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
   transition: all 0.25s ease;
 }
 
-/* ── Footer: siempre fijo al pie, nunca desplazado por el content ── */
+/* ── Footer: siempre visible al pie ── */
 .footer {
   flex-shrink: 0;
 }
