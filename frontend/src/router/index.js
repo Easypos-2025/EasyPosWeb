@@ -489,7 +489,7 @@ router.beforeEach(async (to, from, next) => {
       return false
     }
 
-    if (to.meta.requiresAuth) {
+    if (to.meta.requiresAuth && !isSystem) {
 
       const allowed = hasAccess(menu, to.path)
 

@@ -197,19 +197,6 @@
                 </span>
               </button>
 
-              <!-- Historial de pagos — SYSADMIN -->
-              <button
-                v-if="companyStore.isSystem"
-                class="notif-subtype-item"
-                @click="goToPaymentHistory"
-              >
-                <span class="nsi-icon history"><i class="bi bi-clock-history"></i></span>
-                <span class="nsi-label">
-                  Historial de pagos
-                  <small>SYSADMIN › Aprobados, rechazados, upgrades</small>
-                </span>
-              </button>
-
               <!-- Mensajes internos — funcional -->
               <button class="notif-subtype-item" :class="{ 'has-count': unreadNotif > 0 }" @click="openNotifPanel">
                 <span class="nsi-icon messages"><i class="bi bi-chat-dots"></i></span>
@@ -394,11 +381,6 @@ function goToPaymentReview() {
   router.push("/sysadmin/payment-review")
 }
 
-function goToPaymentHistory() {
-  userDropOpen.value  = false
-  notifExpanded.value = false
-  router.push("/sysadmin/payment-history")
-}
 
 function goProfile() {
   if (!isPaymentActive.value) return
@@ -805,7 +787,6 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center; font-size: .85rem;
 }
 .nsi-icon.payment  { background: rgba(249,115,22,.25); color: #f97316; }
-.nsi-icon.history  { background: rgba(99,102,241,.25);  color: #818cf8; }
 .nsi-icon.messages { background: rgba(59,130,246,.25);  color: #60a5fa; }
 .nsi-icon.news     { background: rgba(168,85,247,.25);  color: #c084fc; }
 .nsi-icon.promo    { background: rgba(16,185,129,.25);  color: #34d399; }
