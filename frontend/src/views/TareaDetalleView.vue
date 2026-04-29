@@ -547,6 +547,7 @@ const unreadNotifsCount = computed(() => notifications.value.filter(n => !n.is_r
 
 // ── Materiales y Gastos ──────────────────────────────────────
 const materials = ref([])
+const expenses  = ref([])
 const savingMat = ref(false)
 const savingExp = ref(false)
 const units     = ["unidad","kg","g","litros","ml","m","m²","m³","rollo","caja","bolsa","par"]
