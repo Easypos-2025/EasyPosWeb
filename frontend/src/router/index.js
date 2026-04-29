@@ -9,7 +9,6 @@ IMPORTACIÓN DE VISTAS
 ========================================= */
 
 import LoginView from "../views/LoginView.vue"
-import AssetCategoriesView from "../views/AssetCategoriesView.vue"
 import MainLayout from "../components/layout/MainLayout.vue"
 import DashboardView from "../views/DashboardView.vue"
 import ProfilesView from "@/views/ProfilesView.vue"
@@ -136,6 +135,14 @@ const routes = [
         component: () => import("@/views/AssetsView.vue"),
         requiresAuth: true,
         meta: { title: "AssetsView" }
+      },
+
+      {
+        path: "/configuration/asset-categories",
+        name: "AssetCategoriesView",
+        component: () => import("@/views/AssetCategoriesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Categorías de Activos" }
       },
 
       {
