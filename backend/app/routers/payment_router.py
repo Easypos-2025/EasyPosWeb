@@ -107,6 +107,15 @@ def _serialize_payment(p: CompanyPayment, db: Session) -> dict:
         .order_by(User.id)
         .first()
     )
+    # Para upgrades: incluir el plan activo actual para mostrar la transición
+    current_plan_data = None
+    if p.payment_type == "upgrade":
+        active_cp = _get_active_plan(p.company_id, db)
+        if active_cp:
+            cp = db.get(Plan, active_cp.plan_id)
+            if cp:
+                current_plan_data = {"id": cp.id, "name": cp.name, "price": cp.price}
+
     return {
         "id":            p.id,
         "payment_type":  p.payment_type,
@@ -122,9 +131,11 @@ def _serialize_payment(p: CompanyPayment, db: Session) -> dict:
             "nit":  company.identification_number if company else "—",
         },
         "plan": {
-            "id":   plan.id if plan else None,
-            "name": plan.name if plan else "—",
+            "id":    plan.id if plan else None,
+            "name":  plan.name if plan else "—",
+            "price": plan.price if plan else 0,
         },
+        "current_plan": current_plan_data,
         "admin_email": admin.email if admin else "—",
         "admin_name":  admin.nombre if admin else "—",
     }
@@ -431,10 +442,45 @@ def request_downgrade(
         return {"message": f"Solicitud de cambio al plan {new_plan.name} registrada. Completa el pago.", "requires_payment": True}
 
 
+# ── Asociado: planes disponibles (actual + superiores) ────────────────────────
+
+@router.get("/available-plans")
+def available_plans(
+    currency: str = "COP",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Devuelve el plan actual + todos los de precio mayor, para el selector de renovación."""
+    active_cp = _get_active_plan(current_user.company_id, db)
+    current_plan_id = active_cp.plan_id if active_cp else None
+    current_price   = 0.0
+    if active_cp:
+        cp = db.get(Plan, active_cp.plan_id)
+        if cp:
+            current_price = cp.price
+
+    all_plans = db.query(Plan).filter(Plan.is_active == True).order_by(Plan.price).all()
+    result = []
+    for p in all_plans:
+        if p.price >= current_price:
+            price_val = _plan_price_for(p, currency, db)
+            result.append({
+                "id":          p.id,
+                "name":        p.name,
+                "description": p.description,
+                "price":       price_val,
+                "currency":    currency.upper(),
+                "max_users":   p.max_users,
+                "is_current":  p.id == current_plan_id,
+            })
+    return result
+
+
 # ── Asociado: solicitar renovación (plan vencido — bloquea) ───────────────────
 
 class RenewalRequest(BaseModel):
     currency_code: str = "COP"
+    plan_id: int | None = None   # None = renovar con el mismo plan; int = cambiar a plan igual o superior
 
 
 @router.post("/request-renewal")
@@ -447,31 +493,66 @@ def request_renewal(
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    if company.payment_status != "expired":
-        raise HTTPException(status_code=400, detail="Tu plan no ha vencido")
+    allowed_statuses = ("expired", "pending_payment")
+    if company.payment_status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="No tienes un pago de renovación pendiente")
 
     active_cp = _get_active_plan(company.id_company, db)
     if not active_cp:
         raise HTTPException(status_code=404, detail="Plan activo no encontrado")
 
-    plan   = db.get(Plan, active_cp.plan_id)
-    amount = _plan_price_for(plan, body.currency_code, db)
+    current_plan = db.get(Plan, active_cp.plan_id)
+    if not current_plan:
+        raise HTTPException(status_code=404, detail="Plan actual no encontrado")
 
-    db.add(CompanyPayment(
-        company_id    = company.id_company,
-        plan_id       = plan.id,
-        amount        = amount,
-        currency_code = body.currency_code.upper(),
-        status        = "pending",
-        payment_type  = "renewal",
-    ))
+    # Determinar qué plan se va a pagar
+    if body.plan_id and body.plan_id != current_plan.id:
+        target_plan = db.get(Plan, body.plan_id)
+        if not target_plan or not target_plan.is_active:
+            raise HTTPException(status_code=400, detail="Plan seleccionado no disponible")
+        if target_plan.price < current_plan.price:
+            raise HTTPException(status_code=400, detail="No puedes seleccionar un plan inferior en la renovación")
+        payment_type = "upgrade" if target_plan.price > current_plan.price else "renewal"
+    else:
+        target_plan  = current_plan
+        payment_type = "renewal"
+
+    amount = _plan_price_for(target_plan, body.currency_code, db)
+
+    # Si ya existe un pending para esta empresa (del mismo tipo), reutilizarlo
+    existing = (
+        db.query(CompanyPayment)
+        .filter(
+            CompanyPayment.company_id == company.id_company,
+            CompanyPayment.status.in_(["pending", "rejected"]),
+            CompanyPayment.payment_type == payment_type,
+        )
+        .order_by(CompanyPayment.id.desc())
+        .first()
+    )
+    if existing:
+        existing.plan_id       = target_plan.id
+        existing.amount        = amount
+        existing.currency_code = body.currency_code.upper()
+        existing.status        = "pending"
+    else:
+        db.add(CompanyPayment(
+            company_id    = company.id_company,
+            plan_id       = target_plan.id,
+            amount        = amount,
+            currency_code = body.currency_code.upper(),
+            status        = "pending",
+            payment_type  = payment_type,
+        ))
+
     company.payment_status = "pending_payment"
     db.commit()
 
     return {
-        "message": f"Solicitud de renovación del plan {plan.name} registrada.",
-        "plan_name": plan.name,
-        "amount": amount,
+        "message":      f"Solicitud de {payment_type} al plan {target_plan.name} registrada.",
+        "plan_name":    target_plan.name,
+        "payment_type": payment_type,
+        "amount":       amount,
     }
 
 

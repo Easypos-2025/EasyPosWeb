@@ -78,6 +78,17 @@
           </div>
         </div>
 
+        <!-- BANNER UPGRADE -->
+        <div v-if="p.payment_type === 'upgrade'" class="upgrade-banner">
+          <i class="bi bi-arrow-up-circle-fill upgrade-arrow"></i>
+          <div class="upgrade-transition">
+            <span class="upgrade-from">{{ p.current_plan?.name ?? '—' }}</span>
+            <i class="bi bi-arrow-right upgrade-sep"></i>
+            <span class="upgrade-to">{{ p.plan.name }}</span>
+          </div>
+          <span class="upgrade-note">El plan actual se cancelará y se activará el nuevo.</span>
+        </div>
+
         <!-- COMPROBANTE -->
         <div class="pr-receipt" v-if="p.receipt_url">
           <div class="pr-receipt-label"><i class="bi bi-paperclip me-1"></i>Comprobante adjunto</div>
@@ -96,8 +107,18 @@
 
         <!-- ACCIONES -->
         <div class="pr-actions">
-          <button class="btn-approve" :disabled="actioning === p.id"
-                  @click="confirmApprove(p)">
+          <button
+            v-if="p.payment_type === 'upgrade'"
+            class="btn-upgrade" :disabled="actioning === p.id"
+            @click="confirmApprove(p)"
+          >
+            <i class="bi bi-arrow-up-circle-fill me-1"></i> Subir de Plan
+          </button>
+          <button
+            v-else
+            class="btn-approve" :disabled="actioning === p.id"
+            @click="confirmApprove(p)"
+          >
             <i class="bi bi-check-circle-fill me-1"></i> Aprobar
           </button>
           <button class="btn-reject" :disabled="actioning === p.id"
@@ -108,27 +129,56 @@
       </div>
     </div>
 
-    <!-- MODAL APROBAR -->
+    <!-- MODAL APROBAR / SUBIR DE PLAN -->
     <div v-if="approveTarget" class="pr-modal-overlay" @click.self="approveTarget = null">
       <div class="pr-modal">
-        <div class="modal-icon green"><i class="bi bi-check-circle-fill"></i></div>
-        <h3>¿Aprobar pago?</h3>
-        <p>
-          Empresa: <strong>{{ approveTarget.company.name }}</strong><br>
-          Plan: <strong>{{ approveTarget.plan.name }}</strong> —
-          <strong>{{ formatCurrency(approveTarget.amount) }}</strong>
-        </p>
-        <p class="modal-note">Se activará la cuenta y se notificará al asociado por correo.</p>
-        <div class="modal-btns">
-          <button class="btn-cancel" @click="approveTarget = null">Cancelar</button>
-          <button class="btn-approve" :disabled="actioning === approveTarget.id"
-                  @click="doApprove">
-            <span v-if="actioning === approveTarget.id">
-              <i class="bi bi-hourglass-split spin me-1"></i>Aprobando...
-            </span>
-            <span v-else>Confirmar aprobación</span>
-          </button>
-        </div>
+
+        <!-- Upgrade -->
+        <template v-if="approveTarget.payment_type === 'upgrade'">
+          <div class="modal-icon upgrade"><i class="bi bi-arrow-up-circle-fill"></i></div>
+          <h3>¿Confirmar Upgrade de Plan?</h3>
+          <div class="upgrade-modal-transition">
+            <span class="umt-from">{{ approveTarget.current_plan?.name ?? '—' }}</span>
+            <i class="bi bi-arrow-right umt-arrow"></i>
+            <span class="umt-to">{{ approveTarget.plan.name }}</span>
+          </div>
+          <p>
+            Empresa: <strong>{{ approveTarget.company.name }}</strong><br>
+            Monto pagado: <strong>{{ formatCurrency(approveTarget.amount) }}</strong>
+          </p>
+          <p class="modal-note">El plan actual se cancelará y se activará el nuevo por 365 días. El asociado será notificado.</p>
+          <div class="modal-btns">
+            <button class="btn-cancel" @click="approveTarget = null">Cancelar</button>
+            <button class="btn-upgrade" :disabled="actioning === approveTarget.id" @click="doApprove">
+              <span v-if="actioning === approveTarget.id">
+                <i class="bi bi-hourglass-split spin me-1"></i>Procesando...
+              </span>
+              <span v-else><i class="bi bi-arrow-up-circle-fill me-1"></i>Confirmar Upgrade</span>
+            </button>
+          </div>
+        </template>
+
+        <!-- Aprobación normal -->
+        <template v-else>
+          <div class="modal-icon green"><i class="bi bi-check-circle-fill"></i></div>
+          <h3>¿Aprobar pago?</h3>
+          <p>
+            Empresa: <strong>{{ approveTarget.company.name }}</strong><br>
+            Plan: <strong>{{ approveTarget.plan.name }}</strong> —
+            <strong>{{ formatCurrency(approveTarget.amount) }}</strong>
+          </p>
+          <p class="modal-note">Se activará la cuenta y se notificará al asociado por correo.</p>
+          <div class="modal-btns">
+            <button class="btn-cancel" @click="approveTarget = null">Cancelar</button>
+            <button class="btn-approve" :disabled="actioning === approveTarget.id" @click="doApprove">
+              <span v-if="actioning === approveTarget.id">
+                <i class="bi bi-hourglass-split spin me-1"></i>Aprobando...
+              </span>
+              <span v-else>Confirmar aprobación</span>
+            </button>
+          </div>
+        </template>
+
       </div>
     </div>
 
@@ -362,7 +412,31 @@ export default {
 }
 .pr-no-receipt { font-size: .82rem; color: #94a3b8; margin-bottom: 14px; }
 
+/* BANNER UPGRADE */
+.upgrade-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+  border: 1.5px solid #86efac; border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 14px;
+}
+.upgrade-arrow { font-size: 1.4rem; color: #16a34a; flex-shrink: 0; }
+.upgrade-transition { display: flex; align-items: center; gap: 8px; flex: 1; }
+.upgrade-from { font-weight: 700; font-size: .9rem; color: #64748b; background: #e2e8f0; padding: 3px 10px; border-radius: 20px; }
+.upgrade-sep  { color: #16a34a; font-size: 1rem; }
+.upgrade-to   { font-weight: 800; font-size: .9rem; color: #15803d; background: #dcfce7; padding: 3px 10px; border-radius: 20px; }
+.upgrade-note { font-size: .75rem; color: #64748b; width: 100%; margin-top: 4px; }
+
 .pr-actions { display: flex; gap: 10px; }
+
+.btn-upgrade {
+  background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; border: none;
+  padding: 9px 18px; border-radius: 8px; font-weight: 700; font-size: .85rem;
+  cursor: pointer; transition: all .2s;
+  display: flex; align-items: center; gap: 4px;
+  box-shadow: 0 2px 8px rgba(124,58,237,.3);
+}
+.btn-upgrade:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 4px 12px rgba(124,58,237,.4); }
+.btn-upgrade:disabled { opacity: .5; cursor: not-allowed; }
 
 .btn-approve {
   background: #10b981; color: #fff; border: none;
@@ -398,8 +472,19 @@ export default {
   display: flex; align-items: center; justify-content: center;
   font-size: 1.6rem; margin: 0 auto 16px;
 }
-.modal-icon.green { background: #f0fdf4; color: #10b981; }
-.modal-icon.red   { background: #fef2f2; color: #ef4444; }
+.modal-icon.green   { background: #f0fdf4; color: #10b981; }
+.modal-icon.red     { background: #fef2f2; color: #ef4444; }
+.modal-icon.upgrade { background: #eff6ff; color: #2563eb; }
+
+.upgrade-modal-transition {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 0 auto 12px; padding: 10px 16px;
+  background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+  border-radius: 10px; border: 1px solid #86efac;
+}
+.umt-from  { font-weight: 700; color: #64748b; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
+.umt-arrow { color: #16a34a; font-size: 1.1rem; }
+.umt-to    { font-weight: 800; color: #15803d; background: #dcfce7; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
 .pr-modal h3 { text-align: center; font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
 .pr-modal p  { text-align: center; color: #64748b; font-size: .88rem; margin-bottom: 8px; }
 .modal-note  { font-size: .78rem; color: #94a3b8; }

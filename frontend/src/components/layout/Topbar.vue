@@ -140,7 +140,10 @@
           @click.stop="toggleUserDropdown"
           title="Mi cuenta"
         >
-          <i class="bi bi-person-circle"></i>
+          <span class="user-icon-wrap">
+            <i class="bi bi-person-circle"></i>
+            <span v-if="totalNotifCount > 0" class="user-notif-badge">{{ totalNotifCount > 99 ? '99+' : totalNotifCount }}</span>
+          </span>
           <div class="user-text">
             <span class="user-name">{{ user?.nombre }}</span>
             <span class="user-role">{{ user?.role }}</span>
@@ -164,14 +167,67 @@
               </div>
             </div>
 
-            <!-- Notificaciones -->
-            <button class="dropdown-item" @click="openNotifPanel">
+            <!-- NOTIFICACIONES expandible -->
+            <button class="dropdown-item notif-toggle" @click.stop="notifExpanded = !notifExpanded">
               <span class="item-icon" style="position:relative">
                 <i class="bi bi-bell"></i>
-                <span v-if="unreadNotif > 0" class="notif-dot">{{ unreadNotif > 99 ? '99+' : unreadNotif }}</span>
+                <span v-if="totalNotifCount > 0" class="notif-dot">{{ totalNotifCount > 99 ? '99+' : totalNotifCount }}</span>
               </span>
-              <span class="item-name">Notificaciones{{ unreadNotif > 0 ? ` (${unreadNotif})` : '' }}</span>
+              <span class="item-name">Notificaciones{{ totalNotifCount > 0 ? ` (${totalNotifCount})` : '' }}</span>
+              <i class="bi notif-chevron" :class="notifExpanded ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
             </button>
+
+            <!-- Sub-tipos de notificaciones -->
+            <div v-if="notifExpanded" class="notif-subtypes">
+
+              <!-- Pagos pendientes — SYSADMIN, funcional -->
+              <button
+                v-if="companyStore.isSystem"
+                class="notif-subtype-item"
+                :class="{ 'has-count': pendingPaymentsCount > 0 }"
+                @click="goToPaymentReview"
+              >
+                <span class="nsi-icon payment"><i class="bi bi-credit-card-2-back"></i></span>
+                <span class="nsi-label">
+                  Pagos pendientes
+                  <small>SYSADMIN › Revisión de Pagos</small>
+                </span>
+                <span class="nsi-count" :class="pendingPaymentsCount > 0 ? 'active' : 'zero'">
+                  {{ pendingPaymentsCount }}
+                </span>
+              </button>
+
+              <!-- Mensajes internos — funcional -->
+              <button class="notif-subtype-item" :class="{ 'has-count': unreadNotif > 0 }" @click="openNotifPanel">
+                <span class="nsi-icon messages"><i class="bi bi-chat-dots"></i></span>
+                <span class="nsi-label">
+                  Mensajes internos
+                  <small>Comentarios y avisos de tu equipo</small>
+                </span>
+                <span class="nsi-count" :class="unreadNotif > 0 ? 'active' : 'zero'">{{ unreadNotif }}</span>
+              </button>
+
+              <!-- Novedades — próximamente -->
+              <div class="notif-subtype-item disabled">
+                <span class="nsi-icon news"><i class="bi bi-megaphone"></i></span>
+                <span class="nsi-label">
+                  Novedades EasyPosWeb
+                  <small>Nuevos módulos y características</small>
+                </span>
+                <span class="badge-soon">Próximo</span>
+              </div>
+
+              <!-- Promociones — próximamente -->
+              <div class="notif-subtype-item disabled">
+                <span class="nsi-icon promo"><i class="bi bi-gift"></i></span>
+                <span class="nsi-label">
+                  Promociones
+                  <small>Ofertas y descuentos especiales</small>
+                </span>
+                <span class="badge-soon">Próximo</span>
+              </div>
+
+            </div>
 
             <div class="dropdown-divider"></div>
 
@@ -225,13 +281,19 @@ const dropdownOpen    = ref(false)
 const dropdownRef     = ref(null)
 const userDropOpen    = ref(false)
 const userDropRef     = ref(null)
-const companyDropOpen = ref(false)
-const companyDropRef  = ref(null)
+const companyDropOpen      = ref(false)
+const companyDropRef       = ref(null)
+const notifExpanded        = ref(false)
+const pendingPaymentsCount = ref(0)
 
 const isPaymentActive = computed(() => {
   const ps = user.value?.payment_status ?? "active"
   return ps === "active"
 })
+
+const totalNotifCount = computed(() =>
+  unreadNotif.value + (companyStore.isSystem ? pendingPaymentsCount.value : 0)
+)
 
 // ── Notificaciones ──────────────────────────────────
 async function loadUnreadCount() {
@@ -239,6 +301,14 @@ async function loadUnreadCount() {
   try {
     const res = await api.get("/task-comments/notifications/unread")
     unreadNotif.value = res.data.filter(n => !n.is_read).length
+  } catch {}
+}
+
+async function loadPendingPayments() {
+  if (!companyStore.isSystem) return
+  try {
+    const res = await api.get("/payments/pending-count")
+    pendingPaymentsCount.value = res.data.count ?? 0
   } catch {}
 }
 
@@ -296,11 +366,19 @@ function toggleDropdown() {
 function toggleUserDropdown() {
   userDropOpen.value = !userDropOpen.value
   if (userDropOpen.value) dropdownOpen.value = false
+  if (!userDropOpen.value) notifExpanded.value = false
 }
 
 function openNotifPanel() {
-  userDropOpen.value = false
+  userDropOpen.value  = false
+  notifExpanded.value = false
   emit("toggle-sidebar-right")
+}
+
+function goToPaymentReview() {
+  userDropOpen.value  = false
+  notifExpanded.value = false
+  router.push("/sysadmin/payment-review")
 }
 
 function goProfile() {
@@ -310,15 +388,12 @@ function goProfile() {
 }
 
 function handleOutsideClick(e) {
-  if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
-    dropdownOpen.value = false
-  }
+  if (dropdownRef.value && !dropdownRef.value.contains(e.target)) dropdownOpen.value = false
   if (userDropRef.value && !userDropRef.value.contains(e.target)) {
-    userDropOpen.value = false
+    userDropOpen.value  = false
+    notifExpanded.value = false
   }
-  if (companyDropRef.value && !companyDropRef.value.contains(e.target)) {
-    companyDropOpen.value = false
-  }
+  if (companyDropRef.value && !companyDropRef.value.contains(e.target)) companyDropOpen.value = false
 }
 
 function toggleCompanyDrop() {
@@ -388,14 +463,15 @@ onMounted(async () => {
     await loadPlan(companyStore.selectedCompany?.id)
     await loadMenuItems()
     loadUnreadCount()
+    loadPendingPayments()
     sendHeartbeat()
 
     const [notifMs, hbMs] = await Promise.all([
       getConfigMs("topbar_notif_interval_ms",     60_000),
       getConfigMs("topbar_heartbeat_interval_ms", 180_000),
     ])
-    notifTimer     = setInterval(loadUnreadCount, notifMs)
-    heartbeatTimer = setInterval(sendHeartbeat,   hbMs)
+    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments() }, notifMs)
+    heartbeatTimer = setInterval(sendHeartbeat, hbMs)
   }
   document.addEventListener("click", handleOutsideClick)
 })
@@ -671,24 +747,68 @@ onUnmounted(() => {
 .item-plan-text { display: flex; flex-direction: column; line-height: 1.3; }
 .item-plan-exp { font-size: 10px; opacity: 0.6; }
 
-/* Dot de notificaciones inline en el dropdown */
+/* Badge en el botón CUENTA */
+.user-icon-wrap { position: relative; display: flex; align-items: center; }
+.user-notif-badge {
+  position: absolute; top: -5px; right: -7px;
+  min-width: 16px; height: 16px;
+  background: #ef4444; color: #fff;
+  font-size: 8px; font-weight: 800; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 3px; line-height: 1; pointer-events: none;
+  border: 1.5px solid var(--topbar-bg, #1e293b);
+}
+
+/* Fila toggle de notificaciones en el dropdown */
+.notif-toggle { justify-content: flex-start; }
+.notif-chevron { font-size: 10px; margin-left: auto; opacity: .6; }
+
+/* Sub-tipos de notificaciones */
+.notif-subtypes {
+  background: rgba(0,0,0,0.15);
+  border-radius: 8px;
+  margin: 2px 4px 6px;
+  overflow: hidden;
+}
+.notif-subtype-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 12px;
+  background: none; border: none; border-radius: 0;
+  color: var(--topbar-text); font-size: .82rem; cursor: pointer;
+  text-align: left; transition: background .15s;
+}
+.notif-subtype-item:not(.disabled):hover { background: rgba(255,255,255,0.08); }
+.notif-subtype-item.has-count { background: rgba(255,255,255,0.04); }
+.notif-subtype-item.disabled { opacity: .45; cursor: default; }
+
+.nsi-icon {
+  width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: .85rem;
+}
+.nsi-icon.payment  { background: rgba(249,115,22,.25); color: #f97316; }
+.nsi-icon.messages { background: rgba(59,130,246,.25);  color: #60a5fa; }
+.nsi-icon.news     { background: rgba(168,85,247,.25);  color: #c084fc; }
+.nsi-icon.promo    { background: rgba(16,185,129,.25);  color: #34d399; }
+
+.nsi-label { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.nsi-label small { font-size: .68rem; opacity: .5; line-height: 1.2; }
+
+.nsi-count {
+  min-width: 20px; height: 20px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; padding: 0 4px; flex-shrink: 0;
+}
+.nsi-count.active { background: #ef4444; color: #fff; }
+.nsi-count.zero   { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.4); }
+
+/* Dot de notificaciones */
 .notif-dot {
-  position: absolute;
-  top: -4px;
-  right: -6px;
-  min-width: 15px;
-  height: 15px;
-  background: #ef4444;
-  color: #fff;
-  font-size: 8px;
-  font-weight: 800;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 3px;
-  line-height: 1;
-  pointer-events: none;
+  position: absolute; top: -4px; right: -6px;
+  min-width: 15px; height: 15px;
+  background: #ef4444; color: #fff;
+  font-size: 8px; font-weight: 800; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 3px; line-height: 1; pointer-events: none;
 }
 
 /* Dropdown Soporte */
