@@ -210,6 +210,24 @@
     </div>
 
     <!-- ══════════════════════════════════════════════
+         MODAL: CONFIRMAR ELIMINAR FILA
+    ══════════════════════════════════════════════ -->
+    <div v-if="deleteFeatureId !== null" class="modal-overlay" @click.self="deleteFeatureId = null">
+      <div class="modal-box" style="max-width:360px; text-align:center">
+        <div style="font-size:2rem; color:#ef4444; margin-bottom:10px"><i class="bi bi-trash3-fill"></i></div>
+        <h5 class="mb-1">Eliminar fila</h5>
+        <p style="font-size:.88rem; color:#64748b; margin-bottom:20px">¿Eliminar esta fila del plan? Esta acción no se puede deshacer.</p>
+        <div style="display:flex; gap:10px; justify-content:center">
+          <button class="btn-save" :disabled="deletingFeature" @click="confirmDeleteFeature">
+            <i v-if="deletingFeature" class="bi bi-hourglass-split me-1"></i>
+            {{ deletingFeature ? 'Eliminando...' : 'Sí, eliminar' }}
+          </button>
+          <button class="btn-cancel" @click="deleteFeatureId = null">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════
          MODAL: EDITAR / CREAR SECCIÓN
     ══════════════════════════════════════════════ -->
     <div v-if="sectionModal.open" class="modal-overlay" @click.self="sectionModal.open = false">
@@ -538,13 +556,26 @@ export default {
       } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
-    async function deleteFeature(id) {
-      if (!confirm("¿Eliminar esta fila del plan?")) return
+    const deleteFeatureId  = ref(null)
+    const deletingFeature  = ref(false)
+
+    function deleteFeature(id) {
+      deleteFeatureId.value = id
+    }
+
+    async function confirmDeleteFeature() {
+      if (deleteFeatureId.value === null) return
+      deletingFeature.value = true
       try {
-        await api.delete(`/landing/admin/plan-features/${id}`)
-        features.value = features.value.filter(f => f.id !== id)
+        await api.delete(`/landing/admin/plan-features/${deleteFeatureId.value}`)
+        features.value = features.value.filter(f => f.id !== deleteFeatureId.value)
         showToast("Fila eliminada", "success")
-      } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
+        deleteFeatureId.value = null
+      } catch (e) {
+        showToast(e.response?.data?.detail || e.message, "error")
+      } finally {
+        deletingFeature.value = false
+      }
     }
 
     // ── Contactos ─────────────────────────────────────
@@ -588,7 +619,7 @@ export default {
       openEditSection, openNewSection, saveSection, toggleSection, uploadSectionImage,
       profiles, loadingProfiles, saveProfile, uploadProfileImage,
       features, loadingFeatures, groupedFeatures, allCategories, featureModal,
-      openNewFeature, saveFeature, createFeature, deleteFeature,
+      openNewFeature, saveFeature, createFeature, deleteFeature, deleteFeatureId, deletingFeature, confirmDeleteFeature,
       contacts, loadingContacts, unreadCount, markRead, formatDate,
     }
   }
