@@ -167,7 +167,7 @@ const maxDepth     = computed(() => stats.value.maxD)
 async function loadProfiles() {
   try {
     const res = await api.get("/business-profiles/")
-    profiles.value = res.data
+    profiles.value = res.data.data ?? res.data
   } catch {
     showToast("Error cargando perfiles", "error")
   }
