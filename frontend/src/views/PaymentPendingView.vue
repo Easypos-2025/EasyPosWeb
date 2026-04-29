@@ -214,6 +214,19 @@
           <input ref="fileInput" type="file"
                  accept="image/jpeg,image/png,image/webp,application/pdf"
                  style="display:none" @change="onFileChange" />
+
+          <!-- Botón optimizar: visible cuando hay imagen cargada -->
+          <button
+            v-if="isImage && selectedFile"
+            type="button"
+            class="btn-optimize"
+            @click="openResizeModal(selectedFile)"
+          >
+            <i class="bi bi-crop me-1"></i>
+            Optimizar imagen
+            <span class="btn-optimize-size">({{ formatSize(selectedFile.size) }})</span>
+          </button>
+
           <div v-if="uploadError" class="api-error mt-2">
             <i class="bi bi-exclamation-circle-fill me-2"></i>{{ uploadError }}
           </div>
@@ -237,11 +250,86 @@
       </template>
 
     </div>
+
+    <!-- ── MODAL: OPTIMIZAR IMAGEN ──────────────────────────────── -->
+    <div v-if="showResizeModal" class="rz-overlay" @click.self="showResizeModal = false">
+      <div class="rz-modal">
+
+        <div class="rz-header">
+          <div class="rz-icon"><i class="bi bi-crop"></i></div>
+          <div class="rz-header-text">
+            <h3>Optimizar imagen</h3>
+            <p>Ajusta calidad y escala para reducir el tamaño del archivo.</p>
+          </div>
+        </div>
+
+        <!-- Canvas preview -->
+        <div class="rz-preview-wrap">
+          <canvas ref="resizeCanvas" class="rz-canvas"></canvas>
+          <div v-if="!resizeReady" class="rz-canvas-loader">
+            <i class="bi bi-hourglass-split spin"></i>
+          </div>
+        </div>
+
+        <!-- Controles -->
+        <div class="rz-controls">
+          <div class="rz-slider-row">
+            <div class="rz-slider-label">
+              <span>Calidad</span>
+              <strong>{{ resizeQualityPct }}%</strong>
+            </div>
+            <input type="range" min="20" max="100" step="5"
+                   v-model.number="resizeQualityPct"
+                   @input="debouncedPreview" class="rz-range" />
+          </div>
+          <div class="rz-slider-row">
+            <div class="rz-slider-label">
+              <span>Escala</span>
+              <strong>{{ resizeScalePct }}%</strong>
+            </div>
+            <input type="range" min="25" max="100" step="5"
+                   v-model.number="resizeScalePct"
+                   @input="debouncedPreview" class="rz-range" />
+          </div>
+
+          <!-- Comparativa de tamaños -->
+          <div class="rz-size-compare">
+            <div class="rz-size-box orig">
+              <span class="rz-size-label">Original</span>
+              <span class="rz-size-val">{{ formatSize(resizeOrigSize) }}</span>
+            </div>
+            <i class="bi bi-arrow-right rz-arrow"></i>
+            <div class="rz-size-box" :class="resizeSizeClass">
+              <span class="rz-size-label">Resultado</span>
+              <span class="rz-size-val">{{ resizeEstSize ? formatSize(resizeEstSize) : '…' }}</span>
+            </div>
+          </div>
+          <p v-if="resizeSizeClass === 'warn'" class="rz-warn-hint">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            Aún es grande. Baja calidad o escala para reducirlo más.
+          </p>
+        </div>
+
+        <!-- Acciones -->
+        <div class="rz-actions">
+          <button class="btn-rz-cancel" @click="showResizeModal = false">
+            <i class="bi bi-x me-1"></i>Cancelar
+          </button>
+          <button class="btn-rz-apply" :disabled="isCompressing || !resizeReady" @click="applyResize">
+            <i v-if="!isCompressing" class="bi bi-check2 me-1"></i>
+            <i v-else class="bi bi-hourglass-split me-1 spin"></i>
+            {{ isCompressing ? 'Procesando…' : 'Usar imagen optimizada' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- ── FIN MODAL ─────────────────────────────────────────────── -->
+
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from "vue"
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue"
 import { useRouter } from "vue-router"
 import api from "@/services/apis"
 
@@ -272,6 +360,19 @@ export default {
     const fileInput     = ref(null)
     let pollTimer       = null
 
+    // ── Resize modal state ──────────────────────────────────────────
+    const showResizeModal  = ref(false)
+    const resizeQualityPct = ref(75)
+    const resizeScalePct   = ref(80)
+    const resizeOrigSize   = ref(0)
+    const resizeEstSize    = ref(0)
+    const isCompressing    = ref(false)
+    const resizeReady      = ref(false)
+    const resizeCanvas     = ref(null)
+    let resizeSourceImg    = null
+    let previewDebounceTimer = null
+
+    // ── Computeds ──────────────────────────────────────────────────
     const isImage = computed(() => selectedFile.value?.type?.startsWith("image/") ?? false)
     const selectedPlan = computed(() => plans.value.find(p => p.id === selectedPlanId.value) ?? null)
 
@@ -280,6 +381,12 @@ export default {
       return `PLAN-${user.company_id ?? "0"}`
     })
 
+    const resizeSizeClass = computed(() => {
+      if (!resizeEstSize.value) return ""
+      return resizeEstSize.value < 1.5 * 1024 * 1024 ? "ok" : "warn"
+    })
+
+    // ── Formatters ─────────────────────────────────────────────────
     function formatCurrency(amount, currency = "COP") {
       if (!amount && amount !== 0) return "—"
       return new Intl.NumberFormat("es-CO", {
@@ -287,6 +394,14 @@ export default {
       }).format(amount)
     }
 
+    function formatSize(bytes) {
+      if (!bytes) return "—"
+      if (bytes < 1024) return bytes + " B"
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB"
+    }
+
+    // ── Status / Plans ─────────────────────────────────────────────
     async function loadStatus() {
       try {
         const res = await api.get("/payments/my-status")
@@ -326,9 +441,7 @@ export default {
       try {
         const res = await api.get("/payments/my-status")
         paymentStatus.value = res.data.payment_status
-        if (res.data.payment_status === "active") {
-          stopPolling()
-        }
+        if (res.data.payment_status === "active") stopPolling()
       } catch {} finally {
         refreshing.value = false
       }
@@ -340,9 +453,7 @@ export default {
         try {
           const res = await api.get("/payments/my-status")
           paymentStatus.value = res.data.payment_status
-          if (res.data.payment_status === "active") {
-            stopPolling()
-          }
+          if (res.data.payment_status === "active") stopPolling()
         } catch {}
       }, 10000)
     }
@@ -351,6 +462,7 @@ export default {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
     }
 
+    // ── File handling ──────────────────────────────────────────────
     function onFileChange(e) { setFile(e.target.files?.[0]) }
     function onDrop(e)       { isDrag.value = false; setFile(e.dataTransfer.files?.[0]) }
 
@@ -363,11 +475,16 @@ export default {
         return
       }
       if (file.size > 5 * 1024 * 1024) {
-        uploadError.value = "El archivo supera el límite de 5 MB."
+        uploadError.value = "El archivo supera el límite de 5 MB. Comprime la imagen antes de cargarla."
         return
       }
       selectedFile.value = file
       previewUrl.value   = file.type.startsWith("image/") ? URL.createObjectURL(file) : "pdf"
+
+      // Auto-open optimizer for images > 1.5 MB
+      if (file.type.startsWith("image/") && file.size > 1.5 * 1024 * 1024) {
+        openResizeModal(file)
+      }
     }
 
     function clearFile() {
@@ -376,20 +493,92 @@ export default {
       if (fileInput.value) fileInput.value.value = ""
     }
 
+    // ── Resize modal ───────────────────────────────────────────────
+    async function openResizeModal(file) {
+      resizeOrigSize.value   = file.size
+      resizeQualityPct.value = 75
+      resizeScalePct.value   = 80
+      resizeEstSize.value    = 0
+      resizeReady.value      = false
+      showResizeModal.value  = true
+
+      await nextTick()
+
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        resizeSourceImg = img
+        URL.revokeObjectURL(url)
+        drawAndEstimate()
+      }
+      img.src = url
+    }
+
+    async function drawAndEstimate() {
+      const canvas = resizeCanvas.value
+      if (!canvas || !resizeSourceImg) return
+
+      const scale = resizeScalePct.value / 100
+      canvas.width  = Math.max(1, Math.round(resizeSourceImg.naturalWidth  * scale))
+      canvas.height = Math.max(1, Math.round(resizeSourceImg.naturalHeight * scale))
+
+      const ctx = canvas.getContext("2d")
+      ctx.drawImage(resizeSourceImg, 0, 0, canvas.width, canvas.height)
+
+      return new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+          resizeEstSize.value = blob?.size ?? 0
+          resizeReady.value   = true
+          resolve()
+        }, "image/jpeg", resizeQualityPct.value / 100)
+      })
+    }
+
+    function debouncedPreview() {
+      resizeReady.value = false
+      clearTimeout(previewDebounceTimer)
+      previewDebounceTimer = setTimeout(drawAndEstimate, 350)
+    }
+
+    async function applyResize() {
+      const canvas = resizeCanvas.value
+      if (!canvas || !resizeSourceImg) return
+      isCompressing.value = true
+
+      const scale = resizeScalePct.value / 100
+      canvas.width  = Math.max(1, Math.round(resizeSourceImg.naturalWidth  * scale))
+      canvas.height = Math.max(1, Math.round(resizeSourceImg.naturalHeight * scale))
+      const ctx = canvas.getContext("2d")
+      ctx.drawImage(resizeSourceImg, 0, 0, canvas.width, canvas.height)
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const optimizedFile = new File([blob], "comprobante_optimizado.jpg", { type: "image/jpeg" })
+          selectedFile.value = optimizedFile
+          if (previewUrl.value && previewUrl.value !== "pdf") {
+            URL.revokeObjectURL(previewUrl.value)
+          }
+          previewUrl.value  = URL.createObjectURL(blob)
+          uploadError.value = ""
+        }
+        isCompressing.value   = false
+        showResizeModal.value = false
+      }, "image/jpeg", resizeQualityPct.value / 100)
+    }
+
+    // ── Submit ─────────────────────────────────────────────────────
     async function submitReceipt() {
       if (!selectedFile.value || !selectedPlanId.value) return
       uploadError.value = ""
       submitting.value  = true
 
       try {
-        // Paso 1: crear/actualizar el registro de pago con el plan seleccionado
         const user = JSON.parse(localStorage.getItem("user") || "{}")
         await api.post("/payments/request-renewal", {
           plan_id:       selectedPlanId.value,
           currency_code: user.currency_code ?? "COP",
         })
 
-        // Paso 2: subir el comprobante
         const fd = new FormData()
         fd.append("file", selectedFile.value)
         await api.post("/payments/submit-receipt", fd, {
@@ -402,7 +591,11 @@ export default {
         startPolling()
       } catch (e) {
         if (e.response?.status === 413) {
-          uploadError.value = "El archivo es demasiado grande. Comprime la imagen o usa un PDF de menos de 5 MB."
+          uploadError.value = "El archivo es demasiado grande para el servidor."
+          // Auto-open optimizer if it's an image
+          if (selectedFile.value?.type?.startsWith("image/")) {
+            openResizeModal(selectedFile.value)
+          }
         } else {
           uploadError.value = e.response?.data?.detail || "Error al enviar el comprobante."
         }
@@ -431,9 +624,14 @@ export default {
       showWaitScreen, waitPlanName,
       plans, selectedPlanId, selectedPlan,
       selectedFile, previewUrl, uploadError, isDrag, fileInput, isImage,
-      referenceText, formatCurrency, refreshStatus,
+      referenceText, formatCurrency, formatSize, refreshStatus,
       onFileChange, onDrop, clearFile, submitReceipt,
       goToDashboard, logout, copy,
+      // Resize modal
+      showResizeModal, resizeQualityPct, resizeScalePct,
+      resizeOrigSize, resizeEstSize, resizeSizeClass,
+      isCompressing, resizeReady, resizeCanvas,
+      openResizeModal, debouncedPreview, applyResize,
     }
   }
 }
@@ -574,6 +772,17 @@ export default {
   background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer;
 }
 
+/* Botón optimizar imagen */
+.btn-optimize {
+  margin-top: 8px; width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px;
+  border: 1.5px dashed #f97316; background: #fff7ed; color: #ea580c;
+  font-size: .83rem; font-weight: 600; cursor: pointer; transition: all .2s;
+}
+.btn-optimize:hover { background: #ffedd5; border-color: #ea580c; }
+.btn-optimize-size { opacity: .7; font-weight: 400; }
+
 /* PANTALLA DE ESPERA */
 .pp-wait { text-align: center; padding: 10px 0; }
 .pp-wait h2 { font-size: 1.2rem; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
@@ -654,6 +863,103 @@ export default {
   color: #dc2626; padding: 10px 14px; border-radius: 8px; font-size: .85rem;
 }
 
+/* ── RESIZE MODAL ──────────────────────────────────────────────── */
+.rz-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000; padding: 16px;
+}
+
+.rz-modal {
+  background: #fff; border-radius: 18px; padding: 24px;
+  width: 100%; max-width: 480px;
+  max-height: calc(100vh - 32px); overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0,0,0,.4);
+}
+
+.rz-header {
+  display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;
+}
+.rz-icon {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  background: #fff7ed; color: #f97316;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem;
+}
+.rz-header-text h3 { margin: 0 0 2px; font-size: 1rem; font-weight: 700; color: #0f172a; }
+.rz-header-text p  { margin: 0; font-size: .8rem; color: #64748b; }
+
+/* Canvas preview */
+.rz-preview-wrap {
+  position: relative;
+  background: #f1f5f9; border-radius: 10px; overflow: hidden;
+  margin-bottom: 16px; min-height: 120px;
+  display: flex; align-items: center; justify-content: center;
+}
+.rz-canvas {
+  max-width: 100%; max-height: 260px;
+  border-radius: 8px; display: block;
+}
+.rz-canvas-loader {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(241,245,249,.85); font-size: 1.3rem; color: #94a3b8;
+}
+
+/* Sliders */
+.rz-controls { margin-bottom: 16px; }
+.rz-slider-row { margin-bottom: 12px; }
+.rz-slider-label {
+  display: flex; justify-content: space-between;
+  font-size: .82rem; color: #475569; margin-bottom: 4px;
+}
+.rz-slider-label strong { color: #1e293b; }
+.rz-range {
+  width: 100%; accent-color: #f97316;
+  height: 4px; cursor: pointer;
+}
+
+/* Size comparison */
+.rz-size-compare {
+  display: flex; align-items: center; gap: 10px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 10px; padding: 10px 14px; margin-top: 4px;
+}
+.rz-size-box { display: flex; flex-direction: column; align-items: center; flex: 1; }
+.rz-size-label { font-size: .7rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.rz-size-val   { font-size: .9rem; font-weight: 800; color: #1e293b; margin-top: 2px; }
+.rz-size-box.orig .rz-size-val { color: #64748b; }
+.rz-size-box.ok   .rz-size-val { color: #15803d; }
+.rz-size-box.warn .rz-size-val { color: #ea580c; }
+.rz-arrow { color: #cbd5e1; font-size: 1rem; flex-shrink: 0; }
+
+.rz-warn-hint {
+  margin: 6px 0 0; font-size: .78rem; color: #ea580c;
+  display: flex; align-items: center;
+}
+
+/* Modal actions */
+.rz-actions {
+  display: flex; gap: 10px; margin-top: 4px;
+}
+.btn-rz-cancel {
+  flex: 1; padding: 10px; border-radius: 10px;
+  border: 1.5px solid #e2e8f0; background: #fff; color: #64748b;
+  font-weight: 600; font-size: .88rem; cursor: pointer; transition: all .2s;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.btn-rz-cancel:hover { border-color: #94a3b8; color: #334155; }
+.btn-rz-apply {
+  flex: 2; padding: 10px; border-radius: 10px;
+  border: none; background: #f97316; color: #fff;
+  font-weight: 700; font-size: .88rem; cursor: pointer; transition: all .2s;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.btn-rz-apply:hover:not(:disabled) { background: #ea580c; }
+.btn-rz-apply:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── UTILIDADES ────────────────────────────────────────────────── */
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -663,6 +969,6 @@ export default {
   .instr-row { flex-direction: column; align-items: flex-start; }
   .instr-val { text-align: left; }
   .pp-footer-btns { flex-direction: column; }
+  .rz-actions { flex-direction: column; }
 }
-
 </style>

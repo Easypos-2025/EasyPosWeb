@@ -180,7 +180,10 @@
             </div>
             <div class="field-group" :class="{ error: approveErr.bank_origin }">
               <label>Banco origen (del asociado) <span class="req">*</span></label>
-              <input v-model="approveForm.bank_origin" type="text" placeholder="Ej. Bancolombia, Davivienda..." />
+              <select v-model="approveForm.bank_origin">
+                <option value="" disabled>Selecciona banco...</option>
+                <option v-for="b in BANKS_CO" :key="b" :value="b">{{ b }}</option>
+              </select>
               <span v-if="approveErr.bank_origin" class="field-error">{{ approveErr.bank_origin }}</span>
             </div>
           </div>
@@ -229,8 +232,6 @@
           <strong>{{ planEndDate }}</strong>
           <span class="dates-note">(30 días)</span>
         </div>
-        <p class="modal-note">Se enviará notificación por correo al asociado.</p>
-
         <div v-if="approveErr.general" class="error-general">
           <i class="bi bi-exclamation-circle me-1"></i>{{ approveErr.general }}
         </div>
@@ -319,6 +320,13 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
+
+const BANKS_CO = [
+  "Bancolombia", "Banco de Bogotá", "Davivienda", "BBVA Colombia",
+  "Banco de Occidente", "Banco Popular", "Banco Caja Social", "Banco Agrario",
+  "Nequi", "Daviplata", "Nubank", "Banco Itaú", "Banco GNB Sudameris",
+  "Banco Falabella", "Banco Pichincha", "Lulo Bank", "Rappipay", "Otro",
+]
 
 export default {
   name: "PaymentReviewView",
@@ -476,6 +484,7 @@ export default {
     onMounted(load)
 
     return {
+      BANKS_CO,
       loading, payments, actioning, filterType, apiBase,
       approveTarget, approveFile, duplicateInfo, approveForm, approveErr,
       rejectTarget, rejectReason, rejectFile, rejectErr, rejectForm,
@@ -615,45 +624,43 @@ export default {
 /* MODAL */
 .pr-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.5);
-  display: flex; align-items: center; justify-content: center; z-index: 9999;
-  padding: 16px;
+  display: flex; align-items: flex-start; justify-content: center; z-index: 9999;
+  padding: 12px; overflow-y: auto;
 }
 .pr-modal {
-  background: #fff; border-radius: 16px; padding: 20px;
-  width: 100%; max-width: 520px;
-  box-shadow: 0 24px 60px rgba(0,0,0,.3);
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
+  background: #fff; border-radius: 14px; padding: 14px 16px;
+  width: 100%; max-width: 500px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.3);
+  margin: auto 0;
 }
 .modal-header-row {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
 }
-.modal-header-row h3 { margin: 0; text-align: left; }
+.modal-header-row h3 { margin: 0; text-align: left; font-size: .96rem; }
 .modal-icon {
-  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem;
+  font-size: .95rem;
 }
 .modal-icon.green   { background: #f0fdf4; color: #10b981; }
 .modal-icon.red     { background: #fef2f2; color: #ef4444; }
 .modal-icon.upgrade { background: #eff6ff; color: #2563eb; }
 
 .upgrade-modal-transition {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  margin: 0 auto 12px; padding: 10px 16px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 0 auto 8px; padding: 6px 12px;
   background: linear-gradient(135deg, #eff6ff, #f0fdf4);
-  border-radius: 10px; border: 1px solid #86efac;
+  border-radius: 8px; border: 1px solid #86efac;
 }
 .umt-from  { font-weight: 700; color: #64748b; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
 .umt-arrow { color: #16a34a; font-size: 1.1rem; }
 .umt-to    { font-weight: 800; color: #15803d; background: #dcfce7; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
 .pr-modal-lg { max-width: 560px; }
 
-.pr-modal h3 { font-size: 1rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
-.pr-modal p  { color: #64748b; font-size: .86rem; margin-bottom: 6px; }
-.modal-company-info { font-size: .86rem; color: #475569; margin-bottom: 8px; }
-.modal-note  { font-size: .76rem; color: #94a3b8; text-align: center; margin-bottom: 4px; }
-.modal-btns  { display: flex; gap: 10px; margin-top: 14px; }
+.pr-modal h3 { font-size: .94rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
+.pr-modal p  { color: #64748b; font-size: .82rem; margin-bottom: 4px; }
+.modal-company-info { font-size: .82rem; color: #475569; margin-bottom: 6px; }
+.modal-btns  { display: flex; gap: 8px; margin-top: 10px; }
 .modal-btns .btn-approve,
 .modal-btns .btn-reject,
 .modal-btns .btn-upgrade { flex: 1; justify-content: center; }
@@ -667,25 +674,33 @@ export default {
 /* FORMULARIO DE EVIDENCIA */
 .evidence-form {
   background: #f8fafc; border: 1px solid #e2e8f0;
-  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
 }
-.ev-title { font-size: .82rem; font-weight: 700; color: #475569; margin-bottom: 8px; }
-.ev-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ev-title { font-size: .78rem; font-weight: 700; color: #475569; margin-bottom: 6px; }
+.ev-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
-.field-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.field-group { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
 .field-group:last-child { margin-bottom: 0; }
-.field-group label { font-size: .78rem; font-weight: 600; color: #334155; }
+.field-group label { font-size: .74rem; font-weight: 600; color: #334155; }
 .field-group label small { font-weight: 400; color: #94a3b8; }
 .field-group.error label { color: #ef4444; }
 .req { color: #ef4444; }
-.field-group input, .field-group textarea {
-  border: 1.5px solid #e2e8f0; border-radius: 7px;
-  padding: 8px 12px; font-size: .84rem; resize: vertical;
+.field-group input,
+.field-group select,
+.field-group textarea {
+  border: 1.5px solid #e2e8f0; border-radius: 6px;
+  padding: 6px 10px; font-size: .82rem; resize: vertical;
   outline: none; color: #0f172a; font-family: inherit; background: #fff;
+  width: 100%; box-sizing: border-box;
 }
-.field-group input:focus, .field-group textarea:focus { border-color: #2563eb; }
-.field-group.error input, .field-group.error textarea { border-color: #ef4444; }
-.field-error { color: #ef4444; font-size: .72rem; }
+.field-group select { cursor: pointer; appearance: auto; }
+.field-group input:focus,
+.field-group select:focus,
+.field-group textarea:focus { border-color: #2563eb; }
+.field-group.error input,
+.field-group.error select,
+.field-group.error textarea { border-color: #ef4444; }
+.field-error { color: #ef4444; font-size: .7rem; }
 
 .ev-upload {
   border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 10px 14px;
@@ -722,11 +737,11 @@ export default {
 /* Fechas informativas en modal */
 .modal-dates-info {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px;
-  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;
-  padding: 6px 12px; font-size: .80rem; color: #0369a1; margin-bottom: 4px;
+  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 7px;
+  padding: 5px 10px; font-size: .76rem; color: #0369a1; margin-bottom: 6px;
 }
 .modal-dates-info strong { color: #0f172a; }
-.dates-note { color: #64748b; font-size: .74rem; margin-left: 4px; }
+.dates-note { color: #64748b; font-size: .72rem; margin-left: 4px; }
 
 /* Responsive: campos del formulario en columna en pantallas pequeñas */
 @media (max-width: 540px) {

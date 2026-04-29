@@ -39,6 +39,9 @@
         </div>
 
         <template v-if="!isWorkerRole">
+          <button v-if="task.assigned_to" class="btn btn-notif" @click="notifModal = true" title="Notificar al Task Leader">
+            <i class="bi bi-bell"></i> Notificar
+          </button>
           <button class="btn btn-danger btn-sm" @click="handleDelete">
             <i class="bi bi-trash"></i>
           </button>
@@ -425,7 +428,38 @@
       </div>
 
     </template>
+
   </div>
+
+  <!-- ── MODAL: NOTIFICAR AL TASK LEADER ────────────────────── -->
+  <div v-if="notifModal" class="notif-overlay" @click.self="notifModal = false">
+    <div class="notif-modal">
+      <div class="notif-header">
+        <div class="notif-icon"><i class="bi bi-bell-fill"></i></div>
+        <div>
+          <h3>Notificar al Task Leader</h3>
+          <p>Para: <strong>{{ task?.assigned_to_name }}</strong></p>
+        </div>
+        <button class="notif-close" @click="notifModal = false"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <textarea
+        v-model="notifMsg"
+        class="notif-textarea"
+        rows="4"
+        placeholder="Escribe el mensaje para el Task Leader..."
+        autofocus
+      ></textarea>
+      <div class="notif-footer">
+        <button class="btn btn-secondary btn-sm" @click="notifModal = false">Cancelar</button>
+        <button class="btn btn-primary btn-sm" @click="sendNotification" :disabled="sendingNotif || !notifMsg.trim()">
+          <i v-if="sendingNotif" class="bi bi-arrow-repeat spin"></i>
+          <i v-else class="bi bi-send-fill"></i>
+          {{ sendingNotif ? 'Enviando...' : 'Enviar notificación' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
 </template>
 
 <script setup>
@@ -470,6 +504,11 @@ const savingExp = ref(false)
 const units     = ["unidad","kg","g","litros","ml","m","m²","m³","rollo","caja","bolsa","par"]
 const matForm = ref({ name: "", unit: "", quantity: 1, unit_cost: 0 })
 const expForm = ref({ concept: "", amount: 0, payment_date: "", receipt_ref: "" })
+
+// ── Notificación al Task Leader ──────────────────────────────
+const notifModal   = ref(false)
+const notifMsg     = ref("")
+const sendingNotif = ref(false)
 
 const totalMaterials = computed(() => materials.value.reduce((s, m) => s + (m.total_cost || 0), 0))
 const totalExpenses  = computed(() => expenses.value.reduce((s, e) => s + (e.amount || 0), 0))
@@ -684,6 +723,25 @@ async function delExpense(e) {
   expenses.value = res.data
 }
 
+// ── Enviar notificación ──────────────────────────────────────
+async function sendNotification() {
+  if (!notifMsg.value.trim()) return
+  sendingNotif.value = true
+  try {
+    await api.post(`/task-comments/${taskId}`, {
+      comment:         notifMsg.value.trim(),
+      is_notification: true,
+    })
+    showToast("Notificación enviada al Task Leader", "success")
+    notifMsg.value   = ""
+    notifModal.value = false
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al enviar notificación", "error")
+  } finally {
+    sendingNotif.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -839,4 +897,55 @@ onMounted(load)
   background: #3b82f6; color: #fff;
   padding: 1px 5px; border-radius: 6px; margin-left: 2px;
 }
+
+/* ── BOTÓN NOTIFICAR ── */
+.btn-notif {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid #f59e0b; background: #fffbeb; color: #b45309;
+  cursor: pointer; transition: all 0.15s;
+}
+.btn-notif:hover { background: #fef3c7; border-color: #d97706; color: #92400e; }
+
+/* ── MODAL NOTIFICACIÓN ── */
+.notif-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 3000; padding: 16px;
+}
+.notif-modal {
+  background: #fff; border-radius: 14px; padding: 20px;
+  width: 100%; max-width: 440px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.25);
+}
+.notif-header {
+  display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px;
+}
+.notif-header h3 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0 0 2px; }
+.notif-header p  { font-size: 13px; color: #64748b; margin: 0; }
+.notif-icon {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: #fffbeb; color: #f59e0b;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.notif-close {
+  margin-left: auto; background: none; border: none; color: #94a3b8;
+  cursor: pointer; font-size: 14px; padding: 2px 4px; flex-shrink: 0;
+}
+.notif-close:hover { color: #475569; }
+.notif-textarea {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 12px; font-size: 14px; font-family: inherit; resize: vertical;
+  outline: none; color: #1e293b; box-sizing: border-box;
+}
+.notif-textarea:focus { border-color: #f59e0b; }
+.notif-footer {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;
+}
+.btn-secondary {
+  border: 1.5px solid #e2e8f0; background: #fff; color: #64748b;
+  padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+}
+.btn-secondary:hover { border-color: #94a3b8; }
 </style>
