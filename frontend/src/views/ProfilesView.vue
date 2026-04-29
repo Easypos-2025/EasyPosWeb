@@ -117,7 +117,7 @@
 
       <ImageUploader
         :currentLogo="currentLogo"
-        @update:image="val => perfil.value.logo = val"
+        @update:image="val => perfil.logo = val"
       />
 
       <div class="col-footer">

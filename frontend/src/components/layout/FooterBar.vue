@@ -129,7 +129,9 @@ async function loadOnlineCompanies() {
     const res  = await api.get("/footer/online-companies")
     onlineCompanies.value = res.data.count
     if (prev !== null && prev !== res.data.count) triggerFlash(chip1Flash)
-  } catch { onlineCompanies.value = 0 }
+  } catch (e) {
+    onlineCompanies.value = e?.response?.status === 403 ? null : 0
+  }
 }
 
 async function loadAssociates() {
@@ -169,7 +171,7 @@ window.addEventListener("online",  () => { online.value = true  })
 window.addEventListener("offline", () => { online.value = false })
 
 watch(() => companyStore.isSystem, (val) => {
-  if (val !== null) loadOnlineCompanies()
+  if (val === true) loadOnlineCompanies()
 }, { immediate: true })
 
 // ── Montaje ───────────────────────────────────────────
