@@ -134,6 +134,28 @@
   </div>
 
   <!-- =============================== -->
+  <!-- MODAL CONFIRMAR ELIMINAR -->
+  <!-- =============================== -->
+  <div v-if="deleteTarget" class="modal-overlay" @click.self="deleteTarget = null">
+    <div class="modal-content" style="max-width:380px; text-align:center">
+      <div style="font-size:2rem; color:#ef4444; margin-bottom:10px">
+        <i class="bi bi-trash3-fill"></i>
+      </div>
+      <h5 class="mb-1">Eliminar módulo</h5>
+      <p class="text-muted" style="font-size:.88rem; margin-bottom:20px">
+        ¿Eliminar <strong>"{{ deleteTarget.name }}"</strong>? Esta acción no se puede deshacer.
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-danger" :disabled="deleting" @click="confirmDelete">
+          <i v-if="deleting" class="bi bi-hourglass-split me-1"></i>
+          {{ deleting ? 'Eliminando...' : 'Sí, eliminar' }}
+        </button>
+        <button class="btn btn-secondary" @click="deleteTarget = null">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================== -->
   <!-- MODAL EDITAR -->
   <!-- =============================== -->
 
@@ -366,21 +388,27 @@ const createModule = async () => {
 DELETE
 ========================= */
 
-const deleteModule = async (id) => {
+const deleteTarget = ref(null)
+const deleting     = ref(false)
+
+const deleteModule = (id) => {
+  const item = modules.value.find(m => m.id === id)
+  deleteTarget.value = item ?? { id, name: `#${id}` }
+}
+
+const confirmDelete = async () => {
+  if (!deleteTarget.value) return
+  deleting.value = true
   try {
-
-    const confirmDelete = confirm("¿Eliminar este módulo?")
-    if (!confirmDelete) return
-
-    await api.delete(`/system-modules/${id}`)
-
+    await api.delete(`/system-modules/${deleteTarget.value.id}`)
     showToast("Módulo eliminado", "success")
-
+    deleteTarget.value = null
     await loadModules()
-
   } catch (error) {
     console.error(error)
     showToast("Error al eliminar módulo", "error")
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -510,29 +538,12 @@ const closeModal = () => {
   editingId.value = null
 }
 
-const handleDelete = async (item) => {
-  try {
-
-    // 🔥 VALIDAR HIJOS
-    if (item.children && item.children.length) {
-      showToast("No puedes eliminar un módulo con hijos", "error")
-      return
-    }
-
-    // 🔥 CONFIRMAR
-    const ok = confirm(`Eliminar módulo "${item.name}"?`)
-    if (!ok) return
-
-    await api.delete(`/system-modules/${item.id}`)
-
-    showToast("Módulo eliminado", "success")
-
-    await loadModules()
-
-  } catch (error) {
-    console.error(error)
-    showToast("Error al eliminar módulo", "error")
+const handleDelete = (item) => {
+  if (item.children && item.children.length) {
+    showToast("No puedes eliminar un módulo con hijos", "error")
+    return
   }
+  deleteTarget.value = item
 }
 
 const handleToggle = async (item) => {
