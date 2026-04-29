@@ -36,6 +36,36 @@
     </form>
 
     <!-- =============================== -->
+    <!-- REPARAR PERFIL -->
+    <!-- =============================== -->
+    <div class="repair-panel mt-4">
+      <div class="repair-header">
+        <i class="bi bi-wrench-adjustable"></i>
+        <span>Reparar Perfil</span>
+        <span class="repair-hint">Limpia módulos inactivos, re-sincroniza jerarquía y añade permisos faltantes</span>
+      </div>
+      <div class="repair-body">
+        <select v-model="repairProfileId" class="form-control repair-select">
+          <option value="">— Seleccionar perfil —</option>
+          <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+        <button
+          class="btn btn-repair"
+          :disabled="!repairProfileId || repairing"
+          @click="repairProfile"
+        >
+          <i v-if="repairing" class="bi bi-arrow-repeat spin"></i>
+          <i v-else class="bi bi-wrench-adjustable-circle-fill"></i>
+          {{ repairing ? 'Reparando...' : 'Reparar' }}
+        </button>
+      </div>
+      <div v-if="repairResult" class="repair-result">
+        <i class="bi bi-check-circle-fill"></i>
+        {{ repairResult }}
+      </div>
+    </div>
+
+    <!-- =============================== -->
     <!-- TREE -->
     <!-- =============================== -->
 
@@ -148,6 +178,53 @@ const treeModules = ref([])
 const showEditModal = ref(false)
 const editingId = ref(null)
 const filterStatus = ref("active")
+
+// ── Reparar perfil ──────────────────────────────────────────────────────────
+const profiles      = ref([])
+const repairProfileId = ref("")
+const repairing     = ref(false)
+const repairResult  = ref("")
+
+const loadProfiles = async () => {
+  try {
+    const res = await api.get("/business-profiles/")
+    profiles.value = res.data.data ?? res.data
+  } catch {}
+}
+
+const repairProfile = async () => {
+  const name = profiles.value.find(p => p.id === repairProfileId.value)?.name || "este perfil"
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Reparar "${name}"?`,
+    html: `<div style="text-align:left;font-size:14px;color:#475569">
+      <b>1.</b> Elimina módulos inactivos del perfil<br>
+      <b>2.</b> Re-sincroniza jerarquía padre-hijo<br>
+      <b>3.</b> Añade permisos <code>can_view</code> faltantes a roles
+    </div>`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, reparar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#1e3a5f"
+  })
+  if (!isConfirmed) return
+
+  repairing.value = true
+  repairResult.value = ""
+  try {
+    const res = await api.post(`/menu/repair-profile/${repairProfileId.value}`)
+    const { deleted_inactive, permissions_added } = res.data
+    const parts = []
+    if (deleted_inactive > 0) parts.push(`${deleted_inactive} módulo(s) inactivo(s) eliminado(s)`)
+    if (permissions_added > 0) parts.push(`${permissions_added} permiso(s) añadido(s)`)
+    repairResult.value = parts.length ? parts.join(' · ') : 'Perfil ya estaba sincronizado'
+    showToast(repairResult.value, parts.length ? "success" : "info")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error reparando perfil", "error")
+  } finally {
+    repairing.value = false
+  }
+}
 
 watch(filterStatus, () => {
   loadModules()
@@ -430,11 +507,79 @@ const handleToggle = async (item) => {
 }
 
 
-onMounted(loadModules)
+onMounted(() => { loadModules(); loadProfiles() })
 
 </script>
 
 <style scoped>
+
+/* ── Panel de reparación ── */
+.repair-panel {
+  background: #1e293b;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #334155;
+}
+.repair-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-weight: 700;
+  font-size: 14px;
+}
+.repair-hint {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.55;
+  margin-left: 4px;
+}
+.repair-body {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+}
+.repair-select {
+  flex: 1;
+  min-width: 200px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+.btn-repair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  background: #1e3a5f;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-repair:hover:not(:disabled) { background: #16a34a; }
+.btn-repair:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.repair-result {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px 12px;
+  color: #4ade80;
+  font-size: 13px;
+}
+.repair-result .bi { font-size: 15px; }
+
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
 .modal-overlay {
   position: fixed;
