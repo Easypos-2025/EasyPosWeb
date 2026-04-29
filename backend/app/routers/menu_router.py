@@ -231,7 +231,7 @@ def get_menu_by_profile(
     return build_tree(data)
 
 
-# ── REPARAR PERFIL: limpia huérfanos y re-sincroniza jerarquía ─────────────
+# ── REPARAR PERFIL: limpia huérfanos, re-sincroniza jerarquía y permisos ───
 @router.post("/repair-profile/{profile_id}")
 def repair_profile_menu(
     profile_id: int,
@@ -246,28 +246,53 @@ def repair_profile_menu(
     """), {"pid": profile_id})
     deleted_count = deleted.rowcount
 
-    # 2. Re-sincronizar parent_id en bpm usando sm.parent_id como referencia
-    #    Para cada bpm, buscar el bpm del módulo padre en el mismo perfil
-    db.execute(text("""
-        UPDATE business_profile_modules bpm
-        LEFT JOIN (
-            SELECT bpm2.id AS bpm_id, bpm2.module_id
-            FROM business_profile_modules bpm2
-            WHERE bpm2.business_profile_id = :pid
-        ) parent_map
-            ON parent_map.module_id = (
-                SELECT sm.parent_id FROM system_modules sm WHERE sm.id = bpm.module_id
-            )
-        SET bpm.parent_id = parent_map.bpm_id
+    # 2. Re-sincronizar parent_id en bpm desde sm.parent_id
+    rows = db.execute(text("""
+        SELECT bpm.id AS bpm_id, sm.parent_id AS sm_parent_id
+        FROM business_profile_modules bpm
+        JOIN system_modules sm ON sm.id = bpm.module_id
         WHERE bpm.business_profile_id = :pid
+    """), {"pid": profile_id}).fetchall()
+
+    # Mapa sm.id → bpm.id para este perfil
+    sm_to_bpm = {}
+    for r in rows:
+        sm_id_res = db.execute(text(
+            "SELECT module_id FROM business_profile_modules WHERE id = :bid"
+        ), {"bid": r.bpm_id}).fetchone()
+        if sm_id_res:
+            sm_to_bpm[sm_id_res.module_id] = r.bpm_id
+
+    for r in rows:
+        new_parent = sm_to_bpm.get(r.sm_parent_id)  # None si el padre no está en el perfil
+        db.execute(text(
+            "UPDATE business_profile_modules SET parent_id = :pid WHERE id = :bid"
+        ), {"pid": new_parent, "bid": r.bpm_id})
+
+    # 3. Sincronizar role_modules: insertar can_view=1 para módulos sin permiso
+    #    en todos los roles de empresas con este perfil de negocio
+    fixed_perms = db.execute(text("""
+        INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
+        SELECT DISTINCT r.id, bpm.module_id, 1, 0, 0, 0
+        FROM roles r
+        JOIN companies c ON c.id_company = r.company_id
+        JOIN business_profile_modules bpm ON bpm.business_profile_id = c.business_profile_id
+        JOIN system_modules sm ON sm.id = bpm.module_id AND sm.is_active = 1
+        WHERE c.business_profile_id = :pid
+          AND NOT EXISTS (
+              SELECT 1 FROM role_modules rm2
+              WHERE rm2.role_id = r.id AND rm2.module_id = bpm.module_id
+          )
     """), {"pid": profile_id})
+    perms_added = fixed_perms.rowcount
 
     db.commit()
 
-    # 3. Devolver el árbol limpio
+    # 4. Devolver árbol actualizado y resumen
     tree = get_menu_by_profile(profile_id, db, current_user)
     return {
         "deleted_inactive": deleted_count,
+        "permissions_added": perms_added,
         "tree": tree
     }
 

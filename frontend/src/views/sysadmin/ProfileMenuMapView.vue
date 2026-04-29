@@ -214,11 +214,14 @@ async function repairProfile() {
   repairing.value = true
   try {
     const res = await api.post(`/menu/repair-profile/${selectedProfileId.value}`)
-    const { deleted_inactive, tree: fixedTree } = res.data
+    const { deleted_inactive, permissions_added, tree: fixedTree } = res.data
     tree.value = fixedTree
+    const parts = []
+    if (deleted_inactive > 0) parts.push(`${deleted_inactive} módulo(s) inactivo(s) eliminado(s)`)
+    if (permissions_added > 0) parts.push(`${permissions_added} permiso(s) de rol añadido(s)`)
     showToast(
-      `Perfil reparado — ${deleted_inactive} módulo(s) inactivo(s) eliminado(s)`,
-      deleted_inactive > 0 ? "success" : "info"
+      parts.length ? `Reparado: ${parts.join(' · ')}` : 'Perfil ya estaba sincronizado',
+      parts.length ? "success" : "info"
     )
   } catch (e) {
     showToast(e.response?.data?.detail || "Error reparando perfil", "error")
