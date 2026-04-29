@@ -8,8 +8,14 @@
         <i class="bi bi-list"></i>
       </button>
 
-      <div class="brand">
-        <img v-if="logo" :src="logo" class="brand-logo" alt="logo" />
+      <!-- Logo + nombre empresa agrupados (en móvil apila verticalmente) -->
+      <div class="brand-block">
+        <div class="brand">
+          <img v-if="logo" :src="logo" class="brand-logo" alt="logo" />
+        </div>
+        <span class="brand-company-name">
+          {{ companyStore.selectedCompany?.name || '' }}
+        </span>
       </div>
 
       <div v-if="logo" class="topbar-divider"></div>
@@ -140,6 +146,7 @@
             <span class="user-role">{{ user?.role }}</span>
           </div>
           <i class="bi bi-chevron-down user-arr"></i>
+          <span class="user-short-label">CUENTA</span>
         </button>
 
         <Transition name="dropdown-fade">
@@ -429,7 +436,28 @@ onUnmounted(() => {
 
 .btn-menu-left { display: none; flex-shrink: 0; }
 
-.brand { display: flex; align-items: center; flex-shrink: 0; }
+/* Bloque logo + nombre-empresa (en móvil apila en columna) */
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.brand { display: flex; align-items: center; }
+
+/* Nombre empresa debajo del logo — solo visible en móvil */
+.brand-company-name {
+  display: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--topbar-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 72px;
+  line-height: 1.1;
+}
 
 .brand-logo {
   height: 40px;
@@ -618,6 +646,17 @@ onUnmounted(() => {
 
 .user-drop-panel { right: 0; min-width: 200px; }
 
+/* Label corta del botón usuario — solo visible en móvil */
+.user-short-label {
+  display: none;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  opacity: 0.85;
+  line-height: 1;
+}
+
 .item-logout { color: #fca5a5; }
 .item-logout:hover { background: rgba(239,68,68,0.2) !important; color: #fca5a5; }
 
@@ -785,16 +824,33 @@ onUnmounted(() => {
   .user-text             { display: none; }
   .user-arr              { display: none; }
   .company-title         { font-size: 13px; max-width: 100px; }
+  .company-title-wrap    { display: none; }
   .company-profile-type  { display: none; }
   .topbar-divider        { display: none; }
-  .brand-logo            { height: 34px; }
+  .brand-logo            { height: 36px; }
   .plan-name             { display: none; }
   .plan-exp              { display: none; }
   .plan-badge            { padding: 3px 6px; }
   .sysadmin-badge        { display: none; }
+
   /* intercambio select empresa */
   .company-select-desktop { display: none; }
   .company-select-mobile  { display: block; }
+
+  /* Logo + nombre empresa en columna */
+  .brand-block           { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .brand-company-name    { display: block; }
+
+  /* Botón usuario en columna como SOPORTE/EASYPOSWEB */
+  .btn-user-drop {
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .btn-user-drop .bi-person-circle { font-size: 17px; }
+  .user-short-label      { display: block; }
 }
 
 @media (min-width: 769px) and (max-width: 1100px) {
