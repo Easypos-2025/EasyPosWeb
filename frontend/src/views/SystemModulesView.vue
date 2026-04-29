@@ -70,7 +70,16 @@
     <!-- =============================== -->
 
     <hr />
-    <h5 class="mt-4">Estructura de módulos</h5>
+    <h5 class="mt-4">
+      Estructura de módulos
+      <span v-if="repairProfileId" class="profile-filter-badge">
+        <i class="bi bi-funnel-fill"></i>
+        {{ profiles.find(p => p.id === repairProfileId)?.name }}
+        <button class="clear-filter" @click="repairProfileId = ''" title="Ver todos">
+          <i class="bi bi-x"></i>
+        </button>
+      </span>
+    </h5>
 
     <div class="mb-3">
 
@@ -180,10 +189,11 @@ const editingId = ref(null)
 const filterStatus = ref("active")
 
 // ── Reparar perfil ──────────────────────────────────────────────────────────
-const profiles      = ref([])
+const profiles        = ref([])
 const repairProfileId = ref("")
-const repairing     = ref(false)
-const repairResult  = ref("")
+const repairing       = ref(false)
+const repairResult    = ref("")
+const profileModuleIds = ref(null)   // null = sin filtro, Set = filtrado
 
 const loadProfiles = async () => {
   try {
@@ -191,6 +201,23 @@ const loadProfiles = async () => {
     profiles.value = res.data.data ?? res.data
   } catch {}
 }
+
+// Cuando cambia el perfil seleccionado, filtra el árbol
+watch(repairProfileId, async (id) => {
+  repairResult.value = ""
+  if (!id) {
+    profileModuleIds.value = null
+    await loadModules()
+    return
+  }
+  try {
+    const res = await api.get(`/business-profiles/${id}/modules/`)
+    profileModuleIds.value = new Set(res.data.map(m => m.id))
+    await loadModules()
+  } catch {
+    profileModuleIds.value = null
+  }
+})
 
 const repairProfile = async () => {
   const name = profiles.value.find(p => p.id === repairProfileId.value)?.name || "este perfil"
@@ -271,9 +298,19 @@ const filterTree = (modules) => {
       children: m.children ? filterTree(m.children) : []
     }))
     .filter(m => {
-      if (filterStatus.value === "all") return true
-      if (filterStatus.value === "active") return m.is_active
-      if (filterStatus.value === "inactive") return !m.is_active
+      // Filtro por estado
+      const passStatus = filterStatus.value === "all"
+        || (filterStatus.value === "active" && m.is_active)
+        || (filterStatus.value === "inactive" && !m.is_active)
+      if (!passStatus) return false
+
+      // Filtro por perfil seleccionado
+      if (profileModuleIds.value !== null) {
+        const inProfile = profileModuleIds.value.has(m.id)
+        const childInProfile = m.children?.some(c => profileModuleIds.value.has(c.id))
+        return inProfile || childInProfile
+      }
+      return true
     })
 }
 
@@ -512,6 +549,32 @@ onMounted(() => { loadModules(); loadProfiles() })
 </script>
 
 <style scoped>
+
+/* ── Badge de perfil activo en el árbol ── */
+.profile-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #1e3a5f;
+  color: #93c5fd;
+  padding: 2px 10px 2px 8px;
+  border-radius: 20px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+.clear-filter {
+  background: none;
+  border: none;
+  color: #93c5fd;
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.clear-filter:hover { opacity: 1; }
 
 /* ── Panel de reparación ── */
 .repair-panel {
