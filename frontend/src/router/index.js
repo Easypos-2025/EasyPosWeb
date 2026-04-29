@@ -356,6 +356,14 @@ const routes = [
       },
 
       {
+        path: "/navigation-map",
+        name: "NavigationMapView",
+        component: () => import("@/views/NavigationMapView.vue"),
+        requiresAuth: true,
+        meta: { title: "Guía de Módulos" }
+      },
+
+      {
         path: "/sysadmin/menu-map",
         name: "ProfileMenuMapView",
         component: () => import("@/views/sysadmin/ProfileMenuMapView.vue"),
