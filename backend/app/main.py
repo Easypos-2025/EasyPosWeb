@@ -570,17 +570,25 @@ if ASSETS_DIR.exists() and os.getenv("SERVE_FRONTEND") == "true":
 # ===============================
 # SPA FRONTEND
 # ===============================
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma":        "no-cache",
+    "Expires":       "0",
+}
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-
-    # 🔥 SI ES API → NO tocar (dejar que FastAPI responda)
     if full_path.startswith("api/"):
         return {"detail": "Not Found"}
 
     requested = FRONTEND_DIST / full_path
 
+    # Assets con hash (JS/CSS) → cacheo largo permitido
     if requested.exists() and requested.is_file():
-        return FileResponse(requested)
+        if requested.suffix in (".js", ".css") and requested.parent.name == "assets":
+            return FileResponse(requested, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        return FileResponse(requested, headers=_NO_CACHE_HEADERS)
 
-    return FileResponse(FRONTEND_DIST / "index.html")
+    # SPA fallback → index.html siempre sin caché
+    return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE_HEADERS)
 
