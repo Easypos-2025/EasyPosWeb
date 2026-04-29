@@ -133,10 +133,12 @@
     <div v-if="approveTarget" class="pr-modal-overlay" @click.self="closeApprove">
       <div class="pr-modal pr-modal-lg">
 
-        <div class="modal-icon" :class="approveTarget.payment_type === 'upgrade' ? 'upgrade' : 'green'">
-          <i :class="approveTarget.payment_type === 'upgrade' ? 'bi bi-arrow-up-circle-fill' : 'bi bi-check-circle-fill'"></i>
+        <div class="modal-header-row">
+          <div class="modal-icon" :class="approveTarget.payment_type === 'upgrade' ? 'upgrade' : 'green'">
+            <i :class="approveTarget.payment_type === 'upgrade' ? 'bi bi-arrow-up-circle-fill' : 'bi bi-check-circle-fill'"></i>
+          </div>
+          <h3>{{ approveTarget.payment_type === 'upgrade' ? 'Confirmar Upgrade de Plan' : 'Aprobar Pago' }}</h3>
         </div>
-        <h3>{{ approveTarget.payment_type === 'upgrade' ? 'Confirmar Upgrade de Plan' : 'Aprobar Pago' }}</h3>
 
         <!-- Transición de plan (upgrade) -->
         <div v-if="approveTarget.payment_type === 'upgrade'" class="upgrade-modal-transition">
@@ -256,8 +258,10 @@
     <!-- MODAL RECHAZAR -->
     <div v-if="rejectTarget" class="pr-modal-overlay" @click.self="closeReject">
       <div class="pr-modal pr-modal-lg">
-        <div class="modal-icon red"><i class="bi bi-x-circle-fill"></i></div>
-        <h3>Rechazar comprobante</h3>
+        <div class="modal-header-row">
+          <div class="modal-icon red"><i class="bi bi-x-circle-fill"></i></div>
+          <h3>Rechazar comprobante</h3>
+        </div>
         <p class="modal-company-info">Empresa: <strong>{{ rejectTarget.company.name }}</strong></p>
 
         <div class="evidence-form">
@@ -611,19 +615,24 @@ export default {
 /* MODAL */
 .pr-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.5);
-  display: flex; align-items: flex-start; justify-content: center; z-index: 9999;
-  padding: 20px; overflow-y: auto;
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+  padding: 16px;
 }
 .pr-modal {
-  background: #fff; border-radius: 16px; padding: 24px;
-  width: 100%; max-width: 440px;
+  background: #fff; border-radius: 16px; padding: 20px;
+  width: 100%; max-width: 520px;
   box-shadow: 0 24px 60px rgba(0,0,0,.3);
-  margin: auto;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
+.modal-header-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+}
+.modal-header-row h3 { margin: 0; text-align: left; }
 .modal-icon {
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.3rem; margin: 0 auto 10px;
+  font-size: 1.1rem;
 }
 .modal-icon.green   { background: #f0fdf4; color: #10b981; }
 .modal-icon.red     { background: #fef2f2; color: #ef4444; }
@@ -640,9 +649,9 @@ export default {
 .umt-to    { font-weight: 800; color: #15803d; background: #dcfce7; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
 .pr-modal-lg { max-width: 560px; }
 
-.pr-modal h3 { text-align: center; font-size: 1rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
-.pr-modal p  { text-align: center; color: #64748b; font-size: .86rem; margin-bottom: 6px; }
-.modal-company-info { font-size: .86rem; color: #475569; text-align: center; margin-bottom: 8px; }
+.pr-modal h3 { font-size: 1rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
+.pr-modal p  { color: #64748b; font-size: .86rem; margin-bottom: 6px; }
+.modal-company-info { font-size: .86rem; color: #475569; margin-bottom: 8px; }
 .modal-note  { font-size: .76rem; color: #94a3b8; text-align: center; margin-bottom: 4px; }
 .modal-btns  { display: flex; gap: 10px; margin-top: 14px; }
 .modal-btns .btn-approve,
