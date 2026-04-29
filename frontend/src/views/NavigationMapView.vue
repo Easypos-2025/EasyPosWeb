@@ -219,7 +219,7 @@ const totalModules  = computed(() => {
   font-size: 14px;
   color: #1e293b;
   background: rgba(255,255,255,0.95);
-  min-width: 240px;
+  width: 240px;
   outline: none;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
@@ -304,7 +304,7 @@ const totalModules  = computed(() => {
 /* ── GRID DE TARJETAS ── */
 .cards-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
   padding: 16px;
 }
@@ -379,13 +379,21 @@ const totalModules  = computed(() => {
 }
 
 /* ── RESPONSIVE ── */
-@media (max-width: 600px) {
-  .map-banner    { flex-direction: column; align-items: flex-start; }
-  .search-input  { min-width: 100%; }
-  .cards-row     { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 768px) {
+  .nav-map       { padding: 12px; gap: 12px; }
+  .map-banner    { flex-direction: column; align-items: flex-start; padding: 16px; }
+  .banner-right  { width: 100%; }
+  .search-wrap   { width: 100%; }
+  .search-input  { width: 100%; min-width: 0; }
   .banner-title  { font-size: 17px; }
+  .cards-row     { grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 12px; }
+  .mod-icon      { width: 40px; height: 40px; font-size: 18px; }
+  .mod-card      { padding: 14px 8px 10px; }
+  .mod-route     { display: none; }
 }
-@media (max-width: 380px) {
-  .cards-row { grid-template-columns: 1fr; }
+@media (max-width: 360px) {
+  .cards-row     { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px; }
+  .mod-card      { padding: 12px 6px 8px; }
+  .mod-name      { font-size: 11px; }
 }
 </style>
