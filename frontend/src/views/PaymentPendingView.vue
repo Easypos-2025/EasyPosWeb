@@ -401,7 +401,11 @@ export default {
         await loadStatus()
         startPolling()
       } catch (e) {
-        uploadError.value = e.response?.data?.detail || "Error al enviar el comprobante."
+        if (e.response?.status === 413) {
+          uploadError.value = "El archivo es demasiado grande. Comprime la imagen o usa un PDF de menos de 5 MB."
+        } else {
+          uploadError.value = e.response?.data?.detail || "Error al enviar el comprobante."
+        }
       } finally {
         submitting.value = false
       }
