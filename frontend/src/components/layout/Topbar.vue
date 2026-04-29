@@ -55,28 +55,6 @@
         </Transition>
       </div>
 
-      <!-- Plan + campana de notificaciones (juntos, zona central) -->
-      <div class="plan-notif-group">
-        <div v-if="companyPlan.plan_name" class="plan-badge">
-          <i class="bi bi-award"></i>
-          <span class="plan-name">{{ companyPlan.plan_name }}</span>
-          <span class="plan-exp">
-            {{ companyPlan.expiration_date
-              ? 'Vence: ' + formatDate(companyPlan.expiration_date)
-              : 'Indefinido' }}
-          </span>
-        </div>
-
-        <!-- Botón notificaciones / toggle SidebarRight -->
-        <button
-          class="btn-icon btn-notif-toggle"
-          @click="emit('toggle-sidebar-right')"
-          title="Notificaciones y panel lateral"
-        >
-          <i class="bi bi-bell"></i>
-          <span v-if="unreadNotif > 0" class="notif-badge">{{ unreadNotif > 99 ? '99+' : unreadNotif }}</span>
-        </button>
-      </div>
 
       <!-- Nombre empresa + tipo de negocio -->
       <div class="company-title-wrap">
@@ -144,6 +122,7 @@
       <a :href="siteUrl" target="_blank" rel="noopener"
          class="btn-icon btn-website" title="Ver sitio web">
         <i class="bi bi-globe2"></i>
+        <span class="btn-label">EasyPosWeb</span>
       </a>
 
       <!-- Dropdown Usuario -->
@@ -164,6 +143,28 @@
         <Transition name="dropdown-fade">
           <div v-if="userDropOpen" class="dropdown-panel user-drop-panel">
             <div class="dropdown-header">Mi cuenta</div>
+
+            <!-- Plan activo -->
+            <div v-if="companyPlan.plan_name" class="dropdown-item item-plan-info">
+              <span class="item-icon"><i class="bi bi-award" style="color:#fbbf24"></i></span>
+              <div class="item-plan-text">
+                <span class="item-name">{{ companyPlan.plan_name }}</span>
+                <span class="item-plan-exp">
+                  {{ companyPlan.expiration_date ? 'Vence: ' + formatDate(companyPlan.expiration_date) : 'Indefinido' }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Notificaciones -->
+            <button class="dropdown-item" @click="openNotifPanel">
+              <span class="item-icon" style="position:relative">
+                <i class="bi bi-bell"></i>
+                <span v-if="unreadNotif > 0" class="notif-dot">{{ unreadNotif > 99 ? '99+' : unreadNotif }}</span>
+              </span>
+              <span class="item-name">Notificaciones{{ unreadNotif > 0 ? ` (${unreadNotif})` : '' }}</span>
+            </button>
+
+            <div class="dropdown-divider"></div>
 
             <!-- Perfil — deshabilitado si pago pendiente -->
             <button
@@ -286,6 +287,11 @@ function toggleDropdown() {
 function toggleUserDropdown() {
   userDropOpen.value = !userDropOpen.value
   if (userDropOpen.value) dropdownOpen.value = false
+}
+
+function openNotifPanel() {
+  userDropOpen.value = false
+  emit("toggle-sidebar-right")
 }
 
 function goProfile() {
@@ -492,71 +498,6 @@ onUnmounted(() => {
 .item-active-co .item-name { font-weight: 700; }
 .item-check { margin-left: auto; color: #22c55e; font-size: 14px; }
 
-/* Plan + campana juntos */
-.plan-notif-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.plan-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 20px;
-}
-
-.plan-badge .bi { font-size: 13px; color: #fbbf24; }
-
-.plan-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--topbar-text);
-  white-space: nowrap;
-}
-
-.plan-exp {
-  font-size: 10px;
-  opacity: 0.7;
-  white-space: nowrap;
-}
-
-/* Campana de notificaciones */
-.btn-notif-toggle {
-  position: relative;
-  font-size: 18px;
-  padding: 6px 8px;
-}
-
-.notif-badge {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  min-width: 17px;
-  height: 17px;
-  background: #ef4444;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 3px;
-  line-height: 1;
-  pointer-events: none;
-  animation: notif-pop 0.3s ease;
-}
-
-@keyframes notif-pop {
-  0%   { transform: scale(0.5); opacity: 0; }
-  70%  { transform: scale(1.2); }
-  100% { transform: scale(1);   opacity: 1; }
-}
 
 /* Empresa */
 .company-title-wrap {
@@ -638,8 +579,19 @@ onUnmounted(() => {
 }
 
 .btn-icon:hover   { background: rgba(255,255,255,0.12); }
-.btn-website       { margin-left: 2px; color: inherit; text-decoration: none; }
-.btn-website:hover { background: rgba(37,99,235,0.25); color: #93c5fd; }
+.btn-website {
+  margin-left: 2px;
+  color: inherit;
+  text-decoration: none;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.btn-website .bi { font-size: 17px; }
+.btn-website:hover { background: rgba(37,99,235,0.28); color: #93c5fd; border-color: rgba(147,197,253,0.35); }
 /* Dropdown usuario */
 .btn-user-drop {
   display: flex; align-items: center; gap: 7px;
@@ -660,6 +612,37 @@ onUnmounted(() => {
 
 .item-logout { color: #fca5a5; }
 .item-logout:hover { background: rgba(239,68,68,0.2) !important; color: #fca5a5; }
+
+/* Plan info dentro del dropdown usuario */
+.item-plan-info {
+  cursor: default;
+  opacity: 1;
+  background: rgba(251,191,36,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.item-plan-info:hover { background: rgba(251,191,36,0.12); }
+.item-plan-text { display: flex; flex-direction: column; line-height: 1.3; }
+.item-plan-exp { font-size: 10px; opacity: 0.6; }
+
+/* Dot de notificaciones inline en el dropdown */
+.notif-dot {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 800;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
+  pointer-events: none;
+}
 
 /* Dropdown Soporte */
 .dropdown-wrap { position: relative; }
