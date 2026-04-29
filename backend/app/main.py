@@ -388,10 +388,57 @@ def _init_db_data():
             except Exception:
                 db.rollback()
 
-        # ── MIGRACIÓN: columnas nuevas en company_payments ───────────────
+        # ── MIGRACIÓN: company_payments — todas las columnas del modelo ──
         for col_sql in [
             "ALTER TABLE company_payments ADD COLUMN payment_type VARCHAR(20) NOT NULL DEFAULT 'activation'",
             "ALTER TABLE company_payments ADD COLUMN currency_code VARCHAR(3) NOT NULL DEFAULT 'COP'",
+            "ALTER TABLE company_payments ADD COLUMN previous_plan_id INT NULL",
+            "ALTER TABLE company_payments ADD COLUMN receipt_url VARCHAR(500) NULL",
+            "ALTER TABLE company_payments ADD COLUMN receipt_number VARCHAR(100) NULL",
+            "ALTER TABLE company_payments ADD COLUMN bank_origin VARCHAR(100) NULL",
+            "ALTER TABLE company_payments ADD COLUMN payment_date DATE NULL",
+            "ALTER TABLE company_payments ADD COLUMN confirmed_amount FLOAT NULL",
+            "ALTER TABLE company_payments ADD COLUMN review_description TEXT NULL",
+            "ALTER TABLE company_payments ADD COLUMN review_evidence_url VARCHAR(500) NULL",
+            "ALTER TABLE company_payments ADD COLUMN rejection_reason TEXT NULL",
+            "ALTER TABLE company_payments ADD COLUMN submitted_at DATETIME NULL",
+            "ALTER TABLE company_payments ADD COLUMN reviewed_at DATETIME NULL",
+            "ALTER TABLE company_payments ADD COLUMN reviewed_by INT NULL",
+            "ALTER TABLE company_payments ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE company_payments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+        ]:
+            try:
+                db.execute(text(col_sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # ── MIGRACIÓN: system_modules — columna is_sysadmin ─────────────
+        for col_sql in [
+            "ALTER TABLE system_modules ADD COLUMN is_sysadmin TINYINT(1) NOT NULL DEFAULT 0",
+        ]:
+            try:
+                db.execute(text(col_sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # ── MIGRACIÓN: users — columnas de personalización ──────────────
+        for col_sql in [
+            "ALTER TABLE users ADD COLUMN topbar_color VARCHAR(20) NULL",
+            "ALTER TABLE users ADD COLUMN sidebar_color VARCHAR(20) NULL",
+            "ALTER TABLE users ADD COLUMN bg_color VARCHAR(20) NULL",
+            "ALTER TABLE users ADD COLUMN logo VARCHAR(255) NULL",
+        ]:
+            try:
+                db.execute(text(col_sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # ── MIGRACIÓN: companies — columna business_profile_id ──────────
+        for col_sql in [
+            "ALTER TABLE companies ADD COLUMN business_profile_id INT NULL",
         ]:
             try:
                 db.execute(text(col_sql))
@@ -418,18 +465,19 @@ def _init_db_data():
         except Exception:
             db.rollback()
 
-        # ── SEED: módulo Revisión de Pagos en system_modules ───────────
-        if not db.query(SystemModule).filter(SystemModule.route == "/sysadmin/payment-review").first():
-            db.add(SystemModule(
-                name="Revisión de Pagos",
-                route="/sysadmin/payment-review",
-                icon="bi-credit-card-2-back",
-                parent_id=None,
-                is_active=True,
-                order_index=0,
-                is_sysadmin=True
-            ))
-            db.commit()
+        # ── SEED: módulos de pagos en system_modules ────────────────────
+        for route, name, icon, is_sysadmin in [
+            ("/sysadmin/payment-review",  "Revisión de Pagos",  "bi-credit-card-2-back", True),
+            ("/sysadmin/payment-history", "Historial de Pagos", "bi-clock-history",      True),
+            ("/payment-history",          "Historial de Pagos", "bi-clock-history",      False),
+        ]:
+            if not db.query(SystemModule).filter(SystemModule.route == route).first():
+                db.add(SystemModule(
+                    name=name, route=route, icon=icon,
+                    parent_id=None, is_active=True, order_index=0,
+                    is_sysadmin=is_sysadmin
+                ))
+        db.commit()
 
     finally:
         db.close()
