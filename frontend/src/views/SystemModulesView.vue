@@ -91,7 +91,27 @@
 
     </div>
 
+    <!-- MODO PREVIEW: árbol real del sidebar para el perfil seleccionado -->
+    <template v-if="repairProfileId">
+      <div v-if="profileLoading" class="text-muted py-3 text-center">
+        <i class="bi bi-arrow-repeat spin"></i> Cargando estructura del perfil...
+      </div>
+      <div v-else-if="profileTree.length === 0" class="text-muted py-3 text-center">
+        Sin módulos asignados a este perfil.
+      </div>
+      <ul v-else class="tree preview-tree">
+        <TreeItem
+          v-for="node in profileTree"
+          :key="node.id"
+          :item="node"
+          :preview="true"
+        />
+      </ul>
+    </template>
+
+    <!-- MODO GLOBAL: árbol editable completo -->
     <draggable
+      v-else
       v-model="treeModules"
       item-key="id"
       class="tree"
@@ -100,8 +120,8 @@
     >
       <template #item="{ element }">
         <div class="tree-wrapper">
-          <TreeItem 
-            :item="element" 
+          <TreeItem
+            :item="element"
             @drag-end="handleDragEnd"
             @delete="handleDelete"
             @edit="handleEdit"
@@ -193,7 +213,8 @@ const profiles        = ref([])
 const repairProfileId = ref("")
 const repairing       = ref(false)
 const repairResult    = ref("")
-const profileModuleIds = ref(null)   // null = sin filtro, Set = filtrado
+const profileTree     = ref([])      // árbol del perfil (modo preview)
+const profileLoading  = ref(false)
 
 const loadProfiles = async () => {
   try {
@@ -202,20 +223,18 @@ const loadProfiles = async () => {
   } catch {}
 }
 
-// Cuando cambia el perfil seleccionado, filtra el árbol
+// Cuando cambia el perfil seleccionado: carga árbol real del sidebar
 watch(repairProfileId, async (id) => {
   repairResult.value = ""
-  if (!id) {
-    profileModuleIds.value = null
-    await loadModules()
-    return
-  }
+  if (!id) { profileTree.value = []; return }
+  profileLoading.value = true
   try {
-    const res = await api.get(`/business-profiles/${id}/modules/`)
-    profileModuleIds.value = new Set(res.data.map(m => m.id))
-    await loadModules()
+    const res = await api.get(`/menu/by-profile/${id}`)
+    profileTree.value = res.data
   } catch {
-    profileModuleIds.value = null
+    profileTree.value = []
+  } finally {
+    profileLoading.value = false
   }
 })
 
@@ -298,19 +317,9 @@ const filterTree = (modules) => {
       children: m.children ? filterTree(m.children) : []
     }))
     .filter(m => {
-      // Filtro por estado
-      const passStatus = filterStatus.value === "all"
-        || (filterStatus.value === "active" && m.is_active)
-        || (filterStatus.value === "inactive" && !m.is_active)
-      if (!passStatus) return false
-
-      // Filtro por perfil seleccionado
-      if (profileModuleIds.value !== null) {
-        const inProfile = profileModuleIds.value.has(m.id)
-        const childInProfile = m.children?.some(c => profileModuleIds.value.has(c.id))
-        return inProfile || childInProfile
-      }
-      return true
+      if (filterStatus.value === "all") return true
+      if (filterStatus.value === "active") return m.is_active
+      if (filterStatus.value === "inactive") return !m.is_active
     })
 }
 
@@ -549,6 +558,13 @@ onMounted(() => { loadModules(); loadProfiles() })
 </script>
 
 <style scoped>
+
+/* ── Árbol preview (sin botones de edición) ── */
+.preview-tree {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
 
 /* ── Badge de perfil activo en el árbol ── */
 .profile-filter-badge {

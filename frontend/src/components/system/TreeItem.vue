@@ -26,49 +26,54 @@
 
       </div>
 
-      <!-- DERECHA -->
-      <div class="actions">
-
-        <button class="btn btn-sm btn-warning" @click.stop="emit('edit', item)">
-          Editar
-        </button>
-
-        <button class="btn btn-sm btn-danger" @click.stop="emit('delete', item)">
-          Eliminar
-        </button>
-
-        <button 
+      <!-- DERECHA: acciones (ocultas en modo preview) -->
+      <div v-if="!preview" class="actions">
+        <button class="btn btn-sm btn-warning" @click.stop="emit('edit', item)">Editar</button>
+        <button class="btn btn-sm btn-danger" @click.stop="emit('delete', item)">Eliminar</button>
+        <button
           class="btn btn-sm"
           :class="item.is_active ? 'btn-success' : 'btn-secondary'"
           @click.stop="emit('toggle', item)"
-        >
-          {{ item.is_active ? "Activo" : "Inactivo" }}
-        </button>
-
+        >{{ item.is_active ? "Activo" : "Inactivo" }}</button>
       </div>
+
+      <!-- RUTA en modo preview -->
+      <span v-else class="preview-route">{{ item.route }}</span>
 
     </div>
 
-    <!-- HIJOS -->
-    <draggable
-      v-if="hasChildren"
-      v-model="item.children"
-      item-key="id"
-      :group="{ name: 'modules' }"
-      class="tree-children"
-      @end="emit('drag-end')"
-    >
-      <template #item="{ element }">
-        <TreeItem 
-          :item="element" 
+    <!-- HIJOS: draggable en modo edición, lista simple en modo preview -->
+    <template v-if="hasChildren">
+      <draggable
+        v-if="!preview"
+        v-model="item.children"
+        item-key="id"
+        :group="{ name: 'modules' }"
+        class="tree-children"
+        @end="emit('drag-end')"
+      >
+        <template #item="{ element }">
+          <TreeItem
+            :item="element"
+            :level="level + 1"
+            @drag-end="emit('drag-end')"
+            @delete="emit('delete', $event)"
+            @edit="emit('edit', $event)"
+            @toggle="emit('toggle', $event)"
+          />
+        </template>
+      </draggable>
+
+      <ul v-else class="tree-children preview-children">
+        <TreeItem
+          v-for="child in item.children"
+          :key="child.id"
+          :item="child"
           :level="level + 1"
-          @drag-end="emit('drag-end')"
-          @delete="emit('delete', $event)"
-          @edit="emit('edit', $event)"
-          @toggle="emit('toggle', $event)"
+          :preview="true"
         />
-      </template>
-    </draggable>
+      </ul>
+    </template>
 
   </li>
 
@@ -80,10 +85,8 @@ import { computed } from "vue"
 
 const props = defineProps({
   item: Object,
-  level: {
-    type: Number,
-    default: 0
-  }
+  level: { type: Number, default: 0 },
+  preview: { type: Boolean, default: false }
 })
 
 const emit = defineEmits([
@@ -205,6 +208,19 @@ const hasChildren = computed(() => {
 
 .tree-item:not(.is-parent) {
   background: #1e293b;
+}
+
+.preview-route {
+  font-size: 11px;
+  font-family: monospace;
+  color: #64748b;
+  opacity: 0.8;
+}
+
+.preview-children {
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 </style>
