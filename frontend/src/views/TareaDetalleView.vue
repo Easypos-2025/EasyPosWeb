@@ -838,13 +838,19 @@ onMounted(load)
 .border-danger { border-color:#ef4444 !important; }
 
 /* TABS */
-.tabs-bar { display:flex; gap:4px; margin-bottom:16px; border-bottom:2px solid #f1f5f9; }
-.tab-btn  { padding:10px 18px; border:none; background:none; font-size:14px; font-weight:600;
+.tabs-bar {
+  display:flex; gap:2px; margin-bottom:16px; border-bottom:2px solid #f1f5f9;
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.tabs-bar::-webkit-scrollbar { display:none; }
+.tab-btn  { padding:10px 14px; border:none; background:none; font-size:14px; font-weight:600;
   color:#94a3b8; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px;
-  display:flex; align-items:center; gap:8px; transition:all 0.15s; }
+  display:flex; align-items:center; gap:6px; transition:all 0.15s;
+  white-space:nowrap; flex-shrink:0; }
 .tab-btn:hover  { color:#3b82f6; }
 .tab-btn.active { color:#3b82f6; border-bottom-color:#3b82f6; }
-.tab-badge { font-size:11px; background:#e2e8f0; color:#475569; border-radius:10px; padding:1px 8px; }
+.tab-badge { font-size:11px; background:#e2e8f0; color:#475569; border-radius:10px; padding:1px 7px; }
 
 /* SUB-CARDS */
 .sub-card  { background:#fff; border-radius:14px; box-shadow:0 1px 6px rgba(0,0,0,0.08); padding:18px 20px; margin-bottom:16px; }
