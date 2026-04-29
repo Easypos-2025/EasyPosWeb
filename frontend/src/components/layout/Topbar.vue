@@ -339,6 +339,7 @@ async function onCompanyChange(e) {
 
 async function logout() {
   try { await api.post("/auth/logout/") } catch {}
+  companyStore.reset()
   localStorage.removeItem("token")
   localStorage.removeItem("user")
   localStorage.removeItem("menu")

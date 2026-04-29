@@ -43,7 +43,9 @@ const companyStore = useCompanyStore()
 
 const activeDashboard = computed(() => {
   const profileId = companyStore.selectedCompany?.business_profile_id
-  return DASHBOARD_MAP[profileId] ?? null
+  const dash = DASHBOARD_MAP[profileId] ?? null
+  if (dash === DashboardSysadmin && !companyStore.isSystem) return null
+  return dash
 })
 </script>
 

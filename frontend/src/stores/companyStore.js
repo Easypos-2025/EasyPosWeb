@@ -28,7 +28,16 @@ export const useCompanyStore = defineStore("company", () => {
     if (company?.id) await loadTheme(company.id)
   }
 
+  function reset() {
+    isSystem.value      = false
+    selectedCompany.value = null
+    companies.value     = []
+  }
+
   async function init(userFromStorage) {
+    // Resetea estado para evitar datos rancios de sesión anterior (ej: sysadmin → asociado)
+    reset()
+
     // Llama /auth/me para obtener is_system real (no depender del localStorage)
     let meData = userFromStorage
     try {
@@ -96,5 +105,5 @@ export const useCompanyStore = defineStore("company", () => {
     }
   }
 
-  return { selectedCompany, companies, isSystem, setCompany, init }
+  return { selectedCompany, companies, isSystem, setCompany, init, reset }
 })
