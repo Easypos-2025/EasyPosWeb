@@ -354,6 +354,14 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Revisión de Pagos" }
       },
+
+      {
+        path: "/sysadmin/menu-map",
+        name: "ProfileMenuMapView",
+        component: () => import("@/views/sysadmin/ProfileMenuMapView.vue"),
+        requiresAuth: true,
+        meta: { title: "Mapa de Menú por Perfil" }
+      },
 ]
   }
 
