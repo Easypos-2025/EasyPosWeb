@@ -200,6 +200,11 @@
           <i class="bi bi-receipt"></i> Gastos
           <span class="tab-badge">{{ expenses.length }}</span>
         </button>
+        <button class="tab-btn" :class="{ active: tab === 'notificaciones' }"
+          @click="tab = 'notificaciones'">
+          <i class="bi bi-bell"></i> Notificaciones
+          <span class="tab-badge" :class="{ 'tab-badge-alert': unreadNotifsCount > 0 }">{{ notifications.length }}</span>
+        </button>
       </div>
 
       <!-- ──────────────── TAB: EVIDENCIAS ──────────────── -->
@@ -427,6 +432,45 @@
         </div>
       </div>
 
+      <!-- ──────────────── TAB: NOTIFICACIONES ──────────────── -->
+      <div v-if="tab === 'notificaciones'">
+        <div class="sub-card">
+          <div class="notif-tab-header">
+            <h3 class="sub-title mb-0">Historial de notificaciones</h3>
+            <button v-if="!isWorkerRole && task.assigned_to" class="btn-send-notif-tab"
+              @click="notifModal = true">
+              <i class="bi bi-bell-fill me-1"></i>Enviar notificación
+            </button>
+          </div>
+
+          <div v-if="notifications.length === 0" class="empty-section" style="padding:30px 0">
+            <i class="bi bi-bell-slash"></i>
+            <p>Sin notificaciones para esta tarea</p>
+          </div>
+
+          <div v-else class="notif-timeline">
+            <div v-for="n in notifications" :key="n.id"
+              class="nt-item" :class="{ 'nt-unread': !n.is_read }">
+              <div class="nt-dot" :class="{ 'nt-dot-unread': !n.is_read }"></div>
+              <div class="nt-body">
+                <div class="nt-header">
+                  <span class="nt-sender">
+                    <i class="bi bi-person-circle me-1"></i>{{ n.sender_name || 'Sistema' }}
+                  </span>
+                  <span class="nt-date">{{ fmtDateTime(n.created_at) }}</span>
+                  <span v-if="n.is_read" class="nt-read-badge">Leída</span>
+                  <span v-else class="nt-unread-badge">Nueva</span>
+                </div>
+                <div class="nt-msg">{{ n.comment }}</div>
+                <button v-if="!n.is_read" class="btn-mark-read" @click="markNotifRead(n)">
+                  <i class="bi bi-check2"></i> Marcar como leída
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </template>
 
   </div>
@@ -496,9 +540,13 @@ const form = ref({})
 const evidences   = ref([])
 const lightboxUrl = ref("")
 
+// ── Notificaciones ───────────────────────────────────────────
+const comments       = ref([])
+const notifications  = computed(() => comments.value.filter(c => c.is_notification).reverse())
+const unreadNotifsCount = computed(() => notifications.value.filter(n => !n.is_read).length)
+
 // ── Materiales y Gastos ──────────────────────────────────────
 const materials = ref([])
-const expenses  = ref([])
 const savingMat = ref(false)
 const savingExp = ref(false)
 const units     = ["unidad","kg","g","litros","ml","m","m²","m³","rollo","caja","bolsa","par"]
@@ -556,7 +604,7 @@ function clearError(e) { e.target.classList.remove("field-invalid") }
 async function load() {
   loading.value = true
   try {
-    const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes] =
+    const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes] =
       await Promise.all([
         api.get(`/tasks/${taskId}`),
         api.get("/tasks/assets-list"),
@@ -566,6 +614,7 @@ async function load() {
         api.get(`/task-evidence/${taskId}`),
         api.get(`/task-materials/${taskId}`),
         api.get(`/task-expenses/${taskId}`),
+        api.get(`/task-comments/${taskId}`),
       ])
     task.value      = taskRes.data
     assets.value    = assetsRes.data
@@ -575,6 +624,7 @@ async function load() {
     evidences.value = evRes.data
     materials.value = matRes.data
     expenses.value  = expRes.data
+    comments.value  = commRes.data
 
     form.value = {
       title:              task.value.title,
@@ -721,6 +771,16 @@ async function delExpense(e) {
   showToast("Gasto eliminado", "success")
   const res = await api.get(`/task-expenses/${taskId}`)
   expenses.value = res.data
+}
+
+// ── Marcar notificación como leída ───────────────────────────
+async function markNotifRead(n) {
+  try {
+    await api.patch(`/task-comments/${n.id}/read`)
+    n.is_read = true
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al marcar como leída", "error")
+  }
 }
 
 // ── Enviar notificación ──────────────────────────────────────
@@ -897,6 +957,54 @@ onMounted(load)
   background: #3b82f6; color: #fff;
   padding: 1px 5px; border-radius: 6px; margin-left: 2px;
 }
+
+/* ── TAB BADGE ALERT ── */
+.tab-badge-alert { background: #ef4444 !important; color: #fff !important; }
+
+/* ── TAB NOTIFICACIONES ── */
+.notif-tab-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+}
+.mb-0 { margin-bottom: 0 !important; }
+
+.btn-send-notif-tab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  border: 1.5px solid #f59e0b; background: #fffbeb; color: #b45309;
+  cursor: pointer; transition: all 0.15s;
+}
+.btn-send-notif-tab:hover { background: #fef3c7; }
+
+.notif-timeline { display: flex; flex-direction: column; gap: 0; }
+
+.nt-item {
+  display: flex; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.nt-item:last-child { border-bottom: none; }
+.nt-item.nt-unread { background: #fffbeb; border-radius: 8px; padding: 12px; margin-bottom: 4px; border: 1px solid #fde68a; }
+
+.nt-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #e2e8f0; flex-shrink: 0; margin-top: 5px;
+}
+.nt-dot.nt-dot-unread { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.2); }
+
+.nt-body { flex: 1; min-width: 0; }
+.nt-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 5px;
+}
+.nt-sender { font-size: 13px; font-weight: 700; color: #1e293b; }
+.nt-date   { font-size: 11px; color: #94a3b8; }
+.nt-read-badge   { font-size: 10px; background: #dcfce7; color: #16a34a; padding: 1px 7px; border-radius: 10px; font-weight: 600; }
+.nt-unread-badge { font-size: 10px; background: #fef3c7; color: #b45309; padding: 1px 7px; border-radius: 10px; font-weight: 700; }
+.nt-msg { font-size: 14px; color: #334155; line-height: 1.5; margin-bottom: 6px; }
+.btn-mark-read {
+  background: none; border: 1px solid #e2e8f0; border-radius: 6px;
+  color: #64748b; font-size: 11px; padding: 3px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s;
+}
+.btn-mark-read:hover { border-color: #22c55e; color: #16a34a; background: #f0fdf4; }
 
 /* ── BOTÓN NOTIFICAR ── */
 .btn-notif {

@@ -197,15 +197,34 @@
                 </span>
               </button>
 
-              <!-- Mensajes internos — funcional -->
-              <button class="notif-subtype-item" :class="{ 'has-count': unreadNotif > 0 }" @click="openNotifPanel">
-                <span class="nsi-icon messages"><i class="bi bi-chat-dots"></i></span>
+              <!-- Notificaciones de tarea — funcional -->
+              <button class="notif-subtype-item" :class="{ 'has-count': unreadNotif > 0 }"
+                @click.stop="taskNotifListOpen = !taskNotifListOpen">
+                <span class="nsi-icon task-notif"><i class="bi bi-bell-fill"></i></span>
                 <span class="nsi-label">
-                  Mensajes internos
-                  <small>Comentarios y avisos de tu equipo</small>
+                  Notificaciones de tarea
+                  <small>Avisos del administrador</small>
                 </span>
+                <i class="bi notif-chevron" :class="taskNotifListOpen ? 'bi-chevron-up' : 'bi-chevron-down'" style="font-size:10px;opacity:.6;flex-shrink:0"></i>
                 <span class="nsi-count" :class="unreadNotif > 0 ? 'active' : 'zero'">{{ unreadNotif }}</span>
               </button>
+
+              <!-- Lista inline de notificaciones de tarea -->
+              <div v-if="taskNotifListOpen" class="tnl-panel">
+                <div v-if="taskNotifList.length === 0" class="tnl-empty">
+                  <i class="bi bi-bell-slash me-1"></i> Sin notificaciones pendientes
+                </div>
+                <div v-for="n in taskNotifList" :key="n.id" class="tnl-item" @click="goToTaskNotif(n)">
+                  <div class="tnl-top">
+                    <span class="tnl-task"><i class="bi bi-clipboard-check me-1"></i>{{ n.task_title || 'Tarea #' + n.task_id }}</span>
+                    <span class="tnl-time">{{ fmtRelative(n.created_at) }}</span>
+                  </div>
+                  <div class="tnl-msg">{{ n.comment }}</div>
+                  <div v-if="n.sender_name" class="tnl-from">
+                    <i class="bi bi-person-circle me-1"></i>{{ n.sender_name }}
+                  </div>
+                </div>
+              </div>
 
               <!-- Novedades — próximamente -->
               <div class="notif-subtype-item disabled">
@@ -285,6 +304,8 @@ const companyDropOpen      = ref(false)
 const companyDropRef       = ref(null)
 const notifExpanded        = ref(false)
 const pendingPaymentsCount = ref(0)
+const taskNotifList        = ref([])
+const taskNotifListOpen    = ref(false)
 
 const isPaymentActive = computed(() => {
   const ps = user.value?.payment_status ?? "active"
@@ -300,8 +321,29 @@ async function loadUnreadCount() {
   if (!localStorage.getItem("token")) return
   try {
     const res = await api.get("/task-comments/notifications/unread")
-    unreadNotif.value = res.data.filter(n => !n.is_read).length
+    taskNotifList.value = res.data
+    unreadNotif.value   = res.data.length
   } catch {}
+}
+
+async function goToTaskNotif(n) {
+  try { await api.patch(`/task-comments/${n.id}/read`) } catch {}
+  taskNotifList.value    = taskNotifList.value.filter(x => x.id !== n.id)
+  unreadNotif.value      = taskNotifList.value.length
+  taskNotifListOpen.value = false
+  userDropOpen.value      = false
+  notifExpanded.value     = false
+  router.push(`/tasks/${n.task_id}/detalle`)
+}
+
+function fmtRelative(iso) {
+  if (!iso) return ""
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1)  return "ahora"
+  if (mins < 60) return `hace ${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)  return `hace ${hrs}h`
+  return `hace ${Math.floor(hrs / 24)}d`
 }
 
 async function loadPendingPayments() {
@@ -366,7 +408,7 @@ function toggleDropdown() {
 function toggleUserDropdown() {
   userDropOpen.value = !userDropOpen.value
   if (userDropOpen.value) dropdownOpen.value = false
-  if (!userDropOpen.value) notifExpanded.value = false
+  if (!userDropOpen.value) { notifExpanded.value = false; taskNotifListOpen.value = false }
 }
 
 function openNotifPanel() {
@@ -979,4 +1021,41 @@ onUnmounted(() => {
   .company-title { max-width: 180px; font-size: 15px; }
   .plan-exp      { display: none; }
 }
+
+/* ── NOTIFICACIONES DE TAREA - panel inline ── */
+.nsi-icon.task-notif { background: rgba(245,158,11,.25); color: #fbbf24; }
+
+.tnl-panel {
+  margin: 0 4px 4px;
+  background: rgba(0,0,0,.25);
+  border-radius: 8px;
+  overflow-y: auto;
+  max-height: 260px;
+}
+.tnl-empty {
+  padding: 12px; font-size: .76rem;
+  color: rgba(255,255,255,.4); text-align: center;
+}
+.tnl-item {
+  padding: 9px 12px; cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  transition: background .15s;
+}
+.tnl-item:hover { background: rgba(255,255,255,.08); }
+.tnl-item:last-child { border-bottom: none; }
+.tnl-top {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 6px; margin-bottom: 3px;
+}
+.tnl-task {
+  font-size: .75rem; font-weight: 700; color: #fbbf24;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+}
+.tnl-time { font-size: .68rem; color: rgba(255,255,255,.4); flex-shrink: 0; }
+.tnl-msg {
+  font-size: .78rem; color: rgba(255,255,255,.85); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 3px;
+}
+.tnl-from { font-size: .68rem; color: rgba(255,255,255,.4); }
 </style>

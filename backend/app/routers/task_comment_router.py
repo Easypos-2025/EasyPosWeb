@@ -26,12 +26,39 @@ def _get_user(authorization: str, db: Session):
     return user
 
 
+@router.get("/notifications/unread")
+def get_unread_notifications(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Notificaciones no leídas para el Task Leader logueado."""
+    user = _get_user(authorization, db)
+    rows = (
+        db.query(TaskComment, Task, User)
+        .join(Task, TaskComment.task_id == Task.id)
+        .join(User, TaskComment.user_id == User.id, isouter=True)
+        .filter(
+            Task.assigned_to          == user.id,
+            TaskComment.is_notification == True,
+            TaskComment.is_read         == False,
+        )
+        .order_by(TaskComment.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    return [_ser(c, task_title=t.title, sender_name=u.nombre if u else None) for c, t, u in rows]
+
+
 @router.get("/{task_id}")
 def get_comments(task_id: int, db: Session = Depends(get_db)):
-    items = db.query(TaskComment).filter(
-        TaskComment.task_id == task_id
-    ).order_by(TaskComment.created_at.asc()).all()
-    return [_ser(c) for c in items]
+    rows = (
+        db.query(TaskComment, User)
+        .join(User, TaskComment.user_id == User.id, isouter=True)
+        .filter(TaskComment.task_id == task_id)
+        .order_by(TaskComment.created_at.asc())
+        .all()
+    )
+    return [_ser(c, sender_name=u.nombre if u else None) for c, u in rows]
 
 
 @router.post("/{task_id}")
@@ -56,7 +83,7 @@ def add_comment(
     db.add(c)
     db.commit()
     db.refresh(c)
-    return _ser(c)
+    return _ser(c, sender_name=user.nombre)
 
 
 @router.patch("/{comment_id}/read")
@@ -68,33 +95,13 @@ def mark_read(comment_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.get("/notifications/unread")
-def get_unread_notifications(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    """Notificaciones no leídas para el Task Leader logueado (para el SidebarRight)."""
-    user  = _get_user(authorization, db)
-    items = (
-        db.query(TaskComment)
-        .join(Task, TaskComment.task_id == Task.id)
-        .filter(
-            Task.assigned_to      == user.id,
-            TaskComment.is_notification == True,
-            TaskComment.is_read   == False
-        )
-        .order_by(TaskComment.created_at.desc())
-        .limit(20)
-        .all()
-    )
-    return [_ser(c) for c in items]
-
-
-def _ser(c: TaskComment):
+def _ser(c: TaskComment, task_title: str = None, sender_name: str = None):
     return {
         "id":              c.id,
         "task_id":         c.task_id,
+        "task_title":      task_title,
         "user_id":         c.user_id,
+        "sender_name":     sender_name,
         "comment":         c.comment,
         "is_notification": c.is_notification,
         "is_read":         c.is_read,
