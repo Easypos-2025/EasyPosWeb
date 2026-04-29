@@ -14,14 +14,17 @@
           <option value="">— Seleccionar perfil —</option>
           <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
-        <a
+        <button
           v-if="selectedProfileId"
-          href="/companies/sysadmin"
-          class="btn-manage"
-          title="Ir a Gestor de Menú"
+          class="btn-manage btn-repair"
+          :disabled="repairing"
+          @click="repairProfile"
+          title="Limpiar módulos inactivos y re-sincronizar jerarquía"
         >
-          <i class="bi bi-pencil-square"></i> Gestionar
-        </a>
+          <i v-if="repairing" class="bi bi-arrow-repeat spin"></i>
+          <i v-else class="bi bi-wrench-adjustable"></i>
+          {{ repairing ? 'Reparando...' : 'Reparar perfil' }}
+        </button>
       </div>
     </div>
 
@@ -128,10 +131,12 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
-const profiles        = ref([])
+
+const profiles          = ref([])
 const selectedProfileId = ref("")
-const tree            = ref([])
-const loading         = ref(false)
+const tree              = ref([])
+const loading           = ref(false)
+const repairing         = ref(false)
 
 // ── KPIs derivados ──────────────────────────────────────
 function countNodes(nodes, depth = 1) {
@@ -184,6 +189,41 @@ async function loadMap() {
     tree.value = []
   } finally {
     loading.value = false
+  }
+}
+
+async function repairProfile() {
+  const profileName = profiles.value.find(p => p.id === selectedProfileId.value)?.name || "este perfil"
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Reparar "${profileName}"?`,
+    html: `
+      <div style="text-align:left;font-size:14px;color:#475569">
+        Esto realizará:<br><br>
+        <b>1.</b> Eliminar módulos inactivos del perfil<br>
+        <b>2.</b> Re-sincronizar la jerarquía padre-hijo<br><br>
+        <span style="color:#ef4444">No elimina módulos activos — solo limpia inconsistencias.</span>
+      </div>`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, reparar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#1e3a5f"
+  })
+  if (!isConfirmed) return
+
+  repairing.value = true
+  try {
+    const res = await api.post(`/menu/repair-profile/${selectedProfileId.value}`)
+    const { deleted_inactive, tree: fixedTree } = res.data
+    tree.value = fixedTree
+    showToast(
+      `Perfil reparado — ${deleted_inactive} módulo(s) inactivo(s) eliminado(s)`,
+      deleted_inactive > 0 ? "success" : "info"
+    )
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error reparando perfil", "error")
+  } finally {
+    repairing.value = false
   }
 }
 
@@ -253,6 +293,9 @@ onMounted(loadProfiles)
   white-space: nowrap;
 }
 .btn-manage:hover { background: #2563eb; color: #fff; }
+.btn-repair { background: #1e3a5f; cursor: pointer; border: none; }
+.btn-repair:hover:not(:disabled) { background: #16a34a; }
+.btn-repair:disabled { opacity: 0.65; cursor: not-allowed; }
 
 /* KPI BAR */
 .kpi-bar {

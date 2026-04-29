@@ -148,7 +148,7 @@ def assign_modules_to_profile(
             {"profile_id": profile_id}
         )
 
-        # 🔥 insertar módulos + hijos SIN duplicar
+        # Insertar solo los módulos explícitamente seleccionados (sin auto-hijos)
         db.execute(
             text("""
                 INSERT INTO business_profile_modules (
@@ -164,10 +164,6 @@ def assign_modules_to_profile(
                     0
                 FROM system_modules sm
                 WHERE sm.id IN :module_ids
-                   OR (
-                        sm.parent_id IN :module_ids
-                        AND sm.id NOT IN :module_ids
-                   )
             """),
             {
                 "profile_id": profile_id,

@@ -230,6 +230,44 @@ def get_menu_by_profile(
 
     return build_tree(data)
 
-        
 
+# ── REPARAR PERFIL: limpia huérfanos y re-sincroniza jerarquía ─────────────
+@router.post("/repair-profile/{profile_id}")
+def repair_profile_menu(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Eliminar registros de módulos inactivos (sm.is_active = 0)
+    deleted = db.execute(text("""
+        DELETE bpm FROM business_profile_modules bpm
+        INNER JOIN system_modules sm ON sm.id = bpm.module_id
+        WHERE bpm.business_profile_id = :pid AND sm.is_active = 0
+    """), {"pid": profile_id})
+    deleted_count = deleted.rowcount
+
+    # 2. Re-sincronizar parent_id en bpm usando sm.parent_id como referencia
+    #    Para cada bpm, buscar el bpm del módulo padre en el mismo perfil
+    db.execute(text("""
+        UPDATE business_profile_modules bpm
+        LEFT JOIN (
+            SELECT bpm2.id AS bpm_id, bpm2.module_id
+            FROM business_profile_modules bpm2
+            WHERE bpm2.business_profile_id = :pid
+        ) parent_map
+            ON parent_map.module_id = (
+                SELECT sm.parent_id FROM system_modules sm WHERE sm.id = bpm.module_id
+            )
+        SET bpm.parent_id = parent_map.bpm_id
+        WHERE bpm.business_profile_id = :pid
+    """), {"pid": profile_id})
+
+    db.commit()
+
+    # 3. Devolver el árbol limpio
+    tree = get_menu_by_profile(profile_id, db, current_user)
+    return {
+        "deleted_inactive": deleted_count,
+        "tree": tree
+    }
 
