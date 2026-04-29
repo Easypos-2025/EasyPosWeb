@@ -219,12 +219,15 @@
           </div>
         </div>
 
-        <p class="modal-note">
-          {{ approveTarget.payment_type === 'upgrade'
-            ? 'El plan actual se cancelará y se activará el nuevo por 365 días.'
-            : 'Se activará la cuenta del asociado por 365 días.' }}
-          Se enviará notificación por correo.
-        </p>
+        <div class="modal-dates-info">
+          <i class="bi bi-calendar-range me-1"></i>
+          Período del plan:
+          <strong>{{ planStartDate }}</strong>
+          <i class="bi bi-arrow-right mx-1"></i>
+          <strong>{{ planEndDate }}</strong>
+          <span class="dates-note">(30 días)</span>
+        </div>
+        <p class="modal-note">Se enviará notificación por correo al asociado.</p>
 
         <div v-if="approveErr.general" class="error-general">
           <i class="bi bi-exclamation-circle me-1"></i>{{ approveErr.general }}
@@ -308,7 +311,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
@@ -336,6 +339,19 @@ export default {
     const rejectFile    = ref(null)
     const rejectErr     = ref("")
     const rejectForm    = ref({ review_description: "" })
+
+    function addDays(dateStr, days) {
+      const d = dateStr ? new Date(dateStr) : new Date()
+      d.setDate(d.getDate() + days)
+      return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })
+    }
+    function fmtDateShort(dateStr) {
+      if (!dateStr) return new Date().toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })
+      return new Date(dateStr).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })
+    }
+
+    const planStartDate = computed(() => fmtDateShort(approveForm.value?.payment_date))
+    const planEndDate   = computed(() => addDays(approveForm.value?.payment_date, 30))
 
     const statusLabel = { pending: "Pendiente", submitted: "Comprobante enviado", approved: "Aprobado", rejected: "Rechazado" }
     const typeLabel   = { activation: "Activación", upgrade: "Upgrade", renewal: "Renovación", downgrade: "Downgrade" }
@@ -460,6 +476,7 @@ export default {
       approveTarget, approveFile, duplicateInfo, approveForm, approveErr,
       rejectTarget, rejectReason, rejectFile, rejectErr, rejectForm,
       statusLabel, typeLabel, formatCurrency, formatDate,
+      planStartDate, planEndDate,
       load, confirmApprove, closeApprove, doApprove,
       openReject, closeReject, doReject,
     }
@@ -690,6 +707,21 @@ export default {
   background: #fef2f2; border: 1px solid #fecaca;
   color: #dc2626; padding: 8px 12px; border-radius: 7px;
   font-size: .82rem; margin-bottom: 10px; text-align: center;
+}
+
+/* Fechas informativas en modal */
+.modal-dates-info {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px;
+  background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;
+  padding: 8px 14px; font-size: .82rem; color: #0369a1; margin-bottom: 6px;
+}
+.modal-dates-info strong { color: #0f172a; }
+.dates-note { color: #64748b; font-size: .74rem; margin-left: 4px; }
+
+/* Responsive: campos del formulario en columna en pantallas pequeñas */
+@media (max-width: 540px) {
+  .pr-modal { padding: 20px 16px; }
+  .ev-row   { grid-template-columns: 1fr; }
 }
 
 .spin { animation: spin 1s linear infinite; display: inline-block; }

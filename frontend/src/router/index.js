@@ -86,6 +86,13 @@ const routes = [
     component: () => import("@/views/PaymentPendingView.vue"),
     meta: { title: "Activa tu plan — EasyPosWeb" }
   },
+  {
+    path: "/payment-history",
+    name: "PaymentHistoryAssociate",
+    component: () => import("@/views/PaymentHistoryAssociateView.vue"),
+    requiresAuth: true,
+    meta: { title: "Historial de Pagos" }
+  },
 
   {
     path: "/reset-password",
@@ -353,6 +360,13 @@ const routes = [
         component: () => import("@/views/sysadmin/PaymentReviewView.vue"),
         requiresAuth: true,
         meta: { title: "Revisión de Pagos" }
+      },
+      {
+        path: "/sysadmin/payment-history",
+        name: "PaymentHistoryView",
+        component: () => import("@/views/sysadmin/PaymentHistoryView.vue"),
+        requiresAuth: true,
+        meta: { title: "Historial de Pagos" }
       },
 
       {

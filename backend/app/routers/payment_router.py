@@ -3,6 +3,7 @@ Payment Router — gestión de pagos de planes.
 
 Asociado:
   GET  /payments/my-status              → estado del pago activo de mi empresa
+  GET  /payments/my-history             → historial completo de pagos de mi empresa
   GET  /payments/available-upgrades     → planes superiores disponibles para upgrade
   POST /payments/submit-receipt         → sube comprobante (activación / renovación)
   POST /payments/request-upgrade        → solicita upgrade de plan (no bloqueante)
@@ -12,6 +13,7 @@ Asociado:
 SYSADMIN:
   GET  /payments/pending                → lista pagos pending/submitted (todos los tipos)
   GET  /payments/pending-count          → conteo para KPI dashboard
+  GET  /payments/history                → historial de pagos aprobados/rechazados con filtros
   PUT  /payments/{id}/approve           → aprueba → activa empresa + fija expiration_date
   PUT  /payments/{id}/reject            → rechaza + razón + email al asociado
 """
@@ -723,6 +725,101 @@ async def approve_payment(
         )
 
     return {"message": "Pago aprobado. Plan activado correctamente."}
+
+
+# ── SYSADMIN: historial de pagos (aprobados / rechazados) ────────────────────
+
+@router.get("/history")
+def list_payment_history(
+    status:       str = None,   # approved | rejected  (None = ambos)
+    payment_type: str = None,   # activation|upgrade|renewal|downgrade
+    company_id:   int = None,
+    date_from:    str = None,   # YYYY-MM-DD
+    date_to:      str = None,
+    page:         int = 1,
+    page_size:    int = 20,
+    _: User = Depends(require_sysadmin),
+    db: Session = Depends(get_db),
+):
+    q = db.query(CompanyPayment).filter(
+        CompanyPayment.status.in_(["approved", "rejected"])
+    )
+    if status and status in ("approved", "rejected"):
+        q = q.filter(CompanyPayment.status == status)
+    if payment_type:
+        q = q.filter(CompanyPayment.payment_type == payment_type)
+    if company_id:
+        q = q.filter(CompanyPayment.company_id == company_id)
+    if date_from:
+        try:
+            q = q.filter(CompanyPayment.reviewed_at >= datetime.fromisoformat(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(CompanyPayment.reviewed_at <= datetime.fromisoformat(date_to + "T23:59:59"))
+        except ValueError:
+            pass
+
+    total = q.count()
+    payments = (
+        q.order_by(CompanyPayment.reviewed_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "total":    total,
+        "page":     page,
+        "pages":    max(1, -(-total // page_size)),
+        "items":    [_serialize_payment(p, db) for p in payments],
+    }
+
+
+# ── Asociado: historial completo de sus pagos ─────────────────────────────────
+
+@router.get("/my-history")
+def get_my_payment_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    payments = (
+        db.query(CompanyPayment)
+        .filter(CompanyPayment.company_id == current_user.company_id)
+        .order_by(CompanyPayment.id.desc())
+        .all()
+    )
+    result = []
+    for p in payments:
+        plan      = db.get(Plan, p.plan_id)
+        prev_plan = db.get(Plan, p.previous_plan_id) if p.previous_plan_id else None
+        result.append({
+            "id":                  p.id,
+            "payment_type":        p.payment_type,
+            "status":              p.status,
+            "amount":              p.amount,
+            "currency_code":       p.currency_code,
+            "receipt_url":         p.receipt_url,
+            "rejection_reason":    p.rejection_reason,
+            "review_description":  p.review_description,
+            "review_evidence_url": p.review_evidence_url,
+            "receipt_number":      p.receipt_number,
+            "bank_origin":         p.bank_origin,
+            "payment_date":        str(p.payment_date) if p.payment_date else None,
+            "confirmed_amount":    p.confirmed_amount,
+            "submitted_at":        p.submitted_at,
+            "reviewed_at":         p.reviewed_at,
+            "created_at":          p.created_at,
+            "plan": {
+                "id":   plan.id if plan else None,
+                "name": plan.name if plan else "—",
+            },
+            "previous_plan": {
+                "id":   prev_plan.id if prev_plan else None,
+                "name": prev_plan.name if prev_plan else None,
+            } if prev_plan else None,
+        })
+    return result
 
 
 # ── SYSADMIN: rechazar pago ───────────────────────────────────────────────────

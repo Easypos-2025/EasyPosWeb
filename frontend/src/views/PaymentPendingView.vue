@@ -235,6 +235,7 @@
         </div>
 
       </template>
+
     </div>
   </div>
 </template>
@@ -659,4 +660,5 @@ export default {
   .instr-val { text-align: left; }
   .pp-footer-btns { flex-direction: column; }
 }
+
 </style>
