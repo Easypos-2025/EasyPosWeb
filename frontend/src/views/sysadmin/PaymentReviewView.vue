@@ -130,75 +130,171 @@
     </div>
 
     <!-- MODAL APROBAR / SUBIR DE PLAN -->
-    <div v-if="approveTarget" class="pr-modal-overlay" @click.self="approveTarget = null">
-      <div class="pr-modal">
+    <div v-if="approveTarget" class="pr-modal-overlay" @click.self="closeApprove">
+      <div class="pr-modal pr-modal-lg">
 
-        <!-- Upgrade -->
-        <template v-if="approveTarget.payment_type === 'upgrade'">
-          <div class="modal-icon upgrade"><i class="bi bi-arrow-up-circle-fill"></i></div>
-          <h3>¿Confirmar Upgrade de Plan?</h3>
-          <div class="upgrade-modal-transition">
-            <span class="umt-from">{{ approveTarget.current_plan?.name ?? '—' }}</span>
-            <i class="bi bi-arrow-right umt-arrow"></i>
-            <span class="umt-to">{{ approveTarget.plan.name }}</span>
-          </div>
-          <p>
-            Empresa: <strong>{{ approveTarget.company.name }}</strong><br>
-            Monto pagado: <strong>{{ formatCurrency(approveTarget.amount) }}</strong>
-          </p>
-          <p class="modal-note">El plan actual se cancelará y se activará el nuevo por 365 días. El asociado será notificado.</p>
-          <div class="modal-btns">
-            <button class="btn-cancel" @click="approveTarget = null">Cancelar</button>
-            <button class="btn-upgrade" :disabled="actioning === approveTarget.id" @click="doApprove">
-              <span v-if="actioning === approveTarget.id">
-                <i class="bi bi-hourglass-split spin me-1"></i>Procesando...
-              </span>
-              <span v-else><i class="bi bi-arrow-up-circle-fill me-1"></i>Confirmar Upgrade</span>
-            </button>
-          </div>
-        </template>
+        <div class="modal-icon" :class="approveTarget.payment_type === 'upgrade' ? 'upgrade' : 'green'">
+          <i :class="approveTarget.payment_type === 'upgrade' ? 'bi bi-arrow-up-circle-fill' : 'bi bi-check-circle-fill'"></i>
+        </div>
+        <h3>{{ approveTarget.payment_type === 'upgrade' ? 'Confirmar Upgrade de Plan' : 'Aprobar Pago' }}</h3>
 
-        <!-- Aprobación normal -->
-        <template v-else>
-          <div class="modal-icon green"><i class="bi bi-check-circle-fill"></i></div>
-          <h3>¿Aprobar pago?</h3>
-          <p>
-            Empresa: <strong>{{ approveTarget.company.name }}</strong><br>
-            Plan: <strong>{{ approveTarget.plan.name }}</strong> —
-            <strong>{{ formatCurrency(approveTarget.amount) }}</strong>
-          </p>
-          <p class="modal-note">Se activará la cuenta y se notificará al asociado por correo.</p>
-          <div class="modal-btns">
-            <button class="btn-cancel" @click="approveTarget = null">Cancelar</button>
-            <button class="btn-approve" :disabled="actioning === approveTarget.id" @click="doApprove">
-              <span v-if="actioning === approveTarget.id">
-                <i class="bi bi-hourglass-split spin me-1"></i>Aprobando...
-              </span>
-              <span v-else>Confirmar aprobación</span>
-            </button>
+        <!-- Transición de plan (upgrade) -->
+        <div v-if="approveTarget.payment_type === 'upgrade'" class="upgrade-modal-transition">
+          <span class="umt-from">{{ approveTarget.current_plan?.name ?? '—' }}</span>
+          <i class="bi bi-arrow-right umt-arrow"></i>
+          <span class="umt-to">{{ approveTarget.plan.name }}</span>
+        </div>
+
+        <p class="modal-company-info">
+          <strong>{{ approveTarget.company.name }}</strong> —
+          {{ approveTarget.payment_type === 'upgrade' ? approveTarget.plan.name : `Plan ${approveTarget.plan.name}` }} —
+          <strong>{{ formatCurrency(approveTarget.amount) }}</strong>
+        </p>
+
+        <!-- ALERTA DUPLICADO -->
+        <div v-if="duplicateInfo" class="duplicate-alert">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>
+          <div>
+            <strong>Recibo duplicado detectado</strong>
+            <p>Este N° de recibo del mismo banco ya fue registrado en otro pago aprobado:</p>
+            <ul>
+              <li>Empresa: <strong>{{ duplicateInfo.company_name }}</strong></li>
+              <li>Fecha: {{ duplicateInfo.payment_date ?? '—' }}</li>
+              <li>Monto: {{ formatCurrency(duplicateInfo.amount) }}</li>
+            </ul>
+            <p>Verifica el número de recibo antes de continuar.</p>
           </div>
-        </template>
+        </div>
+
+        <!-- FORMULARIO DE EVIDENCIA -->
+        <div class="evidence-form">
+          <div class="ev-title"><i class="bi bi-shield-check me-2"></i>Evidencia de aprobación</div>
+
+          <div class="ev-row">
+            <div class="field-group" :class="{ error: approveErr.receipt_number }">
+              <label>N° Recibo bancario <span class="req">*</span></label>
+              <input v-model="approveForm.receipt_number" type="text" placeholder="Ej. 2024-0012345" />
+              <span v-if="approveErr.receipt_number" class="field-error">{{ approveErr.receipt_number }}</span>
+            </div>
+            <div class="field-group" :class="{ error: approveErr.bank_origin }">
+              <label>Banco origen (del asociado) <span class="req">*</span></label>
+              <input v-model="approveForm.bank_origin" type="text" placeholder="Ej. Bancolombia, Davivienda..." />
+              <span v-if="approveErr.bank_origin" class="field-error">{{ approveErr.bank_origin }}</span>
+            </div>
+          </div>
+
+          <div class="ev-row">
+            <div class="field-group" :class="{ error: approveErr.payment_date }">
+              <label>Fecha del pago <span class="req">*</span></label>
+              <input v-model="approveForm.payment_date" type="date" />
+              <span v-if="approveErr.payment_date" class="field-error">{{ approveErr.payment_date }}</span>
+            </div>
+            <div class="field-group">
+              <label>Monto confirmado</label>
+              <input v-model="approveForm.confirmed_amount" type="number" step="1" :placeholder="`${approveTarget.amount}`" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label>Descripción / observaciones</label>
+            <textarea v-model="approveForm.review_description" rows="2" placeholder="Pago verificado correctamente. Ref. interna..."></textarea>
+          </div>
+
+          <div class="field-group">
+            <label>Evidencia del banco (opcional)</label>
+            <div class="ev-upload" @click="$refs.approveFileInput.click()" :class="{ 'has-file': approveFile }">
+              <template v-if="!approveFile">
+                <i class="bi bi-cloud-upload me-2"></i> Adjuntar comprobante del banco
+              </template>
+              <template v-else>
+                <i class="bi bi-paperclip me-2 text-success"></i> {{ approveFile.name }}
+                <button type="button" class="ev-remove-file" @click.stop="approveFile = null">
+                  <i class="bi bi-x"></i>
+                </button>
+              </template>
+            </div>
+            <input ref="approveFileInput" type="file"
+                   accept="image/jpeg,image/png,image/webp,application/pdf"
+                   style="display:none" @change="e => approveFile = e.target.files[0]" />
+          </div>
+        </div>
+
+        <p class="modal-note">
+          {{ approveTarget.payment_type === 'upgrade'
+            ? 'El plan actual se cancelará y se activará el nuevo por 365 días.'
+            : 'Se activará la cuenta del asociado por 365 días.' }}
+          Se enviará notificación por correo.
+        </p>
+
+        <div v-if="approveErr.general" class="error-general">
+          <i class="bi bi-exclamation-circle me-1"></i>{{ approveErr.general }}
+        </div>
+
+        <div class="modal-btns">
+          <button class="btn-cancel" @click="closeApprove">Cancelar</button>
+          <button
+            :class="approveTarget.payment_type === 'upgrade' ? 'btn-upgrade' : 'btn-approve'"
+            :disabled="actioning === approveTarget.id"
+            @click="doApprove"
+          >
+            <span v-if="actioning === approveTarget.id">
+              <i class="bi bi-hourglass-split spin me-1"></i>Procesando...
+            </span>
+            <span v-else>
+              <i :class="approveTarget.payment_type === 'upgrade' ? 'bi bi-arrow-up-circle-fill' : 'bi bi-check-circle-fill'" class="me-1"></i>
+              {{ approveTarget.payment_type === 'upgrade' ? 'Confirmar Upgrade' : 'Confirmar aprobación' }}
+            </span>
+          </button>
+        </div>
 
       </div>
     </div>
 
     <!-- MODAL RECHAZAR -->
     <div v-if="rejectTarget" class="pr-modal-overlay" @click.self="closeReject">
-      <div class="pr-modal">
+      <div class="pr-modal pr-modal-lg">
         <div class="modal-icon red"><i class="bi bi-x-circle-fill"></i></div>
         <h3>Rechazar comprobante</h3>
-        <p>Empresa: <strong>{{ rejectTarget.company.name }}</strong></p>
-        <div class="field-group" :class="{ error: rejectErr }">
-          <label>Motivo de rechazo <span class="req">*</span></label>
-          <textarea v-model="rejectReason" rows="3"
-                    placeholder="Ej. El comprobante es ilegible, el monto no coincide..."></textarea>
-          <span v-if="rejectErr" class="field-error">{{ rejectErr }}</span>
+        <p class="modal-company-info">Empresa: <strong>{{ rejectTarget.company.name }}</strong></p>
+
+        <div class="evidence-form">
+          <div class="ev-title"><i class="bi bi-file-earmark-x me-2"></i>Evidencia de rechazo</div>
+
+          <div class="field-group" :class="{ error: rejectErr }">
+            <label>Motivo breve <span class="req">*</span> <small>(se enviará al asociado)</small></label>
+            <input v-model="rejectReason" type="text" placeholder="Ej. Monto no coincide, comprobante ilegible..." />
+            <span v-if="rejectErr" class="field-error">{{ rejectErr }}</span>
+          </div>
+
+          <div class="field-group">
+            <label>Descripción detallada <small>(registro interno)</small></label>
+            <textarea v-model="rejectForm.review_description" rows="3"
+                      placeholder="Detalle adicional del motivo de rechazo, observaciones internas..."></textarea>
+          </div>
+
+          <div class="field-group">
+            <label>Evidencia de rechazo (opcional)</label>
+            <div class="ev-upload" @click="$refs.rejectFileInput.click()" :class="{ 'has-file': rejectFile }">
+              <template v-if="!rejectFile">
+                <i class="bi bi-cloud-upload me-2"></i> Adjuntar evidencia del rechazo
+              </template>
+              <template v-else>
+                <i class="bi bi-paperclip me-2 text-success"></i> {{ rejectFile.name }}
+                <button type="button" class="ev-remove-file" @click.stop="rejectFile = null">
+                  <i class="bi bi-x"></i>
+                </button>
+              </template>
+            </div>
+            <input ref="rejectFileInput" type="file"
+                   accept="image/jpeg,image/png,image/webp,application/pdf"
+                   style="display:none" @change="e => rejectFile = e.target.files[0]" />
+          </div>
         </div>
-        <p class="modal-note">El asociado recibirá este motivo por correo y podrá reenviar el comprobante.</p>
+
+        <p class="modal-note">El asociado recibirá el motivo breve por correo y podrá reenviar el comprobante.</p>
         <div class="modal-btns">
           <button class="btn-cancel" @click="closeReject">Cancelar</button>
-          <button class="btn-reject" :disabled="actioning === rejectTarget.id"
-                  @click="doReject">
+          <button class="btn-reject" :disabled="actioning === rejectTarget.id" @click="doReject">
             <span v-if="actioning === rejectTarget.id">
               <i class="bi bi-hourglass-split spin me-1"></i>Rechazando...
             </span>
@@ -221,68 +317,99 @@ export default {
   name: "PaymentReviewView",
 
   setup() {
-    const loading      = ref(true)
-    const payments     = ref([])
-    const actioning    = ref(null)
+    const loading       = ref(true)
+    const payments      = ref([])
+    const actioning     = ref(null)
+    const filterType    = ref("")
+    const apiBase       = API_URL
+
+    // Aprobar
     const approveTarget = ref(null)
+    const approveFile   = ref(null)
+    const duplicateInfo = ref(null)
+    const approveForm   = ref({ receipt_number: "", bank_origin: "", payment_date: "", confirmed_amount: "", review_description: "" })
+    const approveErr    = ref({})
+
+    // Rechazar
     const rejectTarget  = ref(null)
     const rejectReason  = ref("")
+    const rejectFile    = ref(null)
     const rejectErr     = ref("")
-    const apiBase       = API_URL
-    const filterType    = ref("")
+    const rejectForm    = ref({ review_description: "" })
 
-    const statusLabel = {
-      pending:   "Pendiente",
-      submitted: "Comprobante enviado",
-      approved:  "Aprobado",
-      rejected:  "Rechazado",
-    }
-    const typeLabel = {
-      activation: "Activación",
-      upgrade:    "Upgrade",
-      renewal:    "Renovación",
-      downgrade:  "Downgrade",
-    }
+    const statusLabel = { pending: "Pendiente", submitted: "Comprobante enviado", approved: "Aprobado", rejected: "Rechazado" }
+    const typeLabel   = { activation: "Activación", upgrade: "Upgrade", renewal: "Renovación", downgrade: "Downgrade" }
 
     function formatCurrency(amount) {
-      return new Intl.NumberFormat("es-CO", {
-        style: "currency", currency: "COP", maximumFractionDigits: 0,
-      }).format(amount ?? 0)
+      return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(amount ?? 0)
     }
-
     function formatDate(dt) {
       if (!dt) return "—"
-      return new Date(dt).toLocaleString("es-CO", {
-        dateStyle: "medium", timeStyle: "short",
-      })
+      return new Date(dt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" })
     }
 
     async function load() {
       loading.value = true
       try {
-        const url = filterType.value
-          ? `/payments/pending?payment_type=${filterType.value}`
-          : "/payments/pending"
-        const res = await api.get(url)
-        payments.value = res.data
-      } catch {
-        payments.value = []
-      } finally {
-        loading.value = false
-      }
+        const url = filterType.value ? `/payments/pending?payment_type=${filterType.value}` : "/payments/pending"
+        payments.value = (await api.get(url)).data
+      } catch { payments.value = [] }
+      finally { loading.value = false }
     }
 
-    function confirmApprove(p) { approveTarget.value = p }
+    function confirmApprove(p) {
+      approveTarget.value = p
+      approveFile.value   = null
+      duplicateInfo.value = null
+      approveErr.value    = {}
+      approveForm.value   = {
+        receipt_number:     "",
+        bank_origin:        "",
+        payment_date:       new Date().toISOString().split("T")[0],
+        confirmed_amount:   p.amount ?? "",
+        review_description: "",
+      }
+    }
+    function closeApprove() {
+      approveTarget.value = null
+      duplicateInfo.value = null
+      approveFile.value   = null
+    }
 
     async function doApprove() {
       if (!approveTarget.value) return
+      approveErr.value    = {}
+      duplicateInfo.value = null
+
+      // Validación frontend
+      const errs = {}
+      if (!approveForm.value.receipt_number.trim()) errs.receipt_number = "Requerido"
+      if (!approveForm.value.bank_origin.trim())    errs.bank_origin    = "Requerido"
+      if (!approveForm.value.payment_date)          errs.payment_date   = "Requerido"
+      if (Object.keys(errs).length) { approveErr.value = errs; return }
+
       actioning.value = approveTarget.value.id
+      const fd = new FormData()
+      fd.append("receipt_number",     approveForm.value.receipt_number.trim())
+      fd.append("bank_origin",        approveForm.value.bank_origin.trim())
+      fd.append("payment_date",       approveForm.value.payment_date)
+      if (approveForm.value.confirmed_amount) fd.append("confirmed_amount", approveForm.value.confirmed_amount)
+      if (approveForm.value.review_description) fd.append("review_description", approveForm.value.review_description.trim())
+      if (approveFile.value) fd.append("file", approveFile.value)
+
       try {
-        await api.put(`/payments/${approveTarget.value.id}/approve`)
-        approveTarget.value = null
+        await api.put(`/payments/${approveTarget.value.id}/approve`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+        closeApprove()
         await load()
       } catch (e) {
-        alert(e.response?.data?.detail || "Error al aprobar")
+        const detail = e.response?.data?.detail
+        if (e.response?.status === 409 && detail?.duplicate) {
+          duplicateInfo.value = detail.duplicate
+        } else {
+          approveErr.value = { general: (typeof detail === "string" ? detail : detail?.message) || "Error al aprobar" }
+        }
       } finally {
         actioning.value = null
       }
@@ -291,25 +418,31 @@ export default {
     function openReject(p) {
       rejectTarget.value = p
       rejectReason.value = ""
+      rejectFile.value   = null
       rejectErr.value    = ""
+      rejectForm.value   = { review_description: "" }
     }
     function closeReject() {
       rejectTarget.value = null
       rejectReason.value = ""
+      rejectFile.value   = null
       rejectErr.value    = ""
     }
 
     async function doReject() {
       if (!rejectTarget.value) return
       rejectErr.value = ""
-      if (!rejectReason.value.trim()) {
-        rejectErr.value = "El motivo es obligatorio"
-        return
-      }
+      if (!rejectReason.value.trim()) { rejectErr.value = "El motivo es obligatorio"; return }
+
       actioning.value = rejectTarget.value.id
+      const fd = new FormData()
+      fd.append("reason", rejectReason.value.trim())
+      if (rejectForm.value.review_description) fd.append("review_description", rejectForm.value.review_description.trim())
+      if (rejectFile.value) fd.append("file", rejectFile.value)
+
       try {
-        await api.put(`/payments/${rejectTarget.value.id}/reject`, {
-          reason: rejectReason.value,
+        await api.put(`/payments/${rejectTarget.value.id}/reject`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
         })
         closeReject()
         await load()
@@ -323,10 +456,12 @@ export default {
     onMounted(load)
 
     return {
-      loading, payments, actioning, approveTarget,
-      rejectTarget, rejectReason, rejectErr, apiBase,
-      filterType, statusLabel, typeLabel, formatCurrency, formatDate,
-      load, confirmApprove, doApprove, openReject, closeReject, doReject,
+      loading, payments, actioning, filterType, apiBase,
+      approveTarget, approveFile, duplicateInfo, approveForm, approveErr,
+      rejectTarget, rejectReason, rejectFile, rejectErr, rejectForm,
+      statusLabel, typeLabel, formatCurrency, formatDate,
+      load, confirmApprove, closeApprove, doApprove,
+      openReject, closeReject, doReject,
     }
   }
 }
@@ -485,12 +620,16 @@ export default {
 .umt-from  { font-weight: 700; color: #64748b; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
 .umt-arrow { color: #16a34a; font-size: 1.1rem; }
 .umt-to    { font-weight: 800; color: #15803d; background: #dcfce7; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
+.pr-modal-lg { max-width: 560px; }
+
 .pr-modal h3 { text-align: center; font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
 .pr-modal p  { text-align: center; color: #64748b; font-size: .88rem; margin-bottom: 8px; }
-.modal-note  { font-size: .78rem; color: #94a3b8; }
+.modal-company-info { font-size: .88rem; color: #475569; text-align: center; margin-bottom: 12px; }
+.modal-note  { font-size: .78rem; color: #94a3b8; text-align: center; }
 .modal-btns  { display: flex; gap: 10px; margin-top: 20px; }
 .modal-btns .btn-approve,
-.modal-btns .btn-reject { flex: 1; justify-content: center; }
+.modal-btns .btn-reject,
+.modal-btns .btn-upgrade { flex: 1; justify-content: center; }
 .btn-cancel {
   flex: 1; border: 1.5px solid #e2e8f0; background: #fff; color: #64748b;
   padding: 10px; border-radius: 8px; font-weight: 600; font-size: .88rem;
@@ -498,18 +637,60 @@ export default {
 }
 .btn-cancel:hover { border-color: #94a3b8; }
 
-.field-group { display: flex; flex-direction: column; gap: 6px; }
-.field-group label { font-size: .84rem; font-weight: 600; color: #334155; }
+/* FORMULARIO DE EVIDENCIA */
+.evidence-form {
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
+}
+.ev-title { font-size: .82rem; font-weight: 700; color: #475569; margin-bottom: 12px; }
+.ev-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.field-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.field-group:last-child { margin-bottom: 0; }
+.field-group label { font-size: .78rem; font-weight: 600; color: #334155; }
+.field-group label small { font-weight: 400; color: #94a3b8; }
 .field-group.error label { color: #ef4444; }
 .req { color: #ef4444; }
-.field-group textarea {
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 10px 14px; font-size: .88rem; resize: vertical;
-  outline: none; color: #0f172a; font-family: inherit;
+.field-group input, .field-group textarea {
+  border: 1.5px solid #e2e8f0; border-radius: 7px;
+  padding: 8px 12px; font-size: .84rem; resize: vertical;
+  outline: none; color: #0f172a; font-family: inherit; background: #fff;
 }
-.field-group textarea:focus { border-color: #2563eb; }
-.field-group.error textarea { border-color: #ef4444; }
-.field-error { color: #ef4444; font-size: .78rem; }
+.field-group input:focus, .field-group textarea:focus { border-color: #2563eb; }
+.field-group.error input, .field-group.error textarea { border-color: #ef4444; }
+.field-error { color: #ef4444; font-size: .72rem; }
+
+.ev-upload {
+  border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 10px 14px;
+  text-align: center; cursor: pointer; font-size: .82rem; color: #64748b;
+  transition: all .2s; position: relative; background: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.ev-upload:hover   { border-color: #2563eb; color: #2563eb; }
+.ev-upload.has-file { border-style: solid; border-color: #10b981; color: #059669; justify-content: flex-start; }
+.ev-remove-file {
+  margin-left: auto; background: none; border: none;
+  color: #ef4444; cursor: pointer; font-size: .9rem; padding: 0 2px;
+}
+
+/* ALERTA DUPLICADO */
+.duplicate-alert {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #fef2f2; border: 1.5px solid #fecaca;
+  border-radius: 8px; padding: 12px 14px;
+  color: #dc2626; font-size: .82rem; margin-bottom: 12px;
+}
+.duplicate-alert strong { display: block; margin-bottom: 4px; }
+.duplicate-alert p  { margin: 2px 0; }
+.duplicate-alert ul { margin: 4px 0; padding-left: 16px; }
+.duplicate-alert li { margin: 2px 0; }
+
+/* Error general */
+.error-general {
+  background: #fef2f2; border: 1px solid #fecaca;
+  color: #dc2626; padding: 8px 12px; border-radius: 7px;
+  font-size: .82rem; margin-bottom: 10px; text-align: center;
+}
 
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }

@@ -81,12 +81,18 @@
           <p>Selecciona el plan a renovar, sube tu comprobante y lo activamos en minutos. Este proceso puede durar entre una y dos horas; por favor espera a que se active tu plataforma. Gracias por tu comprensión.</p>
         </div>
 
-        <!-- Rechazo previo -->
+        <!-- Rechazo previo con evidencia -->
         <div v-if="paymentStatus === 'payment_rejected' && rejectionReason" class="rejection-box">
-          <i class="bi bi-exclamation-triangle-fill me-2"></i>
-          <div>
-            <strong>Tu comprobante fue rechazado:</strong>
-            <p class="mb-0">{{ rejectionReason }}</p>
+          <i class="bi bi-exclamation-triangle-fill me-2 flex-shrink-0"></i>
+          <div class="rejection-body">
+            <strong>Tu comprobante fue rechazado</strong>
+            <p class="rejection-reason">{{ rejectionReason }}</p>
+            <p v-if="rejectionDetail" class="rejection-detail">{{ rejectionDetail }}</p>
+            <a v-if="rejectionEvidenceUrl"
+               :href="apiBase + rejectionEvidenceUrl"
+               target="_blank" class="rejection-evidence-link">
+              <i class="bi bi-paperclip me-1"></i>Ver evidencia adjunta
+            </a>
           </div>
         </div>
 
@@ -238,6 +244,8 @@ import { ref, computed, onMounted, onUnmounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "@/services/apis"
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
+
 export default {
   name: "PaymentPendingView",
 
@@ -248,7 +256,10 @@ export default {
     const refreshing    = ref(false)
     const submitting    = ref(false)
     const paymentStatus = ref("")
-    const rejectionReason = ref("")
+    const rejectionReason     = ref("")
+    const rejectionDetail     = ref("")
+    const rejectionEvidenceUrl = ref("")
+    const apiBase             = API_BASE
     const showWaitScreen  = ref(false)
     const waitPlanName    = ref("")
     const plans         = ref([])
@@ -278,8 +289,10 @@ export default {
     async function loadStatus() {
       try {
         const res = await api.get("/payments/my-status")
-        paymentStatus.value   = res.data.payment_status
-        rejectionReason.value = res.data.payment?.rejection_reason ?? ""
+        paymentStatus.value        = res.data.payment_status
+        rejectionReason.value      = res.data.payment?.rejection_reason      ?? ""
+        rejectionDetail.value      = res.data.payment?.review_description    ?? ""
+        rejectionEvidenceUrl.value = res.data.payment?.review_evidence_url   ?? ""
         if (res.data.payment?.status === "submitted") {
           waitPlanName.value  = res.data.plan?.name ?? ""
           showWaitScreen.value = true
@@ -409,7 +422,8 @@ export default {
 
     return {
       loading, loadingPlans, refreshing, submitting,
-      paymentStatus, rejectionReason, showWaitScreen, waitPlanName,
+      paymentStatus, rejectionReason, rejectionDetail, rejectionEvidenceUrl, apiBase,
+      showWaitScreen, waitPlanName,
       plans, selectedPlanId, selectedPlan,
       selectedFile, previewUrl, uploadError, isDrag, fileInput, isImage,
       referenceText, formatCurrency, refreshStatus,
@@ -474,7 +488,14 @@ export default {
   color: #dc2626; padding: 12px 14px; border-radius: 8px;
   font-size: .85rem; margin-bottom: 16px;
 }
-.rejection-box p { margin: 4px 0 0; color: #b91c1c; }
+.rejection-body { display: flex; flex-direction: column; gap: 4px; }
+.rejection-reason { margin: 2px 0 0; color: #b91c1c; font-weight: 600; }
+.rejection-detail { margin: 0; color: #7f1d1d; font-size: .8rem; }
+.rejection-evidence-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: #dc2626; font-size: .78rem; text-decoration: underline; margin-top: 2px;
+}
+.rejection-evidence-link:hover { color: #991b1b; }
 
 /* SELECTOR DE PLANES */
 .plan-section { margin-bottom: 20px; }
