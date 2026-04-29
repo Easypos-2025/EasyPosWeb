@@ -122,7 +122,9 @@
       <a :href="siteUrl" target="_blank" rel="noopener"
          class="btn-icon btn-website" title="Ver sitio web">
         <i class="bi bi-globe2"></i>
-        <span class="btn-label">EasyPosWeb</span>
+        <span class="btn-label brand-label">
+          <span class="bl-easy">Easy</span><span class="bl-pos">Pos</span><span class="bl-web">Web</span>
+        </span>
       </a>
 
       <!-- Dropdown Usuario -->
@@ -591,7 +593,13 @@ onUnmounted(() => {
   border: 1px solid rgba(255,255,255,0.12);
 }
 .btn-website .bi { font-size: 17px; }
-.btn-website:hover { background: rgba(37,99,235,0.28); color: #93c5fd; border-color: rgba(147,197,253,0.35); }
+.btn-website:hover { background: rgba(37,99,235,0.18); border-color: rgba(147,197,253,0.35); }
+
+/* Colores tricolor EasyPosWeb (igual que landing) */
+.brand-label { letter-spacing: 0; }
+.bl-easy { color: #2563eb; }
+.bl-pos  { color: #f59e0b; }
+.bl-web  { color: #10b981; }
 /* Dropdown usuario */
 .btn-user-drop {
   display: flex; align-items: center; gap: 7px;
