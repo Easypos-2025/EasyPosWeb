@@ -146,7 +146,7 @@
             <span class="user-role">{{ user?.role }}</span>
           </div>
           <i class="bi bi-chevron-down user-arr"></i>
-          <span class="user-short-label">CUENTA</span>
+          <span class="user-short-label">CUENTA <i class="bi bi-chevron-down btn-arr"></i></span>
         </button>
 
         <Transition name="dropdown-fade">
