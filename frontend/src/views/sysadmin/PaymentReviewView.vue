@@ -611,18 +611,19 @@ export default {
 /* MODAL */
 .pr-modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.5);
-  display: flex; align-items: center; justify-content: center; z-index: 9999;
-  padding: 20px;
+  display: flex; align-items: flex-start; justify-content: center; z-index: 9999;
+  padding: 20px; overflow-y: auto;
 }
 .pr-modal {
-  background: #fff; border-radius: 16px; padding: 32px;
+  background: #fff; border-radius: 16px; padding: 24px;
   width: 100%; max-width: 440px;
   box-shadow: 0 24px 60px rgba(0,0,0,.3);
+  margin: auto;
 }
 .modal-icon {
-  width: 56px; height: 56px; border-radius: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.6rem; margin: 0 auto 16px;
+  font-size: 1.3rem; margin: 0 auto 10px;
 }
 .modal-icon.green   { background: #f0fdf4; color: #10b981; }
 .modal-icon.red     { background: #fef2f2; color: #ef4444; }
@@ -639,11 +640,11 @@ export default {
 .umt-to    { font-weight: 800; color: #15803d; background: #dcfce7; padding: 4px 12px; border-radius: 20px; font-size: .88rem; }
 .pr-modal-lg { max-width: 560px; }
 
-.pr-modal h3 { text-align: center; font-size: 1.1rem; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
-.pr-modal p  { text-align: center; color: #64748b; font-size: .88rem; margin-bottom: 8px; }
-.modal-company-info { font-size: .88rem; color: #475569; text-align: center; margin-bottom: 12px; }
-.modal-note  { font-size: .78rem; color: #94a3b8; text-align: center; }
-.modal-btns  { display: flex; gap: 10px; margin-top: 20px; }
+.pr-modal h3 { text-align: center; font-size: 1rem; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
+.pr-modal p  { text-align: center; color: #64748b; font-size: .86rem; margin-bottom: 6px; }
+.modal-company-info { font-size: .86rem; color: #475569; text-align: center; margin-bottom: 8px; }
+.modal-note  { font-size: .76rem; color: #94a3b8; text-align: center; margin-bottom: 4px; }
+.modal-btns  { display: flex; gap: 10px; margin-top: 14px; }
 .modal-btns .btn-approve,
 .modal-btns .btn-reject,
 .modal-btns .btn-upgrade { flex: 1; justify-content: center; }
@@ -657,12 +658,12 @@ export default {
 /* FORMULARIO DE EVIDENCIA */
 .evidence-form {
   background: #f8fafc; border: 1px solid #e2e8f0;
-  border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
 }
-.ev-title { font-size: .82rem; font-weight: 700; color: #475569; margin-bottom: 12px; }
-.ev-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ev-title { font-size: .82rem; font-weight: 700; color: #475569; margin-bottom: 8px; }
+.ev-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-.field-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.field-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .field-group:last-child { margin-bottom: 0; }
 .field-group label { font-size: .78rem; font-weight: 600; color: #334155; }
 .field-group label small { font-weight: 400; color: #94a3b8; }
@@ -713,7 +714,7 @@ export default {
 .modal-dates-info {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px;
   background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;
-  padding: 8px 14px; font-size: .82rem; color: #0369a1; margin-bottom: 6px;
+  padding: 6px 12px; font-size: .80rem; color: #0369a1; margin-bottom: 4px;
 }
 .modal-dates-info strong { color: #0f172a; }
 .dates-note { color: #64748b; font-size: .74rem; margin-left: 4px; }
