@@ -2,6 +2,7 @@
   <div class="page">
 
     <Topbar
+      :sidebar-right-open="sidebarRightOpen"
       @toggle-sidebar="toggleSidebar"
       @toggle-sidebar-right="toggleSidebarRight"
     />
@@ -36,7 +37,7 @@
       </main>
 
       <RightSidebar
-        v-show="isDesktop || sidebarRightOpen"
+        v-show="sidebarRightOpen"
         class="sidebar-right"
         @close="sidebarRightOpen = false"
       />
@@ -71,7 +72,7 @@ const isDesktop = ref(window.innerWidth > 768)
 
 const sidebarOpen      = ref(false)
 const sidebarCollapsed = ref(true)
-const sidebarRightOpen = ref(false)
+const sidebarRightOpen = ref(window.innerWidth > 768)
 const showUpgradeModal = ref(false)
 
 const paymentStatus  = ref("")

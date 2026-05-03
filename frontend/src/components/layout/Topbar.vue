@@ -262,6 +262,16 @@
 
             <div class="dropdown-divider"></div>
 
+            <!-- Panel lateral derecho -->
+            <button class="dropdown-item" @click="toggleRightPanel">
+              <span class="item-icon"><i class="bi bi-layout-sidebar-reverse"></i></span>
+              <span class="item-name">Panel lateral</span>
+              <i class="bi item-toggle-icon" :class="sidebarRightOpen ? 'bi-toggle-on' : 'bi-toggle-off'"
+                 :style="sidebarRightOpen ? 'color:#22c55e' : 'opacity:.4'"></i>
+            </button>
+
+            <div class="dropdown-divider"></div>
+
             <!-- Perfil de Empresa — deshabilitado si pago pendiente -->
             <button
               class="dropdown-item"
@@ -296,7 +306,8 @@ import { getThemeState } from "@/utils/theme"
 import { useCompanyStore } from "@/stores/companyStore"
 import api from "@/services/apis"
 
-const emit = defineEmits(["toggle-sidebar", "toggle-sidebar-right"])
+const props = defineProps({ sidebarRightOpen: { type: Boolean, default: true } })
+const emit  = defineEmits(["toggle-sidebar", "toggle-sidebar-right"])
 
 const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin
 
@@ -473,6 +484,10 @@ function goToPaymentReview() {
   router.push("/sysadmin/payment-review")
 }
 
+
+function toggleRightPanel() {
+  emit("toggle-sidebar-right")
+}
 
 function goProfile() {
   if (!isPaymentActive.value) return
