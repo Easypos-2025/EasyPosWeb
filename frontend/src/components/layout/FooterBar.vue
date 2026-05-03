@@ -75,7 +75,7 @@ import { useCompanyStore } from "@/stores/companyStore"
 import api from "@/services/apis"
 
 const companyStore = useCompanyStore()
-const version      = import.meta.env.VITE_APP_VERSION || "1.0.0"
+const version      = __APP_BUILD__
 const online       = ref(navigator.onLine)
 const apiStatus    = ref(false)
 
