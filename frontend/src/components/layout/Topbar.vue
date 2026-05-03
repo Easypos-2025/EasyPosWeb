@@ -278,6 +278,48 @@
                 <span class="nsi-count" :class="unreadUserNotif > 0 ? 'active' : 'zero'">{{ unreadUserNotif }}</span>
               </button>
 
+              <!-- Tareas con info incompleta — admin solamente -->
+              <button
+                v-if="isAdminUser"
+                class="notif-subtype-item"
+                :class="{ 'has-count': incompleteTaskCount > 0 }"
+                @click.stop="incompleteListOpen = !incompleteListOpen"
+              >
+                <span class="nsi-icon incomplete"><i class="bi bi-clipboard-x-fill"></i></span>
+                <span class="nsi-label">
+                  Tareas incompletas
+                  <small>Sin asignar o sin info completa</small>
+                </span>
+                <i class="bi notif-chevron" :class="incompleteListOpen ? 'bi-chevron-up' : 'bi-chevron-down'" style="font-size:10px;opacity:.6;flex-shrink:0"></i>
+                <span class="nsi-count" :class="incompleteTaskCount > 0 ? 'active' : 'zero'">{{ incompleteTaskCount }}</span>
+              </button>
+
+              <!-- Lista inline de tareas incompletas -->
+              <div v-if="incompleteListOpen && isAdminUser" class="tnl-panel">
+                <div v-if="incompleteTaskList.length === 0" class="tnl-empty">
+                  <i class="bi bi-check2-circle me-1"></i> Sin tareas pendientes
+                </div>
+                <div v-for="t in incompleteTaskList.slice(0, 6)" :key="t.id" class="tnl-item" @click="goToIncompleteTask(t)">
+                  <div class="tnl-top">
+                    <span class="tnl-task" style="color:#fb923c">
+                      <i class="bi bi-clipboard-x me-1"></i>{{ t.title }}
+                    </span>
+                    <span class="tnl-time" :style="t.worker_id ? 'color:#fbbf24' : 'color:#f87171'">
+                      {{ t.worker_id ? 'Incompleta' : 'Sin asignar' }}
+                    </span>
+                  </div>
+                  <div v-if="t.due_date" class="tnl-from">
+                    <i class="bi bi-calendar3 me-1"></i>Vence: {{ formatDate(t.due_date) }}
+                  </div>
+                  <div v-else class="tnl-from" style="color:#f87171">
+                    <i class="bi bi-calendar-x me-1"></i>Sin fecha límite
+                  </div>
+                </div>
+                <div v-if="incompleteTaskList.length > 6" class="tnl-more-link" @click="goToTasksView">
+                  <i class="bi bi-arrow-right-circle me-1"></i>+{{ incompleteTaskList.length - 6 }} más — ver todas
+                </div>
+              </div>
+
               <!-- Novedades — próximamente -->
               <div class="notif-subtype-item disabled">
                 <span class="nsi-icon news"><i class="bi bi-megaphone"></i></span>
@@ -360,6 +402,10 @@ const pendingPaymentsCount = ref(0)
 const taskNotifList        = ref([])
 const taskNotifListOpen    = ref(false)
 const unreadUserNotif      = ref(0)
+const incompleteTaskCount  = ref(0)
+const incompleteTaskList   = ref([])
+const incompleteListOpen   = ref(false)
+const hasNewNotif          = ref(false)
 
 const isPaymentActive = computed(() => {
   const ps = user.value?.payment_status ?? "active"
@@ -372,7 +418,10 @@ const isAdminUser = computed(() => {
 })
 
 const totalNotifCount = computed(() =>
-  unreadNotif.value + unreadUserNotif.value + (companyStore.isSystem ? pendingPaymentsCount.value : 0)
+  unreadNotif.value +
+  unreadUserNotif.value +
+  (companyStore.isSystem ? pendingPaymentsCount.value : 0) +
+  (isAdminUser.value ? incompleteTaskCount.value : 0)
 )
 
 // ── Audio ────────────────────────────────────────────
@@ -390,7 +439,7 @@ function unlockAudio() {
 function playNotifSound() {
   try {
     const ctx = _getCtx()
-    if (ctx.state === "suspended") return  // aún sin interacción del usuario
+    if (ctx.state === "suspended") { hasNewNotif.value = true; return }
     const t = ctx.currentTime
     // chime 1 — 880→660 Hz
     const o1 = ctx.createOscillator(), g1 = ctx.createGain()
@@ -462,6 +511,18 @@ async function loadPendingPayments() {
   } catch {}
 }
 
+async function loadIncompleteTasks() {
+  if (!isAdminUser.value) return
+  try {
+    const res  = await api.get("/tasks/incomplete-info")
+    const prev = incompleteTaskCount.value
+    const all  = [...(res.data.sin_asignar || []), ...(res.data.info_incompleta || [])]
+    incompleteTaskList.value  = all
+    incompleteTaskCount.value = all.length
+    if (incompleteTaskCount.value > prev) playNotifSound()
+  } catch {}
+}
+
 // ── Plan ────────────────────────────────────────────
 async function loadPlan(companyId) {
   if (!companyId) return
@@ -517,8 +578,14 @@ function toggleDropdown() {
 function toggleUserDropdown() {
   unlockAudio()
   userDropOpen.value = !userDropOpen.value
-  if (userDropOpen.value) dropdownOpen.value = false
-  if (!userDropOpen.value) { notifExpanded.value = false; taskNotifListOpen.value = false }
+  if (userDropOpen.value) {
+    dropdownOpen.value = false
+    if (hasNewNotif.value && totalNotifCount.value > 0) {
+      playNotifSound()
+      hasNewNotif.value = false
+    }
+  }
+  if (!userDropOpen.value) { notifExpanded.value = false; taskNotifListOpen.value = false; incompleteListOpen.value = false }
 }
 
 function openNotifPanel() {
@@ -550,6 +617,20 @@ function goProfile() {
   if (!isPaymentActive.value) return
   userDropOpen.value = false
   router.push("/profiles")
+}
+
+function goToIncompleteTask(t) {
+  userDropOpen.value    = false
+  notifExpanded.value   = false
+  incompleteListOpen.value = false
+  router.push(`/tasks/${t.id}/detalle`)
+}
+
+function goToTasksView() {
+  userDropOpen.value    = false
+  notifExpanded.value   = false
+  incompleteListOpen.value = false
+  router.push("/tasks")
 }
 
 function handleOutsideClick(e) {
@@ -629,13 +710,14 @@ onMounted(async () => {
     await loadMenuItems()
     loadUnreadCount()
     loadPendingPayments()
+    loadIncompleteTasks()
     sendHeartbeat()
 
     const [notifMs, hbMs] = await Promise.all([
       getConfigMs("topbar_notif_interval_ms",     60_000),
       getConfigMs("topbar_heartbeat_interval_ms", 180_000),
     ])
-    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments() }, notifMs)
+    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments(); loadIncompleteTasks() }, notifMs)
     heartbeatTimer = setInterval(sendHeartbeat, hbMs)
   }
   document.addEventListener("click", handleOutsideClick)
@@ -1165,8 +1247,18 @@ onUnmounted(() => {
     right: 8px;
     left: auto;
     width: min(290px, calc(100vw - 16px));
-    max-height: calc(100vh - 70px);
-    max-height: calc(100dvh - 70px);
+    max-height: calc(100svh - 70px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+  /* Landscape móvil: pantalla muy corta, reducir aún más */
+  @media (max-height: 480px) {
+    .dropdown-panel {
+      max-height: calc(100svh - 65px);
+      top: 58px;
+    }
   }
   .company-drop-panel { right: auto; left: 8px; }
 }
@@ -1255,6 +1347,16 @@ onUnmounted(() => {
   color: #ef4444;
   margin-left: 3px;
 }
+
+.nsi-icon.incomplete { background: rgba(251,146,60,.25); color: #fb923c; }
+
+.tnl-more-link {
+  padding: 8px 12px; font-size: .74rem; cursor: pointer;
+  color: #60a5fa; text-align: center;
+  border-top: 1px solid rgba(255,255,255,.05);
+  transition: background .15s;
+}
+.tnl-more-link:hover { background: rgba(255,255,255,.06); }
 
 /* ── Tarjeta info usuario logueado ── */
 .user-info-card {
