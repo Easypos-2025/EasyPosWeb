@@ -174,22 +174,29 @@
       <div v-if="showFormCropper" class="cropper-overlay">
         <div class="cropper-modal">
           <div class="cropper-header">
-            <h3><i class="bi bi-crop"></i> Recortar imagen</h3>
+            <span class="cropper-title"><i class="bi bi-crop me-2"></i>Recortar imagen</span>
+            <div class="cropper-ratio-btns">
+              <button :class="{ active: formCropRatio === 0 }"    @click="formCropRatio = 0">Libre</button>
+              <button :class="{ active: formCropRatio === 1 }"    @click="formCropRatio = 1">1:1</button>
+              <button :class="{ active: formCropRatio === 16/9 }" @click="formCropRatio = 16/9">16:9</button>
+              <button :class="{ active: formCropRatio === 4/3 }"  @click="formCropRatio = 4/3">4:3</button>
+            </div>
             <button class="cropper-close" @click="cancelFormCrop"><i class="bi bi-x-lg"></i></button>
           </div>
           <div class="cropper-area">
-            <img ref="formImgEl" :src="formRawSrc" alt="preview" style="max-width:100%;display:block" />
+            <Cropper
+              ref="formCropperRef"
+              :src="formRawSrc"
+              image-restriction="none"
+              :auto-zoom="true"
+              :stencil-props="{ movable: true, resizable: true, aspectRatio: formCropRatio || undefined }"
+            />
           </div>
           <div class="cropper-footer">
-            <div class="cropper-tools">
-              <button class="tool-btn" @click="formCropperInst?.rotate(-90)" title="Rotar izquierda"><i class="bi bi-arrow-counterclockwise"></i></button>
-              <button class="tool-btn" @click="formCropperInst?.rotate(90)"  title="Rotar derecha"><i class="bi bi-arrow-clockwise"></i></button>
-              <button class="tool-btn" @click="formCropperInst?.reset()"     title="Resetear"><i class="bi bi-arrow-repeat"></i></button>
-            </div>
             <div class="cropper-actions">
               <button class="btn-cancel-crop" @click="cancelFormCrop">Cancelar</button>
               <button class="btn-confirm-crop" @click="confirmFormCrop">
-                <i class="bi bi-check-lg"></i> Agregar foto
+                <i class="bi bi-check-lg me-1"></i> Agregar foto
               </button>
             </div>
           </div>
@@ -304,9 +311,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from "vue"
-import Cropper from "cropperjs"
-import "cropperjs/dist/cropper.css"
+import { ref, computed, onMounted } from "vue"
+import { Cropper } from "vue-advanced-cropper"
+import "vue-advanced-cropper/dist/style.css"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -344,12 +351,12 @@ const changingStatus  = ref(false)
 const lightboxUrl     = ref(null)
 
 // ── Cropper inline del formulario ───────────────────
-const pendingPhotos   = ref([])
-const showFormCropper = ref(false)
-const formRawSrc      = ref("")
-const formImgEl       = ref(null)
-const formFileInput   = ref(null)
-let   formCropperInst = null
+const pendingPhotos    = ref([])
+const showFormCropper  = ref(false)
+const formRawSrc       = ref("")
+const formCropperRef   = ref(null)
+const formFileInput    = ref(null)
+const formCropRatio    = ref(0)
 
 const errors = ref({ title: "", description: "" })
 
@@ -446,8 +453,9 @@ function openEditFromDetail() {
 function closeFormModal() {
   showFormModal.value = false
   for (const p of pendingPhotos.value) URL.revokeObjectURL(p.previewUrl)
-  pendingPhotos.value = []
-  if (formCropperInst) { formCropperInst.destroy(); formCropperInst = null }
+  pendingPhotos.value   = []
+  showFormCropper.value = false
+  formRawSrc.value      = ""
 }
 
 // ── Cropper inline ───────────────────────────────────
@@ -455,33 +463,16 @@ function onFormFileChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
   if (formRawSrc.value) URL.revokeObjectURL(formRawSrc.value)
-  formRawSrc.value = URL.createObjectURL(file)
+  formRawSrc.value      = URL.createObjectURL(file)
   showFormCropper.value = true
-  e.target.value = ""
-  nextTick(() => {
-    if (formCropperInst) { formCropperInst.destroy(); formCropperInst = null }
-    formCropperInst = new Cropper(formImgEl.value, {
-      aspectRatio: NaN,
-      viewMode: 1,
-      autoCropArea: 0.9,
-      responsive: true,
-      guides: true,
-      center: true,
-      highlight: false,
-      cropBoxMovable: true,
-      cropBoxResizable: true,
-    })
-  })
+  formCropRatio.value   = 0
+  e.target.value        = ""
 }
 
 async function confirmFormCrop() {
-  if (!formCropperInst) return
-  const canvas = formCropperInst.getCroppedCanvas({
-    maxWidth: 1200, maxHeight: 900,
-    fillColor: "#fff",
-    imageSmoothingEnabled: true,
-    imageSmoothingQuality: "high",
-  })
+  if (!formCropperRef.value) return
+  const { canvas } = formCropperRef.value.getResult()
+  if (!canvas) return
   const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.88))
   const previewUrl = URL.createObjectURL(blob)
   pendingPhotos.value.push({ blob, previewUrl })
@@ -489,10 +480,10 @@ async function confirmFormCrop() {
 }
 
 function cancelFormCrop() {
-  if (formCropperInst) { formCropperInst.destroy(); formCropperInst = null }
   showFormCropper.value = false
   URL.revokeObjectURL(formRawSrc.value)
-  formRawSrc.value = ""
+  formRawSrc.value    = ""
+  formCropRatio.value = 0
 }
 
 function removePendingPhoto(index) {
@@ -1014,58 +1005,48 @@ onMounted(async () => {
 /* Cropper overlay */
 .cropper-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7);
+  background: rgba(0,0,0,0.75);
   display: flex; align-items: center; justify-content: center;
-  z-index: 2000;
+  z-index: 9000; padding: 16px;
 }
 .cropper-modal {
-  background: #fff;
-  border-radius: 16px;
-  width: 680px;
-  max-width: 96vw;
-  max-height: 92vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 25px 70px rgba(0,0,0,0.4);
-  overflow: hidden;
+  background: #fff; border-radius: 16px;
+  width: 100%; max-width: 680px; max-height: 92vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 25px 70px rgba(0,0,0,0.4); overflow: hidden;
 }
 .cropper-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px; border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0; flex-wrap: wrap;
 }
-.cropper-header h3 {
-  font-size: 15px; font-weight: 700; color: #1e293b; margin: 0;
-  display: flex; align-items: center; gap: 7px;
+.cropper-title {
+  font-size: 15px; font-weight: 700; color: #1e293b;
+  display: flex; align-items: center; flex-shrink: 0;
 }
+.cropper-ratio-btns { display: flex; gap: 5px; flex: 1; }
+.cropper-ratio-btns button {
+  padding: 4px 11px; border-radius: 20px;
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all 0.15s; color: #475569;
+}
+.cropper-ratio-btns button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.cropper-ratio-btns button:hover:not(.active) { border-color: #94a3b8; }
 .cropper-close {
   background: none; border: none; font-size: 17px;
-  cursor: pointer; color: #94a3b8;
+  cursor: pointer; color: #94a3b8; margin-left: auto; flex-shrink: 0;
 }
 .cropper-close:hover { color: #1e293b; }
 .cropper-area {
-  flex: 1; overflow: hidden;
-  background: #0f172a;
-  min-height: 0; max-height: 480px;
+  flex: 1; min-height: 300px; max-height: 55vh;
+  background: #1e293b; overflow: hidden; position: relative;
 }
-.cropper-area img { max-height: 480px; width: 100%; object-fit: contain; }
 .cropper-footer {
-  padding: 12px 20px;
-  border-top: 1px solid #f1f5f9;
-  display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0; flex-wrap: wrap; gap: 10px;
+  padding: 12px 18px; border-top: 1px solid #f1f5f9;
+  display: flex; justify-content: flex-end;
+  flex-shrink: 0; gap: 8px;
 }
-.cropper-tools { display: flex; gap: 6px; }
-.tool-btn {
-  width: 34px; height: 34px;
-  border: 1px solid #e2e8f0; border-radius: 8px;
-  background: #f8fafc; color: #475569;
-  font-size: 14px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s;
-}
-.tool-btn:hover { background: #e2e8f0; color: #1e293b; }
 .cropper-actions { display: flex; gap: 8px; }
 .btn-cancel-crop {
   padding: 7px 16px; border-radius: 8px;
@@ -1078,7 +1059,7 @@ onMounted(async () => {
   padding: 7px 18px; border-radius: 8px;
   background: #3b82f6; color: #fff;
   border: none; font-size: 13px; font-weight: 600;
-  cursor: pointer; display: flex; align-items: center; gap: 6px;
+  cursor: pointer; display: flex; align-items: center; gap: 5px;
   transition: background 0.15s;
 }
 .btn-confirm-crop:hover { background: #2563eb; }
