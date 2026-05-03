@@ -46,7 +46,7 @@ def _max_mb(file_type: str) -> int:
 
 
 # ── GET: evidencias de una tarea ────────────────────────────────
-@router.get("/{task_id}")
+@router.get("/{task_id:int}")
 def get_evidence(task_id: int, db: Session = Depends(get_db)):
     items = db.query(TaskEvidence).filter(
         TaskEvidence.task_id == task_id
@@ -55,7 +55,7 @@ def get_evidence(task_id: int, db: Session = Depends(get_db)):
 
 
 # ── POST: subir nueva evidencia (async streaming) ───────────────
-@router.post("/{task_id}")
+@router.post("/{task_id:int}")
 async def add_evidence(
     task_id:     int,
     file_type:   str       = Form(...),
@@ -138,7 +138,7 @@ async def add_evidence(
 
 
 # ── DELETE ──────────────────────────────────────────────────────
-@router.delete("/{evidence_id}")
+@router.delete("/{evidence_id:int}")
 def delete_evidence(
     evidence_id:   int,
     authorization: str = Header(None),

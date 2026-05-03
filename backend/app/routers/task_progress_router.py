@@ -29,7 +29,7 @@ def _get_user(authorization: str, db: Session):
 
 
 # ── Reportes de avance de una tarea ─────────────────────────────
-@router.get("/{task_id}")
+@router.get("/{task_id:int}")
 def get_reports(task_id: int, db: Session = Depends(get_db)):
     items = db.query(TaskProgressReport)\
                .filter(TaskProgressReport.task_id == task_id)\
@@ -37,7 +37,7 @@ def get_reports(task_id: int, db: Session = Depends(get_db)):
     return [_ser(r) for r in items]
 
 
-@router.post("/{task_id}")
+@router.post("/{task_id:int}")
 def add_report(
     task_id: int,
     data: dict = Body(...),
@@ -61,7 +61,7 @@ def add_report(
     return _ser(r)
 
 
-@router.delete("/{report_id}")
+@router.delete("/{report_id:int}")
 def delete_report(
     report_id: int,
     authorization: str = Header(None),

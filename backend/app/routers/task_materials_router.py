@@ -31,14 +31,14 @@ def _get_user(authorization: str, db: Session):
 # MATERIALES
 # ══════════════════════════════════════════════════════
 
-@router.get("/{task_id}")
+@router.get("/{task_id:int}")
 def get_materials(task_id: int, db: Session = Depends(get_db)):
     items = db.query(TaskMaterial).filter(TaskMaterial.task_id == task_id)\
                .order_by(TaskMaterial.created_at.asc()).all()
     return [_ser_mat(m) for m in items]
 
 
-@router.post("/{task_id}")
+@router.post("/{task_id:int}")
 def add_material(
     task_id: int,
     data: dict = Body(...),
@@ -68,7 +68,7 @@ def add_material(
     return _ser_mat(m)
 
 
-@router.put("/{material_id}")
+@router.put("/{material_id:int}")
 def update_material(
     material_id: int,
     data: dict = Body(...),
@@ -91,7 +91,7 @@ def update_material(
     return _ser_mat(m)
 
 
-@router.delete("/{material_id}")
+@router.delete("/{material_id:int}")
 def delete_material(
     material_id: int,
     authorization: str = Header(None),

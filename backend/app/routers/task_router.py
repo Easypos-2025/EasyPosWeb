@@ -166,7 +166,7 @@ def get_my_tasks(
 
 
 # ─── ACTUALIZAR AVANCE RÁPIDO ──────────────────────────────────
-@router.patch("/{task_id}/progress")
+@router.patch("/{task_id:int}/progress")
 def update_progress(
     task_id: int,
     data: dict = Body(...),
@@ -229,7 +229,7 @@ def get_tasks(
 
 
 # ─── GET BY ID ─────────────────────────────────────────────────
-@router.get("/{task_id}")
+@router.get("/{task_id:int}")
 def get_task(task_id: int, db: Session = Depends(get_db)):
     sm   = _status_map(db)
     wm   = _worker_map(db)
@@ -283,7 +283,7 @@ def create_task(
 
 
 # ─── UPDATE ────────────────────────────────────────────────────
-@router.put("/{task_id}")
+@router.put("/{task_id:int}")
 def update_task(
     task_id: int,
     data: dict = Body(...),
@@ -326,7 +326,7 @@ def update_task(
 
 
 # ─── DELETE ────────────────────────────────────────────────────
-@router.delete("/{task_id}")
+@router.delete("/{task_id:int}")
 def delete_task(
     task_id: int,
     authorization: str = Header(None),

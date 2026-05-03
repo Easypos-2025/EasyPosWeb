@@ -63,7 +63,7 @@ def get_assets(
     return [_ser(a, db) for a in assets]
 
 
-@router.get("/{asset_id}")
+@router.get("/{asset_id:int}")
 def get_asset(
     asset_id: int,
     current_user: User = Depends(get_current_user),
@@ -75,7 +75,7 @@ def get_asset(
     return _ser(asset, db)
 
 
-@router.put("/{asset_id}")
+@router.put("/{asset_id:int}")
 def update_asset(
     asset_id: int,
     data: AssetUpdate,
@@ -97,7 +97,7 @@ def update_asset(
     return _ser(asset, db)
 
 
-@router.delete("/{asset_id}")
+@router.delete("/{asset_id:int}")
 def delete_asset(
     asset_id: int,
     current_user: User = Depends(get_current_user),

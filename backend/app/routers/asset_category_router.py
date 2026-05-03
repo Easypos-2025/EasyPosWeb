@@ -59,7 +59,7 @@ def get_categories(
 # GET CATEGORY BY ID
 # =====================================================
 
-@router.get("/{category_id}")
+@router.get("/{category_id:int}")
 def get_category(
     category_id: int,
     current_user: User = Depends(get_current_user),
@@ -77,7 +77,7 @@ def get_category(
 # UPDATE CATEGORY
 # =====================================================
 
-@router.put("/{category_id}")
+@router.put("/{category_id:int}")
 def update_category(
     category_id: int,
     data: AssetCategoryUpdate,
@@ -101,7 +101,7 @@ def update_category(
 # DELETE CATEGORY
 # =====================================================
 
-@router.delete("/{category_id}")
+@router.delete("/{category_id:int}")
 def delete_category(
     category_id: int,
     current_user: User = Depends(get_current_user),
