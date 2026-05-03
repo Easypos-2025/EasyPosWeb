@@ -121,7 +121,13 @@ const handleResize = () => {
   const was = isDesktop.value
   isDesktop.value = window.innerWidth > 768
   if (!was && isDesktop.value) {
-    sidebarOpen.value = false
+    // Al pasar a desktop: cerrar overlay izquierdo y abrir panel derecho
+    sidebarOpen.value      = false
+    sidebarRightOpen.value = true
+  }
+  if (was && !isDesktop.value) {
+    // Al pasar a móvil: cerrar ambos sidebars para ver contenido completo
+    sidebarOpen.value      = false
     sidebarRightOpen.value = false
   }
 }

@@ -264,8 +264,14 @@
 
             <!-- Panel lateral derecho -->
             <button class="dropdown-item" @click="toggleRightPanel">
-              <span class="item-icon"><i class="bi bi-layout-sidebar-reverse"></i></span>
-              <span class="item-name">Panel lateral</span>
+              <span class="item-icon" style="position:relative">
+                <i class="bi bi-layout-sidebar-reverse"></i>
+                <span v-if="unreadNotif > 0" class="notif-dot">{{ unreadNotif > 99 ? '99+' : unreadNotif }}</span>
+              </span>
+              <span class="item-name">
+                Panel lateral
+                <span v-if="unreadNotif > 0" class="panel-notif-count">({{ unreadNotif }})</span>
+              </span>
               <i class="bi item-toggle-icon" :class="sidebarRightOpen ? 'bi-toggle-on' : 'bi-toggle-off'"
                  :style="sidebarRightOpen ? 'color:#22c55e' : 'opacity:.4'"></i>
             </button>
@@ -486,6 +492,8 @@ function goToPaymentReview() {
 
 
 function toggleRightPanel() {
+  userDropOpen.value  = false
+  notifExpanded.value = false
   emit("toggle-sidebar-right")
 }
 
@@ -1144,6 +1152,14 @@ onUnmounted(() => {
   -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 3px;
 }
 .tnl-from { font-size: .68rem; color: rgba(255,255,255,.4); }
+
+/* Panel lateral — contador de notificaciones en el item-name */
+.panel-notif-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: #ef4444;
+  margin-left: 3px;
+}
 
 /* ── Tarjeta info usuario logueado ── */
 .user-info-card {
