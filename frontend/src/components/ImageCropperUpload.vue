@@ -169,12 +169,12 @@ onBeforeUnmount(() => {
 .btn-upload-ev:hover  { background: #2563eb; }
 .btn-upload-ev.loading { opacity: 0.7; cursor: not-allowed; }
 
-/* Overlay */
+/* Overlay — z-index alto para quedar encima de cualquier modal padre */
 .cropper-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7);
+  background: rgba(0,0,0,0.75);
   display: flex; align-items: center; justify-content: center;
-  z-index: 2000;
+  z-index: 9000;
 }
 
 /* Modal */

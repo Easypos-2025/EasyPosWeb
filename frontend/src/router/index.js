@@ -347,6 +347,13 @@ const routes = [
       },
 
       {
+        path: "/sysadmin/email-footer",
+        name: "EmailFooterConfigView",
+        component: () => import("@/views/sysadmin/EmailFooterConfigView.vue"),
+        meta: { title: "Firma de Email" }
+      },
+
+      {
         path: "/sysadmin/landing-manager",
         name: "LandingManagerView",
         component: () => import("@/views/sysadmin/LandingManagerView.vue"),

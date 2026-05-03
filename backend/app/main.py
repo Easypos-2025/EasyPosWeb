@@ -110,6 +110,15 @@ def _init_db_data():
             ))
             db.commit()
 
+        # Registrar módulo Firma de Email en system_modules si no existe
+        if not db.query(SystemModule).filter(SystemModule.route == "/sysadmin/email-footer").first():
+            db.add(SystemModule(
+                name="Firma de Email", route="/sysadmin/email-footer",
+                icon="bi-envelope-paper", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=True
+            ))
+            db.commit()
+
         # Datos iniciales system_config
         defaults_config = [
             ("footer_ticker_interval_sec",      "45",    "Segundos entre cada asociado en el ticker del footer",                   "integer"),
@@ -117,6 +126,14 @@ def _init_db_data():
             ("footer_ticker_enabled",           "1",     "Habilitar ticker de nuevos asociados",                                  "boolean"),
             ("topbar_notif_interval_ms",        "60000", "Intervalo en ms para verificar notificaciones en el topbar (default 60s)", "integer"),
             ("topbar_heartbeat_interval_ms",    "180000","Intervalo en ms para heartbeat de sesión en el topbar (default 3min)",    "integer"),
+            # Firma de pie de página para emails
+            ("email_footer_legal_name",    "EasyPosWeb SAS",                              "Razón social que aparece en el pie de los emails",        "string"),
+            ("email_footer_nit",           "900.123.456-7",                               "NIT de la empresa en el pie de los emails",               "string"),
+            ("email_footer_tagline",       "Tu negocio, en línea. Sin complicaciones.",   "Slogan que aparece en el pie de los emails",              "string"),
+            ("email_footer_website",       "https://easyposweb.com",                      "URL del sitio web en el pie de los emails",               "string"),
+            ("email_footer_support_email", "soporte@easyposweb.com",                      "Email de soporte visible en el pie de los emails",        "string"),
+            ("email_footer_phone",         "",                                             "Teléfono de contacto en el pie de los emails (opcional)", "string"),
+            ("email_footer_address",       "Colombia",                                    "Dirección o país en el pie de los emails",                "string"),
         ]
         for key, value, desc, ctype in defaults_config:
             if not db.query(SystemConfig).filter(SystemConfig.config_key == key).first():

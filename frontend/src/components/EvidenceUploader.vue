@@ -654,9 +654,9 @@ function formatBytes(bytes) {
 
 /* MODAL RECORTE */
 .crop-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  position: fixed; inset: 0; background: rgba(0,0,0,0.75);
   display: flex; align-items: center; justify-content: center;
-  z-index: 2000; padding: 16px;
+  z-index: 9000; padding: 16px;
 }
 .crop-box {
   background: #fff; border-radius: 16px; width: 100%; max-width: 680px;
