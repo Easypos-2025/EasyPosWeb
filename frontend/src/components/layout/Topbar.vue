@@ -80,6 +80,16 @@
     <!-- ── DERECHA: soporte + sitio web + usuario ── -->
     <div class="topbar-right">
 
+      <!-- Botón toggle sidebar derecho — siempre visible en topbar -->
+      <button
+        class="btn-icon btn-panel-right"
+        :class="{ 'panel-active': sidebarRightOpen }"
+        @click="emit('toggle-sidebar-right')"
+        title="Panel lateral"
+      >
+        <i class="bi bi-layout-sidebar-reverse"></i>
+      </button>
+
       <!-- Dropdown Soporte -->
       <div class="dropdown-wrap" ref="dropdownRef">
         <button
@@ -158,6 +168,19 @@
         <Transition name="dropdown-fade">
           <div v-if="userDropOpen" class="dropdown-panel user-drop-panel">
 
+            <!-- Panel lateral — primera acción, siempre visible -->
+            <button class="dropdown-item item-panel-toggle" @click="toggleRightPanel">
+              <span class="item-icon">
+                <i class="bi bi-layout-sidebar-reverse"></i>
+              </span>
+              <span class="item-name">Panel lateral</span>
+              <i class="bi item-toggle-icon"
+                 :class="sidebarRightOpen ? 'bi-toggle-on' : 'bi-toggle-off'"
+                 :style="sidebarRightOpen ? 'color:#22c55e;font-size:20px' : 'opacity:.4;font-size:20px'"></i>
+            </button>
+
+            <div class="dropdown-divider"></div>
+
             <!-- Tarjeta info usuario logueado -->
             <div class="user-info-card">
               <div class="uic-avatar"><i class="bi bi-person-circle"></i></div>
@@ -178,19 +201,6 @@
                 </span>
               </div>
             </div>
-
-            <div class="dropdown-divider"></div>
-
-            <!-- Panel lateral derecho — visible y prominente -->
-            <button class="dropdown-item item-panel-toggle" @click="toggleRightPanel">
-              <span class="item-icon">
-                <i class="bi bi-layout-sidebar-reverse"></i>
-              </span>
-              <span class="item-name">Panel lateral</span>
-              <i class="bi item-toggle-icon"
-                 :class="sidebarRightOpen ? 'bi-toggle-on' : 'bi-toggle-off'"
-                 :style="sidebarRightOpen ? 'color:#22c55e;font-size:20px' : 'opacity:.4;font-size:20px'"></i>
-            </button>
 
             <div class="dropdown-divider"></div>
 
@@ -1012,14 +1022,15 @@ onUnmounted(() => {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 210px;
+  min-width: 220px;
   background: #1e2535;
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
   padding: 6px;
   z-index: 999;
-  max-height: 82vh;
+  /* scroll: limitar al espacio disponible bajo el topbar */
+  max-height: calc(100dvh - 70px);
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.15) transparent;
@@ -1146,9 +1157,13 @@ onUnmounted(() => {
   .btn-user-drop .bi-person-circle { font-size: 17px; }
   .user-short-label      { display: block; }
 
-  /* En móvil/tablet el dropdown no puede salirse de pantalla */
-  .dropdown-panel { max-height: 78vh; }
+  /* En móvil/tablet asegurar que quede alineado a la derecha */
   .user-drop-panel { right: 0; left: auto; }
+}
+
+/* En desktop el botón de panel ya está en el dropdown CUENTA */
+@media (min-width: 1024px) {
+  .btn-panel-right { display: none; }
 }
 
 @media (min-width: 1024px) and (max-width: 1200px) {
@@ -1169,7 +1184,22 @@ onUnmounted(() => {
 .nsi-icon.task-notif { background: rgba(245,158,11,.25); color: #fbbf24; }
 .nsi-icon.access     { background: rgba(34,197,94,.25);  color: #4ade80; }
 
-/* Botón panel lateral — destacado */
+/* Botón toggle sidebar derecho en topbar — solo en móvil/tablet */
+.btn-panel-right {
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  font-size: 18px;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+.btn-panel-right:hover { opacity: 1; background: rgba(255,255,255,0.15); }
+.btn-panel-right.panel-active { opacity: 1; background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.35); color: #4ade80; }
+
+/* Botón panel lateral en dropdown — destacado */
 .item-panel-toggle { background: rgba(255,255,255,0.04); }
 .item-panel-toggle:hover { background: rgba(255,255,255,0.1) !important; }
 .item-toggle-icon { flex-shrink: 0; }
