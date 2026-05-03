@@ -99,7 +99,6 @@
         >
           <span class="support-icon-wrap">
             <i class="bi bi-headset"></i>
-            <span v-if="totalNotifCount > 0" class="support-notif-badge">{{ totalNotifCount > 99 ? '99+' : totalNotifCount }}</span>
           </span>
           <span class="btn-label">Soporte <i class="bi bi-chevron-down btn-arr"></i></span>
         </button>
