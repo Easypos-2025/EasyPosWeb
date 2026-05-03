@@ -68,11 +68,11 @@ import PlanUpgradeModal from "@/components/plans/PlanUpgradeModal.vue"
 import api from "@/services/apis"
 
 const router    = useRouter()
-const isDesktop = ref(window.innerWidth > 768)
+const isDesktop = ref(window.innerWidth >= 1024)
 
 const sidebarOpen      = ref(false)
 const sidebarCollapsed = ref(true)
-const sidebarRightOpen = ref(window.innerWidth > 768)
+const sidebarRightOpen = ref(window.innerWidth >= 1024)
 const showUpgradeModal = ref(false)
 
 const paymentStatus  = ref("")
@@ -102,31 +102,31 @@ function goRenew() { router.push("/payment-pending") }
 
 const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value
-  if (window.innerWidth < 768) {
+  if (window.innerWidth < 1024) {
     sidebarCollapsed.value = false
     if (sidebarOpen.value) sidebarRightOpen.value = false
   }
 }
 const toggleSidebarRight = () => {
   sidebarRightOpen.value = !sidebarRightOpen.value
-  if (window.innerWidth < 768 && sidebarRightOpen.value) sidebarOpen.value = false
+  if (window.innerWidth < 1024 && sidebarRightOpen.value) sidebarOpen.value = false
 }
 const expandSidebar  = () => { sidebarCollapsed.value = false }
 const collapseSidebar = () => { sidebarCollapsed.value = true }
 const handleCloseSidebar = () => {
   sidebarOpen.value = false
-  if (window.innerWidth >= 768) sidebarCollapsed.value = true
+  if (window.innerWidth >= 1024) sidebarCollapsed.value = true
 }
 const handleResize = () => {
   const was = isDesktop.value
-  isDesktop.value = window.innerWidth > 768
+  isDesktop.value = window.innerWidth >= 1024
   if (!was && isDesktop.value) {
-    // Al pasar a desktop: cerrar overlay izquierdo y abrir panel derecho
+    // Al pasar a desktop (≥1024px): cerrar overlay izquierdo y abrir panel derecho
     sidebarOpen.value      = false
     sidebarRightOpen.value = true
   }
   if (was && !isDesktop.value) {
-    // Al pasar a móvil: cerrar ambos sidebars para ver contenido completo
+    // Al pasar a móvil/tablet (<1024px): cerrar ambos sidebars
     sidebarOpen.value      = false
     sidebarRightOpen.value = false
   }

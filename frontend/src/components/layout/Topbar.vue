@@ -179,6 +179,21 @@
               </div>
             </div>
 
+            <div class="dropdown-divider"></div>
+
+            <!-- Panel lateral derecho — visible y prominente -->
+            <button class="dropdown-item item-panel-toggle" @click="toggleRightPanel">
+              <span class="item-icon">
+                <i class="bi bi-layout-sidebar-reverse"></i>
+              </span>
+              <span class="item-name">Panel lateral</span>
+              <i class="bi item-toggle-icon"
+                 :class="sidebarRightOpen ? 'bi-toggle-on' : 'bi-toggle-off'"
+                 :style="sidebarRightOpen ? 'color:#22c55e;font-size:20px' : 'opacity:.4;font-size:20px'"></i>
+            </button>
+
+            <div class="dropdown-divider"></div>
+
             <!-- NOTIFICACIONES expandible -->
             <button class="dropdown-item notif-toggle" @click.stop="notifExpanded = !notifExpanded">
               <span class="item-icon" style="position:relative">
@@ -192,7 +207,7 @@
             <!-- Sub-tipos de notificaciones -->
             <div v-if="notifExpanded" class="notif-subtypes">
 
-              <!-- Pagos pendientes — SYSADMIN, funcional -->
+              <!-- Pagos pendientes — SYSADMIN -->
               <button
                 v-if="companyStore.isSystem"
                 class="notif-subtype-item"
@@ -209,7 +224,7 @@
                 </span>
               </button>
 
-              <!-- Notificaciones de tarea — funcional -->
+              <!-- Notificaciones de tarea -->
               <button class="notif-subtype-item" :class="{ 'has-count': unreadNotif > 0 }"
                 @click.stop="taskNotifListOpen = !taskNotifListOpen">
                 <span class="nsi-icon task-notif"><i class="bi bi-bell-fill"></i></span>
@@ -238,6 +253,21 @@
                 </div>
               </div>
 
+              <!-- Accesos de usuarios — admin solamente -->
+              <button
+                v-if="isAdminUser"
+                class="notif-subtype-item"
+                :class="{ 'has-count': unreadUserNotif > 0 }"
+                @click="goToInbox"
+              >
+                <span class="nsi-icon access"><i class="bi bi-person-check-fill"></i></span>
+                <span class="nsi-label">
+                  Accesos de usuarios
+                  <small>Entradas y salidas del sistema</small>
+                </span>
+                <span class="nsi-count" :class="unreadUserNotif > 0 ? 'active' : 'zero'">{{ unreadUserNotif }}</span>
+              </button>
+
               <!-- Novedades — próximamente -->
               <div class="notif-subtype-item disabled">
                 <span class="nsi-icon news"><i class="bi bi-megaphone"></i></span>
@@ -262,23 +292,7 @@
 
             <div class="dropdown-divider"></div>
 
-            <!-- Panel lateral derecho -->
-            <button class="dropdown-item" @click="toggleRightPanel">
-              <span class="item-icon" style="position:relative">
-                <i class="bi bi-layout-sidebar-reverse"></i>
-                <span v-if="unreadNotif > 0" class="notif-dot">{{ unreadNotif > 99 ? '99+' : unreadNotif }}</span>
-              </span>
-              <span class="item-name">
-                Panel lateral
-                <span v-if="unreadNotif > 0" class="panel-notif-count">({{ unreadNotif }})</span>
-              </span>
-              <i class="bi item-toggle-icon" :class="sidebarRightOpen ? 'bi-toggle-on' : 'bi-toggle-off'"
-                 :style="sidebarRightOpen ? 'color:#22c55e' : 'opacity:.4'"></i>
-            </button>
-
-            <div class="dropdown-divider"></div>
-
-            <!-- Perfil de Empresa — deshabilitado si pago pendiente -->
+            <!-- Perfil de Empresa -->
             <button
               class="dropdown-item"
               :class="{ 'item-disabled': !isPaymentActive }"
@@ -340,6 +354,11 @@ const unreadUserNotif      = ref(0)
 const isPaymentActive = computed(() => {
   const ps = user.value?.payment_status ?? "active"
   return ps === "active"
+})
+
+const isAdminUser = computed(() => {
+  const role = user.value?.role?.toLowerCase() || ""
+  return role.includes("admin")
 })
 
 const totalNotifCount = computed(() =>
@@ -496,6 +515,12 @@ function openNotifPanel() {
   userDropOpen.value  = false
   notifExpanded.value = false
   emit("toggle-sidebar-right")
+}
+
+function goToInbox() {
+  userDropOpen.value  = false
+  notifExpanded.value = false
+  router.push("/notifications/inbox")
 }
 
 function goToPaymentReview() {
@@ -994,7 +1019,13 @@ onUnmounted(() => {
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
   padding: 6px;
   z-index: 999;
+  max-height: 82vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
+.dropdown-panel::-webkit-scrollbar { width: 4px; }
+.dropdown-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
 
 .dropdown-header {
   font-size: 10px;
@@ -1082,7 +1113,7 @@ onUnmounted(() => {
 }
 
 /* ── RESPONSIVE ── */
-@media (max-width: 768px) {
+@media (max-width: 1023px) {
   .btn-menu-left         { display: flex; }
   .user-text             { display: none; }
   .user-arr              { display: none; }
@@ -1114,16 +1145,20 @@ onUnmounted(() => {
   }
   .btn-user-drop .bi-person-circle { font-size: 17px; }
   .user-short-label      { display: block; }
+
+  /* En móvil/tablet el dropdown no puede salirse de pantalla */
+  .dropdown-panel { max-height: 78vh; }
+  .user-drop-panel { right: 0; left: auto; }
 }
 
-@media (min-width: 769px) and (max-width: 1100px) {
+@media (min-width: 1024px) and (max-width: 1200px) {
   .user-role     { display: none; }
   .company-title { max-width: 180px; font-size: 15px; }
   .plan-exp      { display: none; }
 }
 
-/* 720p: ocultar botón EasyPosWeb para evitar solapamiento de iconos */
-@media (max-width: 720px) {
+/* <768px: ocultar botón EasyPosWeb para evitar solapamiento */
+@media (max-width: 767px) {
   .btn-website   { display: none; }
   .topbar-right  { gap: 3px; }
   .btn-support   { padding: 4px 7px; }
@@ -1132,6 +1167,12 @@ onUnmounted(() => {
 
 /* ── NOTIFICACIONES DE TAREA - panel inline ── */
 .nsi-icon.task-notif { background: rgba(245,158,11,.25); color: #fbbf24; }
+.nsi-icon.access     { background: rgba(34,197,94,.25);  color: #4ade80; }
+
+/* Botón panel lateral — destacado */
+.item-panel-toggle { background: rgba(255,255,255,0.04); }
+.item-panel-toggle:hover { background: rgba(255,255,255,0.1) !important; }
+.item-toggle-icon { flex-shrink: 0; }
 
 .tnl-panel {
   margin: 0 4px 4px;

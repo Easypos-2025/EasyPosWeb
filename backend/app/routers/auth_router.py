@@ -11,6 +11,7 @@ Manejo de autenticación del sistema
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sqlfunc
 from app.database import SessionLocal
 from app.models.user_model import User
 from app.models.role_model import Role
@@ -30,8 +31,9 @@ from app.auth.password_utils import hash_password
 from app.models.business_profile_model import BusinessProfile
 import re
 from app.models.user_session_model import UserSession
+from app.models.user_notification_model import UserNotification
 from fastapi import Request
-from app.schemas.auth_schema import ResetPasswordRequest    
+from app.schemas.auth_schema import ResetPasswordRequest
 
 # =====================================================
 # ROUTER
@@ -41,6 +43,41 @@ router = APIRouter(
     prefix="/auth",
     tags=["Auth"]
 )
+
+
+# =====================================================
+# HELPER: notificar a admins de la empresa
+# =====================================================
+
+def _notify_admins_access(db: Session, actor: User, title: str, message: str):
+    """Crea UserNotification para todos los admins activos de la empresa, excepto el actor."""
+    try:
+        admin_role_ids = [
+            r.id for r in db.query(Role.id).filter(
+                Role.company_id == actor.company_id,
+                sqlfunc.lower(Role.name).like("%admin%"),
+            ).all()
+        ]
+        if not admin_role_ids:
+            return
+        admins = db.query(User).filter(
+            User.company_id == actor.company_id,
+            User.role_id.in_(admin_role_ids),
+            User.is_active == True,
+            User.id != actor.id,
+        ).all()
+        for admin in admins:
+            db.add(UserNotification(
+                sender_id=actor.id,
+                receiver_id=admin.id,
+                title=title,
+                message=message,
+                is_read=False,
+            ))
+        if admins:
+            db.commit()
+    except Exception:
+        db.rollback()
 
 
 # =====================================================
@@ -143,6 +180,12 @@ def login(
 
     db.add(session)
     db.commit()
+
+    _notify_admins_access(
+        db, user,
+        title="Entrada al sistema",
+        message=f"{user.nombre} ingresó al sistema desde {ip or 'IP desconocida'}.",
+    )
 
     return {
         "access_token": token,
@@ -335,8 +378,17 @@ def logout(
     # DESACTIVAR SESIÓN
     # =========================================
 
+    user_out = db.query(User).filter(User.id == session.user_id).first()
+
     session.is_active = False
     db.commit()
+
+    if user_out:
+        _notify_admins_access(
+            db, user_out,
+            title="Salida del sistema",
+            message=f"{user_out.nombre} cerró sesión.",
+        )
 
     return {"message": "Sesión cerrada correctamente"}
 
