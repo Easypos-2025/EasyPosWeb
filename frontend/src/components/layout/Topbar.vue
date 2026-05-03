@@ -1028,12 +1028,13 @@ onUnmounted(() => {
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
   padding: 6px;
-  z-index: 999;
-  /* scroll: limitar al espacio disponible bajo el topbar */
-  max-height: calc(100dvh - 70px);
+  z-index: 9999;
+  max-height: calc(100vh - 70px);
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.15) transparent;
+  -webkit-overflow-scrolling: touch;
 }
 .dropdown-panel::-webkit-scrollbar { width: 4px; }
 .dropdown-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
@@ -1157,8 +1158,17 @@ onUnmounted(() => {
   .btn-user-drop .bi-person-circle { font-size: 17px; }
   .user-short-label      { display: block; }
 
-  /* En móvil/tablet asegurar que quede alineado a la derecha */
-  .user-drop-panel { right: 0; left: auto; }
+  /* En móvil: dropdowns como fixed para evitar clipping y habilitar scroll real */
+  .dropdown-panel {
+    position: fixed;
+    top: 62px; /* 54px topbar + 8px gap */
+    right: 8px;
+    left: auto;
+    width: min(290px, calc(100vw - 16px));
+    max-height: calc(100vh - 70px);
+    max-height: calc(100dvh - 70px);
+  }
+  .company-drop-panel { right: auto; left: 8px; }
 }
 
 /* En desktop el botón de panel ya está en el dropdown CUENTA */
