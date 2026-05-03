@@ -10,7 +10,7 @@ Ejemplos de módulos:
 - Dashboard
 - Assets
 - Asset Categories
-- Workers
+
 - Tasks
 
 Tabla: system_modules
