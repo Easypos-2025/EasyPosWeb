@@ -55,6 +55,7 @@ from app.routers.landing_router import router as landing_router
 from app.routers.register_router import router as register_router
 from app.routers.payment_router import router as payment_router
 from app.routers.task_collaborators_router import router as task_collaborators_router
+from app.routers.user_notification_router import router as user_notification_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -116,6 +117,42 @@ def _init_db_data():
                 name="Firma de Email", route="/sysadmin/email-footer",
                 icon="bi-envelope-paper", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=True
+            ))
+            db.commit()
+
+        # Crear tabla user_notifications si no existe (migración segura)
+        try:
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_notifications (
+                    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    receiver_id INTEGER NOT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    message TEXT NOT NULL,
+                    is_read TINYINT(1) NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_un_receiver (receiver_id),
+                    INDEX idx_un_sender (sender_id)
+                )
+            """))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Registrar módulos inbox/outbox en system_modules
+        if not db.query(SystemModule).filter(SystemModule.route == "/notifications/inbox").first():
+            db.add(SystemModule(
+                name="Bandeja de Entrada", route="/notifications/inbox",
+                icon="bi-envelope-open", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=False
+            ))
+            db.commit()
+
+        if not db.query(SystemModule).filter(SystemModule.route == "/notifications/outbox").first():
+            db.add(SystemModule(
+                name="Mensajes Enviados", route="/notifications/outbox",
+                icon="bi-send", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=False
             ))
             db.commit()
 
@@ -644,6 +681,7 @@ routers = [
     register_router,
     payment_router,
     task_collaborators_router,
+    user_notification_router,
 ]
 
 for router in routers:

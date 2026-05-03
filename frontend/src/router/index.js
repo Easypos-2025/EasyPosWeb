@@ -197,6 +197,21 @@ const routes = [
         requiresAuth: true,
         meta: { title: "TaskCompletarInfoView" }
       },
+
+      {
+        path: "/notifications/inbox",
+        name: "NotificationsInbox",
+        component: () => import("@/views/notifications/InboxView.vue"),
+        requiresAuth: true,
+        meta: { title: "Bandeja de Entrada" }
+      },
+      {
+        path: "/notifications/outbox",
+        name: "NotificationsOutbox",
+        component: () => import("@/views/notifications/OutboxView.vue"),
+        requiresAuth: true,
+        meta: { title: "Mensajes Enviados" }
+      },
       {
         path: "/tasks/:taskId/evidencias",
         name: "TaskEvidenciaView",

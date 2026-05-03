@@ -335,6 +335,7 @@ const notifExpanded        = ref(false)
 const pendingPaymentsCount = ref(0)
 const taskNotifList        = ref([])
 const taskNotifListOpen    = ref(false)
+const unreadUserNotif      = ref(0)
 
 const isPaymentActive = computed(() => {
   const ps = user.value?.payment_status ?? "active"
@@ -342,52 +343,63 @@ const isPaymentActive = computed(() => {
 })
 
 const totalNotifCount = computed(() =>
-  unreadNotif.value + (companyStore.isSystem ? pendingPaymentsCount.value : 0)
+  unreadNotif.value + unreadUserNotif.value + (companyStore.isSystem ? pendingPaymentsCount.value : 0)
 )
 
-// ── Notificaciones ──────────────────────────────────
-
-// Beep de sistema usando Web Audio API — se resume si el navegador lo suspendió por autoplay
+// ── Audio ────────────────────────────────────────────
+// Un solo AudioContext compartido; se desbloquea en el primer clic del usuario.
+// Crear el contexto dentro de un timer lo deja suspendido — por eso usamos uno persistente.
+let _actx = null
+function _getCtx() {
+  if (!_actx || _actx.state === "closed")
+    _actx = new (window.AudioContext || window.webkitAudioContext)()
+  return _actx
+}
+function unlockAudio() {
+  try { const c = _getCtx(); if (c.state === "suspended") c.resume() } catch {}
+}
 function playNotifSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const run = () => {
-      // Tono 1: 880 Hz → 660 Hz (chime inicial)
-      const o1 = ctx.createOscillator(), g1 = ctx.createGain()
-      o1.connect(g1); g1.connect(ctx.destination)
-      o1.type = "sine"
-      o1.frequency.setValueAtTime(880, ctx.currentTime)
-      o1.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.12)
-      g1.gain.setValueAtTime(0.30, ctx.currentTime)
-      g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28)
-      o1.start(ctx.currentTime); o1.stop(ctx.currentTime + 0.28)
-
-      // Tono 2: 1100 Hz → 880 Hz (chime eco) — 120 ms después
-      const o2 = ctx.createOscillator(), g2 = ctx.createGain()
-      o2.connect(g2); g2.connect(ctx.destination)
-      o2.type = "sine"
-      o2.frequency.setValueAtTime(1100, ctx.currentTime + 0.12)
-      o2.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.35)
-      g2.gain.setValueAtTime(0.0, ctx.currentTime)
-      g2.gain.setValueAtTime(0.22, ctx.currentTime + 0.12)
-      g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55)
-      o2.start(ctx.currentTime + 0.12); o2.stop(ctx.currentTime + 0.55)
-      o2.onended = () => ctx.close()
-    }
-    // Los navegadores modernos suspenden AudioContext hasta interacción del usuario
-    if (ctx.state === "suspended") ctx.resume().then(run)
-    else run()
+    const ctx = _getCtx()
+    if (ctx.state === "suspended") return  // aún sin interacción del usuario
+    const t = ctx.currentTime
+    // chime 1 — 880→660 Hz
+    const o1 = ctx.createOscillator(), g1 = ctx.createGain()
+    o1.connect(g1); g1.connect(ctx.destination)
+    o1.type = "sine"
+    o1.frequency.setValueAtTime(880, t)
+    o1.frequency.exponentialRampToValueAtTime(660, t + 0.12)
+    g1.gain.setValueAtTime(0.28, t)
+    g1.gain.exponentialRampToValueAtTime(0.001, t + 0.28)
+    o1.start(t); o1.stop(t + 0.28)
+    // chime 2 — 1100→880 Hz, 120 ms después
+    const o2 = ctx.createOscillator(), g2 = ctx.createGain()
+    o2.connect(g2); g2.connect(ctx.destination)
+    o2.type = "sine"
+    o2.frequency.setValueAtTime(1100, t + 0.12)
+    o2.frequency.exponentialRampToValueAtTime(880, t + 0.38)
+    g2.gain.setValueAtTime(0.0,  t)
+    g2.gain.setValueAtTime(0.20, t + 0.12)
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.55)
+    o2.start(t + 0.12); o2.stop(t + 0.55)
   } catch {}
 }
+
+// ── Notificaciones ──────────────────────────────────
 
 async function loadUnreadCount() {
   if (!localStorage.getItem("token")) return
   try {
-    const res  = await api.get("/task-comments/notifications/unread")
-    const prev = unreadNotif.value
-    taskNotifList.value = res.data
-    unreadNotif.value   = res.data.length
-    if (unreadNotif.value > prev) playNotifSound()
+    const [taskRes, userRes] = await Promise.all([
+      api.get("/task-comments/notifications/unread"),
+      api.get("/user-notifications/inbox/count"),
+    ])
+    const prevTask = unreadNotif.value
+    const prevUser = unreadUserNotif.value
+    taskNotifList.value  = taskRes.data
+    unreadNotif.value    = taskRes.data.length
+    unreadUserNotif.value = userRes.data.count ?? 0
+    if (unreadNotif.value > prevTask || unreadUserNotif.value > prevUser) playNotifSound()
   } catch {}
 }
 
@@ -468,11 +480,13 @@ function handleMenuAction(item) {
 
 // ── Dropdown ────────────────────────────────────────
 function toggleDropdown() {
+  unlockAudio()
   dropdownOpen.value = !dropdownOpen.value
   if (dropdownOpen.value) userDropOpen.value = false
 }
 
 function toggleUserDropdown() {
+  unlockAudio()
   userDropOpen.value = !userDropOpen.value
   if (userDropOpen.value) dropdownOpen.value = false
   if (!userDropOpen.value) { notifExpanded.value = false; taskNotifListOpen.value = false }

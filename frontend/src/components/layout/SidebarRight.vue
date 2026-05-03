@@ -79,7 +79,35 @@
       </div>
     </div>
 
-    <!-- ── SLOTS 3 y 4: PUBLICIDAD (ocultos si vacíos) ── -->
+    <!-- ── SLOT 3: NOVEDADES / MENSAJES DIRECTOS ── -->
+    <div class="slot slot-novedades" v-if="userNotifCount > 0">
+      <div class="slot-header">
+        <span class="slot-title">
+          <i class="bi bi-envelope-open-fill"></i>
+          Novedades
+          <span class="notif-badge nov-badge">{{ userNotifCount }}</span>
+        </span>
+        <button class="btn-go-complete" @click="goToInbox" title="Ver mensajes">
+          <i class="bi bi-arrow-right"></i>
+        </button>
+      </div>
+      <div class="nov-preview">
+        <div
+          v-for="n in userNotifPreview" :key="n.id"
+          class="nov-item"
+          @click="goToInbox"
+        >
+          <div class="nov-dot"></div>
+          <div class="nov-body">
+            <p class="nov-from">{{ n.sender_name }}</p>
+            <p class="nov-text">{{ n.title }}</p>
+          </div>
+          <span class="nov-time">{{ fmtAgo(n.created_at) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SLOTS 4 y 5: PUBLICIDAD (ocultos si vacíos) ── -->
     <template v-for="(slot, index) in adSlots" :key="index">
       <div class="slot slot-ad" v-if="slot.active">
 
@@ -124,6 +152,24 @@ import { useRouter } from "vue-router"
 import api from "@/services/apis"
 
 const router = useRouter()
+
+// ── Novedades: mensajes directos no leídos ────────────────────────
+const userNotifs     = ref([])
+const userNotifCount = computed(() => userNotifs.value.length)
+const userNotifPreview = computed(() => userNotifs.value.slice(0, 3))
+
+async function loadUserNotifs() {
+  const token = localStorage.getItem("token")
+  if (!token) return
+  try {
+    const res = await api.get("/user-notifications/inbox")
+    userNotifs.value = (res.data || []).filter(n => !n.is_read)
+  } catch { userNotifs.value = [] }
+}
+
+function goToInbox() {
+  router.push("/notifications/inbox")
+}
 
 // ── Publicidad (se llenará desde SYSADMIN cuando llegue ese módulo) ──
 const adSlots = ref([
@@ -200,9 +246,11 @@ function goToCompletarInfo() {
 onMounted(() => {
   loadNotifications()
   loadIncompleteTasks()
+  loadUserNotifs()
   refreshTimer = setInterval(() => {
     loadNotifications()
     loadIncompleteTasks()
+    loadUserNotifs()
   }, 60000)
 })
 
@@ -399,6 +447,24 @@ onUnmounted(() => {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inc-meta { font-size: 10px; color: rgba(255,255,255,0.4); display: flex; align-items: center; gap: 3px; }
 .inc-more { padding: 5px 10px; font-size: 10px; color: rgba(255,255,255,0.35); text-align: center; }
+
+/* ── NOVEDADES ── */
+.slot-novedades { display: flex; flex-direction: column; flex-shrink: 0; }
+.nov-badge { background: #8b5cf6 !important; }
+.nov-preview { overflow-y: auto; max-height: 160px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.1) transparent; }
+.nov-item {
+  display: flex; align-items: flex-start; gap: 7px;
+  padding: 7px 10px; cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  transition: background .15s;
+}
+.nov-item:hover { background: rgba(139,92,246,.12); }
+.nov-item:last-child { border-bottom: none; }
+.nov-dot { width: 6px; height: 6px; background: #8b5cf6; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.nov-body { flex: 1; min-width: 0; }
+.nov-from { font-size: 10px; font-weight: 700; color: #c4b5fd; margin: 0; }
+.nov-text { font-size: 11px; color: rgba(255,255,255,.75); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nov-time { font-size: 9px; color: rgba(255,255,255,.3); flex-shrink: 0; margin-top: 2px; }
 
 /* ── PUBLICIDAD ── */
 .slot-ad {
