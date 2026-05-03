@@ -23,8 +23,7 @@
 - **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
 - **Safe-Manual-Commit**: Solo cuando escriba "commit", verifica sintaxis y ejecuta: `git add . && git commit -m "Auto-save: [resumen]"`
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
-- Todos los campos donde se decriba un valor de pesos, debe tener formato de $$.
-
+- Todos los campos donde se decriba un valor de pesos, debe tener correspondiente formato de pesos deacuerdo al pais.
 
 ## 6. REGLAS DE CAMBIO DE PERFIL
 - **Switch-Profile**: Cuando el usuario diga "Cambiar a perfil [NOMBRE]", debes:

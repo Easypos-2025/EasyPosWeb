@@ -8,18 +8,33 @@
         <p class="pr-sub">Pagos pendientes de activación, upgrade, renovación y cambio de plan.</p>
       </div>
       <div class="pr-header-right">
-        <select v-model="filterType" class="filter-select" @change="load">
+        <select v-if="activeTab === 'review'" v-model="filterType" class="filter-select" @change="load">
           <option value="">Todos los tipos</option>
           <option value="activation">Activación</option>
           <option value="upgrade">Upgrade</option>
           <option value="renewal">Renovación</option>
           <option value="downgrade">Downgrade</option>
         </select>
-        <button class="btn-refresh" @click="load" :disabled="loading">
-          <i class="bi bi-arrow-clockwise" :class="{ spin: loading }"></i> Actualizar
+        <button class="btn-refresh" @click="activeTab === 'review' ? load() : loadBlocked()" :disabled="loading || loadingBlocked">
+          <i class="bi bi-arrow-clockwise" :class="{ spin: loading || loadingBlocked }"></i> Actualizar
         </button>
       </div>
     </div>
+
+    <!-- TABS -->
+    <div class="pr-tabs">
+      <button class="pr-tab" :class="{ active: activeTab === 'review' }" @click="activeTab = 'review'">
+        <i class="bi bi-inbox"></i> Pagos pendientes
+        <span v-if="payments.length" class="pr-tab-badge">{{ payments.length }}</span>
+      </button>
+      <button class="pr-tab" :class="{ active: activeTab === 'blocked' }" @click="activeTab = 'blocked'; loadBlocked()">
+        <i class="bi bi-lock-fill"></i> Empresas bloqueadas
+        <span v-if="blockedCompanies.length" class="pr-tab-badge pr-tab-badge-warn">{{ blockedCompanies.length }}</span>
+      </button>
+    </div>
+
+    <!-- ══════ TAB: REVISIÓN DE PAGOS ══════ -->
+    <template v-if="activeTab === 'review'">
 
     <!-- CARGANDO -->
     <div v-if="loading" class="pr-empty">
@@ -128,6 +143,74 @@
         </div>
       </div>
     </div>
+
+    </template><!-- fin TAB review -->
+
+    <!-- ══════ TAB: EMPRESAS BLOQUEADAS ══════ -->
+    <template v-if="activeTab === 'blocked'">
+
+      <div v-if="loadingBlocked" class="pr-empty">
+        <i class="bi bi-hourglass-split spin"></i> Cargando empresas bloqueadas...
+      </div>
+
+      <div v-else-if="!blockedCompanies.length" class="pr-empty">
+        <i class="bi bi-check-circle-fill text-success fs-2 mb-2"></i>
+        <p>No hay empresas bloqueadas en este momento.</p>
+      </div>
+
+      <div v-else class="bl-list">
+        <div class="bl-info-banner">
+          <i class="bi bi-info-circle-fill me-2"></i>
+          Estas empresas quedaron bloqueadas en el proceso de pago (caída de conexión u otro imprevisto).
+          Al desbloquear, su estado se restablece a <strong>activo</strong> y los pagos pendientes se cancelan automáticamente.
+        </div>
+
+        <div v-for="c in blockedCompanies" :key="c.company_id" class="bl-card">
+          <div class="bl-card-left">
+            <div class="bl-lock-icon"><i class="bi bi-lock-fill"></i></div>
+            <div class="bl-info">
+              <div class="bl-company-name">{{ c.company_name }}</div>
+              <div class="bl-company-nit">NIT: {{ c.nit }}</div>
+              <div v-if="c.admin_name" class="bl-admin">
+                <i class="bi bi-person me-1"></i>{{ c.admin_name }}
+                <span v-if="c.admin_email"> · {{ c.admin_email }}</span>
+              </div>
+              <div v-if="c.plan_name" class="bl-plan">
+                <i class="bi bi-award me-1"></i>Plan activo: {{ c.plan_name }}
+              </div>
+            </div>
+          </div>
+
+          <div class="bl-card-right">
+            <div class="bl-status-wrap">
+              <span class="bl-status-badge" :class="c.payment_status">
+                {{ statusLabel[c.payment_status] || c.payment_status }}
+              </span>
+              <span v-if="c.upgrade_status" class="bl-upgrade-badge">
+                {{ c.upgrade_status }}
+              </span>
+            </div>
+            <div v-if="c.latest_payment" class="bl-payment-info">
+              <span class="bl-pay-type">{{ typeLabel[c.latest_payment.type] || c.latest_payment.type }}</span>
+              <span class="bl-pay-amount">{{ formatCurrency(c.latest_payment.amount) }}</span>
+              <span v-if="c.latest_payment.created_at" class="bl-pay-date">
+                Desde: {{ formatDate(c.latest_payment.created_at) }}
+              </span>
+            </div>
+            <button
+              class="bl-btn-unlock"
+              :disabled="unblocking === c.company_id"
+              @click="doUnblock(c)"
+            >
+              <i v-if="unblocking === c.company_id" class="bi bi-arrow-repeat spin me-1"></i>
+              <i v-else class="bi bi-unlock-fill me-1"></i>
+              {{ unblocking === c.company_id ? 'Desbloqueando...' : 'Desbloquear' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </template><!-- fin TAB blocked -->
 
     <!-- MODAL APROBAR / SUBIR DE PLAN -->
     <div v-if="approveTarget" class="pr-modal-overlay" @click.self="closeApprove">
@@ -337,6 +420,12 @@ export default {
     const actioning     = ref(null)
     const filterType    = ref("")
     const apiBase       = API_URL
+    const activeTab     = ref("review")
+
+    // Empresas bloqueadas
+    const blockedCompanies = ref([])
+    const loadingBlocked   = ref(false)
+    const unblocking       = ref(null)
 
     // Aprobar
     const approveTarget = ref(null)
@@ -481,17 +570,64 @@ export default {
       }
     }
 
+    // ── Empresas bloqueadas ──────────────────────────────────────
+    async function loadBlocked() {
+      loadingBlocked.value = true
+      try {
+        blockedCompanies.value = (await api.get("/payments/blocked-companies")).data
+      } catch { blockedCompanies.value = [] }
+      finally { loadingBlocked.value = false }
+    }
+
+    async function doUnblock(company) {
+      const { isConfirmed, value: reason } = await window.Swal.fire({
+        title: `¿Desbloquear "${company.company_name}"?`,
+        html: `
+          <p style="font-size:13px;color:#64748b;margin-bottom:12px">
+            Se restablecerá el acceso y se cancelarán los pagos pendientes.<br>
+            <strong>Esta acción queda registrada.</strong>
+          </p>
+          <input id="swal-reason" class="swal2-input" style="font-size:13px"
+            placeholder="Nota interna (opcional)">
+        `,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Sí, desbloquear",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#2563eb",
+        preConfirm: () => document.getElementById("swal-reason")?.value?.trim() || ""
+      })
+      if (!isConfirmed) return
+
+      unblocking.value = company.company_id
+      try {
+        await api.post(`/payments/unblock-company/${company.company_id}`, { reason: reason || "" })
+        window.Swal.fire({
+          icon: "success", title: "Empresa desbloqueada",
+          text: `${company.company_name} ya puede acceder a la plataforma.`,
+          timer: 2500, showConfirmButton: false,
+        })
+        await loadBlocked()
+      } catch (e) {
+        window.Swal.fire("Error", e.response?.data?.detail || "No se pudo desbloquear la empresa", "error")
+      } finally {
+        unblocking.value = null
+      }
+    }
+
     onMounted(load)
 
     return {
       BANKS_CO,
       loading, payments, actioning, filterType, apiBase,
+      activeTab, blockedCompanies, loadingBlocked, unblocking,
       approveTarget, approveFile, duplicateInfo, approveForm, approveErr,
       rejectTarget, rejectReason, rejectFile, rejectErr, rejectForm,
       statusLabel, typeLabel, formatCurrency, formatDate,
       planStartDate, planEndDate,
       load, confirmApprove, closeApprove, doApprove,
       openReject, closeReject, doReject,
+      loadBlocked, doUnblock,
     }
   }
 }
@@ -757,5 +893,101 @@ export default {
   .pr-info-label { min-width: auto; }
   .pr-actions { flex-direction: column; }
   .modal-btns { flex-direction: column; }
+}
+
+/* ══ TABS ══ */
+.pr-tabs {
+  display: flex; gap: 4px; margin-bottom: 20px;
+  border-bottom: 2px solid #f1f5f9;
+}
+.pr-tab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 18px; border: none; background: none;
+  font-size: .88rem; font-weight: 600; color: #94a3b8;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: all .15s;
+}
+.pr-tab:hover  { color: #475569; }
+.pr-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.pr-tab-badge {
+  min-width: 20px; height: 20px; border-radius: 10px;
+  background: #ef4444; color: #fff;
+  font-size: 10px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 5px;
+}
+.pr-tab-badge-warn { background: #f59e0b; }
+
+/* ══ EMPRESAS BLOQUEADAS ══ */
+.bl-info-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: 10px; padding: 12px 16px;
+  font-size: .84rem; color: #92400e; margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.bl-list { display: flex; flex-direction: column; gap: 12px; }
+
+.bl-card {
+  background: #fff; border: 1.5px solid #fde68a;
+  border-radius: 14px; padding: 16px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.05);
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+
+.bl-card-left  { display: flex; align-items: flex-start; gap: 14px; flex: 1; min-width: 0; }
+.bl-lock-icon  {
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+  background: #fef3c7; color: #d97706;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+.bl-info            { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bl-company-name    { font-size: 1rem; font-weight: 800; color: #0f172a; }
+.bl-company-nit     { font-size: .8rem; color: #94a3b8; }
+.bl-admin           { font-size: .8rem; color: #64748b; }
+.bl-plan            { font-size: .8rem; color: #2563eb; }
+
+.bl-card-right {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 8px; flex-shrink: 0;
+}
+.bl-status-wrap { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.bl-status-badge {
+  font-size: .75rem; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; white-space: nowrap;
+}
+.bl-status-badge.pending_payment  { background: #fff7ed; color: #c2410c; }
+.bl-status-badge.payment_submitted{ background: #dbeafe; color: #1e40af; }
+.bl-status-badge.payment_rejected { background: #fef2f2; color: #b91c1c; }
+.bl-status-badge.expired          { background: #f1f5f9; color: #475569; }
+.bl-upgrade-badge {
+  font-size: .75rem; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; background: #f3e8ff; color: #7c3aed;
+}
+.bl-payment-info {
+  display: flex; flex-direction: column; align-items: flex-end;
+  gap: 2px; font-size: .78rem; color: #64748b;
+}
+.bl-pay-type   { color: #475569; font-weight: 600; }
+.bl-pay-amount { color: #1e293b; font-weight: 700; font-size: .9rem; }
+.bl-pay-date   { font-size: .73rem; color: #94a3b8; }
+
+.bl-btn-unlock {
+  display: flex; align-items: center; gap: 5px;
+  padding: 8px 16px; border-radius: 8px;
+  background: #2563eb; color: #fff;
+  border: none; font-size: .84rem; font-weight: 700;
+  cursor: pointer; transition: all .2s;
+  white-space: nowrap;
+}
+.bl-btn-unlock:hover:not(:disabled) { background: #1d4ed8; }
+.bl-btn-unlock:disabled { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .bl-card       { flex-direction: column; }
+  .bl-card-right { align-items: flex-start; width: 100%; }
+  .bl-btn-unlock { width: 100%; justify-content: center; }
 }
 </style>

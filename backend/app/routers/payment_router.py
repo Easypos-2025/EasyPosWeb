@@ -890,3 +890,112 @@ async def reject_payment(
         )
 
     return {"message": "Pago rechazado. Se notificó al asociado."}
+
+
+# ── SYSADMIN: empresas bloqueadas en proceso de pago ─────────────────────────
+
+@router.get("/blocked-companies")
+def list_blocked_companies(
+    _: User = Depends(require_sysadmin),
+    db: Session = Depends(get_db),
+):
+    """
+    Retorna empresas que quedaron bloqueadas en el proceso de pago
+    (payment_status distinto de 'active') sin comprobante aprobado.
+    Útil cuando la empresa no completó el flujo por caída de conexión u otro imprevisto.
+    """
+    blocked = db.query(Company).filter(
+        Company.payment_status.notin_(["active"])
+    ).order_by(Company.name).all()
+
+    result = []
+    for c in blocked:
+        # Último pago pendiente de esta empresa
+        latest = (
+            db.query(CompanyPayment)
+            .filter(CompanyPayment.company_id == c.id_company)
+            .order_by(CompanyPayment.id.desc())
+            .first()
+        )
+        # Plan activo (puede que no tenga si nunca tuvo uno)
+        active_cp = _get_active_plan(c.id_company, db)
+        plan_name = None
+        if active_cp:
+            p = db.get(Plan, active_cp.plan_id)
+            plan_name = p.name if p else None
+
+        # Admin principal de la empresa
+        admin = (
+            db.query(User)
+            .filter(User.company_id == c.id_company)
+            .order_by(User.id)
+            .first()
+        )
+
+        result.append({
+            "company_id":     c.id_company,
+            "company_name":   c.name,
+            "nit":            c.identification_number,
+            "payment_status": c.payment_status,
+            "upgrade_status": c.upgrade_status,
+            "plan_name":      plan_name,
+            "admin_email":    admin.email  if admin else None,
+            "admin_name":     admin.nombre if admin else None,
+            "latest_payment": {
+                "id":           latest.id,
+                "type":         latest.payment_type,
+                "status":       latest.status,
+                "amount":       latest.amount,
+                "currency":     latest.currency_code,
+                "submitted_at": latest.submitted_at.isoformat() if latest.submitted_at else None,
+                "created_at":   latest.created_at.isoformat()   if latest.created_at   else None,
+            } if latest else None,
+        })
+    return result
+
+
+# ── SYSADMIN: desbloquear empresa atascada ────────────────────────────────────
+
+class UnblockBody(BaseModel):
+    reason: str = ""   # Nota interna opcional del soporte
+
+
+@router.post("/unblock-company/{company_id}")
+def unblock_company(
+    company_id: int,
+    body: UnblockBody,
+    sysadmin: User = Depends(require_sysadmin),
+    db: Session    = Depends(get_db),
+):
+    """
+    Resetea el payment_status de una empresa a 'active' y limpia upgrade_status.
+    Usar cuando la empresa quedó bloqueada por error de conexión u otro imprevisto
+    sin haber completado el proceso de pago.
+    """
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    if company.payment_status == "active" and not company.upgrade_status:
+        raise HTTPException(status_code=400, detail="Esta empresa ya está activa")
+
+    # Cancelar pagos pendientes para que no queden en la cola de revisión
+    db.query(CompanyPayment).filter(
+        CompanyPayment.company_id == company_id,
+        CompanyPayment.status.in_(["pending", "submitted"]),
+    ).update({
+        "status":             "rejected",
+        "rejection_reason":   f"Cancelado por soporte al desbloquear empresa. {body.reason}".strip(". "),
+        "reviewed_at":        datetime.now(timezone.utc),
+        "reviewed_by":        sysadmin.id,
+    })
+
+    company.payment_status = "active"
+    company.upgrade_status = None
+    db.commit()
+
+    return {
+        "message":    f"Empresa '{company.name}' desbloqueada correctamente.",
+        "company_id": company_id,
+        "new_status": "active",
+    }

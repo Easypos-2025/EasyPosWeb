@@ -87,7 +87,10 @@
           @click.stop="toggleDropdown"
           title="Soporte"
         >
-          <i class="bi bi-headset"></i>
+          <span class="support-icon-wrap">
+            <i class="bi bi-headset"></i>
+            <span v-if="totalNotifCount > 0" class="support-notif-badge">{{ totalNotifCount > 99 ? '99+' : totalNotifCount }}</span>
+          </span>
           <span class="btn-label">Soporte <i class="bi bi-chevron-down btn-arr"></i></span>
         </button>
 
@@ -317,12 +320,34 @@ const totalNotifCount = computed(() =>
 )
 
 // ── Notificaciones ──────────────────────────────────
+
+// Genera un beep suave con Web Audio API (sin archivos externos)
+function playNotifSound() {
+  try {
+    const ctx  = new (window.AudioContext || window.webkitAudioContext)()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = "sine"
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.18)
+    gain.gain.setValueAtTime(0.28, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.45)
+    osc.onended = () => ctx.close()
+  } catch {}
+}
+
 async function loadUnreadCount() {
   if (!localStorage.getItem("token")) return
   try {
-    const res = await api.get("/task-comments/notifications/unread")
+    const res  = await api.get("/task-comments/notifications/unread")
+    const prev = unreadNotif.value
     taskNotifList.value = res.data
     unreadNotif.value   = res.data.length
+    if (unreadNotif.value > prev) playNotifSound()
   } catch {}
 }
 
@@ -349,8 +374,10 @@ function fmtRelative(iso) {
 async function loadPendingPayments() {
   if (!companyStore.isSystem) return
   try {
-    const res = await api.get("/payments/pending-count")
+    const res  = await api.get("/payments/pending-count")
+    const prev = pendingPaymentsCount.value
     pendingPaymentsCount.value = res.data.count ?? 0
+    if (pendingPaymentsCount.value > prev) playNotifSound()
   } catch {}
 }
 
@@ -790,6 +817,19 @@ onUnmounted(() => {
 .item-plan-text { display: flex; flex-direction: column; line-height: 1.3; }
 .item-plan-exp { font-size: 10px; opacity: 0.6; }
 
+/* Badge en el botón SOPORTE */
+.support-icon-wrap { position: relative; display: flex; align-items: center; }
+.support-notif-badge {
+  position: absolute; top: -5px; right: -7px;
+  min-width: 16px; height: 16px;
+  background: #ef4444; color: #fff;
+  font-size: 8px; font-weight: 800; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 3px; line-height: 1; pointer-events: none;
+  border: 1.5px solid var(--topbar-bg, #1e293b);
+  z-index: 1;
+}
+
 /* Badge en el botón CUENTA */
 .user-icon-wrap { position: relative; display: flex; align-items: center; }
 .user-notif-badge {
@@ -1020,6 +1060,14 @@ onUnmounted(() => {
   .user-role     { display: none; }
   .company-title { max-width: 180px; font-size: 15px; }
   .plan-exp      { display: none; }
+}
+
+/* 720p: ocultar botón EasyPosWeb para evitar solapamiento de iconos */
+@media (max-width: 720px) {
+  .btn-website   { display: none; }
+  .topbar-right  { gap: 3px; }
+  .btn-support   { padding: 4px 7px; }
+  .btn-user-drop { padding: 4px 7px; }
 }
 
 /* ── NOTIFICACIONES DE TAREA - panel inline ── */

@@ -205,6 +205,11 @@
           <i class="bi bi-bell"></i> Notificaciones
           <span class="tab-badge" :class="{ 'tab-badge-alert': unreadNotifsCount > 0 }">{{ notifications.length }}</span>
         </button>
+        <button class="tab-btn" :class="{ active: tab === 'colaboradores' }"
+          @click="tab = 'colaboradores'">
+          <i class="bi bi-people"></i> Colaboradores
+          <span class="tab-badge">{{ collaborators.length }}</span>
+        </button>
       </div>
 
       <!-- ──────────────── TAB: EVIDENCIAS ──────────────── -->
@@ -471,6 +476,55 @@
         </div>
       </div>
 
+      <!-- ──────────────── TAB: COLABORADORES ──────────────── -->
+      <div v-if="tab === 'colaboradores'" class="sub-card">
+        <h3 class="sub-title"><i class="bi bi-people-fill me-2"></i>Colaboradores de la tarea</h3>
+        <p class="sub-desc">
+          Usuarios que apoyan esta tarea. Si el responsable principal no está disponible,
+          los colaboradores continúan con el trabajo.
+        </p>
+
+        <!-- Lista de colaboradores (visible para todos) -->
+        <div v-if="collaborators.length === 0" class="collab-empty-state">
+          <i class="bi bi-people" style="font-size:28px;opacity:.3"></i>
+          <p>No hay colaboradores asignados a esta tarea</p>
+        </div>
+        <div v-else class="collab-list">
+          <div v-for="c in collaborators" :key="c.user_id" class="collab-item">
+            <div class="collab-avatar"><i class="bi bi-person-circle"></i></div>
+            <div class="collab-info">
+              <span class="collab-name">{{ c.nombre }}</span>
+              <span class="collab-role">{{ c.role }}</span>
+            </div>
+            <span class="collab-since">desde {{ fmtDate(c.assigned_at) }}</span>
+            <!-- Quitar: solo roles superiores -->
+            <button v-if="!isWorkerRole" class="btn btn-outline-danger btn-sm collab-del-btn"
+              @click="removeCollab(c.user_id)" title="Quitar colaborador">
+              <i class="bi bi-person-dash"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Agregar colaborador: solo roles superiores -->
+        <div v-if="!isWorkerRole" class="collab-add-box">
+          <h4 class="collab-add-title">Agregar colaborador</h4>
+          <div class="collab-add-row">
+            <select v-model="newCollabUserId" class="form-select">
+              <option :value="null">— Seleccionar usuario —</option>
+              <option v-for="u in availableForCollab" :key="u.id" :value="u.id">
+                {{ u.nombre }}
+              </option>
+            </select>
+            <button class="btn btn-primary" :disabled="!newCollabUserId || addingCollab"
+              @click="addCollab">
+              <i v-if="addingCollab" class="bi bi-arrow-repeat spin"></i>
+              <i v-else class="bi bi-person-plus-fill"></i>
+              {{ addingCollab ? 'Agregando...' : 'Agregar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
     </template>
 
   </div>
@@ -559,6 +613,18 @@ const notifModal   = ref(false)
 const notifMsg     = ref("")
 const sendingNotif = ref(false)
 
+// ── Colaboradores ─────────────────────────────────────────────
+const collaborators    = ref([])
+const newCollabUserId  = ref(null)
+const addingCollab     = ref(false)
+
+const availableForCollab = computed(() =>
+  users.value.filter(u =>
+    u.id !== task.value?.assigned_to &&
+    !collaborators.value.some(c => c.user_id === u.id)
+  )
+)
+
 const totalMaterials = computed(() => materials.value.reduce((s, m) => s + (m.total_cost || 0), 0))
 const totalExpenses  = computed(() => expenses.value.reduce((s, e) => s + (e.amount || 0), 0))
 
@@ -605,7 +671,7 @@ function clearError(e) { e.target.classList.remove("field-invalid") }
 async function load() {
   loading.value = true
   try {
-    const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes] =
+    const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes, collabRes] =
       await Promise.all([
         api.get(`/tasks/${taskId}`),
         api.get("/tasks/assets-list"),
@@ -616,16 +682,18 @@ async function load() {
         api.get(`/task-materials/${taskId}`),
         api.get(`/task-expenses/${taskId}`),
         api.get(`/task-comments/${taskId}`),
+        api.get(`/task-collaborators/${taskId}`),
       ])
-    task.value      = taskRes.data
-    assets.value    = assetsRes.data
-    workers.value   = workersRes.data
-    users.value     = usersRes.data
-    statuses.value  = statusRes.data
-    evidences.value = evRes.data
-    materials.value = matRes.data
-    expenses.value  = expRes.data
-    comments.value  = commRes.data
+    task.value          = taskRes.data
+    assets.value        = assetsRes.data
+    workers.value       = workersRes.data
+    users.value         = usersRes.data
+    statuses.value      = statusRes.data
+    evidences.value     = evRes.data
+    materials.value     = matRes.data
+    expenses.value      = expRes.data
+    comments.value      = commRes.data
+    collaborators.value = collabRes.data
 
     form.value = {
       title:              task.value.title,
@@ -800,6 +868,38 @@ async function sendNotification() {
     showToast(e.response?.data?.detail || "Error al enviar notificación", "error")
   } finally {
     sendingNotif.value = false
+  }
+}
+
+// ── Colaboradores CRUD ────────────────────────────────────────
+async function addCollab() {
+  if (!newCollabUserId.value) return
+  addingCollab.value = true
+  try {
+    const res = await api.post(`/task-collaborators/${taskId}`, { user_id: newCollabUserId.value })
+    collaborators.value.push(res.data)
+    newCollabUserId.value = null
+    showToast("Colaborador agregado", "success")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al agregar colaborador", "error")
+  } finally {
+    addingCollab.value = false
+  }
+}
+
+async function removeCollab(userId) {
+  const { isConfirmed } = await window.Swal.fire({
+    title: "¿Quitar colaborador?", icon: "warning",
+    showCancelButton: true, confirmButtonText: "Sí, quitar",
+    confirmButtonColor: "#ef4444"
+  })
+  if (!isConfirmed) return
+  try {
+    await api.delete(`/task-collaborators/${taskId}/${userId}`)
+    collaborators.value = collaborators.value.filter(c => c.user_id !== userId)
+    showToast("Colaborador eliminado", "success")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al eliminar colaborador", "error")
   }
 }
 
@@ -1063,4 +1163,39 @@ onMounted(load)
   cursor: pointer;
 }
 .btn-secondary:hover { border-color: #94a3b8; }
+
+/* ── TAB COLABORADORES ── */
+.sub-desc { font-size: 13px; color: #64748b; margin: -4px 0 16px; }
+.collab-empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 28px 0; color: #94a3b8; font-size: 13px;
+}
+.collab-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.collab-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; background: #f8fafc;
+  border: 1px solid #e2e8f0; border-radius: 10px;
+}
+.collab-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: #dbeafe; color: #1d4ed8;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+.collab-info  { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.collab-name  { font-size: 14px; font-weight: 600; color: #1e293b; }
+.collab-role  { font-size: 11px; color: #64748b; text-transform: capitalize; }
+.collab-since { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+.collab-del-btn { flex-shrink: 0; margin-left: 4px; }
+
+.collab-add-box {
+  border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 4px;
+}
+.collab-add-title { font-size: 13px; font-weight: 600; color: #374151; margin: 0 0 10px; }
+.collab-add-row { display: flex; gap: 10px; align-items: center; }
+.collab-add-row .form-select { flex: 1; }
+
+@media (max-width: 720px) {
+  .collab-add-row { flex-direction: column; align-items: stretch; }
+  .collab-since   { display: none; }
+}
 </style>

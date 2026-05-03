@@ -54,6 +54,7 @@ from app.routers.invitation_router import router as invitation_router
 from app.routers.landing_router import router as landing_router
 from app.routers.register_router import router as register_router
 from app.routers.payment_router import router as payment_router
+from app.routers.task_collaborators_router import router as task_collaborators_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -413,6 +414,25 @@ def _init_db_data():
             except Exception:
                 db.rollback()
 
+        # ── MIGRACIÓN: tabla colaborador_tarea ──────────────────────────
+        try:
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS colaborador_tarea (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    task_id     INT NOT NULL,
+                    user_id     INT NOT NULL,
+                    assigned_by INT NULL,
+                    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_task_user (task_id, user_id),
+                    FOREIGN KEY (task_id)     REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id)     REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
+                )
+            """))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         # ── MIGRACIÓN: system_modules — columna is_sysadmin ─────────────
         for col_sql in [
             "ALTER TABLE system_modules ADD COLUMN is_sysadmin TINYINT(1) NOT NULL DEFAULT 0",
@@ -606,6 +626,7 @@ routers = [
     landing_router,
     register_router,
     payment_router,
+    task_collaborators_router,
 ]
 
 for router in routers:

@@ -126,8 +126,8 @@
             </select>
           </div>
 
-          <!-- Estado -->
-          <div class="fg full">
+          <!-- Estado inicial (oculto para workers — siempre se auto-asignan) -->
+          <div v-if="!isWorkerRole" class="fg full">
             <label>Estado inicial</label>
             <div class="status-pills-create">
               <button type="button"
@@ -147,9 +147,17 @@
             </div>
           </div>
 
-          <!-- Asignado a (solo si Asignada) -->
+          <!-- Worker: aviso de auto-asignación -->
+          <div v-if="isWorkerRole" class="fg full">
+            <div class="worker-autoassign-note">
+              <i class="bi bi-person-check-fill"></i>
+              La tarea quedará asignada a ti automáticamente
+            </div>
+          </div>
+
+          <!-- Asignado a (solo si Asignada y no es worker) -->
           <Transition name="fade-down">
-            <div v-if="form.status_id === 2" class="fg full">
+            <div v-if="!isWorkerRole && form.status_id === 2" class="fg full">
               <label>Responsable / Asignado a *</label>
               <select v-model="form.assigned_to" data-v="assigned" class="form-select" @change="clearError">
                 <option :value="null">— Seleccionar responsable —</option>
@@ -215,8 +223,8 @@
             </div>
           </div>
 
-          <div class="form-row2">
-            <!-- Asignado a (Task Leader) -->
+          <!-- Asignado a y Ejecutor (solo roles superiores) -->
+          <div v-if="!isWorkerRole" class="form-row2">
             <div class="fg">
               <label>Asignado a</label>
               <select v-model="form.assigned_to" class="form-select">
@@ -224,8 +232,6 @@
                 <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
             </div>
-
-            <!-- Ejecutor (Worker) -->
             <div class="fg">
               <div class="d-flex justify-content-between align-items-center mb-1">
                 <label class="mb-0">Ejecutor / Profesional</label>
@@ -241,13 +247,10 @@
           </div>
 
           <div class="form-row2">
-            <!-- Fecha inicio -->
             <div class="fg">
               <label>Fecha inicio</label>
               <input v-model="form.start_date" type="date" class="form-control" />
             </div>
-
-            <!-- Fecha límite -->
             <div class="fg">
               <label>Fecha límite</label>
               <input v-model="form.due_date" type="date" class="form-control" />
@@ -255,18 +258,46 @@
           </div>
 
           <div class="form-row2">
-            <!-- Presupuesto -->
             <div class="fg">
               <label>Presupuesto estimado ($)</label>
               <input v-model.number="form.budget_labor_cost" type="number" min="0"
                 class="form-control" placeholder="0" />
             </div>
-
-            <!-- Avance -->
             <div class="fg">
               <label>Avance actual: <strong>{{ form.progress }}%</strong></label>
               <input v-model.number="form.progress" type="range" min="0" max="100"
                 class="form-range" />
+            </div>
+          </div>
+
+          <!-- ── Colaboradores (solo roles superiores) ── -->
+          <div v-if="!isWorkerRole" class="fg full collab-section">
+            <label><i class="bi bi-people-fill me-1"></i>Colaboradores <span class="opt">(opcional)</span></label>
+
+            <!-- Lista actual -->
+            <div v-if="collaborators.length > 0" class="collab-chips">
+              <span v-for="c in collaborators" :key="c.user_id" class="collab-chip">
+                <i class="bi bi-person-fill"></i>
+                {{ c.nombre }}
+                <button class="collab-remove" @click="removeCollab(c.user_id)" title="Quitar colaborador">
+                  <i class="bi bi-x"></i>
+                </button>
+              </span>
+            </div>
+            <p v-else class="collab-empty">Sin colaboradores asignados</p>
+
+            <!-- Agregar colaborador -->
+            <div class="collab-add-row">
+              <select v-model="newCollabUserId" class="form-select form-select-sm">
+                <option :value="null">— Agregar colaborador —</option>
+                <option v-for="u in availableForCollab" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+              </select>
+              <button class="btn btn-outline-primary btn-sm" :disabled="!newCollabUserId || addingCollab"
+                @click="addCollab">
+                <i v-if="addingCollab" class="bi bi-arrow-repeat spin"></i>
+                <i v-else class="bi bi-plus-lg"></i>
+                Agregar
+              </button>
             </div>
           </div>
 
@@ -292,6 +323,10 @@ import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 import WorkersModal from "@/components/WorkersModal.vue"
 
+// ── Rol del usuario actual ───────────────────────────────────────
+const userInfo     = JSON.parse(localStorage.getItem("user") || "{}")
+const isWorkerRole = (userInfo.role || "").toLowerCase().includes("worker")
+
 // ── Estado ──────────────────────────────────────────────────────
 const tasks    = ref([])
 const statuses = ref([])
@@ -305,8 +340,14 @@ const editMode  = ref(false)
 const search    = ref("")
 const filterStatus = ref("")
 
+// ── Colaboradores (modal editar) ─────────────────────────────────
+const collaborators    = ref([])
+const addingCollab     = ref(false)
+const newCollabUserId  = ref(null)
+
 const emptyCreateForm = () => ({
-  title: "", asset_id: null, status_id: 1, assigned_to: null
+  title: "", asset_id: null, status_id: 2,
+  assigned_to: isWorkerRole ? (userInfo.id ?? null) : null
 })
 
 const emptyEditForm = () => ({
@@ -396,12 +437,12 @@ async function loadAll() {
 
 // ── Crear / Editar ───────────────────────────────────────────────
 function openCreate() {
-  form.value  = emptyCreateForm()
+  form.value      = emptyCreateForm()
   editMode.value  = false
   showModal.value = true
 }
 
-function openEdit(task) {
+async function openEdit(task) {
   form.value = {
     id:                 task.id,
     title:              task.title,
@@ -416,8 +457,14 @@ function openEdit(task) {
     actual_labor_cost:  task.actual_labor_cost || 0,
     progress:           task.progress || 0,
   }
+  collaborators.value   = []
+  newCollabUserId.value = null
   editMode.value  = true
   showModal.value = true
+  try {
+    const res = await api.get(`/task-collaborators/${task.id}`)
+    collaborators.value = res.data
+  } catch {}
 }
 
 function closeModal() {
@@ -425,17 +472,58 @@ function closeModal() {
   showModal.value = false
 }
 
+// ── Colaboradores ────────────────────────────────────────────────
+async function addCollab() {
+  if (!newCollabUserId.value) return
+  addingCollab.value = true
+  try {
+    const res = await api.post(`/task-collaborators/${form.value.id}`, { user_id: newCollabUserId.value })
+    collaborators.value.push(res.data)
+    newCollabUserId.value = null
+    showToast("Colaborador agregado", "success")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al agregar colaborador", "error")
+  } finally {
+    addingCollab.value = false
+  }
+}
+
+async function removeCollab(userId) {
+  try {
+    await api.delete(`/task-collaborators/${form.value.id}/${userId}`)
+    collaborators.value = collaborators.value.filter(c => c.user_id !== userId)
+    showToast("Colaborador eliminado", "success")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al eliminar colaborador", "error")
+  }
+}
+
+// Usuarios disponibles para colaborar (excluye ya asignados y el responsable principal)
+const availableForCollab = computed(() =>
+  users.value.filter(u =>
+    u.id !== form.value.assigned_to &&
+    !collaborators.value.some(c => c.user_id === u.id)
+  )
+)
+
 async function save() {
   if (!editMode.value) {
     const rules = [
       { value: form.value.title,    selector: '[data-v="title"]',    label: "Título" },
       { value: form.value.asset_id, selector: '[data-v="asset"]',    label: "Activo" },
     ]
-    if (form.value.status_id === 2) {
+    // Worker: siempre se auto-asigna, no necesita validar responsable
+    if (!isWorkerRole && form.value.status_id === 2) {
       rules.push({ value: form.value.assigned_to, selector: '[data-v="assigned"]', label: "Responsable" })
     }
     const check = validateForm(rules)
     if (!check.valid) { showToast(check.message, "warning"); return }
+
+    // Worker: forzar asignación a sí mismo
+    if (isWorkerRole) {
+      form.value.status_id   = 2
+      form.value.assigned_to = userInfo.id ?? null
+    }
   } else {
     const check = validateForm([
       { value: form.value.title, selector: '[data-v="title"]', label: "Título" }
@@ -568,11 +656,71 @@ onMounted(loadAll)
 .spin { display:inline-block; animation:spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
+/* Nota auto-asignación worker */
+.worker-autoassign-note {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: #eff6ff;
+  border: 1px solid #bfdbfe; border-radius: 8px;
+  font-size: 13px; font-weight: 500; color: #1d4ed8;
+}
+
+/* ── Colaboradores ── */
+.collab-section { border-top: 1px solid #f1f5f9; padding-top: 12px; margin-top: 2px; }
+.collab-chips   { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.collab-chip    {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #eff6ff; color: #1d4ed8;
+  border: 1px solid #bfdbfe; border-radius: 20px;
+  font-size: 12px; font-weight: 500; padding: 3px 10px 3px 8px;
+}
+.collab-remove {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #60a5fa; line-height: 1; font-size: 13px;
+  display: flex; align-items: center;
+}
+.collab-remove:hover { color: #1d4ed8; }
+.collab-empty { font-size: 12px; color: #94a3b8; margin: 0 0 8px; }
+.collab-add-row { display: flex; gap: 8px; align-items: center; }
+.collab-add-row .form-select { max-width: 260px; }
+
+/* ── RESPONSIVE ── */
 @media (max-width: 768px) {
   .page-container { padding: 12px; }
   .form-row2      { grid-template-columns: 1fr; }
   .modal-box      { border-radius: 10px; max-height: 95vh; }
   .modal-create   { width: 95vw; }
   .status-pills-create { flex-direction: column; }
+
+  /* Tabla: ocultar columnas menos críticas */
+  .data-table th:nth-child(3),
+  .data-table td:nth-child(3),
+  .data-table th:nth-child(6),
+  .data-table td:nth-child(6) { display: none; }
+
+  /* Botones de acción: solo íconos */
+  .btn.btn-warning.btn-sm span,
+  .btn.btn-warning.btn-sm { font-size: 0; padding: 5px 8px; }
+  .btn.btn-warning.btn-sm .bi { font-size: 14px; }
+  .btn.btn-danger.btn-sm  { padding: 5px 8px; }
+}
+
+/* 720px: ocultar también columna Ejecutor, comprimir más */
+@media (max-width: 720px) {
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) { display: none; }
+
+  .data-table { min-width: 480px; }
+  .data-table td, .data-table th { padding: 8px 10px; }
+
+  /* Botones acción: solo ícono, sin texto */
+  .btn.btn-warning.btn-sm {
+    font-size: 0 !important;
+    padding: 5px 7px;
+    min-width: 0;
+  }
+  .btn.btn-warning.btn-sm .bi { font-size: 14px !important; }
+
+  .collab-add-row { flex-direction: column; align-items: stretch; }
+  .collab-add-row .form-select { max-width: 100%; }
 }
 </style>

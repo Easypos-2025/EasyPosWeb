@@ -158,6 +158,34 @@
               class="form-control" placeholder="0" />
           </div>
 
+          <!-- Colaboradores -->
+          <div class="fg ci-collab-section">
+            <label><i class="bi bi-people-fill me-1"></i>Colaboradores <span class="opt">(opcional)</span></label>
+
+            <div v-if="collaborators.length > 0" class="ci-collab-chips">
+              <span v-for="c in collaborators" :key="c.user_id" class="ci-chip">
+                <i class="bi bi-person-fill"></i>{{ c.nombre }}
+                <button class="ci-chip-remove" @click="removeCollab(c.user_id)" title="Quitar">
+                  <i class="bi bi-x"></i>
+                </button>
+              </span>
+            </div>
+            <p v-else class="ci-collab-empty">Sin colaboradores aún</p>
+
+            <div class="ci-add-row">
+              <select v-model="newCollabId" class="form-select form-select-sm">
+                <option :value="null">— Agregar colaborador —</option>
+                <option v-for="u in availableForCollab()" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+              </select>
+              <button class="btn btn-outline-primary btn-sm" :disabled="!newCollabId || addingCollab"
+                @click="addCollab">
+                <i v-if="addingCollab" class="bi bi-arrow-repeat spin"></i>
+                <i v-else class="bi bi-plus-lg"></i>
+                Agregar
+              </button>
+            </div>
+          </div>
+
         </div>
 
         <div class="modal-footer-bar">
@@ -194,6 +222,18 @@ const completeForm = ref({
   description: "", worker_id: null, assigned_to: null,
   start_date: "", due_date: "", budget_labor_cost: 0
 })
+
+// ── Colaboradores en modal ────────────────────────────────────
+const collaborators   = ref([])
+const newCollabId     = ref(null)
+const addingCollab    = ref(false)
+
+function availableForCollab() {
+  return users.value.filter(u =>
+    u.id !== completeForm.value.assigned_to &&
+    !collaborators.value.some(c => c.user_id === u.id)
+  )
+}
 
 function assetName(id) {
   return assets.value.find(a => a.id === id)?.name || "—"
@@ -234,7 +274,7 @@ async function assignTask(task) {
   }
 }
 
-function openComplete(task) {
+async function openComplete(task) {
   editing.value = task
   completeForm.value = {
     description:        task.description || "",
@@ -244,12 +284,43 @@ function openComplete(task) {
     due_date:           task.due_date || "",
     budget_labor_cost:  task.budget_labor_cost || 0,
   }
+  collaborators.value = []
+  newCollabId.value   = null
   showModal.value = true
+  try {
+    const res = await api.get(`/task-collaborators/${task.id}`)
+    collaborators.value = res.data
+  } catch {}
 }
 
 function closeModal() {
   showModal.value = false
   editing.value   = null
+}
+
+async function addCollab() {
+  if (!newCollabId.value || !editing.value) return
+  addingCollab.value = true
+  try {
+    const res = await api.post(`/task-collaborators/${editing.value.id}`, { user_id: newCollabId.value })
+    collaborators.value.push(res.data)
+    newCollabId.value = null
+    showToast("Colaborador agregado", "success")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al agregar colaborador", "error")
+  } finally {
+    addingCollab.value = false
+  }
+}
+
+async function removeCollab(userId) {
+  try {
+    await api.delete(`/task-collaborators/${editing.value.id}/${userId}`)
+    collaborators.value = collaborators.value.filter(c => c.user_id !== userId)
+    showToast("Colaborador eliminado", "success")
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al eliminar colaborador", "error")
+  }
 }
 
 async function saveComplete() {
@@ -325,9 +396,30 @@ onMounted(load)
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
+.opt { font-weight: 400; color: #94a3b8; font-size: 12px; }
+
+/* ── Colaboradores en modal completar ── */
+.ci-collab-section { border-top: 1px solid #f1f5f9; padding-top: 12px; margin-top: 2px; }
+.ci-collab-chips   { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.ci-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #eff6ff; color: #1d4ed8;
+  border: 1px solid #bfdbfe; border-radius: 20px;
+  font-size: 12px; font-weight: 500; padding: 3px 10px 3px 8px;
+}
+.ci-chip-remove {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #60a5fa; line-height: 1; font-size: 13px;
+  display: flex; align-items: center;
+}
+.ci-chip-remove:hover { color: #1d4ed8; }
+.ci-collab-empty { font-size: 12px; color: #94a3b8; margin: 0 0 8px; }
+.ci-add-row { display: flex; gap: 8px; align-items: center; }
+
 @media (max-width: 640px) {
   .page-container { padding: 14px 12px; }
   .form-row2 { grid-template-columns: 1fr; }
   .task-row  { flex-direction: column; align-items: flex-start; }
+  .ci-add-row { flex-direction: column; align-items: stretch; }
 }
 </style>
