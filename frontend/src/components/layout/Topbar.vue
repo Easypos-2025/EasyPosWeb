@@ -157,7 +157,16 @@
 
         <Transition name="dropdown-fade">
           <div v-if="userDropOpen" class="dropdown-panel user-drop-panel">
-            <div class="dropdown-header">Mi cuenta</div>
+
+            <!-- Tarjeta info usuario logueado -->
+            <div class="user-info-card">
+              <div class="uic-avatar"><i class="bi bi-person-circle"></i></div>
+              <div class="uic-data">
+                <span class="uic-name">{{ user?.nombre }}</span>
+                <span class="uic-email">{{ user?.email }}</span>
+                <span class="uic-role-badge">{{ user?.role }}</span>
+              </div>
+            </div>
 
             <!-- Plan activo -->
             <div v-if="companyPlan.plan_name" class="dropdown-item item-plan-info">
@@ -253,15 +262,15 @@
 
             <div class="dropdown-divider"></div>
 
-            <!-- Perfil — deshabilitado si pago pendiente -->
+            <!-- Perfil de Empresa — deshabilitado si pago pendiente -->
             <button
               class="dropdown-item"
               :class="{ 'item-disabled': !isPaymentActive }"
-              :title="!isPaymentActive ? 'Disponible una vez activo tu plan' : 'Ir a mi perfil'"
+              :title="!isPaymentActive ? 'Disponible una vez activo tu plan' : 'Ver perfil de empresa'"
               @click="goProfile"
             >
-              <span class="item-icon"><i class="bi bi-person-badge"></i></span>
-              <span class="item-name">Mi Perfil</span>
+              <span class="item-icon"><i class="bi bi-building"></i></span>
+              <span class="item-name">Perfil de Empresa</span>
               <span v-if="!isPaymentActive" class="badge-soon">Inactivo</span>
             </button>
 
@@ -321,22 +330,36 @@ const totalNotifCount = computed(() =>
 
 // ── Notificaciones ──────────────────────────────────
 
-// Genera un beep suave con Web Audio API (sin archivos externos)
+// Beep de sistema usando Web Audio API — se resume si el navegador lo suspendió por autoplay
 function playNotifSound() {
   try {
-    const ctx  = new (window.AudioContext || window.webkitAudioContext)()
-    const osc  = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = "sine"
-    osc.frequency.setValueAtTime(880, ctx.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.18)
-    gain.gain.setValueAtTime(0.28, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.45)
-    osc.onended = () => ctx.close()
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const run = () => {
+      // Tono 1: 880 Hz → 660 Hz (chime inicial)
+      const o1 = ctx.createOscillator(), g1 = ctx.createGain()
+      o1.connect(g1); g1.connect(ctx.destination)
+      o1.type = "sine"
+      o1.frequency.setValueAtTime(880, ctx.currentTime)
+      o1.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.12)
+      g1.gain.setValueAtTime(0.30, ctx.currentTime)
+      g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28)
+      o1.start(ctx.currentTime); o1.stop(ctx.currentTime + 0.28)
+
+      // Tono 2: 1100 Hz → 880 Hz (chime eco) — 120 ms después
+      const o2 = ctx.createOscillator(), g2 = ctx.createGain()
+      o2.connect(g2); g2.connect(ctx.destination)
+      o2.type = "sine"
+      o2.frequency.setValueAtTime(1100, ctx.currentTime + 0.12)
+      o2.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.35)
+      g2.gain.setValueAtTime(0.0, ctx.currentTime)
+      g2.gain.setValueAtTime(0.22, ctx.currentTime + 0.12)
+      g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55)
+      o2.start(ctx.currentTime + 0.12); o2.stop(ctx.currentTime + 0.55)
+      o2.onended = () => ctx.close()
+    }
+    // Los navegadores modernos suspenden AudioContext hasta interacción del usuario
+    if (ctx.state === "suspended") ctx.resume().then(run)
+    else run()
   } catch {}
 }
 
@@ -1106,4 +1129,56 @@ onUnmounted(() => {
   -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 3px;
 }
 .tnl-from { font-size: .68rem; color: rgba(255,255,255,.4); }
+
+/* ── Tarjeta info usuario logueado ── */
+.user-info-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 2px;
+}
+.uic-avatar {
+  font-size: 34px;
+  opacity: 0.85;
+  flex-shrink: 0;
+  line-height: 1;
+  color: #93c5fd;
+}
+.uic-data {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.uic-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--topbar-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.uic-email {
+  font-size: 11px;
+  opacity: 0.50;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 190px;
+}
+.uic-role-badge {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(96,165,250,0.18);
+  color: #93c5fd;
+  width: fit-content;
+}
 </style>
