@@ -56,6 +56,11 @@ from app.routers.register_router import router as register_router
 from app.routers.payment_router import router as payment_router
 from app.routers.task_collaborators_router import router as task_collaborators_router
 from app.routers.user_notification_router import router as user_notification_router
+from app.routers.insumos_router import router as insumos_router
+from app.routers.unidades_medida_router import router as unidades_medida_router
+from app.routers.conceptos_gastos_router import router as conceptos_gastos_router
+from app.routers.conceptos_compras_router import router as conceptos_compras_router
+from app.routers.task_purchases_router import router as task_purchases_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -553,6 +558,42 @@ def _init_db_data():
                 ))
         db.commit()
 
+        # ── SEED: módulos catálogo tareas ────────────────────────────────
+        for route, name, icon in [
+            ("/configuration/insumos",          "Insumos",           "bi-boxes"),
+            ("/configuration/unidades-medida",  "Unidades de Medida","bi-rulers"),
+            ("/configuration/conceptos-gastos", "Conceptos de Gasto","bi-receipt"),
+            ("/configuration/conceptos-compras","Conceptos de Compra","bi-cart3"),
+        ]:
+            if not db.query(SystemModule).filter(SystemModule.route == route).first():
+                db.add(SystemModule(
+                    name=name, route=route, icon=icon,
+                    parent_id=None, is_active=True, order_index=0, is_sysadmin=False
+                ))
+        db.commit()
+
+        # ── SEED: módulos Facturación (estructura padre/hijo) ────────────
+        def _get_or_create_module(name, route, icon, parent_id=None):
+            m = db.query(SystemModule).filter(SystemModule.route == route).first()
+            if not m:
+                m = SystemModule(
+                    name=name, route=route, icon=icon,
+                    parent_id=parent_id, is_active=True, order_index=0, is_sysadmin=False
+                )
+                db.add(m)
+                db.commit()
+                db.refresh(m)
+            return m
+
+        fact_root    = _get_or_create_module("Facturación",   "/facturacion",                  "bi-receipt-cutoff")
+        fact_ventas  = _get_or_create_module("Ventas",        "/facturacion/ventas",            "bi-bag",                  fact_root.id)
+        fact_reportes= _get_or_create_module("Reportes",      "/facturacion/reportes",          "bi-bar-chart-line",       fact_root.id)
+        _get_or_create_module("Factura",  "/facturacion/ventas/factura",          "bi-file-earmark-text",    fact_ventas.id)
+        _get_or_create_module("Recibo",   "/facturacion/ventas/recibo",           "bi-receipt",              fact_ventas.id)
+        _get_or_create_module("Facturas", "/facturacion/reportes/facturas",       "bi-file-earmark-spreadsheet", fact_reportes.id)
+        _get_or_create_module("Recibos",  "/facturacion/reportes/recibos",        "bi-receipt-cutoff",       fact_reportes.id)
+        db.commit()
+
     finally:
         db.close()
 
@@ -682,6 +723,11 @@ routers = [
     payment_router,
     task_collaborators_router,
     user_notification_router,
+    insumos_router,
+    unidades_medida_router,
+    conceptos_gastos_router,
+    conceptos_compras_router,
+    task_purchases_router,
 ]
 
 for router in routers:

@@ -406,6 +406,66 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Mapa de Menú por Perfil" }
       },
+
+      // ── Facturación (placeholders) ──────────────────────────────
+      {
+        path: "/facturacion/ventas/factura",
+        name: "FacturacionFacturaView",
+        component: () => import("@/views/FacturacionFacturaView.vue"),
+        requiresAuth: true,
+        meta: { title: "Factura" }
+      },
+      {
+        path: "/facturacion/ventas/recibo",
+        name: "FacturacionReciboView",
+        component: () => import("@/views/FacturacionReciboView.vue"),
+        requiresAuth: true,
+        meta: { title: "Recibo" }
+      },
+      {
+        path: "/facturacion/reportes/facturas",
+        name: "FacturacionReporteFacturasView",
+        component: () => import("@/views/FacturacionReporteFacturasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Reporte de Facturas" }
+      },
+      {
+        path: "/facturacion/reportes/recibos",
+        name: "FacturacionReporteRecibosView",
+        component: () => import("@/views/FacturacionReporteRecibosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Reporte de Recibos" }
+      },
+
+      // ── Catálogos de tareas ─────────────────────────────────────
+      {
+        path: "/configuration/insumos",
+        name: "InsumosCrudView",
+        component: () => import("@/views/InsumosCrudView.vue"),
+        requiresAuth: true,
+        meta: { title: "Insumos" }
+      },
+      {
+        path: "/configuration/unidades-medida",
+        name: "UnidadesMedidaView",
+        component: () => import("@/views/UnidadesMedidaView.vue"),
+        requiresAuth: true,
+        meta: { title: "Unidades de Medida" }
+      },
+      {
+        path: "/configuration/conceptos-gastos",
+        name: "ConceptosGastosView",
+        component: () => import("@/views/ConceptosGastosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Conceptos de Gasto" }
+      },
+      {
+        path: "/configuration/conceptos-compras",
+        name: "ConceptosComprasView",
+        component: () => import("@/views/ConceptosComprasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Conceptos de Compra" }
+      },
 ]
   }
 

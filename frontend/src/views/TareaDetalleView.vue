@@ -25,19 +25,6 @@
         </div>
       </div>
       <div class="header-actions" v-if="task">
-        <!-- Factura / Recibo — visual, sin funcionalidad aún -->
-        <div class="billing-group" title="Disponible próximamente">
-          <button class="btn-billing btn-factura" disabled>
-            <i class="bi bi-file-earmark-text"></i>
-            <span>Factura</span>
-            <span class="soon-chip">DIAN</span>
-          </button>
-          <button class="btn-billing btn-recibo" disabled>
-            <i class="bi bi-receipt"></i>
-            <span>Recibo</span>
-          </button>
-        </div>
-
         <template v-if="!isWorkerRole">
           <button v-if="task.assigned_to" class="btn btn-notif" @click="notifModal = true" title="Notificar al Task Leader">
             <i class="bi bi-bell"></i> Notificar
@@ -200,6 +187,11 @@
           <i class="bi bi-receipt"></i> Gastos
           <span class="tab-badge">{{ expenses.length }}</span>
         </button>
+        <button class="tab-btn" :class="{ active: tab === 'compras' }"
+          @click="tab = 'compras'">
+          <i class="bi bi-cart3"></i> Compras
+          <span class="tab-badge">{{ purchases.length }}</span>
+        </button>
         <button class="tab-btn" :class="{ active: tab === 'notificaciones' }"
           @click="tab = 'notificaciones'">
           <i class="bi bi-bell"></i> Notificaciones
@@ -289,15 +281,20 @@
           <h3 class="sub-title">Registrar material / herramienta</h3>
           <div class="form-row4">
             <div class="fg col2">
-              <label>Nombre *</label>
-              <input v-model="matForm.name" class="form-control"
-                placeholder="Ej: Cemento, Taladro..." />
+              <label>Material / Insumo *</label>
+              <select v-model="matForm.name" class="form-select">
+                <option value="">— Seleccionar insumo —</option>
+                <option v-for="ins in insumos" :key="ins.id" :value="ins.name">{{ ins.name }}</option>
+              </select>
             </div>
             <div class="fg">
               <label>Unidad</label>
               <select v-model="matForm.unit" class="form-select">
                 <option value="">—</option>
-                <option v-for="u in units" :key="u" :value="u">{{ u }}</option>
+                <option v-for="u in unidadesMedida" :key="u.id"
+                  :value="u.abreviatura || u.name">
+                  {{ u.name }}{{ u.abreviatura ? ' (' + u.abreviatura + ')' : '' }}
+                </option>
               </select>
             </div>
             <div class="fg">
@@ -373,8 +370,10 @@
           <div class="form-row4">
             <div class="fg col2">
               <label>Concepto *</label>
-              <input v-model="expForm.concept" class="form-control"
-                placeholder="Ej: Compra de materiales, Transporte..." />
+              <select v-model="expForm.concept" class="form-select">
+                <option value="">— Seleccionar concepto —</option>
+                <option v-for="c in conceptosGastos" :key="c.id" :value="c.name">{{ c.name }}</option>
+              </select>
             </div>
             <div class="fg">
               <label>Monto ($) *</label>
@@ -429,6 +428,85 @@
                 </td>
                 <td class="text-right">
                   <strong class="total-value">${{ fmt(totalExpenses) }}</strong>
+                </td>
+                <td v-if="!isWorkerRole"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ──────────────── TAB: COMPRAS ──────────────── -->
+      <div v-if="tab === 'compras'">
+        <div v-if="!isWorkerRole" class="sub-card">
+          <h3 class="sub-title">Registrar compra</h3>
+          <div class="form-row4">
+            <div class="fg col2">
+              <label>Concepto *</label>
+              <select v-model="purchForm.concept" class="form-select">
+                <option value="">— Seleccionar concepto —</option>
+                <option v-for="c in conceptosCompras" :key="c.id" :value="c.name">{{ c.name }}</option>
+              </select>
+            </div>
+            <div class="fg">
+              <label>Monto ($) *</label>
+              <input v-model.number="purchForm.amount" type="number" min="0"
+                class="form-control" placeholder="0" />
+            </div>
+            <div class="fg">
+              <label>Fecha de compra</label>
+              <input v-model="purchForm.purchase_date" type="date" class="form-control" />
+            </div>
+            <div class="fg">
+              <label>Proveedor</label>
+              <input v-model="purchForm.supplier" class="form-control" placeholder="Opcional" />
+            </div>
+            <div class="fg">
+              <label>Nº Factura</label>
+              <input v-model="purchForm.invoice_ref" class="form-control" placeholder="Opcional" />
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm mt-3" @click="addPurchase" :disabled="savingPurch">
+            <i v-if="savingPurch" class="bi bi-arrow-repeat spin"></i>
+            <i v-else class="bi bi-plus-lg"></i>
+            {{ savingPurch ? 'Guardando...' : 'Registrar compra' }}
+          </button>
+        </div>
+
+        <div v-if="purchases.length === 0" class="empty-section">
+          <i class="bi bi-cart-x"></i><p>No hay compras registradas</p>
+        </div>
+        <div v-else class="sub-card p-0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th class="text-center">Proveedor</th>
+                <th class="text-center">Fecha</th>
+                <th class="text-center">Nº Factura</th>
+                <th class="text-right">Monto</th>
+                <th v-if="!isWorkerRole" class="text-center">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in purchases" :key="p.id">
+                <td><strong>{{ p.concept }}</strong></td>
+                <td class="text-center text-muted">{{ p.supplier || '—' }}</td>
+                <td class="text-center text-muted">{{ fmtDate(p.purchase_date) }}</td>
+                <td class="text-center text-muted">{{ p.invoice_ref || '—' }}</td>
+                <td class="text-right"><strong>${{ fmt(p.amount) }}</strong></td>
+                <td v-if="!isWorkerRole" class="text-center">
+                  <button class="btn btn-danger btn-sm" @click="delPurchase(p)">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              <tr class="total-row">
+                <td :colspan="isWorkerRole ? 4 : 5" class="text-right">
+                  <strong>Total compras:</strong>
+                </td>
+                <td class="text-right">
+                  <strong class="total-value">${{ fmt(totalPurchases) }}</strong>
                 </td>
                 <td v-if="!isWorkerRole"></td>
               </tr>
@@ -599,14 +677,20 @@ const comments       = ref([])
 const notifications  = computed(() => comments.value.filter(c => c.is_notification).reverse())
 const unreadNotifsCount = computed(() => notifications.value.filter(n => !n.is_read).length)
 
-// ── Materiales y Gastos ──────────────────────────────────────
-const materials = ref([])
-const expenses  = ref([])
-const savingMat = ref(false)
-const savingExp = ref(false)
-const units     = ["unidad","kg","g","litros","ml","m","m²","m³","rollo","caja","bolsa","par"]
-const matForm = ref({ name: "", unit: "", quantity: 1, unit_cost: 0 })
-const expForm = ref({ concept: "", amount: 0, payment_date: "", receipt_ref: "" })
+// ── Materiales, Gastos y Compras ─────────────────────────────
+const materials      = ref([])
+const expenses       = ref([])
+const purchases      = ref([])
+const savingMat      = ref(false)
+const savingExp      = ref(false)
+const savingPurch    = ref(false)
+const insumos        = ref([])
+const unidadesMedida = ref([])
+const conceptosGastos   = ref([])
+const conceptosCompras  = ref([])
+const matForm  = ref({ name: "", unit: "", quantity: 1, unit_cost: 0 })
+const expForm  = ref({ concept: "", amount: 0, payment_date: "", receipt_ref: "" })
+const purchForm = ref({ concept: "", amount: 0, purchase_date: "", supplier: "", invoice_ref: "" })
 
 // ── Notificación al Task Leader ──────────────────────────────
 const notifModal   = ref(false)
@@ -627,6 +711,7 @@ const availableForCollab = computed(() =>
 
 const totalMaterials = computed(() => materials.value.reduce((s, m) => s + (m.total_cost || 0), 0))
 const totalExpenses  = computed(() => expenses.value.reduce((s, e) => s + (e.amount || 0), 0))
+const totalPurchases = computed(() => purchases.value.reduce((s, p) => s + (p.amount || 0), 0))
 
 // ── Helpers ──────────────────────────────────────────────────
 const STATUS_CLASSES = {
@@ -671,7 +756,8 @@ function clearError(e) { e.target.classList.remove("field-invalid") }
 async function load() {
   loading.value = true
   try {
-    const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes, collabRes] =
+    const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes, collabRes,
+           purchRes, insumoRes, unidadRes, cgastoRes, ccompraRes] =
       await Promise.all([
         api.get(`/tasks/${taskId}`),
         api.get("/tasks/assets-list"),
@@ -683,17 +769,27 @@ async function load() {
         api.get(`/task-expenses/${taskId}`),
         api.get(`/task-comments/${taskId}`),
         api.get(`/task-collaborators/${taskId}`),
+        api.get(`/task-purchases/${taskId}`),
+        api.get("/insumos/"),
+        api.get("/unidades-medida/"),
+        api.get("/conceptos-gastos/"),
+        api.get("/conceptos-compras/"),
       ])
-    task.value          = taskRes.data
-    assets.value        = assetsRes.data
-    workers.value       = workersRes.data
-    users.value         = usersRes.data
-    statuses.value      = statusRes.data
-    evidences.value     = evRes.data
-    materials.value     = matRes.data
-    expenses.value      = expRes.data
-    comments.value      = commRes.data
-    collaborators.value = collabRes.data
+    task.value           = taskRes.data
+    assets.value         = assetsRes.data
+    workers.value        = workersRes.data
+    users.value          = usersRes.data
+    statuses.value       = statusRes.data
+    evidences.value      = evRes.data
+    materials.value      = matRes.data
+    expenses.value       = expRes.data
+    comments.value       = commRes.data
+    collaborators.value  = collabRes.data
+    purchases.value      = purchRes.data
+    insumos.value        = insumoRes.data
+    unidadesMedida.value = unidadRes.data
+    conceptosGastos.value  = cgastoRes.data
+    conceptosCompras.value = ccompraRes.data
 
     form.value = {
       title:              task.value.title,
@@ -840,6 +936,39 @@ async function delExpense(e) {
   showToast("Gasto eliminado", "success")
   const res = await api.get(`/task-expenses/${taskId}`)
   expenses.value = res.data
+}
+
+// ── Compras CRUD ─────────────────────────────────────────────
+async function addPurchase() {
+  if (!purchForm.value.concept.trim()) { showToast("El concepto es obligatorio", "warning"); return }
+  if (!purchForm.value.amount || purchForm.value.amount <= 0) {
+    showToast("El monto debe ser mayor a 0", "warning"); return
+  }
+  savingPurch.value = true
+  try {
+    await api.post(`/task-purchases/${taskId}`, purchForm.value)
+    showToast("Compra registrada", "success")
+    purchForm.value = { concept: "", amount: 0, purchase_date: "", supplier: "", invoice_ref: "" }
+    const res = await api.get(`/task-purchases/${taskId}`)
+    purchases.value = res.data
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error guardando", "error")
+  } finally {
+    savingPurch.value = false
+  }
+}
+
+async function delPurchase(p) {
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Eliminar "${p.concept}"?`, icon: "warning",
+    showCancelButton: true, confirmButtonText: "Eliminar",
+    confirmButtonColor: "#ef4444"
+  })
+  if (!isConfirmed) return
+  await api.delete(`/task-purchases/${p.id}`)
+  showToast("Compra eliminada", "success")
+  const res = await api.get(`/task-purchases/${taskId}`)
+  purchases.value = res.data
 }
 
 // ── Marcar notificación como leída ───────────────────────────
@@ -1037,32 +1166,6 @@ onMounted(load)
   .span2       { grid-column:span 1; }
   .form-row4   { grid-template-columns:1fr 1fr; }
   .fg.col2     { grid-column:span 2; }
-}
-
-/* ── BOTONES FACTURA / RECIBO ── */
-.billing-group {
-  display: flex;
-  gap: 6px;
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.btn-billing {
-  display: flex; align-items: center; gap: 5px;
-  padding: 5px 12px; border-radius: 8px;
-  font-size: 12px; font-weight: 600;
-  border: 1.5px solid; cursor: not-allowed;
-  position: relative;
-}
-.btn-factura {
-  background: #eff6ff; border-color: #3b82f6; color: #1d4ed8;
-}
-.btn-recibo {
-  background: #f0fdf4; border-color: #22c55e; color: #15803d;
-}
-.soon-chip {
-  font-size: 9px; font-weight: 800; letter-spacing: 0.5px;
-  background: #3b82f6; color: #fff;
-  padding: 1px 5px; border-radius: 6px; margin-left: 2px;
 }
 
 /* ── TAB BADGE ALERT ── */
