@@ -4,29 +4,29 @@
     <!-- FILTROS + ACCIONES -->
     <div class="card p-3 mt-3">
       <div class="row g-2 align-items-end">
-        <div class="col-md-4 col-12">
+        <div class="col-md-5 col-12">
           <input type="text" class="form-control" placeholder="Buscar ejecutor..."
             v-model="search" />
         </div>
-        <div class="col-md-3 col-6">
+        <div class="col-md-4 col-12">
           <select class="form-select" v-model="filterProfession">
             <option value="">Todas las profesiones</option>
             <option v-for="p in professions" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </div>
-        <div class="col-md-5 col-6 d-flex justify-content-end gap-2">
-          <button class="btn btn-outline-secondary btn-sm" @click="openProfModal">
+        <div class="col-md-3 col-12 d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm flex-grow-1" @click="openProfModal">
             <i class="bi bi-briefcase"></i> Profesiones
           </button>
-          <button class="btn btn-primary" @click="openCreate">
+          <button class="btn btn-primary btn-sm flex-grow-1" @click="openCreate">
             <i class="bi bi-person-plus-fill"></i> Nuevo ejecutor
           </button>
         </div>
       </div>
     </div>
 
-    <!-- TABLA -->
-    <div class="card p-3 mt-3 table-responsive">
+    <!-- TABLA DESKTOP -->
+    <div class="card p-3 mt-3 table-responsive desktop-table">
       <div v-if="loading" class="text-center text-muted py-4">
         <i class="bi bi-arrow-repeat spin"></i> Cargando...
       </div>
@@ -36,20 +36,18 @@
             <th>#</th>
             <th>Nombre</th>
             <th>Profesión</th>
-            <th>Teléfono</th>
-            <th style="width:120px" class="text-center">Acciones</th>
+            <th style="width:100px" class="text-center">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="w in filtered" :key="w.id">
+          <tr v-for="w in filtered" :key="w.id" class="row-clickable" @click="openDetail(w)">
             <td class="text-muted">{{ w.id }}</td>
             <td><strong>{{ w.name }}</strong></td>
             <td>
               <span v-if="w.profession_name" class="prof-badge">{{ w.profession_name }}</span>
               <span v-else class="text-muted">—</span>
             </td>
-            <td class="text-muted">{{ w.phone || '—' }}</td>
-            <td class="text-center">
+            <td class="text-center" @click.stop>
               <div class="d-flex gap-1 justify-content-center">
                 <button class="btn btn-warning btn-sm" @click="openEdit(w)">
                   <i class="bi bi-pencil"></i>
@@ -61,13 +59,83 @@
             </td>
           </tr>
           <tr v-if="filtered.length === 0">
-            <td colspan="5" class="text-center text-muted py-4">
+            <td colspan="4" class="text-center text-muted py-4">
               <i class="bi bi-person-x" style="font-size:28px;display:block;margin-bottom:8px"></i>
               No hay ejecutores con estos filtros
             </td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- TARJETAS MÓVIL -->
+    <div class="mobile-list mt-3">
+      <div
+        v-for="w in filtered"
+        :key="w.id"
+        class="worker-mobile-card"
+        @click="openDetail(w)"
+      >
+        <div class="wmc-header">
+          <span class="wmc-name">{{ w.name }}</span>
+          <span v-if="w.profession_name" class="prof-badge">{{ w.profession_name }}</span>
+        </div>
+        <div v-if="w.phone" class="wmc-phone">
+          <i class="bi bi-telephone"></i> {{ w.phone }}
+        </div>
+        <div class="wmc-actions" @click.stop>
+          <button class="btn btn-warning btn-sm" @click="openEdit(w)">
+            <i class="bi bi-pencil"></i> Editar
+          </button>
+          <button class="btn btn-danger btn-sm" @click="handleDelete(w)">
+            <i class="bi bi-trash"></i> Eliminar
+          </button>
+        </div>
+      </div>
+      <div v-if="filtered.length === 0" class="mobile-empty">
+        <i class="bi bi-person-x" style="font-size:28px;display:block;margin-bottom:8px"></i>
+        No hay ejecutores con estos filtros
+      </div>
+    </div>
+
+    <!-- MODAL DETALLE (solo lectura) -->
+    <div v-if="showDetail && activeWorker" class="modal-overlay" @click.self="closeDetail">
+      <div class="modal-box modal-detail-box">
+        <div class="modal-header-bar">
+          <h2><i class="bi bi-person-badge"></i> Detalle del Ejecutor</h2>
+          <button class="btn-close-sm" @click="closeDetail"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="modal-body-area">
+          <div class="detail-avatar">
+            <i class="bi bi-person-circle"></i>
+          </div>
+          <div class="detail-name">{{ activeWorker.name }}</div>
+
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label"><i class="bi bi-briefcase"></i> Profesión</span>
+              <span class="detail-value">
+                <span v-if="activeWorker.profession_name" class="prof-badge">{{ activeWorker.profession_name }}</span>
+                <span v-else class="text-muted">Sin profesión asignada</span>
+              </span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label"><i class="bi bi-telephone"></i> Teléfono</span>
+              <span class="detail-value">{{ activeWorker.phone || '—' }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label"><i class="bi bi-hash"></i> ID</span>
+              <span class="detail-value text-muted">#{{ activeWorker.id }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer-bar">
+          <button class="btn btn-warning" @click="openEditFromDetail">
+            <i class="bi bi-pencil"></i> Editar
+          </button>
+          <button class="btn btn-secondary ms-auto" @click="closeDetail">Cerrar</button>
+        </div>
+      </div>
     </div>
 
     <!-- MODAL CREAR / EDITAR EJECUTOR -->
@@ -120,7 +188,6 @@
           </button>
         </div>
         <div class="modal-body-area">
-          <!-- Formulario nueva profesión -->
           <div class="prof-form">
             <div class="row g-2">
               <div class="col-5">
@@ -140,8 +207,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Lista de profesiones -->
           <div class="prof-list mt-3">
             <div v-if="professions.length === 0" class="text-muted small text-center py-3">
               No hay profesiones registradas
@@ -153,8 +218,7 @@
                   {{ p.description }}
                 </span>
               </div>
-              <button class="btn btn-danger btn-sm py-0 px-2" @click="deleteProf(p)"
-                title="Eliminar">
+              <button class="btn btn-danger btn-sm py-0 px-2" @click="deleteProf(p)" title="Eliminar">
                 <i class="bi bi-trash" style="font-size:11px"></i>
               </button>
             </div>
@@ -182,13 +246,14 @@ const saving      = ref(false)
 const savingProf  = ref(false)
 const showModal     = ref(false)
 const showProfModal = ref(false)
-const search          = ref("")
+const showDetail    = ref(false)
+const activeWorker  = ref(null)
+const search           = ref("")
 const filterProfession = ref("")
 
 const editForm = ref({})
 const profForm = ref({ name: "", description: "" })
 
-// ── Filtrado ─────────────────────────────────────────────────────
 const filtered = computed(() =>
   workers.value.filter(w => {
     const matchSearch = !search.value ||
@@ -199,7 +264,6 @@ const filtered = computed(() =>
   })
 )
 
-// ── Carga ────────────────────────────────────────────────────────
 async function load() {
   loading.value = true
   try {
@@ -216,14 +280,32 @@ async function load() {
   }
 }
 
-// ── CRUD Ejecutores ───────────────────────────────────────────────
+// ── Detalle (solo lectura) ────────────────────────────
+function openDetail(w) {
+  activeWorker.value = { ...w }
+  showDetail.value   = true
+}
+
+function closeDetail() {
+  showDetail.value  = false
+  activeWorker.value = null
+}
+
+function openEditFromDetail() {
+  const w = activeWorker.value
+  closeDetail()
+  editForm.value  = { id: w.id, name: w.name, profession_id: w.profession_id, phone: w.phone || "" }
+  showModal.value = true
+}
+
+// ── CRUD Ejecutores ───────────────────────────────────
 function openCreate() {
-  editForm.value = { id: null, name: "", profession_id: null, phone: "" }
+  editForm.value  = { id: null, name: "", profession_id: null, phone: "" }
   showModal.value = true
 }
 
 function openEdit(w) {
-  editForm.value = { id: w.id, name: w.name, profession_id: w.profession_id, phone: w.phone || "" }
+  editForm.value  = { id: w.id, name: w.name, profession_id: w.profession_id, phone: w.phone || "" }
   showModal.value = true
 }
 
@@ -278,9 +360,9 @@ async function handleDelete(w) {
   }
 }
 
-// ── CRUD Profesiones ─────────────────────────────────────────────
+// ── CRUD Profesiones ─────────────────────────────────
 function openProfModal() {
-  profForm.value = { name: "", description: "" }
+  profForm.value      = { name: "", description: "" }
   showProfModal.value = true
 }
 
@@ -332,12 +414,25 @@ onMounted(load)
   padding: 2px 10px; border-radius: 20px;
 }
 
+.row-clickable { cursor: pointer; }
+.row-clickable:hover td { background: #f8fafc; }
+
+/* Modal detalle */
+.modal-detail-box .modal-body-area { align-items: center; gap: 10px; padding: 24px; }
+.detail-avatar { font-size: 56px; color: #cbd5e1; line-height: 1; }
+.detail-name   { font-size: 20px; font-weight: 700; color: #1e293b; text-align: center; }
+.detail-grid   { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.detail-item   { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; gap: 12px; }
+.detail-label  { font-size: 12px; font-weight: 600; color: #64748b; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.detail-value  { font-size: 13px; color: #1e293b; font-weight: 500; text-align: right; }
+
+/* Modal base */
 .modal-overlay  { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal-box      { background: #fff; border-radius: 16px; width: 520px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header-bar { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px 14px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0; }
 .modal-header-bar h2 { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0; }
 .modal-body-area  { padding: 18px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.modal-footer-bar { padding: 14px 24px 18px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
+.modal-footer-bar { padding: 14px 24px 18px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
 .fg       { display: flex; flex-direction: column; gap: 4px; }
 .fg label { font-size: 13px; font-weight: 500; color: #374151; }
 .btn-close-sm { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; border-radius: 6px; padding: 4px 8px; }
@@ -350,4 +445,35 @@ onMounted(load)
 
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+
+/* ── RESPONSIVE ── */
+.mobile-list  { display: none; }
+.mobile-empty { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+
+@media (max-width: 768px) {
+  .desktop-table { display: none; }
+  .mobile-list   { display: flex; flex-direction: column; gap: 10px; }
+
+  .worker-mobile-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    padding: 14px 16px;
+    cursor: pointer;
+  }
+  .wmc-header  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
+  .wmc-name    { font-size: 15px; font-weight: 700; color: #1e293b; }
+  .wmc-phone   { font-size: 13px; color: #64748b; display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+  .wmc-phone .bi { color: #94a3b8; }
+  .wmc-actions { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
+  .wmc-actions .btn { flex: 1; }
+
+  .modal-box { width: 95vw; }
+}
+
+@media (max-width: 576px) {
+  .wmc-header  { flex-direction: column; align-items: flex-start; }
+  .wmc-actions { flex-direction: column; }
+  .wmc-actions .btn { width: 100%; }
+}
 </style>

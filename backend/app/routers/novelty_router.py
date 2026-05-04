@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File,
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.novelty_model import Novelty, NoveltyEvidence
+from app.models.novelty_model import Novelty, NoveltyEvidence, NoveltyReply
 from app.models.user_model import User
 from app.models.role_model import Role
 from app.models.user_session_model import UserSession
@@ -80,6 +80,17 @@ def _ser(n: Novelty, user_name: str = "", evidence_count: int = 0) -> dict:
         "evidence_count": evidence_count,
         "created_at":     n.created_at.isoformat() if n.created_at else None,
         "updated_at":     n.updated_at.isoformat() if n.updated_at else None,
+    }
+
+
+def _ser_reply(r: NoveltyReply, user_name: str) -> dict:
+    return {
+        "id":         r.id,
+        "novelty_id": r.novelty_id,
+        "user_id":    r.user_id,
+        "user_name":  user_name,
+        "message":    r.message,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
     }
 
 
@@ -312,6 +323,68 @@ async def upload_evidence(
     db.commit()
     db.refresh(ev)
     return _ser_ev(ev)
+
+
+# ── GET /novelties/{id}/replies ──────────────────────────────────────────────
+@router.get("/{novelty_id}/replies")
+def list_replies(
+    novelty_id: int,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    user = _get_user(authorization, db)
+    _find_novelty(novelty_id, user, db)
+    replies = db.query(NoveltyReply).filter(
+        NoveltyReply.novelty_id == novelty_id
+    ).order_by(NoveltyReply.created_at.asc()).all()
+    result = []
+    for r in replies:
+        author = db.query(User).filter(User.id == r.user_id).first()
+        result.append(_ser_reply(r, author.nombre if author else "Desconocido"))
+    return result
+
+
+# ── POST /novelties/{id}/replies ──────────────────────────────────────────────
+@router.post("/{novelty_id}/replies")
+def create_reply(
+    novelty_id: int,
+    data: dict,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    user    = _get_user(authorization, db)
+    can_all = _can_manage_all(user, db)
+    if not can_all:
+        raise HTTPException(status_code=403, detail="Solo administradores y auditores pueden responder")
+    _find_novelty(novelty_id, user, db)
+    message = (data.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
+    r = NoveltyReply(novelty_id=novelty_id, user_id=user.id, message=message)
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    return _ser_reply(r, user.nombre)
+
+
+# ── DELETE /novelties/replies/{reply_id} ──────────────────────────────────────
+@router.delete("/replies/{reply_id}")
+def delete_reply(
+    reply_id: int,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    user    = _get_user(authorization, db)
+    can_all = _can_manage_all(user, db)
+    r = db.query(NoveltyReply).filter(NoveltyReply.id == reply_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Respuesta no encontrada")
+    _find_novelty(r.novelty_id, user, db)
+    if not can_all and r.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar esta respuesta")
+    db.delete(r)
+    db.commit()
+    return {"ok": True}
 
 
 # ── DELETE /novelties/evidence/{evidence_id} ─────────────────────────────────

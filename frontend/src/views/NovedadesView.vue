@@ -248,6 +248,46 @@
               </div>
             </div>
 
+            <!-- Respuestas -->
+            <div class="replies-section">
+              <h4 class="replies-title">
+                <i class="bi bi-chat-left-text"></i> Respuestas
+                <span v-if="replies.length" class="replies-count">{{ replies.length }}</span>
+              </h4>
+
+              <div v-if="replies.length" class="replies-list">
+                <div v-for="r in replies" :key="r.id" class="reply-bubble">
+                  <div class="reply-header">
+                    <span class="reply-who"><i class="bi bi-person-fill"></i> {{ r.user_name }}</span>
+                    <span class="reply-date">{{ fmtDate(r.created_at) }}</span>
+                    <button v-if="canManageAll" class="reply-del" @click="deleteReply(r)" title="Eliminar respuesta">
+                      <i class="bi bi-x"></i>
+                    </button>
+                  </div>
+                  <p class="reply-msg">{{ r.message }}</p>
+                </div>
+              </div>
+              <div v-else class="reply-empty">
+                <i class="bi bi-chat-left"></i>
+                <span>Sin respuestas aún</span>
+              </div>
+
+              <!-- Input solo para admin/auditor -->
+              <div v-if="canManageAll" class="reply-input-row">
+                <textarea
+                  v-model="replyText"
+                  class="reply-textarea"
+                  placeholder="Escribe una aclaración o instrucción para el usuario..."
+                  rows="2"
+                  @keydown.ctrl.enter="sendReply"
+                ></textarea>
+                <button class="btn-send-reply" :disabled="sendingReply || !replyText.trim()" @click="sendReply">
+                  <i v-if="sendingReply" class="bi bi-hourglass-split"></i>
+                  <i v-else class="bi bi-send-fill"></i>
+                </button>
+              </div>
+            </div>
+
             <!-- Evidencias -->
             <div class="evidence-section">
               <div class="evidence-section-header">
@@ -349,6 +389,11 @@ const activeNovelty   = ref(null)
 const evidences       = ref([])
 const changingStatus  = ref(false)
 const lightboxUrl     = ref(null)
+
+// ── Respuestas ───────────────────────────────────────
+const replies       = ref([])
+const replyText     = ref("")
+const sendingReply  = ref(false)
 
 // ── Cropper inline del formulario ───────────────────
 const pendingPhotos    = ref([])
@@ -537,14 +582,18 @@ async function save() {
 async function openDetail(n) {
   activeNovelty.value = { ...n }
   evidences.value     = []
+  replies.value       = []
+  replyText.value     = ""
   showDetail.value    = true
-  await loadEvidences(n.id)
+  await Promise.all([loadEvidences(n.id), loadReplies(n.id)])
 }
 
 function closeDetail() {
-  showDetail.value = false
+  showDetail.value    = false
   activeNovelty.value = null
   evidences.value     = []
+  replies.value       = []
+  replyText.value     = ""
 }
 
 // ── Cambiar estado ───────────────────────────────────
@@ -581,6 +630,48 @@ async function handleDelete(n) {
     showToast("Novedad eliminada", "success")
     closeDetail()
     await load()
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al eliminar", "error")
+  }
+}
+
+// ── Respuestas ───────────────────────────────────────
+async function loadReplies(noveltyId) {
+  try {
+    const res = await api.get(`/novelties/${noveltyId}/replies`)
+    replies.value = res.data
+  } catch {}
+}
+
+async function sendReply() {
+  const msg = replyText.value.trim()
+  if (!msg) return
+  sendingReply.value = true
+  try {
+    const res = await api.post(`/novelties/${activeNovelty.value.id}/replies`, { message: msg })
+    replies.value.push(res.data)
+    replyText.value = ""
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al enviar respuesta", "error")
+  } finally {
+    sendingReply.value = false
+  }
+}
+
+async function deleteReply(r) {
+  const { isConfirmed } = await window.Swal.fire({
+    title: "¿Eliminar esta respuesta?",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Eliminar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#ef4444"
+  })
+  if (!isConfirmed) return
+  try {
+    await api.delete(`/novelties/replies/${r.id}`)
+    replies.value = replies.value.filter(x => x.id !== r.id)
+    showToast("Respuesta eliminada", "success")
   } catch (e) {
     showToast(e.response?.data?.detail || "Error al eliminar", "error")
   }
@@ -1359,6 +1450,143 @@ onMounted(async () => {
   transition: background 0.15s;
 }
 .lightbox-close:hover { background: rgba(255,255,255,0.2); }
+
+/* ── RESPUESTAS ── */
+.replies-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--input-bg, #f8fafc);
+  border-radius: 10px;
+  border: 1px solid var(--border, #e2e8f0);
+}
+
+.replies-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-main, #1e293b);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.replies-count {
+  background: var(--primary, #3b82f6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.replies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reply-bubble {
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-left: 3px solid var(--primary, #3b82f6);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.reply-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.reply-who {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary, #2563eb);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reply-date {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  margin-left: auto;
+}
+
+.reply-del {
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.reply-del:hover { color: #ef4444; }
+
+.reply-msg {
+  font-size: 13px;
+  color: var(--text-main, #374151);
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.reply-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+  padding: 4px 0;
+}
+
+.reply-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 2px;
+}
+
+.reply-textarea {
+  flex: 1;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-main, #1e293b);
+  background: #fff;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.reply-textarea:focus { border-color: var(--primary, #3b82f6); }
+
+.btn-send-reply {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary, #3b82f6);
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.btn-send-reply:hover:not(:disabled) { background: #2563eb; }
+.btn-send-reply:disabled { background: #94a3b8; cursor: default; }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 768px) {

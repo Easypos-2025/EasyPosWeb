@@ -58,8 +58,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue"
-import { useRouter } from "vue-router"
+import { ref, computed, onMounted, onUnmounted, watch } from "vue"
+import { useRouter, useRoute } from "vue-router"
 import Topbar from "@/components/layout/Topbar.vue"
 import Sidebar from "@/components/layout/SidebarLeft.vue"
 import RightSidebar from "@/components/layout/SidebarRight.vue"
@@ -68,6 +68,7 @@ import PlanUpgradeModal from "@/components/plans/PlanUpgradeModal.vue"
 import api from "@/services/apis"
 
 const router    = useRouter()
+const route     = useRoute()
 const isDesktop = ref(window.innerWidth >= 1024)
 
 const sidebarOpen      = ref(false)
@@ -131,6 +132,11 @@ const handleResize = () => {
     sidebarRightOpen.value = false
   }
 }
+
+watch(() => route.path, () => {
+  sidebarOpen.value = false
+  if (window.innerWidth < 1024) sidebarRightOpen.value = false
+})
 
 onMounted(() => {
   window.addEventListener("resize", handleResize)

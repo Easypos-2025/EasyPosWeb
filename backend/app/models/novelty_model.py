@@ -26,3 +26,13 @@ class NoveltyEvidence(Base):
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
     file_type: Mapped[str] = mapped_column(String(50), nullable=True)
     uploaded_at: Mapped[object] = mapped_column(TIMESTAMP, server_default=func.now())
+
+
+class NoveltyReply(Base):
+    __tablename__ = "novelty_replies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    novelty_id: Mapped[int] = mapped_column(Integer, ForeignKey("novelties.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[object] = mapped_column(TIMESTAMP, server_default=func.now())
