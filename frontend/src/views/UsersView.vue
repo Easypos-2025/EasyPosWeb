@@ -208,7 +208,7 @@
             <th>Nombre</th>
             <th class="d-none d-md-table-cell">Email</th>
             <th>Rol</th>
-            <th>Acciones</th>
+            <th v-if="can('Users', 'can_edit') || can('Users', 'can_delete')">Acciones</th>
           </tr>
         </thead>
 
@@ -217,7 +217,7 @@
             <td>{{ user.nombre }}</td>
             <td class="d-none d-md-table-cell">{{ user.email }}</td>
             <td>{{ getRoleName(user.role_id) }}</td>
-            <td class="d-flex gap-2">
+            <td v-if="can('Users', 'can_edit') || can('Users', 'can_delete')" class="d-flex gap-2">
               <button v-if="can('Users', 'can_edit')" class="btn btn-sm btn-warning" @click="openEdit(user)">
                 Editar
               </button>
