@@ -105,6 +105,14 @@ const routes = [
   /* =========================================
      LAYOUT PRINCIPAL (DASHBOARD)
   ========================================= */
+  // ── Página pública QR préstamo (sin auth, sin layout) ──────────
+  {
+    path: "/prestamo-qr/:token",
+    name: "QrPrestamoPublic",
+    component: () => import("@/views/QrPrestamoPublic.vue"),
+    meta: { title: "Confirmar Préstamo" }
+  },
+
   {
     path: "/",
     component: MainLayout,
@@ -437,6 +445,29 @@ const routes = [
         meta: { title: "Reporte de Recibos" }
       },
 
+      // ── Préstamos de bodega ─────────────────────────────────────
+      {
+        path: "/configuration/colaboradores-externos",
+        name: "ColaboradoresExternosView",
+        component: () => import("@/views/ColaboradoresExternosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Colaboradores Externos" }
+      },
+      {
+        path: "/configuration/bodega",
+        name: "BodegaItemsView",
+        component: () => import("@/views/BodegaItemsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Bodega" }
+      },
+      {
+        path: "/loans/prestamos",
+        name: "LoansView",
+        component: () => import("@/views/LoansView.vue"),
+        requiresAuth: true,
+        meta: { title: "Préstamos" }
+      },
+
       // ── Catálogos de tareas ─────────────────────────────────────
       {
         path: "/configuration/insumos",
@@ -501,7 +532,8 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/register" ||
     to.path === "/payment-pending" ||
     to.path.startsWith("/invite/") ||
-    to.path.startsWith("/landing/perfil/")
+    to.path.startsWith("/landing/perfil/") ||
+    to.path.startsWith("/prestamo-qr/")
   ) {
     return next()
   }

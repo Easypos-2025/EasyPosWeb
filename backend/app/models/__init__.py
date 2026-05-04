@@ -72,5 +72,8 @@ from app.models.unidad_medida_model import UnidadMedida
 from app.models.concepto_gasto_model import ConceptoGasto
 from app.models.concepto_compra_model import ConceptoCompra
 from app.models.task_purchase_model import TaskPurchase
+from app.models.external_collaborator_model import ExternalCollaborator
+from app.models.bodega_item_model import BodegaItem
+from app.models.loan_model import Loan
 
 

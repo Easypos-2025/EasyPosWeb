@@ -61,6 +61,10 @@ from app.routers.unidades_medida_router import router as unidades_medida_router
 from app.routers.conceptos_gastos_router import router as conceptos_gastos_router
 from app.routers.conceptos_compras_router import router as conceptos_compras_router
 from app.routers.task_purchases_router import router as task_purchases_router
+from app.routers.external_collaborators_router import router as external_collaborators_router
+from app.routers.bodega_items_router import router as bodega_items_router
+from app.routers.loans_router import router as loans_router
+from app.routers.qr_public_router import router as qr_public_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -558,6 +562,19 @@ def _init_db_data():
                 ))
         db.commit()
 
+        # ── SEED: módulos préstamos/bodega ───────────────────────────────
+        for route, name, icon in [
+            ("/configuration/colaboradores-externos", "Colaboradores Externos", "bi-person-badge"),
+            ("/configuration/bodega",                 "Bodega",                 "bi-archive"),
+            ("/loans/prestamos",                      "Préstamos",              "bi-box-arrow-right"),
+        ]:
+            if not db.query(SystemModule).filter(SystemModule.route == route).first():
+                db.add(SystemModule(
+                    name=name, route=route, icon=icon,
+                    parent_id=None, is_active=True, order_index=0, is_sysadmin=False
+                ))
+        db.commit()
+
         # ── SEED: módulos catálogo tareas ────────────────────────────────
         for route, name, icon in [
             ("/configuration/insumos",          "Insumos",           "bi-boxes"),
@@ -602,10 +619,11 @@ def _init_db_data():
 # ===============================
 # Rutas públicas sensibles con su límite (max_requests, window_seconds)
 _RATE_LIMITS: dict[str, tuple[int, int]] = {
-    "/register/associate/": (5, 3600),   # 5 registros/IP/hora
-    "/payments/submit-receipt": (10, 3600),  # 10 intentos/IP/hora
-    "/auth/login": (20, 900),            # 20 intentos/IP/15 min
-    "/auth/forgot-password": (5, 3600),  # 5/IP/hora
+    "/register/associate/": (5, 3600),
+    "/payments/submit-receipt": (10, 3600),
+    "/auth/login": (20, 900),
+    "/auth/forgot-password": (5, 3600),
+    "/qr/prestamo/": (15, 60),           # 15 req/IP/min en endpoints QR públicos
 }
 # ip → ruta → deque de timestamps
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
@@ -728,6 +746,10 @@ routers = [
     conceptos_gastos_router,
     conceptos_compras_router,
     task_purchases_router,
+    external_collaborators_router,
+    bodega_items_router,
+    loans_router,
+    qr_public_router,
 ]
 
 for router in routers:
