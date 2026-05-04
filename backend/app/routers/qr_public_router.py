@@ -2,7 +2,7 @@
 Endpoints públicos para confirmación de QR de préstamos.
 No requieren autenticación. Rate-limited en main.py.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -59,6 +59,7 @@ def qr_confirmar(token: str, db: Session = Depends(get_db)):
             item.cantidad_disponible = max(0, item.cantidad_disponible - loan.cantidad)
         loan.estado = "activo"
         loan.fecha_salida_confirmada = datetime.utcnow()
+        loan.qr_expires_at = datetime.utcnow() + timedelta(days=365)
         db.commit()
         return {"message": "Recepción confirmada", "nuevo_estado": "activo"}
 

@@ -65,6 +65,12 @@ from app.routers.external_collaborators_router import router as external_collabo
 from app.routers.bodega_items_router import router as bodega_items_router
 from app.routers.loans_router import router as loans_router
 from app.routers.qr_public_router import router as qr_public_router
+from app.routers.suppliers_router import router as suppliers_router
+from app.routers.supply_items_router import router as supply_items_router
+from app.routers.product_categories_router import router as product_categories_router
+from app.routers.products_router import router as products_router
+from app.routers.price_lists_router import router as price_lists_router
+from app.routers.purchase_orders_router import router as purchase_orders_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -101,6 +107,188 @@ def _init_db_data():
         except Exception:
             db.rollback()
 
+        # ── INVENTARIO: tablas base ────────────────────────────────────────────
+        inventory_tables = [
+            """CREATE TABLE IF NOT EXISTS suppliers (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                name VARCHAR(200) NOT NULL,
+                nit VARCHAR(50) NULL,
+                contact_name VARCHAR(150) NULL,
+                email VARCHAR(150) NULL,
+                phone VARCHAR(30) NULL,
+                address TEXT NULL,
+                notes TEXT NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sup_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS supply_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                code VARCHAR(50) NULL,
+                name VARCHAR(200) NOT NULL,
+                description TEXT NULL,
+                unit_id INT NULL,
+                cost_price DECIMAL(14,4) NOT NULL DEFAULT 0,
+                stock_qty DECIMAL(14,4) NOT NULL DEFAULT 0,
+                min_stock DECIMAL(14,4) NOT NULL DEFAULT 0,
+                waste_pct DECIMAL(5,2) NOT NULL DEFAULT 0,
+                control_stock TINYINT(1) NOT NULL DEFAULT 1,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_si_company (company_id),
+                INDEX idx_si_code (code)
+            )""",
+            """CREATE TABLE IF NOT EXISTS product_categories (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                name VARCHAR(150) NOT NULL,
+                description VARCHAR(255) NULL,
+                color VARCHAR(10) NULL,
+                icon VARCHAR(50) NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pc_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS product_references (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                code VARCHAR(50) NOT NULL,
+                name VARCHAR(200) NOT NULL,
+                base_price DECIMAL(14,2) NOT NULL DEFAULT 0,
+                base_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pr_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS price_lists (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                name VARCHAR(150) NOT NULL,
+                description VARCHAR(255) NULL,
+                is_default TINYINT(1) NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pl_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS products (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                code VARCHAR(50) NULL,
+                name VARCHAR(200) NOT NULL,
+                description TEXT NULL,
+                photo_url VARCHAR(500) NULL,
+                category_id INT NULL,
+                reference_id INT NULL,
+                inventory_behavior VARCHAR(20) NOT NULL DEFAULT 'direct',
+                base_price DECIMAL(14,2) NOT NULL DEFAULT 0,
+                cost_price DECIMAL(14,2) NOT NULL DEFAULT 0,
+                tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+                min_stock DECIMAL(14,4) NOT NULL DEFAULT 0,
+                ask_price TINYINT(1) NOT NULL DEFAULT 0,
+                ask_description TINYINT(1) NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_prod_company (company_id),
+                INDEX idx_prod_code (code)
+            )""",
+            """CREATE TABLE IF NOT EXISTS product_recipes (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                product_id INT NOT NULL,
+                supply_item_id INT NOT NULL,
+                qty_required DECIMAL(14,4) NOT NULL DEFAULT 1,
+                unit_id INT NULL,
+                INDEX idx_recipe_product (product_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS product_presentations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                product_id INT NOT NULL,
+                supply_item_id INT NULL,
+                name VARCHAR(100) NOT NULL,
+                factor DECIMAL(14,4) NOT NULL DEFAULT 1,
+                barcode VARCHAR(100) NULL,
+                price DECIMAL(14,2) NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                INDEX idx_pp_product (product_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS serialized_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                product_id INT NOT NULL,
+                serial_code VARCHAR(100) NOT NULL,
+                supplier_id INT NULL,
+                purchase_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+                is_sold TINYINT(1) NOT NULL DEFAULT 0,
+                sold_at TIMESTAMP NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_ser_product (product_id),
+                INDEX idx_ser_serial (serial_code)
+            )""",
+            """CREATE TABLE IF NOT EXISTS price_list_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                price_list_id INT NOT NULL,
+                product_id INT NOT NULL,
+                presentation_id INT NULL,
+                price DECIMAL(14,2) NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                INDEX idx_pli_list (price_list_id),
+                INDEX idx_pli_product (product_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS purchase_orders (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                supplier_id INT NULL,
+                invoice_no VARCHAR(100) NULL,
+                order_date DATE NOT NULL,
+                total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+                notes TEXT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'draft',
+                created_by INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_po_company (company_id),
+                INDEX idx_po_supplier (supplier_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS purchase_order_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                purchase_order_id INT NOT NULL,
+                supply_item_id INT NOT NULL,
+                qty DECIMAL(14,4) NOT NULL DEFAULT 0,
+                unit_price DECIMAL(14,4) NOT NULL DEFAULT 0,
+                subtotal DECIMAL(14,2) NOT NULL DEFAULT 0,
+                presentation_name VARCHAR(100) NULL,
+                INDEX idx_poi_order (purchase_order_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS stock_movements (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                supply_item_id INT NOT NULL,
+                movement_type VARCHAR(20) NOT NULL,
+                qty DECIMAL(14,4) NOT NULL,
+                qty_before DECIMAL(14,4) NOT NULL DEFAULT 0,
+                qty_after DECIMAL(14,4) NOT NULL DEFAULT 0,
+                reference_type VARCHAR(30) NULL,
+                reference_id INT NULL,
+                notes TEXT NULL,
+                created_by INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sm_company (company_id),
+                INDEX idx_sm_item (supply_item_id)
+            )""",
+        ]
+        for sql in inventory_tables:
+            try:
+                db.execute(text(sql))
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        # Agregar price_list_id a clients si no existe
+        try:
+            db.execute(text("ALTER TABLE clients ADD COLUMN price_list_id INT NULL"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         # Registrar módulo Clientes en system_modules si no existe
         from app.models.system_module_model import SystemModule
         if not db.query(SystemModule).filter(SystemModule.route == "/configuration/clients").first():
@@ -128,6 +316,24 @@ def _init_db_data():
                 order_index=0, is_sysadmin=True
             ))
             db.commit()
+
+        # ── Módulos de inventario ──────────────────────────────────────────────
+        inventory_modules = [
+            ("Proveedores",       "/inventory/suppliers",        "bi-truck"),
+            ("Insumos",           "/inventory/supply-items",     "bi-box-seam"),
+            ("Categorías Prod.",  "/inventory/categories",       "bi-tags"),
+            ("Productos",         "/inventory/products",         "bi-grid"),
+            ("Listas de Precios", "/inventory/price-lists",      "bi-currency-dollar"),
+            ("Entradas Mercancía","/inventory/purchase-orders",  "bi-cart-plus"),
+        ]
+        for mod_name, mod_route, mod_icon in inventory_modules:
+            if not db.query(SystemModule).filter(SystemModule.route == mod_route).first():
+                db.add(SystemModule(
+                    name=mod_name, route=mod_route,
+                    icon=mod_icon, parent_id=None, is_active=True,
+                    order_index=0, is_sysadmin=False
+                ))
+        db.commit()
 
         # Crear tabla user_notifications si no existe (migración segura)
         try:
@@ -750,6 +956,12 @@ routers = [
     bodega_items_router,
     loans_router,
     qr_public_router,
+    suppliers_router,
+    supply_items_router,
+    product_categories_router,
+    products_router,
+    price_lists_router,
+    purchase_orders_router,
 ]
 
 for router in routers:

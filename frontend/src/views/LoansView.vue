@@ -60,6 +60,8 @@
             <th>Colaborador</th>
             <th class="text-center">Cant.</th>
             <th class="text-center">Estado</th>
+            <th class="text-center">Salida QR</th>
+            <th class="text-center">Retorno QR</th>
             <th class="text-center">Vence</th>
             <th class="text-center">Acciones</th>
           </tr>
@@ -80,6 +82,18 @@
               <span class="estado-badge" :class="estadoClass(loan.estado)">
                 {{ estadoLabel(loan.estado) }}
               </span>
+            </td>
+            <td class="text-center">
+              <span v-if="loan.fecha_salida_confirmada" class="date-confirmed date-out">
+                <i class="bi bi-check-circle-fill me-1"></i>{{ fmtDateTime(loan.fecha_salida_confirmada) }}
+              </span>
+              <span v-else class="text-muted">—</span>
+            </td>
+            <td class="text-center">
+              <span v-if="loan.fecha_retorno_confirmada" class="date-confirmed date-in">
+                <i class="bi bi-check-circle-fill me-1"></i>{{ fmtDateTime(loan.fecha_retorno_confirmada) }}
+              </span>
+              <span v-else class="text-muted">—</span>
             </td>
             <td class="text-center" :class="isOverdue(loan) ? 'text-danger' : 'text-muted'">
               <span v-if="loan.fecha_retorno_esperada">
@@ -103,7 +117,7 @@
             </td>
           </tr>
           <tr v-if="filtered.length === 0">
-            <td colspan="7" class="text-center text-muted py-4">No hay préstamos con estos filtros</td>
+            <td colspan="9" class="text-center text-muted py-4">No hay préstamos con estos filtros</td>
           </tr>
         </tbody>
       </table>
@@ -280,6 +294,12 @@ const ESTADO_CLASSES = {
 function estadoLabel(e) { return ESTADO_LABELS[e] || e }
 function estadoClass(e) { return ESTADO_CLASSES[e] || "" }
 function fmtDate(iso)   { return iso ? new Date(iso).toLocaleDateString("es-CO", { day:"2-digit", month:"short", year:"numeric" }) : "" }
+function fmtDateTime(iso) {
+  if (!iso) return ""
+  const d = new Date(iso)
+  return d.toLocaleDateString("es-CO", { day:"2-digit", month:"short" }) + " " +
+         d.toLocaleTimeString("es-CO", { hour:"2-digit", minute:"2-digit" })
+}
 function isOverdue(l) {
   return l.fecha_retorno_esperada &&
     new Date(l.fecha_retorno_esperada) < new Date() &&
@@ -484,6 +504,10 @@ onMounted(load)
 .btn-secondary { border: 1.5px solid #e2e8f0; background: #fff; color: #64748b; }
 .btn-sm { padding: 6px 12px; font-size: 12px; }
 .btn-outline-primary { background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; }
+
+.date-confirmed { font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 2px; }
+.date-out { color: #16a34a; }
+.date-in  { color: #1e40af; }
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }

@@ -497,6 +497,50 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Conceptos de Compra" }
       },
+
+      // ── Inventario ─────────────────────────────────────────────────
+      {
+        path: "/inventory/suppliers",
+        name: "SuppliersView",
+        component: () => import("@/views/inventory/SuppliersView.vue"),
+        requiresAuth: true,
+        meta: { title: "Proveedores" }
+      },
+      {
+        path: "/inventory/supply-items",
+        name: "SupplyItemsView",
+        component: () => import("@/views/inventory/SupplyItemsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Insumos" }
+      },
+      {
+        path: "/inventory/categories",
+        name: "ProductCategoriesView",
+        component: () => import("@/views/inventory/ProductCategoriesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Categorías de Producto" }
+      },
+      {
+        path: "/inventory/price-lists",
+        name: "PriceListsView",
+        component: () => import("@/views/inventory/PriceListsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Listas de Precios" }
+      },
+      {
+        path: "/inventory/products",
+        name: "ProductsView",
+        component: () => import("@/views/inventory/ProductsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Productos" }
+      },
+      {
+        path: "/inventory/purchase-orders",
+        name: "PurchaseOrdersView",
+        component: () => import("@/views/inventory/PurchaseOrdersView.vue"),
+        requiresAuth: true,
+        meta: { title: "Entradas de Mercancía" }
+      },
 ]
   }
 
