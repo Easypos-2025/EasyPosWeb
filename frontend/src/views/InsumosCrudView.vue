@@ -33,14 +33,14 @@
           <tr>
             <th>Nombre</th>
             <th>Descripción</th>
-            <th class="text-center">Acciones</th>
+            <th v-if="canManage" class="text-center">Acciones</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="item in filtered" :key="item.id">
             <td><strong>{{ item.name }}</strong></td>
             <td class="text-muted">{{ item.description || '—' }}</td>
-            <td class="text-center">
+            <td v-if="canManage" class="text-center">
               <div class="action-btns">
                 <button class="btn btn-sm btn-outline-primary" @click="openEdit(item)" title="Editar">
                   <i class="bi bi-pencil"></i>
@@ -89,6 +89,9 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+
+const userInfo   = JSON.parse(localStorage.getItem("user") || "{}")
+const canManage  = !['WORKER','AUDITOR'].some(r => (userInfo.role || '').toUpperCase().includes(r))
 
 const items  = ref([])
 const search = ref("")

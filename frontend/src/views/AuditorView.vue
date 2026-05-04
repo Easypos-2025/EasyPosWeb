@@ -36,8 +36,68 @@
       </select>
     </div>
 
-    <!-- TABLA PRINCIPAL -->
-    <div class="table-card">
+    <!-- TARJETAS MÓVIL -->
+    <div class="mobile-list" v-if="!loading">
+      <div v-for="t in filtered" :key="t.id"
+        class="task-mobile-card" :class="{ 'card-overdue': isOverdue(t) }">
+        <div class="tmc-header">
+          <span class="status-badge" :class="statusClass(t.status_id)">{{ t.status_name }}</span>
+          <span v-if="isOverdue(t)" class="overdue-tag">
+            <i class="bi bi-exclamation-triangle-fill"></i> Atrasada
+          </span>
+          <span class="tmc-id">#{{ t.id }}</span>
+        </div>
+        <div class="tmc-title">{{ t.title }}</div>
+        <div v-if="t.description" class="tmc-desc">{{ t.description }}</div>
+        <div class="tmc-row">
+          <span v-if="t.assigned_to" class="user-chip">
+            <i class="bi bi-person-fill"></i> {{ userName(t.assigned_to) }}
+          </span>
+          <span v-else class="text-muted">Sin asignar</span>
+          <span v-if="t.due_date" :class="isOverdue(t) ? 'text-danger' : 'text-muted'" style="font-size:12px">
+            <i class="bi bi-calendar3 me-1"></i>{{ fmtDate(t.due_date) }}
+          </span>
+        </div>
+        <div class="progress-mini" style="margin:6px 0">
+          <div class="progress-track-sm" style="flex:1;width:auto">
+            <div class="progress-fill-sm"
+              :class="t.progress === 100 ? 'fill-green' : 'fill-blue'"
+              :style="{ width: t.progress + '%' }"></div>
+          </div>
+          <span class="prog-num">{{ t.progress }}%</span>
+        </div>
+        <div class="tmc-actions">
+          <button class="btn btn-warning btn-sm" @click="openAssign(t)" title="Asignar">
+            <i class="bi bi-person-plus"></i>
+          </button>
+          <button class="btn btn-info btn-sm" @click="openMessage(t)" title="Mensaje">
+            <i class="bi bi-chat-dots"></i>
+          </button>
+          <button class="btn btn-secondary btn-sm"
+            @click="$router.push(`/tasks/${t.id}/evidencias`)" title="Evidencias">
+            <i class="bi bi-camera"></i>
+          </button>
+          <button v-if="t.asset_id" class="btn btn-secondary btn-sm"
+            @click="$router.push(`/assets/${t.asset_id}/historial`)" title="Historial">
+            <i class="bi bi-clock-history"></i>
+          </button>
+          <button class="btn btn-secondary btn-sm"
+            @click="$router.push(`/tasks/${t.id}/reportes`)" title="Reportes">
+            <i class="bi bi-bar-chart-steps"></i>
+          </button>
+          <button class="btn btn-secondary btn-sm"
+            @click="$router.push(`/tasks/${t.id}/analisis`)" title="Análisis">
+            <i class="bi bi-graph-up-arrow"></i>
+          </button>
+        </div>
+      </div>
+      <div v-if="filtered.length === 0" class="mobile-empty">
+        No hay tareas con estos filtros
+      </div>
+    </div>
+
+    <!-- TABLA PRINCIPAL (desktop) -->
+    <div class="table-card desktop-table">
       <div v-if="loading" class="table-loading">
         <i class="bi bi-arrow-repeat spin"></i> Cargando...
       </div>
@@ -469,4 +529,35 @@ onMounted(load)
 
 .spin { display:inline-block; animation:spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* ── RESPONSIVE ── */
+.mobile-list  { display: none; }
+.mobile-empty { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+
+@media (max-width: 768px) {
+  .desktop-table { display: none; }
+  .mobile-list   { display: flex; flex-direction: column; gap: 10px; }
+
+  .filters-row { flex-direction: column; }
+  .filters-row .form-control,
+  .filters-row .form-select { max-width: 100% !important; width: 100%; }
+
+  .task-mobile-card {
+    background: #fff; border-radius: 14px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    padding: 14px 16px;
+  }
+  .card-overdue { border-left: 3px solid #ef4444; }
+
+  .tmc-header  { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .tmc-id      { margin-left: auto; font-size: 11px; color: #94a3b8; }
+  .tmc-title   { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 6px; line-height: 1.3; }
+  .tmc-desc    { font-size: 12px; color: #94a3b8; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tmc-row     { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px; }
+  .tmc-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
+  .overdue-tag { font-size: 11px; color: #ef4444; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+
+  .modal-box { width: 95vw; }
+  .page-container { padding: 16px; }
+}
 </style>

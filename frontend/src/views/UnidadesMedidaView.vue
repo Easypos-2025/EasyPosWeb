@@ -30,7 +30,7 @@
           <tr>
             <th>Nombre</th>
             <th class="text-center">Abreviatura</th>
-            <th class="text-center">Acciones</th>
+            <th v-if="canManage" class="text-center">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -40,7 +40,7 @@
               <span v-if="item.abreviatura" class="abr-chip">{{ item.abreviatura }}</span>
               <span v-else class="text-muted">—</span>
             </td>
-            <td class="text-center">
+            <td v-if="canManage" class="text-center">
               <div class="action-btns">
                 <button class="btn btn-sm btn-outline-primary" @click="openEdit(item)" title="Editar">
                   <i class="bi bi-pencil"></i>
@@ -88,6 +88,9 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+
+const userInfo   = JSON.parse(localStorage.getItem("user") || "{}")
+const canManage  = !['WORKER','AUDITOR'].some(r => (userInfo.role || '').toUpperCase().includes(r))
 
 const items   = ref([])
 const search  = ref("")
