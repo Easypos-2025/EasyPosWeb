@@ -20,15 +20,15 @@
           </select>
         </div>
         <div class="col-md-2 col-12 text-end">
-          <button class="btn btn-primary" @click="openCreate">
+          <button class="btn btn-primary btn-nuevo-activo" @click="openCreate">
             <i class="bi bi-plus-lg"></i> Nuevo activo
           </button>
         </div>
       </div>
     </div>
 
-    <!-- TABLA -->
-    <div class="card p-3 mt-3 table-responsive">
+    <!-- TABLA DESKTOP -->
+    <div class="card p-3 mt-3 table-responsive desktop-table">
       <table class="table table-hover">
         <thead>
           <tr>
@@ -61,6 +61,41 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- TARJETAS MÓVIL -->
+    <div class="mobile-list mt-3">
+      <div
+        v-for="a in filtered"
+        :key="a.id"
+        class="asset-mobile-card"
+      >
+        <div class="amc-header">
+          <span class="amc-name">{{ a.name }}</span>
+          <span class="amc-cat">{{ a.category_name || categoryName(a.category_id) }}</span>
+        </div>
+        <div class="amc-row" v-if="a.client_name">
+          <i class="bi bi-person"></i>
+          <span>{{ a.client_name }}</span>
+        </div>
+        <div class="amc-row" v-if="a.location">
+          <i class="bi bi-geo-alt"></i>
+          <span>{{ a.location }}</span>
+        </div>
+        <div class="amc-desc" v-if="a.description">{{ a.description }}</div>
+        <div class="amc-actions">
+          <button class="btn btn-warning btn-sm" @click="openEdit(a)">
+            <i class="bi bi-pencil"></i> Editar
+          </button>
+          <button class="btn btn-danger btn-sm" @click="handleDelete(a)">
+            <i class="bi bi-trash"></i> Eliminar
+          </button>
+        </div>
+      </div>
+      <div v-if="filtered.length === 0" class="mobile-empty">
+        <i class="bi bi-box-seam" style="font-size:28px;display:block;margin-bottom:8px"></i>
+        No hay resultados
+      </div>
     </div>
 
     <!-- MODAL CREAR / EDITAR -->
@@ -235,4 +270,37 @@ onMounted(load)
 .fg label { font-size: 13px; font-weight: 500; color: #374151; }
 .btn-close-sm { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; border-radius: 6px; padding: 4px 8px; }
 .btn-close-sm:hover { background: #f1f5f9; color: #1e293b; }
+
+/* ── RESPONSIVE ── */
+.mobile-list  { display: none; }
+.mobile-empty { padding: 40px; text-align: center; color: #94a3b8; font-size: 14px; }
+
+@media (max-width: 768px) {
+  .desktop-table { display: none; }
+  .mobile-list   { display: flex; flex-direction: column; gap: 10px; }
+
+  .asset-mobile-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    padding: 14px 16px;
+  }
+  .amc-header  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
+  .amc-name    { font-size: 15px; font-weight: 700; color: #1e293b; }
+  .amc-cat     { font-size: 11px; background: #eff6ff; color: #1e40af; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+  .amc-row     { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64748b; margin-bottom: 4px; }
+  .amc-row .bi { color: #94a3b8; font-size: 13px; }
+  .amc-desc    { font-size: 12px; color: #94a3b8; margin: 6px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .amc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
+  .amc-actions .btn { flex: 1; }
+
+  .modal-box { width: 95vw; }
+}
+
+@media (max-width: 576px) {
+  .amc-header  { flex-direction: column; align-items: flex-start; }
+  .amc-actions { flex-direction: column; }
+  .amc-actions .btn { width: 100%; }
+  .btn-nuevo-activo { width: 100%; }
+}
 </style>
