@@ -74,13 +74,22 @@
                   <div class="fw-semibold" style="font-size:14px">{{ r.name }}</div>
                   <div class="text-muted" style="font-size:12px">{{ r.description || '—' }}</div>
                 </div>
-                <button
-                  class="btn btn-danger btn-sm py-0 px-1"
-                  title="Eliminar rol"
-                  @click.stop="handleDeleteRole(r)"
-                >
-                  <i class="bi bi-trash" style="font-size:11px"></i>
-                </button>
+                <div class="d-flex gap-1">
+                  <button
+                    class="btn btn-warning btn-sm py-0 px-1"
+                    title="Editar rol"
+                    @click.stop="openEditRole(r)"
+                  >
+                    <i class="bi bi-pencil" style="font-size:11px"></i>
+                  </button>
+                  <button
+                    class="btn btn-danger btn-sm py-0 px-1"
+                    title="Eliminar rol"
+                    @click.stop="handleDeleteRole(r)"
+                  >
+                    <i class="bi bi-trash" style="font-size:11px"></i>
+                  </button>
+                </div>
               </div>
             </li>
           </ul>
@@ -158,7 +167,7 @@
     <div v-if="showRoleModal" class="modal-overlay" @click.self="showRoleModal = false">
       <div class="modal-box">
         <div class="modal-header-bar">
-          <h2>Nuevo rol</h2>
+          <h2>{{ editingRoleId ? 'Editar rol' : 'Nuevo rol' }}</h2>
           <button class="btn-close-sm" @click="showRoleModal = false">
             <i class="bi bi-x-lg"></i>
           </button>
@@ -203,6 +212,7 @@ const saving             = ref(false)
 const showRoleModal      = ref(false)
 const savingRole         = ref(false)
 const roleForm           = ref({ name: "", description: "" })
+const editingRoleId      = ref(null)
 const selectedCompanyId  = ref("")
 
 // Empresa activa: SYSADMIN usa el selector; ADMIN usa la suya
@@ -302,8 +312,15 @@ async function savePermissions() {
 
 // ─── Crear rol ────────────────────────────────────────────────
 function openCreateRole() {
-  roleForm.value = { name: "", description: "" }
-  showRoleModal.value = true
+  editingRoleId.value  = null
+  roleForm.value       = { name: "", description: "" }
+  showRoleModal.value  = true
+}
+
+function openEditRole(role) {
+  editingRoleId.value  = role.id
+  roleForm.value       = { name: role.name, description: role.description || "" }
+  showRoleModal.value  = true
 }
 
 async function saveRole() {
@@ -313,16 +330,24 @@ async function saveRole() {
   }
   savingRole.value = true
   try {
-    await api.post("/roles/", {
+    const payload = {
       name:        roleForm.value.name.trim().toUpperCase(),
       description: roleForm.value.description.trim(),
-      company_id:  activeCompanyId.value,
-    })
-    showToast("Rol creado", "success")
+    }
+    if (editingRoleId.value) {
+      await api.put(`/roles/${editingRoleId.value}`, payload)
+      showToast("Rol actualizado", "success")
+      if (selectedRole.value?.id === editingRoleId.value) {
+        selectedRole.value = { ...selectedRole.value, ...payload }
+      }
+    } else {
+      await api.post("/roles/", { ...payload, company_id: activeCompanyId.value })
+      showToast("Rol creado", "success")
+    }
     showRoleModal.value = false
     await loadRoles()
   } catch (e) {
-    showToast(e.response?.data?.detail || "Error creando rol", "error")
+    showToast(e.response?.data?.detail || "Error guardando rol", "error")
   } finally {
     savingRole.value = false
   }

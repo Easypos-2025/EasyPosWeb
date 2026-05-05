@@ -53,5 +53,14 @@
 - Todos los perfiles actuales ya la tienen; es regla global para perfiles futuros.
 - La barra de indicadores debe ser responsive y alineada al diseño del perfil activo.
 
-## 10. HOJA DE RUTA
+## 10. REGLA: CAPTIONS DINÁMICOS DESDE BD
+- **Dynamic-Captions**: Ningún caption visible (títulos, botones, placeholders, mensajes vacíos) debe tener quemado el nombre de un módulo o entidad que provenga de `system_modules`.
+- Usar siempre el composable `useModuleName()` (`@/composables/useModuleName.js`):
+  - Sin parámetro → usa la ruta actual para encontrar el módulo en `menuStore`.
+  - Con ruta explícita → `useModuleName('/ruta/modulo')` para referenciar otro módulo (ej: padre).
+- Ejemplos correctos: `Nuevo {{ moduleName }}`, `:placeholder="\`Buscar ${moduleName}...\`"`.
+- Si el nombre cambia en BD, todos los captions se actualizan solos sin tocar código.
+- **Aplica a todas las vistas nuevas y a las existentes cuando se modifiquen.**
+
+## 11. HOJA DE RUTA
 1. DB Status + Dashboard KPIs. | 2. CRUD Tareas. | 3. Vista Task Leader. | 4. Evidencias/Materiales. | 5. Vista Auditor. | 6. Reportes & PDF. | 7. Mensajería.

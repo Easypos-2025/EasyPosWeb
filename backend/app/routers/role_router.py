@@ -82,6 +82,40 @@ def create_role(
     return role
 
 
+# ─── UPDATE ROLE ────────────────────────────────────────────────
+@router.put("/{role_id}")
+def update_role(
+    role_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    role = db.get(Role, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rol no encontrado")
+
+    if not _is_system(current_user, db) and role.company_id != current_user.company_id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+
+    duplicate = db.query(Role).filter(
+        Role.name == name,
+        Role.company_id == role.company_id,
+        Role.id != role_id
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"Ya existe un rol '{name}'")
+
+    role.name        = name
+    role.description = (data.get("description") or "").strip()
+    db.commit()
+    db.refresh(role)
+    return role
+
+
 # ─── DELETE ROLE ────────────────────────────────────────────────
 @router.delete("/{role_id}")
 def delete_role(

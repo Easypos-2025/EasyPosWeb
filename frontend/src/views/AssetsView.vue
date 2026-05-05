@@ -5,7 +5,7 @@
     <div class="card p-3 mt-3">
       <div class="row g-2 align-items-end">
         <div class="col-md-4 col-12">
-          <input type="text" class="form-control" placeholder="Buscar activo..." v-model="search" />
+          <input type="text" class="form-control" :placeholder="`Buscar ${moduleName}...`" v-model="search" />
         </div>
         <div class="col-md-3 col-6">
           <select class="form-select" v-model="filterCategory">
@@ -21,7 +21,7 @@
         </div>
         <div class="col-md-2 col-12 text-end">
           <button class="btn btn-primary btn-nuevo-activo" @click="openCreate">
-            <i class="bi bi-plus-lg"></i> Nuevo activo
+            <i class="bi bi-plus-lg"></i> Nuevo {{ moduleName }}
           </button>
         </div>
       </div>
@@ -102,7 +102,7 @@
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal-box">
         <div class="modal-header-bar">
-          <h2>{{ editForm.id ? 'Editar activo' : 'Nuevo activo' }}</h2>
+          <h2>{{ editForm.id ? `Editar ${moduleName}` : `Nuevo ${moduleName}` }}</h2>
           <button class="btn-close-sm" @click="closeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
@@ -152,6 +152,9 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
+import { useModuleName } from "@/composables/useModuleName"
+
+const { moduleName } = useModuleName()
 
 const assets        = ref([])
 const categories    = ref([])

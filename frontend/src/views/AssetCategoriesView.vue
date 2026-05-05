@@ -42,7 +42,7 @@
             <th>#</th>
             <th>Nombre</th>
             <th>Descripción</th>
-            <th>Activos</th>
+            <th>{{ assetModuleName }}</th>
             <th style="width:110px" class="text-center">Acciones</th>
           </tr>
         </thead>
@@ -127,6 +127,9 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
+import { useModuleName } from "@/composables/useModuleName"
+
+const { moduleName: assetModuleName } = useModuleName("/configuration/assets")
 
 const categories = ref([])
 const loading    = ref(true)
