@@ -4,11 +4,11 @@
     <!-- ENCABEZADO -->
     <div class="page-header">
       <div>
-        <h1 class="page-title">Clientes</h1>
-        <p class="page-subtitle">Total: <strong>{{ clients.length }}</strong> clientes registrados</p>
+        <h1 class="page-title">{{ moduleName }}</h1>
+        <p class="page-subtitle">Total: <strong>{{ clients.length }}</strong> {{ moduleName }} registrados</p>
       </div>
       <button class="btn btn-primary" @click="openCreate">
-        <i class="bi bi-plus-lg"></i> Nuevo cliente
+        <i class="bi bi-plus-lg"></i> Nuevo {{ moduleName }}
       </button>
     </div>
 
@@ -72,7 +72,7 @@
           <tr v-if="filtered.length === 0">
             <td colspan="8" class="text-center text-muted py-4">
               <i class="bi bi-people" style="font-size:28px;display:block;margin-bottom:8px"></i>
-              No hay clientes con estos filtros
+              No hay {{ moduleName }} con estos filtros
             </td>
           </tr>
         </tbody>
@@ -83,7 +83,7 @@
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal-box">
         <div class="modal-header-bar">
-          <h2>{{ form.id ? 'Editar cliente' : 'Nuevo cliente' }}</h2>
+          <h2>{{ form.id ? `Editar ${moduleName}` : `Nuevo ${moduleName}` }}</h2>
           <button class="btn-close-x" @click="closeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
@@ -155,7 +155,7 @@
           <button class="btn btn-secondary" @click="closeModal">Cancelar</button>
           <button class="btn btn-primary" @click="save" :disabled="saving">
             <i v-if="saving" class="bi bi-arrow-repeat spin"></i>
-            {{ saving ? 'Guardando...' : 'Guardar cliente' }}
+            {{ saving ? 'Guardando...' : 'Guardar' }}
           </button>
         </div>
       </div>
@@ -169,6 +169,9 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
+import { useModuleName } from "@/composables/useModuleName"
+
+const { moduleName } = useModuleName()
 
 const clients    = ref([])
 const loading    = ref(true)

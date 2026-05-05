@@ -3,6 +3,7 @@
 # =====================================================
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.role_module_model import RoleModule
 from app.database import get_db
@@ -58,10 +59,16 @@ def build_tree(modules):
 
 @router.post("/", response_model=SystemModuleOut)
 def create_module(data: SystemModuleCreate, db: Session = Depends(get_db)):
-    module = SystemModule(**data.dict())
+    payload = data.dict()
+    payload["route"] = payload.get("route") or ""
+    module = SystemModule(**payload)
 
     db.add(module)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Error al crear el módulo. Verifica los datos.")
     db.refresh(module)
 
     return {

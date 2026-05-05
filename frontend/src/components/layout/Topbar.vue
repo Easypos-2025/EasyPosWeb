@@ -432,8 +432,15 @@ function _getCtx() {
     _actx = new (window.AudioContext || window.webkitAudioContext)()
   return _actx
 }
-function unlockAudio() {
-  try { const c = _getCtx(); if (c.state === "suspended") c.resume() } catch {}
+async function unlockAudio() {
+  try {
+    const c = _getCtx()
+    if (c.state === "suspended") await c.resume()
+    if (hasNewNotif.value) {
+      hasNewNotif.value = false
+      playNotifSound()
+    }
+  } catch {}
 }
 function playNotifSound() {
   try {
@@ -568,22 +575,16 @@ function handleMenuAction(item) {
 }
 
 // ── Dropdown ────────────────────────────────────────
-function toggleDropdown() {
-  unlockAudio()
+async function toggleDropdown() {
+  await unlockAudio()
   dropdownOpen.value = !dropdownOpen.value
   if (dropdownOpen.value) userDropOpen.value = false
 }
 
-function toggleUserDropdown() {
-  unlockAudio()
+async function toggleUserDropdown() {
+  await unlockAudio()
   userDropOpen.value = !userDropOpen.value
-  if (userDropOpen.value) {
-    dropdownOpen.value = false
-    if (hasNewNotif.value && totalNotifCount.value > 0) {
-      playNotifSound()
-      hasNewNotif.value = false
-    }
-  }
+  if (userDropOpen.value) dropdownOpen.value = false
   if (!userDropOpen.value) { notifExpanded.value = false; taskNotifListOpen.value = false; incompleteListOpen.value = false }
 }
 

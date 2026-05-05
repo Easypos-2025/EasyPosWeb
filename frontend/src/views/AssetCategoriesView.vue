@@ -7,7 +7,7 @@
         <i class="bi bi-tags-fill kpi-icon"></i>
         <div class="kpi-body">
           <span class="kpi-value">{{ categories.length }}</span>
-          <span class="kpi-label">Categorías</span>
+          <span class="kpi-label">{{ moduleName }}</span>
         </div>
       </div>
     </div>
@@ -19,13 +19,13 @@
           <input
             type="text"
             class="form-control"
-            placeholder="Buscar categoría..."
+            :placeholder="`Buscar ${moduleName}...`"
             v-model="search"
           />
         </div>
         <div class="col-md-4 col-12 d-flex justify-content-end">
           <button class="btn btn-primary" @click="openCreate">
-            <i class="bi bi-plus-lg"></i> Nueva categoría
+            <i class="bi bi-plus-lg"></i> Nuevo {{ moduleName }}
           </button>
         </div>
       </div>
@@ -72,7 +72,7 @@
           <tr v-if="filtered.length === 0">
             <td colspan="5" class="text-center text-muted py-4">
               <i class="bi bi-tags" style="font-size:28px;display:block;margin-bottom:8px"></i>
-              No hay categorías{{ search ? ' con ese filtro' : '' }}
+              No hay {{ moduleName }}{{ search ? ' con ese filtro' : '' }}
             </td>
           </tr>
         </tbody>
@@ -83,7 +83,7 @@
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal-box">
         <div class="modal-header-bar">
-          <h2>{{ form.id ? 'Editar categoría' : 'Nueva categoría' }}</h2>
+          <h2>{{ form.id ? `Editar ${moduleName}` : `Nuevo ${moduleName}` }}</h2>
           <button class="btn-close-sm" @click="closeModal">
             <i class="bi bi-x-lg"></i>
           </button>
@@ -129,6 +129,7 @@ import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 import { useModuleName } from "@/composables/useModuleName"
 
+const { moduleName }                  = useModuleName()
 const { moduleName: assetModuleName } = useModuleName("/configuration/assets")
 
 const categories = ref([])

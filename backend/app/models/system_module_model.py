@@ -49,7 +49,7 @@ class SystemModule(Base):
 
     route: Mapped[str] = mapped_column(
         String(100),
-        nullable=False
+        nullable=True
     )
 
     icon: Mapped[str] = mapped_column(
