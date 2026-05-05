@@ -76,30 +76,34 @@ def get_my_menu(
     if not company or not company.business_profile_id:
         return []
 
-    # 🔹 módulos por perfil
+    # 🔹 módulos por perfil — jerarquía y orden desde business_profile_modules
     modules = db.execute(text("""
-        SELECT 
-            bpm.id AS bpm_id,
+        SELECT
+            bpm.id        AS bpm_id,
             sm.name,
             sm.route,
             sm.icon,
-            
-            parent_bpm.id AS parent_id
+            COALESCE(
+                bpm.parent_id,
+                parent_bpm.id
+            )             AS parent_id
         FROM system_modules sm
         JOIN business_profile_modules bpm
             ON bpm.module_id = sm.id
         LEFT JOIN business_profile_modules parent_bpm
             ON parent_bpm.module_id = sm.parent_id
             AND parent_bpm.business_profile_id = bpm.business_profile_id
-        WHERE bpm.business_profile_id = :profile_id AND sm.is_active = 1
-        ORDER BY 
-            parent_bpm.id,
-            bpm.sort_order
-    """), 
+        WHERE bpm.business_profile_id = :profile_id
+          AND sm.is_active = 1
+        ORDER BY
+            COALESCE(bpm.parent_id, parent_bpm.id),
+            bpm.sort_order,
+            sm.id
+    """),
     {
         "profile_id": company.business_profile_id
     }).fetchall()
-    print("COLUMNS:", modules[0]._mapping.keys() if modules else "VACÍO")
+
     return [
         {
             "id": m.bpm_id,
@@ -190,29 +194,27 @@ def get_menu_by_profile(
     current_user: User = Depends(get_current_user)
 ):
     modules = db.execute(text("""
-        SELECT 
+        SELECT
             bpm.id AS bpm_id,
-            sm.id AS module_id,
+            sm.id  AS module_id,
             sm.name,
             sm.route,
             sm.icon,
-            parent_bpm.id AS parent_id
-
+            COALESCE(
+                bpm.parent_id,
+                parent_bpm.id
+            ) AS parent_id
         FROM system_modules sm
-
         JOIN business_profile_modules bpm
             ON bpm.module_id = sm.id
-
         LEFT JOIN business_profile_modules parent_bpm
             ON parent_bpm.module_id = sm.parent_id
             AND parent_bpm.business_profile_id = bpm.business_profile_id
-
         WHERE bpm.business_profile_id = :profile_id
-
-        ORDER BY 
-            parent_bpm.id,
-            bpm.sort_order
-    
+        ORDER BY
+            COALESCE(bpm.parent_id, parent_bpm.id),
+            bpm.sort_order,
+            sm.id
     """), {
         "profile_id": profile_id
     }).fetchall()
@@ -269,7 +271,28 @@ def repair_profile_menu(
             "UPDATE business_profile_modules SET parent_id = :pid WHERE id = :bid"
         ), {"pid": new_parent, "bid": r.bpm_id})
 
-    # 3. Sincronizar role_modules: insertar can_view=1 para módulos sin permiso
+    # 3. Inicializar sort_order secuencial por grupo de padre (ordenado por sm.id)
+    #    Solo aplica a registros con sort_order = 0 para no pisar un orden ya guardado
+    bpm_rows = db.execute(text("""
+        SELECT bpm.id AS bpm_id, bpm.parent_id AS bpm_parent
+        FROM business_profile_modules bpm
+        JOIN system_modules sm ON sm.id = bpm.module_id
+        WHERE bpm.business_profile_id = :pid
+        ORDER BY bpm.parent_id, sm.id
+    """), {"pid": profile_id}).fetchall()
+
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in bpm_rows:
+        groups[r.bpm_parent].append(r.bpm_id)
+
+    for parent_key, ids in groups.items():
+        for idx, bpm_id in enumerate(ids):
+            db.execute(text(
+                "UPDATE business_profile_modules SET sort_order = :so WHERE id = :bid"
+            ), {"so": idx, "bid": bpm_id})
+
+    # 4. Sincronizar role_modules: insertar can_view=1 para módulos sin permiso
     #    en todos los roles de empresas con este perfil de negocio
     fixed_perms = db.execute(text("""
         INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)

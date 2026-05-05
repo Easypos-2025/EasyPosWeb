@@ -109,27 +109,18 @@
       </ul>
     </template>
 
-    <!-- MODO GLOBAL: árbol editable completo -->
-    <draggable
-      v-else
-      v-model="treeModules"
-      item-key="id"
-      class="tree"
-      :group="{ name: 'modules' }"
-      @end="handleDragEnd"
-    >
-      <template #item="{ element }">
-        <div class="tree-wrapper">
-          <TreeItem
-            :item="element"
-            @drag-end="handleDragEnd"
-            @delete="handleDelete"
-            @edit="handleEdit"
-            @toggle="handleToggle"
-          />
-        </div>
-      </template>
-    </draggable>
+    <!-- MODO GLOBAL: árbol editable (sin drag — el orden se gestiona en Gestión de Menú) -->
+    <ul v-else class="tree">
+      <TreeItem
+        v-for="element in treeModules"
+        :key="element.id"
+        :item="element"
+        :no-drag="true"
+        @delete="handleDelete"
+        @edit="handleEdit"
+        @toggle="handleToggle"
+      />
+    </ul>
 
   </div>
 
@@ -209,7 +200,6 @@
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import TreeItem from "@/components/system/TreeItem.vue"
-import draggable from "vuedraggable"
 import { ref, onMounted, watch } from "vue"
 
 /* =========================
@@ -455,26 +445,6 @@ const buildTree = (list) => {
   return roots
 }
 
-const flattenTree = (nodes, parentId = null) => {
-  let result = []
-
-  nodes.forEach((node, index) => {
-
-    result.push({
-      id: node.id,
-      parent_id: parentId,
-      order_index: index   // 🔥 NUEVO CAMPO
-    })
-
-    if (node.children && node.children.length) {
-      result = result.concat(flattenTree(node.children, node.id))
-    }
-
-  })
-
-  return result
-}
-
 const handleEdit = (item) => {
 
   form.value = {
@@ -486,29 +456,6 @@ const handleEdit = (item) => {
 
   editingId.value = item.id
   showEditModal.value = true
-}
-
-const handleDragEnd = async () => {
-  //console.log("🔥 DRAG END EJECUTADO")
-  try {
-
-    const flat = flattenTree(treeModules.value)
-
-    //console.log("GUARDANDO FINAL:", flat)
-
-    for (const item of flat) {
-      await api.put(`/system-modules/${item.id}`, {
-        parent_id: item.parent_id,
-        order_index: item.order_index
-      })
-    }
-
-    showToast("Orden actualizado", "success")
-
-  } catch (error) {
-    console.error(error)
-    showToast("Error al guardar cambios", "error")
-  }
 }
 
 const updateModule = async () => {

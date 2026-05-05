@@ -42,10 +42,10 @@
 
     </div>
 
-    <!-- HIJOS: draggable en modo edición, lista simple en modo preview -->
+    <!-- HIJOS: draggable solo si no está en modo noDrag ni preview -->
     <template v-if="hasChildren">
       <draggable
-        v-if="!preview"
+        v-if="!preview && !noDrag"
         v-model="item.children"
         item-key="id"
         :group="{ name: 'modules' }"
@@ -56,6 +56,7 @@
           <TreeItem
             :item="element"
             :level="level + 1"
+            :no-drag="noDrag"
             @drag-end="emit('drag-end')"
             @delete="emit('delete', $event)"
             @edit="emit('edit', $event)"
@@ -63,6 +64,20 @@
           />
         </template>
       </draggable>
+
+      <!-- noDrag: lista estática pero con botones de edición -->
+      <ul v-else-if="noDrag && !preview" class="tree-children preview-children">
+        <TreeItem
+          v-for="child in item.children"
+          :key="child.id"
+          :item="child"
+          :level="level + 1"
+          :no-drag="true"
+          @delete="emit('delete', $event)"
+          @edit="emit('edit', $event)"
+          @toggle="emit('toggle', $event)"
+        />
+      </ul>
 
       <ul v-else class="tree-children preview-children">
         <TreeItem
@@ -86,7 +101,8 @@ import { computed } from "vue"
 const props = defineProps({
   item: Object,
   level: { type: Number, default: 0 },
-  preview: { type: Boolean, default: false }
+  preview: { type: Boolean, default: false },
+  noDrag: { type: Boolean, default: false }
 })
 
 const emit = defineEmits([
