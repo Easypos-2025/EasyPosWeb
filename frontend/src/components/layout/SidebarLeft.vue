@@ -207,15 +207,29 @@ const toggleMenu = (id) => {
 }
 
 const openParentByRoute = (path) => {
+  const newOpen = {}
+  // Abrir todos los padres que tienen hijos
+  menu.value.forEach(item => {
+    if (item.children?.length) {
+      newOpen[item.id] = true
+    }
+  })
+  // Asegurar que el padre de la ruta activa esté abierto
   menu.value.forEach(item => {
     if (item.children?.length) {
       const match = item.children.find(child => child.route === path)
-      if (match) {
-        openMenus.value = { [item.id]: true }
-      }
+      if (match) newOpen[item.id] = true
     }
   })
+  openMenus.value = newOpen
 }
+
+// Re-abrir padres cuando el menú se recargue (ej: tras guardar módulos)
+watch(
+  () => menuStore.menu,
+  () => { if (ready.value) openParentByRoute(route.path) },
+  { deep: false }
+)
 
 // Cuando SYSADMIN cambia de empresa → recargar menú de esa empresa
 watch(
@@ -227,6 +241,7 @@ watch(
       ready.value = true
       openParentByRoute(route.path)
     }
+
   }
 )
 

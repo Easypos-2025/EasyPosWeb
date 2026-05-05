@@ -159,6 +159,27 @@ def assign_modules_to_profile(
                 {"profile_id": profile_id, "module_ids": tuple(module_ids)}
             )
 
+            # Sincronizar role_modules: dar can_view=1 a todos los roles de empresas
+            # con este perfil que aún no tengan permiso para los módulos recién asignados
+            db.execute(
+                text("""
+                    INSERT INTO role_modules
+                        (role_id, module_id, can_view, can_create, can_edit, can_delete)
+                    SELECT DISTINCT r.id, bpm.module_id, 1, 0, 0, 0
+                    FROM roles r
+                    JOIN companies c ON c.id_company = r.company_id
+                    JOIN business_profile_modules bpm
+                        ON bpm.business_profile_id = c.business_profile_id
+                    JOIN system_modules sm ON sm.id = bpm.module_id AND sm.is_active = 1
+                    WHERE c.business_profile_id = :profile_id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM role_modules rm2
+                          WHERE rm2.role_id = r.id AND rm2.module_id = bpm.module_id
+                      )
+                """),
+                {"profile_id": profile_id}
+            )
+
         db.commit()
         return {"message": "Módulos asignados correctamente"}
 
