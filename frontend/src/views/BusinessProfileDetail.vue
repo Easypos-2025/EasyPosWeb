@@ -97,11 +97,13 @@ IMPORTS
 import { ref, onMounted, computed } from "vue";
 import api from "@/services/apis";
 import { showToast } from "@/utils/toast";
+import { useMenuStore } from "@/stores/menuStore";
 
 /* =================================================
 STATE
 ================================================= */
 
+const menuStore = useMenuStore();
 const profiles = ref([]);
 const selectedProfileId = ref("");
 
@@ -172,9 +174,8 @@ const saveModules = async () => {
       `/business-profiles/${selectedProfileId.value}/modules/`,
       selectedModules.value
     );
-
+    await menuStore.loadMenu();
     showToast("Módulos guardados correctamente", "success");
-
   } catch (error) {
     console.error("Error saving modules:", error);
     showToast("Error al guardar módulos", "error");

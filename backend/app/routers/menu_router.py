@@ -131,17 +131,21 @@ def get_menu_by_company(
         return []
 
     modules = db.execute(text("""
-        SELECT 
+        SELECT
             bpm.id AS bpm_id,
             sm.name,
             sm.route,
             sm.icon,
-            bpm.parent_id
+            COALESCE(bpm.parent_id, parent_bpm.id) AS parent_id
         FROM system_modules sm
         JOIN business_profile_modules bpm
             ON bpm.module_id = sm.id
+        LEFT JOIN business_profile_modules parent_bpm
+            ON parent_bpm.module_id = sm.parent_id
+            AND parent_bpm.business_profile_id = bpm.business_profile_id
         WHERE bpm.business_profile_id = :profile_id
-        ORDER BY bpm.parent_id, bpm.sort_order
+          AND sm.is_active = 1
+        ORDER BY COALESCE(bpm.parent_id, parent_bpm.id), bpm.sort_order
     """), {
         "profile_id": company.business_profile_id
     }).fetchall()

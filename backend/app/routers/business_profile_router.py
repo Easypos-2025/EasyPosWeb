@@ -139,54 +139,34 @@ def assign_modules_to_profile(
     user=Depends(get_current_user)
 ):
     try:
-        # 🔥 eliminar relaciones existentes
+        # Eliminar relaciones existentes
         db.execute(
-            text("""
-                DELETE FROM business_profile_modules
-                WHERE business_profile_id = :profile_id
-            """),
+            text("DELETE FROM business_profile_modules WHERE business_profile_id = :profile_id"),
             {"profile_id": profile_id}
         )
 
-        # Insertar solo los módulos explícitamente seleccionados (sin auto-hijos)
-        db.execute(
-            text("""
-                INSERT INTO business_profile_modules (
-                    business_profile_id,
-                    module_id,
-                    parent_id,
-                    sort_order
-                )
-                SELECT DISTINCT
-                    :profile_id,
-                    sm.id,
-                    sm.parent_id,
-                    0
-                FROM system_modules sm
-                WHERE sm.id IN :module_ids
-            """),
-            {
-                "profile_id": profile_id,
-                "module_ids": tuple(module_ids)
-            }
-        )
+        if module_ids:
+            # parent_id = NULL: la jerarquía se deriva automáticamente en get_my_menu
+            # vía COALESCE(bpm.parent_id, parent_bpm.id) usando system_modules.parent_id
+            db.execute(
+                text("""
+                    INSERT INTO business_profile_modules
+                        (business_profile_id, module_id, parent_id, sort_order)
+                    SELECT DISTINCT :profile_id, sm.id, NULL, 0
+                    FROM system_modules sm
+                    WHERE sm.id IN :module_ids
+                """),
+                {"profile_id": profile_id, "module_ids": tuple(module_ids)}
+            )
 
         db.commit()
-
         return {"message": "Módulos asignados correctamente"}
 
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail="Ya existen módulos duplicados para este perfil"
-        )
-
+        raise HTTPException(status_code=400, detail="Ya existen módulos duplicados para este perfil")
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al asignar módulos: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al asignar módulos: {str(e)}")
 
         
