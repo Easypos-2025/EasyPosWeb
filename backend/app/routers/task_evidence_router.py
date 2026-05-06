@@ -1,10 +1,10 @@
-import os
 import uuid
 import aiofiles
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models.task_evidence_model import TaskEvidence
@@ -15,27 +15,26 @@ from app.models.user_session_model import UserSession
 
 router = APIRouter(prefix="/task-evidence", tags=["TaskEvidence"])
 
-UPLOADS_BASE    = Path(__file__).resolve().parent.parent / "uploads"
-ALLOWED_IMAGE   = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-ALLOWED_VIDEO   = {".mp4", ".mov", ".avi", ".webm"}
-ALLOWED_AUDIO   = {".mp3", ".m4a", ".ogg", ".wav", ".aac"}
-MAX_IMAGE_MB    = 10
-MAX_VIDEO_MB    = 20   # reducido de 50 — evita cuelgues en uploads largos
-MAX_AUDIO_MB    = 15
-CHUNK_SIZE      = 1024 * 256   # 256 KB por chunk
+UPLOADS_BASE  = Path(__file__).resolve().parent.parent / "uploads"
+ALLOWED_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+ALLOWED_VIDEO = {".mp4", ".mov", ".avi", ".webm"}
+ALLOWED_AUDIO = {".mp3", ".m4a", ".ogg", ".wav", ".aac"}
+MAX_IMAGE_MB  = 10
+MAX_VIDEO_MB  = 20
+MAX_AUDIO_MB  = 15
+CHUNK_SIZE    = 1024 * 256
 
 
-def _get_user(authorization: str, db: Session):
+async def _get_user(authorization: str, db: AsyncSession):
     if not authorization:
         raise HTTPException(status_code=401, detail="Token requerido")
-    token   = authorization.replace("Bearer ", "")
+    token = authorization.replace("Bearer ", "")
     payload = decode_access_token(token)
-    session = db.query(UserSession).filter(
-        UserSession.token == token, UserSession.is_active == True
-    ).first()
-    if not session or not payload:
+    result = await db.execute(select(UserSession).where(UserSession.token == token, UserSession.is_active == True))
+    if not result.scalar_one_or_none() or not payload:
         raise HTTPException(status_code=401, detail="Sesión inválida")
-    user = db.query(User).filter(User.email == payload.get("sub")).first()
+    result = await db.execute(select(User).where(User.email == payload.get("sub")))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
@@ -45,59 +44,48 @@ def _max_mb(file_type: str) -> int:
     return {"image": MAX_IMAGE_MB, "video": MAX_VIDEO_MB, "audio": MAX_AUDIO_MB}.get(file_type, 10)
 
 
-# ── GET: evidencias de una tarea ────────────────────────────────
+def _serialize(e: TaskEvidence):
+    return {"id": e.id, "task_id": e.task_id, "file_type": e.file_type, "file_path": e.file_path,
+            "description": e.description, "created_by": e.created_by,
+            "created_at": e.created_at.isoformat() if e.created_at else None}
+
+
 @router.get("/{task_id:int}")
-def get_evidence(task_id: int, db: Session = Depends(get_db)):
-    items = db.query(TaskEvidence).filter(
-        TaskEvidence.task_id == task_id
-    ).order_by(TaskEvidence.created_at.asc()).all()
-    return [_serialize(e) for e in items]
+async def get_evidence(task_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskEvidence).where(TaskEvidence.task_id == task_id).order_by(TaskEvidence.created_at.asc()))
+    return [_serialize(e) for e in result.scalars().all()]
 
 
-# ── POST: subir nueva evidencia (async streaming) ───────────────
 @router.post("/{task_id:int}")
 async def add_evidence(
-    task_id:     int,
-    file_type:   str       = Form(...),
-    description: str       = Form(""),
-    file:        UploadFile = File(None),
-    authorization: str     = Header(None),
-    db: Session            = Depends(get_db)
+    task_id: int, file_type: str = Form(...), description: str = Form(""),
+    file: UploadFile = File(None), authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
-    user = _get_user(authorization, db)
-
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
+    user = await _get_user(authorization, db)
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
 
     file_path = ""
-
     if file_type == "text":
         if not description.strip():
             raise HTTPException(status_code=400, detail="El texto no puede estar vacío")
-
     else:
         if not file:
             raise HTTPException(status_code=400, detail="Se requiere un archivo")
-
         ext = Path(file.filename or "").suffix.lower()
-
         if file_type == "image" and ext not in ALLOWED_IMAGE:
             raise HTTPException(status_code=400, detail="Formato no permitido. Usa JPG, PNG o WEBP")
         if file_type == "video" and ext not in ALLOWED_VIDEO:
             raise HTTPException(status_code=400, detail="Formato no permitido. Usa MP4, MOV o WEBM")
         if file_type == "audio" and ext not in ALLOWED_AUDIO:
             raise HTTPException(status_code=400, detail="Formato no permitido. Usa MP3, M4A o WAV")
-
         folder = UPLOADS_BASE / f"{file_type}s"
         folder.mkdir(parents=True, exist_ok=True)
-
-        filename  = f"{task_id}_{uuid.uuid4().hex[:8]}{ext}"
+        filename = f"{task_id}_{uuid.uuid4().hex[:8]}{ext}"
         full_path = folder / filename
         max_bytes = _max_mb(file_type) * 1024 * 1024
-        written   = 0
-
-        # Escritura async en chunks — no bloquea el event loop
+        written = 0
         try:
             async with aiofiles.open(full_path, "wb") as out:
                 while True:
@@ -106,14 +94,10 @@ async def add_evidence(
                         break
                     written += len(chunk)
                     if written > max_bytes:
-                        # Eliminar archivo parcial antes de rechazar
                         await out.close()
                         if full_path.exists():
                             full_path.unlink()
-                        raise HTTPException(
-                            status_code=413,
-                            detail=f"El archivo supera el límite de {_max_mb(file_type)} MB para {file_type}"
-                        )
+                        raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {_max_mb(file_type)} MB para {file_type}")
                     await out.write(chunk)
         except HTTPException:
             raise
@@ -121,51 +105,27 @@ async def add_evidence(
             if full_path.exists():
                 full_path.unlink()
             raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
-
         file_path = f"/uploads/{file_type}s/{filename}"
 
-    evidence = TaskEvidence(
-        task_id=     task_id,
-        file_type=   file_type,
-        file_path=   file_path,
-        description= description,
-        created_by=  user.id
-    )
+    evidence = TaskEvidence(task_id=task_id, file_type=file_type, file_path=file_path,
+                            description=description, created_by=user.id)
     db.add(evidence)
-    db.commit()
-    db.refresh(evidence)
+    await db.commit()
+    await db.refresh(evidence)
     return _serialize(evidence)
 
 
-# ── DELETE ──────────────────────────────────────────────────────
 @router.delete("/{evidence_id:int}")
-def delete_evidence(
-    evidence_id:   int,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    _get_user(authorization, db)
-    ev = db.query(TaskEvidence).filter(TaskEvidence.id == evidence_id).first()
+async def delete_evidence(evidence_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await _get_user(authorization, db)
+    result = await db.execute(select(TaskEvidence).where(TaskEvidence.id == evidence_id))
+    ev = result.scalar_one_or_none()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidencia no encontrada")
-
     if ev.file_path:
         file_on_disk = UPLOADS_BASE.parent / ev.file_path.lstrip("/")
         if file_on_disk.exists():
             file_on_disk.unlink()
-
-    db.delete(ev)
-    db.commit()
+    await db.delete(ev)
+    await db.commit()
     return {"message": "Evidencia eliminada"}
-
-
-def _serialize(e: TaskEvidence):
-    return {
-        "id":          e.id,
-        "task_id":     e.task_id,
-        "file_type":   e.file_type,
-        "file_path":   e.file_path,
-        "description": e.description,
-        "created_by":  e.created_by,
-        "created_at":  e.created_at.isoformat() if e.created_at else None,
-    }
