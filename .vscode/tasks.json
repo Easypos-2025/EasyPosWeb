@@ -4,40 +4,50 @@
     {
       "label": "Backend",
       "type": "shell",
-      "command": "cd backend; ..\\venv\\Scripts\\python.exe -m uvicorn app.main:app --reload",
-      "isBackground": true,
+      "command": "cd backend && ..\\venv\\Scripts\\activate && uvicorn app.main:app --reload",
       "presentation": {
-        "panel": "shared",
-        "group": "dev",
-        "clear": true
-      }
+        "panel": "dedicated",
+        "group": "servidores",
+        "reveal": "always",
+        "showReuseMessage": false
+      },
+      "isBackground": true,
+      "problemMatcher": []
     },
     {
       "label": "Frontend",
       "type": "shell",
-      "command": "cd frontend; npx vite build --watch",
-      "isBackground": true,
+      "command": "cd frontend && npm run dev",
       "presentation": {
-        "panel": "shared",
-        "group": "dev",
-        "clear": true
-      }
+        "panel": "dedicated",
+        "group": "servidores",
+        "reveal": "always",
+        "showReuseMessage": false
+      },
+      "isBackground": true,
+      "problemMatcher": []
     },
     {
       "label": "Ngrok",
       "type": "shell",
-      "command": "C:\\Users\\Personal\\AppData\\Roaming\\npm\\ngrok.cmd http 8000",
-      "isBackground": true,
+      "command": "ngrok http 8000",
       "presentation": {
-        "panel": "shared",
-        "group": "dev",
-        "clear": true
-      }
+        "panel": "dedicated",
+        "group": "servidores",
+        "reveal": "always",
+        "showReuseMessage": false
+      },
+      "isBackground": true,
+      "problemMatcher": []
     },
     {
-      "label": "🚀 Iniciar Todo",
+      "label": "Iniciar Todo",
       "dependsOn": ["Backend", "Frontend", "Ngrok"],
-      "dependsOrder": "parallel"
+      "dependsOrder": "sequence",
+      "presentation": {
+        "reveal": "silent"
+      },
+      "problemMatcher": []
     }
   ]
 }
