@@ -512,10 +512,39 @@ onMounted(load)
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .page-container { padding: 16px; }
+  .page-title     { font-size: 18px; }
+  .kpi-card       { padding: 10px 14px; }
+  .kpi-num        { font-size: 20px; }
+
   .filters-row { flex-direction: column; }
   .filters-row .form-control,
   .filters-row .form-select { max-width: 100% !important; }
+
+  /* Tabla: permitir scroll horizontal y ocultar columnas de menor prioridad */
+  .table-card { overflow-x: auto; border-radius: 10px; }
+  .data-table th:nth-child(1), .data-table td:nth-child(1),
+  .data-table th:nth-child(6), .data-table td:nth-child(6),
+  .data-table th:nth-child(7), .data-table td:nth-child(7) { display: none; }
+}
+
+@media (max-width: 576px) {
+  .page-container { padding: 12px; }
+  .page-title     { font-size: 16px; }
+  .page-subtitle  { font-size: 12px; }
+  .kpi-bar        { gap: 6px; }
+  .kpi-card       { padding: 8px 12px; }
+  .kpi-num        { font-size: 18px; }
+
+  /* Ocultar también Vence en pantallas muy pequeñas */
+  .data-table th:nth-child(8), .data-table td:nth-child(8) { display: none; }
+  .data-table     { font-size: 12px; }
+  .data-table th,
+  .data-table td  { padding: 8px 8px; }
+
   .form-row2 { grid-template-columns: 1fr; }
+  .action-row { gap: 2px; }
+  .btn-sm     { padding: 5px 8px; font-size: 11px; }
 }
 </style>

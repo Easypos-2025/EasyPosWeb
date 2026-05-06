@@ -16,6 +16,7 @@ from app.models.plan_model import Plan
 from app.models.plan_price_model import PlanPrice
 from app.models.user_model import User
 from app.utils.email_service import send_payment_approved, send_payment_rejected
+from app.utils.storage import upload_file
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -57,12 +58,10 @@ async def _save_receipt(file: UploadFile, payment: CompanyPayment) -> str:
         raise HTTPException(status_code=400, detail="El archivo supera el límite de 5 MB.")
     ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}.get(file.content_type, ".bin")
     filename = f"{uuid.uuid4().hex}{ext}"
-    PAYMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    if payment.receipt_url:
+    if payment.receipt_url and payment.receipt_url.startswith("/uploads/"):
         old = PAYMENTS_DIR / payment.receipt_url.split("/")[-1]
         old.unlink(missing_ok=True)
-    (PAYMENTS_DIR / filename).write_bytes(content)
-    return f"/uploads/payments/{filename}"
+    return await upload_file(content, f"payments/{filename}")
 
 
 async def _serialize_payment(p: CompanyPayment, db: AsyncSession) -> dict:
@@ -406,9 +405,7 @@ async def approve_payment(
             raise HTTPException(status_code=400, detail="Tipo de archivo no permitido.")
         ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}.get(file.content_type, ".bin")
         fname = f"rev_{uuid.uuid4().hex}{ext}"
-        REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-        (REVIEWS_DIR / fname).write_bytes(content)
-        evidence_url = f"/uploads/payment_reviews/{fname}"
+        evidence_url = await upload_file(content, f"payment_reviews/{fname}")
 
     company = await db.get(Company, payment.company_id)
     plan = await db.get(Plan, payment.plan_id)
@@ -522,9 +519,7 @@ async def reject_payment(
             raise HTTPException(status_code=400, detail="Tipo de archivo no permitido.")
         ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}.get(file.content_type, ".bin")
         fname = f"rev_{uuid.uuid4().hex}{ext}"
-        REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-        (REVIEWS_DIR / fname).write_bytes(content)
-        evidence_url = f"/uploads/payment_reviews/{fname}"
+        evidence_url = await upload_file(content, f"payment_reviews/{fname}")
 
     company = await db.get(Company, payment.company_id)
     plan = await db.get(Plan, payment.plan_id)

@@ -13,6 +13,7 @@ from app.models.user_model import User
 from app.models.role_model import Role
 from app.models.user_session_model import UserSession
 from app.auth.jwt_handler import decode_access_token
+from app.utils.storage import upload_file
 
 router = APIRouter(prefix="/novelties", tags=["Novelties"])
 
@@ -198,26 +199,14 @@ async def upload_evidence(novelty_id: int, file: UploadFile = File(...), authori
     if ext not in ALLOWED_EXT:
         raise HTTPException(status_code=415, detail=f"Solo imágenes (jpg, png, webp, gif). Recibido: {ext}")
     filename = f"{novelty_id}_{uuid.uuid4().hex}{ext}"
-    file_path = UPLOADS_DIR / filename
-    total = 0
+    content = await file.read()
+    if len(content) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Archivo demasiado grande (máx 10 MB)")
     try:
-        with open(file_path, "wb") as f:
-            while True:
-                chunk = await file.read(CHUNK)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > MAX_FILE_BYTES:
-                    f.close()
-                    file_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail="Archivo demasiado grande (máx 10 MB)")
-                f.write(chunk)
-    except HTTPException:
-        raise
+        file_url = await upload_file(content, f"novelties/{filename}")
     except Exception:
-        file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail="Error al guardar el archivo")
-    ev = NoveltyEvidence(novelty_id=novelty_id, file_url=f"/uploads/novelties/{filename}", file_type="image")
+    ev = NoveltyEvidence(novelty_id=novelty_id, file_url=file_url, file_type="image")
     db.add(ev)
     await db.commit()
     await db.refresh(ev)

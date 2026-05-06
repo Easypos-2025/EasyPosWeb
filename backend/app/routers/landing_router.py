@@ -30,6 +30,7 @@ def _notify_landing_changed():
             _sse_subscribers.discard(q)
 
 from app.database import get_db
+from app.utils.storage import upload_file
 from app.models.landing_section_model import LandingSection
 from app.models.plan_feature_model import PlanFeature
 from app.models.landing_contact_model import LandingContact
@@ -307,6 +308,5 @@ async def admin_upload_image(file: UploadFile = File(...), authorization: str = 
     if len(contents) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="La imagen no puede superar 5 MB")
     filename = f"{uuid.uuid4().hex}{ext}"
-    with open(UPLOADS_DIR / filename, "wb") as f:
-        f.write(contents)
-    return {"url": f"/uploads/landing/{filename}"}
+    url = await upload_file(contents, f"landing/{filename}")
+    return {"url": url}

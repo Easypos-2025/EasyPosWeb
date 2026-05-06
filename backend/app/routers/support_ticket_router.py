@@ -12,6 +12,7 @@ from app.models.role_model import Role
 from app.models.company_model import Company
 from app.models.user_session_model import UserSession
 from app.auth.jwt_handler import decode_access_token
+from app.utils.storage import upload_file
 
 router = APIRouter(prefix="/support-tickets", tags=["SupportTickets"])
 
@@ -187,26 +188,14 @@ async def upload_evidence(ticket_id: int, file: UploadFile = File(...), authoriz
         raise HTTPException(status_code=415, detail=f"Formato no permitido: {ext}")
     file_type = "image" if ext in IMG_EXT else "video" if ext in VIDEO_EXT else "document"
     filename = f"{ticket_id}_{uuid.uuid4().hex}{ext}"
-    file_path = UPLOADS_DIR / filename
-    total = 0
+    content = await file.read()
+    if len(content) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Archivo demasiado grande (máx 10 MB)")
     try:
-        with open(file_path, "wb") as f:
-            while True:
-                chunk = await file.read(CHUNK)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > MAX_FILE_BYTES:
-                    f.close()
-                    file_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail="Archivo demasiado grande (máx 10 MB)")
-                f.write(chunk)
-    except HTTPException:
-        raise
+        file_url = await upload_file(content, f"tickets/{filename}")
     except Exception:
-        file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail="Error al guardar el archivo")
-    ev = TicketEvidence(ticket_id=ticket_id, file_url=f"/uploads/tickets/{filename}", file_type=file_type)
+    ev = TicketEvidence(ticket_id=ticket_id, file_url=file_url, file_type=file_type)
     db.add(ev)
     await db.commit()
     await db.refresh(ev)

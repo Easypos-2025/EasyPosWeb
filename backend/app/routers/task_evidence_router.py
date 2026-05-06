@@ -1,5 +1,4 @@
 import uuid
-import aiofiles
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
@@ -12,6 +11,7 @@ from app.models.task_model import Task
 from app.models.user_model import User
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
+from app.utils.storage import upload_file
 
 router = APIRouter(prefix="/task-evidence", tags=["TaskEvidence"])
 
@@ -22,7 +22,6 @@ ALLOWED_AUDIO = {".mp3", ".m4a", ".ogg", ".wav", ".aac"}
 MAX_IMAGE_MB  = 10
 MAX_VIDEO_MB  = 20
 MAX_AUDIO_MB  = 15
-CHUNK_SIZE    = 1024 * 256
 
 
 async def _get_user(authorization: str, db: AsyncSession):
@@ -80,32 +79,15 @@ async def add_evidence(
             raise HTTPException(status_code=400, detail="Formato no permitido. Usa MP4, MOV o WEBM")
         if file_type == "audio" and ext not in ALLOWED_AUDIO:
             raise HTTPException(status_code=400, detail="Formato no permitido. Usa MP3, M4A o WAV")
-        folder = UPLOADS_BASE / f"{file_type}s"
-        folder.mkdir(parents=True, exist_ok=True)
         filename = f"{task_id}_{uuid.uuid4().hex[:8]}{ext}"
-        full_path = folder / filename
         max_bytes = _max_mb(file_type) * 1024 * 1024
-        written = 0
+        content = await file.read()
+        if len(content) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {_max_mb(file_type)} MB para {file_type}")
         try:
-            async with aiofiles.open(full_path, "wb") as out:
-                while True:
-                    chunk = await file.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    written += len(chunk)
-                    if written > max_bytes:
-                        await out.close()
-                        if full_path.exists():
-                            full_path.unlink()
-                        raise HTTPException(status_code=413, detail=f"El archivo supera el límite de {_max_mb(file_type)} MB para {file_type}")
-                    await out.write(chunk)
-        except HTTPException:
-            raise
+            file_path = await upload_file(content, f"{file_type}s/{filename}")
         except Exception as e:
-            if full_path.exists():
-                full_path.unlink()
             raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
-        file_path = f"/uploads/{file_type}s/{filename}"
 
     evidence = TaskEvidence(task_id=task_id, file_type=file_type, file_path=file_path,
                             description=description, created_by=user.id)
