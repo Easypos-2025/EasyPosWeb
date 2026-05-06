@@ -30,11 +30,6 @@
         <span class="mk-value">{{ counts.atrasadas }}</span>
         <span class="mk-label">⚡ Atrasadas</span>
       </div>
-      <div class="mini-kpi mk-sinasig" :class="{ 'kpi-active': activeTab === 'unassigned' }"
-        @click="setTab('unassigned')">
-        <span class="mk-value">{{ counts.sinEjecutor }}</span>
-        <span class="mk-label">Sin Ejecutor</span>
-      </div>
       <div class="mini-kpi mk-sinasignar" :class="{ 'kpi-active': activeTab === 'sin_asignar' }"
         @click="setTab('sin_asignar')">
         <span class="mk-value">{{ stats.sin_asignar || 0 }}</span>
@@ -49,14 +44,14 @@
 
     <!-- FILTROS -->
     <div class="filter-bar">
-      <select v-model="filterWorker" class="form-select form-select-sm" style="max-width:220px">
-        <option :value="null">Todos los ejecutores</option>
-        <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+      <select v-model="filterLeader" class="form-select form-select-sm" style="max-width:240px">
+        <option :value="null">Todos los líderes de tarea</option>
+        <option v-for="l in leaders" :key="l.id" :value="l.id">{{ l.name }}</option>
       </select>
       <button
-        v-if="filterWorker !== null || activeTab !== 'all'"
+        v-if="filterLeader !== null || activeTab !== 'all'"
         class="btn btn-sm btn-outline-secondary"
-        @click="filterWorker = null; activeTab = 'all'"
+        @click="filterLeader = null; activeTab = 'all'"
       >
         <i class="bi bi-x-circle"></i> Limpiar
       </button>
@@ -69,19 +64,6 @@
           <i class="bi bi-list-ul"></i>
         </button>
       </div>
-    </div>
-
-    <!-- FILTER TABS -->
-    <div class="filter-tabs">
-      <button
-        v-for="tab in tabs" :key="tab.value"
-        class="filter-tab"
-        :class="{ active: activeTab === tab.value }"
-        @click="activeTab = tab.value"
-      >
-        {{ tab.label }}
-        <span class="tab-count">{{ tab.count }}</span>
-      </button>
     </div>
 
     <!-- LOADING -->
@@ -199,15 +181,14 @@ const router = useRouter()
 
 // ── Estado ──────────────────────────────────────────────────
 const stats       = ref({ total:0, pendiente:0, progreso:0, revision:0,
-                           finalizada:0, cancelada:0, atrasadas:0, sin_ejecutor:0,
+                           finalizada:0, cancelada:0, atrasadas:0,
                            sin_asignar:0, info_incompleta:0 })
 const tasks       = ref([])
 const assets      = ref([])
-const workers     = ref([])
 const loadingStats = ref(true)
 const loadingTasks = ref(true)
 const activeTab    = ref("all")
-const filterWorker = ref(null)
+const filterLeader = ref(null)
 const viewMode     = ref("card")
 
 // ── KPI Strip — porcentajes ──────────────────────────────────
@@ -218,32 +199,31 @@ const pct = (n) => {
 }
 
 const kpis = computed(() => [
-  { icon: "bi-hourglass-split",        label: "% Pendientes",   value: pct(stats.value.pendiente) },
-  { icon: "bi-play-circle-fill",       label: "% En Ejecución", value: pct(stats.value.progreso + stats.value.revision) },
-  { icon: "bi-exclamation-triangle-fill", label: "% Atrasadas", value: pct(stats.value.atrasadas) },
-  { icon: "bi-check2-circle",          label: "% Completadas",  value: pct(stats.value.finalizada) },
-  { icon: "bi-person-dash",            label: "% Sin Ejecutor", value: pct(stats.value.sin_ejecutor) },
+  { icon: "bi-hourglass-split",           label: "% Pendientes",   value: pct(stats.value.pendiente) },
+  { icon: "bi-play-circle-fill",          label: "% En Ejecución", value: pct(stats.value.progreso + stats.value.revision) },
+  { icon: "bi-exclamation-triangle-fill", label: "% Atrasadas",    value: pct(stats.value.atrasadas) },
+  { icon: "bi-check2-circle",             label: "% Completadas",  value: pct(stats.value.finalizada) },
 ])
 
 // ── Contadores para mini-KPIs ────────────────────────────────
 const counts = computed(() => ({
-  pendiente:   tasks.value.filter(t => t.status_id === 1).length,
-  progreso:    tasks.value.filter(t => t.status_id === 3).length,
-  revision:    tasks.value.filter(t => t.status_id === 4).length,
-  finalizada:  tasks.value.filter(t => t.status_id === 5).length,
-  atrasadas:   tasks.value.filter(t => isOverdue(t)).length,
-  sinEjecutor: tasks.value.filter(t => !t.worker_id && ![5,6].includes(t.status_id)).length,
+  pendiente:  tasks.value.filter(t => t.status_id === 1).length,
+  progreso:   tasks.value.filter(t => t.status_id === 3).length,
+  revision:   tasks.value.filter(t => t.status_id === 4).length,
+  finalizada: tasks.value.filter(t => t.status_id === 5).length,
+  atrasadas:  tasks.value.filter(t => isOverdue(t)).length,
 }))
 
-const tabs = computed(() => [
-  { label: "Todas",        value: "all",        count: tasks.value.length },
-  { label: "Pendientes",   value: "pending",    count: counts.value.pendiente },
-  { label: "En Progreso",  value: "progress",   count: counts.value.progreso },
-  { label: "En Revisión",  value: "revision",   count: counts.value.revision },
-  { label: "Finalizadas",  value: "done",       count: counts.value.finalizada },
-  { label: "⚡ Atrasadas", value: "overdue",    count: counts.value.atrasadas },
-  { label: "Sin Ejecutor", value: "unassigned", count: counts.value.sinEjecutor },
-])
+// ── Líderes derivados de las tareas cargadas ─────────────────
+const leaders = computed(() => {
+  const map = new Map()
+  tasks.value.forEach(t => {
+    if (t.assigned_to && t.assigned_to_name && !map.has(t.assigned_to)) {
+      map.set(t.assigned_to, { id: t.assigned_to, name: t.assigned_to_name })
+    }
+  })
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+})
 
 // ── Filtrado ─────────────────────────────────────────────────
 const filtered = computed(() => {
@@ -251,8 +231,6 @@ const filtered = computed(() => {
 
   if (activeTab.value === "overdue") {
     list = list.filter(t => isOverdue(t))
-  } else if (activeTab.value === "unassigned") {
-    list = list.filter(t => !t.worker_id && ![5,6].includes(t.status_id))
   } else if (activeTab.value === "sin_asignar") {
     list = list.filter(t => t.status_id === 1 && !t.assigned_to)
   } else {
@@ -261,8 +239,8 @@ const filtered = computed(() => {
     if (sid !== null && sid !== undefined) list = list.filter(t => t.status_id === sid)
   }
 
-  if (filterWorker.value !== null) {
-    list = list.filter(t => t.worker_id === filterWorker.value)
+  if (filterLeader.value !== null) {
+    list = list.filter(t => t.assigned_to === filterLeader.value)
   }
 
   return list
@@ -287,14 +265,12 @@ onMounted(async () => {
   loadingStats.value = false
 
   try {
-    const [tasksRes, assetsRes, workersRes] = await Promise.all([
+    const [tasksRes, assetsRes] = await Promise.all([
       api.get("/tasks/"),
       api.get("/tasks/assets-list"),
-      api.get("/workers/"),
     ])
-    tasks.value   = tasksRes.data
-    assets.value  = assetsRes.data
-    workers.value = workersRes.data
+    tasks.value  = tasksRes.data
+    assets.value = assetsRes.data
   } catch {}
   loadingTasks.value = false
 })
@@ -320,8 +296,6 @@ onMounted(async () => {
 .mk-finalizada { border-top-color:#065f46; }
 .mk-atrasada   { border-top-color:#ef4444; }
 .mk-atrasada .mk-value { color:#ef4444; }
-.mk-sinasig    { border-top-color:#94a3b8; }
-.mk-sinasig .mk-value  { color:#64748b; }
 .mk-sinasignar { border-top-color:#f97316; }
 .mk-sinasignar .mk-value { color:#ea580c; }
 .mk-incompleta { border-top-color:#f59e0b; cursor:pointer; }
@@ -335,19 +309,6 @@ onMounted(async () => {
 .vt-btn { padding:5px 10px; background:#f8fafc; border:none; cursor:pointer; color:#64748b; font-size:15px; transition:all 0.15s; }
 .vt-btn:hover  { background:#e2e8f0; }
 .vt-btn.active { background:#3b82f6; color:#fff; }
-
-/* FILTER TABS */
-.filter-tabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
-.filter-tab {
-  padding:5px 12px; border-radius:20px;
-  border:1px solid #e2e8f0; background:#f8fafc;
-  font-size:12px; font-weight:500; cursor:pointer;
-  display:flex; align-items:center; gap:5px; transition:all 0.15s;
-}
-.filter-tab:hover  { border-color:#3b82f6; background:#eff6ff; }
-.filter-tab.active { background:#3b82f6; border-color:#3b82f6; color:#fff; }
-.filter-tab.active .tab-count { background:rgba(255,255,255,0.25); }
-.tab-count { font-size:10px; background:#e2e8f0; color:#475569; border-radius:10px; padding:1px 6px; }
 
 /* STATES */
 .loading-center { padding:40px; text-align:center; color:#94a3b8; }

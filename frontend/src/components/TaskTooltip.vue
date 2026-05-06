@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, onBeforeUnmount } from "vue"
 
 const props = defineProps({
   task:      { type: Object,  required: true },
@@ -96,8 +96,10 @@ let touchTimer  = null
 // ── PC: hover ─────────────────────────────────────────────────
 function onMouseEnter(e) {
   clearTimeout(hideTimer)
+  // Capturar el elemento ANTES del setTimeout — currentTarget es null después del event handler
+  const el = e.currentTarget
   hoverTimer = setTimeout(() => {
-    positionTooltip(e)
+    if (el) positionTooltip(el)
     showTooltip.value = true
   }, 250)
 }
@@ -111,12 +113,13 @@ function cancelHide() {
   clearTimeout(hideTimer)
 }
 
-function positionTooltip(e) {
+function positionTooltip(el) {
+  if (!el) return
   const TOOLTIP_W = 260
   const TOOLTIP_H = 180
   const VP_W = window.innerWidth
   const VP_H = window.innerHeight
-  const rect = e.currentTarget.getBoundingClientRect()
+  const rect = el.getBoundingClientRect()
 
   let left = rect.left
   let top  = rect.bottom + 6
@@ -131,6 +134,13 @@ function positionTooltip(e) {
     zIndex:   "9999",
   }
 }
+
+onBeforeUnmount(() => {
+  clearTimeout(hoverTimer)
+  clearTimeout(hideTimer)
+  clearTimeout(touchTimer)
+  showTooltip.value = false
+})
 
 // ── Móvil: long press ─────────────────────────────────────────
 function onTouchStart() {

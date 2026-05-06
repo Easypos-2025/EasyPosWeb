@@ -67,7 +67,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="loan in filtered" :key="loan.id" :class="{ 'row-overdue': isOverdue(loan) }">
+          <tr v-for="loan in filtered" :key="loan.id" :class="{ 'row-overdue': isOverdue(loan) }" class="row-clickable" @click.stop="openDetail(loan)">
             <td class="text-muted">{{ loan.id }}</td>
             <td>
               <strong>{{ loan.bodega_item_nombre }}</strong>
@@ -102,15 +102,15 @@
               </span>
               <span v-else>—</span>
             </td>
-            <td class="text-center">
+            <td class="text-center" @click.stop>
               <div class="action-row">
-                <button class="btn btn-sm btn-outline-primary" @click="openQr(loan)" title="Ver QR">
+                <button class="btn btn-sm btn-outline-primary" @click.stop="openQr(loan)" title="Ver QR">
                   <i class="bi bi-qr-code"></i>
                 </button>
-                <button v-if="loan.estado === 'activo' && canManage" class="btn btn-sm btn-outline-purple" @click="activarRetorno(loan)" title="Activar retorno">
+                <button v-if="loan.estado === 'activo' && canManage" class="btn btn-sm btn-outline-purple" @click.stop="activarRetorno(loan)" title="Activar retorno">
                   <i class="bi bi-box-arrow-in-left"></i>
                 </button>
-                <button v-if="['devuelto','devuelto_con_dano','retorno_pendiente','activo'].includes(loan.estado) && canManage" class="btn btn-sm btn-outline-secondary" @click="openCerrar(loan)" title="Cerrar con auditoría">
+                <button v-if="['devuelto','devuelto_con_dano','retorno_pendiente','activo'].includes(loan.estado) && canManage" class="btn btn-sm btn-outline-secondary" @click.stop="openCerrar(loan)" title="Cerrar con auditoría">
                   <i class="bi bi-clipboard-check"></i>
                 </button>
               </div>
@@ -243,6 +243,89 @@
       </div>
     </div>
 
+    <!-- ── MODAL DETALLE ── -->
+    <div v-if="showDetail" class="modal-overlay" @click.self="showDetail = false">
+      <div class="modal-box modal-detail">
+        <div class="mh">
+          <h3><i class="bi bi-info-circle me-2"></i>Detalle Préstamo <span class="detail-id">#{{ detailLoan?.id }}</span></h3>
+          <button class="btn-x" @click="showDetail = false"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="mb-area">
+
+          <!-- Estado -->
+          <div class="detail-estado-row">
+            <span class="estado-badge" :class="estadoClass(detailLoan?.estado)">{{ estadoLabel(detailLoan?.estado) }}</span>
+            <span v-if="detailLoan?.estado_fisico_retorno" class="fisico-tag">
+              <i class="bi bi-clipboard-check me-1"></i>{{ { perfecto:'Perfecto estado', desgaste:'Desgaste normal', dano_leve:'Daño leve', dano_grave:'Daño grave' }[detailLoan.estado_fisico_retorno] || detailLoan.estado_fisico_retorno }}
+            </span>
+          </div>
+
+          <!-- Artículo -->
+          <div class="detail-section">
+            <div class="detail-section-title"><i class="bi bi-box me-1"></i>Artículo</div>
+            <div class="detail-value"><strong>{{ detailLoan?.bodega_item_nombre }}</strong></div>
+            <div v-if="detailLoan?.bodega_item_codigo" class="detail-sub">Código: {{ detailLoan.bodega_item_codigo }}</div>
+            <div class="detail-sub">Cantidad: <strong>{{ detailLoan?.cantidad }}</strong></div>
+          </div>
+
+          <!-- Colaborador -->
+          <div class="detail-section">
+            <div class="detail-section-title"><i class="bi bi-person me-1"></i>Colaborador</div>
+            <div class="detail-value"><strong>{{ detailLoan?.colaborador_nombre }}</strong></div>
+            <div v-if="detailLoan?.colaborador_dni" class="detail-sub">DNI: {{ detailLoan.colaborador_dni }}</div>
+            <div v-if="detailLoan?.colaborador_empresa" class="detail-sub">Empresa: {{ detailLoan.colaborador_empresa }}</div>
+          </div>
+
+          <!-- Fechas -->
+          <div class="detail-section">
+            <div class="detail-section-title"><i class="bi bi-calendar3 me-1"></i>Fechas</div>
+            <div class="detail-dates-grid">
+              <div class="detail-date-item">
+                <span class="detail-date-label">Registro</span>
+                <span class="detail-date-val">{{ detailLoan?.created_at ? fmtDateTime(detailLoan.created_at) : '—' }}</span>
+              </div>
+              <div class="detail-date-item">
+                <span class="detail-date-label">Recibido (QR salida)</span>
+                <span class="detail-date-val" :class="detailLoan?.fecha_salida_confirmada ? 'date-out' : ''">
+                  {{ detailLoan?.fecha_salida_confirmada ? fmtDateTime(detailLoan.fecha_salida_confirmada) : '—' }}
+                </span>
+              </div>
+              <div class="detail-date-item">
+                <span class="detail-date-label">Vencimiento esperado</span>
+                <span class="detail-date-val" :class="isOverdue(detailLoan) ? 'text-danger' : ''">
+                  {{ detailLoan?.fecha_retorno_esperada ? fmtDate(detailLoan.fecha_retorno_esperada) : '—' }}
+                </span>
+              </div>
+              <div class="detail-date-item">
+                <span class="detail-date-label">Devuelto (QR retorno)</span>
+                <span class="detail-date-val" :class="detailLoan?.fecha_retorno_confirmada ? 'date-in' : ''">
+                  {{ detailLoan?.fecha_retorno_confirmada ? fmtDateTime(detailLoan.fecha_retorno_confirmada) : '—' }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Descripción -->
+          <div class="detail-section" v-if="detailLoan?.notas">
+            <div class="detail-section-title"><i class="bi bi-chat-left-text me-1"></i>Descripción / Notas</div>
+            <div class="detail-notas">{{ detailLoan.notas }}</div>
+          </div>
+
+          <!-- Creado por -->
+          <div v-if="detailLoan?.created_by_nombre" class="detail-footer-info">
+            <i class="bi bi-person-check me-1"></i>Creado por: <strong>{{ detailLoan.created_by_nombre }}</strong>
+          </div>
+
+        </div>
+        <div class="mf">
+          <button class="btn btn-secondary btn-sm" @click="showDetail = false">Cerrar</button>
+          <button class="btn btn-outline-primary btn-sm" @click="showDetail = false; openQr(detailLoan)">
+            <i class="bi bi-qr-code me-1"></i>Ver QR
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -275,6 +358,10 @@ const showCerrar = ref(false)
 const cerrarLoan = ref(null)
 const cerrando   = ref(false)
 const cerrarForm = ref({ estado_fisico_retorno: "perfecto", notas: "" })
+
+const showDetail = ref(false)
+const detailLoan = ref(null)
+function openDetail(loan) { detailLoan.value = loan; showDetail.value = true }
 
 const ESTADO_LABELS = {
   pendiente_confirmacion: "Pendiente QR",
@@ -508,6 +595,26 @@ onMounted(load)
 .date-confirmed { font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 2px; }
 .date-out { color: #16a34a; }
 .date-in  { color: #1e40af; }
+
+/* FILA CLICKEABLE */
+.row-clickable { cursor: pointer; transition: background .1s; }
+.row-clickable:hover td { background: #f0f7ff !important; }
+
+/* MODAL DETALLE */
+.modal-detail      { max-width: 520px; }
+.detail-id         { color: #64748b; font-weight: 600; }
+.detail-estado-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fisico-tag        { font-size: 11px; background: #f1f5f9; color: #475569; border-radius: 20px; padding: 2px 10px; font-weight: 600; }
+.detail-section    { background: #f8fafc; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.detail-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #94a3b8; margin-bottom: 4px; }
+.detail-value      { font-size: 14px; color: #1e293b; }
+.detail-sub        { font-size: 12px; color: #64748b; }
+.detail-dates-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.detail-date-item  { display: flex; flex-direction: column; gap: 2px; }
+.detail-date-label { font-size: 11px; color: #94a3b8; font-weight: 600; }
+.detail-date-val   { font-size: 13px; color: #374151; font-weight: 500; }
+.detail-notas      { font-size: 13px; color: #374151; white-space: pre-wrap; line-height: 1.5; }
+.detail-footer-info { font-size: 12px; color: #94a3b8; padding: 0 2px; }
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
