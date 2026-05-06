@@ -46,6 +46,12 @@ async def create_module(data: SystemModuleCreate, db: AsyncSession = Depends(get
             "parent_id": module.parent_id, "is_active": module.is_active, "children": []}
 
 
+def _ser_mod(m: SystemModule) -> dict:
+    return {"id": m.id, "name": m.name, "route": m.route, "icon": m.icon,
+            "parent_id": m.parent_id, "is_active": m.is_active,
+            "order_index": m.order_index, "is_sysadmin": m.is_sysadmin, "children": []}
+
+
 @router.get("/flat/")
 async def get_all_modules_flat(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     role = await db.get(Role, user.role_id)
@@ -53,7 +59,7 @@ async def get_all_modules_flat(db: AsyncSession = Depends(get_db), user=Depends(
         result = await db.execute(select(SystemModule))
     else:
         result = await db.execute(select(SystemModule).where(SystemModule.is_sysadmin == False))
-    return result.scalars().all()
+    return [_ser_mod(m) for m in result.scalars().all()]
 
 
 @router.get("/", response_model=list[SystemModuleOut])
@@ -67,7 +73,7 @@ async def get_module(module_id: int, db: AsyncSession = Depends(get_db)):
     module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
-    return module
+    return _ser_mod(module)
 
 
 @router.put("/{module_id}", response_model=SystemModuleOut)

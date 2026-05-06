@@ -13,6 +13,11 @@ from app.auth.dependencies import get_current_user
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
 
+def _ser(r: Role) -> dict:
+    return {"id": r.id, "name": r.name, "description": r.description,
+            "company_id": r.company_id, "is_system": r.is_system}
+
+
 async def _is_system(user: User, db: AsyncSession) -> bool:
     role = await db.get(Role, user.role_id)
     return role.is_system if role else False
@@ -34,7 +39,7 @@ async def get_roles(
     result = await db.execute(
         select(Role).where(Role.company_id == cid, Role.is_system == False).order_by(Role.name)
     )
-    return result.scalars().all()
+    return [_ser(r) for r in result.scalars().all()]
 
 
 @router.post("/")
@@ -62,7 +67,7 @@ async def create_role(
     db.add(role)
     await db.commit()
     await db.refresh(role)
-    return role
+    return _ser(role)
 
 
 @router.put("/{role_id}")
@@ -90,7 +95,7 @@ async def update_role(
     role.description = (data.get("description") or "").strip()
     await db.commit()
     await db.refresh(role)
-    return role
+    return _ser(role)
 
 
 @router.delete("/{role_id}")
