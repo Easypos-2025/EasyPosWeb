@@ -102,7 +102,7 @@ class Company(Base):
         nullable=True
     )
 
-    business_profile = relationship("BusinessProfile")
+    business_profile = relationship("BusinessProfile", lazy="selectin")
     
     address: Mapped[str] = mapped_column(
         String(255),

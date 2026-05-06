@@ -1,78 +1,31 @@
-"""
-========================================================
-CONFIGURACIÓN DE BASE DE DATOS
-========================================================
-
-Este archivo configura:
-
-- conexión a MariaDB
-- motor SQLAlchemy
-- sesiones de base de datos
-- Base para los modelos
-"""
-
 import os
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
-# =====================================================
-# URL DE CONEXIÓN A LA BASE DE DATOS
-# =====================================================
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+aiomysql://root:123456@localhost/easyposweb")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:123456@localhost/easyposweb")
-
-
-# =====================================================
-# MOTOR DE BASE DE DATOS
-# =====================================================
-
-engine = create_engine(
+engine = create_async_engine(
     DATABASE_URL,
-    echo=True
+    echo=False,
+    pool_size=20,
+    max_overflow=40,
+    pool_timeout=30,
+    pool_recycle=1800,
 )
 
-
-# =====================================================
-# SESIONES DE BASE DE DATOS
-# =====================================================
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
-
-# =====================================================
-# BASE PARA LOS MODELOS
-# =====================================================
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 Base = declarative_base()
 
 
-# =====================================================
-# CREAR TABLAS
-# =====================================================
-
-def init_db():
-    """
-    Crea todas las tablas registradas en SQLAlchemy
-    """
-    Base.metadata.create_all(bind=engine)
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
 
 
-# =====================================================
-# DEPENDENCIA PARA FASTAPI
-# =====================================================
-
-def get_db():
-
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)

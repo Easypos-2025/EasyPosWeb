@@ -5,6 +5,12 @@
       "label": "Backend",
       "type": "shell",
       "command": "cd backend && ..\\venv\\Scripts\\activate && uvicorn app.main:app --reload",
+      "options": {
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      },
       "presentation": {
         "panel": "dedicated",
         "group": "servidores",

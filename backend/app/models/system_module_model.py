@@ -78,9 +78,9 @@ class SystemModule(Base):
     default=False
     )    
 
-    role_modules = relationship("RoleModule", back_populates="module")
+    role_modules = relationship("RoleModule", back_populates="module", lazy="selectin")
 
-     
+
     # =========================================
     # RELATIONSHIPS (JERARQUÍA)
     # =========================================
@@ -88,7 +88,8 @@ class SystemModule(Base):
     children = relationship(
     "SystemModule",
     backref="parent",
-    remote_side=[id]
+    remote_side=[id],
+    lazy="selectin"
     )
     
     # =========================================

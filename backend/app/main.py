@@ -7,8 +7,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select, func, text
 
-from app.database import Base, engine, SessionLocal
+from app.database import AsyncSessionLocal, init_db
 from app import models
 
 # ===============================
@@ -80,32 +81,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 ASSETS_DIR = FRONTEND_DIST / "assets"
 
-# ===============================
-# DB
-# ===============================
-Base.metadata.create_all(bind=engine)
 
-
-def _init_db_data():
-    from sqlalchemy import text
+# ===============================
+# DB INIT DATA (async)
+# ===============================
+async def _init_db_data():
     from app.models.system_config_model import SystemConfig
     from app.models.topbar_menu_item_model import TopbarMenuItem
 
-    db = SessionLocal()
-    try:
+    async with AsyncSessionLocal() as db:
         # Agregar columna last_seen si no existe (migración segura)
         try:
-            db.execute(text("ALTER TABLE user_sessions ADD COLUMN last_seen DATETIME NULL"))
-            db.commit()
+            await db.execute(text("ALTER TABLE user_sessions ADD COLUMN last_seen DATETIME NULL"))
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
 
         # Agregar client_id en assets si no existe
         try:
-            db.execute(text("ALTER TABLE assets ADD COLUMN client_id INT NULL"))
-            db.commit()
+            await db.execute(text("ALTER TABLE assets ADD COLUMN client_id INT NULL"))
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
 
         # ── INVENTARIO: tablas base ────────────────────────────────────────────
         inventory_tables = [
@@ -277,45 +274,48 @@ def _init_db_data():
         ]
         for sql in inventory_tables:
             try:
-                db.execute(text(sql))
-                db.commit()
+                await db.execute(text(sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # Agregar price_list_id a clients si no existe
         try:
-            db.execute(text("ALTER TABLE clients ADD COLUMN price_list_id INT NULL"))
-            db.commit()
+            await db.execute(text("ALTER TABLE clients ADD COLUMN price_list_id INT NULL"))
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
 
         # Registrar módulo Clientes en system_modules si no existe
         from app.models.system_module_model import SystemModule
-        if not db.query(SystemModule).filter(SystemModule.route == "/configuration/clients").first():
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/configuration/clients"))
+        if not result.scalar_one_or_none():
             db.add(SystemModule(
                 name="Clientes", route="/configuration/clients",
                 icon="bi-people", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=False
             ))
-            db.commit()
+            await db.commit()
 
         # Registrar módulo Completar Tareas en system_modules si no existe
-        if not db.query(SystemModule).filter(SystemModule.route == "/tasks/completar-info").first():
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/tasks/completar-info"))
+        if not result.scalar_one_or_none():
             db.add(SystemModule(
                 name="Completar Información Tareas", route="/tasks/completar-info",
                 icon="bi-clipboard-check", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=False
             ))
-            db.commit()
+            await db.commit()
 
         # Registrar módulo Firma de Email en system_modules si no existe
-        if not db.query(SystemModule).filter(SystemModule.route == "/sysadmin/email-footer").first():
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/email-footer"))
+        if not result.scalar_one_or_none():
             db.add(SystemModule(
                 name="Firma de Email", route="/sysadmin/email-footer",
                 icon="bi-envelope-paper", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=True
             ))
-            db.commit()
+            await db.commit()
 
         # ── Módulos de inventario ──────────────────────────────────────────────
         inventory_modules = [
@@ -327,17 +327,18 @@ def _init_db_data():
             ("Entradas Mercancía","/inventory/purchase-orders",  "bi-cart-plus"),
         ]
         for mod_name, mod_route, mod_icon in inventory_modules:
-            if not db.query(SystemModule).filter(SystemModule.route == mod_route).first():
+            result = await db.execute(select(SystemModule).where(SystemModule.route == mod_route))
+            if not result.scalar_one_or_none():
                 db.add(SystemModule(
                     name=mod_name, route=mod_route,
                     icon=mod_icon, parent_id=None, is_active=True,
                     order_index=0, is_sysadmin=False
                 ))
-        db.commit()
+        await db.commit()
 
         # Crear tabla user_notifications si no existe (migración segura)
         try:
-            db.execute(text("""
+            await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS user_notifications (
                     id INTEGER PRIMARY KEY AUTO_INCREMENT,
                     sender_id INTEGER NOT NULL,
@@ -350,26 +351,28 @@ def _init_db_data():
                     INDEX idx_un_sender (sender_id)
                 )
             """))
-            db.commit()
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
 
         # Registrar módulos inbox/outbox en system_modules
-        if not db.query(SystemModule).filter(SystemModule.route == "/notifications/inbox").first():
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/notifications/inbox"))
+        if not result.scalar_one_or_none():
             db.add(SystemModule(
                 name="Bandeja de Entrada", route="/notifications/inbox",
                 icon="bi-envelope-open", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=False
             ))
-            db.commit()
+            await db.commit()
 
-        if not db.query(SystemModule).filter(SystemModule.route == "/notifications/outbox").first():
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/notifications/outbox"))
+        if not result.scalar_one_or_none():
             db.add(SystemModule(
                 name="Mensajes Enviados", route="/notifications/outbox",
                 icon="bi-send", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=False
             ))
-            db.commit()
+            await db.commit()
 
         # Datos iniciales system_config
         defaults_config = [
@@ -378,7 +381,6 @@ def _init_db_data():
             ("footer_ticker_enabled",           "1",     "Habilitar ticker de nuevos asociados",                                  "boolean"),
             ("topbar_notif_interval_ms",        "60000", "Intervalo en ms para verificar notificaciones en el topbar (default 60s)", "integer"),
             ("topbar_heartbeat_interval_ms",    "180000","Intervalo en ms para heartbeat de sesión en el topbar (default 3min)",    "integer"),
-            # Firma de pie de página para emails
             ("email_footer_legal_name",    "EasyPosWeb SAS",                              "Razón social que aparece en el pie de los emails",        "string"),
             ("email_footer_nit",           "900.123.456-7",                               "NIT de la empresa en el pie de los emails",               "string"),
             ("email_footer_tagline",       "Tu negocio, en línea. Sin complicaciones.",   "Slogan que aparece en el pie de los emails",              "string"),
@@ -388,7 +390,8 @@ def _init_db_data():
             ("email_footer_address",       "Colombia",                                    "Dirección o país en el pie de los emails",                "string"),
         ]
         for key, value, desc, ctype in defaults_config:
-            if not db.query(SystemConfig).filter(SystemConfig.config_key == key).first():
+            result = await db.execute(select(SystemConfig).where(SystemConfig.config_key == key))
+            if not result.scalar_one_or_none():
                 db.add(SystemConfig(config_key=key, config_value=value, description=desc, config_type=ctype))
 
         # Datos iniciales topbar_menu_items
@@ -400,14 +403,16 @@ def _init_db_data():
             ("Cláusulas Legales",     "clausulas", "bi-shield-check",         "/clausulas-legales", False, None, True, 5),
         ]
         for name, key, icon, route, has_ev, min_plan, is_act, order in defaults_menu:
-            if not db.query(TopbarMenuItem).filter(TopbarMenuItem.key == key).first():
+            result = await db.execute(select(TopbarMenuItem).where(TopbarMenuItem.key == key))
+            if not result.scalar_one_or_none():
                 db.add(TopbarMenuItem(
                     name=name, key=key, icon=icon, route=route,
                     has_evidence=has_ev, min_plan_id=min_plan,
                     is_active=is_act, order_index=order
                 ))
 
-        db.commit()
+        await db.commit()
+
         # ── MIGRACIONES SEGURAS: columnas nuevas en business_profiles ──
         for col_sql in [
             "ALTER TABLE business_profiles ADD COLUMN image_url VARCHAR(500) NULL",
@@ -417,10 +422,10 @@ def _init_db_data():
             "ALTER TABLE business_profiles ADD COLUMN show_in_landing TINYINT(1) DEFAULT 1",
         ]:
             try:
-                db.execute(text(col_sql))
-                db.commit()
+                await db.execute(text(col_sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # ── SEED: landing_sections ──────────────────────────────────────
         from app.models.landing_section_model import LandingSection
@@ -509,14 +514,14 @@ def _init_db_data():
             },
         ]
         for s in seed_sections:
-            if not db.query(LandingSection).filter(LandingSection.section_key == s["section_key"]).first():
+            result = await db.execute(select(LandingSection).where(LandingSection.section_key == s["section_key"]))
+            if not result.scalar_one_or_none():
                 db.add(LandingSection(**s))
-        db.commit()
+        await db.commit()
 
         # ── SEED: iconos, colores e imágenes por tipo de perfil ───────
         from app.models.business_profile_model import BusinessProfile as BP
         profile_defaults = [
-            # (keywords_en_nombre, icon, color, image_url, show_in_landing, landing_desc)
             (
                 ["restaurante", "restaurant", "comida", "food"],
                 "bi-shop-window", "#f59e0b",
@@ -553,7 +558,8 @@ def _init_db_data():
                 ""
             ),
         ]
-        all_profiles = db.query(BP).all()
+        result = await db.execute(select(BP))
+        all_profiles = result.scalars().all()
         for p in all_profiles:
             name_lower = p.name.lower()
             for keywords, icon, color, img, show, desc in profile_defaults:
@@ -571,11 +577,12 @@ def _init_db_data():
                     if not p.landing_description and desc:
                         p.landing_description = desc
                     break
-        db.commit()
+        await db.commit()
 
         # ── SEED: plan_features ────────────────────────────────────────
         from app.models.plan_feature_model import PlanFeature
-        if db.query(PlanFeature).count() == 0:
+        count_result = await db.execute(select(func.count()).select_from(PlanFeature))
+        if count_result.scalar() == 0:
             seed_features = [
                 # Módulos Básicos
                 ("Módulos Básicos", "Administrativo",     "X",   "X",   "X",   "X",   1),
@@ -621,21 +628,22 @@ def _init_db_data():
                     val_free=vf, val_basic=vb, val_standard=vs, val_premium=vp,
                     order_index=idx, is_active=True
                 ))
-            db.commit()
+            await db.commit()
 
         # ── SEED: system_config email_sender_landing ───────────────────
-        if not db.query(SystemConfig).filter(SystemConfig.config_key == "email_sender_landing").first():
+        result = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "email_sender_landing"))
+        if not result.scalar_one_or_none():
             db.add(SystemConfig(
                 config_key="email_sender_landing",
                 config_value="easypos.co@gmail.com",
                 description="Email desde donde se envían los correos de contacto de la landing",
                 config_type="string"
             ))
-            db.commit()
+            await db.commit()
 
         # ── SEED: módulo landing-manager en system_modules ─────────────
-        from app.models.system_module_model import SystemModule
-        if not db.query(SystemModule).filter(SystemModule.route == "/sysadmin/landing-manager").first():
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/landing-manager"))
+        if not result.scalar_one_or_none():
             db.add(SystemModule(
                 name="Gestión Landing Page",
                 route="/sysadmin/landing-manager",
@@ -645,7 +653,7 @@ def _init_db_data():
                 order_index=0,
                 is_sysadmin=True
             ))
-            db.commit()
+            await db.commit()
 
         # ── MIGRACIÓN: columnas nuevas en companies ─────────────────────
         for col_sql in [
@@ -653,10 +661,10 @@ def _init_db_data():
             "ALTER TABLE companies ADD COLUMN upgrade_status VARCHAR(30) NULL DEFAULT NULL",
         ]:
             try:
-                db.execute(text(col_sql))
-                db.commit()
+                await db.execute(text(col_sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # ── MIGRACIÓN: company_payments — todas las columnas del modelo ──
         for col_sql in [
@@ -678,14 +686,14 @@ def _init_db_data():
             "ALTER TABLE company_payments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
         ]:
             try:
-                db.execute(text(col_sql))
-                db.commit()
+                await db.execute(text(col_sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # ── MIGRACIÓN: tabla colaborador_tarea ──────────────────────────
         try:
-            db.execute(text("""
+            await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS colaborador_tarea (
                     id          INT AUTO_INCREMENT PRIMARY KEY,
                     task_id     INT NOT NULL,
@@ -698,19 +706,19 @@ def _init_db_data():
                     FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
                 )
             """))
-            db.commit()
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
 
         # ── MIGRACIÓN: system_modules — columna is_sysadmin ─────────────
         for col_sql in [
             "ALTER TABLE system_modules ADD COLUMN is_sysadmin TINYINT(1) NOT NULL DEFAULT 0",
         ]:
             try:
-                db.execute(text(col_sql))
-                db.commit()
+                await db.execute(text(col_sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # ── MIGRACIÓN: users — columnas de personalización ──────────────
         for col_sql in [
@@ -720,24 +728,24 @@ def _init_db_data():
             "ALTER TABLE users ADD COLUMN logo VARCHAR(255) NULL",
         ]:
             try:
-                db.execute(text(col_sql))
-                db.commit()
+                await db.execute(text(col_sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # ── MIGRACIÓN: companies — columna business_profile_id ──────────
         for col_sql in [
             "ALTER TABLE companies ADD COLUMN business_profile_id INT NULL",
         ]:
             try:
-                db.execute(text(col_sql))
-                db.commit()
+                await db.execute(text(col_sql))
+                await db.commit()
             except Exception:
-                db.rollback()
+                await db.rollback()
 
         # ── MIGRACIÓN: tabla plan_prices (multi-moneda) ──────────────────
         try:
-            db.execute(text("""
+            await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS plan_prices (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     plan_id INT NOT NULL,
@@ -750,9 +758,9 @@ def _init_db_data():
                     FOREIGN KEY (plan_id) REFERENCES plans(id)
                 )
             """))
-            db.commit()
+            await db.commit()
         except Exception:
-            db.rollback()
+            await db.rollback()
 
         # ── SEED: módulos de pagos en system_modules ────────────────────
         for route, name, icon, is_sysadmin in [
@@ -760,13 +768,14 @@ def _init_db_data():
             ("/sysadmin/payment-history", "Historial de Pagos", "bi-clock-history",      True),
             ("/payment-history",          "Historial de Pagos", "bi-clock-history",      False),
         ]:
-            if not db.query(SystemModule).filter(SystemModule.route == route).first():
+            result = await db.execute(select(SystemModule).where(SystemModule.route == route))
+            if not result.scalar_one_or_none():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0,
                     is_sysadmin=is_sysadmin
                 ))
-        db.commit()
+        await db.commit()
 
         # ── SEED: módulos préstamos/bodega ───────────────────────────────
         for route, name, icon in [
@@ -774,12 +783,13 @@ def _init_db_data():
             ("/configuration/bodega",                 "Bodega",                 "bi-archive"),
             ("/loans/prestamos",                      "Préstamos",              "bi-box-arrow-right"),
         ]:
-            if not db.query(SystemModule).filter(SystemModule.route == route).first():
+            result = await db.execute(select(SystemModule).where(SystemModule.route == route))
+            if not result.scalar_one_or_none():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0, is_sysadmin=False
                 ))
-        db.commit()
+        await db.commit()
 
         # ── SEED: módulos catálogo tareas ────────────────────────────────
         for route, name, icon in [
@@ -788,57 +798,54 @@ def _init_db_data():
             ("/configuration/conceptos-gastos", "Conceptos de Gasto","bi-receipt"),
             ("/configuration/conceptos-compras","Conceptos de Compra","bi-cart3"),
         ]:
-            if not db.query(SystemModule).filter(SystemModule.route == route).first():
+            result = await db.execute(select(SystemModule).where(SystemModule.route == route))
+            if not result.scalar_one_or_none():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0, is_sysadmin=False
                 ))
-        db.commit()
+        await db.commit()
 
         # ── SEED: módulos Facturación (estructura padre/hijo) ────────────
-        def _get_or_create_module(name, route, icon, parent_id=None):
-            m = db.query(SystemModule).filter(SystemModule.route == route).first()
+        async def _get_or_create_module(name, route, icon, parent_id=None):
+            r = await db.execute(select(SystemModule).where(SystemModule.route == route))
+            m = r.scalar_one_or_none()
             if not m:
                 m = SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=parent_id, is_active=True, order_index=0, is_sysadmin=False
                 )
                 db.add(m)
-                db.commit()
-                db.refresh(m)
+                await db.commit()
+                await db.refresh(m)
             return m
 
-        fact_root    = _get_or_create_module("Facturación",   "/facturacion",                  "bi-receipt-cutoff")
-        fact_ventas  = _get_or_create_module("Ventas",        "/facturacion/ventas",            "bi-bag",                  fact_root.id)
-        fact_reportes= _get_or_create_module("Reportes",      "/facturacion/reportes",          "bi-bar-chart-line",       fact_root.id)
-        _get_or_create_module("Factura",  "/facturacion/ventas/factura",          "bi-file-earmark-text",    fact_ventas.id)
-        _get_or_create_module("Recibo",   "/facturacion/ventas/recibo",           "bi-receipt",              fact_ventas.id)
-        _get_or_create_module("Facturas", "/facturacion/reportes/facturas",       "bi-file-earmark-spreadsheet", fact_reportes.id)
-        _get_or_create_module("Recibos",  "/facturacion/reportes/recibos",        "bi-receipt-cutoff",       fact_reportes.id)
-        db.commit()
+        fact_root     = await _get_or_create_module("Facturación",   "/facturacion",                  "bi-receipt-cutoff")
+        fact_ventas   = await _get_or_create_module("Ventas",        "/facturacion/ventas",            "bi-bag",                  fact_root.id)
+        fact_reportes = await _get_or_create_module("Reportes",      "/facturacion/reportes",          "bi-bar-chart-line",       fact_root.id)
+        await _get_or_create_module("Factura",  "/facturacion/ventas/factura",          "bi-file-earmark-text",    fact_ventas.id)
+        await _get_or_create_module("Recibo",   "/facturacion/ventas/recibo",           "bi-receipt",              fact_ventas.id)
+        await _get_or_create_module("Facturas", "/facturacion/reportes/facturas",       "bi-file-earmark-spreadsheet", fact_reportes.id)
+        await _get_or_create_module("Recibos",  "/facturacion/reportes/recibos",        "bi-receipt-cutoff",       fact_reportes.id)
+        await db.commit()
 
-    finally:
-        db.close()
 
 # ===============================
 # RATE LIMITER (in-memory, single server)
 # ===============================
-# Rutas públicas sensibles con su límite (max_requests, window_seconds)
 _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/register/associate/": (5, 3600),
     "/payments/submit-receipt": (10, 3600),
     "/auth/login": (20, 900),
     "/auth/forgot-password": (5, 3600),
-    "/qr/prestamo/": (15, 60),           # 15 req/IP/min en endpoints QR públicos
+    "/qr/prestamo/": (15, 60),
 }
-# ip → ruta → deque de timestamps
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
     lambda: collections.defaultdict(collections.deque)
 )
 
 
 def _check_rate_limit(ip: str, path: str) -> bool:
-    """Retorna True si la request está permitida, False si excede el límite."""
     for route, (max_req, window) in _RATE_LIMITS.items():
         if path.startswith(route):
             now = time.time()
@@ -873,7 +880,11 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-_init_db_data()
+@app.on_event("startup")
+async def startup():
+    await init_db()
+    await _init_db_data()
+
 
 app.router.redirect_slashes = True
 
@@ -987,12 +998,9 @@ async def serve_spa(full_path: str):
 
     requested = FRONTEND_DIST / full_path
 
-    # Assets con hash (JS/CSS) → cacheo largo permitido
     if requested.exists() and requested.is_file():
         if requested.suffix in (".js", ".css") and requested.parent.name == "assets":
             return FileResponse(requested, headers={"Cache-Control": "public, max-age=31536000, immutable"})
         return FileResponse(requested, headers=_NO_CACHE_HEADERS)
 
-    # SPA fallback → index.html siempre sin caché
     return FileResponse(FRONTEND_DIST / "index.html", headers=_NO_CACHE_HEADERS)
-

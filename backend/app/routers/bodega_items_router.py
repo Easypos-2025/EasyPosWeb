@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.models.bodega_item_model import BodegaItem
 from app.auth.dependencies import get_current_user
@@ -20,19 +21,20 @@ def _ser(b: BodegaItem):
 
 
 @router.get("/")
-def list_items(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    items = db.query(BodegaItem).filter(
-        BodegaItem.company_id == current_user.company_id,
-        BodegaItem.is_active == 1
-    ).order_by(BodegaItem.nombre).all()
-    return [_ser(i) for i in items]
+async def list_items(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(BodegaItem)
+        .where(BodegaItem.company_id == current_user.company_id, BodegaItem.is_active == 1)
+        .order_by(BodegaItem.nombre)
+    )
+    return [_ser(i) for i in result.scalars().all()]
 
 
 @router.post("/")
-def create_item(
+async def create_item(
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     nombre = (data.get("nombre") or "").strip()
     if not nombre:
@@ -53,22 +55,22 @@ def create_item(
         ubicacion_bodega=(data.get("ubicacion_bodega") or "").strip() or None,
     )
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return _ser(item)
 
 
 @router.put("/{item_id}")
-def update_item(
+async def update_item(
     item_id: int,
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    item = db.query(BodegaItem).filter(
-        BodegaItem.id == item_id,
-        BodegaItem.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(BodegaItem).where(BodegaItem.id == item_id, BodegaItem.company_id == current_user.company_id)
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
 
@@ -93,21 +95,21 @@ def update_item(
     item.unidad_id           = data.get("unidad_id") or None
     item.ubicacion_bodega    = (data.get("ubicacion_bodega") or "").strip() or None
     item.is_active           = int(data.get("is_active", item.is_active))
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return _ser(item)
 
 
 @router.delete("/{item_id}")
-def delete_item(
+async def delete_item(
     item_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    item = db.query(BodegaItem).filter(
-        BodegaItem.id == item_id,
-        BodegaItem.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(BodegaItem).where(BodegaItem.id == item_id, BodegaItem.company_id == current_user.company_id)
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
 
@@ -118,6 +120,6 @@ def delete_item(
             detail=f"No se puede eliminar: hay {prestados} unidad(es) en préstamo"
         )
 
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
     return {"message": "Artículo eliminado"}

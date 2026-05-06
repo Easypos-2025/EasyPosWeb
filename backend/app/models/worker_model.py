@@ -18,4 +18,4 @@ class Worker(Base):
 
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
-    profession = relationship("Profession", back_populates="workers")
+    profession = relationship("Profession", back_populates="workers", lazy="selectin")

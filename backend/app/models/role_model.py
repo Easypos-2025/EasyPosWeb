@@ -30,10 +30,11 @@ class Role(Base):
 
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    users = relationship("User", back_populates="role")
+    users = relationship("User", back_populates="role", lazy="selectin")
 
     role_modules = relationship(
         "RoleModule",
         back_populates="role",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        lazy="selectin"
     )

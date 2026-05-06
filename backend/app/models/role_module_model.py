@@ -58,8 +58,8 @@ class RoleModule(Base):
     # RELATIONSHIPS
     # =========================================
 
-    role = relationship("Role", back_populates="role_modules")
-    module = relationship("SystemModule", back_populates="role_modules")
+    role = relationship("Role", back_populates="role_modules", lazy="selectin")
+    module = relationship("SystemModule", back_populates="role_modules", lazy="selectin")
 
 
 

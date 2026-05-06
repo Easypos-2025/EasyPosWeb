@@ -19,7 +19,7 @@ del frontend.
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
+from app.database import AsyncSessionLocal
 from app.models.user_model import User
 from app.models.company_model import Company
 from sqlalchemy import text

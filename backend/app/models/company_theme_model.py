@@ -34,6 +34,6 @@ class CompanyTheme(Base):
     font_size  = Column(String(20), nullable=True)
     font_color = Column(String(50), nullable=True)
     # 🔥 CORREGIDO (NOMBRE DE CLASE, NO TABLA)
-    company = relationship("Company", backref="theme")
+    company = relationship("Company", backref="theme", lazy="selectin")
     
 

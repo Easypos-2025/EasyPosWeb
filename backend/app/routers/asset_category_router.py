@@ -1,118 +1,79 @@
-"""
-========================================================
-ASSET CATEGORY ROUTER
-========================================================
-CRUD para categorías de activos
-"""
-
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models.asset_category_model import AssetCategory
 from app.models.user_model import User
-from app.schemas.asset_category_schema import (
-    AssetCategoryCreate,
-    AssetCategoryUpdate
-)
+from app.schemas.asset_category_schema import AssetCategoryCreate, AssetCategoryUpdate
 from app.auth.dependencies import get_current_user
 
-router = APIRouter(
-    prefix="/asset-categories",
-    tags=["Asset Categories"]
-)
+router = APIRouter(prefix="/asset-categories", tags=["Asset Categories"])
 
-# =====================================================
-# CREATE CATEGORY
-# =====================================================
 
 @router.post("/")
-def create_category(
+async def create_category(
     data: AssetCategoryCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    category = AssetCategory(
-        name=data.name,
-        description=data.description or ""
-    )
+    category = AssetCategory(name=data.name, description=data.description or "")
     db.add(category)
-    db.commit()
-    db.refresh(category)
+    await db.commit()
+    await db.refresh(category)
     return category
 
 
-# =====================================================
-# GET ALL CATEGORIES
-# =====================================================
-
 @router.get("/")
-def get_categories(
+async def get_categories(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    return db.query(AssetCategory).order_by(AssetCategory.name).all()
+    result = await db.execute(select(AssetCategory).order_by(AssetCategory.name))
+    return result.scalars().all()
 
-
-# =====================================================
-# GET CATEGORY BY ID
-# =====================================================
 
 @router.get("/{category_id:int}")
-def get_category(
+async def get_category(
     category_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    category = db.query(AssetCategory).filter(
-        AssetCategory.id == category_id
-    ).first()
+    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     return category
 
 
-# =====================================================
-# UPDATE CATEGORY
-# =====================================================
-
 @router.put("/{category_id:int}")
-def update_category(
+async def update_category(
     category_id: int,
     data: AssetCategoryUpdate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    category = db.query(AssetCategory).filter(
-        AssetCategory.id == category_id
-    ).first()
+    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
-
     category.name        = data.name
     category.description = data.description or ""
-    db.commit()
-    db.refresh(category)
+    await db.commit()
+    await db.refresh(category)
     return category
 
 
-# =====================================================
-# DELETE CATEGORY
-# =====================================================
-
 @router.delete("/{category_id:int}")
-def delete_category(
+async def delete_category(
     category_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    category = db.query(AssetCategory).filter(
-        AssetCategory.id == category_id
-    ).first()
+    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
-
-    db.delete(category)
-    db.commit()
+    await db.delete(category)
+    await db.commit()
     return {"message": "Categoría eliminada"}

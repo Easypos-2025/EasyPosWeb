@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.models.insumo_model import Insumo
 from app.auth.dependencies import get_current_user
@@ -13,26 +14,27 @@ def _ser(i: Insumo):
 
 
 @router.get("/")
-def list_insumos(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    items = db.query(Insumo).filter(Insumo.company_id == current_user.company_id)\
-               .order_by(Insumo.name).all()
-    return [_ser(i) for i in items]
+async def list_insumos(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Insumo).where(Insumo.company_id == current_user.company_id).order_by(Insumo.name)
+    )
+    return [_ser(i) for i in result.scalars().all()]
 
 
 @router.post("/")
-def create_insumo(
+async def create_insumo(
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     name = (data.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
 
-    exists = db.query(Insumo).filter(
-        Insumo.company_id == current_user.company_id, Insumo.name == name
-    ).first()
-    if exists:
+    result = await db.execute(
+        select(Insumo).where(Insumo.company_id == current_user.company_id, Insumo.name == name)
+    )
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Ya existe el insumo '{name}'")
 
     item = Insumo(
@@ -41,21 +43,22 @@ def create_insumo(
         description=(data.get("description") or "").strip() or None,
     )
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return _ser(item)
 
 
 @router.put("/{insumo_id}")
-def update_insumo(
+async def update_insumo(
     insumo_id: int,
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    item = db.query(Insumo).filter(
-        Insumo.id == insumo_id, Insumo.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(Insumo).where(Insumo.id == insumo_id, Insumo.company_id == current_user.company_id)
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Insumo no encontrado")
 
@@ -65,23 +68,24 @@ def update_insumo(
 
     item.name        = name
     item.description = (data.get("description") or "").strip() or None
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return _ser(item)
 
 
 @router.delete("/{insumo_id}")
-def delete_insumo(
+async def delete_insumo(
     insumo_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    item = db.query(Insumo).filter(
-        Insumo.id == insumo_id, Insumo.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(Insumo).where(Insumo.id == insumo_id, Insumo.company_id == current_user.company_id)
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Insumo no encontrado")
 
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
     return {"message": "Insumo eliminado"}

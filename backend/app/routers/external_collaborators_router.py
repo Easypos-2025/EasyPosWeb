@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.models.external_collaborator_model import ExternalCollaborator
 from app.auth.dependencies import get_current_user
@@ -18,19 +19,20 @@ def _ser(c: ExternalCollaborator):
 
 
 @router.get("/")
-def list_collaborators(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    items = db.query(ExternalCollaborator).filter(
-        ExternalCollaborator.company_id == current_user.company_id,
-        ExternalCollaborator.is_active == 1
-    ).order_by(ExternalCollaborator.nombre).all()
-    return [_ser(c) for c in items]
+async def list_collaborators(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ExternalCollaborator)
+        .where(ExternalCollaborator.company_id == current_user.company_id, ExternalCollaborator.is_active == 1)
+        .order_by(ExternalCollaborator.nombre)
+    )
+    return [_ser(c) for c in result.scalars().all()]
 
 
 @router.post("/")
-def create_collaborator(
+async def create_collaborator(
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     nombre = (data.get("nombre") or "").strip()
     dni    = (data.get("dni")    or "").strip()
@@ -39,11 +41,13 @@ def create_collaborator(
     if not dni:
         raise HTTPException(status_code=400, detail="El DNI es obligatorio")
 
-    exists = db.query(ExternalCollaborator).filter(
-        ExternalCollaborator.company_id == current_user.company_id,
-        ExternalCollaborator.dni == dni
-    ).first()
-    if exists:
+    result = await db.execute(
+        select(ExternalCollaborator).where(
+            ExternalCollaborator.company_id == current_user.company_id,
+            ExternalCollaborator.dni == dni
+        )
+    )
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Ya existe un colaborador con DNI '{dni}'")
 
     item = ExternalCollaborator(
@@ -55,22 +59,25 @@ def create_collaborator(
         notas=(data.get("notas")    or "").strip() or None,
     )
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return _ser(item)
 
 
 @router.put("/{collab_id}")
-def update_collaborator(
+async def update_collaborator(
     collab_id: int,
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    item = db.query(ExternalCollaborator).filter(
-        ExternalCollaborator.id == collab_id,
-        ExternalCollaborator.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(ExternalCollaborator).where(
+            ExternalCollaborator.id == collab_id,
+            ExternalCollaborator.company_id == current_user.company_id
+        )
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Colaborador no encontrado")
 
@@ -85,32 +92,37 @@ def update_collaborator(
     item.email    = (data.get("email")    or "").strip() or None
     item.notas    = (data.get("notas")    or "").strip() or None
     item.is_active = int(data.get("is_active", item.is_active))
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return _ser(item)
 
 
 @router.delete("/{collab_id}")
-def delete_collaborator(
+async def delete_collaborator(
     collab_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    item = db.query(ExternalCollaborator).filter(
-        ExternalCollaborator.id == collab_id,
-        ExternalCollaborator.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(ExternalCollaborator).where(
+            ExternalCollaborator.id == collab_id,
+            ExternalCollaborator.company_id == current_user.company_id
+        )
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Colaborador no encontrado")
 
     from app.models.loan_model import Loan
-    active = db.query(Loan).filter(
-        Loan.external_collaborator_id == collab_id,
-        Loan.estado.in_(["pendiente_confirmacion", "activo", "retorno_pendiente"])
-    ).first()
-    if active:
+    active = await db.execute(
+        select(Loan).where(
+            Loan.external_collaborator_id == collab_id,
+            Loan.estado.in_(["pendiente_confirmacion", "activo", "retorno_pendiente"])
+        )
+    )
+    if active.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Colaborador tiene préstamos activos")
 
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
     return {"message": "Colaborador eliminado"}

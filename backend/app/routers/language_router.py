@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.models.language_model import Language
 
@@ -7,7 +8,6 @@ router = APIRouter(prefix="/languages", tags=["Languages"])
 
 
 @router.get("/")
-def get_languages(db: Session = Depends(get_db)):
-    
-    return db.query(Language).order_by(Language.name).all()
-
+async def get_languages(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Language).order_by(Language.name))
+    return result.scalars().all()

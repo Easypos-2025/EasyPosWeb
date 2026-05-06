@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models.client_model import Client
@@ -26,24 +26,21 @@ def _ser(c: Client) -> dict:
 
 
 @router.get("")
-def list_clients(
+async def list_clients(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    clients = (
-        db.query(Client)
-        .filter(Client.company_id == current_user.company_id)
-        .order_by(Client.name)
-        .all()
+    result = await db.execute(
+        select(Client).where(Client.company_id == current_user.company_id).order_by(Client.name)
     )
-    return [_ser(c) for c in clients]
+    return [_ser(c) for c in result.scalars().all()]
 
 
 @router.post("")
-def create_client(
+async def create_client(
     data: dict,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     name = (data.get("name") or "").strip()
     if not name:
@@ -60,22 +57,22 @@ def create_client(
         is_active=1,
     )
     db.add(client)
-    db.commit()
-    db.refresh(client)
+    await db.commit()
+    await db.refresh(client)
     return _ser(client)
 
 
 @router.put("/{client_id}")
-def update_client(
+async def update_client(
     client_id: int,
     data: dict,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    client = db.query(Client).filter(
-        Client.id == client_id,
-        Client.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(Client).where(Client.id == client_id, Client.company_id == current_user.company_id)
+    )
+    client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
@@ -92,24 +89,24 @@ def update_client(
     if "is_active" in data:
         client.is_active   = int(bool(data["is_active"]))
 
-    db.commit()
-    db.refresh(client)
+    await db.commit()
+    await db.refresh(client)
     return _ser(client)
 
 
 @router.delete("/{client_id}")
-def delete_client(
+async def delete_client(
     client_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    client = db.query(Client).filter(
-        Client.id == client_id,
-        Client.company_id == current_user.company_id
-    ).first()
+    result = await db.execute(
+        select(Client).where(Client.id == client_id, Client.company_id == current_user.company_id)
+    )
+    client = result.scalar_one_or_none()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
-    db.delete(client)
-    db.commit()
+    await db.delete(client)
+    await db.commit()
     return {"ok": True}

@@ -12,7 +12,7 @@ Manejo de autenticación del sistema
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
-from app.database import SessionLocal
+from app.database import AsyncSessionLocal
 from app.models.user_model import User
 from app.models.role_model import Role
 from app.models.company_plan_model import CompanyPlan

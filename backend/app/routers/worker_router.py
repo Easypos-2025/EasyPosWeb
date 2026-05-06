@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from app.database import get_db
 from app.models.worker_model import Worker
 from app.models.task_model import Task
@@ -20,18 +21,16 @@ def _ser(w: Worker):
 
 
 @router.get("/")
-def get_workers(db: Session = Depends(get_db)):
-    workers = db.query(Worker).options(
-        joinedload(Worker.profession)
-    ).order_by(Worker.name).all()
-    return [_ser(w) for w in workers]
+async def get_workers(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Worker).order_by(Worker.name))
+    return [_ser(w) for w in result.scalars().all()]
 
 
 @router.post("/")
-def create_worker(
+async def create_worker(
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     name = (data.get("name") or "").strip()
     if not name:
@@ -43,20 +42,20 @@ def create_worker(
         phone=         (data.get("phone") or "").strip() or None,
     )
     db.add(w)
-    db.commit()
-    db.refresh(w)
-    db.refresh(w)  # reload relationship
-    return _ser(db.query(Worker).options(joinedload(Worker.profession)).filter(Worker.id == w.id).first())
+    await db.commit()
+    await db.refresh(w)
+    return _ser(w)
 
 
 @router.put("/{worker_id}")
-def update_worker(
+async def update_worker(
     worker_id: int,
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    w = db.query(Worker).options(joinedload(Worker.profession)).filter(Worker.id == worker_id).first()
+    result = await db.execute(select(Worker).where(Worker.id == worker_id))
+    w = result.scalar_one_or_none()
     if not w:
         raise HTTPException(status_code=404, detail="Ejecutor no encontrado")
 
@@ -67,27 +66,31 @@ def update_worker(
     w.name          = name
     w.profession_id = data.get("profession_id") or None
     w.phone         = (data.get("phone") or "").strip() or None
-    db.commit()
-    return _ser(db.query(Worker).options(joinedload(Worker.profession)).filter(Worker.id == worker_id).first())
+    await db.commit()
+    await db.refresh(w)
+    return _ser(w)
 
 
 @router.delete("/{worker_id}")
-def delete_worker(
+async def delete_worker(
     worker_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    w = db.query(Worker).filter(Worker.id == worker_id).first()
+    result = await db.execute(select(Worker).where(Worker.id == worker_id))
+    w = result.scalar_one_or_none()
     if not w:
         raise HTTPException(status_code=404, detail="Ejecutor no encontrado")
 
-    tareas = db.query(Task).filter(Task.worker_id == worker_id).count()
+    tareas = (await db.execute(
+        select(func.count()).select_from(Task).where(Task.worker_id == worker_id)
+    )).scalar()
     if tareas > 0:
         raise HTTPException(
             status_code=409,
             detail=f"No se puede eliminar: el ejecutor tiene {tareas} tarea(s) asignada(s)"
         )
 
-    db.delete(w)
-    db.commit()
+    await db.delete(w)
+    await db.commit()
     return {"message": "Ejecutor eliminado"}

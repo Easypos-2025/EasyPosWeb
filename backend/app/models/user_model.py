@@ -31,5 +31,5 @@ class User(Base):
     # RELATIONSHIPS
     # =========================================
 
-    role = relationship("Role", back_populates="users")
+    role = relationship("Role", back_populates="users", lazy="selectin")
     

@@ -14,5 +14,5 @@ class BusinessProfileModule(Base):
     
     sort_order = Column(Integer, default=0)
 
-    business_profile = relationship("BusinessProfile")
-    module = relationship("SystemModule")
+    business_profile = relationship("BusinessProfile", lazy="selectin")
+    module = relationship("SystemModule", lazy="selectin")

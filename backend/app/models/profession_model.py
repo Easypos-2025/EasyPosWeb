@@ -14,4 +14,4 @@ class Profession(Base):
 
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    workers = relationship("Worker", back_populates="profession")
+    workers = relationship("Worker", back_populates="profession", lazy="selectin")

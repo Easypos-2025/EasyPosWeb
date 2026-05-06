@@ -1,124 +1,55 @@
-"""
-========================================================
-TASK STATUS ROUTER
-========================================================
-
-CRUD para los estados de las tareas
-"""
-
-# =====================================================
-# IMPORTS
-# =====================================================
-
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import get_db
 from app.models.task_status_model import TaskStatus
 
-# =====================================================
-# ROUTER
-# =====================================================
+router = APIRouter(prefix="/task-status", tags=["Task Status"])
 
-router = APIRouter(
-    prefix="/task-status",
-    tags=["Task Status"]
-)
-
-# =====================================================
-# CREATE STATUS
-# =====================================================
 
 @router.post("/")
-def create_status(
-    name: str,
-    description: str,
-    db: Session = Depends(get_db)
-):
-
-    new_status = TaskStatus(
-        name=name,
-        description=description
-    )
-
+async def create_status(name: str, description: str, db: AsyncSession = Depends(get_db)):
+    new_status = TaskStatus(name=name, description=description)
     db.add(new_status)
-    db.commit()
-    db.refresh(new_status)
-
+    await db.commit()
+    await db.refresh(new_status)
     return new_status
 
 
-# =====================================================
-# GET ALL STATUS
-# =====================================================
-
 @router.get("/")
-def get_status_list(db: Session = Depends(get_db)):
+async def get_status_list(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskStatus))
+    return result.scalars().all()
 
-    statuses = db.query(TaskStatus).all()
-
-    return statuses
-
-
-# =====================================================
-# GET STATUS BY ID
-# =====================================================
 
 @router.get("/{status_id}")
-def get_status(status_id: int, db: Session = Depends(get_db)):
-
-    status = db.query(TaskStatus).filter(
-        TaskStatus.id == status_id
-    ).first()
-
+async def get_status(status_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskStatus).where(TaskStatus.id == status_id))
+    status = result.scalar_one_or_none()
     if not status:
         return {"error": "Status not found"}
-
     return status
 
-
-# =====================================================
-# UPDATE STATUS
-# =====================================================
 
 @router.put("/{status_id}")
-def update_status(
-    status_id: int,
-    name: str,
-    description: str,
-    db: Session = Depends(get_db)
-):
-
-    status = db.query(TaskStatus).filter(
-        TaskStatus.id == status_id
-    ).first()
-
+async def update_status(status_id: int, name: str, description: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskStatus).where(TaskStatus.id == status_id))
+    status = result.scalar_one_or_none()
     if not status:
         return {"error": "Status not found"}
-
     status.name = name
     status.description = description
-
-    db.commit()
-
+    await db.commit()
     return status
 
 
-# =====================================================
-# DELETE STATUS
-# =====================================================
-
 @router.delete("/{status_id}")
-def delete_status(status_id: int, db: Session = Depends(get_db)):
-
-    status = db.query(TaskStatus).filter(
-        TaskStatus.id == status_id
-    ).first()
-
+async def delete_status(status_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskStatus).where(TaskStatus.id == status_id))
+    status = result.scalar_one_or_none()
     if not status:
         return {"error": "Status not found"}
-
-    db.delete(status)
-    db.commit()
-
+    await db.delete(status)
+    await db.commit()
     return {"message": "Status deleted"}

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.models.supplier_model import Supplier
 from app.auth.dependencies import get_current_user
@@ -25,14 +26,15 @@ def _ser(s: Supplier) -> dict:
 
 
 @router.get("/")
-def list_suppliers(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return [_ser(s) for s in db.query(Supplier).filter(
-        Supplier.company_id == current_user.company_id
-    ).order_by(Supplier.name).all()]
+async def list_suppliers(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Supplier).where(Supplier.company_id == current_user.company_id).order_by(Supplier.name)
+    )
+    return [_ser(s) for s in result.scalars().all()]
 
 
 @router.post("/")
-def create_supplier(data: dict = Body(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def create_supplier(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not (data.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
     s = Supplier(
@@ -45,13 +47,18 @@ def create_supplier(data: dict = Body(...), current_user: User = Depends(get_cur
         address=(data.get("address") or "").strip() or None,
         notes=(data.get("notes") or "").strip() or None,
     )
-    db.add(s); db.commit(); db.refresh(s)
+    db.add(s)
+    await db.commit()
+    await db.refresh(s)
     return _ser(s)
 
 
 @router.put("/{sid}")
-def update_supplier(sid: int, data: dict = Body(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    s = db.query(Supplier).filter(Supplier.id == sid, Supplier.company_id == current_user.company_id).first()
+async def update_supplier(sid: int, data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Supplier).where(Supplier.id == sid, Supplier.company_id == current_user.company_id)
+    )
+    s = result.scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
     if "name"         in data: s.name         = data["name"].strip()
@@ -62,15 +69,19 @@ def update_supplier(sid: int, data: dict = Body(...), current_user: User = Depen
     if "address"      in data: s.address      = (data["address"] or "").strip() or None
     if "notes"        in data: s.notes        = (data["notes"] or "").strip() or None
     if "is_active"    in data: s.is_active    = int(data["is_active"])
-    db.commit(); db.refresh(s)
+    await db.commit()
+    await db.refresh(s)
     return _ser(s)
 
 
 @router.delete("/{sid}")
-def delete_supplier(sid: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    s = db.query(Supplier).filter(Supplier.id == sid, Supplier.company_id == current_user.company_id).first()
+async def delete_supplier(sid: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Supplier).where(Supplier.id == sid, Supplier.company_id == current_user.company_id)
+    )
+    s = result.scalar_one_or_none()
     if not s:
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
     s.is_active = 0
-    db.commit()
+    await db.commit()
     return {"ok": True}
