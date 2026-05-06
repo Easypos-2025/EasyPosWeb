@@ -63,23 +63,23 @@
         <div class="password-rules">
 
           <small :class="passwordRules.length ? 'text-success' : 'text-danger'">
-            ✔ Mínimo 8 caracteres
+            {{ passwordRules.length ? '✔' : '✘' }} Mínimo 8 caracteres
           </small><br>
 
           <small :class="passwordRules.upper ? 'text-success' : 'text-danger'">
-            ✔ Al menos una mayúscula
+            {{ passwordRules.upper ? '✔' : '✘' }} Al menos una mayúscula
           </small><br>
 
           <small :class="passwordRules.lower ? 'text-success' : 'text-danger'">
-            ✔ Al menos una minúscula
+            {{ passwordRules.lower ? '✔' : '✘' }} Al menos una minúscula
           </small><br>
 
           <small :class="passwordRules.number ? 'text-success' : 'text-danger'">
-            ✔ Al menos un número
+            {{ passwordRules.number ? '✔' : '✘' }} Al menos un número
           </small><br>
 
           <small :class="passwordRules.special ? 'text-success' : 'text-danger'">
-            ✔ Al menos un carácter especial
+            {{ passwordRules.special ? '✔' : '✘' }} Al menos un carácter especial
           </small>
 
         </div>
@@ -617,17 +617,16 @@ const loadPermissions = async () => {
   }
 }
 
-const can = (moduleName, action) => {
-
-  // 💥 SYSADMIN TODO
+const can = (moduleNameOrRoute, action) => {
   if (currentUser?.is_system) return true
-   
-  const mod = permissions.value.find(p => 
-    p.module_name?.toLowerCase().trim() === moduleName.toLowerCase().trim()
+
+  const key = moduleNameOrRoute.toLowerCase().trim()
+  const mod = permissions.value.find(p =>
+    p.module_route?.toLowerCase().includes(key) ||
+    p.module_name?.toLowerCase().trim() === key
   )
 
   if (!mod) return false
-
   return mod[action] === true
 }
 

@@ -135,12 +135,13 @@ async def get_modules_by_role(
 
     return [
         {
-            "module_id":   m.id,
-            "module_name": m.name,
-            "can_view":    permissions_map[m.id].can_view    if m.id in permissions_map else False,
-            "can_create":  permissions_map[m.id].can_create  if m.id in permissions_map else False,
-            "can_edit":    permissions_map[m.id].can_edit    if m.id in permissions_map else False,
-            "can_delete":  permissions_map[m.id].can_delete  if m.id in permissions_map else False,
+            "module_id":    m.id,
+            "module_name":  m.name,
+            "module_route": m.route or "",
+            "can_view":     permissions_map[m.id].can_view    if m.id in permissions_map else False,
+            "can_create":   permissions_map[m.id].can_create  if m.id in permissions_map else False,
+            "can_edit":     permissions_map[m.id].can_edit    if m.id in permissions_map else False,
+            "can_delete":   permissions_map[m.id].can_delete  if m.id in permissions_map else False,
         }
         for m in modules
     ]
