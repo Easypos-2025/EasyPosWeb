@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
 
 from app.database import get_db
 from app.models.role_model import Role
@@ -12,46 +13,37 @@ from app.auth.dependencies import get_current_user
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
 
-def _is_system(user: User, db: Session) -> bool:
-    role = db.get(Role, user.role_id)
+async def _is_system(user: User, db: AsyncSession) -> bool:
+    role = await db.get(Role, user.role_id)
     return role.is_system if role else False
 
 
-# ─── GET ROLES (filtrado por empresa) ──────────────────────────
 @router.get("/")
-def get_roles(
+async def get_roles(
     company_id: Optional[int] = Query(None),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    SYSADMIN: pasa ?company_id=X para ver roles de esa empresa.
-    ADMIN normal: siempre ve solo los de su propia empresa.
-    """
-    if _is_system(current_user, db):
+    if await _is_system(current_user, db):
         if company_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Se requiere company_id para consultar roles"
-            )
+            raise HTTPException(status_code=400, detail="Se requiere company_id para consultar roles")
         cid = company_id
     else:
         cid = current_user.company_id
 
-    return db.query(Role).filter(
-        Role.company_id == cid,
-        Role.is_system == False
-    ).order_by(Role.name).all()
+    result = await db.execute(
+        select(Role).where(Role.company_id == cid, Role.is_system == False).order_by(Role.name)
+    )
+    return result.scalars().all()
 
 
-# ─── CREATE ROLE ────────────────────────────────────────────────
 @router.post("/")
-def create_role(
+async def create_role(
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    if _is_system(current_user, db):
+    if await _is_system(current_user, db):
         cid = data.get("company_id")
         if not cid:
             raise HTTPException(status_code=400, detail="company_id requerido")
@@ -62,100 +54,79 @@ def create_role(
     if not name:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
 
-    exists = db.query(Role).filter(
-        Role.name == name, Role.company_id == cid
-    ).first()
-    if exists:
-        raise HTTPException(
-            status_code=409, detail=f"Ya existe un rol '{name}' en esta empresa"
-        )
+    result = await db.execute(select(Role).where(Role.name == name, Role.company_id == cid))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Ya existe un rol '{name}' en esta empresa")
 
-    role = Role(
-        name=name,
-        description=(data.get("description") or "").strip(),
-        company_id=cid,
-        is_system=False,
-    )
+    role = Role(name=name, description=(data.get("description") or "").strip(), company_id=cid, is_system=False)
     db.add(role)
-    db.commit()
-    db.refresh(role)
+    await db.commit()
+    await db.refresh(role)
     return role
 
 
-# ─── UPDATE ROLE ────────────────────────────────────────────────
 @router.put("/{role_id}")
-def update_role(
+async def update_role(
     role_id: int,
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    role = db.get(Role, role_id)
+    role = await db.get(Role, role_id)
     if not role:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
-
-    if not _is_system(current_user, db) and role.company_id != current_user.company_id:
+    if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
 
     name = (data.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
 
-    duplicate = db.query(Role).filter(
-        Role.name == name,
-        Role.company_id == role.company_id,
-        Role.id != role_id
-    ).first()
-    if duplicate:
+    result = await db.execute(select(Role).where(Role.name == name, Role.company_id == role.company_id, Role.id != role_id))
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Ya existe un rol '{name}'")
 
-    role.name        = name
+    role.name = name
     role.description = (data.get("description") or "").strip()
-    db.commit()
-    db.refresh(role)
+    await db.commit()
+    await db.refresh(role)
     return role
 
 
-# ─── DELETE ROLE ────────────────────────────────────────────────
 @router.delete("/{role_id}")
-def delete_role(
+async def delete_role(
     role_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    role = db.get(Role, role_id)
+    role = await db.get(Role, role_id)
     if not role:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
-
-    if not _is_system(current_user, db) and role.company_id != current_user.company_id:
+    if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
-
-    db.delete(role)
-    db.commit()
+    await db.delete(role)
+    await db.commit()
     return {"message": "Rol eliminado"}
 
 
-# ─── GET MODULES OF A ROLE ──────────────────────────────────────
 @router.get("/{role_id}/modules/")
-def get_modules_by_role(
+async def get_modules_by_role(
     role_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    role = db.get(Role, role_id)
+    role = await db.get(Role, role_id)
     if not role:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
 
-    # Módulos visibles según el tipo de usuario
-    if _is_system(current_user, db):
-        modules = db.query(SystemModule).order_by(SystemModule.order_index).all()
+    if await _is_system(current_user, db):
+        result = await db.execute(select(SystemModule).order_by(SystemModule.order_index))
     else:
-        modules = db.query(SystemModule).filter(
-            SystemModule.is_sysadmin == False
-        ).order_by(SystemModule.order_index).all()
+        result = await db.execute(select(SystemModule).where(SystemModule.is_sysadmin == False).order_by(SystemModule.order_index))
+    modules = result.scalars().all()
 
-    role_modules = db.query(RoleModule).filter(RoleModule.role_id == role_id).all()
-    permissions_map = {rm.module_id: rm for rm in role_modules}
+    result = await db.execute(select(RoleModule).where(RoleModule.role_id == role_id))
+    permissions_map = {rm.module_id: rm for rm in result.scalars().all()}
 
     return [
         {
@@ -170,34 +141,27 @@ def get_modules_by_role(
     ]
 
 
-# ─── ASSIGN MODULES TO ROLE ─────────────────────────────────────
 @router.post("/{role_id}/modules/")
-def assign_modules_to_role(
+async def assign_modules_to_role(
     role_id: int,
     modules: List[dict],
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    role = db.get(Role, role_id)
+    role = await db.get(Role, role_id)
     if not role:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
-
-    if not _is_system(current_user, db) and role.company_id != current_user.company_id:
+    if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
 
-    db.query(RoleModule).filter(
-        RoleModule.role_id == role_id
-    ).delete(synchronize_session=False)
+    await db.execute(delete(RoleModule).where(RoleModule.role_id == role_id))
 
     for m in modules:
         db.add(RoleModule(
-            role_id=role_id,
-            module_id=m["module_id"],
-            can_view=m.get("can_view", True),
-            can_create=m.get("can_create", False),
-            can_edit=m.get("can_edit", False),
-            can_delete=m.get("can_delete", False),
+            role_id=role_id, module_id=m["module_id"],
+            can_view=m.get("can_view", True), can_create=m.get("can_create", False),
+            can_edit=m.get("can_edit", False), can_delete=m.get("can_delete", False),
         ))
 
-    db.commit()
+    await db.commit()
     return {"message": "Módulos asignados correctamente"}

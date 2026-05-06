@@ -1,48 +1,25 @@
-# =====================================================
-# SYSTEM MODULE ROUTER
-# =====================================================
-
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy import select, delete
 from app.models.role_module_model import RoleModule
 from app.database import get_db
 from app.models.system_module_model import SystemModule
-from app.schemas.system_module_schema import (
-    SystemModuleCreate,
-    SystemModuleOut,
-    SystemModuleUpdate
-)
+from app.schemas.system_module_schema import SystemModuleCreate, SystemModuleOut, SystemModuleUpdate
 from app.models.business_profile_module import BusinessProfileModule
 from app.auth.dependencies import get_current_user
 from app.models.role_model import Role
 
+router = APIRouter(prefix="/system-modules", tags=["System Modules"])
 
-router = APIRouter(
-    prefix="/system-modules",
-    tags=["System Modules"]
-)
-
-# =====================================================
-# BUILD TREE
-# =====================================================
 
 def build_tree(modules):
     module_dict = {
-        m.id: {
-            "id": m.id,
-            "name": m.name,
-            "route": m.route,
-            "icon": m.icon,
-            "parent_id": m.parent_id,
-            "is_active": m.is_active,
-            "children": []
-        }
+        m.id: {"id": m.id, "name": m.name, "route": m.route, "icon": m.icon,
+               "parent_id": m.parent_id, "is_active": m.is_active, "children": []}
         for m in modules
     }
-
     tree = []
-
     for m in module_dict.values():
         if m["parent_id"] and m["parent_id"] != 0:
             parent = module_dict.get(m["parent_id"])
@@ -50,138 +27,74 @@ def build_tree(modules):
                 parent["children"].append(m)
         else:
             tree.append(m)
-
     return tree
 
-# =====================================================
-# CREATE
-# =====================================================
 
 @router.post("/", response_model=SystemModuleOut)
-def create_module(data: SystemModuleCreate, db: Session = Depends(get_db)):
+async def create_module(data: SystemModuleCreate, db: AsyncSession = Depends(get_db)):
     payload = data.dict()
     payload["route"] = payload.get("route") or ""
     module = SystemModule(**payload)
-
     db.add(module)
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=422, detail="Error al crear el módulo. Verifica los datos.")
-    db.refresh(module)
+    await db.refresh(module)
+    return {"id": module.id, "name": module.name, "route": module.route, "icon": module.icon,
+            "parent_id": module.parent_id, "is_active": module.is_active, "children": []}
 
-    return {
-        "id": module.id,
-        "name": module.name,
-        "route": module.route,
-        "icon": module.icon,
-        "parent_id": module.parent_id,
-        "is_active": module.is_active,
-        "children": []
-    }
-
-# =====================================================
-# 🔥 LISTAR TODOS LOS MÓDULOS (PLANO)  ← AQUÍ VA
-# =====================================================
 
 @router.get("/flat/")
-def get_all_modules_flat(db: Session = Depends(get_db), user = Depends(get_current_user)):    
-    role = db.get(Role, user.role_id)
-
+async def get_all_modules_flat(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    role = await db.get(Role, user.role_id)
     if role and role.is_system:
-        modules = db.query(SystemModule).all()
+        result = await db.execute(select(SystemModule))
     else:
-        modules = db.query(SystemModule).filter(
-            SystemModule.is_sysadmin == False
-        ).all()
-    return modules
-    
-   
+        result = await db.execute(select(SystemModule).where(SystemModule.is_sysadmin == False))
+    return result.scalars().all()
 
-# =====================================================
-# LIST (TREE)
-# =====================================================
 
 @router.get("/", response_model=list[SystemModuleOut])
-def list_modules(db: Session = Depends(get_db)):
-    modules = db.query(SystemModule)\
-        .order_by(SystemModule.order_index)\
-        .all()
+async def list_modules(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(SystemModule).order_by(SystemModule.order_index))
+    return build_tree(result.scalars().all())
 
-    return build_tree(modules)
-
-# =====================================================
-# GET ONE
-# =====================================================
 
 @router.get("/{module_id}", response_model=SystemModuleOut)
-def get_module(module_id: int, db: Session = Depends(get_db)):
-    module = db.get(SystemModule, module_id)
-
+async def get_module(module_id: int, db: AsyncSession = Depends(get_db)):
+    module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
-
     return module
 
-# =====================================================
-# UPDATE
-# =====================================================
 
 @router.put("/{module_id}", response_model=SystemModuleOut)
-def update_module(module_id: int, data: SystemModuleUpdate, db: Session = Depends(get_db)):
-
-    module = db.get(SystemModule, module_id)
-
+async def update_module(module_id: int, data: SystemModuleUpdate, db: AsyncSession = Depends(get_db)):
+    module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
-
-    update_data = data.dict(exclude_unset=True)
-
-    for key, value in update_data.items():
+    for key, value in data.dict(exclude_unset=True).items():
         setattr(module, key, value)
+    await db.commit()
+    await db.refresh(module)
+    return {"id": module.id, "name": module.name, "route": module.route, "icon": module.icon,
+            "parent_id": module.parent_id, "is_active": module.is_active, "children": []}
 
-    db.commit()
-    db.refresh(module)
-
-    return {
-        "id": module.id,
-        "name": module.name,
-        "route": module.route,
-        "icon": module.icon,
-        "parent_id": module.parent_id,
-        "is_active": module.is_active,
-        "children": []
-    }
-
-# =====================================================
-# DELETE
-# =====================================================
 
 @router.delete("/{module_id}")
-def delete_module(module_id: int, db: Session = Depends(get_db)):
-
-    module = db.get(SystemModule, module_id)
-
+async def delete_module(module_id: int, db: AsyncSession = Depends(get_db)):
+    module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    children = db.query(SystemModule)\
-        .filter(SystemModule.parent_id == module_id)\
-        .first()
-
-    if children:
+    result = await db.execute(select(SystemModule).where(SystemModule.parent_id == module_id))
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Tiene módulos hijos")
 
-    db.query(RoleModule)\
-        .filter(RoleModule.module_id == module_id)\
-        .delete()
-
-    db.query(BusinessProfileModule)\
-        .filter(BusinessProfileModule.module_id == module_id)\
-        .delete()
-
-    db.delete(module)
-    db.commit()
-
+    await db.execute(delete(RoleModule).where(RoleModule.module_id == module_id))
+    await db.execute(delete(BusinessProfileModule).where(BusinessProfileModule.module_id == module_id))
+    await db.delete(module)
+    await db.commit()
     return {"message": "Module deleted"}

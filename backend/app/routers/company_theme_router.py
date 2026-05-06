@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.models.role_model import Role
@@ -19,7 +19,6 @@ DEFAULTS = {
 
 
 def _serialize(theme) -> dict:
-    """Convierte el objeto SQLAlchemy a dict — evita serialización de relaciones."""
     if not theme:
         return DEFAULTS.copy()
     return {
@@ -32,60 +31,55 @@ def _serialize(theme) -> dict:
     }
 
 
-def _authorize(current_user, company_id: int, db: Session):
-    role = db.query(Role).filter(Role.id == current_user.role_id).first()
+async def _authorize(current_user, company_id: int, db: AsyncSession):
+    role = await db.get(Role, current_user.role_id)
     is_system = role.is_system if role else False
     if not is_system and current_user.company_id != company_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
 
-# ── GET colores rápido (sin logo) ─────────────────────────────
 @router.get("/{company_id}/colors")
-def get_theme_colors(
+async def get_theme_colors(
     company_id: int,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
-    _authorize(current_user, company_id, db)
-    theme = db.query(CompanyTheme).filter(CompanyTheme.company_id == company_id).first()
-    d     = _serialize(theme)
-    d.pop("logo", None)   # no incluir el logo en la consulta rápida
+    await _authorize(current_user, company_id, db)
+    result = await db.execute(select(CompanyTheme).where(CompanyTheme.company_id == company_id))
+    theme = result.scalar_one_or_none()
+    d = _serialize(theme)
+    d.pop("logo", None)
     return d
 
 
-# ── GET tema completo (incluye logo) ──────────────────────────
 @router.get("/{company_id}")
-def get_theme(
+async def get_theme(
     company_id: int,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
-    _authorize(current_user, company_id, db)
-    theme = db.query(CompanyTheme).filter(CompanyTheme.company_id == company_id).first()
-    return _serialize(theme)
+    await _authorize(current_user, company_id, db)
+    result = await db.execute(select(CompanyTheme).where(CompanyTheme.company_id == company_id))
+    return _serialize(result.scalar_one_or_none())
 
 
-# ── PUT crear / actualizar tema ───────────────────────────────
 @router.put("/{company_id}")
 async def save_theme(
     company_id: int,
     request: Request,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
-    _authorize(current_user, company_id, db)
+    await _authorize(current_user, company_id, db)
     data = await request.json()
-
-    theme = db.query(CompanyTheme).filter(CompanyTheme.company_id == company_id).first()
+    result = await db.execute(select(CompanyTheme).where(CompanyTheme.company_id == company_id))
+    theme = result.scalar_one_or_none()
     if not theme:
         theme = CompanyTheme(company_id=company_id)
         db.add(theme)
-
-    allowed = ["topbar_color", "sidebar_color", "bg_color", "logo", "font_size", "font_color"]
     for key, value in data.items():
-        if key in allowed:
+        if key in ["topbar_color", "sidebar_color", "bg_color", "logo", "font_size", "font_color"]:
             setattr(theme, key, value)
-
-    db.commit()
-    db.refresh(theme)
+    await db.commit()
+    await db.refresh(theme)
     return _serialize(theme)

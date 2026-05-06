@@ -1,20 +1,7 @@
-"""
-========================================================
-COMPANY ROUTER
-========================================================
-
-CRUD para la gestión de compañías.
-
-Incluye protección multiempresa basada en el usuario
-autenticado.
-"""
-
-# =====================================================
-# IMPORTS
-# =====================================================
-
+import re
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.models.business_profile_module import BusinessProfileModule
@@ -25,251 +12,124 @@ from app.models.company_theme_model import CompanyTheme
 from app.models.role_model import Role
 from app.models.role_module_model import RoleModule
 
-# =====================================================
-# ROUTER
-# =====================================================
+router = APIRouter(prefix="/companies", tags=["Companies"])
 
-router = APIRouter(
-    prefix="/companies",
-    tags=["Companies"]
-)
-
-
-# =====================================================
-# CREATE
-# =====================================================
 
 @router.post("/")
-def create_company(
-    data: dict = Body(...),
-    db: Session = Depends(get_db)
-):
-    """
-    Crea una nueva compañía y auto-asigna Role Admin con todos los módulos del perfil.
-    """
+async def create_company(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
     company = Company(**data)
     db.add(company)
-    db.flush()
+    await db.flush()
 
-    # Auto-crear Role Admin si no existe para esta empresa
-    admin_role = db.query(Role).filter(
-        Role.company_id == company.id_company,
-        Role.name == "Admin"
-    ).first()
-
+    result = await db.execute(select(Role).where(Role.company_id == company.id_company, Role.name == "Admin"))
+    admin_role = result.scalar_one_or_none()
     if not admin_role:
-        admin_role = Role(
-            name="Admin",
-            description="Administrador principal",
-            company_id=company.id_company,
-            is_system=False,
-        )
+        admin_role = Role(name="Admin", description="Administrador principal",
+                          company_id=company.id_company, is_system=False)
         db.add(admin_role)
-        db.flush()
+        await db.flush()
 
-    # Asignar todos los módulos del perfil de negocio al Role Admin
-    profile_modules = db.query(BusinessProfileModule).filter(
-        BusinessProfileModule.business_profile_id == company.business_profile_id
-    ).all()
+    result = await db.execute(select(BusinessProfileModule).where(BusinessProfileModule.business_profile_id == company.business_profile_id))
+    profile_modules = result.scalars().all()
 
-    existing_module_ids = {
-        rm.module_id for rm in db.query(RoleModule).filter(RoleModule.role_id == admin_role.id).all()
-    }
+    result = await db.execute(select(RoleModule).where(RoleModule.role_id == admin_role.id))
+    existing_module_ids = {rm.module_id for rm in result.scalars().all()}
 
     for bpm in profile_modules:
         if bpm.module_id not in existing_module_ids:
-            db.add(RoleModule(
-                role_id=admin_role.id,
-                module_id=bpm.module_id,
-                can_view=True,
-                can_create=True,
-                can_edit=True,
-                can_delete=True,
-            ))
+            db.add(RoleModule(role_id=admin_role.id, module_id=bpm.module_id,
+                              can_view=True, can_create=True, can_edit=True, can_delete=True))
 
-    db.commit()
-    db.refresh(company)
-    return {
-        "id": company.id_company,
-        "name": company.name,
-        "admin_role_id": admin_role.id,
-        "modules_assigned": len(profile_modules),
-    }
+    await db.commit()
+    await db.refresh(company)
+    return {"id": company.id_company, "name": company.name,
+            "admin_role_id": admin_role.id, "modules_assigned": len(profile_modules)}
 
-
-# =====================================================
-# READ ONE (PROTEGIDO)
-# =====================================================
 
 @router.get("/{company_id:int}")
-def get_company(company_id: int, db: Session = Depends(get_db)):
-
-    company = db.query(Company).filter(Company.id_company == company_id).first()
-
+async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Company).where(Company.id_company == company_id))
+    company = result.scalar_one_or_none()
     if not company:
         return {"message": "Empresa no encontrada"}
-
-    return {
-        "id": company.id_company,
-        "name": company.name,
-        "identification_number": company.identification_number,
-        "dv": company.dv,
-        "address": company.address,
-        "phone": company.phone,
-        "email": company.email,
-        "description": company.description,
-        "state": company.state,
-        "business_profile_id": company.business_profile_id,
-        "language_id": company.language_id,
-        "country_id": company.country_id,
-        "department_id": company.department_id,
-        "municipality_id": company.municipality_id,
-        "type_currency_id": company.type_currency_id
-    }
-    
-# =====================================================
-# UPDATE COMPANY (PROTEGIDO)
-# =====================================================
-
+    return {"id": company.id_company, "name": company.name,
+            "identification_number": company.identification_number, "dv": company.dv,
+            "address": company.address, "phone": company.phone, "email": company.email,
+            "description": company.description, "state": company.state,
+            "business_profile_id": company.business_profile_id,
+            "language_id": company.language_id, "country_id": company.country_id,
+            "department_id": company.department_id, "municipality_id": company.municipality_id,
+            "type_currency_id": company.type_currency_id}
 
 
 @router.put("/{company_id}")
-def update_company(company_id: int, data: dict, db: Session = Depends(get_db)):
-
-    company = db.query(Company).filter(Company.id_company == company_id).first()
-
+async def update_company(company_id: int, data: dict, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Company).where(Company.id_company == company_id))
+    company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    # 🔥 VALIDACIÓN BACKEND (IGUAL QUE FRONT)
-    required_fields = [
-        "name",
-        "identification_number",
-        "dv",
-        "address",
-        "phone",
-        "email",
-        "business_profile_id",
-        "language_id",
-        "country_id",
-        "department_id",
-        "municipality_id",
-        "type_currency_id"
-    ]
-
+    required_fields = ["name", "identification_number", "dv", "address", "phone", "email",
+                       "business_profile_id", "language_id", "country_id", "department_id",
+                       "municipality_id", "type_currency_id"]
     for field in required_fields:
         if not data.get(field):
-            raise HTTPException(
-                status_code=400,
-                detail=f"El campo {field} es obligatorio"
-            )
+            raise HTTPException(status_code=400, detail=f"El campo {field} es obligatorio")
 
-    # 🔥 VALIDACIÓN EMAIL
-    import re
-    email: str = data["email"]
-
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", data["email"]):
         raise HTTPException(status_code=400, detail="Email inválido")
 
-    # 🔥 ASIGNACIÓN SEGURA (SIN PARCHE)
     company.name = data["name"]
     company.identification_number = data["identification_number"]
     company.dv = data["dv"]
     company.address = data["address"]
     company.phone = data["phone"]
     company.email = data["email"]
-    company.description = data.get("description") or ""  # opcional
+    company.description = data.get("description") or ""
     company.state = data.get("state", 1)
-
     company.business_profile_id = data["business_profile_id"]
     company.language_id = data["language_id"]
     company.country_id = data["country_id"]
     company.department_id = data["department_id"]
     company.municipality_id = data["municipality_id"]
     company.type_currency_id = data["type_currency_id"]
-
-    db.commit()
-
+    await db.commit()
     return {"message": "Empresa actualizada correctamente"}
 
-# =====================================================
-# DELETE (PROTEGIDO)
-# =====================================================
 
 @router.delete("/{company_id}")
-def delete_company(
-    company_id: int,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    role = db.query(Role).filter(Role.id == current_user.role_id).first()
+async def delete_company(company_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
+    role = await db.get(Role, current_user.role_id)
     is_system = role.is_system if role else False
     if not is_system and current_user.company_id != company_id:
         raise HTTPException(status_code=403, detail="No autorizado")
 
-    company = db.query(Company).filter(Company.id_company == company_id).first()
+    result = await db.execute(select(Company).where(Company.id_company == company_id))
+    company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    # 1. Desconectar usuarios (no eliminar, solo romper la FK)
-    db.query(User).filter(User.company_id == company_id).update({"company_id": None})
-
-    # 2. Eliminar tema de la empresa
-    db.query(CompanyTheme).filter(CompanyTheme.company_id == company_id).delete()
-
-    # 3. Eliminar la empresa
-    db.delete(company)
-    db.commit()
-
+    await db.execute(update(User).where(User.company_id == company_id).values(company_id=None))
+    await db.execute(delete(CompanyTheme).where(CompanyTheme.company_id == company_id))
+    await db.delete(company)
+    await db.commit()
     return {"message": "Empresa eliminada correctamente"}
 
+
 @router.get("/")
-def get_companies(
-    db: Session = Depends(get_db)
-):
-    """
-    Obtener listado de todas las empresas.
-
-    Uso:
-    - SYSADMIN PANEL → selector de empresa
-    - Configuración administrativa
-
-    Seguridad:
-    - Requiere autenticación
-    - Requiere permiso en system_modules ('/companies')
-
-    Response:
-    [
-        {
-            "id": int,
-            "name": str,
-            "business_profile_id": int | None
-        }
-    ]
-    """
-
-    companies = db.query(Company).all()
-    profiles  = {p.id: p.name for p in db.query(BusinessProfile).all()}
-
+async def get_companies(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Company))
+    companies = result.scalars().all()
+    result = await db.execute(select(BusinessProfile))
+    profiles = {p.id: p.name for p in result.scalars().all()}
     return [
-        {
-            "id":                    c.id_company,
-            "name":                  c.name,
-            "identification_number": c.identification_number,
-            "dv":                    c.dv,
-            "address":               c.address,
-            "phone":                 c.phone,
-            "email":                 c.email,
-            "description":           c.description,
-            "state":                 c.state,
-            "business_profile_id":   c.business_profile_id,
-            "business_profile_name": profiles.get(c.business_profile_id, ""),
-            "language_id":           c.language_id,
-            "country_id":            c.country_id,
-            "department_id":         c.department_id,
-            "municipality_id":       c.municipality_id,
-            "type_currency_id":      c.type_currency_id,
-        }
+        {"id": c.id_company, "name": c.name, "identification_number": c.identification_number,
+         "dv": c.dv, "address": c.address, "phone": c.phone, "email": c.email,
+         "description": c.description, "state": c.state,
+         "business_profile_id": c.business_profile_id,
+         "business_profile_name": profiles.get(c.business_profile_id, ""),
+         "language_id": c.language_id, "country_id": c.country_id,
+         "department_id": c.department_id, "municipality_id": c.municipality_id,
+         "type_currency_id": c.type_currency_id}
         for c in companies
     ]
-   

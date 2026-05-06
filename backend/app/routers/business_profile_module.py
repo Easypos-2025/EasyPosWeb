@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
 from app.database import get_db
 from app.models.business_profile_module import BusinessProfileModule
 
@@ -7,31 +8,28 @@ router = APIRouter(prefix="/business-profile-module", tags=["BusinessProfileModu
 
 
 @router.put("/reorder/")
-def reorder_modules(data: list[dict], db: Session = Depends(get_db)):
+async def reorder_modules(data: list[dict], db: AsyncSession = Depends(get_db)):
     if not data:
         return {"message": "Sin datos"}
 
-    # Detectar profile_id desde el primer registro para eliminar huérfanos
-    first = db.query(BusinessProfileModule).filter(
-        BusinessProfileModule.id == data[0]["id"]
-    ).first()
+    result = await db.execute(select(BusinessProfileModule).where(BusinessProfileModule.id == data[0]["id"]))
+    first = result.scalar_one_or_none()
 
     if first:
         keep_ids = [item["id"] for item in data]
-        # Eliminar registros del perfil que ya no están en el payload
-        db.query(BusinessProfileModule).filter(
-            BusinessProfileModule.business_profile_id == first.business_profile_id,
-            BusinessProfileModule.id.notin_(keep_ids)
-        ).delete(synchronize_session=False)
+        await db.execute(
+            delete(BusinessProfileModule).where(
+                BusinessProfileModule.business_profile_id == first.business_profile_id,
+                BusinessProfileModule.id.notin_(keep_ids)
+            )
+        )
 
     for item in data:
-        module = db.query(BusinessProfileModule).filter(
-            BusinessProfileModule.id == item["id"]
-        ).first()
+        result = await db.execute(select(BusinessProfileModule).where(BusinessProfileModule.id == item["id"]))
+        module = result.scalar_one_or_none()
         if module:
             module.sort_order = item["sort_order"]
             module.parent_id = int(item["parent_id"]) if item.get("parent_id") is not None else None
 
-    db.commit()
+    await db.commit()
     return {"message": "Orden actualizado correctamente"}
-

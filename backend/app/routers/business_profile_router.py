@@ -1,193 +1,101 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.database import get_db
-from sqlalchemy import text
-from app.models.business_profile_model import BusinessProfile
-
-from app.schemas.business_profile_schema import (
-    BusinessProfileCreate,
-    BusinessProfileUpdate,
-    BusinessProfileResponse,
-    BusinessProfileListResponse
-)
-
-from app.auth.dependencies import get_current_user
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-
-router = APIRouter(
-    prefix="/business-profiles",
-    tags=["Business Profiles"]
+from app.database import get_db
+from app.models.business_profile_model import BusinessProfile
+from app.schemas.business_profile_schema import (
+    BusinessProfileCreate, BusinessProfileUpdate,
+    BusinessProfileResponse, BusinessProfileListResponse
 )
+from app.auth.dependencies import get_current_user
+
+router = APIRouter(prefix="/business-profiles", tags=["Business Profiles"])
 
 
-# 🔹 LISTAR
 @router.get("/", response_model=BusinessProfileListResponse)
-def get_business_profiles(
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    profiles = db.query(BusinessProfile).all()
-    return {"data": profiles}
+async def get_business_profiles(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    result = await db.execute(select(BusinessProfile))
+    return {"data": result.scalars().all()}
 
 
-# 🔹 OBTENER POR ID
 @router.get("/{profile_id}", response_model=BusinessProfileResponse)
-def get_business_profile(
-    profile_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    profile = db.query(BusinessProfile).filter(BusinessProfile.id == profile_id).first()
-
+async def get_business_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    result = await db.execute(select(BusinessProfile).where(BusinessProfile.id == profile_id))
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-
     return profile
 
 
-# 🔹 CREAR
 @router.post("/", response_model=BusinessProfileResponse)
-def create_business_profile(
-    data: BusinessProfileCreate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
+async def create_business_profile(data: BusinessProfileCreate, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     new_profile = BusinessProfile(**data.dict())
-
     db.add(new_profile)
-    db.commit()
-    db.refresh(new_profile)
-
+    await db.commit()
+    await db.refresh(new_profile)
     return new_profile
 
 
-# 🔹 ACTUALIZAR
 @router.put("/{profile_id}", response_model=BusinessProfileResponse)
-def update_business_profile(
-    profile_id: int,
-    data: BusinessProfileUpdate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    profile = db.query(BusinessProfile).filter(BusinessProfile.id == profile_id).first()
-
+async def update_business_profile(profile_id: int, data: BusinessProfileUpdate, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    result = await db.execute(select(BusinessProfile).where(BusinessProfile.id == profile_id))
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-
     for key, value in data.dict(exclude_unset=True).items():
         setattr(profile, key, value)
-
-    db.commit()
-    db.refresh(profile)
-
+    await db.commit()
+    await db.refresh(profile)
     return profile
 
 
-# 🔹 ELIMINAR (soft opcional luego)
 @router.delete("/{profile_id}")
-def delete_business_profile(
-    profile_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    profile = db.query(BusinessProfile).filter(BusinessProfile.id == profile_id).first()
-
+async def delete_business_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    result = await db.execute(select(BusinessProfile).where(BusinessProfile.id == profile_id))
+    profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-
-    db.delete(profile)
-    db.commit()
-
+    await db.delete(profile)
+    await db.commit()
     return {"message": "Perfil eliminado correctamente"}
 
 
-# 🔹 OBTENER MÓDULOS DE UN PERFIL
 @router.get("/{profile_id}/modules/")
-def get_modules_by_profile(
-    profile_id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
-    results = db.execute(
-        text("""
-            SELECT sm.id, sm.name
-            FROM system_modules sm
-            JOIN business_profile_modules bpm
-                ON bpm.module_id = sm.id
-            WHERE bpm.business_profile_id = :profile_id
-        """),
-        {"profile_id": profile_id}
-    ).fetchall()
-
-    return [
-        {
-            "id": r.id,
-            "name": r.name
-        }
-        for r in results
-    ]
-
-
-# 🔹 ASIGNAR MÓDULOS A UN PERFIL
+async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    result = await db.execute(text("""
+        SELECT sm.id, sm.name FROM system_modules sm
+        JOIN business_profile_modules bpm ON bpm.module_id = sm.id
+        WHERE bpm.business_profile_id = :profile_id
+    """), {"profile_id": profile_id})
+    return [{"id": r.id, "name": r.name} for r in result.fetchall()]
 
 
 @router.post("/{profile_id}/modules/")
-def assign_modules_to_profile(
-    profile_id: int,
-    module_ids: list[int],
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user)
-):
+async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     try:
-        # Eliminar relaciones existentes
-        db.execute(
-            text("DELETE FROM business_profile_modules WHERE business_profile_id = :profile_id"),
-            {"profile_id": profile_id}
-        )
-
+        await db.execute(text("DELETE FROM business_profile_modules WHERE business_profile_id = :profile_id"), {"profile_id": profile_id})
         if module_ids:
-            # parent_id = NULL: la jerarquía se deriva automáticamente en get_my_menu
-            # vía COALESCE(bpm.parent_id, parent_bpm.id) usando system_modules.parent_id
-            db.execute(
-                text("""
-                    INSERT INTO business_profile_modules
-                        (business_profile_id, module_id, parent_id, sort_order)
-                    SELECT DISTINCT :profile_id, sm.id, NULL, 0
-                    FROM system_modules sm
-                    WHERE sm.id IN :module_ids
-                """),
-                {"profile_id": profile_id, "module_ids": tuple(module_ids)}
-            )
-
-            # Sincronizar role_modules: dar can_view=1 a todos los roles de empresas
-            # con este perfil que aún no tengan permiso para los módulos recién asignados
-            db.execute(
-                text("""
-                    INSERT INTO role_modules
-                        (role_id, module_id, can_view, can_create, can_edit, can_delete)
-                    SELECT DISTINCT r.id, bpm.module_id, 1, 0, 0, 0
-                    FROM roles r
-                    JOIN companies c ON c.id_company = r.company_id
-                    JOIN business_profile_modules bpm
-                        ON bpm.business_profile_id = c.business_profile_id
-                    JOIN system_modules sm ON sm.id = bpm.module_id AND sm.is_active = 1
-                    WHERE c.business_profile_id = :profile_id
-                      AND NOT EXISTS (
-                          SELECT 1 FROM role_modules rm2
-                          WHERE rm2.role_id = r.id AND rm2.module_id = bpm.module_id
-                      )
-                """),
-                {"profile_id": profile_id}
-            )
-
-        db.commit()
+            await db.execute(text("""
+                INSERT INTO business_profile_modules (business_profile_id, module_id, parent_id, sort_order)
+                SELECT DISTINCT :profile_id, sm.id, NULL, 0
+                FROM system_modules sm WHERE sm.id IN :module_ids
+            """), {"profile_id": profile_id, "module_ids": tuple(module_ids)})
+            await db.execute(text("""
+                INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
+                SELECT DISTINCT r.id, bpm.module_id, 1, 0, 0, 0
+                FROM roles r
+                JOIN companies c ON c.id_company = r.company_id
+                JOIN business_profile_modules bpm ON bpm.business_profile_id = c.business_profile_id
+                JOIN system_modules sm ON sm.id = bpm.module_id AND sm.is_active = 1
+                WHERE c.business_profile_id = :profile_id
+                  AND NOT EXISTS (SELECT 1 FROM role_modules rm2 WHERE rm2.role_id = r.id AND rm2.module_id = bpm.module_id)
+            """), {"profile_id": profile_id})
+        await db.commit()
         return {"message": "Módulos asignados correctamente"}
-
     except IntegrityError:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=400, detail="Ya existen módulos duplicados para este perfil")
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al asignar módulos: {str(e)}")
-
-        
