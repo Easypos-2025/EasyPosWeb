@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Body, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from datetime import datetime
 from typing import Optional
 
@@ -16,332 +17,41 @@ from app.models.user_session_model import UserSession
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
-# ─── helper: usuario autenticado ───────────────────────────────
-def _get_user(authorization: str, db: Session):
+async def _get_user(authorization: str, db: AsyncSession):
     if not authorization:
         raise HTTPException(status_code=401, detail="Token requerido")
     token = authorization.replace("Bearer ", "")
     payload = decode_access_token(token)
-    session = db.query(UserSession).filter(
-        UserSession.token == token, UserSession.is_active == True
-    ).first()
-    if not session or payload is None:
+    result = await db.execute(select(UserSession).where(UserSession.token == token, UserSession.is_active == True))
+    if not result.scalar_one_or_none() or payload is None:
         raise HTTPException(status_code=401, detail="Sesión inválida")
-    user = db.query(User).filter(User.email == payload.get("sub")).first()
+    result = await db.execute(select(User).where(User.email == payload.get("sub")))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
 
 
-def _is_system(user, db):
-    role = db.query(Role).filter(Role.id == user.role_id).first()
-    return role.is_system if role else False
+async def _get_role(user: User, db: AsyncSession):
+    result = await db.execute(select(Role).where(Role.id == user.role_id))
+    return result.scalar_one_or_none()
 
 
-# ─── STATS para el dashboard ───────────────────────────────────
-@router.get("/stats")
-def get_task_stats(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user = _get_user(authorization, db)
-    base = db.query(Task)
-
-    role      = db.query(Role).filter(Role.id == user.role_id).first()
-    role_name = (role.name or "").lower() if role else ""
-    is_sys    = role.is_system if role else False
-    can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
-
-    if not is_sys:
-        base = base.filter(Task.company_id == user.company_id)
-    if not can_see_all:
-        base = base.filter(Task.assigned_to == user.id)
-
-    hoy = datetime.now()
-    return {
-        "total":           base.count(),
-        "pendiente":       base.filter(Task.status_id == 1).count(),
-        "asignada":        base.filter(Task.status_id == 2).count(),
-        "progreso":        base.filter(Task.status_id == 3).count(),
-        "revision":        base.filter(Task.status_id == 4).count(),
-        "finalizada":      base.filter(Task.status_id == 5).count(),
-        "cancelada":       base.filter(Task.status_id == 6).count(),
-        "atrasadas":       base.filter(
-            Task.due_date < hoy,
-            Task.status_id.notin_([5, 6])
-        ).count(),
-        "sin_ejecutor":    base.filter(
-            Task.worker_id == None,
-            Task.status_id.notin_([5, 6])
-        ).count(),
-        # Tareas pendiente=1 sin responsable asignado
-        "sin_asignar":     base.filter(
-            Task.status_id == 1,
-            Task.assigned_to == None
-        ).count(),
-        # Tareas asignadas=2 con información incompleta (sin ejecutor o sin fecha límite)
-        "info_incompleta": base.filter(
-            Task.status_id == 2,
-            (Task.worker_id == None) | (Task.due_date == None)
-        ).count(),
-    }
+async def _status_map(db: AsyncSession) -> dict:
+    result = await db.execute(select(TaskStatus))
+    return {s.id: s.name for s in result.scalars().all()}
 
 
-# ─── TAREAS CON INFORMACIÓN INCOMPLETA ────────────────────────
-@router.get("/incomplete-info")
-def get_incomplete_tasks(
-    mine: bool = Query(False),
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    """
-    Devuelve tareas que necesitan completar información:
-    - Sin asignar: status=1 AND assigned_to IS NULL
-    - Info incompleta: status=2 AND (worker_id IS NULL OR due_date IS NULL)
-    Si mine=True, solo las asignadas al usuario autenticado.
-    """
-    user = _get_user(authorization, db)
-    sm   = _status_map(db)
-    wm   = _worker_map(db)
-    um   = _user_map(db)
-
-    q = db.query(Task)
-    if not _is_system(user, db):
-        q = q.filter(Task.company_id == user.company_id)
-
-    if mine:
-        q = q.filter(Task.assigned_to == user.id)
-
-    sin_asignar = q.filter(
-        Task.status_id == 1,
-        Task.assigned_to == None
-    ).all()
-
-    info_incompleta = q.filter(
-        Task.status_id == 2,
-        (Task.worker_id == None) | (Task.due_date == None)
-    ).all()
-
-    return {
-        "sin_asignar":     [_serialize(t, sm, wm, um) for t in sin_asignar],
-        "info_incompleta": [_serialize(t, sm, wm, um) for t in info_incompleta],
-    }
+async def _worker_map(db: AsyncSession) -> dict:
+    result = await db.execute(select(Worker))
+    return {w.id: w.name for w in result.scalars().all()}
 
 
-# ─── USUARIOS disponibles para asignación de tareas ───────────
-@router.get("/users-list")
-def get_users_for_tasks(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user = _get_user(authorization, db)
-    users = db.query(User).filter(User.company_id == user.company_id).order_by(User.nombre).all()
-    return [{"id": u.id, "nombre": u.nombre, "email": u.email} for u in users]
+async def _user_map(db: AsyncSession) -> dict:
+    result = await db.execute(select(User))
+    return {u.id: u.nombre for u in result.scalars().all()}
 
 
-# ─── ACTIVOS disponibles (para selects en formularios de tareas) ─
-@router.get("/assets-list")
-def get_assets_for_tasks(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    _get_user(authorization, db)
-    assets = db.query(Asset).order_by(Asset.name).all()
-    return [{"id": a.id, "name": a.name} for a in assets]
-
-
-# ─── MIS TAREAS (Task Leader / Worker role) ────────────────────
-@router.get("/my-tasks")
-def get_my_tasks(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user  = _get_user(authorization, db)
-    sm    = _status_map(db)
-    wm    = _worker_map(db)
-    um    = _user_map(db)
-    tasks = db.query(Task).filter(Task.assigned_to == user.id)\
-               .order_by(Task.due_date.is_(None), Task.due_date.asc()).all()
-    return [_serialize(t, sm, wm, um) for t in tasks]
-
-
-# ─── ACTUALIZAR AVANCE RÁPIDO ──────────────────────────────────
-@router.patch("/{task_id:int}/progress")
-def update_progress(
-    task_id: int,
-    data: dict = Body(...),
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user = _get_user(authorization, db)
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
-    if task.assigned_to != user.id and not _is_system(user, db):
-        raise HTTPException(status_code=403, detail="Solo el Task Leader asignado puede actualizar el avance")
-
-    if "progress" in data:
-        task.progress = max(0, min(100, int(data["progress"])))
-    if "status_id" in data:
-        task.status_id = data["status_id"]
-        if data["status_id"] in [5, 6] and not task.closed_at:
-            task.closed_at = datetime.now()
-
-    db.commit()
-    db.refresh(task)
-    sm = _status_map(db)
-    wm = _worker_map(db)
-    um = _user_map(db)
-    return _serialize(task, sm, wm, um)
-
-
-# ─── GET ALL (con filtros opcionales) ─────────────────────────
-@router.get("/")
-def get_tasks(
-    status_id: Optional[int] = Query(None),
-    worker_id: Optional[int] = Query(None),
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user = _get_user(authorization, db)
-    sm   = _status_map(db)
-    wm   = _worker_map(db)
-    um   = _user_map(db)
-    q    = db.query(Task)
-
-    role      = db.query(Role).filter(Role.id == user.role_id).first()
-    role_name = (role.name or "").lower() if role else ""
-    is_sys    = role.is_system if role else False
-    can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
-
-    if not is_sys:
-        q = q.filter(Task.company_id == user.company_id)
-
-    # Worker / Task Leader: solo sus propias tareas
-    if not can_see_all:
-        q = q.filter(Task.assigned_to == user.id)
-
-    if status_id is not None:
-        q = q.filter(Task.status_id == status_id)
-    if worker_id is not None:
-        q = q.filter(Task.worker_id == worker_id)
-    return [_serialize(t, sm, wm, um) for t in q.order_by(Task.created_at.desc()).all()]
-
-
-# ─── GET BY ID ─────────────────────────────────────────────────
-@router.get("/{task_id:int}")
-def get_task(task_id: int, db: Session = Depends(get_db)):
-    sm   = _status_map(db)
-    wm   = _worker_map(db)
-    um   = _user_map(db)
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
-    return _serialize(task, sm, wm, um)
-
-
-# ─── CREATE ────────────────────────────────────────────────────
-@router.post("/")
-def create_task(
-    data: dict = Body(...),
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user = _get_user(authorization, db)
-
-    task = Task(
-        company_id=        user.company_id,
-        title=             data.get("title", "").strip(),
-        description=       data.get("description", ""),
-        asset_id=          data.get("asset_id") or None,
-        status_id=         data.get("status_id", 1),
-        assigned_to=       data.get("assigned_to") or None,
-        worker_id=         data.get("worker_id") or None,
-        progress=          int(data.get("progress", 0)),
-        budget_labor_cost= float(data.get("budget_labor_cost", 0)),
-        actual_labor_cost= float(data.get("actual_labor_cost", 0)),
-        start_date=        _parse_date(data.get("start_date")),
-        due_date=          _parse_date(data.get("due_date")),
-        created_by=        user.id,
-    )
-
-    if not task.title:
-        raise HTTPException(status_code=400, detail="El título es obligatorio")
-
-    try:
-        db.add(task)
-        db.commit()
-        db.refresh(task)
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
-
-    sm = _status_map(db)
-    wm = _worker_map(db)
-    um = _user_map(db)
-    return _serialize(task, sm, wm, um)
-
-
-# ─── UPDATE ────────────────────────────────────────────────────
-@router.put("/{task_id:int}")
-def update_task(
-    task_id: int,
-    data: dict = Body(...),
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user  = _get_user(authorization, db)
-    task  = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
-
-    fields = [
-        "title", "description", "asset_id", "status_id",
-        "assigned_to", "worker_id", "progress",
-        "budget_labor_cost", "actual_labor_cost",
-    ]
-    for f in fields:
-        if f in data:
-            setattr(task, f, data[f] or None if f.endswith("_id") else data[f])
-
-    if "start_date" in data:
-        task.start_date = _parse_date(data["start_date"])
-    if "due_date" in data:
-        task.due_date = _parse_date(data["due_date"])
-
-    if data.get("status_id") in [5, 6] and not task.closed_at:
-        task.closed_at = datetime.now()
-
-    try:
-        db.commit()
-        db.refresh(task)
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
-
-    sm = _status_map(db)
-    wm = _worker_map(db)
-    um = _user_map(db)
-    return _serialize(task, sm, wm, um)
-
-
-# ─── DELETE ────────────────────────────────────────────────────
-@router.delete("/{task_id:int}")
-def delete_task(
-    task_id: int,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    user = _get_user(authorization, db)
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
-    db.delete(task)
-    db.commit()
-    return {"message": "Tarea eliminada"}
-
-
-# ─── helpers ───────────────────────────────────────────────────
 def _parse_date(value):
     if not value:
         return None
@@ -351,42 +61,260 @@ def _parse_date(value):
         return None
 
 
-def _status_map(db: Session) -> dict:
-    return {s.id: s.name for s in db.query(TaskStatus).all()}
-
-
-def _worker_map(db: Session) -> dict:
-    return {w.id: w.name for w in db.query(Worker).all()}
-
-
-def _user_map(db: Session) -> dict:
-    return {u.id: u.nombre for u in db.query(User).all()}
-
-
-def _serialize(
-    t: Task,
-    status_names: dict = None,
-    worker_names: dict = None,
-    user_names:   dict = None
-) -> dict:
+def _serialize(t: Task, status_names=None, worker_names=None, user_names=None) -> dict:
     sname = (status_names or {}).get(t.status_id, "—") if t.status_id else "—"
     return {
-        "id":                 t.id,
-        "company_id":         t.company_id,
-        "title":              t.title,
-        "description":        t.description,
-        "asset_id":           t.asset_id,
-        "status_id":          t.status_id,
-        "status_name":        sname,
-        "assigned_to":        t.assigned_to,
-        "assigned_to_name":   (user_names or {}).get(t.assigned_to) if t.assigned_to else None,
-        "worker_id":          t.worker_id,
-        "worker_name":        (worker_names or {}).get(t.worker_id) if t.worker_id else None,
-        "progress":           t.progress or 0,
-        "budget_labor_cost":  t.budget_labor_cost or 0,
-        "actual_labor_cost":  t.actual_labor_cost or 0,
-        "start_date":         t.start_date.isoformat()[:10] if t.start_date else None,
-        "due_date":           t.due_date.isoformat()[:10] if t.due_date else None,
-        "closed_at":          t.closed_at.isoformat() if t.closed_at else None,
-        "created_at":         t.created_at.isoformat() if t.created_at else None,
+        "id": t.id, "company_id": t.company_id, "title": t.title, "description": t.description,
+        "asset_id": t.asset_id, "status_id": t.status_id, "status_name": sname,
+        "assigned_to": t.assigned_to,
+        "assigned_to_name": (user_names or {}).get(t.assigned_to) if t.assigned_to else None,
+        "worker_id": t.worker_id,
+        "worker_name": (worker_names or {}).get(t.worker_id) if t.worker_id else None,
+        "progress": t.progress or 0,
+        "budget_labor_cost": t.budget_labor_cost or 0, "actual_labor_cost": t.actual_labor_cost or 0,
+        "start_date": t.start_date.isoformat()[:10] if t.start_date else None,
+        "due_date": t.due_date.isoformat()[:10] if t.due_date else None,
+        "closed_at": t.closed_at.isoformat() if t.closed_at else None,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
     }
+
+
+@router.get("/stats")
+async def get_task_stats(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    role = await _get_role(user, db)
+    role_name = (role.name or "").lower() if role else ""
+    is_sys = role.is_system if role else False
+    can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
+
+    base_conds = []
+    if not is_sys:
+        base_conds.append(Task.company_id == user.company_id)
+    if not can_see_all:
+        base_conds.append(Task.assigned_to == user.id)
+
+    async def cnt(*extra):
+        return (await db.execute(select(func.count()).select_from(Task).where(*base_conds, *extra))).scalar()
+
+    hoy = datetime.now()
+    return {
+        "total":           await cnt(),
+        "pendiente":       await cnt(Task.status_id == 1),
+        "asignada":        await cnt(Task.status_id == 2),
+        "progreso":        await cnt(Task.status_id == 3),
+        "revision":        await cnt(Task.status_id == 4),
+        "finalizada":      await cnt(Task.status_id == 5),
+        "cancelada":       await cnt(Task.status_id == 6),
+        "atrasadas":       await cnt(Task.due_date < hoy, Task.status_id.notin_([5, 6])),
+        "sin_ejecutor":    await cnt(Task.worker_id == None, Task.status_id.notin_([5, 6])),
+        "sin_asignar":     await cnt(Task.status_id == 1, Task.assigned_to == None),
+        "info_incompleta": await cnt(Task.status_id == 2, (Task.worker_id == None) | (Task.due_date == None)),
+    }
+
+
+@router.get("/incomplete-info")
+async def get_incomplete_tasks(
+    mine: bool = Query(False),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+
+    role = await _get_role(user, db)
+    is_sys = role.is_system if role else False
+
+    base_conds = [] if is_sys else [Task.company_id == user.company_id]
+    if mine:
+        base_conds.append(Task.assigned_to == user.id)
+
+    r1 = await db.execute(select(Task).where(*base_conds, Task.status_id == 1, Task.assigned_to == None))
+    r2 = await db.execute(select(Task).where(*base_conds, Task.status_id == 2, (Task.worker_id == None) | (Task.due_date == None)))
+
+    return {
+        "sin_asignar":     [_serialize(t, sm, wm, um) for t in r1.scalars().all()],
+        "info_incompleta": [_serialize(t, sm, wm, um) for t in r2.scalars().all()],
+    }
+
+
+@router.get("/users-list")
+async def get_users_for_tasks(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    result = await db.execute(select(User).where(User.company_id == user.company_id).order_by(User.nombre))
+    return [{"id": u.id, "nombre": u.nombre, "email": u.email} for u in result.scalars().all()]
+
+
+@router.get("/assets-list")
+async def get_assets_for_tasks(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await _get_user(authorization, db)
+    result = await db.execute(select(Asset).order_by(Asset.name))
+    return [{"id": a.id, "name": a.name} for a in result.scalars().all()]
+
+
+@router.get("/my-tasks")
+async def get_my_tasks(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+    result = await db.execute(
+        select(Task).where(Task.assigned_to == user.id).order_by(Task.due_date.is_(None), Task.due_date.asc())
+    )
+    return [_serialize(t, sm, wm, um) for t in result.scalars().all()]
+
+
+@router.patch("/{task_id:int}/progress")
+async def update_progress(
+    task_id: int,
+    data: dict = Body(...),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    role = await _get_role(user, db)
+    is_sys = role.is_system if role else False
+    if task.assigned_to != user.id and not is_sys:
+        raise HTTPException(status_code=403, detail="Solo el Task Leader asignado puede actualizar el avance")
+
+    if "progress" in data:
+        task.progress = max(0, min(100, int(data["progress"])))
+    if "status_id" in data:
+        task.status_id = data["status_id"]
+        if data["status_id"] in [5, 6] and not task.closed_at:
+            task.closed_at = datetime.now()
+
+    await db.commit()
+    await db.refresh(task)
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+    return _serialize(task, sm, wm, um)
+
+
+@router.get("/")
+async def get_tasks(
+    status_id: Optional[int] = Query(None),
+    worker_id: Optional[int] = Query(None),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+    role = await _get_role(user, db)
+    role_name = (role.name or "").lower() if role else ""
+    is_sys = role.is_system if role else False
+    can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
+
+    conds = []
+    if not is_sys:
+        conds.append(Task.company_id == user.company_id)
+    if not can_see_all:
+        conds.append(Task.assigned_to == user.id)
+    if status_id is not None:
+        conds.append(Task.status_id == status_id)
+    if worker_id is not None:
+        conds.append(Task.worker_id == worker_id)
+
+    result = await db.execute(select(Task).where(*conds).order_by(Task.created_at.desc()))
+    return [_serialize(t, sm, wm, um) for t in result.scalars().all()]
+
+
+@router.get("/{task_id:int}")
+async def get_task(task_id: int, db: AsyncSession = Depends(get_db)):
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    return _serialize(task, sm, wm, um)
+
+
+@router.post("/")
+async def create_task(
+    data: dict = Body(...),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    task = Task(
+        company_id=user.company_id, title=data.get("title", "").strip(),
+        description=data.get("description", ""), asset_id=data.get("asset_id") or None,
+        status_id=data.get("status_id", 1), assigned_to=data.get("assigned_to") or None,
+        worker_id=data.get("worker_id") or None, progress=int(data.get("progress", 0)),
+        budget_labor_cost=float(data.get("budget_labor_cost", 0)),
+        actual_labor_cost=float(data.get("actual_labor_cost", 0)),
+        start_date=_parse_date(data.get("start_date")), due_date=_parse_date(data.get("due_date")),
+        created_by=user.id,
+    )
+    if not task.title:
+        raise HTTPException(status_code=400, detail="El título es obligatorio")
+    try:
+        db.add(task)
+        await db.commit()
+        await db.refresh(task)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+    return _serialize(task, sm, wm, um)
+
+
+@router.put("/{task_id:int}")
+async def update_task(
+    task_id: int,
+    data: dict = Body(...),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    await _get_user(authorization, db)
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    for f in ["title", "description", "asset_id", "status_id", "assigned_to", "worker_id",
+              "progress", "budget_labor_cost", "actual_labor_cost"]:
+        if f in data:
+            setattr(task, f, data[f] or None if f.endswith("_id") else data[f])
+    if "start_date" in data:
+        task.start_date = _parse_date(data["start_date"])
+    if "due_date" in data:
+        task.due_date = _parse_date(data["due_date"])
+    if data.get("status_id") in [5, 6] and not task.closed_at:
+        task.closed_at = datetime.now()
+
+    try:
+        await db.commit()
+        await db.refresh(task)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
+
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+    return _serialize(task, sm, wm, um)
+
+
+@router.delete("/{task_id:int}")
+async def delete_task(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await _get_user(authorization, db)
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    await db.delete(task)
+    await db.commit()
+    return {"message": "Tarea eliminada"}
