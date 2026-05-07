@@ -486,7 +486,7 @@ import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 import { useModuleName } from "@/composables/useModuleName"
 import AssetMediaGallery from "@/components/AssetMediaGallery.vue"
-import QRCode from "qrcode/lib/browser.js"
+import { encode as encodeQR } from "uqr"
 
 const { moduleName } = useModuleName()
 
@@ -636,11 +636,24 @@ async function openQr() {
 
 async function renderQr() {
   await nextTick()
-  if (qrCanvas.value) {
-    await QRCode.toCanvas(qrCanvas.value, qrUrl.value, {
-      width: 260, margin: 2,
-      color: { dark: "#1e293b", light: "#ffffff" },
-    })
+  if (!qrCanvas.value) return
+  const { size, data } = encodeQR(qrUrl.value, { ecc: "M" })
+  const CANVAS_SIZE = 260
+  const px  = Math.floor(CANVAS_SIZE / (size + 4))   // píxeles por módulo
+  const off = Math.floor((CANVAS_SIZE - size * px) / 2) // margen centrado
+  const canvas = qrCanvas.value
+  canvas.width  = CANVAS_SIZE
+  canvas.height = CANVAS_SIZE
+  const ctx = canvas.getContext("2d")
+  ctx.fillStyle = "#ffffff"
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+  ctx.fillStyle = "#1e293b"
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (data[r * size + c]) {
+        ctx.fillRect(off + c * px, off + r * px, px, px)
+      }
+    }
   }
 }
 
