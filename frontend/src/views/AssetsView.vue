@@ -486,7 +486,7 @@ import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 import { useModuleName } from "@/composables/useModuleName"
 import AssetMediaGallery from "@/components/AssetMediaGallery.vue"
-import QRCode from "qrcode"
+import QRCode from "qrcode/lib/browser.js"
 
 const { moduleName } = useModuleName()
 
