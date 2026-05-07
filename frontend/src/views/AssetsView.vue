@@ -130,20 +130,10 @@
 
     <!-- MODAL CREAR / EDITAR -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-      <div class="modal-box">
+      <div :class="['modal-box', activeTab === 'publicacion' && 'modal-wide']">
         <div class="modal-header-bar">
           <h2>{{ editForm.id ? `Editar ${moduleName}` : `Nuevo ${moduleName}` }}</h2>
-          <div class="header-actions-row">
-            <button
-              v-if="editForm.id && editForm.list_code"
-              class="btn-qr"
-              @click="openQr"
-              title="Ver / Descargar QR"
-            >
-              <i class="bi bi-qr-code"></i> QR
-            </button>
-            <button class="btn-close-sm" @click="closeModal"><i class="bi bi-x-lg"></i></button>
-          </div>
+          <button class="btn-close-sm" @click="closeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
         <!-- TABS -->
@@ -164,6 +154,14 @@
             @click="activeTab = 'fotos'"
           >
             <i class="bi bi-images"></i> Fotos
+          </button>
+          <button
+            :class="['tab-btn', activeTab === 'publicacion' && 'active']"
+            :disabled="!editForm.id"
+            :title="!editForm.id ? 'Guarda el activo primero' : 'QR y página pública'"
+            @click="activatePublicacion"
+          >
+            <i class="bi bi-qr-code"></i> QR
           </button>
         </div>
 
@@ -335,147 +333,123 @@
             <AssetMediaGallery v-if="editForm.id" :asset-id="editForm.id" />
           </template>
 
+          <!-- TAB PUBLICACIÓN (QR + Vista previa) -->
+          <template v-if="activeTab === 'publicacion'">
+
+            <!-- Sin código de lista -->
+            <div v-if="!editForm.list_code" class="pub-tab-empty">
+              <i class="bi bi-qr-code" style="font-size:36px;color:#cbd5e1"></i>
+              <p>Para generar el QR, asigna un <strong>Código de Lista</strong> en la pestaña <strong>Legal</strong> y guarda el activo.</p>
+              <button class="btn btn-outline-secondary btn-sm" @click="activeTab = 'legal'">
+                <i class="bi bi-file-earmark-text"></i> Ir a Legal
+              </button>
+            </div>
+
+            <template v-else>
+              <div class="pub-tab-layout">
+
+                <!-- COLUMNA IZQUIERDA: QR + acciones -->
+                <div class="pub-col-qr">
+                  <div class="pub-qr-box">
+                    <div v-if="qrLoading" class="qr-loading">
+                      <div class="preview-spinner"></div>
+                      <span>Generando QR...</span>
+                    </div>
+                    <img v-else-if="qrBlobUrl" :src="qrBlobUrl" class="qr-img" alt="QR" />
+                  </div>
+
+                  <div class="pub-url-box">
+                    <span class="pub-url-label">URL pública</span>
+                    <span class="pub-url-text">{{ qrUrl }}</span>
+                  </div>
+
+                  <div class="pub-qr-btns">
+                    <button class="btn btn-outline-secondary btn-sm w-100" @click="copyUrl">
+                      <i class="bi" :class="urlCopied ? 'bi-check-lg' : 'bi-clipboard'"></i>
+                      {{ urlCopied ? '¡Copiado!' : 'Copiar enlace' }}
+                    </button>
+                    <button class="btn btn-success btn-sm w-100" @click="downloadQr" :disabled="!qrBlobUrl">
+                      <i class="bi bi-download"></i> Descargar QR
+                    </button>
+                    <a :href="qrUrl" target="_blank" class="btn btn-outline-primary btn-sm w-100">
+                      <i class="bi bi-box-arrow-up-right"></i> Abrir página
+                    </a>
+                  </div>
+                </div>
+
+                <!-- COLUMNA DERECHA: Phone preview -->
+                <div class="pub-col-preview">
+                  <p class="preview-title"><i class="bi bi-phone"></i> Vista previa</p>
+
+                  <div v-if="previewLoading" class="preview-loading">
+                    <div class="preview-spinner"></div>
+                    <span>Cargando...</span>
+                  </div>
+
+                  <div v-else-if="previewData" class="phone-frame">
+                    <div class="phone-screen">
+                      <div class="pp-header">
+                        <span class="pp-brand">
+                          <span style="color:#2563eb">Easy</span><span style="color:#f59e0b">Pos</span><span style="color:#10b981">Web</span>
+                        </span>
+                        <span v-if="previewData.list_code" class="pp-code">#{{ previewData.list_code }}</span>
+                      </div>
+                      <div class="pp-photo-wrap">
+                        <img v-if="previewData.media?.length && previewData.media[0].file_type === 'image'"
+                             :src="previewData.media[0].file_url" class="pp-photo" />
+                        <div v-else class="pp-no-photo">
+                          <i class="bi bi-house-door" style="font-size:28px;color:#cbd5e1"></i>
+                          <span>Sin fotos</span>
+                        </div>
+                        <span v-if="previewData.media?.length > 1" class="pp-photo-count">
+                          <i class="bi bi-images"></i> {{ previewData.media.length }}
+                        </span>
+                      </div>
+                      <div class="pp-body">
+                        <span class="pp-cat">{{ previewData.category_name }}</span>
+                        <div class="pp-name">{{ previewData.name }}</div>
+                        <div v-if="previewData.address || previewData.location" class="pp-location">
+                          <i class="bi bi-geo-alt-fill"></i>{{ previewData.address || previewData.location }}
+                        </div>
+                        <div class="pp-values">
+                          <div v-if="previewData.canon_value != null" class="pp-val-card green">
+                            <span class="pp-val-lbl">Canon</span>
+                            <span class="pp-val-amt">{{ fmt(previewData.canon_value) }}<span class="pp-val-per">/mes</span></span>
+                          </div>
+                          <div v-if="previewData.has_sale_option" class="pp-val-card yellow">
+                            <i class="bi bi-tag-fill"></i>
+                            <span class="pp-val-lbl">Opción de Venta</span>
+                          </div>
+                        </div>
+                        <div class="pp-badges">
+                          <span v-if="previewData.is_rented" class="pp-badge pp-rented">Ocupado</span>
+                          <span v-else class="pp-badge pp-free">Disponible</span>
+                        </div>
+                        <p v-if="previewData.description" class="pp-desc">{{ previewData.description.substring(0,100) }}{{ previewData.description.length > 100 ? '...' : '' }}</p>
+                        <div class="pp-form-placeholder">
+                          <i class="bi bi-chat-dots-fill"></i>
+                          <span>Formulario de contacto</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="preview-hint">
+                    <i class="bi bi-info-circle"></i>
+                    Así verán el activo quienes escaneen el QR.
+                  </p>
+                </div>
+
+              </div>
+            </template>
+          </template>
+
         </div>
 
         <div class="modal-footer-bar">
           <button class="btn btn-secondary" @click="closeModal">Cancelar</button>
-          <button class="btn btn-primary" @click="save" :disabled="saving">
+          <button v-if="activeTab !== 'publicacion'" class="btn btn-primary" @click="save" :disabled="saving">
             {{ saving ? 'Guardando...' : 'Guardar' }}
           </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL QR -->
-    <div v-if="showQr" class="modal-overlay" @click.self="showQr = false">
-      <div class="qr-modal-box">
-
-        <!-- Header -->
-        <div class="qr-modal-header">
-          <div>
-            <h3><i class="bi bi-qr-code"></i> Activo #{{ editForm.list_code }}</h3>
-            <p class="qr-url-text">{{ qrUrl }}</p>
-          </div>
-          <button class="btn-close-sm" @click="showQr = false"><i class="bi bi-x-lg"></i></button>
-        </div>
-
-        <!-- Tabs -->
-        <div class="qr-tabs">
-          <button :class="['qr-tab', qrTab === 'code' && 'active']" @click="qrTab = 'code'">
-            <i class="bi bi-qr-code-scan"></i> Código QR
-          </button>
-          <button :class="['qr-tab', qrTab === 'preview' && 'active']" @click="switchPreview">
-            <i class="bi bi-phone"></i> Vista previa
-          </button>
-        </div>
-
-        <!-- Tab: QR Code -->
-        <div v-if="qrTab === 'code'" class="qr-tab-body">
-          <div class="qr-canvas-wrap">
-            <div v-if="qrLoading" class="qr-loading">
-              <div class="preview-spinner"></div>
-              <span>Generando QR...</span>
-            </div>
-            <img v-else-if="qrBlobUrl" :src="qrBlobUrl" class="qr-img" alt="QR Activo" />
-          </div>
-          <div class="qr-actions">
-            <button class="btn btn-outline-secondary btn-sm" @click="copyUrl">
-              <i class="bi" :class="urlCopied ? 'bi-check-lg' : 'bi-clipboard'"></i>
-              {{ urlCopied ? 'Copiado' : 'Copiar URL' }}
-            </button>
-            <button class="btn btn-primary btn-sm" @click="downloadQr" :disabled="!qrBlobUrl">
-              <i class="bi bi-download"></i> Descargar PNG
-            </button>
-          </div>
-        </div>
-
-        <!-- Tab: Vista Previa -->
-        <div v-if="qrTab === 'preview'" class="qr-tab-body qr-preview-body">
-          <div v-if="previewLoading" class="preview-loading">
-            <div class="preview-spinner"></div>
-            <span>Cargando vista previa...</span>
-          </div>
-          <template v-else-if="previewData">
-            <div class="phone-frame">
-              <div class="phone-screen">
-
-                <!-- Brand bar -->
-                <div class="pp-header">
-                  <span class="pp-brand">
-                    <span style="color:#2563eb">Easy</span><span style="color:#f59e0b">Pos</span><span style="color:#10b981">Web</span>
-                  </span>
-                  <span v-if="previewData.list_code" class="pp-code">#{{ previewData.list_code }}</span>
-                </div>
-
-                <!-- Foto principal -->
-                <div class="pp-photo-wrap">
-                  <img
-                    v-if="previewData.media && previewData.media.length && previewData.media[0].file_type === 'image'"
-                    :src="previewData.media[0].file_url"
-                    class="pp-photo"
-                  />
-                  <div v-else class="pp-no-photo">
-                    <i class="bi bi-house-door" style="font-size:32px;color:#cbd5e1"></i>
-                    <span>Sin fotos</span>
-                  </div>
-                  <span v-if="previewData.media && previewData.media.length > 1" class="pp-photo-count">
-                    <i class="bi bi-images"></i> {{ previewData.media.length }}
-                  </span>
-                </div>
-
-                <!-- Info -->
-                <div class="pp-body">
-                  <span class="pp-cat">{{ previewData.category_name }}</span>
-                  <div class="pp-name">{{ previewData.name }}</div>
-                  <div v-if="previewData.short_name" class="pp-short">{{ previewData.short_name }}</div>
-                  <div v-if="previewData.address || previewData.location" class="pp-location">
-                    <i class="bi bi-geo-alt-fill"></i>
-                    {{ previewData.address || previewData.location }}
-                  </div>
-
-                  <!-- Valores -->
-                  <div class="pp-values">
-                    <div v-if="previewData.canon_value != null" class="pp-val-card green">
-                      <span class="pp-val-lbl">Canon</span>
-                      <span class="pp-val-amt">{{ fmt(previewData.canon_value) }}<span class="pp-val-per">/mes</span></span>
-                    </div>
-                    <div v-if="previewData.has_sale_option" class="pp-val-card yellow">
-                      <i class="bi bi-tag-fill"></i>
-                      <span class="pp-val-lbl">Opción de Venta</span>
-                    </div>
-                  </div>
-
-                  <!-- Estado -->
-                  <div class="pp-badges">
-                    <span v-if="previewData.is_rented" class="pp-badge pp-rented">Ocupado</span>
-                    <span v-else class="pp-badge pp-free">Disponible</span>
-                  </div>
-
-                  <!-- Descripción snippet -->
-                  <p v-if="previewData.description" class="pp-desc">{{ previewData.description.substring(0,120) }}{{ previewData.description.length > 120 ? '...' : '' }}</p>
-
-                  <!-- Formulario placeholder -->
-                  <div class="pp-form-placeholder">
-                    <i class="bi bi-chat-dots-fill"></i>
-                    <span>Formulario de contacto disponible</span>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-            <p class="preview-hint">
-              <i class="bi bi-info-circle"></i>
-              Esta es una representación de lo que verán los interesados al escanear el QR.
-            </p>
-          </template>
-        </div>
-
-        <!-- Footer siempre visible -->
-        <div class="qr-modal-footer">
-          <button class="btn btn-secondary btn-sm" @click="showQr = false">Cerrar</button>
-          <a :href="qrUrl" target="_blank" class="btn btn-outline-primary btn-sm">
-            <i class="bi bi-box-arrow-up-right"></i> Abrir página
-          </a>
         </div>
       </div>
     </div>
@@ -506,11 +480,8 @@ const showModal     = ref(false)
 const saving        = ref(false)
 const activeTab     = ref("general")
 const editForm      = ref({})
-const showQr         = ref(false)
-const qrImgUrl       = ref("")
 const qrBlobUrl      = ref(null)
 const qrUrl          = ref("")
-const qrTab          = ref("code")
 const urlCopied      = ref(false)
 const qrLoading      = ref(false)
 const previewData    = ref(null)
@@ -629,14 +600,13 @@ async function handleDelete(a) {
   }
 }
 
-async function openQr() {
+async function activatePublicacion() {
+  activeTab.value   = "publicacion"
   qrUrl.value       = `${window.location.origin}/activo/${editForm.value.list_code}`
-  qrTab.value       = "code"
-  qrBlobUrl.value   = null
-  previewData.value = null
   urlCopied.value   = false
-  showQr.value      = true
-  await loadQrImage()
+  if (!editForm.value.list_code) return
+  if (!qrBlobUrl.value)   loadQrImage()
+  if (!previewData.value) loadPreview()
 }
 
 async function loadQrImage() {
@@ -656,9 +626,7 @@ async function loadQrImage() {
   }
 }
 
-async function switchPreview() {
-  qrTab.value = "preview"
-  if (previewData.value) return
+async function loadPreview() {
   previewLoading.value = true
   try {
     const res = await api.get(`/public/activo/${editForm.value.list_code}`)
@@ -694,7 +662,8 @@ onMounted(load)
 <style scoped>
 /* ── Modal ── */
 .modal-overlay  { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal-box      { background: #fff; border-radius: 16px; width: 580px; max-width: 95vw; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal-box      { background: #fff; border-radius: 16px; width: 580px; max-width: 95vw; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); transition: width .2s ease; }
+.modal-box.modal-wide { width: 760px; }
 .modal-header-bar { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px 0; flex-shrink: 0; }
 .modal-header-bar h2 { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0; }
 .modal-body-area  { padding: 16px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
@@ -719,33 +688,43 @@ onMounted(load)
 }
 .btn-qr:hover { background: #dcfce7; }
 
-/* ── QR Modal ── */
-.qr-modal-box {
-  background: #fff; border-radius: 16px; width: 420px; max-width: 95vw; max-height: 92vh;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-  display: flex; flex-direction: column; overflow: hidden;
+/* ── Pestaña Publicación (QR + Vista previa) ── */
+.pub-tab-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 40px 20px; text-align: center; color: #64748b; font-size: 13px;
 }
-.qr-modal-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  padding: 16px 20px 10px; flex-shrink: 0;
+.pub-tab-empty p { margin: 0; max-width: 320px; line-height: 1.5; }
+
+.pub-tab-layout {
+  display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap;
+  justify-content: center; padding: 6px 0;
 }
-.qr-modal-header h3 { font-size: 15px; font-weight: 700; margin: 0 0 3px; color: #1e293b; display: flex; align-items: center; gap: 7px; }
-.qr-modal-header h3 .bi { color: #10b981; }
-.qr-url-text { font-size: 11px; color: #64748b; margin: 0; word-break: break-all; }
+.pub-col-qr,
+.pub-col-preview {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  flex: 1; min-width: 240px;
+}
 
-.qr-tabs { display: flex; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; padding: 0 8px; }
-.qr-tab { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; padding: 9px; font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: -1px; transition: color .15s; }
-.qr-tab:hover { color: #1e293b; }
-.qr-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.pub-qr-box {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 220px; min-width: 220px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px;
+}
 
-.qr-tab-body { flex: 1; overflow-y: auto; }
-.qr-canvas-wrap { display: flex; justify-content: center; padding: 16px 0 8px; min-height: 180px; align-items: center; }
+.pub-url-box {
+  width: 100%; background: #f1f5f9; border-radius: 8px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pub-url-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
+.pub-url-text  { font-size: 11px; color: #1e293b; word-break: break-all; font-family: ui-monospace, monospace; }
+
+.pub-qr-btns { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+
+.preview-title { font-size: 12px; font-weight: 700; color: #475569; margin: 0; display: flex; align-items: center; gap: 5px; }
+.preview-title .bi { color: #2563eb; }
+
 .qr-img     { border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.1); width: 220px; height: 220px; }
 .qr-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #64748b; font-size: 13px; }
-.qr-actions { display: flex; justify-content: center; gap: 10px; padding: 8px 16px 16px; }
-
-/* Preview tab */
-.qr-preview-body { background: #f1f5f9; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 
 .preview-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px; color: #64748b; font-size: 14px; }
 .preview-spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; }
@@ -793,11 +772,6 @@ onMounted(load)
 .pp-form-placeholder { margin-top: 6px; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 7px; padding: 7px 10px; font-size: 10px; color: #3b82f6; display: flex; align-items: center; gap: 5px; font-weight: 600; }
 
 .preview-hint { font-size: 11px; color: #64748b; text-align: center; margin: 0; display: flex; align-items: flex-start; gap: 5px; max-width: 260px; line-height: 1.4; }
-
-.qr-modal-footer {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 20px 16px; border-top: 1px solid #f1f5f9; flex-shrink: 0;
-}
 
 /* ── Form fields ── */
 .fg       { display: flex; flex-direction: column; gap: 4px; }
