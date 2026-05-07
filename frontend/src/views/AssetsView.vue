@@ -372,14 +372,18 @@
         <!-- Tab: QR Code -->
         <div v-if="qrTab === 'code'" class="qr-tab-body">
           <div class="qr-canvas-wrap">
-            <canvas ref="qrCanvas" class="qr-canvas"></canvas>
+            <div v-if="qrLoading" class="qr-loading">
+              <div class="preview-spinner"></div>
+              <span>Generando QR...</span>
+            </div>
+            <img v-else-if="qrBlobUrl" :src="qrBlobUrl" class="qr-img" alt="QR Activo" />
           </div>
           <div class="qr-actions">
             <button class="btn btn-outline-secondary btn-sm" @click="copyUrl">
               <i class="bi" :class="urlCopied ? 'bi-check-lg' : 'bi-clipboard'"></i>
               {{ urlCopied ? 'Copiado' : 'Copiar URL' }}
             </button>
-            <button class="btn btn-primary btn-sm" @click="downloadQr">
+            <button class="btn btn-primary btn-sm" @click="downloadQr" :disabled="!qrBlobUrl">
               <i class="bi bi-download"></i> Descargar PNG
             </button>
           </div>
@@ -480,13 +484,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from "vue"
+import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 import { useModuleName } from "@/composables/useModuleName"
 import AssetMediaGallery from "@/components/AssetMediaGallery.vue"
-import { encode as encodeQR } from "uqr"
 
 const { moduleName } = useModuleName()
 
@@ -503,12 +506,14 @@ const showModal     = ref(false)
 const saving        = ref(false)
 const activeTab     = ref("general")
 const editForm      = ref({})
-const showQr        = ref(false)
-const qrCanvas      = ref(null)
-const qrUrl         = ref("")
-const qrTab         = ref("code")
-const urlCopied     = ref(false)
-const previewData   = ref(null)
+const showQr         = ref(false)
+const qrImgUrl       = ref("")
+const qrBlobUrl      = ref(null)
+const qrUrl          = ref("")
+const qrTab          = ref("code")
+const urlCopied      = ref(false)
+const qrLoading      = ref(false)
+const previewData    = ref(null)
 const previewLoading = ref(false)
 
 const EMPTY_FORM = () => ({
@@ -625,35 +630,29 @@ async function handleDelete(a) {
 }
 
 async function openQr() {
-  qrUrl.value     = `${window.location.origin}/activo/${editForm.value.list_code}`
-  qrTab.value     = "code"
+  qrUrl.value       = `${window.location.origin}/activo/${editForm.value.list_code}`
+  qrTab.value       = "code"
+  qrBlobUrl.value   = null
   previewData.value = null
-  urlCopied.value = false
-  showQr.value    = true
-  await nextTick()
-  await renderQr()
+  urlCopied.value   = false
+  showQr.value      = true
+  await loadQrImage()
 }
 
-async function renderQr() {
-  await nextTick()
-  if (!qrCanvas.value) return
-  const { size, data } = encodeQR(qrUrl.value, { ecc: "M" })
-  const CANVAS_SIZE = 260
-  const px  = Math.floor(CANVAS_SIZE / (size + 4))   // píxeles por módulo
-  const off = Math.floor((CANVAS_SIZE - size * px) / 2) // margen centrado
-  const canvas = qrCanvas.value
-  canvas.width  = CANVAS_SIZE
-  canvas.height = CANVAS_SIZE
-  const ctx = canvas.getContext("2d")
-  ctx.fillStyle = "#ffffff"
-  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-  ctx.fillStyle = "#1e293b"
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (data[r * size + c]) {
-        ctx.fillRect(off + c * px, off + r * px, px, px)
-      }
-    }
+async function loadQrImage() {
+  qrLoading.value = true
+  try {
+    const token = localStorage.getItem("token") || ""
+    const res   = await fetch(`/api/assets/${editForm.value.id}/qr-image`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!res.ok) throw new Error()
+    const blob      = await res.blob()
+    qrBlobUrl.value = URL.createObjectURL(blob)
+  } catch {
+    showToast("Error generando QR", "error")
+  } finally {
+    qrLoading.value = false
   }
 }
 
@@ -682,10 +681,10 @@ async function copyUrl() {
 }
 
 function downloadQr() {
-  if (!qrCanvas.value) return
-  const link = document.createElement("a")
-  link.download = `qr-activo-${editForm.value.list_code}.png`
-  link.href = qrCanvas.value.toDataURL("image/png")
+  if (!qrBlobUrl.value) return
+  const link      = document.createElement("a")
+  link.download   = `qr-activo-${editForm.value.list_code}.png`
+  link.href       = qrBlobUrl.value
   link.click()
 }
 
@@ -740,8 +739,9 @@ onMounted(load)
 .qr-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
 
 .qr-tab-body { flex: 1; overflow-y: auto; }
-.qr-canvas-wrap { display: flex; justify-content: center; padding: 16px 0 8px; }
-.qr-canvas { border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+.qr-canvas-wrap { display: flex; justify-content: center; padding: 16px 0 8px; min-height: 180px; align-items: center; }
+.qr-img     { border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.1); width: 220px; height: 220px; }
+.qr-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #64748b; font-size: 13px; }
 .qr-actions { display: flex; justify-content: center; gap: 10px; padding: 8px 16px 16px; }
 
 /* Preview tab */

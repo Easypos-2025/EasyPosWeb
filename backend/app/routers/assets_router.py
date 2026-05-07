@@ -1,5 +1,7 @@
+from io import BytesIO
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -136,6 +138,38 @@ async def update_asset(
     await db.commit()
     await db.refresh(asset)
     return await _ser(asset, db)
+
+
+@router.get("/{asset_id:int}/qr-image")
+async def get_asset_qr_image(
+    asset_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Activo no encontrado")
+    if not asset.list_code:
+        raise HTTPException(status_code=400, detail="El activo no tiene Código de Lista asignado")
+    try:
+        import qrcode
+        base = str(request.base_url).rstrip("/")
+        url  = f"{base}/activo/{asset.list_code}"
+        qr   = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img  = qr.make_image(fill_color="#1e293b", back_color="white")
+        buf  = BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return StreamingResponse(
+            buf, media_type="image/png",
+            headers={"Content-Disposition": f"inline; filename=qr-activo-{asset.list_code}.png"}
+        )
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Librería qrcode no instalada en el servidor")
 
 
 @router.delete("/{asset_id:int}")

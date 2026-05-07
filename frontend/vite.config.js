@@ -16,14 +16,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
-  optimizeDeps: {
-    include: ['qrcode']
-  },
-  build: {
-    commonjsOptions: {
-      include: [/qrcode/, /node_modules/]
-    }
-  },
   server: {
     host: true,       // 🔥 CLAVE
     port: 5173,
