@@ -15,18 +15,64 @@ router = APIRouter(prefix="/assets", tags=["Assets"])
 
 
 async def _ser(asset: Asset, db: AsyncSession) -> dict:
-    cat = await db.get(AssetCategory, asset.category_id) if asset.category_id else None
-    cli = await db.get(Client, asset.client_id) if asset.client_id else None
+    cat   = await db.get(AssetCategory, asset.category_id) if asset.category_id else None
+    cli   = await db.get(Client, asset.client_id)          if asset.client_id   else None
+    owner = await db.get(Client, asset.owner_id)           if asset.owner_id    else None
     return {
-        "id":            asset.id,
-        "name":          asset.name,
-        "category_id":   asset.category_id,
-        "category_name": cat.name if cat else "",
-        "client_id":     asset.client_id,
-        "client_name":   cli.name if cli else "",
-        "description":   asset.description or "",
-        "location":      asset.location or "",
+        "id":                   asset.id,
+        "name":                 asset.name,
+        "short_name":           asset.short_name or "",
+        "category_id":          asset.category_id,
+        "category_name":        cat.name if cat else "",
+        "client_id":            asset.client_id,
+        "client_name":          cli.name if cli else "",
+        "owner_id":             asset.owner_id,
+        "owner_name":           owner.name if owner else "",
+        "description":          asset.description or "",
+        "location":             asset.location or "",
+        "address":              asset.address or "",
+        "phone":                asset.phone or "",
+        "sector_id":            asset.sector_id,
+        "is_rented":            asset.is_rented or 0,
+        "is_active":            asset.is_active if asset.is_active is not None else 1,
+        "has_sale_option":      asset.has_sale_option or 0,
+        "canon_value":          float(asset.canon_value)      if asset.canon_value      is not None else None,
+        "cadastral_value":      float(asset.cadastral_value)  if asset.cadastral_value  is not None else None,
+        "commercial_value":     float(asset.commercial_value) if asset.commercial_value is not None else None,
+        "sale_price":           float(asset.sale_price)       if asset.sale_price       is not None else None,
+        "appraisal_year":       asset.appraisal_year,
+        "acquisition_type":     asset.acquisition_type or "",
+        "registration":         asset.registration or "",
+        "property_number":      asset.property_number or "",
+        "additional_reference": asset.additional_reference or "",
+        "list_code":            asset.list_code,
     }
+
+
+def _apply(asset: Asset, data: AssetCreate) -> None:
+    asset.name                 = data.name
+    asset.short_name           = data.short_name or None
+    asset.category_id          = data.category_id
+    asset.client_id            = data.client_id
+    asset.owner_id             = data.owner_id
+    asset.description          = data.description or None
+    asset.location             = data.location or None
+    asset.address              = data.address or None
+    asset.phone                = data.phone or None
+    asset.sector_id            = data.sector_id
+    asset.is_rented            = data.is_rented or 0
+    asset.is_active            = data.is_active if data.is_active is not None else 1
+    asset.has_sale_option      = data.has_sale_option or 0
+    asset.canon_value          = data.canon_value
+    asset.cadastral_value      = data.cadastral_value
+    asset.commercial_value     = data.commercial_value
+    asset.sale_price           = data.sale_price
+    asset.appraisal_year       = data.appraisal_year
+    asset.acquisition_type     = data.acquisition_type or None
+    asset.registration         = data.registration or None
+    asset.property_number      = data.property_number or None
+    asset.additional_reference = data.additional_reference or None
+    asset.list_code            = data.list_code
 
 
 @router.post("/")
@@ -35,8 +81,12 @@ async def create_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    asset = Asset(name=data.name, category_id=data.category_id, client_id=data.client_id,
-                  description=data.description or "", location=data.location or "")
+    if data.list_code is not None:
+        dup = await db.execute(select(Asset).where(Asset.list_code == data.list_code))
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="El Código de Lista ya existe en otro activo")
+    asset = Asset()
+    _apply(asset, data)
     db.add(asset)
     await db.commit()
     await db.refresh(asset)
@@ -76,11 +126,13 @@ async def update_asset(
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Activo no encontrado")
-    asset.name = data.name
-    asset.category_id = data.category_id
-    asset.client_id = data.client_id
-    asset.description = data.description or ""
-    asset.location = data.location or ""
+    if data.list_code is not None:
+        dup = await db.execute(
+            select(Asset).where(Asset.list_code == data.list_code, Asset.id != asset_id)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="El Código de Lista ya existe en otro activo")
+    _apply(asset, data)
     await db.commit()
     await db.refresh(asset)
     return await _ser(asset, db)

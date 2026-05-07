@@ -14,10 +14,10 @@ _USE_SPACES = bool(SPACES_KEY and SPACES_SECRET)
 _LOCAL_UPLOADS = Path(__file__).resolve().parent.parent / "uploads"
 
 
-def _boto_upload(content: bytes, path: str) -> None:
+def _boto_client():
     import boto3
     from botocore.config import Config
-    client = boto3.client(
+    return boto3.client(
         "s3",
         region_name=SPACES_REGION,
         endpoint_url=SPACES_ENDPOINT,
@@ -25,7 +25,14 @@ def _boto_upload(content: bytes, path: str) -> None:
         aws_secret_access_key=SPACES_SECRET,
         config=Config(signature_version="s3v4"),
     )
-    client.put_object(Bucket=SPACES_BUCKET, Key=path, Body=content, ACL="public-read")
+
+
+def _boto_upload(content: bytes, path: str) -> None:
+    _boto_client().put_object(Bucket=SPACES_BUCKET, Key=path, Body=content, ACL="public-read")
+
+
+def _boto_delete(path: str) -> None:
+    _boto_client().delete_object(Bucket=SPACES_BUCKET, Key=path)
 
 
 async def upload_file(content: bytes, path: str) -> str:
@@ -42,3 +49,22 @@ async def upload_file(content: bytes, path: str) -> str:
     async with aiofiles.open(dest, "wb") as f:
         await f.write(content)
     return f"/uploads/{path}"
+
+
+async def delete_file(url: str) -> None:
+    """Elimina un archivo dado su URL pública o ruta local. Silencia errores de 'no existe'."""
+    if not url:
+        return
+    try:
+        if _USE_SPACES and SPACES_BUCKET in url:
+            key = url.split(f"{SPACES_BUCKET}/", 1)[-1]
+            await asyncio.to_thread(_boto_delete, key)
+        else:
+            rel = url.lstrip("/")
+            if rel.startswith("uploads/"):
+                rel = rel[len("uploads/"):]
+            local = _LOCAL_UPLOADS / rel
+            if local.exists():
+                local.unlink()
+    except Exception:
+        pass

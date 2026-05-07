@@ -351,3 +351,83 @@ def send_contact_email(name: str, email: str, message: str,
         f"Contacto Web: {name} — {company or email}",
         _wrap_email("#2563eb", content),
     )
+
+
+def send_inquiry_confirmation(to_email: str, name: str, asset_name: str, confirm_link: str):
+    """Doble opt-in: el interesado confirma que su correo es real."""
+    content = f"""
+    <h2 style="margin:0 0 16px;color:#2563eb;font-size:20px;">
+      &#127968; Confirma tu solicitud de información
+    </h2>
+    <p style="margin:0 0 12px;">Hola <strong>{name}</strong>,</p>
+    <p style="margin:0 0 20px;">
+      Recibimos tu solicitud de información sobre el activo
+      <strong>"{asset_name}"</strong>.
+      Para completar el proceso y que podamos contactarte, necesitamos
+      verificar tu dirección de correo electrónico.
+    </p>
+    <p style="margin:0 0 24px;">
+      <a href="{confirm_link}"
+         style="display:inline-block;background:#2563eb;color:#ffffff;
+                padding:14px 32px;border-radius:8px;text-decoration:none;
+                font-weight:700;font-size:15px;">
+        &#10003; Confirmar mi solicitud
+      </a>
+    </p>
+    <p style="margin:0 0 10px;font-size:13px;color:#64748b;">
+      Si no realizaste esta solicitud, ignora este mensaje y no pasará nada.
+    </p>
+    <div style="background:#f8fafc;border-radius:8px;padding:12px 16px;
+                font-size:12px;color:#94a3b8;margin-top:16px;">
+      &#128274; Este enlace es de un solo uso y expira cuando lo confirmes.
+    </div>
+    """
+    _send(to_email, f"Confirma tu solicitud — {asset_name}", _wrap_email("#2563eb", content))
+
+
+def send_new_inquiry_notification(admin_email: str, inquiry, asset_name: str, list_code):
+    """Notifica al admin que llegó una consulta confirmada."""
+    interest_label = {"arriendo": "Arriendo", "compra": "Compra", "info": "Información general"}.get(
+        inquiry.interest, inquiry.interest
+    )
+    code_str = f"#{list_code}" if list_code else "—"
+    content = f"""
+    <h2 style="margin:0 0 16px;color:#10b981;font-size:20px;">
+      &#128233; Nueva consulta confirmada sobre un activo
+    </h2>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:14px;">
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;background:#f8fafc;width:140px;">Activo</td>
+        <td style="padding:9px 12px;background:#f8fafc;">{asset_name} {code_str}</td>
+      </tr>
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;">Interesado</td>
+        <td style="padding:9px 12px;">{inquiry.name}</td>
+      </tr>
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;background:#f8fafc;">Teléfono</td>
+        <td style="padding:9px 12px;background:#f8fafc;">{inquiry.phone}</td>
+      </tr>
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;">Email</td>
+        <td style="padding:9px 12px;">{inquiry.email}</td>
+      </tr>
+      <tr>
+        <td style="padding:9px 12px;font-weight:700;background:#f8fafc;">Interés</td>
+        <td style="padding:9px 12px;background:#f8fafc;">
+          <strong style="color:#10b981;">{interest_label}</strong>
+        </td>
+      </tr>
+      {"<tr><td style='padding:9px 12px;font-weight:700;'>Mensaje</td><td style='padding:9px 12px;'>" + (inquiry.message or '—') + "</td></tr>" if inquiry.message else ""}
+    </table>
+    <div style="background:#f0fdf4;border-left:4px solid #10b981;
+                padding:12px 16px;border-radius:0 6px 6px 0;font-size:13px;">
+      El interesado ya <strong>confirmó su correo electrónico</strong>.
+      Puedes contactarlo directamente.
+    </div>
+    """
+    _send(
+        admin_email or EMAIL_SENDER,
+        f"[Activo] Nueva consulta confirmada: {asset_name} {code_str}",
+        _wrap_email("#10b981", content),
+    )

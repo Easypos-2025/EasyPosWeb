@@ -4,7 +4,7 @@
     <!-- ENCABEZADO -->
     <div class="page-header">
       <div class="header-left">
-        <button class="btn-back" @click="$router.back()">
+        <button class="btn-back" @click="$router.push('/tasks/my-tasks')">
           <i class="bi bi-arrow-left"></i>
         </button>
         <div>

@@ -17,6 +17,9 @@ from app import models
 # ===============================
 from app.routers.asset_category_router import router as asset_category_router
 from app.routers.assets_router import router as assets_router
+from app.routers.asset_media_router import router as asset_media_router
+from app.routers.public_asset_router import router as public_asset_router
+from app.routers.asset_inquiries_router import router as asset_inquiries_router
 from app.routers.worker_router import router as worker_router
 from app.routers.profession_router import router as profession_router
 from app.routers.task_router import router as task_router
@@ -103,6 +106,86 @@ async def _init_db_data():
             await db.commit()
         except Exception:
             await db.rollback()
+
+        # ── ASSETS: campos extendidos (migración segura columna a columna) ─────
+        _asset_cols = [
+            "ALTER TABLE assets ADD COLUMN short_name VARCHAR(100) NULL",
+            "ALTER TABLE assets ADD COLUMN address VARCHAR(300) NULL",
+            "ALTER TABLE assets ADD COLUMN phone VARCHAR(20) NULL",
+            "ALTER TABLE assets ADD COLUMN sector_id INT NULL",
+            "ALTER TABLE assets ADD COLUMN owner_id INT NULL",
+            "ALTER TABLE assets ADD COLUMN is_rented TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE assets ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE assets ADD COLUMN has_sale_option TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE assets ADD COLUMN canon_value DECIMAL(15,2) NULL",
+            "ALTER TABLE assets ADD COLUMN cadastral_value DECIMAL(15,2) NULL",
+            "ALTER TABLE assets ADD COLUMN commercial_value DECIMAL(15,2) NULL",
+            "ALTER TABLE assets ADD COLUMN sale_price DECIMAL(15,2) NULL",
+            "ALTER TABLE assets ADD COLUMN appraisal_year INT NULL",
+            "ALTER TABLE assets ADD COLUMN acquisition_type VARCHAR(50) NULL",
+            "ALTER TABLE assets ADD COLUMN registration VARCHAR(100) NULL",
+            "ALTER TABLE assets ADD COLUMN property_number VARCHAR(100) NULL",
+            "ALTER TABLE assets ADD COLUMN additional_reference VARCHAR(300) NULL",
+            "ALTER TABLE assets ADD COLUMN list_code INT NULL",
+            "ALTER TABLE assets ADD UNIQUE INDEX uq_assets_list_code (list_code)",
+        ]
+        for _sql in _asset_cols:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── SYSTEM_MODULE: Consultas de Activos ───────────────────────────────
+        try:
+            await db.execute(text("""
+                INSERT IGNORE INTO system_modules (name, route, icon, parent_id, is_active, order_index, is_sysadmin)
+                VALUES ('Consultas Activos', '/assets/inquiries', 'bi-chat-dots', NULL, 1, 0, 0)
+            """))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+        # ── ASSET MEDIA y ASSET INQUIRIES ──────────────────────────────────────
+        _asset_tables = [
+            """CREATE TABLE IF NOT EXISTS asset_media (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                asset_id    INT NOT NULL,
+                file_url    VARCHAR(500) NOT NULL,
+                file_name   VARCHAR(200) NOT NULL,
+                file_type   VARCHAR(10)  NOT NULL,
+                file_size   INT NOT NULL DEFAULT 0,
+                sort_order  SMALLINT NOT NULL DEFAULT 0,
+                uploaded_by INT NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                INDEX idx_am_asset (asset_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS asset_inquiries (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                asset_id      INT NOT NULL,
+                name          VARCHAR(100) NOT NULL,
+                phone         VARCHAR(20)  NOT NULL,
+                email         VARCHAR(150) NOT NULL,
+                interest      VARCHAR(20)  NOT NULL,
+                message       TEXT NULL,
+                confirm_token VARCHAR(64)  NOT NULL,
+                status        VARCHAR(20)  NOT NULL DEFAULT 'pending',
+                ip_address    VARCHAR(45)  NULL,
+                confirmed_at  TIMESTAMP NULL,
+                created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_inquiry_asset_email (asset_id, email),
+                UNIQUE KEY uq_inquiry_token (confirm_token),
+                INDEX idx_ai_asset (asset_id)
+            )""",
+        ]
+        for _sql in _asset_tables:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
         # ── INVENTARIO: tablas base ────────────────────────────────────────────
         inventory_tables = [
@@ -973,6 +1056,9 @@ routers = [
     products_router,
     price_lists_router,
     purchase_orders_router,
+    asset_media_router,
+    public_asset_router,
+    asset_inquiries_router,
 ]
 
 for router in routers:

@@ -110,6 +110,16 @@ const routes = [
     path: "/prestamo-qr/:token",
     name: "QrPrestamoPublic",
     component: () => import("@/views/QrPrestamoPublic.vue"),
+  },
+  {
+    path: "/activo/:listCode",
+    name: "QrAssetPublic",
+    component: () => import("@/views/QrAssetPublicView.vue"),
+  },
+  {
+    path: "/activo/confirmar/:confirmToken",
+    name: "QrAssetConfirm",
+    component: () => import("@/views/QrAssetPublicView.vue"),
     meta: { title: "Confirmar Préstamo" }
   },
 
@@ -254,6 +264,13 @@ const routes = [
         component: () => import("@/views/AssetHistoryView.vue"),
         requiresAuth: true,
         meta: { title: "AssetHistoryView" }
+      },
+      {
+        path: "/assets/inquiries",
+        name: "AssetInquiriesView",
+        component: () => import("@/views/AssetInquiriesView.vue"),
+        requiresAuth: true,
+        meta: { title: "AssetInquiriesView" }
       },
       {
         path: "/tasks/:taskId/detalle",
@@ -577,7 +594,8 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/payment-pending" ||
     to.path.startsWith("/invite/") ||
     to.path.startsWith("/landing/perfil/") ||
-    to.path.startsWith("/prestamo-qr/")
+    to.path.startsWith("/prestamo-qr/") ||
+    to.path.startsWith("/activo/")
   ) {
     return next()
   }

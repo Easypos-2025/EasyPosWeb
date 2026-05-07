@@ -16,6 +16,8 @@ from app.models.user import User
 """
 from app.models.asset_category_model import AssetCategory
 from app.models.asset_model import Asset
+from app.models.asset_media_model import AssetMedia
+from app.models.asset_inquiry_model import AssetInquiry
 
 from app.models.role_model import Role
 
