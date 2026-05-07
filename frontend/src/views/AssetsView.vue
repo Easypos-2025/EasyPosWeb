@@ -531,20 +531,31 @@ async function load() {
   }
 }
 
+function resetPubCache() {
+  if (qrBlobUrl.value) URL.revokeObjectURL(qrBlobUrl.value)
+  qrBlobUrl.value   = null
+  qrUrl.value       = ""
+  previewData.value = null
+  urlCopied.value   = false
+}
+
 function openCreate() {
   editForm.value = EMPTY_FORM()
   activeTab.value = "general"
+  resetPubCache()
   showModal.value = true
 }
 
 function openEdit(a) {
   editForm.value  = { ...a }
   activeTab.value = "general"
+  resetPubCache()
   showModal.value = true
 }
 
 function closeModal() {
   document.querySelectorAll(".field-invalid").forEach(el => el.classList.remove("field-invalid"))
+  resetPubCache()
   showModal.value = false
 }
 
@@ -601,24 +612,19 @@ async function handleDelete(a) {
 }
 
 async function activatePublicacion() {
-  activeTab.value   = "publicacion"
-  qrUrl.value       = `${window.location.origin}/activo/${editForm.value.list_code}`
-  urlCopied.value   = false
+  activeTab.value = "publicacion"
+  urlCopied.value = false
   if (!editForm.value.list_code) return
-  if (!qrBlobUrl.value)   loadQrImage()
-  if (!previewData.value) loadPreview()
+  qrUrl.value = `${window.location.origin}/activo/${editForm.value.list_code}`
+  if (!qrBlobUrl.value) loadQrImage()
+  loadPreview()
 }
 
 async function loadQrImage() {
   qrLoading.value = true
   try {
-    const token = localStorage.getItem("token") || ""
-    const res   = await fetch(`/api/assets/${editForm.value.id}/qr-image`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    if (!res.ok) throw new Error()
-    const blob      = await res.blob()
-    qrBlobUrl.value = URL.createObjectURL(blob)
+    const res = await api.get(`/assets/${editForm.value.id}/qr-image`, { responseType: "blob" })
+    qrBlobUrl.value = URL.createObjectURL(res.data)
   } catch {
     showToast("Error generando QR", "error")
   } finally {
@@ -626,11 +632,22 @@ async function loadQrImage() {
   }
 }
 
+function fullMediaUrl(u) {
+  if (!u) return ""
+  if (/^https?:\/\//i.test(u)) return u
+  const base = import.meta.env.VITE_API_URL || ""
+  return `${base}${u.startsWith("/") ? u : "/" + u}`
+}
+
 async function loadPreview() {
   previewLoading.value = true
   try {
     const res = await api.get(`/public/activo/${editForm.value.list_code}`)
-    previewData.value = res.data
+    const data = res.data
+    if (Array.isArray(data.media)) {
+      data.media = data.media.map(m => ({ ...m, file_url: fullMediaUrl(m.file_url) }))
+    }
+    previewData.value = data
   } catch {
     showToast("Error cargando vista previa", "error")
   } finally {

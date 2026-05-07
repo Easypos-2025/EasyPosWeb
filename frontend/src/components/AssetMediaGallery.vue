@@ -120,10 +120,17 @@ const fileInput  = ref(null)
 
 const isMobile = computed(() => /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))
 
+function fullMediaUrl(u) {
+  if (!u) return ""
+  if (/^https?:\/\//i.test(u)) return u
+  const base = import.meta.env.VITE_API_URL || ""
+  return `${base}${u.startsWith("/") ? u : "/" + u}`
+}
+
 async function load() {
   try {
     const res = await api.get(`/asset-media/${props.assetId}`)
-    media.value = res.data
+    media.value = res.data.map(m => ({ ...m, file_url: fullMediaUrl(m.file_url) }))
   } catch {
     showToast("Error cargando archivos del activo", "error")
   }
