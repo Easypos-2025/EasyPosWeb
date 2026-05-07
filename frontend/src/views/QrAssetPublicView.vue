@@ -182,9 +182,16 @@
 <script setup>
 import { ref, reactive, onMounted } from "vue"
 import { useRoute } from "vue-router"
-import axios from "axios"
+import api from "@/services/apis"
 
 const route = useRoute()
+
+function fullMediaUrl(u) {
+  if (!u) return ""
+  if (/^https?:\/\//i.test(u)) return u
+  const base = import.meta.env.VITE_API_URL || ""
+  return `${base}${u.startsWith("/") ? u : "/" + u}`
+}
 
 const loading       = ref(true)
 const error         = ref("")
@@ -198,8 +205,6 @@ const confirming    = ref(false)
 const confirmLoading = ref(false)
 const confirmResult  = ref("")
 const confirmName    = ref("")
-
-const BASE = import.meta.env.VITE_API_URL || "/api"
 
 const form = reactive({
   name: "", phone: "", email: "", interest: "info", message: "", hp_field: "",
@@ -223,7 +228,7 @@ async function load() {
     confirmLoading.value = true
     loading.value        = false
     try {
-      const res = await axios.get(`/api/public/inquiry/confirm/${token}`)
+      const res = await api.get(`/public/inquiry/confirm/${token}`)
       confirmResult.value = res.data.message
       confirmName.value   = res.data.name || ""
     } catch {
@@ -236,8 +241,12 @@ async function load() {
 
   const code = route.params.listCode
   try {
-    const res = await axios.get(`/api/public/activo/${code}`)
-    asset.value = res.data
+    const res = await api.get(`/public/activo/${code}`)
+    const data = res.data
+    if (Array.isArray(data.media)) {
+      data.media = data.media.map(m => ({ ...m, file_url: fullMediaUrl(m.file_url) }))
+    }
+    asset.value = data
   } catch (e) {
     error.value = e.response?.data?.detail || "Activo no encontrado"
   } finally {
@@ -256,7 +265,7 @@ async function submitForm() {
   submitting.value = true
   try {
     const code = route.params.listCode
-    await axios.post(`/api/public/activo/${code}/inquiry`, { ...form })
+    await api.post(`/public/activo/${code}/inquiry`, { ...form })
     sentEmail.value = form.email
     formSent.value  = true
   } catch (e) {
