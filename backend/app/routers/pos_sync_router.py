@@ -698,3 +698,562 @@ async def pull_tables(
     sql += " ORDER BY updated_at ASC LIMIT 500"
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "since": since, "tables": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# INVOICE DETAILS (detalle_factura)
+# ═════════════════════════════════════════
+class InvoiceDetailIn(BaseModel):
+    invoice_number: str
+    order_number: str
+    date: str
+    dish_id: int
+    item: int
+    depends_on: int
+    company_id: int
+    quantity: Optional[float] = 0
+    notes: Optional[str] = None
+    dish_amount: Optional[int] = 0
+    complimentary: Optional[int] = 0
+    discount_pct: Optional[float] = 0
+
+
+@router.post("/sync/push/invoice-details")
+async def push_invoice_details(
+    details: List[InvoiceDetailIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for d in details:
+        key = f"{d.invoice_number}|{d.order_number}|{d.date}|{d.dish_id}|{d.item}|{d.depends_on}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_invoice_details (
+                    invoice_number, order_number, date, dish_id, item, depends_on, company_id,
+                    quantity, notes, dish_amount, complimentary, discount_pct,
+                    synced, updated_at
+                ) VALUES (
+                    :invoice_number, :order_number, :date, :dish_id, :item, :depends_on, :company_id,
+                    :quantity, :notes, :dish_amount, :complimentary, :discount_pct,
+                    1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    quantity     = VALUES(quantity),
+                    notes        = VALUES(notes),
+                    dish_amount  = VALUES(dish_amount),
+                    complimentary= VALUES(complimentary),
+                    discount_pct = VALUES(discount_pct),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), d.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/invoice-details")
+async def pull_invoice_details(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_invoice_details WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "invoice_details": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# INVOICE PAYMENT METHODS (factura_forma_pago)
+# ═════════════════════════════════════════
+class InvoicePaymentIn(BaseModel):
+    item: int
+    payment_method_id: int
+    card_id: int
+    invoice_number: str
+    company_id: int
+    amount: Optional[float] = 0
+    date: Optional[str] = None
+    authorization: Optional[float] = 0
+    notes: Optional[str] = None
+    delivery_amount: Optional[float] = 0
+    prefix: Optional[str] = None
+    fac_pe: Optional[str] = None
+    order_number: Optional[str] = None
+
+
+@router.post("/sync/push/invoice-payments")
+async def push_invoice_payments(
+    payments: List[InvoicePaymentIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for p in payments:
+        key = f"{p.item}|{p.payment_method_id}|{p.card_id}|{p.invoice_number}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_invoice_payment_methods (
+                    item, payment_method_id, card_id, invoice_number, company_id,
+                    amount, date, authorization, notes, delivery_amount,
+                    prefix, fac_pe, order_number, synced, updated_at
+                ) VALUES (
+                    :item, :payment_method_id, :card_id, :invoice_number, :company_id,
+                    :amount, :date, :authorization, :notes, :delivery_amount,
+                    :prefix, :fac_pe, :order_number, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    amount          = VALUES(amount),
+                    authorization   = VALUES(authorization),
+                    notes           = VALUES(notes),
+                    delivery_amount = VALUES(delivery_amount),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), p.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(payments), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/invoice-payments")
+async def pull_invoice_payments(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_invoice_payment_methods WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "invoice_payments": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# RECEIPT ORDERS (recibos_comanda)
+# ═════════════════════════════════════════
+class ReceiptOrderIn(BaseModel):
+    order_number: str
+    date: str
+    receipt_number: str
+    company_id: int
+    table_name: Optional[str] = "0"
+    time: Optional[str] = None
+    waiter_id: Optional[int] = 0
+    cancelled: Optional[int] = 0
+    amount: Optional[int] = 0
+    notes: Optional[str] = None
+    complimentary: Optional[int] = 0
+    guests_count: Optional[int] = 0
+    delivery: Optional[int] = 0
+    customer_id: Optional[int] = 0
+    table_id: Optional[int] = 0
+
+
+@router.post("/sync/push/receipt-orders")
+async def push_receipt_orders(
+    orders: List[ReceiptOrderIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for o in orders:
+        key = f"{o.order_number}|{o.date}|{o.receipt_number}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_orders (
+                    order_number, date, receipt_number, company_id,
+                    table_name, time, waiter_id, cancelled, amount,
+                    notes, complimentary, guests_count, delivery,
+                    customer_id, table_id, synced, updated_at
+                ) VALUES (
+                    :order_number, :date, :receipt_number, :company_id,
+                    :table_name, :time, :waiter_id, :cancelled, :amount,
+                    :notes, :complimentary, :guests_count, :delivery,
+                    :customer_id, :table_id, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    waiter_id   = VALUES(waiter_id),
+                    cancelled   = VALUES(cancelled),
+                    amount      = VALUES(amount),
+                    notes       = VALUES(notes),
+                    customer_id = VALUES(customer_id),
+                    synced      = 1,
+                    updated_at  = NOW()
+            """), o.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/receipt-orders")
+async def pull_receipt_orders(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_receipt_orders WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipt_orders": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# RECEIPT ORDER DETAILS (recibos_detalle_comanda)
+# ═════════════════════════════════════════
+class ReceiptOrderDetailIn(BaseModel):
+    order_number: str
+    date: str
+    receipt_number: str
+    dish_id: int
+    item: int
+    depends_on: int
+    company_id: int
+    quantity: Optional[float] = 0
+    amount: Optional[int] = 0
+    notes: Optional[str] = None
+    complimentary: Optional[int] = 0
+    dish_discount_pct: Optional[float] = 0
+    general_discount_pct: Optional[float] = 0
+    seat_number: Optional[int] = 0
+    changes: Optional[str] = None
+    dish_time: Optional[str] = None
+    pays_tax: Optional[int] = 0
+    tax: Optional[float] = 0
+    original_tax: Optional[float] = 0
+    pays_dish: Optional[int] = 0
+    custom_product: Optional[str] = None
+
+
+@router.post("/sync/push/receipt-order-details")
+async def push_receipt_order_details(
+    details: List[ReceiptOrderDetailIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for d in details:
+        key = f"{d.order_number}|{d.date}|{d.receipt_number}|{d.dish_id}|{d.item}|{d.depends_on}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_order_details (
+                    order_number, date, receipt_number, dish_id, item, depends_on, company_id,
+                    quantity, amount, notes, complimentary, dish_discount_pct,
+                    general_discount_pct, seat_number, changes, dish_time,
+                    pays_tax, tax, original_tax, pays_dish, custom_product,
+                    synced, updated_at
+                ) VALUES (
+                    :order_number, :date, :receipt_number, :dish_id, :item, :depends_on, :company_id,
+                    :quantity, :amount, :notes, :complimentary, :dish_discount_pct,
+                    :general_discount_pct, :seat_number, :changes, :dish_time,
+                    :pays_tax, :tax, :original_tax, :pays_dish, :custom_product,
+                    1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    quantity             = VALUES(quantity),
+                    amount               = VALUES(amount),
+                    notes                = VALUES(notes),
+                    dish_discount_pct    = VALUES(dish_discount_pct),
+                    general_discount_pct = VALUES(general_discount_pct),
+                    pays_tax             = VALUES(pays_tax),
+                    tax                  = VALUES(tax),
+                    synced               = 1,
+                    updated_at           = NOW()
+            """), d.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/receipt-order-details")
+async def pull_receipt_order_details(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_receipt_order_details WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipt_order_details": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# RECEIPT INVOICE DETAILS (recibos_detalle_factura)
+# ═════════════════════════════════════════
+class ReceiptInvoiceDetailIn(BaseModel):
+    receipt_number: str
+    order_number: str
+    date: str
+    dish_id: int
+    item: int
+    depends_on: int
+    company_id: int
+    quantity: Optional[float] = None
+    notes: Optional[str] = None
+    dish_amount: Optional[int] = 0
+    complimentary: Optional[int] = 0
+    discount_pct: Optional[float] = 0
+
+
+@router.post("/sync/push/receipt-invoice-details")
+async def push_receipt_invoice_details(
+    details: List[ReceiptInvoiceDetailIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for d in details:
+        key = f"{d.receipt_number}|{d.order_number}|{d.date}|{d.dish_id}|{d.item}|{d.depends_on}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_invoice_details (
+                    receipt_number, order_number, date, dish_id, item, depends_on, company_id,
+                    quantity, notes, dish_amount, complimentary, discount_pct,
+                    synced, updated_at
+                ) VALUES (
+                    :receipt_number, :order_number, :date, :dish_id, :item, :depends_on, :company_id,
+                    :quantity, :notes, :dish_amount, :complimentary, :discount_pct,
+                    1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    quantity     = VALUES(quantity),
+                    notes        = VALUES(notes),
+                    dish_amount  = VALUES(dish_amount),
+                    discount_pct = VALUES(discount_pct),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), d.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/receipt-invoice-details")
+async def pull_receipt_invoice_details(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_receipt_invoice_details WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipt_invoice_details": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# RECEIPT PAYMENT METHODS (recibos_forma_pago)
+# ═════════════════════════════════════════
+class ReceiptPaymentIn(BaseModel):
+    item: int
+    payment_method_id: int
+    card_id: int
+    receipt_number: str
+    company_id: int
+    amount: Optional[float] = 0
+    date: Optional[str] = None
+    authorization: Optional[float] = 0
+    notes: Optional[str] = None
+    delivery_amount: Optional[float] = 0
+    prefix: Optional[str] = None
+    fac_pe: Optional[str] = None
+    order_number: Optional[str] = None
+
+
+@router.post("/sync/push/receipt-payments")
+async def push_receipt_payments(
+    payments: List[ReceiptPaymentIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for p in payments:
+        key = f"{p.item}|{p.payment_method_id}|{p.card_id}|{p.receipt_number}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_payment_methods (
+                    item, payment_method_id, card_id, receipt_number, company_id,
+                    amount, date, authorization, notes, delivery_amount,
+                    prefix, fac_pe, order_number, synced, updated_at
+                ) VALUES (
+                    :item, :payment_method_id, :card_id, :receipt_number, :company_id,
+                    :amount, :date, :authorization, :notes, :delivery_amount,
+                    :prefix, :fac_pe, :order_number, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    amount          = VALUES(amount),
+                    authorization   = VALUES(authorization),
+                    notes           = VALUES(notes),
+                    delivery_amount = VALUES(delivery_amount),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), p.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(payments), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/receipt-payments")
+async def pull_receipt_payments(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_receipt_payment_methods WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipt_payments": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# CASH REGISTER CLOSINGS (cajas_cierres)
+# ═════════════════════════════════════════
+class CashClosingIn(BaseModel):
+    id: int
+    company_id: int
+    register_number: Optional[int] = 0
+    shift: Optional[int] = 0
+    date: Optional[str] = None
+    base_amount: Optional[float] = 0
+    total_sales: Optional[float] = 0
+    cash_sales: Optional[float] = 0
+    voucher_sales: Optional[float] = 0
+    tips: Optional[float] = 0
+    extra_tips: Optional[float] = 0
+    expenses: Optional[float] = 0
+    vouchers: Optional[float] = 0
+    manager_consumption: Optional[float] = 0
+    final_base: Optional[float] = 0
+    total_invoices: Optional[int] = 0
+    voucher_invoices: Optional[int] = 0
+    copy_invoices: Optional[int] = 0
+    voided_invoices: Optional[int] = 0
+    invoice_start: Optional[str] = "0"
+    invoice_end: Optional[str] = "0"
+    bills: Optional[float] = 0
+    coins: Optional[float] = 0
+    purchases: Optional[float] = 0
+    customer_sales: Optional[float] = 0
+    closed: Optional[int] = 0
+    invoice_start_manual: Optional[str] = None
+    invoice_end_manual: Optional[str] = None
+    delivery_income: Optional[float] = 0
+    delivery_expense: Optional[float] = 0
+    opened_pc: Optional[str] = None
+    closing_notes: Optional[str] = None
+    opening_datetime: Optional[str] = None
+    closing_datetime: Optional[str] = None
+
+
+@router.post("/sync/push/cash-closings")
+async def push_cash_closings(
+    closings: List[CashClosingIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for c in closings:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_register_closings (
+                    id, company_id, register_number, shift, date,
+                    base_amount, total_sales, cash_sales, voucher_sales,
+                    tips, extra_tips, expenses, vouchers, manager_consumption,
+                    final_base, total_invoices, voucher_invoices, copy_invoices,
+                    voided_invoices, invoice_start, invoice_end, bills, coins,
+                    purchases, customer_sales, closed, invoice_start_manual,
+                    invoice_end_manual, delivery_income, delivery_expense,
+                    opened_pc, closing_notes, opening_datetime, closing_datetime,
+                    synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :register_number, :shift, :date,
+                    :base_amount, :total_sales, :cash_sales, :voucher_sales,
+                    :tips, :extra_tips, :expenses, :vouchers, :manager_consumption,
+                    :final_base, :total_invoices, :voucher_invoices, :copy_invoices,
+                    :voided_invoices, :invoice_start, :invoice_end, :bills, :coins,
+                    :purchases, :customer_sales, :closed, :invoice_start_manual,
+                    :invoice_end_manual, :delivery_income, :delivery_expense,
+                    :opened_pc, :closing_notes, :opening_datetime, :closing_datetime,
+                    1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    total_sales     = VALUES(total_sales),
+                    cash_sales      = VALUES(cash_sales),
+                    total_invoices  = VALUES(total_invoices),
+                    voided_invoices = VALUES(voided_invoices),
+                    final_base      = VALUES(final_base),
+                    closed          = VALUES(closed),
+                    closing_notes   = VALUES(closing_notes),
+                    closing_datetime= VALUES(closing_datetime),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), c.dict())
+            saved.append(c.id)
+        except Exception as e:
+            failed.append({"id": c.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(closings), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/cash-closings")
+async def pull_cash_closings(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_cash_register_closings WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "cash_closings": [dict(r) for r in rows]}
