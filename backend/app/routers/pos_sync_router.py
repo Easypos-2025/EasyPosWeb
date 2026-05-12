@@ -405,3 +405,296 @@ async def pull_receipts(
     sql += " ORDER BY updated_at ASC LIMIT 500"
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "since": since, "receipts": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# DISHES (platos)
+# ═════════════════════════════════════════
+class DishIn(BaseModel):
+    id: int
+    company_id: int
+    name: Optional[str] = None
+    product_code: Optional[str] = None
+    price: Optional[int] = 0
+    preparation_time: Optional[int] = 0
+    active: Optional[int] = 0
+    category_id: Optional[int] = 0
+    photo_path: Optional[str] = None
+    description: Optional[str] = None
+    printer: Optional[str] = None
+    comment: Optional[str] = None
+    extra_print: Optional[str] = None
+    printer_2: Optional[str] = None
+    pre_preparation: Optional[int] = 0
+    offer: Optional[int] = 0
+    offer_priority: Optional[int] = 0
+    tax: Optional[float] = 0
+    wholesale_price: Optional[float] = 0
+    product_cost: Optional[float] = 0
+    minimum_stock: Optional[float] = 0
+    ask_sale_price: Optional[int] = 0
+    ask_product_description: Optional[int] = 0
+
+
+@router.post("/sync/push/dishes")
+async def push_dishes(
+    dishes: List[DishIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for d in dishes:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_dishes (
+                    id, company_id, name, product_code, price, preparation_time,
+                    active, category_id, photo_path, description, printer, comment,
+                    extra_print, printer_2, pre_preparation, offer, offer_priority,
+                    tax, wholesale_price, product_cost, minimum_stock,
+                    ask_sale_price, ask_product_description, synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :name, :product_code, :price, :preparation_time,
+                    :active, :category_id, :photo_path, :description, :printer, :comment,
+                    :extra_print, :printer_2, :pre_preparation, :offer, :offer_priority,
+                    :tax, :wholesale_price, :product_cost, :minimum_stock,
+                    :ask_sale_price, :ask_product_description, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    name                   = VALUES(name),
+                    product_code           = VALUES(product_code),
+                    price                  = VALUES(price),
+                    active                 = VALUES(active),
+                    category_id            = VALUES(category_id),
+                    description            = VALUES(description),
+                    tax                    = VALUES(tax),
+                    wholesale_price        = VALUES(wholesale_price),
+                    product_cost           = VALUES(product_cost),
+                    minimum_stock          = VALUES(minimum_stock),
+                    synced                 = 1,
+                    updated_at             = NOW()
+            """), d.dict())
+            saved.append(d.id)
+        except Exception as e:
+            failed.append({"id": d.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(dishes), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/dishes")
+async def pull_dishes(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_dishes WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "dishes": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# EMPLOYEES (empleados)
+# ═════════════════════════════════════════
+class EmployeeIn(BaseModel):
+    id: int
+    company_id: int
+    name: str
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    login: str
+    password: str
+    status: Optional[int] = 0
+    employee_type: Optional[int] = 0
+    personal_skin: Optional[int] = 0
+
+
+@router.post("/sync/push/employees")
+async def push_employees(
+    employees: List[EmployeeIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for e in employees:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_employees (
+                    id, company_id, name, phone, address, login, password,
+                    status, employee_type, personal_skin, synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :name, :phone, :address, :login, :password,
+                    :status, :employee_type, :personal_skin, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    name          = VALUES(name),
+                    phone         = VALUES(phone),
+                    address       = VALUES(address),
+                    login         = VALUES(login),
+                    password      = VALUES(password),
+                    status        = VALUES(status),
+                    employee_type = VALUES(employee_type),
+                    synced        = 1,
+                    updated_at    = NOW()
+            """), e.dict())
+            saved.append(e.id)
+        except Exception as e2:
+            failed.append({"id": e.id, "error": str(e2)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(employees), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/employees")
+async def pull_employees(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_employees WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "employees": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# WAITERS (meseros)
+# ═════════════════════════════════════════
+class WaiterIn(BaseModel):
+    id: int
+    company_id: int
+    name: str
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    password: Optional[str] = None
+    status: Optional[int] = 0
+    employee_type: Optional[int] = 0
+
+
+@router.post("/sync/push/waiters")
+async def push_waiters(
+    waiters: List[WaiterIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for w in waiters:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_waiters (
+                    id, company_id, name, phone, address, password,
+                    status, employee_type, synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :name, :phone, :address, :password,
+                    :status, :employee_type, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    name          = VALUES(name),
+                    phone         = VALUES(phone),
+                    address       = VALUES(address),
+                    password      = VALUES(password),
+                    status        = VALUES(status),
+                    employee_type = VALUES(employee_type),
+                    synced        = 1,
+                    updated_at    = NOW()
+            """), w.dict())
+            saved.append(w.id)
+        except Exception as e:
+            failed.append({"id": w.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(waiters), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/waiters")
+async def pull_waiters(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_waiters WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "waiters": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# TABLES LAYOUT (mesas)
+# ═════════════════════════════════════════
+class TableLayoutIn(BaseModel):
+    id: int
+    company_id: int
+    branch_id: Optional[int] = 0
+    name: str
+    location: Optional[str] = ""
+    seats: Optional[int] = 0
+    customer_id: Optional[int] = 0
+    dynamic_zone: Optional[int] = 0
+    active: Optional[int] = 0
+    zone_id: Optional[int] = 0
+
+
+@router.post("/sync/push/tables")
+async def push_tables(
+    tables: List[TableLayoutIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for t in tables:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_tables_layout (
+                    id, company_id, branch_id, name, location, seats,
+                    customer_id, dynamic_zone, active, zone_id, synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :branch_id, :name, :location, :seats,
+                    :customer_id, :dynamic_zone, :active, :zone_id, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    name         = VALUES(name),
+                    location     = VALUES(location),
+                    seats        = VALUES(seats),
+                    active       = VALUES(active),
+                    zone_id      = VALUES(zone_id),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), t.dict())
+            saved.append(t.id)
+        except Exception as e:
+            failed.append({"id": t.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(tables), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/tables")
+async def pull_tables(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_tables_layout WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "tables": [dict(r) for r in rows]}
