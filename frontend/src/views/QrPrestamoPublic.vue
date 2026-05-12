@@ -43,15 +43,32 @@
           <div class="info-row"><span>Artículo</span><strong>{{ info.articulo }}</strong></div>
           <div v-if="info.articulo_codigo" class="info-row"><span>Código</span><strong>{{ info.articulo_codigo }}</strong></div>
           <div class="info-row"><span>Cantidad</span><strong>{{ info.cantidad }}</strong></div>
-          <div class="info-row"><span>Entregado a</span><strong>{{ info.colaborador_nombre }}</strong></div>
+          <div v-if="info.task_leader_nombre" class="info-row"><span>Responsable</span><strong>{{ info.task_leader_nombre }}</strong></div>
+          <div v-if="info.colaborador_nombre" class="info-row"><span>Colaborador</span><strong>{{ info.colaborador_nombre }}</strong></div>
           <div v-if="info.fecha_retorno_esperada" class="info-row"><span>Devolver antes del</span><strong>{{ fmtDate(info.fecha_retorno_esperada) }}</strong></div>
         </div>
+
+        <!-- Selección de quién firma — solo si hay colaborador -->
+        <div v-if="!confirmed && info.tiene_colaborador && !signedBy" class="signer-select">
+          <p class="signer-label">¿Quién confirma la recepción?</p>
+          <button class="btn-signer" @click="signedBy = 'leader'">
+            <i class="bi bi-person-badge"></i>
+            {{ info.task_leader_nombre || 'Líder de tarea' }}
+            <small>Responsable</small>
+          </button>
+          <button class="btn-signer btn-signer-collab" @click="signedBy = 'collaborator'">
+            <i class="bi bi-person"></i>
+            {{ info.colaborador_nombre || 'Colaborador' }}
+            <small>Colaborador externo</small>
+          </button>
+        </div>
+
         <div v-if="confirmed" class="qr-state qr-done">
           <i class="bi bi-check-circle-fill"></i>
           <h3>¡Recepción confirmada!</h3>
           <p>Queda registrado que recibiste el artículo.</p>
         </div>
-        <button v-else class="btn-confirm recepcion-btn" @click="confirmar" :disabled="confirming">
+        <button v-else-if="!info.tiene_colaborador || signedBy" class="btn-confirm recepcion-btn" @click="confirmar" :disabled="confirming">
           <i v-if="confirming" class="bi bi-arrow-repeat spin"></i>
           <i v-else class="bi bi-hand-thumbs-up"></i>
           {{ confirming ? 'Confirmando...' : 'Confirmar que lo recibí' }}
@@ -68,14 +85,31 @@
         <div class="info-block">
           <div class="info-row"><span>Artículo</span><strong>{{ info.articulo }}</strong></div>
           <div class="info-row"><span>Cantidad</span><strong>{{ info.cantidad }}</strong></div>
-          <div class="info-row"><span>Devuelto por</span><strong>{{ info.colaborador_nombre }}</strong></div>
+          <div v-if="info.task_leader_nombre" class="info-row"><span>Responsable</span><strong>{{ info.task_leader_nombre }}</strong></div>
+          <div v-if="info.colaborador_nombre" class="info-row"><span>Colaborador</span><strong>{{ info.colaborador_nombre }}</strong></div>
         </div>
+
+        <!-- Selección de quién firma — solo si hay colaborador -->
+        <div v-if="!confirmed && info.tiene_colaborador && !signedBy" class="signer-select">
+          <p class="signer-label">¿Quién confirma la devolución?</p>
+          <button class="btn-signer" @click="signedBy = 'leader'">
+            <i class="bi bi-person-badge"></i>
+            {{ info.task_leader_nombre || 'Líder de tarea' }}
+            <small>Responsable</small>
+          </button>
+          <button class="btn-signer btn-signer-collab" @click="signedBy = 'collaborator'">
+            <i class="bi bi-person"></i>
+            {{ info.colaborador_nombre || 'Colaborador' }}
+            <small>Colaborador externo</small>
+          </button>
+        </div>
+
         <div v-if="confirmed" class="qr-state qr-done">
           <i class="bi bi-check-circle-fill"></i>
           <h3>¡Devolución confirmada!</h3>
           <p>Queda registrado que devolviste el artículo.</p>
         </div>
-        <button v-else class="btn-confirm devolucion-btn" @click="confirmar" :disabled="confirming">
+        <button v-else-if="!info.tiene_colaborador || signedBy" class="btn-confirm devolucion-btn" @click="confirmar" :disabled="confirming">
           <i v-if="confirming" class="bi bi-arrow-repeat spin"></i>
           <i v-else class="bi bi-box-arrow-in-left"></i>
           {{ confirming ? 'Confirmando...' : 'Confirmar que lo entregué' }}
@@ -101,6 +135,7 @@ const error     = ref(null)
 const info      = ref(null)
 const confirmed = ref(false)
 const confirming = ref(false)
+const signedBy  = ref(null)  // 'leader' | 'collaborator' | null
 
 function fmtDate(iso) {
   if (!iso) return ""
@@ -126,7 +161,12 @@ async function loadInfo() {
 async function confirmar() {
   confirming.value = true
   try {
-    const res = await fetch(`${apiBase}/qr/prestamo/${token}/confirmar`, { method: "POST" })
+    const body = { signed_by: signedBy.value || "leader" }
+    const res = await fetch(`${apiBase}/qr/prestamo/${token}/confirmar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
     if (!res.ok) {
       const data = await res.json()
       alert(data.detail || "Error al confirmar")
@@ -213,4 +253,17 @@ onMounted(loadInfo)
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* Selección de firmante */
+.signer-select { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.signer-label  { font-size: 13px; font-weight: 600; color: #475569; text-align: center; margin: 0; }
+.btn-signer {
+  width: 100%; padding: 14px 16px; border: 2px solid #bfdbfe; border-radius: 12px;
+  background: #eff6ff; color: #1d4ed8; font-size: 14px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 10px; text-align: left; transition: all .15s;
+}
+.btn-signer small { font-size: 11px; font-weight: 400; color: #64748b; margin-left: auto; }
+.btn-signer:hover { background: #dbeafe; border-color: #93c5fd; }
+.btn-signer-collab { border-color: #d8b4fe; background: #f3e8ff; color: #7c3aed; }
+.btn-signer-collab:hover { background: #ede9fe; border-color: #c4b5fd; }
 </style>

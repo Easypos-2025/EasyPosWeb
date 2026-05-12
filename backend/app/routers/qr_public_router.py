@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.loan_model import Loan
 from app.models.bodega_item_model import BodegaItem
 from app.models.external_collaborator_model import ExternalCollaborator
+from app.models.user_model import User
 
 router = APIRouter(prefix="/qr", tags=["QRPublic"])
 ESTADOS_ACTIVOS = {"pendiente_confirmacion", "activo", "retorno_pendiente"}
@@ -23,24 +24,35 @@ async def _get_loan_by_token(token: str, db: AsyncSession) -> Loan:
 
 @router.get("/prestamo/{token}")
 async def qr_info(token: str, db: AsyncSession = Depends(get_db)):
-    loan = await _get_loan_by_token(token, db)
-    item = await db.get(BodegaItem, loan.bodega_item_id)
-    collab = await db.get(ExternalCollaborator, loan.external_collaborator_id)
+    loan   = await _get_loan_by_token(token, db)
+    item   = await db.get(BodegaItem, loan.bodega_item_id)
+    leader = await db.get(User, loan.task_leader_id) if loan.task_leader_id else None
+    collab = await db.get(ExternalCollaborator, loan.external_collaborator_id) if loan.external_collaborator_id else None
     accion = None
     if loan.estado == "pendiente_confirmacion":
         accion = "confirmar_recepcion"
     elif loan.estado == "retorno_pendiente":
         accion = "confirmar_devolucion"
-    return {"loan_id": loan.id, "estado": loan.estado, "accion_disponible": accion,
-            "articulo": item.nombre if item else "—", "articulo_codigo": item.codigo if item else None,
-            "cantidad": loan.cantidad, "colaborador_nombre": collab.nombre if collab else "—",
-            "colaborador_empresa": collab.empresa if collab else None,
-            "fecha_retorno_esperada": loan.fecha_retorno_esperada.isoformat() if loan.fecha_retorno_esperada else None}
+    return {
+        "loan_id": loan.id, "estado": loan.estado, "accion_disponible": accion,
+        "articulo": item.nombre if item else "—", "articulo_codigo": item.codigo if item else None,
+        "cantidad": loan.cantidad,
+        "task_leader_nombre": leader.nombre if leader else None,
+        "task_leader_id": loan.task_leader_id,
+        "colaborador_nombre": collab.nombre if collab else None,
+        "colaborador_empresa": collab.empresa if collab else None,
+        "tiene_colaborador": collab is not None,
+        "qr_signed_by": loan.qr_signed_by,
+        "fecha_retorno_esperada": loan.fecha_retorno_esperada.isoformat() if loan.fecha_retorno_esperada else None,
+    }
 
 
 @router.post("/prestamo/{token}/confirmar")
-async def qr_confirmar(token: str, db: AsyncSession = Depends(get_db)):
+async def qr_confirmar(token: str, data: dict = Body(default={}), db: AsyncSession = Depends(get_db)):
     loan = await _get_loan_by_token(token, db)
+    signed_by = data.get("signed_by")  # 'leader' | 'collaborator'
+    if signed_by in ("leader", "collaborator"):
+        loan.qr_signed_by = signed_by
     if loan.estado == "pendiente_confirmacion":
         item = await db.get(BodegaItem, loan.bodega_item_id)
         if item:

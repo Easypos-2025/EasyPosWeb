@@ -5,13 +5,24 @@
       :sidebar-right-open="sidebarRightOpen"
       @toggle-sidebar="toggleSidebar"
       @toggle-sidebar-right="toggleSidebarRight"
+      @open-upgrade-modal="showUpgradeModal = true"
     />
 
-    <!-- BANNER: plan vencido (bloqueante) -->
-    <div v-if="paymentStatus === 'expired'" class="plan-banner banner-expired">
-      <i class="bi bi-exclamation-triangle-fill me-2"></i>
-      <span>Tu plan venció. Renuévalo para continuar usando todas las funciones.</span>
-      <button class="banner-btn" @click="goRenew">Renovar ahora</button>
+    <!-- OVERLAY BLOQUEANTE: plan vencido — cubre todo el contenido -->
+    <div v-if="paymentStatus === 'expired'" class="plan-expired-overlay">
+      <div class="plan-expired-card">
+        <div class="pec-icon"><i class="bi bi-alarm-fill"></i></div>
+        <h2 class="pec-title">Tu plan venció</h2>
+        <p class="pec-text">
+          Para continuar usando EasyPosWeb debes renovar tu plan.
+          Haz clic en el botón de abajo, sube tu comprobante de pago y
+          en minutos estarás activo nuevamente.
+        </p>
+        <button class="pec-btn" @click="goRenew">
+          <i class="bi bi-credit-card-2-front me-2"></i>Renovar plan ahora
+        </button>
+        <p class="pec-hint">¿Necesitas ayuda? Contáctanos en soporte.</p>
+      </div>
     </div>
 
     <!-- BANNER: upgrade en revisión (NO bloqueante) -->
@@ -157,24 +168,38 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
 </style>
 
 <style scoped>
+/* Overlay bloqueante — plan vencido */
+.plan-expired-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(15,23,42,.85);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.plan-expired-card {
+  background: #fff; border-radius: 20px; max-width: 440px; width: 100%;
+  padding: 36px 32px; box-shadow: 0 30px 80px rgba(0,0,0,.4);
+  display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center;
+}
+.pec-icon { font-size: 52px; color: #ef4444; }
+.pec-title { font-size: 22px; font-weight: 800; color: #1e293b; margin: 0; }
+.pec-text  { font-size: 14px; color: #475569; line-height: 1.6; margin: 0; }
+.pec-btn {
+  background: #ef4444; color: #fff; border: none; border-radius: 10px;
+  padding: 12px 28px; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.pec-btn:hover { background: #dc2626; }
+.pec-hint { font-size: 12px; color: #94a3b8; margin: 0; }
+
 /* Banners de estado de plan */
 .plan-banner {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 10px 18px; font-size: .84rem; font-weight: 600;
   position: sticky; top: 0; z-index: 90;
 }
-.banner-expired {
-  background: #fef2f2; color: #b91c1c; border-bottom: 2px solid #fca5a5;
-}
 .banner-upgrade {
   background: #eff6ff; color: #1d4ed8; border-bottom: 2px solid #bfdbfe;
 }
-.banner-btn {
-  margin-left: auto; background: #ef4444; color: #fff;
-  border: none; border-radius: 6px; padding: 5px 14px;
-  font-size: .8rem; font-weight: 700; cursor: pointer; white-space: nowrap;
-}
-.banner-btn:hover { background: #dc2626; }
 .banner-btn-outline {
   margin-left: auto; background: transparent; color: #2563eb;
   border: 1.5px solid #2563eb; border-radius: 6px; padding: 4px 12px;

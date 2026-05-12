@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, String, Text, ForeignKey, TIMESTAMP, func, UniqueConstraint
+from sqlalchemy import Boolean, Integer, String, Text, ForeignKey, TIMESTAMP, func, UniqueConstraint
 from app.database import Base
 
 
@@ -22,5 +22,6 @@ class AssetInquiry(Base):
     confirm_token:   Mapped[str]           = mapped_column(String(64), unique=True, nullable=False)
     status:          Mapped[str]           = mapped_column(String(20), nullable=False, default="pending")  # pending | confirmed | expired
     ip_address:      Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    notified:        Mapped[bool]           = mapped_column(Boolean, default=False, nullable=False)
     confirmed_at:    Mapped[Optional[object]] = mapped_column(TIMESTAMP, nullable=True)
     created_at:      Mapped[object]        = mapped_column(TIMESTAMP, server_default=func.now())

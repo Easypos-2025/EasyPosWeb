@@ -66,6 +66,33 @@ async def inquiry_kpis(
     return {"total": total, "confirmed": confirmed, "pending": pending}
 
 
+@router.get("/new-count")
+async def inquiry_new_count(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Nuevas solicitudes confirmadas (sin leer). Usado por el topbar."""
+    from sqlalchemy import text
+    count = (await db.execute(
+        select(func.count()).select_from(AssetInquiry)
+        .where(AssetInquiry.status == "confirmed", AssetInquiry.notified == False)
+    )).scalar() or 0
+    return {"count": count}
+
+
+@router.post("/mark-notified")
+async def mark_inquiries_notified(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Marca todas las solicitudes confirmadas como notificadas."""
+    result = await db.execute(select(AssetInquiry).where(AssetInquiry.status == "confirmed", AssetInquiry.notified == False))
+    for inq in result.scalars().all():
+        inq.notified = True
+    await db.commit()
+    return {"message": "ok"}
+
+
 @router.delete("/{inquiry_id:int}")
 async def delete_inquiry(
     inquiry_id: int,

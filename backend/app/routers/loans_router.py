@@ -19,17 +19,23 @@ QR_EXPIRY_HOURS = 72
 
 
 async def _ser(loan: Loan, db: AsyncSession):
-    item = await db.get(BodegaItem, loan.bodega_item_id)
-    collab = await db.get(ExternalCollaborator, loan.external_collaborator_id)
-    user = await db.get(User, loan.created_by)
+    item   = await db.get(BodegaItem, loan.bodega_item_id)
+    collab = await db.get(ExternalCollaborator, loan.external_collaborator_id) if loan.external_collaborator_id else None
+    creator = await db.get(User, loan.created_by)
+    leader  = await db.get(User, loan.task_leader_id) if loan.task_leader_id else None
     return {"id": loan.id, "company_id": loan.company_id,
             "bodega_item_id": loan.bodega_item_id, "bodega_item_nombre": item.nombre if item else "—",
             "bodega_item_codigo": item.codigo if item else None, "cantidad": loan.cantidad,
+            "task_leader_id": loan.task_leader_id,
+            "task_leader_nombre": leader.nombre if leader else None,
             "external_collaborator_id": loan.external_collaborator_id,
-            "colaborador_nombre": collab.nombre if collab else "—", "colaborador_dni": collab.dni if collab else "—",
+            "colaborador_nombre": collab.nombre if collab else None,
+            "colaborador_dni": collab.dni if collab else None,
             "colaborador_empresa": collab.empresa if collab else None,
-            "created_by_nombre": user.nombre if user else "—", "estado": loan.estado,
+            "created_by_nombre": creator.nombre if creator else "—",
+            "estado": loan.estado,
             "qr_token": loan.qr_token,
+            "qr_signed_by": loan.qr_signed_by,
             "qr_expires_at": loan.qr_expires_at.isoformat() if loan.qr_expires_at else None,
             "fecha_salida_confirmada": loan.fecha_salida_confirmada.isoformat() if loan.fecha_salida_confirmada else None,
             "fecha_retorno_esperada": loan.fecha_retorno_esperada.isoformat() if loan.fecha_retorno_esperada else None,
@@ -66,10 +72,23 @@ async def create_loan(data: dict = Body(...), current_user: User = Depends(get_c
         raise HTTPException(status_code=400, detail="La cantidad debe ser al menos 1")
     if item.cantidad_disponible < cantidad:
         raise HTTPException(status_code=409, detail=f"Stock insuficiente. Disponible: {item.cantidad_disponible}")
-    result = await db.execute(select(ExternalCollaborator).where(ExternalCollaborator.id == data.get("external_collaborator_id"), ExternalCollaborator.company_id == current_user.company_id))
-    collab = result.scalar_one_or_none()
-    if not collab:
-        raise HTTPException(status_code=404, detail="Colaborador no encontrado")
+
+    # Líder de tarea — obligatorio (usuario registrado del sistema)
+    task_leader_id = data.get("task_leader_id")
+    if not task_leader_id:
+        raise HTTPException(status_code=400, detail="El líder de tarea es obligatorio")
+    leader = await db.get(User, task_leader_id)
+    if not leader or leader.company_id != current_user.company_id:
+        raise HTTPException(status_code=404, detail="Líder de tarea no encontrado en esta empresa")
+
+    # Colaborador externo — opcional
+    collab = None
+    if data.get("external_collaborator_id"):
+        result = await db.execute(select(ExternalCollaborator).where(ExternalCollaborator.id == data["external_collaborator_id"], ExternalCollaborator.company_id == current_user.company_id))
+        collab = result.scalar_one_or_none()
+        if not collab:
+            raise HTTPException(status_code=404, detail="Colaborador no encontrado")
+
     fecha_retorno = None
     if data.get("fecha_retorno_esperada"):
         from datetime import date
@@ -78,7 +97,9 @@ async def create_loan(data: dict = Body(...), current_user: User = Depends(get_c
         except ValueError:
             pass
     loan = Loan(company_id=current_user.company_id, bodega_item_id=item.id, cantidad=cantidad,
-                external_collaborator_id=collab.id, created_by=current_user.id,
+                task_leader_id=task_leader_id,
+                external_collaborator_id=collab.id if collab else None,
+                created_by=current_user.id,
                 estado="pendiente_confirmacion", qr_token=secrets.token_urlsafe(32),
                 qr_expires_at=datetime.utcnow() + timedelta(hours=QR_EXPIRY_HOURS),
                 fecha_retorno_esperada=fecha_retorno, notas=(data.get("notas") or "").strip() or None)

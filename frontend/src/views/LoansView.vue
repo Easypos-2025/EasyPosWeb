@@ -57,9 +57,10 @@
           <tr>
             <th>#</th>
             <th>Artículo</th>
-            <th>Colaborador</th>
+            <th>Líder / Colaborador</th>
             <th class="text-center">Cant.</th>
             <th class="text-center">Estado</th>
+            <th class="text-center">Firmó QR</th>
             <th class="text-center">Salida QR</th>
             <th class="text-center">Retorno QR</th>
             <th class="text-center">Vence</th>
@@ -74,14 +75,23 @@
               <div v-if="loan.bodega_item_codigo" class="sub-text">{{ loan.bodega_item_codigo }}</div>
             </td>
             <td>
-              <div>{{ loan.colaborador_nombre }}</div>
-              <div class="sub-text">{{ loan.colaborador_empresa || loan.colaborador_dni }}</div>
+              <div class="leader-col">
+                <span class="leader-tag"><i class="bi bi-person-badge me-1"></i>{{ loan.task_leader_nombre || '—' }}</span>
+                <span v-if="loan.colaborador_nombre" class="sub-text"><i class="bi bi-person me-1"></i>{{ loan.colaborador_nombre }}</span>
+              </div>
             </td>
             <td class="text-center">{{ loan.cantidad }}</td>
             <td class="text-center">
               <span class="estado-badge" :class="estadoClass(loan.estado)">
                 {{ estadoLabel(loan.estado) }}
               </span>
+            </td>
+            <td class="text-center">
+              <span v-if="loan.qr_signed_by" class="signed-tag" :class="loan.qr_signed_by === 'leader' ? 'signed-leader' : 'signed-collab'">
+                <i :class="loan.qr_signed_by === 'leader' ? 'bi bi-person-badge' : 'bi bi-person'"></i>
+                {{ loan.qr_signed_by === 'leader' ? 'Líder' : 'Colaborador' }}
+              </span>
+              <span v-else class="text-muted">—</span>
             </td>
             <td class="text-center">
               <span v-if="loan.fecha_salida_confirmada" class="date-confirmed date-out">
@@ -117,7 +127,7 @@
             </td>
           </tr>
           <tr v-if="filtered.length === 0">
-            <td colspan="9" class="text-center text-muted py-4">No hay préstamos con estos filtros</td>
+            <td colspan="10" class="text-center text-muted py-4">No hay préstamos con estos filtros</td>
           </tr>
         </tbody>
       </table>
@@ -140,9 +150,18 @@
             </select>
           </div>
           <div class="fg">
-            <label>Colaborador externo *</label>
+            <label>Líder de tarea * <span class="label-hint">(usuario responsable del artículo)</span></label>
+            <select v-model="createForm.task_leader_id" class="form-select">
+              <option :value="null">— Seleccionar líder de tarea —</option>
+              <option v-for="u in systemUsers" :key="u.id" :value="u.id">
+                {{ u.nombre }}{{ u.email ? ' — ' + u.email : '' }}
+              </option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Colaborador externo <span class="label-hint">(opcional — quien retira físicamente)</span></label>
             <select v-model="createForm.external_collaborator_id" class="form-select">
-              <option :value="null">— Seleccionar colaborador —</option>
+              <option :value="null">— Sin colaborador externo —</option>
               <option v-for="c in collaborators" :key="c.id" :value="c.id">
                 {{ c.nombre }} — {{ c.dni }}{{ c.empresa ? ' · ' + c.empresa : '' }}
               </option>
@@ -268,10 +287,20 @@
             <div class="detail-sub">Cantidad: <strong>{{ detailLoan?.cantidad }}</strong></div>
           </div>
 
-          <!-- Colaborador -->
+          <!-- Líder de tarea -->
           <div class="detail-section">
-            <div class="detail-section-title"><i class="bi bi-person me-1"></i>Colaborador</div>
-            <div class="detail-value"><strong>{{ detailLoan?.colaborador_nombre }}</strong></div>
+            <div class="detail-section-title"><i class="bi bi-person-badge me-1"></i>Líder de Tarea (Responsable)</div>
+            <div class="detail-value"><strong>{{ detailLoan?.task_leader_nombre || '—' }}</strong></div>
+            <div v-if="detailLoan?.qr_signed_by" class="detail-sub">
+              <i class="bi bi-qr-code me-1"></i>Firmó QR:
+              <strong>{{ detailLoan.qr_signed_by === 'leader' ? 'El líder' : 'El colaborador' }}</strong>
+            </div>
+          </div>
+
+          <!-- Colaborador externo -->
+          <div class="detail-section" v-if="detailLoan?.colaborador_nombre">
+            <div class="detail-section-title"><i class="bi bi-person me-1"></i>Colaborador Externo</div>
+            <div class="detail-value"><strong>{{ detailLoan.colaborador_nombre }}</strong></div>
             <div v-if="detailLoan?.colaborador_dni" class="detail-sub">DNI: {{ detailLoan.colaborador_dni }}</div>
             <div v-if="detailLoan?.colaborador_empresa" class="detail-sub">Empresa: {{ detailLoan.colaborador_empresa }}</div>
           </div>
@@ -341,6 +370,7 @@ const canManage = !['WORKER','AUDITOR'].some(r => (userInfo.role || '').toUpperC
 const loans        = ref([])
 const bodegaItems  = ref([])
 const collaborators = ref([])
+const systemUsers  = ref([])
 const stats        = ref(null)
 const loading      = ref(true)
 const search       = ref("")
@@ -348,7 +378,7 @@ const filterEstado = ref("")
 
 const showCreate = ref(false)
 const creating   = ref(false)
-const createForm = ref({ bodega_item_id: null, external_collaborator_id: null, cantidad: 1, fecha_retorno_esperada: "", notas: "" })
+const createForm = ref({ bodega_item_id: null, task_leader_id: null, external_collaborator_id: null, cantidad: 1, fecha_retorno_esperada: "", notas: "" })
 
 const showQr     = ref(false)
 const selectedLoan = ref(null)
@@ -397,8 +427,9 @@ const filtered = computed(() => {
   return loans.value.filter(l => {
     const q = search.value.toLowerCase()
     const matchSearch = !q ||
-      l.bodega_item_nombre.toLowerCase().includes(q) ||
-      l.colaborador_nombre.toLowerCase().includes(q)
+      (l.bodega_item_nombre || "").toLowerCase().includes(q) ||
+      (l.task_leader_nombre || "").toLowerCase().includes(q) ||
+      (l.colaborador_nombre || "").toLowerCase().includes(q)
     const matchEstado = !filterEstado.value || l.estado === filterEstado.value
     return matchSearch && matchEstado
   })
@@ -407,28 +438,30 @@ const filtered = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const [lr, br, cr, sr] = await Promise.all([
+    const [lr, br, cr, ur, sr] = await Promise.all([
       api.get("/loans/"),
       api.get("/bodega-items/"),
       api.get("/external-collaborators/"),
+      api.get("/users/"),
       api.get("/loans/stats"),
     ])
     loans.value        = lr.data
     bodegaItems.value  = br.data
     collaborators.value = cr.data
+    systemUsers.value  = ur.data
     stats.value        = sr.data
   } catch { showToast("Error cargando datos", "error") }
   finally { loading.value = false }
 }
 
 function openCreate() {
-  createForm.value = { bodega_item_id: null, external_collaborator_id: null, cantidad: 1, fecha_retorno_esperada: "", notas: "" }
+  createForm.value = { bodega_item_id: null, task_leader_id: null, external_collaborator_id: null, cantidad: 1, fecha_retorno_esperada: "", notas: "" }
   showCreate.value = true
 }
 
 async function submitCreate() {
-  if (!createForm.value.bodega_item_id)            { showToast("Selecciona un artículo", "warning"); return }
-  if (!createForm.value.external_collaborator_id)  { showToast("Selecciona un colaborador", "warning"); return }
+  if (!createForm.value.bodega_item_id)   { showToast("Selecciona un artículo", "warning"); return }
+  if (!createForm.value.task_leader_id)   { showToast("El líder de tarea es obligatorio", "warning"); return }
   creating.value = true
   try {
     const r = await api.post("/loans/", createForm.value)
@@ -468,9 +501,12 @@ function downloadQr() {
 function printQr() {
   if (!qrBlobUrl.value) return
   const win = window.open("", "_blank")
+  const lider = selectedLoan.value?.task_leader_nombre || '—'
+  const collab = selectedLoan.value?.colaborador_nombre ? ` / Colaborador: ${selectedLoan.value.colaborador_nombre}` : ''
   win.document.write(`<html><body style="text-align:center;padding:40px">
     <h2>Préstamo #${selectedLoan.value?.id}</h2>
-    <p><strong>${selectedLoan.value?.bodega_item_nombre}</strong> → ${selectedLoan.value?.colaborador_nombre}</p>
+    <p><strong>${selectedLoan.value?.bodega_item_nombre}</strong></p>
+    <p style="font-size:13px">Líder: ${lider}${collab}</p>
     <img src="${qrBlobUrl.value}" style="max-width:300px" />
     <p style="margin-top:16px;font-size:12px;color:#666">Escanea para confirmar recepción o devolución</p>
   </body></html>`)
@@ -482,7 +518,7 @@ function printQr() {
 async function activarRetorno(loan) {
   const { isConfirmed } = await window.Swal.fire({
     title: "¿Activar retorno?",
-    text: `${loan.colaborador_nombre} escaneará el QR para confirmar la devolución de "${loan.bodega_item_nombre}".`,
+    text: `${loan.task_leader_nombre || loan.colaborador_nombre || 'El responsable'} escaneará el QR para confirmar la devolución de "${loan.bodega_item_nombre}".`,
     icon: "question", showCancelButton: true,
     confirmButtonText: "Sí, activar retorno", cancelButtonText: "Cancelar"
   })
@@ -615,6 +651,18 @@ onMounted(load)
 .detail-date-val   { font-size: 13px; color: #374151; font-weight: 500; }
 .detail-notas      { font-size: 13px; color: #374151; white-space: pre-wrap; line-height: 1.5; }
 .detail-footer-info { font-size: 12px; color: #94a3b8; padding: 0 2px; }
+
+/* Líder en tabla */
+.leader-col   { display: flex; flex-direction: column; gap: 2px; }
+.leader-tag   { font-size: 13px; font-weight: 600; color: #1e293b; display: flex; align-items: center; }
+
+/* Badge firmó QR */
+.signed-tag      { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; display: inline-flex; align-items: center; gap: 4px; }
+.signed-leader   { background: #dbeafe; color: #1d4ed8; }
+.signed-collab   { background: #f3e8ff; color: #7c3aed; }
+
+/* Label hint en form */
+.label-hint { font-size: 11px; color: #94a3b8; font-weight: 400; }
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }

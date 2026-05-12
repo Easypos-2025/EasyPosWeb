@@ -199,6 +199,14 @@
                   {{ companyPlan.expiration_date ? 'Vence: ' + formatDate(companyPlan.expiration_date) : 'Indefinido' }}
                 </span>
               </div>
+              <button
+                v-if="isAdminUser && !companyStore.isSystem"
+                class="btn-upgrade-plan"
+                @click.stop="userDropOpen = false; emit('open-upgrade-modal')"
+                title="Mejorar plan"
+              >
+                <i class="bi bi-arrow-up-circle"></i> Mejorar
+              </button>
             </div>
 
             <div class="dropdown-divider"></div>
@@ -319,6 +327,38 @@
                 </div>
               </div>
 
+              <!-- Solicitudes de activos — admin solamente -->
+              <button
+                v-if="isAdminUser"
+                class="notif-subtype-item"
+                :class="{ 'has-count': newInquiriesCount > 0 }"
+                @click="markInquiriesRead(); userDropOpen = false; notifExpanded = false; $router.push('/assets/inquiries')"
+              >
+                <span class="nsi-icon news"><i class="bi bi-envelope-check-fill"></i></span>
+                <span class="nsi-label">
+                  Solicitudes de activos
+                  <small>Nuevas consultas sin revisar</small>
+                </span>
+                <span class="nsi-count" :class="newInquiriesCount > 0 ? 'active' : 'zero'">{{ newInquiriesCount }}</span>
+              </button>
+
+              <!-- Nueva versión disponible -->
+              <div v-if="newVersionAvailable" class="notif-version-banner">
+                <div class="nvb-header">
+                  <i class="bi bi-arrow-up-circle-fill"></i>
+                  <span>Nueva versión disponible</span>
+                </div>
+                <p class="nvb-text">Hay actualizaciones pendientes. Recarga la página o cierra sesión para ver los cambios.</p>
+                <div class="nvb-actions">
+                  <button class="nvb-btn nvb-reload" @click.stop="dismissVersion('reload')">
+                    <i class="bi bi-arrow-clockwise"></i> Recargar
+                  </button>
+                  <button class="nvb-btn nvb-logout" @click.stop="dismissVersion('logout')">
+                    <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                  </button>
+                </div>
+              </div>
+
               <!-- Novedades — próximamente -->
               <div class="notif-subtype-item disabled">
                 <span class="nsi-icon news"><i class="bi bi-megaphone"></i></span>
@@ -378,7 +418,7 @@ import { useCompanyStore } from "@/stores/companyStore"
 import api from "@/services/apis"
 
 const props = defineProps({ sidebarRightOpen: { type: Boolean, default: true } })
-const emit  = defineEmits(["toggle-sidebar", "toggle-sidebar-right"])
+const emit  = defineEmits(["toggle-sidebar", "toggle-sidebar-right", "open-upgrade-modal"])
 
 const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin
 
@@ -405,6 +445,9 @@ const incompleteTaskCount  = ref(0)
 const incompleteTaskList   = ref([])
 const incompleteListOpen   = ref(false)
 const hasNewNotif          = ref(false)
+const newInquiriesCount    = ref(0)
+const newVersionAvailable  = ref(false)
+const newVersionValue      = ref("")
 
 const isPaymentActive = computed(() => {
   const ps = user.value?.payment_status ?? "active"
@@ -420,7 +463,9 @@ const totalNotifCount = computed(() =>
   unreadNotif.value +
   unreadUserNotif.value +
   (companyStore.isSystem ? pendingPaymentsCount.value : 0) +
-  (isAdminUser.value ? incompleteTaskCount.value : 0)
+  (isAdminUser.value ? incompleteTaskCount.value : 0) +
+  (isAdminUser.value ? newInquiriesCount.value : 0) +
+  (newVersionAvailable.value ? 1 : 0)
 )
 
 // ── Audio ────────────────────────────────────────────
@@ -527,6 +572,43 @@ async function loadIncompleteTasks() {
     incompleteTaskCount.value = all.length
     if (incompleteTaskCount.value > prev) playNotifSound()
   } catch {}
+}
+
+async function loadNewInquiries() {
+  if (!isAdminUser.value) return
+  try {
+    const res  = await api.get("/asset-inquiries/new-count")
+    const prev = newInquiriesCount.value
+    newInquiriesCount.value = res.data.count ?? 0
+    if (newInquiriesCount.value > prev) playNotifSound()
+  } catch {}
+}
+
+async function markInquiriesRead() {
+  try { await api.post("/asset-inquiries/mark-notified") } catch {}
+  newInquiriesCount.value = 0
+}
+
+async function checkAppVersion() {
+  try {
+    const res = await api.get("/system-config/app_version")
+    const serverVersion = res.data?.config_value || ""
+    const storedVersion = localStorage.getItem("app_version") || ""
+    if (serverVersion && storedVersion && serverVersion !== storedVersion) {
+      newVersionAvailable.value = true
+      newVersionValue.value = serverVersion
+    } else if (serverVersion && !storedVersion) {
+      localStorage.setItem("app_version", serverVersion)
+    }
+  } catch {}
+}
+
+function dismissVersion(action) {
+  const v = newVersionValue.value
+  if (v) localStorage.setItem("app_version", v)
+  newVersionAvailable.value = false
+  if (action === "reload") window.location.reload()
+  else if (action === "logout") logout()
 }
 
 // ── Plan ────────────────────────────────────────────
@@ -711,13 +793,15 @@ onMounted(async () => {
     loadUnreadCount()
     loadPendingPayments()
     loadIncompleteTasks()
+    loadNewInquiries()
+    checkAppVersion()
     sendHeartbeat()
 
     const [notifMs, hbMs] = await Promise.all([
       getConfigMs("topbar_notif_interval_ms",     60_000),
       getConfigMs("topbar_heartbeat_interval_ms", 180_000),
     ])
-    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments(); loadIncompleteTasks() }, notifMs)
+    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments(); loadIncompleteTasks(); loadNewInquiries() }, notifMs)
     heartbeatTimer = setInterval(sendHeartbeat, hbMs)
   }
   document.addEventListener("click", handleOutsideClick)
@@ -993,6 +1077,12 @@ onUnmounted(() => {
 .item-plan-info:hover { background: rgba(251,191,36,0.12); }
 .item-plan-text { display: flex; flex-direction: column; line-height: 1.3; }
 .item-plan-exp { font-size: 10px; opacity: 0.6; }
+.btn-upgrade-plan {
+  margin-left: auto; flex-shrink: 0; background: rgba(59,130,246,.2); color: #60a5fa;
+  border: 1px solid rgba(59,130,246,.3); border-radius: 6px; padding: 3px 8px;
+  font-size: 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 3px;
+}
+.btn-upgrade-plan:hover { background: rgba(59,130,246,.35); }
 
 /* Badge en el botón SOPORTE */
 .support-icon-wrap { position: relative; display: flex; align-items: center; }
@@ -1178,6 +1268,31 @@ onUnmounted(() => {
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+/* Banner nueva versión */
+.notif-version-banner {
+  margin: 4px 6px;
+  background: linear-gradient(135deg, rgba(37,99,235,.25), rgba(16,185,129,.2));
+  border: 1px solid rgba(96,165,250,.3);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.nvb-header {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .8rem; font-weight: 700; color: #60a5fa; margin-bottom: 4px;
+}
+.nvb-text {
+  font-size: .73rem; color: rgba(255,255,255,.7); margin: 0 0 8px; line-height: 1.4;
+}
+.nvb-actions { display: flex; gap: 6px; }
+.nvb-btn {
+  flex: 1; padding: 6px 8px; border: none; border-radius: 7px; font-size: .73rem;
+  font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;
+}
+.nvb-reload { background: #2563eb; color: #fff; }
+.nvb-reload:hover { background: #1d4ed8; }
+.nvb-logout { background: rgba(255,255,255,.1); color: rgba(255,255,255,.85); }
+.nvb-logout:hover { background: rgba(255,255,255,.15); }
 
 .dropdown-empty {
   display: flex;
