@@ -131,29 +131,277 @@ async def push_invoices(
 # ─────────────────────────────────────────
 @router.get("/sync/pull/invoices")
 async def pull_invoices(
-    company_id: int = Query(..., description="ID de la empresa"),
-    since: Optional[str] = Query(None, description="Fecha desde (YYYY-MM-DD HH:MM:SS)"),
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
+    sql = "SELECT * FROM pos_invoices WHERE company_id = :company_id"
+    params = {"company_id": company_id}
     if since:
-        result = await db.execute(text("""
-            SELECT * FROM pos_invoices
-            WHERE company_id = :company_id
-              AND updated_at >= :since
-            ORDER BY updated_at ASC
-        """), {"company_id": company_id, "since": since})
-    else:
-        result = await db.execute(text("""
-            SELECT * FROM pos_invoices
-            WHERE company_id = :company_id
-            ORDER BY updated_at ASC
-            LIMIT 500
-        """), {"company_id": company_id})
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "invoices": [dict(r) for r in rows]}
 
-    rows = result.mappings().all()
-    return {
-        "total": len(rows),
-        "since": since,
-        "invoices": [dict(r) for r in rows],
-    }
+
+# ═════════════════════════════════════════
+# ORDERS (comanda)
+# ═════════════════════════════════════════
+class OrderIn(BaseModel):
+    order_number: str
+    date: str
+    invoice_number: str
+    company_id: int
+    table_name: Optional[str] = "0"
+    time: Optional[str] = None
+    waiter_id: Optional[int] = 0
+    cancelled: Optional[int] = 0
+    amount: Optional[int] = 0
+    notes: Optional[str] = None
+    complimentary: Optional[int] = 0
+    guests_count: Optional[int] = 0
+    delivery: Optional[int] = 0
+    customer_id: Optional[int] = 0
+    table_id: Optional[int] = 0
+
+
+@router.post("/sync/push/orders")
+async def push_orders(
+    orders: List[OrderIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for o in orders:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_orders (
+                    order_number, date, invoice_number, company_id,
+                    table_name, time, waiter_id, cancelled, amount,
+                    notes, complimentary, guests_count, delivery,
+                    customer_id, table_id, synced, updated_at
+                ) VALUES (
+                    :order_number, :date, :invoice_number, :company_id,
+                    :table_name, :time, :waiter_id, :cancelled, :amount,
+                    :notes, :complimentary, :guests_count, :delivery,
+                    :customer_id, :table_id, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    waiter_id    = VALUES(waiter_id),
+                    cancelled    = VALUES(cancelled),
+                    amount       = VALUES(amount),
+                    notes        = VALUES(notes),
+                    customer_id  = VALUES(customer_id),
+                    table_id     = VALUES(table_id),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), o.dict())
+            saved.append(o.order_number)
+        except Exception as e:
+            failed.append({"order_number": o.order_number, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/orders")
+async def pull_orders(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_orders WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "orders": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# ORDER DETAILS (detalle_comanda)
+# ═════════════════════════════════════════
+class OrderDetailIn(BaseModel):
+    order_number: str
+    date: str
+    invoice_number: str
+    dish_id: int
+    item: int
+    depends_on: int
+    company_id: int
+    quantity: Optional[float] = 0
+    amount: Optional[int] = 0
+    notes: Optional[str] = None
+    complimentary: Optional[int] = 0
+    dish_discount_pct: Optional[float] = 0
+    general_discount_pct: Optional[float] = 0
+    seat_number: Optional[int] = 0
+    changes: Optional[str] = None
+    dish_time: Optional[str] = None
+    pays_tax: Optional[int] = 0
+    tax: Optional[float] = 0
+    original_tax: Optional[float] = 0
+    pays_dish: Optional[int] = 0
+    custom_product: Optional[str] = None
+
+
+@router.post("/sync/push/order-details")
+async def push_order_details(
+    details: List[OrderDetailIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for d in details:
+        key = f"{d.order_number}|{d.date}|{d.invoice_number}|{d.dish_id}|{d.item}|{d.depends_on}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_order_details (
+                    order_number, date, invoice_number, dish_id, item, depends_on, company_id,
+                    quantity, amount, notes, complimentary, dish_discount_pct,
+                    general_discount_pct, seat_number, changes, dish_time,
+                    pays_tax, tax, original_tax, pays_dish, custom_product,
+                    synced, updated_at
+                ) VALUES (
+                    :order_number, :date, :invoice_number, :dish_id, :item, :depends_on, :company_id,
+                    :quantity, :amount, :notes, :complimentary, :dish_discount_pct,
+                    :general_discount_pct, :seat_number, :changes, :dish_time,
+                    :pays_tax, :tax, :original_tax, :pays_dish, :custom_product,
+                    1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    quantity             = VALUES(quantity),
+                    amount               = VALUES(amount),
+                    notes                = VALUES(notes),
+                    dish_discount_pct    = VALUES(dish_discount_pct),
+                    general_discount_pct = VALUES(general_discount_pct),
+                    pays_tax             = VALUES(pays_tax),
+                    tax                  = VALUES(tax),
+                    synced               = 1,
+                    updated_at           = NOW()
+            """), d.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/order-details")
+async def pull_order_details(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_order_details WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "order_details": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# RECEIPTS (recibos) — misma normalización que invoices
+# ═════════════════════════════════════════
+class ReceiptIn(BaseModel):
+    receipt_number: str
+    company_id: int
+    date: Optional[str] = None
+    cash_amount: Optional[int] = 0
+    discount: Optional[int] = 0
+    customer_id: Optional[int] = 0
+    employee_id: Optional[int] = 0
+    voided: Optional[int] = 0
+    paid_vat: Optional[int] = 0
+    adjustment: Optional[int] = 0
+    credit_card_amount: Optional[int] = 0
+    debit_card_amount: Optional[int] = 0
+    tip: Optional[int] = 0
+    shift: Optional[int] = 0
+    time: Optional[str] = None
+    time_text: Optional[str] = None
+    extra_tip: Optional[int] = 0
+    amount_without_tip: Optional[int] = 0
+    analyzed: Optional[int] = 0
+    currency_type_id: Optional[int] = 0
+    foreign_amount: Optional[float] = 0
+    manual_receipt: Optional[int] = 0
+    resolution_id: Optional[int] = 0
+    reservation_receipt: Optional[str] = "0"
+    delivery_receipt: Optional[int] = 0
+
+
+@router.post("/sync/push/receipts")
+async def push_receipts(
+    receipts: List[ReceiptIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in receipts:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipts (
+                    receipt_number, company_id, date, cash_amount, discount,
+                    customer_id, employee_id, voided, paid_vat, adjustment,
+                    credit_card_amount, debit_card_amount, tip, shift,
+                    time, time_text, extra_tip, amount_without_tip, analyzed,
+                    currency_type_id, foreign_amount, manual_receipt, resolution_id,
+                    reservation_receipt, delivery_receipt, synced, updated_at
+                ) VALUES (
+                    :receipt_number, :company_id, :date, :cash_amount, :discount,
+                    :customer_id, :employee_id, :voided, :paid_vat, :adjustment,
+                    :credit_card_amount, :debit_card_amount, :tip, :shift,
+                    :time, :time_text, :extra_tip, :amount_without_tip, :analyzed,
+                    :currency_type_id, :foreign_amount, :manual_receipt, :resolution_id,
+                    :reservation_receipt, :delivery_receipt, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    cash_amount        = VALUES(cash_amount),
+                    discount           = VALUES(discount),
+                    customer_id        = VALUES(customer_id),
+                    employee_id        = VALUES(employee_id),
+                    voided             = VALUES(voided),
+                    credit_card_amount = VALUES(credit_card_amount),
+                    debit_card_amount  = VALUES(debit_card_amount),
+                    tip                = VALUES(tip),
+                    extra_tip          = VALUES(extra_tip),
+                    amount_without_tip = VALUES(amount_without_tip),
+                    currency_type_id   = VALUES(currency_type_id),
+                    delivery_receipt   = VALUES(delivery_receipt),
+                    synced             = 1,
+                    updated_at         = NOW()
+            """), r.dict())
+            saved.append(r.receipt_number)
+        except Exception as e:
+            failed.append({"receipt_number": r.receipt_number, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(receipts), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/receipts")
+async def pull_receipts(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_receipts WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipts": [dict(r) for r in rows]}
