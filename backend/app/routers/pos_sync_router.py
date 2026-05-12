@@ -28,7 +28,7 @@ class InvoiceIn(BaseModel):
     date: Optional[str] = None
     cash_amount: Optional[int] = 0
     discount: Optional[int] = 0
-    id_number: Optional[str] = "1"
+    customer_id: Optional[int] = 0
     employee_id: Optional[int] = 0
     voided: Optional[int] = 0
     paid_vat: Optional[int] = 0
@@ -42,11 +42,10 @@ class InvoiceIn(BaseModel):
     extra_tip: Optional[int] = 0
     amount_without_tip: Optional[int] = 0
     analyzed: Optional[int] = 0
-    currency_type: Optional[int] = 0
+    currency_type_id: Optional[int] = 0
     foreign_amount: Optional[float] = 0
     manual_invoice: Optional[int] = 0
     resolution_id: Optional[int] = 0
-    customer_id: Optional[int] = 0
     reservation_invoice: Optional[str] = "0"
     delivery_invoice: Optional[int] = 0
 
@@ -83,35 +82,34 @@ async def push_invoices(
             await db.execute(text("""
                 INSERT INTO pos_invoices (
                     invoice_number, company_id, date, cash_amount, discount,
-                    id_number, employee_id, voided, paid_vat, adjustment,
+                    customer_id, employee_id, voided, paid_vat, adjustment,
                     credit_card_amount, debit_card_amount, tip, shift,
                     time, time_text, extra_tip, amount_without_tip, analyzed,
-                    currency_type, foreign_amount, manual_invoice, resolution_id,
-                    customer_id, reservation_invoice, delivery_invoice,
-                    synced, updated_at
+                    currency_type_id, foreign_amount, manual_invoice, resolution_id,
+                    reservation_invoice, delivery_invoice, synced, updated_at
                 ) VALUES (
                     :invoice_number, :company_id, :date, :cash_amount, :discount,
-                    :id_number, :employee_id, :voided, :paid_vat, :adjustment,
+                    :customer_id, :employee_id, :voided, :paid_vat, :adjustment,
                     :credit_card_amount, :debit_card_amount, :tip, :shift,
                     :time, :time_text, :extra_tip, :amount_without_tip, :analyzed,
-                    :currency_type, :foreign_amount, :manual_invoice, :resolution_id,
-                    :customer_id, :reservation_invoice, :delivery_invoice,
-                    1, NOW()
+                    :currency_type_id, :foreign_amount, :manual_invoice, :resolution_id,
+                    :reservation_invoice, :delivery_invoice, 1, NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    cash_amount         = VALUES(cash_amount),
-                    discount            = VALUES(discount),
-                    id_number           = VALUES(id_number),
-                    employee_id         = VALUES(employee_id),
-                    voided              = VALUES(voided),
-                    credit_card_amount  = VALUES(credit_card_amount),
-                    debit_card_amount   = VALUES(debit_card_amount),
-                    tip                 = VALUES(tip),
-                    extra_tip           = VALUES(extra_tip),
-                    amount_without_tip  = VALUES(amount_without_tip),
-                    delivery_invoice    = VALUES(delivery_invoice),
-                    synced              = 1,
-                    updated_at          = NOW()
+                    cash_amount        = VALUES(cash_amount),
+                    discount           = VALUES(discount),
+                    customer_id        = VALUES(customer_id),
+                    employee_id        = VALUES(employee_id),
+                    voided             = VALUES(voided),
+                    credit_card_amount = VALUES(credit_card_amount),
+                    debit_card_amount  = VALUES(debit_card_amount),
+                    tip                = VALUES(tip),
+                    extra_tip          = VALUES(extra_tip),
+                    amount_without_tip = VALUES(amount_without_tip),
+                    currency_type_id   = VALUES(currency_type_id),
+                    delivery_invoice   = VALUES(delivery_invoice),
+                    synced             = 1,
+                    updated_at         = NOW()
             """), inv.dict())
             saved.append(inv.invoice_number)
         except Exception as e:

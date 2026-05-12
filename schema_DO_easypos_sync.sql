@@ -214,14 +214,18 @@ CREATE TABLE IF NOT EXISTS `pos_employees` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------
--- pos_invoices (facturas)
+-- pos_invoices (facturas) — normalizada
+-- employee_id  → ref users.id
+-- customer_id  → ref clients.id
+-- currency_type_id → ref type_currencies.id
 -- ---------------------------------------------------
 CREATE TABLE IF NOT EXISTS `pos_invoices` (
   `invoice_number` varchar(50) NOT NULL,
+  `company_id` int(11) NOT NULL DEFAULT '0',
   `date` date DEFAULT NULL,
   `cash_amount` int(11) DEFAULT '0',
   `discount` int(11) DEFAULT '0',
-  `id_number` varchar(50) DEFAULT '1',
+  `customer_id` int(11) DEFAULT '0',
   `employee_id` int(11) DEFAULT '0',
   `voided` tinyint(4) DEFAULT '0',
   `paid_vat` tinyint(1) DEFAULT '0',
@@ -235,15 +239,13 @@ CREATE TABLE IF NOT EXISTS `pos_invoices` (
   `extra_tip` int(11) DEFAULT '0',
   `amount_without_tip` int(11) DEFAULT '0',
   `analyzed` tinyint(1) DEFAULT '0',
-  `currency_type` int(11) DEFAULT '0',
+  `currency_type_id` int(11) DEFAULT '0',
   `foreign_amount` float DEFAULT '0',
   `manual_invoice` tinyint(1) DEFAULT '0',
   `resolution_id` int(11) DEFAULT '0',
-  `customer_id` int(11) DEFAULT '0',
   `reservation_invoice` varchar(50) DEFAULT '0',
   `delivery_invoice` tinyint(4) DEFAULT '0',
   `synced` tinyint(4) DEFAULT '0',
-  `company_id` int(11) NOT NULL DEFAULT '0',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`invoice_number`, `company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
