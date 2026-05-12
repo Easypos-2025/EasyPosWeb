@@ -75,6 +75,7 @@ from app.routers.product_categories_router import router as product_categories_r
 from app.routers.products_router import router as products_router
 from app.routers.price_lists_router import router as price_lists_router
 from app.routers.purchase_orders_router import router as purchase_orders_router
+from app.routers.pos_sync_router import router as pos_sync_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -1059,6 +1060,7 @@ routers = [
     asset_media_router,
     public_asset_router,
     asset_inquiries_router,
+    pos_sync_router,
 ]
 
 for router in routers:
