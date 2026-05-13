@@ -11,9 +11,15 @@ class Plan(Base):
     description: Mapped[str] = mapped_column(Text, nullable=True)
 
     # Límites — -1 significa ilimitado
-    max_users: Mapped[int] = mapped_column(Integer, default=1)
-    max_products: Mapped[int] = mapped_column(Integer, default=-1)
-    max_categories: Mapped[int] = mapped_column(Integer, default=-1)
+    max_users:          Mapped[int] = mapped_column(Integer, default=1)
+    max_products:       Mapped[int] = mapped_column(Integer, default=-1)
+    max_categories:     Mapped[int] = mapped_column(Integer, default=-1)
+    max_workers:        Mapped[int] = mapped_column(Integer, default=-1)
+    max_clients:        Mapped[int] = mapped_column(Integer, default=-1)
+    max_bodega_items:   Mapped[int] = mapped_column(Integer, default=-1)
+    max_tasks:          Mapped[int] = mapped_column(Integer, default=-1)
+    max_daily_invoices: Mapped[int] = mapped_column(Integer, default=-1)
+    max_assets:         Mapped[int] = mapped_column(Integer, default=-1)
 
     price: Mapped[float] = mapped_column(Float, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

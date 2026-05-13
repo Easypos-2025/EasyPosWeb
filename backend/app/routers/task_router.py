@@ -13,6 +13,7 @@ from app.models.worker_model import Worker
 from app.models.role_model import Role
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -246,6 +247,7 @@ async def create_task(
     db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    await check_limit(user.company_id, "max_tasks", Task, db)
     task = Task(
         company_id=user.company_id, title=data.get("title", "").strip(),
         description=data.get("description", ""), asset_id=data.get("asset_id") or None,

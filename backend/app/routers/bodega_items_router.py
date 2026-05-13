@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models.bodega_item_model import BodegaItem
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/bodega-items", tags=["BodegaItems"])
 
@@ -36,6 +37,7 @@ async def create_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await check_limit(current_user.company_id, "max_bodega_items", BodegaItem, db)
     nombre = (data.get("nombre") or "").strip()
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")

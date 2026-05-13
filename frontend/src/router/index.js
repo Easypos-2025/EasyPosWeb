@@ -409,6 +409,13 @@ const routes = [
         meta: { title: "Revisión de Pagos" }
       },
       {
+        path: "/sysadmin/plan-asociado",
+        name: "PlanAsociadoView",
+        component: () => import("@/views/sysadmin/PlanAsociadoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Límites por Asociado" }
+      },
+      {
         path: "/sysadmin/payment-history",
         name: "PaymentHistoryView",
         component: () => import("@/views/sysadmin/PaymentHistoryView.vue"),

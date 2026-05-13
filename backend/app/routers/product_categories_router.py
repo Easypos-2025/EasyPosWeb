@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models.product_category_model import ProductCategory
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/product-categories", tags=["ProductCategories"])
 
@@ -34,6 +35,7 @@ async def list_categories(current_user: User = Depends(get_current_user), db: As
 
 @router.post("/")
 async def create_category(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await check_limit(current_user.company_id, "max_categories", ProductCategory, db)
     if not (data.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
     c = ProductCategory(

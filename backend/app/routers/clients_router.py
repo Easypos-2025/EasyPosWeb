@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.client_model import Client
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -42,6 +43,7 @@ async def create_client(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await check_limit(current_user.company_id, "max_clients", Client, db)
     name = (data.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="El nombre del cliente es obligatorio")

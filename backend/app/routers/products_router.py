@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.product_model import Product
+from app.services.plan_limits_service import check_limit
 from app.models.product_category_model import ProductCategory
 from app.models.product_reference_model import ProductReference
 from app.models.product_recipe_model import ProductRecipe
@@ -37,6 +38,7 @@ async def list_products(current_user: User = Depends(get_current_user), db: Asyn
 
 @router.post("/")
 async def create_product(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await check_limit(current_user.company_id, "max_products", Product, db)
     if not (data.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
     behavior = data.get("inventory_behavior", "direct")

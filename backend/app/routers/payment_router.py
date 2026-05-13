@@ -434,6 +434,10 @@ async def approve_payment(
             company.upgrade_status = None
         else:
             company.payment_status = "active"
+        # Snapshot de límites del plan para este asociado
+        from app.services.plan_limits_service import snapshot_plan_limits
+        await db.flush()  # asegurar que CompanyPlan esté en sesión antes del snapshot
+        await snapshot_plan_limits(company.id_company, payment.plan_id, db)
 
     await db.commit()
     if admin and company and plan:

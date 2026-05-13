@@ -14,6 +14,7 @@ from app.models.company_plan_model import CompanyPlan
 from app.models.plan_model import Plan
 from passlib.context import CryptContext
 from app.auth.dependencies import get_current_user
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -51,12 +52,7 @@ async def crear_user(usuario: UserCreate, db: AsyncSession = Depends(get_db), cu
     role = await db.get(Role, current_user.role_id)
     if not (role and role.is_system):
         company_id = usuario.company_id or current_user.company_id
-        max_users, plan_name = await _get_plan_limit(company_id, db)
-        if max_users != -1:
-            current_count = (await db.execute(select(func.count()).select_from(User).where(User.company_id == company_id))).scalar()
-            if current_count >= max_users:
-                raise HTTPException(status_code=403,
-                    detail=f"Límite de {max_users} usuario(s) alcanzado para el plan {plan_name}. Actualiza tu plan para agregar más usuarios.")
+        await check_limit(company_id, "max_users", User, db)
 
     nuevo_usuario = User(nombre=usuario.nombre, email=usuario.email,
                          password_hash=pwd_context.hash(usuario.password),
