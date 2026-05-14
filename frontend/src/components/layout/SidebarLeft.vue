@@ -12,23 +12,30 @@
       <!-- <li v-for="item in menu || []" :key="item.id"> -->
       <!--<li v-for="item in filteredMenu || []" :key="item.id">-->
       <li v-for="item in (ready ? filteredMenu : [])" :key="item.id">
-        <!-- ITEM SIN HIJOS -->
-        <router-link  
-          v-if="!item.children || item.children.length === 0"
+        <!-- ITEM SIN HIJOS — solo router-link si route es válida -->
+        <router-link
+          v-if="(!item.children || item.children.length === 0) && item.route"
           :to="item.route"
           :class="{ active: route.path === item.route }"
           @click="handleNavigate"
         >
           <span class="icon">
-            <i 
-              v-if="item.icon && item.icon.startsWith('bi-')" 
+            <i
+              v-if="item.icon && item.icon.startsWith('bi-')"
               :class="`bi ${item.icon}`"
             ></i>
             <span v-else>{{ item.icon }}</span>
           </span>
-
           <span class="title">{{ item.name }}</span>
         </router-link>
+        <!-- ITEM SIN HIJOS y SIN RUTA — solo muestra como label -->
+        <div v-else-if="!item.children || item.children.length === 0" class="menu-label">
+          <span class="icon">
+            <i v-if="item.icon?.startsWith('bi-')" :class="`bi ${item.icon}`"></i>
+            <span v-else>{{ item.icon }}</span>
+          </span>
+          <span class="title">{{ item.name }}</span>
+        </div>
         
         <!-- ITEM CON HIJOS -->
         <div v-else>
@@ -54,19 +61,19 @@
           <!-- SUBMENU -->
           <ul class="submenu" :class="{ open: openMenus[item.id] }">
             <li v-for="child in item.children || []" :key="child.id">
-              <router-link 
+              <router-link
+                v-if="child.route"
                 :to="child.route"
                 :class="{ active: route.path === child.route }"
                 @click="handleNavigate"
               >
                 <span class="icon">
-                  <i 
-                    v-if="child.icon && child.icon.startsWith('bi-')" 
+                  <i
+                    v-if="child.icon && child.icon.startsWith('bi-')"
                     :class="`bi ${child.icon}`"
                   ></i>
                   <span v-else>{{ child.icon }}</span>
                 </span>
-
                 <span class="title">{{ child.name }}</span>
               </router-link>
             </li>
@@ -311,6 +318,17 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Módulo sin ruta (label solo informativo) */
+.menu-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  opacity: 0.45;
+  cursor: default;
+  font-size: 13px;
 }
 
 /* ===== ICONOS ===== */

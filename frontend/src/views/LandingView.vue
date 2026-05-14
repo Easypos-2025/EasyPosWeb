@@ -16,6 +16,15 @@
           <a href="#contacto"   class="nav-link-item">Contacto</a>
         </div>
         <div class="nav-actions">
+          <!-- Toggle panel publicitario — mismo sistema que en el dashboard -->
+          <button
+            class="btn-nav-sidebar-toggle"
+            :class="{ 'panel-on': !sidebarDismissed }"
+            @click="toggleSidebar"
+            title="Panel de publicidad"
+          >
+            <i class="bi bi-layout-sidebar-reverse"></i>
+          </button>
           <a href="/login"    class="btn-nav-outline">Iniciar Sesión</a>
           <a href="/register" class="btn-nav-solid">Empezar Gratis</a>
         </div>
@@ -644,6 +653,7 @@
 <script>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
 import LandingAdSidebar from "@/components/landing/LandingAdSidebar.vue"
+import { sidebarDismissed, toggleSidebar } from "@/composables/useLandingSidebar"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -916,6 +926,7 @@ export default {
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
       formatPrice, renderVal, submitContact,
+      sidebarDismissed, toggleSidebar,
     }
   },
   components: { LandingAdSidebar },
@@ -970,6 +981,25 @@ export default {
 }
 .nav-link-item:hover { color: var(--primary); }
 .nav-actions { display: flex; gap: 10px; align-items: center; }
+/* Botón toggle panel publicitario — idéntico al del dashboard */
+.btn-nav-sidebar-toggle {
+  background: rgba(79,70,229,0.1);
+  border: 1.5px solid rgba(79,70,229,0.25);
+  color: #4f46e5;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 1.05rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all .2s;
+}
+.btn-nav-sidebar-toggle:hover { background: rgba(79,70,229,0.18); }
+.btn-nav-sidebar-toggle.panel-on {
+  background: rgba(79,70,229,0.18);
+  border-color: rgba(79,70,229,0.5);
+  color: #4338ca;
+}
 .btn-nav-outline {
   padding: 8px 18px; border: 1.5px solid var(--primary); color: var(--primary);
   border-radius: 8px; font-size: .9rem; font-weight: 600; text-decoration: none;
@@ -1844,40 +1874,6 @@ export default {
   .btn-slide-cta, .btn-slide-outline { justify-content: center; }
 }
 
-/* ── Sidebar publicitario en landing ── */
-.landing-fixed-sidebar {
-  position: fixed;
-  top: 80px;
-  right: 12px;
-  z-index: 50;
-  display: none;
-  max-height: calc(100vh - 90px);
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-.landing-fixed-sidebar::-webkit-scrollbar { display: none; }
-
-/* Desktop y tablet landscape ≥1200px: columna derecha */
-@media (min-width: 1200px) {
-  .landing-fixed-sidebar { display: flex; }
-}
-
-/* Móvil landscape (480px-1199px): barra horizontal inferior */
-@media (max-width: 1199px) and (orientation: landscape) and (min-width: 480px) {
-  .landing-fixed-sidebar {
-    display: flex;
-    position: fixed;
-    top: auto;
-    bottom: 0;
-    right: 0;
-    left: 0;
-    width: 100%;
-    max-height: none;
-    padding: 6px 10px;
-    background: rgba(10,15,30,0.92);
-    backdrop-filter: blur(8px);
-    border-top: 1px solid rgba(255,255,255,0.1);
-    z-index: 80;
-  }
-}
+/* El LandingAdSidebar maneja su propio posicionamiento fixed internamente */
+.landing-fixed-sidebar { display: contents; }
 </style>
