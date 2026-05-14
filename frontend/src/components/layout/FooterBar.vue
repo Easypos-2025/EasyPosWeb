@@ -63,8 +63,13 @@
       </div>
     </Transition>
 
-    <!-- ── DERECHA: copyright ── -->
-    <span class="footer-copy">© 2020 EasyPosWeb</span>
+    <!-- ── DERECHA: paute aquí + copyright ── -->
+    <div class="footer-right">
+      <a href="#contacto" class="footer-adcta">
+        <i class="bi bi-megaphone-fill me-1"></i>¡Paute aquí!
+      </a>
+      <span class="footer-copy">© 2020 EasyPosWeb</span>
+    </div>
 
   </div>
 </template>
@@ -271,8 +276,19 @@ onUnmounted(() => {
 }
 .chip-green .bi { opacity: 1; color: #4ade80; }
 
-/* ── COPYRIGHT ── */
-.footer-copy { margin-left: auto; white-space: nowrap; opacity: 0.35; font-size: 11px; flex-shrink: 0; padding-left: 12px; }
+/* ── DERECHA ── */
+.footer-right { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.footer-copy  { white-space: nowrap; opacity: 0.35; font-size: 11px; }
+.footer-adcta {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: .3px;
+  color: #fbbf24; text-decoration: none;
+  background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.25);
+  border-radius: 20px; padding: 2px 10px;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.footer-adcta:hover { background: rgba(251,191,36,.2); color: #f59e0b; }
 
 /* ── NUEVO ASOCIADO INLINE ── */
 .assoc-inline {
@@ -325,5 +341,8 @@ onUnmounted(() => {
   .footer-content    { padding: 0 10px; }
   .assoc-inline      { max-width: 180px; margin-right: 6px; }
   .assoc-meta        { display: none; }
+}
+@media (max-width: 576px) {
+  .footer-adcta { font-size: 10px; padding: 2px 8px; }
 }
 </style>

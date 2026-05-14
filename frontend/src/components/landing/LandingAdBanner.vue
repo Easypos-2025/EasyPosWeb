@@ -16,6 +16,8 @@
               :title="slot.title"
               :muted="slotMuted[si]"
             />
+            <!-- Label: Publicidad -->
+            <span class="ad-label">Publicidad</span>
             <!-- Botón audio (video/youtube) -->
             <button
               v-if="isMediaPiece(currentSlotPiece(slot, si))"
@@ -29,6 +31,14 @@
             <div v-if="slot.pieces.length > 1" class="slot-piece-dots">
               <span v-for="(p, pi) in slot.pieces" :key="pi"
                 class="spdot" :class="{ active: pi === slotPieceIdx[si] }"></span>
+            </div>
+            <!-- Iconos redes sociales del anunciante -->
+            <div v-if="slotHasSocial(slot)" class="slot-social-icons">
+              <a v-if="slot.social_instagram" :href="slot.social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-instagram"></i></a>
+              <a v-if="slot.social_tiktok" :href="slot.social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-tiktok"></i></a>
+              <a v-if="slot.social_facebook" :href="slot.social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-facebook"></i></a>
+              <a v-if="slot.social_youtube_channel" :href="slot.social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-youtube"></i></a>
+              <a v-if="slot.social_website" :href="slot.social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-globe2"></i></a>
             </div>
           </template>
           <!-- Placeholder → contacto -->
@@ -66,6 +76,8 @@
                   :title="slots[currentSlot].title"
                   :muted="slotMuted[currentSlot]"
                 />
+                <!-- Label: Publicidad -->
+                <span class="ad-label">Publicidad</span>
                 <button
                   v-if="isMediaPiece(currentSlotPiece(slots[currentSlot], currentSlot))"
                   class="btn-audio"
@@ -74,6 +86,14 @@
                 >
                   <i :class="slotMuted[currentSlot] ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'"></i>
                 </button>
+                <!-- Iconos redes sociales -->
+                <div v-if="slotHasSocial(slots[currentSlot])" class="slot-social-icons">
+                  <a v-if="slots[currentSlot].social_instagram" :href="slots[currentSlot].social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-instagram"></i></a>
+                  <a v-if="slots[currentSlot].social_tiktok" :href="slots[currentSlot].social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-tiktok"></i></a>
+                  <a v-if="slots[currentSlot].social_facebook" :href="slots[currentSlot].social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-facebook"></i></a>
+                  <a v-if="slots[currentSlot].social_youtube_channel" :href="slots[currentSlot].social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-youtube"></i></a>
+                  <a v-if="slots[currentSlot].social_website" :href="slots[currentSlot].social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-globe2"></i></a>
+                </div>
               </template>
               <template v-else>
                 <a href="#contacto" class="slot-placeholder-inner">
@@ -107,6 +127,15 @@
 <script>
 import { defineComponent, h, computed } from "vue"
 
+const SOCIAL_ICONS = {
+  youtube: "bi-youtube", instagram: "bi-instagram", tiktok: "bi-tiktok",
+  facebook: "bi-facebook", twitter: "bi-twitter-x", social: "bi-play-circle",
+}
+const SOCIAL_COLORS = {
+  youtube: "#ff0000", instagram: "#e1306c", tiktok: "#010101",
+  facebook: "#1877f2", twitter: "#1da1f2", social: "#6b7280",
+}
+
 const SlotPiece = defineComponent({
   name: "SlotPiece",
   props: { piece: Object, title: String, muted: { type: Boolean, default: true } },
@@ -120,7 +149,7 @@ const SlotPiece = defineComponent({
   render() {
     const p = this.piece
     if (!p) return null
-    const { piece_type, media_url, text_content } = p
+    const { piece_type, media_url, text_content, social_platform } = p
 
     if (piece_type === "image")
       return h("img", { src: media_url, alt: this.title || "Pauta", class: "slot-media", loading: "lazy" })
@@ -139,6 +168,20 @@ const SlotPiece = defineComponent({
           allow: "autoplay; encrypted-media", allowfullscreen: true, class: "slot-yt"
         })
       ])
+
+    if (piece_type === "social") {
+      const plat = social_platform || "social"
+      const icon = SOCIAL_ICONS[plat] || "bi-play-circle"
+      const color = SOCIAL_COLORS[plat] || "#6b7280"
+      return h("a", { href: media_url, target: "_blank", rel: "noopener noreferrer", class: "slot-social-card" }, [
+        h("div", { class: "slot-social-bg", style: `background:${color}18` }),
+        h("div", { class: "slot-social-content" }, [
+          h("i", { class: `bi ${icon} slot-social-icon`, style: `color:${color}` }),
+          h("span", { class: "slot-social-title" }, this.title || ""),
+          h("span", { class: "slot-social-cta" }, "Ver publicación →"),
+        ])
+      ])
+    }
 
     if (piece_type === "text")
       return h("div", { class: "slot-text" }, [
@@ -181,6 +224,9 @@ function toggleAudio(si) {
 }
 function isMediaPiece(piece) {
   return piece?.piece_type === "video" || piece?.piece_type === "youtube"
+}
+function slotHasSocial(slot) {
+  return slot?.active && (slot.social_instagram || slot.social_tiktok || slot.social_facebook || slot.social_youtube_channel || slot.social_website)
 }
 
 // ── Datos ──────────────────────────────────────────────────────────────────
@@ -448,6 +494,32 @@ onUnmounted(() => {
 }
 .c-dot.active { background: #fff; transform: scale(1.25); }
 
+/* ── Label Publicidad (top-right) ── */
+.ad-label {
+  position: absolute; top: 7px; right: 7px; z-index: 10;
+  font-size: 9px; font-weight: 700; letter-spacing: .5px;
+  text-transform: uppercase; color: rgba(255,255,255,.75);
+  background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 4px; padding: 2px 6px;
+  pointer-events: none; user-select: none;
+}
+
+/* ── Iconos redes sociales del anunciante ── */
+.slot-social-icons {
+  position: absolute; top: 8px; left: 8px; z-index: 10;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.slot-soc-btn {
+  width: 26px; height: 26px; border-radius: 6px;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,.2);
+  color: #fff; font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  text-decoration: none; transition: background .2s, transform .15s;
+}
+.slot-soc-btn:hover { background: rgba(0,0,0,.8); transform: scale(1.1); }
+
 /* ── Transición ── */
 .ad-fade-enter-active, .ad-fade-leave-active { transition: opacity .3s; }
 .ad-fade-enter-from, .ad-fade-leave-to       { opacity: 0; }
@@ -493,4 +565,21 @@ onUnmounted(() => {
 }
 .slot-text-title { font-size: 13px; font-weight: 700; color: #fff; text-align: center; margin: 0; }
 .slot-text-body  { font-size: 11px; color: rgba(255,255,255,.75); text-align: center; line-height: 1.5; margin: 0; }
+
+/* Pieza tipo social (Instagram, TikTok, etc.) */
+.slot-social-card {
+  flex: 1; width: 100%; height: 100%;
+  display: flex; position: relative;
+  text-decoration: none; cursor: pointer;
+}
+.slot-social-bg { position: absolute; inset: 0; }
+.slot-social-content {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 100%; height: 100%; gap: 8px; padding: 12px;
+}
+.slot-social-icon  { font-size: 36px; }
+.slot-social-title { font-size: 13px; font-weight: 700; color: #fff; text-align: center; }
+.slot-social-cta   { font-size: 11px; color: rgba(255,255,255,.8); }
 </style>

@@ -2,6 +2,7 @@ import uuid
 import re
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,48 @@ _URL_RE = re.compile(r"^https://[^\s]{4,500}$")
 _YT_RE  = re.compile(r"^[A-Za-z0-9_\-]{6,20}$")
 
 
+def _detect_social_platform(url: str) -> tuple[str, str | None]:
+    """Detecta plataforma y extrae youtube_id si aplica. Retorna (platform, yt_id|None)."""
+    url = url.strip()
+    yt_id = None
+    try:
+        p = urlparse(url)
+        h = p.hostname or ""
+        h = h.replace("www.", "").replace("m.", "")
+        if h in ("youtube.com", "youtu.be"):
+            if h == "youtu.be":
+                yt_id = p.path.strip("/").split("?")[0].split("/")[0]
+            else:
+                qs = parse_qs(p.query)
+                yt_id = qs.get("v", [None])[0]
+                if not yt_id:
+                    parts = p.path.strip("/").split("/")
+                    if len(parts) >= 2 and parts[0] in ("embed", "shorts", "v"):
+                        yt_id = parts[1]
+            if yt_id:
+                return "youtube", yt_id
+        if "instagram" in h:
+            return "instagram", None
+        if "tiktok" in h:
+            return "tiktok", None
+        if "facebook" in h or h in ("fb.com", "fb.watch"):
+            return "facebook", None
+        if "twitter" in h or h == "x.com":
+            return "twitter", None
+    except Exception:
+        pass
+    lower = url.lower()
+    if "youtube" in lower or "youtu.be" in lower:
+        return "youtube", None
+    if "instagram" in lower:
+        return "instagram", None
+    if "tiktok" in lower:
+        return "tiktok", None
+    if "facebook" in lower:
+        return "facebook", None
+    return "social", None
+
+
 def _validate_url(url: str | None) -> str | None:
     if not url:
         return None
@@ -42,6 +85,7 @@ def _ser_piece(p: AdPiece) -> dict:
         "id": p.id, "advertisement_id": p.advertisement_id,
         "piece_type": p.piece_type, "media_url": p.media_url,
         "youtube_id": p.youtube_id, "text_content": p.text_content,
+        "social_platform": p.social_platform,
         "order_index": p.order_index,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
@@ -90,6 +134,11 @@ async def _ser_ad(ad: Advertisement, db: AsyncSession, include_pieces=True, incl
         "approved_by": ad.approved_by,
         "approved_at": ad.approved_at.isoformat() if ad.approved_at else None,
         "impressions": ad.impressions,
+        "social_instagram":       ad.social_instagram,
+        "social_tiktok":          ad.social_tiktok,
+        "social_facebook":        ad.social_facebook,
+        "social_youtube_channel": ad.social_youtube_channel,
+        "social_website":         ad.social_website,
         "created_at": ad.created_at.isoformat() if ad.created_at else None,
         "updated_at": ad.updated_at.isoformat() if ad.updated_at else None,
         "pieces": pieces,
@@ -147,6 +196,11 @@ async def get_active_slots(db: AsyncSession = Depends(get_db)):
             slots.append({
                 "slot": pos, "ad_id": ad.id, "title": ad.title,
                 "cta_url": ad.cta_url, "pieces": pieces, "active": True,
+                "social_instagram":       ad.social_instagram,
+                "social_tiktok":          ad.social_tiktok,
+                "social_facebook":        ad.social_facebook,
+                "social_youtube_channel": ad.social_youtube_channel,
+                "social_website":         ad.social_website,
             })
         else:
             slots.append({"slot": pos, "active": False, "pieces": []})
@@ -218,6 +272,11 @@ async def create_ad(
         target_profile_id=data.get("target_profile_id") or None,
         start_date=_parse_date(data.get("start_date")),
         end_date=_parse_date(data.get("end_date")),
+        social_instagram=_validate_url(data.get("social_instagram")),
+        social_tiktok=_validate_url(data.get("social_tiktok")),
+        social_facebook=_validate_url(data.get("social_facebook")),
+        social_youtube_channel=_validate_url(data.get("social_youtube_channel")),
+        social_website=_validate_url(data.get("social_website")),
         status="pending",
     )
     db.add(ad)
@@ -254,6 +313,16 @@ async def update_ad(
         ad.start_date = _parse_date(data["start_date"])
     if "end_date" in data:
         ad.end_date = _parse_date(data["end_date"])
+    if "social_instagram" in data:
+        ad.social_instagram = _validate_url(data["social_instagram"])
+    if "social_tiktok" in data:
+        ad.social_tiktok = _validate_url(data["social_tiktok"])
+    if "social_facebook" in data:
+        ad.social_facebook = _validate_url(data["social_facebook"])
+    if "social_youtube_channel" in data:
+        ad.social_youtube_channel = _validate_url(data["social_youtube_channel"])
+    if "social_website" in data:
+        ad.social_website = _validate_url(data["social_website"])
 
     if ad.status == "rejected":
         ad.status = "pending"
@@ -388,6 +457,45 @@ async def add_text_piece(
     return _ser_piece(piece)
 
 
+@router.post("/{ad_id}/pieces/social")
+async def add_social_piece(
+    ad_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    ad = await _get_ad_owned(ad_id, current_user.company_id, db)
+    if ad.status not in ("pending", "rejected"):
+        raise HTTPException(status_code=400, detail="No se pueden agregar piezas a una pauta en este estado")
+
+    count = await _count_pieces(ad_id, db)
+    if count >= MAX_PIECES:
+        raise HTTPException(status_code=400, detail=f"Máximo {MAX_PIECES} piezas por pauta")
+
+    url = (data.get("url") or "").strip()
+    if not url or not url.startswith("http"):
+        raise HTTPException(status_code=400, detail="URL inválida")
+
+    platform, yt_id = _detect_social_platform(url)
+
+    if platform == "youtube" and yt_id:
+        piece = AdPiece(
+            advertisement_id=ad_id, piece_type="youtube",
+            youtube_id=yt_id, social_platform="youtube", order_index=count,
+        )
+    else:
+        if not platform or platform == "social":
+            raise HTTPException(status_code=400, detail="Plataforma no reconocida. Acepta YouTube, Instagram, TikTok o Facebook")
+        piece = AdPiece(
+            advertisement_id=ad_id, piece_type="social",
+            media_url=url, social_platform=platform, order_index=count,
+        )
+    db.add(piece)
+    await db.commit()
+    await db.refresh(piece)
+    return _ser_piece(piece)
+
+
 @router.delete("/{ad_id}/pieces/{piece_id}")
 async def delete_piece(
     ad_id: int,
@@ -419,7 +527,7 @@ async def submit_payment(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
+    if ad.status not in ("pending", "rejected", "approved"):
         raise HTTPException(status_code=400, detail="No se puede registrar pago en este estado")
 
     receipt_url = None
@@ -612,7 +720,7 @@ async def admin_activate(
     ad.slot_position = slot
     ad.start_date    = start
     ad.end_date      = end
-    ad.priority      = int(data.get("priority", 0))
+    ad.priority      = int(data.get("priority") or 0)
     ad.status        = "active"
     await db.commit()
     return await _ser_ad(ad, db)

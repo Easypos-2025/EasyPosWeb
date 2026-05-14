@@ -154,6 +154,7 @@
                 <img v-if="piece.piece_type === 'image'" :src="piece.media_url" class="piece-thumb" />
                 <div v-else-if="piece.piece_type === 'video'" class="piece-icon"><i class="bi bi-camera-video-fill"></i></div>
                 <div v-else-if="piece.piece_type === 'youtube'" class="piece-icon yt"><i class="bi bi-youtube"></i></div>
+                <div v-else-if="piece.piece_type === 'social'" class="piece-icon social"><i :class="platformIcon(piece.social_platform)"></i></div>
                 <div v-else class="piece-icon txt"><i class="bi bi-type"></i></div>
               </div>
               <span class="piece-label">{{ pieceLabel(piece) }}</span>
@@ -163,14 +164,14 @@
             </div>
           </div>
 
-          <div v-if="editing && form.pieces.length < 3" class="add-piece-row">
+          <div v-if="editing && canEditAd && form.pieces.length < 3" class="add-piece-row">
             <label class="btn-add-piece" title="Subir imagen o video (máx. 8MB)">
               <i class="bi bi-upload me-1"></i>Subir archivo
               <input type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm"
                 @change="uploadPiece" class="hidden-input" :disabled="saving" />
             </label>
-            <button class="btn-add-piece" @click="showYTForm = !showYTForm">
-              <i class="bi bi-youtube me-1"></i>YouTube
+            <button class="btn-add-piece" @click="showSocialForm = !showSocialForm">
+              <i class="bi bi-play-circle me-1"></i>Video/Social
             </button>
             <button class="btn-add-piece" @click="showTextForm = !showTextForm">
               <i class="bi bi-type me-1"></i>Texto
@@ -180,19 +181,23 @@
             <i class="bi bi-info-circle me-1"></i>Guarda la pauta primero para agregar piezas multimedia.
           </div>
 
-          <!-- YouTube sub-form -->
-          <div v-if="showYTForm" class="sub-form">
+          <!-- Video/Social sub-form -->
+          <div v-if="showSocialForm" class="sub-form">
             <div class="yt-input-wrap">
-              <input v-model="ytInput" class="form-ctrl"
-                placeholder="Pega la URL de YouTube: https://www.youtube.com/watch?v=..."
-                @paste.prevent="onYTPaste" />
-              <p class="yt-hint">Acepta: youtube.com/watch?v=..., youtu.be/..., youtube.com/embed/...</p>
+              <input v-model="socialInput" class="form-ctrl"
+                placeholder="Pega la URL: YouTube, Instagram, TikTok, Facebook..."
+                @paste.prevent="onSocialPaste" />
+              <p class="yt-hint">Acepta: youtube.com, youtu.be, instagram.com/reel, tiktok.com, facebook.com/watch...</p>
+              <div v-if="detectedPlatform" class="platform-detect">
+                <i :class="platformIcon(detectedPlatform)"></i>
+                {{ platformLabel(detectedPlatform) }} detectado
+              </div>
             </div>
             <div class="sub-actions">
-              <button class="btn-sub-save" @click="addYoutube" :disabled="saving">
+              <button class="btn-sub-save" @click="addSocial" :disabled="saving">
                 <i class="bi bi-plus me-1"></i>Agregar
               </button>
-              <button class="btn-sub-cancel" @click="showYTForm=false;ytInput=''">Cancelar</button>
+              <button class="btn-sub-cancel" @click="showSocialForm=false;socialInput='';detectedPlatform=''">Cancelar</button>
             </div>
           </div>
 
@@ -208,6 +213,36 @@
             </div>
           </div>
 
+          <!-- Redes sociales del anunciante -->
+          <div class="form-section-label mt-3">Redes sociales (se mostrarán como íconos en la pauta)</div>
+          <div class="social-fields">
+            <div class="social-field">
+              <span class="social-icon-lbl"><i class="bi bi-instagram" style="color:#e1306c"></i></span>
+              <input v-model="form.social_instagram" class="form-ctrl" :disabled="!canEditAd"
+                placeholder="https://instagram.com/tunegocio" />
+            </div>
+            <div class="social-field">
+              <span class="social-icon-lbl"><i class="bi bi-tiktok" style="color:#010101"></i></span>
+              <input v-model="form.social_tiktok" class="form-ctrl" :disabled="!canEditAd"
+                placeholder="https://tiktok.com/@tunegocio" />
+            </div>
+            <div class="social-field">
+              <span class="social-icon-lbl"><i class="bi bi-facebook" style="color:#1877f2"></i></span>
+              <input v-model="form.social_facebook" class="form-ctrl" :disabled="!canEditAd"
+                placeholder="https://facebook.com/tunegocio" />
+            </div>
+            <div class="social-field">
+              <span class="social-icon-lbl"><i class="bi bi-youtube" style="color:#ff0000"></i></span>
+              <input v-model="form.social_youtube_channel" class="form-ctrl" :disabled="!canEditAd"
+                placeholder="https://youtube.com/@tunegocio" />
+            </div>
+            <div class="social-field">
+              <span class="social-icon-lbl"><i class="bi bi-globe2" style="color:#6b7280"></i></span>
+              <input v-model="form.social_website" class="form-ctrl" :disabled="!canEditAd"
+                placeholder="https://tunegocio.com" />
+            </div>
+          </div>
+
           <!-- Comprobante de pago -->
           <div class="form-section-label mt-3">Comprobante de pago</div>
           <div v-if="form.payment" class="payment-status">
@@ -219,10 +254,13 @@
               <i class="bi bi-eye me-1"></i>Ver comprobante
             </a>
           </div>
-          <div v-if="editing" class="form-row">
+          <div v-if="form.payment?.status === 'verified'" class="info-box">
+            <i class="bi bi-check-circle me-1"></i>Pago verificado. El administrador activará tu pauta próximamente.
+          </div>
+          <div v-else-if="editing && canPayAd" class="form-row">
             <label class="btn-add-piece" :class="{ 'uploading': saving }">
               <i class="bi bi-upload me-1"></i>
-              {{ form.payment ? 'Reemplazar comprobante' : 'Subir comprobante' }}
+              {{ form.payment ? 'Reemplazar comprobante' : 'Subir comprobante de pago' }}
               <input type="file" accept=".jpg,.jpeg,.png,.pdf,.webp"
                 @change="uploadPayment" class="hidden-input" :disabled="saving" />
             </label>
@@ -236,8 +274,8 @@
 
         </div>
         <div class="modal-footer">
-          <button class="btn-cancel" @click="closeModal">Cancelar</button>
-          <button class="btn-save" :disabled="saving" @click="saveAd">
+          <button class="btn-cancel" @click="closeModal">Cerrar</button>
+          <button v-if="!editing || canEditAd" class="btn-save" :disabled="saving" @click="saveAd">
             <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
             {{ editing ? 'Guardar cambios' : 'Crear pauta' }}
           </button>
@@ -285,7 +323,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, watch, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -302,12 +340,16 @@ const saving   = ref(false)
 const priceAll    = ref(0)
 const priceSingle = ref(0)
 
-const showModal    = ref(false)
-const editing      = ref(false)
-const showYTForm   = ref(false)
-const showTextForm = ref(false)
-const ytInput      = ref("")
-const textContent  = ref("")
+const showModal      = ref(false)
+const editing        = ref(false)
+const showSocialForm = ref(false)
+const showTextForm   = ref(false)
+const socialInput    = ref("")
+const detectedPlatform = ref("")
+const textContent    = ref("")
+
+const canEditAd = computed(() => !editing.value || ["pending","rejected"].includes(form.value.status || ""))
+const canPayAd  = computed(() => editing.value && ["pending","rejected","approved"].includes(form.value.status || ""))
 
 const showRenewModal = ref(false)
 const renewTarget    = ref(null)
@@ -329,35 +371,49 @@ const kpis = [
 function emptyForm() {
   return {
     id: null, title: "", description: "", cta_url: "", notes_to_admin: "",
-    target_profile_id: null, start_date: "", end_date: "",
+    target_profile_id: null, start_date: "", end_date: "", status: "pending",
+    social_instagram: "", social_tiktok: "", social_facebook: "",
+    social_youtube_channel: "", social_website: "",
     pieces: [], payment: null, rejection_reason: null,
   }
 }
 
-// ── Extraer ID de YouTube desde URL completa ───────────────────────────────
-function extractYouTubeId(input) {
-  if (!input) return null
-  const s = input.trim()
-  // ya es un ID puro (11 chars alfanuméricos/guiones)
-  if (/^[A-Za-z0-9_\-]{6,20}$/.test(s) && !s.includes(".")) return s
+// ── Detección de plataforma social ────────────────────────────────────────
+function detectPlatform(url) {
+  if (!url) return ""
+  const s = url.trim().toLowerCase()
   try {
-    const url = new URL(s)
-    // youtu.be/ID
-    if (url.hostname === "youtu.be") return url.pathname.slice(1).split("?")[0]
-    // youtube.com/watch?v=ID
-    const v = url.searchParams.get("v")
-    if (v) return v
-    // youtube.com/embed/ID  o  youtube.com/shorts/ID
-    const parts = url.pathname.split("/").filter(Boolean)
-    if (parts.length >= 2 && ["embed","shorts","v"].includes(parts[0])) return parts[1]
+    const u = new URL(url.trim())
+    const h = u.hostname.replace("www.", "")
+    if (h === "youtube.com" || h === "youtu.be" || h === "m.youtube.com") return "youtube"
+    if (h === "instagram.com") return "instagram"
+    if (h === "tiktok.com" || h === "vm.tiktok.com") return "tiktok"
+    if (h === "facebook.com" || h === "fb.com" || h === "fb.watch") return "facebook"
+    if (h === "twitter.com" || h === "x.com") return "twitter"
   } catch {}
-  return null
+  if (s.includes("youtube") || s.includes("youtu.be")) return "youtube"
+  if (s.includes("instagram")) return "instagram"
+  if (s.includes("tiktok")) return "tiktok"
+  if (s.includes("facebook") || s.includes("fb.com")) return "facebook"
+  return ""
 }
 
-function onYTPaste(e) {
-  const pasted = (e.clipboardData || window.clipboardData).getData("text")
-  ytInput.value = pasted
+function platformIcon(p) {
+  return { youtube:"bi bi-youtube", instagram:"bi bi-instagram", tiktok:"bi bi-tiktok",
+           facebook:"bi bi-facebook", twitter:"bi bi-twitter-x" }[p] || "bi bi-play-circle"
 }
+function platformLabel(p) {
+  return { youtube:"YouTube", instagram:"Instagram", tiktok:"TikTok",
+           facebook:"Facebook", twitter:"Twitter/X" }[p] || "Social"
+}
+
+function onSocialPaste(e) {
+  const pasted = (e.clipboardData || window.clipboardData).getData("text")
+  socialInput.value      = pasted
+  detectedPlatform.value = detectPlatform(pasted)
+}
+
+watch(socialInput, (v) => { detectedPlatform.value = detectPlatform(v) })
 
 // ── Cargar datos ───────────────────────────────────────────────────────────
 async function loadAll() {
@@ -389,10 +445,10 @@ function onProfileChange() { /* price updates via computed */ }
 // ── Modales ────────────────────────────────────────────────────────────────
 function openNew() {
   form.value = emptyForm()
-  editing.value      = false
-  showYTForm.value   = false
-  showTextForm.value = false
-  showModal.value    = true
+  editing.value        = false
+  showSocialForm.value = false
+  showTextForm.value   = false
+  showModal.value      = true
 }
 
 function openEdit(ad) {
@@ -401,14 +457,20 @@ function openEdit(ad) {
     cta_url: ad.cta_url || "", notes_to_admin: ad.notes_to_admin || "",
     target_profile_id: ad.target_profile_id || null,
     start_date: ad.start_date || "", end_date: ad.end_date || "",
+    status: ad.status || "pending",
+    social_instagram:       ad.social_instagram || "",
+    social_tiktok:          ad.social_tiktok || "",
+    social_facebook:        ad.social_facebook || "",
+    social_youtube_channel: ad.social_youtube_channel || "",
+    social_website:         ad.social_website || "",
     pieces: [...(ad.pieces || [])],
     payment: ad.payments?.[0] || null,
     rejection_reason: ad.rejection_reason || null,
   }
-  editing.value      = true
-  showYTForm.value   = false
-  showTextForm.value = false
-  showModal.value    = true
+  editing.value        = true
+  showSocialForm.value = false
+  showTextForm.value   = false
+  showModal.value      = true
 }
 
 function openDetail(ad) { openEdit(ad) }
@@ -420,11 +482,12 @@ function openRenew(ad) {
 }
 
 function closeModal() {
-  showModal.value    = false
-  showYTForm.value   = false
-  showTextForm.value = false
-  ytInput.value      = ""
-  textContent.value  = ""
+  showModal.value      = false
+  showSocialForm.value = false
+  showTextForm.value   = false
+  socialInput.value    = ""
+  detectedPlatform.value = ""
+  textContent.value    = ""
 }
 
 // ── CRUD pauta ─────────────────────────────────────────────────────────────
@@ -437,13 +500,18 @@ async function saveAd() {
   saving.value = true
   try {
     const payload = {
-      title:             form.value.title,
-      description:       form.value.description || null,
-      cta_url:           form.value.cta_url || null,
-      notes_to_admin:    form.value.notes_to_admin || null,
-      target_profile_id: form.value.target_profile_id || null,
-      start_date:        form.value.start_date,
-      end_date:          form.value.end_date,
+      title:                  form.value.title,
+      description:            form.value.description || null,
+      cta_url:                form.value.cta_url || null,
+      notes_to_admin:         form.value.notes_to_admin || null,
+      target_profile_id:      form.value.target_profile_id || null,
+      start_date:             form.value.start_date,
+      end_date:               form.value.end_date,
+      social_instagram:       form.value.social_instagram || null,
+      social_tiktok:          form.value.social_tiktok || null,
+      social_facebook:        form.value.social_facebook || null,
+      social_youtube_channel: form.value.social_youtube_channel || null,
+      social_website:         form.value.social_website || null,
     }
     let saved
     if (editing.value) {
@@ -487,19 +555,22 @@ async function uploadPiece(e) {
   }
 }
 
-async function addYoutube() {
-  const id = extractYouTubeId(ytInput.value)
-  if (!id) return showToast("URL de YouTube inválida. Pega la URL completa del video.", "warning", 3000)
+async function addSocial() {
+  const url = socialInput.value.trim()
+  if (!url) return showToast("Pega la URL del video o publicación", "warning", 3000)
+  const platform = detectPlatform(url)
+  if (!platform) return showToast("URL no reconocida. Acepta YouTube, Instagram, TikTok o Facebook", "warning", 3500)
   saving.value = true
   try {
-    const res = await api.post(`/ads/${form.value.id}/pieces/youtube`, { youtube_id: id })
+    const res = await api.post(`/ads/${form.value.id}/pieces/social`, { url, platform })
     form.value.pieces.push(res.data)
-    showYTForm.value = false
-    ytInput.value = ""
-    showToast("Video de YouTube agregado", "success")
+    showSocialForm.value = false
+    socialInput.value = ""
+    detectedPlatform.value = ""
+    showToast(`${platformLabel(platform)} agregado`, "success")
     await loadAll()
   } catch (err) {
-    showToast(err.response?.data?.detail || "Error al agregar YouTube", "error", 3500)
+    showToast(err.response?.data?.detail || "Error al agregar video/social", "error", 3500)
   } finally {
     saving.value = false
   }
@@ -612,6 +683,7 @@ function pieceLabel(p) {
   if (p.piece_type === "image")   return "Imagen"
   if (p.piece_type === "video")   return "Video"
   if (p.piece_type === "youtube") return `YouTube: ${p.youtube_id}`
+  if (p.piece_type === "social")  return `${platformLabel(p.social_platform)}: ${(p.media_url||"").slice(0,35)}...`
   if (p.piece_type === "text")    return `Texto: ${(p.text_content || "").slice(0, 30)}...`
   return p.piece_type
 }
@@ -730,8 +802,9 @@ onMounted(loadAll)
 .piece-preview { width: 36px; height: 36px; border-radius: 6px; overflow: hidden; flex-shrink: 0; background: rgba(0,0,0,.08); display: flex; align-items: center; justify-content: center; }
 .piece-thumb { width: 100%; height: 100%; object-fit: cover; }
 .piece-icon  { font-size: 18px; color: #3b82f6; }
-.piece-icon.yt  { color: #ef4444; }
-.piece-icon.txt { color: #8b5cf6; }
+.piece-icon.yt     { color: #ef4444; }
+.piece-icon.social { color: #e1306c; }
+.piece-icon.txt    { color: #8b5cf6; }
 .piece-label { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-del-piece { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 14px; }
 
@@ -763,6 +836,11 @@ onMounted(loadAll)
 .btn-ver-comp { font-size: 11px; color: #2563eb; text-decoration: none; display: flex; align-items: center; }
 
 .rejection-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #dc2626; margin-top: 10px; }
+.info-box { background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.2); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #16a34a; margin-bottom: 8px; display: flex; align-items: center; }
+.platform-detect { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #2563eb; margin-top: 4px; }
+.social-fields { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.social-field { display: flex; align-items: center; gap: 8px; }
+.social-icon-lbl { width: 24px; text-align: center; font-size: 16px; flex-shrink: 0; }
 
 @media (max-width: 768px) {
   .form-row-2 { grid-template-columns: 1fr; }

@@ -229,6 +229,28 @@
             </div>
           </div>
 
+          <!-- Redes sociales del anunciante -->
+          <template v-if="selected.social_instagram || selected.social_tiktok || selected.social_facebook || selected.social_youtube_channel || selected.social_website">
+            <div class="section-lbl mt-3">Redes sociales del anunciante</div>
+            <div class="social-links-row">
+              <a v-if="selected.social_instagram" :href="selected.social_instagram" target="_blank" rel="noopener" class="social-link-btn instagram" title="Instagram">
+                <i class="bi bi-instagram"></i>
+              </a>
+              <a v-if="selected.social_tiktok" :href="selected.social_tiktok" target="_blank" rel="noopener" class="social-link-btn tiktok" title="TikTok">
+                <i class="bi bi-tiktok"></i>
+              </a>
+              <a v-if="selected.social_facebook" :href="selected.social_facebook" target="_blank" rel="noopener" class="social-link-btn facebook" title="Facebook">
+                <i class="bi bi-facebook"></i>
+              </a>
+              <a v-if="selected.social_youtube_channel" :href="selected.social_youtube_channel" target="_blank" rel="noopener" class="social-link-btn youtube" title="YouTube">
+                <i class="bi bi-youtube"></i>
+              </a>
+              <a v-if="selected.social_website" :href="selected.social_website" target="_blank" rel="noopener" class="social-link-btn website" title="Sitio web">
+                <i class="bi bi-globe2"></i>
+              </a>
+            </div>
+          </template>
+
           <!-- Piezas -->
           <div class="section-lbl mt-3">Piezas ({{ selected.pieces?.length || 0 }}/3)</div>
           <div class="pieces-preview-row">
@@ -729,6 +751,18 @@ onMounted(() => {
 .btn-sub-save   { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; width: fit-content; display: flex; align-items: center; }
 .btn-sub-cancel { background: none; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .text-muted { opacity: .4; }
+
+.social-links-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.social-link-btn {
+  width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center;
+  justify-content: center; font-size: 16px; text-decoration: none; transition: opacity .15s;
+}
+.social-link-btn:hover { opacity: .8; }
+.social-link-btn.instagram { background: rgba(225,48,108,.12); color: #e1306c; }
+.social-link-btn.tiktok    { background: rgba(1,1,1,.08);      color: #010101; }
+.social-link-btn.facebook  { background: rgba(24,119,242,.12); color: #1877f2; }
+.social-link-btn.youtube   { background: rgba(255,0,0,.1);     color: #ff0000; }
+.social-link-btn.website   { background: rgba(107,114,128,.1); color: #6b7280; }
 
 @media (max-width: 768px) {
   .af-row { grid-template-columns: 1fr 1fr; }

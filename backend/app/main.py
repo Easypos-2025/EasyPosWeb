@@ -955,6 +955,22 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
+        # ── PAUTAS: migraciones de columnas nuevas ────────────────────
+        ad_migrations = [
+            "ALTER TABLE ad_pieces ADD COLUMN social_platform VARCHAR(20) NULL",
+            "ALTER TABLE advertisements ADD COLUMN social_instagram VARCHAR(500) NULL",
+            "ALTER TABLE advertisements ADD COLUMN social_tiktok VARCHAR(500) NULL",
+            "ALTER TABLE advertisements ADD COLUMN social_facebook VARCHAR(500) NULL",
+            "ALTER TABLE advertisements ADD COLUMN social_youtube_channel VARCHAR(500) NULL",
+            "ALTER TABLE advertisements ADD COLUMN social_website VARCHAR(500) NULL",
+        ]
+        for sql in ad_migrations:
+            try:
+                await db.execute(text(sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
         # ── SEED: precios de pautas en system_config ──────────────────
         for ad_key, ad_val, ad_desc in [
             ("ad_price_single_profile", "50000",  "Precio pauta dirigida a un perfil (COP)"),
