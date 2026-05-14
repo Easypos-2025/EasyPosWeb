@@ -145,6 +145,15 @@ const routes = [
         meta: { title: "DashboardView" }
       },
 
+      /* MÉTRICAS */
+      {
+        path: "/metricas",
+        name: "MetricasView",
+        component: () => import("@/views/MetricasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Métricas" }
+      },
+
 
       {
         path: "/configuration/users",
@@ -222,6 +231,13 @@ const routes = [
         component: () => import("@/views/notifications/InboxView.vue"),
         requiresAuth: true,
         meta: { title: "Bandeja de Entrada" }
+      },
+      {
+        path: "/notifications/access-log",
+        name: "UserAccessLogView",
+        component: () => import("@/views/notifications/UserAccessLogView.vue"),
+        requiresAuth: true,
+        meta: { title: "Log de Accesos" }
       },
       {
         path: "/notifications/outbox",

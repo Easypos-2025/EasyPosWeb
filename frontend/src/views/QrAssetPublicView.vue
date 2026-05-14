@@ -99,6 +99,18 @@
 
         <!-- DESCRIPCIÓN -->
         <p v-if="asset.description" class="pub-desc">{{ asset.description }}</p>
+
+        <!-- REQUISITOS DE ARRIENDO -->
+        <div v-if="asset.rental_requirements" class="pub-info-block">
+          <div class="pub-info-title"><i class="bi bi-file-earmark-check me-2"></i>Requisitos de Arriendo</div>
+          <p class="pub-info-text">{{ asset.rental_requirements }}</p>
+        </div>
+
+        <!-- OBSERVACIONES GENERALES -->
+        <div v-if="asset.general_observations" class="pub-info-block pub-info-obs">
+          <div class="pub-info-title"><i class="bi bi-info-circle me-2"></i>Observaciones Generales</div>
+          <p class="pub-info-text">{{ asset.general_observations }}</p>
+        </div>
       </div>
 
       <!-- FORMULARIO DE CONTACTO -->
@@ -411,6 +423,12 @@ onMounted(load)
 .pub-badge-rented    { background: #fef3c7; color: #92400e; }
 
 .pub-desc { font-size: 14px; color: #475569; line-height: 1.6; margin: 8px 0 0; }
+
+.pub-info-block { background: #f0f9ff; border-left: 3px solid #3b82f6; border-radius: 0 10px 10px 0; padding: 12px 14px; margin-top: 12px; }
+.pub-info-obs   { background: #fefce8; border-left-color: #eab308; }
+.pub-info-title { font-size: 12px; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
+.pub-info-obs .pub-info-title { color: #854d0e; }
+.pub-info-text  { font-size: 13px; color: #374151; line-height: 1.6; margin: 0; white-space: pre-wrap; }
 
 /* Formulario */
 .pub-form-card { position: relative; overflow: hidden; }

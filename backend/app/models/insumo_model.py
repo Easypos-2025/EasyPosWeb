@@ -5,7 +5,7 @@ from app.database import Base
 
 
 class Insumo(Base):
-    __tablename__ = "insumos"
+    __tablename__ = "supplies"
 
     id:          Mapped[int]           = mapped_column(Integer, primary_key=True)
     company_id:  Mapped[int]           = mapped_column(ForeignKey("companies.id_company"), nullable=False, index=True)

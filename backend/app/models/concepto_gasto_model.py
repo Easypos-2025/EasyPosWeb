@@ -5,7 +5,7 @@ from app.database import Base
 
 
 class ConceptoGasto(Base):
-    __tablename__ = "conceptos_gastos"
+    __tablename__ = "expense_concepts"
 
     id:          Mapped[int]           = mapped_column(Integer, primary_key=True)
     company_id:  Mapped[int]           = mapped_column(ForeignKey("companies.id_company"), nullable=False, index=True)

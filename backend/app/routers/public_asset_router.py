@@ -49,17 +49,19 @@ async def _get_asset_by_code(list_code: int, db: AsyncSession) -> Asset:
 def _public_fields(asset: Asset, category_name: str, media: list) -> dict:
     """Solo expone campos seguros para la vista pública."""
     return {
-        "id":             asset.id,
-        "name":           asset.name,
-        "short_name":     asset.short_name or "",
-        "category_name":  category_name,
-        "location":       asset.location or "",
-        "address":        asset.address or "",
-        "description":    asset.description or "",
-        "canon_value":    float(asset.canon_value) if asset.canon_value is not None else None,
-        "has_sale_option": bool(asset.has_sale_option),
-        "is_rented":      bool(asset.is_rented),
-        "list_code":      asset.list_code,
+        "id":                   asset.id,
+        "name":                 asset.name,
+        "short_name":           asset.short_name or "",
+        "category_name":        category_name,
+        "location":             asset.location or "",
+        "address":              asset.address or "",
+        "description":          asset.description or "",
+        "canon_value":          float(asset.canon_value) if asset.canon_value is not None else None,
+        "has_sale_option":      bool(asset.has_sale_option),
+        "is_rented":            bool(asset.is_rented),
+        "list_code":            asset.list_code,
+        "rental_requirements":  asset.rental_requirements or "",
+        "general_observations": asset.general_observations or "",
         "media": [
             {"file_url": m.file_url, "file_type": m.file_type, "sort_order": m.sort_order}
             for m in media
@@ -183,12 +185,35 @@ async def confirm_inquiry(token: str, db: AsyncSession = Depends(get_db)):
     inquiry.confirmed_at = datetime.utcnow()
     await db.commit()
 
-    # Notificar al administrador
+    # Notificar al administrador — usar email del admin del asociado dueño del activo
     try:
         asset = await db.get(Asset, inquiry.asset_id)
         from app.utils.email_service import send_new_inquiry_notification, EMAIL_SENDER
+        from app.models.user_model import User
+        from app.models.role_model import Role
+
+        admin_email = EMAIL_SENDER  # fallback
+        if asset and asset.company_id:
+            # Buscar el admin del asociado que creó el activo
+            role_res = await db.execute(
+                select(Role).where(Role.company_id == asset.company_id, Role.is_system == False)
+                .order_by(Role.id)
+            )
+            roles = role_res.scalars().all()
+            if roles:
+                user_res = await db.execute(
+                    select(User).where(
+                        User.company_id == asset.company_id,
+                        User.role_id.in_([r.id for r in roles]),
+                        User.is_active == True,
+                    ).order_by(User.id)
+                )
+                admin = user_res.scalars().first()
+                if admin and admin.email:
+                    admin_email = admin.email
+
         send_new_inquiry_notification(
-            admin_email = EMAIL_SENDER,
+            admin_email = admin_email,
             inquiry     = inquiry,
             asset_name  = asset.name if asset else "—",
             list_code   = asset.list_code if asset else None,

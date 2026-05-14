@@ -1,8 +1,5 @@
 <template>
   <div>
-    <!-- KPI STRIP: porcentajes de salud del proyecto -->
-    <KpiStrip :kpis="kpis" :loading="loadingStats" :show-labels="true" />
-
     <!-- MINI KPIs (conteos, todos clickeables) -->
     <div class="mini-kpis">
       <div class="mini-kpi" :class="{ 'kpi-active': activeTab === 'pending' }"
@@ -55,8 +52,11 @@
       >
         <i class="bi bi-x-circle"></i> Limpiar
       </button>
+      <router-link to="/metricas" class="btn btn-sm btn-metrics ms-auto me-2" title="Ver métricas y análisis">
+        <i class="bi bi-bar-chart-line"></i> Métricas
+      </router-link>
       <!-- TOGGLE VISTA -->
-      <div class="view-toggle ms-auto">
+      <div class="view-toggle">
         <button class="vt-btn" :class="{ active: viewMode === 'card' }" @click="viewMode = 'card'" title="Vista tarjetas">
           <i class="bi bi-grid"></i>
         </button>
@@ -173,7 +173,6 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
-import KpiStrip from "@/components/dashboard/KpiStrip.vue"
 import TaskTooltip from "@/components/TaskTooltip.vue"
 import api from "@/services/apis"
 
@@ -185,25 +184,10 @@ const stats       = ref({ total:0, pendiente:0, progreso:0, revision:0,
                            sin_asignar:0, info_incompleta:0 })
 const tasks       = ref([])
 const assets      = ref([])
-const loadingStats = ref(true)
 const loadingTasks = ref(true)
 const activeTab    = ref("all")
 const filterLeader = ref(null)
 const viewMode     = ref("card")
-
-// ── KPI Strip — porcentajes ──────────────────────────────────
-const pct = (n) => {
-  const t = stats.value.total
-  if (!t) return "—"
-  return Math.round((n / t) * 100) + "%"
-}
-
-const kpis = computed(() => [
-  { icon: "bi-hourglass-split",           label: "% Pendientes",   value: pct(stats.value.pendiente) },
-  { icon: "bi-play-circle-fill",          label: "% En Ejecución", value: pct(stats.value.progreso + stats.value.revision) },
-  { icon: "bi-exclamation-triangle-fill", label: "% Atrasadas",    value: pct(stats.value.atrasadas) },
-  { icon: "bi-check2-circle",             label: "% Completadas",  value: pct(stats.value.finalizada) },
-])
 
 // ── Contadores para mini-KPIs ────────────────────────────────
 const counts = computed(() => ({
@@ -262,7 +246,6 @@ onMounted(async () => {
     const statsRes = await api.get("/tasks/stats")
     stats.value = statsRes.data
   } catch {}
-  loadingStats.value = false
 
   try {
     const [tasksRes, assetsRes] = await Promise.all([
@@ -303,6 +286,13 @@ onMounted(async () => {
 
 /* FILTER BAR */
 .filter-bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+.btn-metrics {
+  display:inline-flex; align-items:center; gap:5px;
+  background:#eff6ff; color:#1d4ed8; border:1.5px solid #bfdbfe;
+  border-radius:8px; padding:5px 12px; font-size:12px; font-weight:600;
+  cursor:pointer; text-decoration:none; transition:all .15s; white-space:nowrap;
+}
+.btn-metrics:hover { background:#dbeafe; }
 
 /* TOGGLE VISTA */
 .view-toggle { display:flex; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }

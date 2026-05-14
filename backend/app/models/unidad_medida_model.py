@@ -5,7 +5,7 @@ from app.database import Base
 
 
 class UnidadMedida(Base):
-    __tablename__ = "unidades_medida"
+    __tablename__ = "measurement_units"
 
     id:           Mapped[int]           = mapped_column(Integer, primary_key=True)
     company_id:   Mapped[int]           = mapped_column(ForeignKey("companies.id_company"), nullable=False, index=True)

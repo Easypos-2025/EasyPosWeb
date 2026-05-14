@@ -15,7 +15,7 @@ router = APIRouter(prefix="/task-collaborators", tags=["TaskCollaborators"])
 
 
 class TaskCollaborator(Base):
-    __tablename__ = "colaborador_tarea"
+    __tablename__ = "task_collaborators"
     __table_args__ = {"extend_existing": True}
     id          = Column(Integer, primary_key=True, autoincrement=True)
     task_id     = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)

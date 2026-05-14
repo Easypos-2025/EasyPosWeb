@@ -48,6 +48,8 @@ async def _ser(asset: Asset, db: AsyncSession) -> dict:
         "property_number":      asset.property_number or "",
         "additional_reference": asset.additional_reference or "",
         "list_code":            asset.list_code,
+        "rental_requirements":  asset.rental_requirements or "",
+        "general_observations": asset.general_observations or "",
     }
 
 
@@ -75,6 +77,8 @@ def _apply(asset: Asset, data: AssetCreate) -> None:
     asset.property_number      = data.property_number or None
     asset.additional_reference = data.additional_reference or None
     asset.list_code            = data.list_code
+    asset.rental_requirements  = data.rental_requirements or None
+    asset.general_observations = data.general_observations or None
 
 
 @router.post("/")
@@ -87,7 +91,7 @@ async def create_asset(
         dup = await db.execute(select(Asset).where(Asset.list_code == data.list_code))
         if dup.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="El Código de Lista ya existe en otro activo")
-    asset = Asset()
+    asset = Asset(company_id=current_user.company_id)
     _apply(asset, data)
     db.add(asset)
     await db.commit()
@@ -100,7 +104,11 @@ async def get_assets(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(Asset).order_by(Asset.name))
+    result = await db.execute(
+        select(Asset)
+        .where(Asset.company_id == current_user.company_id)
+        .order_by(Asset.name)
+    )
     return [await _ser(a, db) for a in result.scalars().all()]
 
 

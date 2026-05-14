@@ -236,6 +236,16 @@
               <label>Descripción</label>
               <textarea v-model="editForm.description" class="form-control" rows="3" />
             </div>
+            <div class="fg">
+              <label>Requisitos de Arriendo</label>
+              <textarea v-model="editForm.rental_requirements" class="form-control" rows="3"
+                placeholder="Ej: Fiador, depósito 2 meses, ingresos mínimos 3x canon..." />
+            </div>
+            <div class="fg">
+              <label>Observaciones Generales</label>
+              <textarea v-model="editForm.general_observations" class="form-control" rows="3"
+                placeholder="Información adicional visible en la página pública del activo..." />
+            </div>
           </template>
 
           <!-- TAB VALORES -->
@@ -494,6 +504,7 @@ const EMPTY_FORM = () => ({
   canon_value: null, cadastral_value: null, commercial_value: null, sale_price: null,
   appraisal_year: null, acquisition_type: "", registration: "", property_number: "",
   additional_reference: "", list_code: null,
+  rental_requirements: "", general_observations: "",
 })
 
 const filtered = computed(() =>

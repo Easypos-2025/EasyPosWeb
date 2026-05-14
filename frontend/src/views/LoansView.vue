@@ -8,7 +8,7 @@
         <p class="page-subtitle">Registro y control de salidas y devoluciones</p>
       </div>
       <div class="header-btns">
-        <router-link to="/bodega-items" class="btn btn-outline-secondary btn-sm">
+        <router-link to="/configuration/bodega" class="btn btn-outline-secondary btn-sm">
           <i class="bi bi-archive"></i> Gestionar bodega
         </router-link>
         <button v-if="canManage" class="btn btn-primary" @click="openCreate">

@@ -270,20 +270,6 @@
                 </div>
               </div>
 
-              <!-- Accesos de usuarios — admin solamente -->
-              <button
-                v-if="isAdminUser"
-                class="notif-subtype-item"
-                :class="{ 'has-count': unreadUserNotif > 0 }"
-                @click="goToInbox"
-              >
-                <span class="nsi-icon access"><i class="bi bi-person-check-fill"></i></span>
-                <span class="nsi-label">
-                  Accesos de usuarios
-                  <small>Entradas y salidas del sistema</small>
-                </span>
-                <span class="nsi-count" :class="unreadUserNotif > 0 ? 'active' : 'zero'">{{ unreadUserNotif }}</span>
-              </button>
 
               <!-- Tareas con info incompleta — admin solamente -->
               <button
@@ -461,7 +447,6 @@ const isAdminUser = computed(() => {
 
 const totalNotifCount = computed(() =>
   unreadNotif.value +
-  unreadUserNotif.value +
   (companyStore.isSystem ? pendingPaymentsCount.value : 0) +
   (isAdminUser.value ? incompleteTaskCount.value : 0) +
   (isAdminUser.value ? newInquiriesCount.value : 0) +
@@ -519,16 +504,11 @@ function playNotifSound() {
 async function loadUnreadCount() {
   if (!localStorage.getItem("token")) return
   try {
-    const [taskRes, userRes] = await Promise.all([
-      api.get("/task-comments/notifications/unread"),
-      api.get("/user-notifications/inbox/count"),
-    ])
+    const taskRes = await api.get("/task-comments/notifications/unread")
     const prevTask = unreadNotif.value
-    const prevUser = unreadUserNotif.value
-    taskNotifList.value  = taskRes.data
-    unreadNotif.value    = taskRes.data.length
-    unreadUserNotif.value = userRes.data.count ?? 0
-    if (unreadNotif.value > prevTask || unreadUserNotif.value > prevUser) playNotifSound()
+    taskNotifList.value = taskRes.data
+    unreadNotif.value   = taskRes.data.length
+    if (unreadNotif.value > prevTask) playNotifSound()
   } catch {}
 }
 
@@ -779,6 +759,9 @@ async function getConfigMs(key, fallback) {
 }
 
 onMounted(async () => {
+  // Desbloquear audio al primer clic en cualquier parte — necesario por política de navegadores
+  document.addEventListener("click", unlockAudio, { once: true })
+
   const stored = localStorage.getItem("user")
   if (stored) {
     user.value = JSON.parse(stored)

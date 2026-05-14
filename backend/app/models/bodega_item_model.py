@@ -14,7 +14,7 @@ class BodegaItem(Base):
     codigo:              Mapped[Optional[str]] = mapped_column(String(50),  nullable=True)
     cantidad_total:      Mapped[int]           = mapped_column(Integer, default=1)
     cantidad_disponible: Mapped[int]           = mapped_column(Integer, default=1)
-    unidad_id:           Mapped[Optional[int]] = mapped_column(ForeignKey("unidades_medida.id"), nullable=True)
+    unidad_id:           Mapped[Optional[int]] = mapped_column(ForeignKey("measurement_units.id"), nullable=True)
     ubicacion_bodega:    Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     is_active:           Mapped[int]           = mapped_column(SmallInteger, default=1)
     created_at:          Mapped[object]        = mapped_column(TIMESTAMP, server_default=func.now())

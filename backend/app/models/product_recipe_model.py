@@ -11,4 +11,4 @@ class ProductRecipe(Base):
     product_id:     Mapped[int]           = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     supply_item_id: Mapped[int]           = mapped_column(ForeignKey("supply_items.id"), nullable=False)
     qty_required:   Mapped[object]        = mapped_column(DECIMAL(14, 4), nullable=False, default=1)
-    unit_id:        Mapped[Optional[int]] = mapped_column(ForeignKey("unidades_medida.id"), nullable=True)
+    unit_id:        Mapped[Optional[int]] = mapped_column(ForeignKey("measurement_units.id"), nullable=True)

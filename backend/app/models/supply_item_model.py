@@ -12,7 +12,7 @@ class SupplyItem(Base):
     code:            Mapped[Optional[str]] = mapped_column(String(50),  nullable=True, index=True)
     name:            Mapped[str]           = mapped_column(String(200), nullable=False)
     description:     Mapped[Optional[str]] = mapped_column(Text,        nullable=True)
-    unit_id:         Mapped[Optional[int]] = mapped_column(ForeignKey("unidades_medida.id"), nullable=True)
+    unit_id:         Mapped[Optional[int]] = mapped_column(ForeignKey("measurement_units.id"), nullable=True)
     cost_price:      Mapped[object]        = mapped_column(DECIMAL(14, 4), default=0)
     stock_qty:       Mapped[object]        = mapped_column(DECIMAL(14, 4), default=0)
     min_stock:       Mapped[object]        = mapped_column(DECIMAL(14, 4), default=0)

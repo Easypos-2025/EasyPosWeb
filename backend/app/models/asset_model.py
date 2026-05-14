@@ -12,6 +12,7 @@ class Asset(Base):
     )
 
     id:                   Mapped[int]           = mapped_column(Integer, primary_key=True)
+    company_id:           Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id_company"), nullable=True, index=True)
     name:                 Mapped[str]           = mapped_column(String(200), nullable=False)
     short_name:           Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     category_id:          Mapped[int]           = mapped_column(ForeignKey("asset_categories.id"), nullable=False)
@@ -35,3 +36,5 @@ class Asset(Base):
     property_number:      Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     additional_reference: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     list_code:            Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rental_requirements:  Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    general_observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

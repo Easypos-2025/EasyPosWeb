@@ -27,6 +27,8 @@ class AssetCreate(BaseModel):
     property_number:      Optional[str]     = None
     additional_reference: Optional[str]     = None
     list_code:            Optional[int]     = None
+    rental_requirements:  Optional[str]     = None
+    general_observations: Optional[str]     = None
 
 
 class AssetUpdate(AssetCreate):
@@ -61,6 +63,8 @@ class AssetResponse(BaseModel):
     property_number:      Optional[str]     = None
     additional_reference: Optional[str]     = None
     list_code:            Optional[int]     = None
+    rental_requirements:  Optional[str]     = None
+    general_observations: Optional[str]     = None
 
     class Config:
         from_attributes = True
