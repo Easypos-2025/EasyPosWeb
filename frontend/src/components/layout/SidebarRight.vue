@@ -20,11 +20,20 @@
             :href="slot.cta_url" target="_blank" rel="noopener noreferrer"
             class="ad-link"
           >
-            <SlotContent :piece="currentPiece(slot, si)" :title="slot.title" />
+            <SlotContent :piece="currentPiece(slot, si)" :title="slot.title" :muted="slotMuted[si]" />
           </a>
           <div v-else class="ad-link">
-            <SlotContent :piece="currentPiece(slot, si)" :title="slot.title" />
+            <SlotContent :piece="currentPiece(slot, si)" :title="slot.title" :muted="slotMuted[si]" />
           </div>
+          <!-- Botón audio para video/youtube -->
+          <button
+            v-if="isMediaPiece(currentPiece(slot, si))"
+            class="btn-audio-sr"
+            @click.prevent.stop="toggleAudio(si)"
+            :title="slotMuted[si] ? 'Activar audio' : 'Silenciar'"
+          >
+            <i :class="slotMuted[si] ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'"></i>
+          </button>
           <!-- Dots cuando hay más de 1 pieza -->
           <div v-if="slot.pieces.length > 1" class="piece-dots">
             <span v-for="(p, pi) in slot.pieces" :key="pi"
@@ -86,9 +95,9 @@ import api from "@/services/apis"
 
 const emit = defineEmits(["close"])
 
-// ── Sub-componente: renderiza UNA pieza ──────────────────────────────────
+// ── Sub-componente: renderiza UNA pieza (con muted reactivo) ─────────────
 const SlotContent = defineComponent({
-  props: { piece: Object, title: String },
+  props: { piece: Object, title: String, muted: { type: Boolean, default: true } },
   setup(props) {
     return () => {
       const p = props.piece
@@ -100,14 +109,17 @@ const SlotContent = defineComponent({
       if (piece_type === "image")
         return [h("img", { src: media_url, alt: props.title || "Pauta", class: "ad-media", loading: "lazy" }), caption]
       if (piece_type === "video")
-        return [h("video", { src: media_url, autoplay: true, muted: true, loop: true, playsinline: true, preload: "metadata", class: "ad-media" }), caption]
-      if (piece_type === "youtube")
+        return [h("video", { src: media_url, autoplay: true, muted: props.muted, loop: true, playsinline: true, preload: "metadata", class: "ad-media" }), caption]
+      if (piece_type === "youtube") {
+        const mute = props.muted ? "&mute=1" : ""
         return h("div", { class: "ad-yt-wrap" }, [
           h("iframe", {
-            src: `https://www.youtube.com/embed/${youtube_id}?autoplay=1&mute=1&loop=1&playlist=${youtube_id}&controls=0&rel=0`,
+            key: `yt-${youtube_id}-${props.muted}`,  // re-mount al cambiar muted
+            src: `https://www.youtube.com/embed/${youtube_id}?autoplay=1&loop=1&playlist=${youtube_id}&controls=0&rel=0${mute}`,
             frameborder: "0", allow: "autoplay; encrypted-media", allowfullscreen: true, class: "ad-yt"
           })
         ])
+      }
       if (piece_type === "text")
         return h("div", { class: "ad-text-wrap" }, [
           h("p", { class: "ad-title-txt" }, props.title),
@@ -117,6 +129,11 @@ const SlotContent = defineComponent({
     }
   }
 })
+
+// ── Audio ──────────────────────────────────────────────────────────────────
+const slotMuted = ref([true, true, true])
+function toggleAudio(si) { slotMuted.value[si] = !slotMuted.value[si] }
+function isMediaPiece(p) { return p?.piece_type === "video" || p?.piece_type === "youtube" }
 
 // ── Datos + rotación inteligente de piezas ───────────────────────────────
 const slots      = ref([
@@ -238,6 +255,18 @@ onUnmounted(() => {
   transition: opacity .2s;
 }
 .ad-link:hover { opacity: .92; }
+
+/* ── Botón audio ── */
+.btn-audio-sr {
+  position: absolute; bottom: 7px; right: 7px; z-index: 10;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.25);
+  color: #fff; font-size: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s;
+  backdrop-filter: blur(4px);
+}
+.btn-audio-sr:hover { background: rgba(0,0,0,.85); }
 
 /* ── Dots de piezas múltiples ── */
 .piece-dots {
