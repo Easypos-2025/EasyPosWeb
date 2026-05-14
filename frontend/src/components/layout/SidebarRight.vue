@@ -90,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, defineComponent, h } from "vue"
+import { ref, nextTick, onMounted, onUnmounted, defineComponent, h } from "vue"
 import api from "@/services/apis"
 
 const emit = defineEmits(["close"])
@@ -99,15 +99,6 @@ const emit = defineEmits(["close"])
 const SlotContent = defineComponent({
   props: { piece: Object, title: String, muted: { type: Boolean, default: true } },
   setup(props) {
-    const iframeRef = ref(null)
-
-    watch(() => props.muted, (muted) => {
-      if (!iframeRef.value) return
-      iframeRef.value.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func: muted ? 'mute' : 'unMute', args: [] }), '*'
-      )
-    })
-
     return () => {
       const p = props.piece
       if (!p) return null
@@ -122,7 +113,6 @@ const SlotContent = defineComponent({
       if (piece_type === "youtube") {
         return h("div", { class: "ad-yt-wrap" }, [
           h("iframe", {
-            ref: iframeRef,
             key: `yt-${youtube_id}`,
             src: `https://www.youtube.com/embed/${youtube_id}?autoplay=1&loop=1&playlist=${youtube_id}&controls=0&rel=0&enablejsapi=1&mute=1`,
             frameborder: "0", allow: "autoplay; encrypted-media", allowfullscreen: true, class: "ad-yt"
@@ -141,7 +131,15 @@ const SlotContent = defineComponent({
 
 // ── Audio ──────────────────────────────────────────────────────────────────
 const slotMuted = ref([true, true, true])
-function toggleAudio(si) { slotMuted.value[si] = !slotMuted.value[si] }
+function toggleAudio(si) {
+  slotMuted.value[si] = !slotMuted.value[si]
+  const adSlots = document.querySelectorAll('.sidebar-right .ad-slot')
+  const iframe = adSlots[si]?.querySelector('iframe')
+  if (iframe?.contentWindow) {
+    const cmd = slotMuted.value[si] ? 'mute' : 'unMute'
+    iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: cmd, args: '' }), 'https://www.youtube.com')
+  }
+}
 function isMediaPiece(p) { return p?.piece_type === "video" || p?.piece_type === "youtube" }
 
 // ── Datos + rotación inteligente de piezas ───────────────────────────────
@@ -150,8 +148,48 @@ const slots      = ref([
   { slot: 2, active: false, pieces: [] },
   { slot: 3, active: false, pieces: [] },
 ])
-const pieceIdx   = ref([0, 0, 0])
-const slotTimers = [null, null, null]
+const pieceIdx      = ref([0, 0, 0])
+const slotTimers    = [null, null, null]
+const pauseCleanups = [null, null, null]
+
+function cleanPauseCleanup(si) {
+  if (pauseCleanups[si]) { pauseCleanups[si](); pauseCleanups[si] = null }
+}
+
+function skipToNextPiece(si) {
+  cleanPauseCleanup(si)
+  clearTimeout(slotTimers[si])
+  const len = slots.value[si]?.pieces?.length ?? 1
+  if (len <= 1) return
+  pieceIdx.value[si] = (pieceIdx.value[si] + 1) % len
+  scheduleSlot(si)
+}
+
+function attachPauseListener(si, piece) {
+  if (piece.piece_type === "video") {
+    nextTick(() => {
+      const adSlot = document.querySelectorAll('.sidebar-right .ad-slot')[si]
+      const video  = adSlot?.querySelector('video')
+      if (!video) return
+      const onPause = () => { if (!video.ended) skipToNextPiece(si) }
+      video.addEventListener('pause', onPause)
+      pauseCleanups[si] = () => video.removeEventListener('pause', onPause)
+    })
+  } else if (piece.piece_type === "youtube") {
+    const onMsg = (evt) => {
+      if (evt.origin !== 'https://www.youtube.com') return
+      const adSlot = document.querySelectorAll('.sidebar-right .ad-slot')[si]
+      const iframe = adSlot?.querySelector('iframe')
+      if (evt.source !== iframe?.contentWindow) return
+      try {
+        const d = JSON.parse(evt.data)
+        if (d.event === 'infoDelivery' && d.info?.playerState === 2) skipToNextPiece(si)
+      } catch {}
+    }
+    window.addEventListener('message', onMsg)
+    pauseCleanups[si] = () => window.removeEventListener('message', onMsg)
+  }
+}
 
 function currentPiece(slot, si) {
   return slot.pieces[pieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
@@ -177,18 +215,22 @@ async function pieceDuration(piece) {
 }
 
 function clearSlotTimers() {
-  slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null })
+  slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null; cleanPauseCleanup(i) })
 }
 
 async function scheduleSlot(si) {
+  cleanPauseCleanup(si)
   const slot = slots.value[si]
   if (!slot?.pieces?.length || slot.pieces.length <= 1) return
-  const duration = await pieceDuration(slot.pieces[pieceIdx.value[si]])
+  const piece    = slot.pieces[pieceIdx.value[si]]
+  const duration = await pieceDuration(piece)
   slotTimers[si] = setTimeout(() => {
+    cleanPauseCleanup(si)
     const len = slots.value[si]?.pieces?.length ?? 1
     pieceIdx.value[si] = (pieceIdx.value[si] + 1) % len
     scheduleSlot(si)
   }, duration)
+  attachPauseListener(si, piece)
 }
 
 async function loadSlots() {

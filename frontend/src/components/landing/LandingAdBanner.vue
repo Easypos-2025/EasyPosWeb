@@ -105,27 +105,17 @@
 
 <!-- Sub-componente: renderiza una pieza (imagen/video/youtube/texto) -->
 <script>
-import { defineComponent, h, computed, ref, watch } from "vue"
+import { defineComponent, h, computed } from "vue"
 
 const SlotPiece = defineComponent({
   name: "SlotPiece",
   props: { piece: Object, title: String, muted: { type: Boolean, default: true } },
   setup(props) {
-    const iframeRef = ref(null)
-
-    watch(() => props.muted, (muted) => {
-      if (!iframeRef.value) return
-      iframeRef.value.contentWindow?.postMessage(
-        JSON.stringify({ event: 'command', func: muted ? 'mute' : 'unMute', args: [] }), '*'
-      )
-    })
-
     const ytSrc = computed(() => {
       if (!props.piece?.youtube_id) return ""
       return `https://www.youtube.com/embed/${props.piece.youtube_id}?autoplay=1&loop=1&playlist=${props.piece.youtube_id}&controls=0&rel=0&enablejsapi=1&mute=1`
     })
-
-    return { ytSrc, iframeRef }
+    return { ytSrc }
   },
   render() {
     const p = this.piece
@@ -144,7 +134,6 @@ const SlotPiece = defineComponent({
     if (piece_type === "youtube")
       return h("div", { class: "slot-yt-wrap" }, [
         h("iframe", {
-          ref: this.iframeRef,
           key: `yt-${p.youtube_id}`,
           src: this.ytSrc, frameborder: "0",
           allow: "autoplay; encrypted-media", allowfullscreen: true, class: "slot-yt"
@@ -165,7 +154,7 @@ export default { components: { SlotPiece } }
 </script>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from "vue"
+import { ref, watch, nextTick, onMounted, onUnmounted } from "vue"
 import api from "@/services/apis"
 
 // ── Orientación ────────────────────────────────────────────────────────────
@@ -176,7 +165,20 @@ function checkOrientation() {
 
 // ── Audio por slot ─────────────────────────────────────────────────────────
 const slotMuted = ref([true, true, true])
-function toggleAudio(si) { slotMuted.value[si] = !slotMuted.value[si] }
+function toggleAudio(si) {
+  slotMuted.value[si] = !slotMuted.value[si]
+  let iframe = null
+  if (isMobilePortrait.value) {
+    iframe = document.querySelector('.carousel-wrap .ad-slot iframe')
+  } else {
+    const adSlots = document.querySelectorAll('.ad-banner-wrap > .ad-slot')
+    iframe = adSlots[si]?.querySelector('iframe')
+  }
+  if (iframe?.contentWindow) {
+    const cmd = slotMuted.value[si] ? 'mute' : 'unMute'
+    iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: cmd, args: '' }), 'https://www.youtube.com')
+  }
+}
 function isMediaPiece(piece) {
   return piece?.piece_type === "video" || piece?.piece_type === "youtube"
 }
@@ -187,9 +189,71 @@ const slots        = ref([
   { slot: 2, active: false, pieces: [] },
   { slot: 3, active: false, pieces: [] },
 ])
-const slotPieceIdx = ref([0, 0, 0])
-const currentSlot  = ref(0)
-const slotTimers   = [null, null, null]
+const slotPieceIdx  = ref([0, 0, 0])
+const currentSlot   = ref(0)
+const slotTimers    = [null, null, null]
+const pauseCleanups = [null, null, null]
+
+function cleanPauseCleanup(si) {
+  if (pauseCleanups[si]) { pauseCleanups[si](); pauseCleanups[si] = null }
+}
+
+// Avanza la pieza del slot si (extrae la lógica del timeout para reusar en pausa)
+function advancePiece(si) {
+  cleanPauseCleanup(si)
+  clearTimeout(slotTimers[si])
+  const len       = slots.value[si]?.pieces?.length ?? 1
+  const nextPiece = len > 1 ? (slotPieceIdx.value[si] + 1) % len : 0
+  slotPieceIdx.value[si] = nextPiece
+
+  if (isMobilePortrait.value) {
+    if (nextPiece === 0) {
+      let nextSi = (si + 1) % 3
+      let tries = 0
+      while (tries < 3 && !slots.value[nextSi]?.pieces?.length) { nextSi = (nextSi + 1) % 3; tries++ }
+      currentSlot.value = nextSi
+      scheduleSlot(nextSi)
+    } else {
+      scheduleSlot(si)
+    }
+  } else {
+    scheduleSlot(si)
+  }
+}
+
+function attachPauseListener(si, piece) {
+  if (piece.piece_type === "video") {
+    nextTick(() => {
+      let video = null
+      if (isMobilePortrait.value) {
+        video = document.querySelector('.carousel-wrap .ad-slot video')
+      } else {
+        video = document.querySelectorAll('.ad-banner-wrap > .ad-slot')[si]?.querySelector('video')
+      }
+      if (!video) return
+      const onPause = () => { if (!video.ended) advancePiece(si) }
+      video.addEventListener('pause', onPause)
+      pauseCleanups[si] = () => video.removeEventListener('pause', onPause)
+    })
+  } else if (piece.piece_type === "youtube") {
+    const onMsg = (evt) => {
+      if (evt.origin !== 'https://www.youtube.com') return
+      let iframe = null
+      if (isMobilePortrait.value) {
+        iframe = document.querySelector('.carousel-wrap .ad-slot iframe')
+      } else {
+        iframe = document.querySelectorAll('.ad-banner-wrap > .ad-slot')[si]?.querySelector('iframe')
+      }
+      if (evt.source !== iframe?.contentWindow) return
+      try {
+        const d = JSON.parse(evt.data)
+        if (d.event === 'infoDelivery' && d.info?.playerState === 2) advancePiece(si)
+      } catch {}
+    }
+    window.addEventListener('message', onMsg)
+    pauseCleanups[si] = () => window.removeEventListener('message', onMsg)
+  }
+}
 
 function currentSlotPiece(slot, si) {
   return slot.pieces[slotPieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
@@ -209,46 +273,36 @@ function getVideoDuration(url) {
 async function pieceDuration(piece) {
   if (!piece) return 8_000
   if (piece.piece_type === "video" && piece.media_url) return await getVideoDuration(piece.media_url)
-  if (piece.piece_type === "youtube") return 5 * 60 * 1000
+  // En móvil el carrusel no puede esperar 5 minutos por YouTube
+  if (piece.piece_type === "youtube") return isMobilePortrait.value ? 20_000 : 5 * 60 * 1000
   return 8_000   // imagen / texto
 }
 
 function clearSlotTimers() {
-  slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null })
+  slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null; cleanPauseCleanup(i) })
 }
 
-// ── Scheduling: respeta duración + avanza slot en móvil al completar ciclo ─
+// ── Scheduling: respeta duración + detecta pausa para avanzar anticipadamente ─
 async function scheduleSlot(si) {
+  cleanPauseCleanup(si)
   const slot = slots.value[si]
   if (!slot?.pieces?.length) return
   if (slot.pieces.length <= 1 && !isMobilePortrait.value) return  // 1 pieza sin rotación en desktop
 
   const piece    = slot.pieces[slotPieceIdx.value[si]]
   const duration = await pieceDuration(piece)
-
-  slotTimers[si] = setTimeout(() => {
-    const len       = slots.value[si]?.pieces?.length ?? 1
-    const nextPiece = len > 1 ? (slotPieceIdx.value[si] + 1) % len : 0
-    slotPieceIdx.value[si] = nextPiece
-
-    if (isMobilePortrait.value) {
-      // Móvil: cuando las piezas del slot completan ciclo → avanzar slot
-      if (nextPiece === 0) {
-        currentSlot.value = (currentSlot.value + 1) % 3
-        scheduleSlot(currentSlot.value)
-      } else {
-        scheduleSlot(si)
-      }
-    } else {
-      scheduleSlot(si)
-    }
-  }, duration)
+  slotTimers[si] = setTimeout(() => advancePiece(si), duration)
+  attachPauseListener(si, piece)
 }
 
 function startTimers() {
   clearSlotTimers()
   if (isMobilePortrait.value) {
-    scheduleSlot(currentSlot.value)  // cascada en móvil
+    // Empezar desde el primer slot que tenga piezas
+    const firstActive = slots.value.findIndex(s => s.pieces?.length > 0)
+    const startSi = firstActive >= 0 ? firstActive : 0
+    currentSlot.value = startSi
+    scheduleSlot(startSi)
   } else {
     slots.value.forEach((_, si) => scheduleSlot(si))  // independiente en desktop
   }
