@@ -64,11 +64,11 @@
                     <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
                     <span>{{ profile.name }}</span>
                   </div>
-                  <h2 class="slide-name">{{ profile.name }}</h2>
                   <p class="slide-desc">
                     {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
                   </p>
                   <div class="slide-actions">
+                    <h2 class="slide-name">{{ profile.name }}</h2>
                     <a href="/register" class="btn-slide-cta">
                       <i class="bi bi-rocket-takeoff-fill me-2"></i>Probar Gratis
                     </a>
@@ -1100,24 +1100,29 @@ export default {
 }
 
 .slide-name {
-  font-size: clamp(2.2rem, 5.5vw, 4.2rem);
-  font-weight: 900;
-  margin: 0 0 18px;
-  line-height: 1.08;
+  font-size: clamp(1.1rem, 2.4vw, 1.75rem);
+  font-weight: 800;
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
   text-shadow: 0 2px 24px rgba(0,0,0,.5);
-  letter-spacing: -.02em;
+  letter-spacing: -.01em;
 }
 
 .slide-desc {
   font-size: clamp(.95rem, 1.5vw, 1.2rem);
   color: rgba(255,255,255,.82);
-  margin-bottom: 32px;
+  margin-bottom: 20px;
   max-width: 580px;
   line-height: 1.72;
   text-shadow: 0 1px 10px rgba(0,0,0,.4);
 }
 
-.slide-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+.slide-actions { display: flex; align-items: center; gap: 14px; width: 100%; }
 
 .btn-slide-cta {
   display: inline-flex; align-items: center;
@@ -1838,9 +1843,10 @@ export default {
   .slider-arrow.left  { left: 12px; }
   .slider-arrow.right { right: 12px; }
   .slide-item { background-position: top center; }
-  .slide-content { padding: 0 6% 100px; }
-  .slide-name { font-size: 2rem; }
+  .slide-content { padding: 0 6% 90px; }
+  .slide-name { font-size: 1.15rem; white-space: nowrap; flex: 0 0 100%; }
   .slide-desc { font-size: .95rem; }
+  .slide-actions { flex-wrap: wrap; }
   .multidevice-strip { flex-direction: column; text-align: center; }
   .contact-grid { grid-template-columns: 1fr; }
   .form-row-2 { grid-template-columns: 1fr; }
@@ -1854,8 +1860,9 @@ export default {
   .pricing-cards { grid-template-columns: 1fr; }
   .hero-title { font-size: 1.8rem; }
   .payment-methods { flex-direction: column; align-items: center; }
-  .slide-actions { flex-direction: column; }
-  .btn-slide-cta, .btn-slide-outline { justify-content: center; }
+  .slide-actions { flex-wrap: wrap; }
+  .slide-name { flex: 0 0 100%; white-space: normal; font-size: 1rem; }
+  .btn-slide-cta, .btn-slide-outline { flex: 1; justify-content: center; padding: 11px 16px; font-size: .9rem; }
 }
 
 </style>
