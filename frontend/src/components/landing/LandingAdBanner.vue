@@ -7,10 +7,16 @@
         <template v-if="slot.active && slot.pieces?.length">
           <a v-if="slot.cta_url" :href="slot.cta_url" target="_blank"
              rel="noopener noreferrer" class="slot-inner slot-link">
-            <PieceContent :piece="slot.pieces[0]" :title="slot.title" />
+            <PieceContent :piece="currentSlotPiece(slot, si)" :title="slot.title" />
           </a>
           <div v-else class="slot-inner">
-            <PieceContent :piece="slot.pieces[0]" :title="slot.title" />
+            <PieceContent :piece="currentSlotPiece(slot, si)" :title="slot.title" />
+          </div>
+          <!-- Dots piezas múltiples -->
+          <div v-if="slot.pieces.length > 1" class="slot-piece-dots">
+            <span v-for="(p, pi) in slot.pieces" :key="pi"
+              class="spdot" :class="{ active: pi === slotPieceIdx[si] }"
+            ></span>
           </div>
         </template>
         <!-- Placeholder → contacto -->
@@ -37,10 +43,10 @@
               <a v-if="slots[currentSlot].cta_url"
                  :href="slots[currentSlot].cta_url" target="_blank"
                  rel="noopener noreferrer" class="slot-inner slot-link">
-                <PieceContent :piece="slots[currentSlot].pieces[0]" :title="slots[currentSlot].title" />
+                <PieceContent :piece="currentSlotPiece(slots[currentSlot], currentSlot)" :title="slots[currentSlot].title" />
               </a>
               <div v-else class="slot-inner">
-                <PieceContent :piece="slots[currentSlot].pieces[0]" :title="slots[currentSlot].title" />
+                <PieceContent :piece="currentSlotPiece(slots[currentSlot], currentSlot)" :title="slots[currentSlot].title" />
               </div>
             </template>
             <a v-else href="#contacto" class="slot-inner slot-placeholder">
@@ -109,16 +115,31 @@ function checkOrientation() {
   isMobilePortrait.value = window.innerWidth < 560 && window.innerHeight > window.innerWidth
 }
 
-const slots = ref([
+const slots        = ref([
   { slot: 1, active: false, pieces: [] },
   { slot: 2, active: false, pieces: [] },
   { slot: 3, active: false, pieces: [] },
 ])
+const slotPieceIdx = ref([0, 0, 0])   // índice de pieza activa por slot
+
+function currentSlotPiece(slot, si) {
+  return slot.pieces[slotPieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
+}
+
+function rotatePieces() {
+  slots.value.forEach((slot, si) => {
+    if (slot.pieces?.length > 1)
+      slotPieceIdx.value[si] = (slotPieceIdx.value[si] + 1) % slot.pieces.length
+  })
+}
 
 async function loadSlots() {
   try {
     const res = await api.get("/ads/active-slots")
-    if (Array.isArray(res.data)) slots.value = res.data
+    if (Array.isArray(res.data)) {
+      slots.value = res.data
+      slotPieceIdx.value = [0, 0, 0]
+    }
   } catch {}
 }
 
@@ -140,18 +161,21 @@ function resetCarouselTimer() {
 }
 
 let refreshTimer = null
+let rotateTimer  = null
 
 onMounted(() => {
   checkOrientation()
   window.addEventListener("resize", () => { checkOrientation(); resetCarouselTimer() })
   loadSlots()
-  refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
+  refreshTimer = setInterval(loadSlots,    5 * 60 * 1000)
+  rotateTimer  = setInterval(rotatePieces, 4_000)   // rotar piezas cada 4s
   resetCarouselTimer()
 })
 
 onUnmounted(() => {
   window.removeEventListener("resize", checkOrientation)
   if (carouselTimer) clearInterval(carouselTimer)
+  if (rotateTimer)   clearInterval(rotateTimer)
   if (refreshTimer)  clearInterval(refreshTimer)
 })
 </script>
@@ -260,6 +284,18 @@ onUnmounted(() => {
   border-radius: 20px;
   white-space: nowrap;
 }
+
+/* ── Dots piezas múltiples (desktop/tablet) ── */
+.slot-piece-dots {
+  position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; z-index: 5; pointer-events: none;
+}
+.spdot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(255,255,255,.35);
+  transition: background .2s, transform .2s;
+}
+.spdot.active { background: #fff; transform: scale(1.3); }
 
 /* ── Carrusel móvil ── */
 .carousel-wrap {

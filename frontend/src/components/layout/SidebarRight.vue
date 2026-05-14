@@ -16,18 +16,20 @@
 
         <!-- Slot activo con pieza -->
         <template v-if="slot.active && slot.pieces?.length">
-          <!-- CON link: solo href válido, nunca undefined -->
           <a v-if="slot.cta_url"
-            :href="slot.cta_url"
-            target="_blank"
-            rel="noopener noreferrer"
+            :href="slot.cta_url" target="_blank" rel="noopener noreferrer"
             class="ad-link"
           >
-            <SlotContent :slot="slot" />
+            <SlotContent :piece="currentPiece(slot, si)" :title="slot.title" />
           </a>
-          <!-- SIN link -->
           <div v-else class="ad-link">
-            <SlotContent :slot="slot" />
+            <SlotContent :piece="currentPiece(slot, si)" :title="slot.title" />
+          </div>
+          <!-- Dots cuando hay más de 1 pieza -->
+          <div v-if="slot.pieces.length > 1" class="piece-dots">
+            <span v-for="(p, pi) in slot.pieces" :key="pi"
+              class="pdot" :class="{ active: pi === pieceIdx[si] }"
+            ></span>
           </div>
         </template>
 
@@ -84,30 +86,21 @@ import api from "@/services/apis"
 
 const emit = defineEmits(["close"])
 
-// ── Sub-componente para el contenido del slot ────────────────────────────
+// ── Sub-componente: renderiza UNA pieza ──────────────────────────────────
 const SlotContent = defineComponent({
-  props: { slot: Object },
+  props: { piece: Object, title: String },
   setup(props) {
     return () => {
-      const s = props.slot
-      if (!s?.pieces?.length) return null
-      const piece = s.pieces[0]
-      const { piece_type, media_url, youtube_id, text_content } = piece
-
-      const caption = (s.title && piece_type !== "text")
-        ? h("div", { class: "ad-caption" }, s.title)
+      const p = props.piece
+      if (!p) return null
+      const { piece_type, media_url, youtube_id, text_content } = p
+      const caption = (props.title && piece_type !== "text")
+        ? h("div", { class: "ad-caption" }, props.title)
         : null
-
       if (piece_type === "image")
-        return [
-          h("img", { src: media_url, alt: s.title || "Pauta", class: "ad-media", loading: "lazy" }),
-          caption,
-        ]
+        return [h("img", { src: media_url, alt: props.title || "Pauta", class: "ad-media", loading: "lazy" }), caption]
       if (piece_type === "video")
-        return [
-          h("video", { src: media_url, autoplay: true, muted: true, loop: true, playsinline: true, preload: "metadata", class: "ad-media" }),
-          caption,
-        ]
+        return [h("video", { src: media_url, autoplay: true, muted: true, loop: true, playsinline: true, preload: "metadata", class: "ad-media" }), caption]
       if (piece_type === "youtube")
         return h("div", { class: "ad-yt-wrap" }, [
           h("iframe", {
@@ -117,7 +110,7 @@ const SlotContent = defineComponent({
         ])
       if (piece_type === "text")
         return h("div", { class: "ad-text-wrap" }, [
-          h("p", { class: "ad-title-txt" }, s.title),
+          h("p", { class: "ad-title-txt" }, props.title),
           h("p", { class: "ad-body-txt" }, text_content),
         ])
       return null
@@ -125,26 +118,46 @@ const SlotContent = defineComponent({
   }
 })
 
-// ── Datos ─────────────────────────────────────────────────────────────────
-const slots = ref([
+// ── Datos + rotación de piezas ────────────────────────────────────────────
+const slots    = ref([
   { slot: 1, active: false, pieces: [] },
   { slot: 2, active: false, pieces: [] },
   { slot: 3, active: false, pieces: [] },
 ])
+const pieceIdx = ref([0, 0, 0])   // índice de pieza activa por slot
+
+function currentPiece(slot, si) {
+  return slot.pieces[pieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
+}
+
+function rotatePieces() {
+  slots.value.forEach((slot, si) => {
+    if (slot.pieces?.length > 1)
+      pieceIdx.value[si] = (pieceIdx.value[si] + 1) % slot.pieces.length
+  })
+}
 
 async function loadSlots() {
   try {
     const res = await api.get("/ads/active-slots")
-    if (Array.isArray(res.data)) slots.value = res.data
+    if (Array.isArray(res.data)) {
+      slots.value = res.data
+      pieceIdx.value = [0, 0, 0]
+    }
   } catch {}
 }
 
 let refreshTimer = null
+let rotateTimer  = null
 onMounted(() => {
   loadSlots()
-  refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
+  refreshTimer = setInterval(loadSlots,    5 * 60 * 1000)
+  rotateTimer  = setInterval(rotatePieces, 4_000)         // rotar cada 4s
 })
-onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+  if (rotateTimer)  clearInterval(rotateTimer)
+})
 </script>
 
 <style scoped>
@@ -197,6 +210,18 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
   transition: opacity .2s;
 }
 .ad-link:hover { opacity: .92; }
+
+/* ── Dots de piezas múltiples ── */
+.piece-dots {
+  position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 4px; z-index: 5; pointer-events: none;
+}
+.pdot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(255,255,255,.35);
+  transition: background .2s, transform .2s;
+}
+.pdot.active { background: #fff; transform: scale(1.3); }
 
 /* ── Placeholder ── */
 .ad-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; padding: 6px; }
