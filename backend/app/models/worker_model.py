@@ -8,14 +8,10 @@ class Worker(Base):
 
     __tablename__ = "workers"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-
-    profession_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("professions.id"), nullable=True
-    )
-
-    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    id:            Mapped[int]           = mapped_column(Integer, primary_key=True)
+    company_id:    Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id_company"), nullable=True, index=True)
+    name:          Mapped[str]           = mapped_column(String(100), nullable=False)
+    profession_id: Mapped[Optional[int]] = mapped_column(ForeignKey("professions.id"), nullable=True)
+    phone:         Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     profession = relationship("Profession", back_populates="workers", lazy="selectin")

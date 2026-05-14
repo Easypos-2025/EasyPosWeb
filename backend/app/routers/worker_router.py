@@ -21,8 +21,12 @@ def _ser(w: Worker):
 
 
 @router.get("/")
-async def get_workers(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Worker).order_by(Worker.name))
+async def get_workers(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Worker)
+        .where(Worker.company_id == current_user.company_id)
+        .order_by(Worker.name)
+    )
     return [_ser(w) for w in result.scalars().all()]
 
 
@@ -37,6 +41,7 @@ async def create_worker(
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
 
     w = Worker(
+        company_id=    current_user.company_id,
         name=          name,
         profession_id= data.get("profession_id") or None,
         phone=         (data.get("phone") or "").strip() or None,
@@ -54,7 +59,7 @@ async def update_worker(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
+    result = await db.execute(select(Worker).where(Worker.id == worker_id, Worker.company_id == current_user.company_id))
     w = result.scalar_one_or_none()
     if not w:
         raise HTTPException(status_code=404, detail="Ejecutor no encontrado")
@@ -77,7 +82,7 @@ async def delete_worker(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
+    result = await db.execute(select(Worker).where(Worker.id == worker_id, Worker.company_id == current_user.company_id))
     w = result.scalar_one_or_none()
     if not w:
         raise HTTPException(status_code=404, detail="Ejecutor no encontrado")
