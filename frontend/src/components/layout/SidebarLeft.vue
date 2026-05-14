@@ -208,13 +208,7 @@ const toggleMenu = (id) => {
 
 const openParentByRoute = (path) => {
   const newOpen = {}
-  // Abrir todos los padres que tienen hijos
-  menu.value.forEach(item => {
-    if (item.children?.length) {
-      newOpen[item.id] = true
-    }
-  })
-  // Asegurar que el padre de la ruta activa esté abierto
+  // Solo abrir el padre que contiene la ruta activa, el resto queda colapsado
   menu.value.forEach(item => {
     if (item.children?.length) {
       const match = item.children.find(child => child.route === path)
