@@ -107,6 +107,43 @@
             <label class="form-lbl">URL destino (debe iniciar con https://)</label>
             <input v-model="form.cta_url" class="form-ctrl" placeholder="https://wa.me/57300..." />
           </div>
+
+          <!-- Redes sociales del negocio -->
+          <div class="social-section">
+            <div class="social-section-header">
+              <i class="bi bi-share-fill me-1" style="color:#2563eb"></i>
+              <span class="form-section-label" style="margin:0">Redes sociales del negocio</span>
+              <span class="social-hint">(aparecen como íconos en la pauta)</span>
+            </div>
+            <div class="social-fields">
+              <div class="social-field">
+                <span class="social-icon-lbl"><i class="bi bi-instagram" style="color:#e1306c"></i></span>
+                <input v-model="form.social_instagram" class="form-ctrl" :disabled="!canEditAd"
+                  placeholder="https://instagram.com/tunegocio" />
+              </div>
+              <div class="social-field">
+                <span class="social-icon-lbl"><i class="bi bi-tiktok" style="color:#010101"></i></span>
+                <input v-model="form.social_tiktok" class="form-ctrl" :disabled="!canEditAd"
+                  placeholder="https://tiktok.com/@tunegocio" />
+              </div>
+              <div class="social-field">
+                <span class="social-icon-lbl"><i class="bi bi-facebook" style="color:#1877f2"></i></span>
+                <input v-model="form.social_facebook" class="form-ctrl" :disabled="!canEditAd"
+                  placeholder="https://facebook.com/tunegocio" />
+              </div>
+              <div class="social-field">
+                <span class="social-icon-lbl"><i class="bi bi-youtube" style="color:#ff0000"></i></span>
+                <input v-model="form.social_youtube_channel" class="form-ctrl" :disabled="!canEditAd"
+                  placeholder="https://youtube.com/@tunegocio" />
+              </div>
+              <div class="social-field">
+                <span class="social-icon-lbl"><i class="bi bi-globe2" style="color:#6b7280"></i></span>
+                <input v-model="form.social_website" class="form-ctrl" :disabled="!canEditAd"
+                  placeholder="https://tunegocio.com" />
+              </div>
+            </div>
+          </div>
+
           <div class="form-row-2">
             <div>
               <label class="form-lbl">Fecha inicio *</label>
@@ -210,36 +247,6 @@
                 <i class="bi bi-plus me-1"></i>Agregar
               </button>
               <button class="btn-sub-cancel" @click="showTextForm=false;textContent=''">Cancelar</button>
-            </div>
-          </div>
-
-          <!-- Redes sociales del anunciante -->
-          <div class="form-section-label mt-3">Redes sociales (se mostrarán como íconos en la pauta)</div>
-          <div class="social-fields">
-            <div class="social-field">
-              <span class="social-icon-lbl"><i class="bi bi-instagram" style="color:#e1306c"></i></span>
-              <input v-model="form.social_instagram" class="form-ctrl" :disabled="!canEditAd"
-                placeholder="https://instagram.com/tunegocio" />
-            </div>
-            <div class="social-field">
-              <span class="social-icon-lbl"><i class="bi bi-tiktok" style="color:#010101"></i></span>
-              <input v-model="form.social_tiktok" class="form-ctrl" :disabled="!canEditAd"
-                placeholder="https://tiktok.com/@tunegocio" />
-            </div>
-            <div class="social-field">
-              <span class="social-icon-lbl"><i class="bi bi-facebook" style="color:#1877f2"></i></span>
-              <input v-model="form.social_facebook" class="form-ctrl" :disabled="!canEditAd"
-                placeholder="https://facebook.com/tunegocio" />
-            </div>
-            <div class="social-field">
-              <span class="social-icon-lbl"><i class="bi bi-youtube" style="color:#ff0000"></i></span>
-              <input v-model="form.social_youtube_channel" class="form-ctrl" :disabled="!canEditAd"
-                placeholder="https://youtube.com/@tunegocio" />
-            </div>
-            <div class="social-field">
-              <span class="social-icon-lbl"><i class="bi bi-globe2" style="color:#6b7280"></i></span>
-              <input v-model="form.social_website" class="form-ctrl" :disabled="!canEditAd"
-                placeholder="https://tunegocio.com" />
             </div>
           </div>
 
@@ -838,7 +845,13 @@ onMounted(loadAll)
 .rejection-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #dc2626; margin-top: 10px; }
 .info-box { background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.2); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #16a34a; margin-bottom: 8px; display: flex; align-items: center; }
 .platform-detect { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #2563eb; margin-top: 4px; }
-.social-fields { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.social-section {
+  background: rgba(37,99,235,.05); border: 1px solid rgba(37,99,235,.12);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; margin-top: 8px;
+}
+.social-section-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.social-hint { font-size: 10px; opacity: .5; }
+.social-fields { display: flex; flex-direction: column; gap: 6px; }
 .social-field { display: flex; align-items: center; gap: 8px; }
 .social-icon-lbl { width: 24px; text-align: center; font-size: 16px; flex-shrink: 0; }
 
