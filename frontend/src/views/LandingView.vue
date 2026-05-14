@@ -1,5 +1,5 @@
 <template>
-  <div class="landing-root">
+  <div class="landing-root" :class="{ 'has-ad-sidebar': !sidebarDismissed }">
 
     <!-- ══════════════════════════════════════════════
          NAVBAR FIJA
@@ -1194,7 +1194,16 @@ export default {
 }
 .slider-arrow:hover { background: var(--primary); border-color: var(--primary); }
 .slider-arrow.left  { left: 24px; }
-.slider-arrow.right { right: 24px; }
+.slider-arrow.right { right: 24px; transition: right .3s; }
+
+/* Flecha derecha se aleja del sidebar cuando está visible */
+.has-ad-sidebar .slider-arrow.right { right: calc(190px + 16px); }
+@media (max-width: 1199px) and (min-width: 768px) {
+  .has-ad-sidebar .slider-arrow.right { right: calc(155px + 12px); }
+}
+@media (max-width: 767px) {
+  .has-ad-sidebar .slider-arrow.right { right: calc(100px + 8px); }
+}
 
 /* Counter */
 .slide-counter {

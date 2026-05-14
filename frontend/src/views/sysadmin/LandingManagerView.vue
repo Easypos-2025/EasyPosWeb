@@ -90,7 +90,20 @@
             </label>
           </div>
           <div class="profile-edit-body">
-            <h5 class="profile-edit-name">{{ prof.name }}</h5>
+            <div class="profile-name-row">
+              <h5 class="profile-edit-name">{{ prof.name }}</h5>
+              <!-- Badge estado activo/inactivo del perfil -->
+              <span class="prof-status-badge" :class="prof.is_active ? 'active' : 'inactive'">
+                <i :class="prof.is_active ? 'bi bi-check-circle-fill' : 'bi bi-x-circle-fill'"></i>
+                {{ prof.is_active ? 'Activo' : 'Inactivo' }}
+              </span>
+            </div>
+            <!-- Alerta cuando is_active=false -->
+            <div v-if="!prof.is_active" class="prof-inactive-warn">
+              <i class="bi bi-exclamation-triangle-fill me-1"></i>
+              Este perfil está <strong>inactivo</strong> — no aparecerá en el slider aunque "Mostrar en landing" esté marcado.
+              Actívalo desde <em>Gestión de Perfiles de Negocio</em>.
+            </div>
             <div class="form-row-2">
               <div class="form-group">
                 <label>Ícono Bootstrap</label>
@@ -111,8 +124,7 @@
             </div>
             <div class="form-group show-landing-toggle">
               <label class="check-label">
-                <input type="checkbox" v-model="prof.show_in_landing"
-                       @change="saveProfile(prof)" />
+                <input type="checkbox" v-model="prof.show_in_landing" />
                 <span>Mostrar en slider de la landing</span>
               </label>
             </div>
@@ -479,13 +491,14 @@ export default {
     async function saveProfile(prof) {
       try {
         await api.put(`/landing/admin/profiles/${prof.id}`, {
-          image_url: prof.image_url,
+          image_url:           prof.image_url,
           landing_description: prof.landing_description,
-          icon: prof.icon,
-          color_accent: prof.color_accent,
-          show_in_landing: prof.show_in_landing,
+          icon:                prof.icon,
+          color_accent:        prof.color_accent,
+          show_in_landing:     !!prof.show_in_landing,  // forzar boolean (no int 0/1)
         })
         showToast("Perfil actualizado", "success")
+        await loadProfiles()  // refrescar desde BD para confirmar
       } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
@@ -865,4 +878,29 @@ export default {
 }
 .btn-save:hover { background: #1d4ed8; }
 .btn-save:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Badge activo/inactivo en perfil */
+.profile-name-row {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 10px;
+}
+.prof-status-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; padding: 3px 8px;
+  border-radius: 20px;
+}
+.prof-status-badge.active   { background: rgba(34,197,94,.12);  color: #16a34a; }
+.prof-status-badge.inactive { background: rgba(239,68,68,.12);  color: #dc2626; }
+
+/* Alerta perfil inactivo */
+.prof-inactive-warn {
+  background: rgba(245,158,11,.1);
+  border: 1px solid rgba(245,158,11,.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #92400e;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
 </style>

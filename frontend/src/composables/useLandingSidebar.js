@@ -7,11 +7,9 @@ const DISMISS_KEY = "landing_ads_dismissed"
 const dismissed = ref(true)
 
 export function initLandingSidebar() {
-  const hasSeen      = localStorage.getItem(SEEN_KEY)      === "true"
-  const hasDismissed = localStorage.getItem(DISMISS_KEY)   === "true"
-  // Primera visita: siempre visible; siguientes: respetar preferencia
-  dismissed.value = hasSeen && hasDismissed
-  if (!hasSeen) localStorage.setItem(SEEN_KEY, "true")
+  // Siempre visible al cargar/recargar la página — sin importar sesión anterior
+  dismissed.value = false
+  localStorage.setItem(SEEN_KEY, "true")
 }
 
 export function dismissSidebar() {

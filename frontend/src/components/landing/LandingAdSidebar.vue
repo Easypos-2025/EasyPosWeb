@@ -20,10 +20,11 @@
     <div class="ls-header">
       <span class="ls-header-title">
         <i class="bi bi-megaphone-fill"></i>
-        Destacados
+        <span class="ls-header-text">Destacados</span>
       </span>
-      <button class="ls-close" @click="dismiss" title="Ocultar publicidad" aria-label="Cerrar panel">
+      <button class="ls-close" @click="dismiss" title="Ocultar" aria-label="Cerrar panel">
         <i class="bi bi-x-lg"></i>
+        <span class="ls-close-label">Cerrar</span>
       </button>
     </div>
 
@@ -51,8 +52,8 @@
           </div>
         </template>
 
-        <!-- Placeholder "Paute Aquí" -->
-        <a href="https://easyposweb.com/register" class="ls-placeholder-link" v-else>
+        <!-- Placeholder: clic cierra el sidebar (no navega) -->
+        <div class="ls-placeholder-link" @click="dismiss" title="Ocultar panel" v-else>
           <svg viewBox="0 0 180 200" xmlns="http://www.w3.org/2000/svg" class="ls-placeholder-svg">
             <defs>
               <linearGradient :id="`lpBg${si}`" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -90,7 +91,7 @@
             <rect x="0" y="191" width="180" height="9" fill="rgba(0,0,0,0.25)" rx="2"/>
             <text x="90" y="198.5" text-anchor="middle" font-family="Arial,sans-serif" font-size="6.5" fill="rgba(255,255,255,0.5)" letter-spacing="0.5">EasyPosWeb.com</text>
           </svg>
-        </a>
+        </div>
 
       </div>
     </div>
@@ -197,17 +198,22 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
 }
 .ls-header-title .bi { color: #f59e0b; font-size: 13px; }
 .ls-close {
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.45);
-  font-size: 13px;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: rgba(255,255,255,0.75);
+  font-size: 11px;
   cursor: pointer;
   padding: 4px 6px;
-  border-radius: 5px;
+  border-radius: 6px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
   transition: color .15s, background .15s;
 }
-.ls-close:hover { color: #fff; background: rgba(255,255,255,0.12); }
+.ls-close:hover { color: #fff; background: rgba(239,68,68,0.35); }
+.ls-close-label { font-size: 9px; font-weight: 700; letter-spacing: 0.3px; }
 
 /* ── Slots ── */
 .ls-slots {
@@ -317,27 +323,22 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
   .landing-sidebar {
     width: 100px;
     top: 62px;
-    padding-bottom: 0;   /* sin padding — los slots llenan todo */
-    overflow: hidden;    /* sin scroll — flex reparte el espacio */
+    padding-bottom: 0;
+    overflow: hidden;
   }
-  .ls-slots {
-    gap: 4px;
-    padding: 4px;
-  }
-  .ls-slot {
-    min-height: 0;       /* flex:1 controla la altura, sin mínimo fijo */
-    border-radius: 6px;
-  }
-  .ls-header        { padding: 6px 8px; }
-  .ls-header-title span { display: none; }  /* solo icono en header */
-  .ls-header-title .bi  { font-size: 14px; }
-  .ls-caption           { font-size: 8px; padding: 8px 4px 4px; }
+  .ls-slots  { gap: 4px; padding: 4px; }
+  .ls-slot   { min-height: 0; border-radius: 6px; }
+  .ls-header { padding: 5px 7px; }
+  .ls-header-text   { display: none; }   /* ocultar "Destacados" en texto */
+  .ls-header-title .bi { font-size: 13px; }
+  .ls-close-label   { display: none; }   /* solo X en móvil portrait estrecho */
+  .ls-caption       { font-size: 8px; padding: 8px 4px 4px; }
 }
 
 /* Pantallas muy pequeñas portrait (<420px) */
 @media (max-width: 420px) and (orientation: portrait) {
   .landing-sidebar { width: 86px; top: 58px; }
   .ls-text-title   { font-size: 8px; }
-  .ls-header       { padding: 5px 7px; }
+  .ls-header       { padding: 4px 6px; }
 }
 </style>
