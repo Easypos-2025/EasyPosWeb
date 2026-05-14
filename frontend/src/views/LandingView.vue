@@ -1079,7 +1079,6 @@ export default {
   right: 0;
   padding: 0 8% 90px;
   color: #fff;
-  max-width: 860px;
 }
 
 .slide-tag {
@@ -1097,10 +1096,7 @@ export default {
   text-transform: uppercase;
   letter-spacing: .08em;
   margin: 0;
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .slide-name {
@@ -1108,9 +1104,6 @@ export default {
   font-weight: 900;
   margin: 0 0 12px;
   line-height: 1.08;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   text-shadow: 0 2px 24px rgba(0,0,0,.5);
   letter-spacing: -.02em;
 }
@@ -1848,8 +1841,8 @@ export default {
   .slide-content { padding: 0 6% 90px; }
   .slide-name { font-size: clamp(1.3rem, 5vw, 2rem); }
   .slide-desc { font-size: .95rem; }
-  .slide-actions { flex-wrap: wrap; }
-  .slide-tag { flex: 0 0 100%; }
+  .slide-actions { flex-wrap: wrap; gap: 10px; }
+  .slide-tag { flex: 0 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .multidevice-strip { flex-direction: column; text-align: center; }
   .contact-grid { grid-template-columns: 1fr; }
   .form-row-2 { grid-template-columns: 1fr; }
@@ -1863,8 +1856,8 @@ export default {
   .pricing-cards { grid-template-columns: 1fr; }
   .hero-title { font-size: 1.8rem; }
   .payment-methods { flex-direction: column; align-items: center; }
-  .slide-actions { flex-wrap: wrap; }
-  .slide-tag { flex: 0 0 100%; }
+  .slide-actions { flex-wrap: wrap; gap: 10px; }
+  .slide-tag { flex: 0 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .btn-slide-cta, .btn-slide-outline { flex: 1; justify-content: center; padding: 11px 16px; font-size: .9rem; }
 }
 
