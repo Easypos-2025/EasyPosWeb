@@ -1015,7 +1015,7 @@ export default {
 
 /* Franja publicitaria — altura fija */
 .ad-banner-strip {
-  height: clamp(140px, 20vh, 210px);
+  height: clamp(170px, 26vh, 260px);
   flex-shrink: 0;
 }
 
@@ -1051,13 +1051,13 @@ export default {
   overflow: hidden;
 }
 
-/* Responsive: banner más compacto en móvil */
+/* Responsive: banner en móvil */
 @media (max-width: 767px) {
-  .ad-banner-strip { height: clamp(110px, 18vh, 155px); }
+  .ad-banner-strip { height: clamp(130px, 22vh, 180px); }
   .slider-floating-label { top: 10px; left: 14px; font-size: .68rem; padding: 4px 10px; }
 }
 @media (max-width: 767px) and (orientation: portrait) {
-  .ad-banner-strip { height: clamp(120px, 22vh, 170px); }
+  .ad-banner-strip { height: clamp(145px, 27vh, 200px); }
 }
 
 .slider-track {
