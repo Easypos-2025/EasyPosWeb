@@ -16,15 +16,6 @@
           <a href="#contacto"   class="nav-link-item">Contacto</a>
         </div>
         <div class="nav-actions">
-          <!-- Toggle panel publicitario — mismo sistema que en el dashboard -->
-          <button
-            class="btn-nav-sidebar-toggle"
-            :class="{ 'panel-on': !sidebarDismissed }"
-            @click="toggleSidebar"
-            title="Panel de publicidad"
-          >
-            <i class="bi bi-layout-sidebar-reverse"></i>
-          </button>
           <a href="/login"    class="btn-nav-outline">Iniciar Sesión</a>
           <a href="/register" class="btn-nav-solid">Empezar Gratis</a>
         </div>
@@ -44,82 +35,90 @@
     </nav>
 
     <!-- ══════════════════════════════════════════════
-         SLIDER PERFILES DE NEGOCIO — FULL SCREEN
+         PRIMERA VISTA — AD BANNER + PERFILES
     ══════════════════════════════════════════════ -->
     <section id="perfiles" class="section-perfiles">
-      <template v-if="profiles.length">
-        <!-- Floating label top-left -->
-        <div class="slider-floating-label">
-          <i class="bi bi-grid-3x3-gap-fill me-2"></i>Perfiles de Negocio
-        </div>
 
-        <div class="profiles-slider">
-          <div
-            class="slider-track"
-            :style="trackStyle"
-            @transitionend.self="onTransitionEnd"
-          >
+      <!-- Franja publicitaria — siempre visible, sin toggle -->
+      <LandingAdBanner class="ad-banner-strip" />
+
+      <!-- Slider perfiles de negocio -->
+      <div class="profiles-section">
+        <template v-if="profiles.length">
+          <!-- Floating label -->
+          <div class="slider-floating-label">
+            <i class="bi bi-grid-3x3-gap-fill me-2"></i>Perfiles de Negocio
+          </div>
+
+          <div class="profiles-slider">
             <div
-              v-for="(profile, idx) in displayProfiles"
-              :key="`${profile.id}-${idx}`"
-              class="slide-item"
-              :style="getSlideBackground(profile)"
-              @click="pauseTimer"
+              class="slider-track"
+              :style="trackStyle"
+              @transitionend.self="onTransitionEnd"
             >
-              <div class="slide-overlay"></div>
-              <div class="slide-content">
-                <div class="slide-tag">
-                  <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
-                  <span>{{ profile.name }}</span>
-                </div>
-                <h2 class="slide-name">{{ profile.name }}</h2>
-                <p class="slide-desc">
-                  {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
-                </p>
-                <div class="slide-actions">
-                  <a href="/register" class="btn-slide-cta">
-                    <i class="bi bi-rocket-takeoff-fill me-2"></i>Probar Gratis
-                  </a>
-                  <a href="#planes" class="btn-slide-outline">
-                    Ver planes <i class="bi bi-arrow-down ms-1"></i>
-                  </a>
+              <div
+                v-for="(profile, idx) in displayProfiles"
+                :key="`${profile.id}-${idx}`"
+                class="slide-item"
+                :style="getSlideBackground(profile)"
+                @click="pauseTimer"
+              >
+                <div class="slide-overlay"></div>
+                <div class="slide-content">
+                  <div class="slide-tag">
+                    <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
+                    <span>{{ profile.name }}</span>
+                  </div>
+                  <h2 class="slide-name">{{ profile.name }}</h2>
+                  <p class="slide-desc">
+                    {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
+                  </p>
+                  <div class="slide-actions">
+                    <a href="/register" class="btn-slide-cta">
+                      <i class="bi bi-rocket-takeoff-fill me-2"></i>Probar Gratis
+                    </a>
+                    <a href="#planes" class="btn-slide-outline">
+                      Ver planes <i class="bi bi-arrow-down ms-1"></i>
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Dots -->
-          <div class="slider-dots">
-            <button
-              v-for="(p, i) in profiles"
-              :key="i"
-              class="slider-dot"
-              :class="{ active: i === realActiveIndex }"
-              @click="goToSlide(i)"
-            ></button>
-          </div>
+            <!-- Dots -->
+            <div class="slider-dots">
+              <button
+                v-for="(p, i) in profiles"
+                :key="i"
+                class="slider-dot"
+                :class="{ active: i === realActiveIndex }"
+                @click="goToSlide(i)"
+              ></button>
+            </div>
 
-          <!-- Arrows -->
-          <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
-          <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
+            <!-- Arrows -->
+            <button class="slider-arrow left"  @click="prevSlide"><i class="bi bi-chevron-left"></i></button>
+            <button class="slider-arrow right" @click="nextSlide"><i class="bi bi-chevron-right"></i></button>
 
-          <!-- Counter + pausa -->
-          <div class="slide-counter">
-            <i v-if="isPaused" class="bi bi-pause-circle-fill me-1" title="Auto-play pausado — presiona una flecha para reanudar"></i>
-            {{ realActiveIndex + 1 }} / {{ profiles.length }}
-          </div>
+            <!-- Counter -->
+            <div class="slide-counter">
+              <i v-if="isPaused" class="bi bi-pause-circle-fill me-1"></i>
+              {{ realActiveIndex + 1 }} / {{ profiles.length }}
+            </div>
 
-          <!-- Scroll hint -->
-          <div class="slide-scroll-hint">
-            <i class="bi bi-chevron-down"></i>
+            <!-- Scroll hint -->
+            <div class="slide-scroll-hint">
+              <i class="bi bi-chevron-down"></i>
+            </div>
           </div>
+        </template>
+
+        <div v-else class="slide-loading">
+          <i class="bi bi-buildings"></i>
+          <p>Cargando perfiles...</p>
         </div>
-      </template>
-
-      <div v-else class="slide-loading">
-        <i class="bi bi-buildings"></i>
-        <p>Cargando perfiles...</p>
       </div>
+
     </section>
 
     <!-- ══════════════════════════════════════════════
@@ -652,8 +651,7 @@
 
 <script>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
-import LandingAdSidebar from "@/components/landing/LandingAdSidebar.vue"
-import { sidebarDismissed, toggleSidebar } from "@/composables/useLandingSidebar"
+import LandingAdBanner from "@/components/landing/LandingAdBanner.vue"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -926,10 +924,9 @@ export default {
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
       formatPrice, renderVal, submitContact,
-      sidebarDismissed, toggleSidebar,
     }
   },
-  components: { LandingAdSidebar },
+  components: { LandingAdBanner },
 }
 </script>
 
@@ -981,25 +978,6 @@ export default {
 }
 .nav-link-item:hover { color: var(--primary); }
 .nav-actions { display: flex; gap: 10px; align-items: center; }
-/* Botón toggle panel publicitario — idéntico al del dashboard */
-.btn-nav-sidebar-toggle {
-  background: rgba(79,70,229,0.1);
-  border: 1.5px solid rgba(79,70,229,0.25);
-  color: #4f46e5;
-  border-radius: 8px;
-  padding: 7px 10px;
-  font-size: 1.05rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  transition: all .2s;
-}
-.btn-nav-sidebar-toggle:hover { background: rgba(79,70,229,0.18); }
-.btn-nav-sidebar-toggle.panel-on {
-  background: rgba(79,70,229,0.18);
-  border-color: rgba(79,70,229,0.5);
-  color: #4338ca;
-}
 .btn-nav-outline {
   padding: 8px 18px; border: 1.5px solid var(--primary); color: var(--primary);
   border-radius: 8px; font-size: .9rem; font-weight: 600; text-decoration: none;
@@ -1027,26 +1005,41 @@ export default {
    SLIDER PERFILES — FULL SCREEN
 ════════════════════════════════════════════════════ */
 .section-perfiles {
-  height: 100vh;
-  padding-top: 68px;
-  position: relative;
+  height: 100dvh;
+  padding-top: 68px;              /* espacio navbar */
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: #0f172a;
 }
 
-/* Floating label */
+/* Franja publicitaria — altura fija */
+.ad-banner-strip {
+  height: clamp(140px, 20vh, 210px);
+  flex-shrink: 0;
+}
+
+/* Sección perfiles — ocupa el espacio restante */
+.profiles-section {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Floating label — relativo a profiles-section */
 .slider-floating-label {
   position: absolute;
-  top: calc(68px + 20px);
-  left: 32px;
+  top: 16px;
+  left: 24px;
   z-index: 20;
   background: rgba(0,0,0,.4);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,.18);
   color: rgba(255,255,255,.9);
-  padding: 6px 16px;
+  padding: 5px 14px;
   border-radius: 20px;
-  font-size: .78rem;
+  font-size: .75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .1em;
@@ -1056,6 +1049,15 @@ export default {
   height: 100%;
   position: relative;
   overflow: hidden;
+}
+
+/* Responsive: banner más compacto en móvil */
+@media (max-width: 767px) {
+  .ad-banner-strip { height: clamp(110px, 18vh, 155px); }
+  .slider-floating-label { top: 10px; left: 14px; font-size: .68rem; padding: 4px 10px; }
+}
+@media (max-width: 767px) and (orientation: portrait) {
+  .ad-banner-strip { height: clamp(120px, 22vh, 170px); }
 }
 
 .slider-track {
@@ -1196,17 +1198,6 @@ export default {
 .slider-arrow.left  { left: 24px; }
 .slider-arrow.right { right: 24px; transition: right .3s; }
 
-/* Flecha derecha se aleja del sidebar cuando está visible */
-.has-ad-sidebar .slider-arrow.right { right: calc(190px + 16px); }
-@media (max-width: 1199px) and (min-width: 768px) {
-  .has-ad-sidebar .slider-arrow.right { right: calc(155px + 12px); }
-}
-@media (max-width: 767px) {
-  .has-ad-sidebar .slider-arrow.right { right: calc(130px + 8px); }
-}
-@media (max-width: 420px) {
-  .has-ad-sidebar .slider-arrow.right { right: calc(115px + 8px); }
-}
 
 /* Counter */
 .slide-counter {
@@ -1886,6 +1877,4 @@ export default {
   .btn-slide-cta, .btn-slide-outline { justify-content: center; }
 }
 
-/* El LandingAdSidebar maneja su propio posicionamiento fixed internamente */
-.landing-fixed-sidebar { display: contents; }
 </style>
