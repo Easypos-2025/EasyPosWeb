@@ -14,6 +14,8 @@ class AssetInquiry(Base):
 
     id:              Mapped[int]           = mapped_column(Integer, primary_key=True)
     asset_id:        Mapped[int]           = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), nullable=False, index=True)
+    company_id:      Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id_company"), nullable=True, index=True)
+    list_code:       Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     name:            Mapped[str]           = mapped_column(String(100), nullable=False)
     phone:           Mapped[str]           = mapped_column(String(20), nullable=False)
     email:           Mapped[str]           = mapped_column(String(150), nullable=False)

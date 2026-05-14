@@ -44,7 +44,13 @@ async def list_inquiries(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.models.role_model import Role
+    role = await db.get(Role, current_user.role_id)
+    is_system = role.is_system if role else False
+
     q = select(AssetInquiry).order_by(AssetInquiry.created_at.desc())
+    if not is_system:
+        q = q.where(AssetInquiry.company_id == current_user.company_id)
     if asset_id:
         q = q.where(AssetInquiry.asset_id == asset_id)
     if status:
@@ -60,9 +66,16 @@ async def inquiry_kpis(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    total     = (await db.execute(select(func.count()).select_from(AssetInquiry))).scalar() or 0
-    confirmed = (await db.execute(select(func.count()).select_from(AssetInquiry).where(AssetInquiry.status == "confirmed"))).scalar() or 0
-    pending   = (await db.execute(select(func.count()).select_from(AssetInquiry).where(AssetInquiry.status == "pending"))).scalar() or 0
+    from app.models.role_model import Role
+    role = await db.get(Role, current_user.role_id)
+    is_system = role.is_system if role else False
+    base = select(func.count()).select_from(AssetInquiry)
+    if not is_system:
+        base = base.where(AssetInquiry.company_id == current_user.company_id)
+    cond = [] if is_system else [AssetInquiry.company_id == current_user.company_id]
+    total     = (await db.execute(base)).scalar() or 0
+    confirmed = (await db.execute(select(func.count()).select_from(AssetInquiry).where(AssetInquiry.status == "confirmed", *cond))).scalar() or 0
+    pending   = (await db.execute(select(func.count()).select_from(AssetInquiry).where(AssetInquiry.status == "pending",   *cond))).scalar() or 0
     return {"total": total, "confirmed": confirmed, "pending": pending}
 
 

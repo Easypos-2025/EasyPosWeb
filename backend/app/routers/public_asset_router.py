@@ -135,6 +135,8 @@ async def submit_inquiry(
 
     inquiry = AssetInquiry(
         asset_id      = asset.id,
+        company_id    = asset.company_id or None,
+        list_code     = asset.list_code,
         name          = body.name.strip()[:100],
         phone         = body.phone.strip()[:20],
         email         = str(body.email).lower()[:150],

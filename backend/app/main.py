@@ -140,11 +140,12 @@ async def _init_db_data():
 
         # ── SYSTEM_MODULE: Consultas de Activos ───────────────────────────────
         try:
-            await db.execute(text("""
-                INSERT IGNORE INTO system_modules (name, route, icon, parent_id, is_active, order_index, is_sysadmin)
-                VALUES ('Consultas Activos', '/assets/inquiries', 'bi-chat-dots', NULL, 1, 0, 0)
-            """))
-            await db.commit()
+            from app.models.system_module_model import SystemModule as SM
+            _existing = await db.execute(select(SM).where(SM.route == "/assets/inquiries"))
+            if not _existing.scalar_one_or_none():
+                db.add(SM(name="Consultas Activos", route="/assets/inquiries",
+                          icon="bi-chat-dots", parent_id=None, is_active=True, order_index=0, is_sysadmin=False))
+                await db.commit()
         except Exception:
             await db.rollback()
 
