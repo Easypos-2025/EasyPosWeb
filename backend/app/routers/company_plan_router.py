@@ -47,6 +47,29 @@ async def get_company_plan(
     }
 
 
+@router.get("/my-downgrade-preview")
+async def my_downgrade_preview(
+    plan_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Preview accesible para cualquier usuario autenticado (solo su propia empresa)."""
+    if not current_user.company_id:
+        raise HTTPException(status_code=400, detail="Usuario sin empresa asignada")
+    new_plan = await db.get(Plan, plan_id)
+    if not new_plan:
+        raise HTTPException(status_code=404, detail="Plan no encontrado")
+    new_limits = {f: getattr(new_plan, f, -1) for f in LIMIT_FIELDS}
+    preview = await preview_downgrade_blocks(current_user.company_id, new_limits, db)
+    total_affected = sum(v["count"] for v in preview.values())
+    return {
+        "plan_id":        plan_id,
+        "plan_name":      new_plan.name,
+        "affected_total": total_affected,
+        "details":        preview,
+    }
+
+
 @router.get("/{company_id}/downgrade-preview")
 async def downgrade_preview(
     company_id: int,

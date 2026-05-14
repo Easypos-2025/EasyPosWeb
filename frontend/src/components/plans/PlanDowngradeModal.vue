@@ -64,7 +64,41 @@
         </div>
 
         <!-- Checkbox de aceptación + firma -->
-        <div v-if="selectedPlanId" class="accept-section">
+        <!-- PANEL DE IMPACTO -->
+        <div v-if="selectedPlanId" class="impact-section">
+          <div v-if="previewLoading" class="impact-loading">
+            <i class="bi bi-hourglass-split spin me-2"></i>Calculando impacto...
+          </div>
+          <template v-else-if="previewData">
+            <div v-if="previewData.affected_total === 0" class="impact-box impact-ok">
+              <i class="bi bi-check-circle-fill me-2"></i>
+              <strong>Sin impacto</strong> — Ningún registro actual supera los límites del plan
+              <strong>{{ previewData.plan_name }}</strong>.
+            </div>
+            <div v-else class="impact-box impact-warn">
+              <div class="impact-title">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <strong>{{ previewData.affected_total }} registro(s) quedarán inaccesibles</strong>
+                <span class="impact-subtitle">al cambiar a <strong>{{ previewData.plan_name }}</strong></span>
+              </div>
+              <div class="impact-grid">
+                <div v-for="(info, resource) in previewData.details" :key="resource" class="impact-item">
+                  <span class="impact-resource">{{ RESOURCE_LABELS[resource] || resource }}</span>
+                  <span class="impact-count">{{ info.count }}</span>
+                  <span class="impact-sample" v-if="info.sample?.length">
+                    ({{ info.sample.join(', ') }}{{ info.count > info.sample.length ? '...' : '' }})
+                  </span>
+                </div>
+              </div>
+              <p class="impact-note">
+                <i class="bi bi-info-circle me-1"></i>
+                Los registros bloqueados no se eliminan. Si vuelves a un plan superior, podrás reactivarlos.
+              </p>
+            </div>
+          </template>
+        </div>
+
+        <div v-if="selectedPlanId && !previewLoading" class="accept-section">
           <label class="accept-check">
             <input type="checkbox" v-model="legalAccepted" />
             <span>Entiendo y acepto las condiciones. Las funcionalidades adicionales quedarán
@@ -186,7 +220,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, watch, onMounted } from "vue"
 import api from "@/services/apis"
 import { detectCurrency, formatMoney, CURRENCY_NAMES, SUPPORTED_CURRENCIES } from "@/utils/currency"
 
@@ -214,6 +248,20 @@ const fileInput      = ref(null)
 const successMsg     = ref("")
 const successDetail  = ref("")
 
+const previewLoading = ref(false)
+const previewData    = ref(null)
+
+const RESOURCE_LABELS = {
+  users:        "Usuarios",
+  pos_waiters:  "Meseros/Cajeros POS",
+  products:     "Productos",
+  categories:   "Categorías",
+  workers:      "Trabajadores",
+  clients:      "Clientes",
+  bodega_items: "Artículos de bodega",
+  assets:       "Activos",
+}
+
 const selectedPlan = computed(() => downgrades.value.find(p => p.id === selectedPlanId.value))
 const isImage      = computed(() => selectedFile.value?.type?.startsWith("image/") ?? false)
 const refText      = computed(() => {
@@ -224,11 +272,23 @@ const refText      = computed(() => {
 async function loadDowngrades() {
   loading.value = true
   selectedPlanId.value = null
+  previewData.value = null
   try {
     const res = await api.get(`/payments/available-downgrades?currency=${currency.value}`)
     downgrades.value = res.data
   } catch { downgrades.value = [] }
   finally { loading.value = false }
+}
+
+async function loadImpactPreview(planId) {
+  if (!planId) { previewData.value = null; return }
+  previewLoading.value = true
+  previewData.value = null
+  try {
+    const res = await api.get(`/company-plan/my-downgrade-preview?plan_id=${planId}`)
+    previewData.value = res.data
+  } catch { previewData.value = null }
+  finally { previewLoading.value = false }
 }
 
 async function proceed() {
@@ -296,6 +356,13 @@ async function submitReceipt() {
     submittingReceipt.value = false
   }
 }
+
+watch(selectedPlanId, (id) => {
+  legalAccepted.value = false
+  confirmName.value   = ""
+  nameErr.value       = ""
+  loadImpactPreview(id)
+})
 
 onMounted(loadDowngrades)
 </script>
@@ -372,6 +439,36 @@ onMounted(loadDowngrades)
 .price-free { color: #10b981; font-weight: 800; }
 .price-paid { color: #f59e0b; font-weight: 700; }
 .price-paid small { font-size: .7rem; color: #64748b; }
+
+/* PANEL IMPACTO */
+.impact-section { margin-bottom: 14px; }
+.impact-loading { text-align: center; padding: 12px; color: #94a3b8; font-size: .84rem; }
+.impact-box {
+  border-radius: 10px; padding: 12px 14px; font-size: .84rem; margin-bottom: 0;
+}
+.impact-ok {
+  background: #f0fdf4; border: 1.5px solid #86efac; color: #166534;
+  display: flex; align-items: center; gap: 6px;
+}
+.impact-warn { background: #fffbeb; border: 1.5px solid #fde68a; }
+.impact-title {
+  display: flex; align-items: center; gap: 6px; color: #92400e;
+  margin-bottom: 10px; flex-wrap: wrap;
+}
+.impact-subtitle { font-size: .78rem; color: #a16207; }
+.impact-grid { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.impact-item {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,.7); border-radius: 6px; padding: 6px 10px;
+  flex-wrap: wrap;
+}
+.impact-resource { font-weight: 700; color: #92400e; font-size: .82rem; flex-shrink: 0; }
+.impact-count {
+  background: #f59e0b; color: #fff; font-size: .72rem; font-weight: 800;
+  padding: 1px 7px; border-radius: 20px; flex-shrink: 0;
+}
+.impact-sample { font-size: .75rem; color: #a16207; font-style: italic; }
+.impact-note { font-size: .76rem; color: #a16207; margin: 0; }
 
 .accept-section { margin-bottom: 14px; }
 .accept-check {
