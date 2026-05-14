@@ -4,26 +4,63 @@
     <!-- ── Desktop / Tablet: 3 slots en fila ── -->
     <template v-if="!isMobilePortrait">
       <div v-for="(slot, si) in slots" :key="slot.slot" class="ad-slot">
-        <SlotItem :slot="slot" :si="si" />
+        <template v-if="slot.active && slot.pieces?.length">
+          <a v-if="slot.cta_url" :href="slot.cta_url" target="_blank"
+             rel="noopener noreferrer" class="slot-inner slot-link">
+            <PieceContent :piece="slot.pieces[0]" :title="slot.title" />
+          </a>
+          <div v-else class="slot-inner">
+            <PieceContent :piece="slot.pieces[0]" :title="slot.title" />
+          </div>
+        </template>
+        <!-- Placeholder → contacto -->
+        <a v-else href="#contacto" class="slot-inner slot-placeholder">
+          <div class="ph-bg"></div>
+          <div class="ph-content">
+            <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
+            <div class="ph-text">
+              <span class="ph-title">¡Paute Aquí!</span>
+              <span class="ph-sub">Llega a miles de asociados</span>
+            </div>
+            <span class="ph-cta">→ Solicitar espacio</span>
+          </div>
+        </a>
       </div>
     </template>
 
-    <!-- ── Móvil portrait: carrusel de 1 slot ── -->
+    <!-- ── Móvil portrait: carrusel ── -->
     <template v-else>
       <div class="carousel-wrap">
         <Transition name="ad-fade" mode="out-in">
           <div :key="currentSlot" class="ad-slot carousel-slot">
-            <SlotItem :slot="slots[currentSlot]" :si="currentSlot" />
+            <template v-if="slots[currentSlot]?.active && slots[currentSlot]?.pieces?.length">
+              <a v-if="slots[currentSlot].cta_url"
+                 :href="slots[currentSlot].cta_url" target="_blank"
+                 rel="noopener noreferrer" class="slot-inner slot-link">
+                <PieceContent :piece="slots[currentSlot].pieces[0]" :title="slots[currentSlot].title" />
+              </a>
+              <div v-else class="slot-inner">
+                <PieceContent :piece="slots[currentSlot].pieces[0]" :title="slots[currentSlot].title" />
+              </div>
+            </template>
+            <a v-else href="#contacto" class="slot-inner slot-placeholder">
+              <div class="ph-bg"></div>
+              <div class="ph-content">
+                <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
+                <div class="ph-text">
+                  <span class="ph-title">¡Paute Aquí!</span>
+                  <span class="ph-sub">Llega a miles de asociados</span>
+                </div>
+                <span class="ph-cta">→ Solicitar espacio</span>
+              </div>
+            </a>
           </div>
         </Transition>
-        <!-- Indicador de puntos -->
+
         <div class="carousel-dots">
-          <button
-            v-for="i in 3" :key="i"
-            class="c-dot"
-            :class="{ active: i - 1 === currentSlot }"
-            @click="goToSlot(i - 1)"
-            :aria-label="`Pauta ${i}`"
+          <button v-for="i in 3" :key="i"
+            class="c-dot" :class="{ active: i - 1 === currentSlot }"
+            @click="goToSlot(i - 1)" :aria-label="`Pauta ${i}`"
           ></button>
         </div>
       </div>
@@ -32,18 +69,46 @@
   </div>
 </template>
 
+<!-- Sub-componente: renderiza una pieza multimedia (image/video/youtube/text) -->
+<script>
+import { defineComponent, h } from "vue"
+const PieceContent = defineComponent({
+  name: "PieceContent",
+  props: { piece: Object, title: String },
+  render() {
+    const p = this.piece
+    if (!p) return null
+    if (p.piece_type === "image")
+      return h("img", { src: p.media_url, alt: this.title || "Pauta", class: "slot-media", loading: "lazy" })
+    if (p.piece_type === "video")
+      return h("video", { src: p.media_url, autoplay: true, muted: true, loop: true, playsinline: true, preload: "metadata", class: "slot-media" })
+    if (p.piece_type === "youtube")
+      return h("div", { class: "slot-yt-wrap" }, [
+        h("iframe", {
+          src: `https://www.youtube.com/embed/${p.youtube_id}?autoplay=1&mute=1&loop=1&playlist=${p.youtube_id}&controls=0&rel=0`,
+          frameborder: "0", allow: "autoplay; encrypted-media", allowfullscreen: true, class: "slot-yt"
+        })
+      ])
+    if (p.piece_type === "text")
+      return h("div", { class: "slot-text" }, [
+        h("p", { class: "slot-text-title" }, this.title || ""),
+        h("p", { class: "slot-text-body" }, p.text_content),
+      ])
+    return null
+  }
+})
+export default { components: { PieceContent } }
+</script>
+
 <script setup>
-import { ref, onMounted, onUnmounted, h, computed } from "vue"
+import { ref, onMounted, onUnmounted } from "vue"
 import api from "@/services/apis"
 
-// ── Detección móvil portrait ───────────────────────────────────────────────
 const isMobilePortrait = ref(false)
-
 function checkOrientation() {
   isMobilePortrait.value = window.innerWidth < 560 && window.innerHeight > window.innerWidth
 }
 
-// ── Datos slots ────────────────────────────────────────────────────────────
 const slots = ref([
   { slot: 1, active: false, pieces: [] },
   { slot: 2, active: false, pieces: [] },
@@ -57,7 +122,6 @@ async function loadSlots() {
   } catch {}
 }
 
-// ── Carrusel móvil ─────────────────────────────────────────────────────────
 const currentSlot = ref(0)
 let carouselTimer = null
 
@@ -75,75 +139,11 @@ function resetCarouselTimer() {
   if (isMobilePortrait.value) carouselTimer = setInterval(nextCarousel, 4500)
 }
 
-// ── Sub-componente: un slot con su contenido ───────────────────────────────
-const SlotItem = {
-  props: { slot: Object, si: Number },
-  setup(props) {
-    return () => {
-      const s = props.slot
-
-      // Slot activo con pieza
-      if (s?.active && s.pieces?.length) {
-        const piece  = s.pieces[0]
-        const inner  = renderPiece(piece, s.title)
-        const caption = (s.title && piece.piece_type !== "text")
-          ? h("div", { class: "ad-caption" }, s.title)
-          : null
-
-        if (s.cta_url) {
-          return h("a", {
-            href: s.cta_url, target: "_blank", rel: "noopener noreferrer",
-            class: "slot-inner slot-link"
-          }, [inner, caption])
-        }
-        return h("div", { class: "slot-inner" }, [inner, caption])
-      }
-
-      // Placeholder → sección #contacto
-      return h("a", { href: "#contacto", class: "slot-inner slot-placeholder" }, [
-        h("div", { class: "ph-bg" }),
-        h("div", { class: "ph-content" }, [
-          h("div", { class: "ph-icon-wrap" }, [
-            h("i", { class: "bi bi-megaphone-fill ph-icon" })
-          ]),
-          h("div", { class: "ph-text" }, [
-            h("span", { class: "ph-title" }, "¡Paute Aquí!"),
-            h("span", { class: "ph-sub" }, "Llega a miles de asociados"),
-          ]),
-          h("span", { class: "ph-cta" }, "→ Solicitar espacio"),
-        ]),
-      ])
-    }
-  }
-}
-
-function renderPiece(piece, title) {
-  const { piece_type, media_url, youtube_id, text_content } = piece
-  if (piece_type === "image")
-    return h("img", { src: media_url, alt: title || "Pauta", class: "slot-media", loading: "lazy" })
-  if (piece_type === "video")
-    return h("video", { src: media_url, autoplay: true, muted: true, loop: true, playsinline: true, preload: "metadata", class: "slot-media" })
-  if (piece_type === "youtube")
-    return h("div", { class: "slot-yt-wrap" }, [
-      h("iframe", {
-        src: `https://www.youtube.com/embed/${youtube_id}?autoplay=1&mute=1&loop=1&playlist=${youtube_id}&controls=0&rel=0`,
-        frameborder: "0", allow: "autoplay; encrypted-media", allowfullscreen: true, class: "slot-yt"
-      })
-    ])
-  if (piece_type === "text")
-    return h("div", { class: "slot-text" }, [
-      h("p", { class: "slot-text-title" }, title || ""),
-      h("p", { class: "slot-text-body" }, text_content),
-    ])
-  return null
-}
-
-// ── Lifecycle ──────────────────────────────────────────────────────────────
 let refreshTimer = null
 
 onMounted(() => {
   checkOrientation()
-  window.addEventListener("resize", checkOrientation)
+  window.addEventListener("resize", () => { checkOrientation(); resetCarouselTimer() })
   loadSlots()
   refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
   resetCarouselTimer()
@@ -157,17 +157,16 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* ── Contenedor principal ── */
+/* ── Contenedor ── */
 .ad-banner-wrap {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: row;
-  gap: 4px;
-  padding: 4px;
+  gap: 5px;
+  padding: 5px;
   box-sizing: border-box;
-  background: #0f172a;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: #0a0e1a;
 }
 
 /* ── Slot ── */
@@ -176,6 +175,7 @@ onUnmounted(() => {
   border-radius: 10px;
   overflow: hidden;
   position: relative;
+  min-width: 0;
 }
 
 .slot-inner {
@@ -188,108 +188,118 @@ onUnmounted(() => {
 }
 
 .slot-link { cursor: pointer; transition: opacity .2s; }
-.slot-link:hover { opacity: .92; }
+.slot-link:hover { opacity: .9; }
 
 /* ── Media ── */
 .slot-media   { width: 100%; height: 100%; object-fit: cover; display: block; }
-.slot-yt-wrap { flex: 1; background: #000; }
+.slot-yt-wrap { flex: 1; background: #000; height: 100%; }
 .slot-yt      { width: 100%; height: 100%; border: none; display: block; }
-.slot-text    { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; gap: 6px; }
+.slot-text    { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; gap: 5px; }
 .slot-text-title { font-size: 13px; font-weight: 700; color: #fff; text-align: center; margin: 0; }
 .slot-text-body  { font-size: 11px; color: rgba(255,255,255,.75); text-align: center; line-height: 1.5; margin: 0; }
-.ad-caption {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  background: linear-gradient(transparent,rgba(0,0,0,.7));
-  color: #fff; font-size: 11px; font-weight: 600;
-  padding: 20px 10px 8px; text-align: center;
-}
 
 /* ── Placeholder ── */
 .slot-placeholder {
   cursor: pointer;
   transition: filter .2s;
-  text-decoration: none;
 }
-.slot-placeholder:hover { filter: brightness(1.08); }
+.slot-placeholder:hover { filter: brightness(1.1); }
 
 .ph-bg {
-  position: absolute; inset: 0;
+  position: absolute;
+  inset: 0;
   background: linear-gradient(135deg, #2563eb 0%, #4f46e5 45%, #7c3aed 100%);
 }
-/* Círculos decorativos */
-.ph-bg::before, .ph-bg::after {
+.ph-bg::before {
   content: ""; position: absolute; border-radius: 50%;
-  background: rgba(255,255,255,0.07);
+  width: 130px; height: 130px; top: -40px; right: -30px;
+  background: rgba(255,255,255,0.08);
 }
-.ph-bg::before { width: 120px; height: 120px; top: -30px; right: -20px; }
-.ph-bg::after  { width: 80px;  height: 80px;  bottom: -15px; left: -10px; }
+.ph-bg::after {
+  content: ""; position: absolute; border-radius: 50%;
+  width: 90px; height: 90px; bottom: -20px; left: -15px;
+  background: rgba(255,255,255,0.06);
+}
 
 .ph-content {
-  position: relative; z-index: 1;
-  display: flex; align-items: center;
-  width: 100%; height: 100%;
-  gap: 12px; padding: 0 16px;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  gap: 14px;
+  padding: 0 20px;
 }
 
 .ph-icon-wrap {
   flex-shrink: 0;
-  width: 44px; height: 44px;
+  width: 46px; height: 46px;
   background: rgba(255,255,255,0.15);
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
 }
-.ph-icon { font-size: 22px; color: #fbbf24; }
+.ph-icon { font-size: 24px; color: #fbbf24; }
 
 .ph-text {
-  flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
-.ph-title { font-size: 15px; font-weight: 800; color: #fff; line-height: 1; }
-.ph-sub   { font-size: 11px; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-title { font-size: 16px; font-weight: 800; color: #fff; line-height: 1; white-space: nowrap; }
+.ph-sub   { font-size: 12px; color: rgba(255,255,255,.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .ph-cta {
   flex-shrink: 0;
-  background: linear-gradient(90deg,#10b981,#0ea5e9);
-  color: #fff; font-size: 11px; font-weight: 800;
-  padding: 7px 14px; border-radius: 20px; white-space: nowrap;
+  background: linear-gradient(90deg, #10b981, #0ea5e9);
+  color: #fff;
+  font-size: 12px; font-weight: 800;
+  padding: 8px 16px;
+  border-radius: 20px;
+  white-space: nowrap;
 }
 
 /* ── Carrusel móvil ── */
 .carousel-wrap {
-  flex: 1; position: relative;
-  display: flex; flex-direction: column;
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 .carousel-slot { flex: 1; }
 
 .carousel-dots {
-  position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 5px; z-index: 10;
+  position: absolute;
+  bottom: 6px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px; z-index: 10;
 }
 .c-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: rgba(255,255,255,.35); border: none; cursor: pointer;
   transition: background .2s, transform .2s; padding: 0;
 }
-.c-dot.active { background: #fff; transform: scale(1.2); }
+.c-dot.active { background: #fff; transform: scale(1.25); }
 
-/* ── Transición carrusel ── */
+/* ── Transición ── */
 .ad-fade-enter-active, .ad-fade-leave-active { transition: opacity .3s; }
 .ad-fade-enter-from, .ad-fade-leave-to       { opacity: 0; }
 
-/* ── Responsive: reducir padding/gap en móvil ── */
+/* ── Responsive ── */
 @media (max-width: 767px) {
   .ad-banner-wrap { gap: 3px; padding: 3px; }
   .ad-slot        { border-radius: 7px; }
-  .ph-content     { gap: 8px; padding: 0 10px; }
-  .ph-icon-wrap   { width: 34px; height: 34px; border-radius: 9px; }
-  .ph-icon        { font-size: 17px; }
+  .ph-content     { gap: 8px; padding: 0 12px; }
+  .ph-icon-wrap   { width: 36px; height: 36px; border-radius: 9px; }
+  .ph-icon        { font-size: 18px; }
   .ph-title       { font-size: 13px; }
   .ph-sub         { font-size: 10px; }
   .ph-cta         { font-size: 10px; padding: 5px 10px; }
-  .ad-caption     { font-size: 9px; padding: 14px 8px 5px; }
 }
 
 @media (max-width: 420px) {
-  .ph-title  { font-size: 12px; }
-  .ph-cta    { display: none; }
+  .ph-title { font-size: 12px; }
+  .ph-cta   { display: none; }
 }
 </style>

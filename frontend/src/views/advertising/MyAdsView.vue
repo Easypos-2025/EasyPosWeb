@@ -523,7 +523,15 @@ async function addText() {
 }
 
 async function deletePiece(piece, pi) {
-  if (!confirm("¿Eliminar esta pieza?")) return
+  const { isConfirmed } = await window.Swal.fire({
+    title: "¿Eliminar esta pieza?",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, eliminar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#ef4444"
+  })
+  if (!isConfirmed) return
   try {
     await api.delete(`/ads/${form.value.id}/pieces/${piece.id}`)
     form.value.pieces.splice(pi, 1)
@@ -557,7 +565,16 @@ async function uploadPayment(e) {
 
 // ── Eliminación y renovación ───────────────────────────────────────────────
 async function deleteAd(ad) {
-  if (!confirm(`¿Eliminar la pauta "${ad.title}"?`)) return
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Eliminar la pauta?`,
+    text: `"${ad.title}"`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, eliminar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#ef4444"
+  })
+  if (!isConfirmed) return
   try {
     await api.delete(`/ads/${ad.id}`)
     showToast("Pauta eliminada", "success")

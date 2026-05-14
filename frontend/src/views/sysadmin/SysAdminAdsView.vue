@@ -286,8 +286,12 @@
                 <button class="btn-sub-cancel" @click="rejectOpen=false;rejectReason=''">Cancelar</button>
               </div>
             </div>
-            <template v-if="['approved','paused'].includes(selected.status)">
+            <template v-if="['approved','paused','active'].includes(selected.status)">
               <div class="activate-form">
+                <div v-if="selected.status === 'active'" class="reconfig-note">
+                  <i class="bi bi-info-circle me-1"></i>
+                  Pauta actualmente activa. Puedes cambiar slot, fechas o prioridad.
+                </div>
                 <div class="af-row">
                   <div><label class="form-lbl">Slot *</label>
                     <select v-model="activateForm.slot_position" class="form-ctrl-sm">
@@ -305,7 +309,8 @@
                   </div>
                 </div>
                 <button class="btn-action btn-activate" @click="activateAd">
-                  <i class="bi bi-broadcast me-1"></i>Activar pauta
+                  <i :class="selected.status === 'active' ? 'bi bi-pencil-square' : 'bi bi-broadcast'" class="me-1"></i>
+                  {{ selected.status === 'active' ? 'Reconfigurar pauta' : 'Activar pauta' }}
                 </button>
               </div>
             </template>
@@ -430,7 +435,16 @@ function openDetail(ad) {
 
 // ── Acciones sobre pauta ───────────────────────────────────────────────────
 async function approveAd() {
-  if (!confirm("¿Aprobar esta pauta?")) return
+  const { isConfirmed } = await window.Swal.fire({
+    title: "¿Aprobar esta pauta?",
+    text: `"${selected.value.title}"`,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Sí, aprobar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#16a34a"
+  })
+  if (!isConfirmed) return
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/approve`)
     selected.value = { ...selected.value, ...res.data }
@@ -457,13 +471,32 @@ async function activateAd() {
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/activate`, f)
     selected.value = { ...selected.value, ...res.data }
-    showToast("Pauta activada en slot " + f.slot_position, "success")
+    const isReconfig = selected.value.status === "active"
+    showToast(
+      isReconfig ? `Pauta reconfigurada en slot ${f.slot_position}` : `Pauta activada en slot ${f.slot_position}`,
+      "success"
+    )
     await loadAds()
-  } catch (e) { showToast(e.response?.data?.detail || "Error al activar", "error") }
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al activar", "error")
+    // Recargar para mostrar estado real desde BD
+    await loadAds()
+    const fresh = ads.value.find(a => a.id === selected.value.id)
+    if (fresh) selected.value = { ...fresh }
+  }
 }
 
 async function pauseAd() {
-  if (!confirm("¿Pausar esta pauta?")) return
+  const { isConfirmed } = await window.Swal.fire({
+    title: "¿Pausar esta pauta?",
+    text: "La pauta dejará de mostrarse hasta que la reactives.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, pausar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#d97706"
+  })
+  if (!isConfirmed) return
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/pause`)
     selected.value = { ...selected.value, ...res.data }
@@ -473,7 +506,16 @@ async function pauseAd() {
 }
 
 async function expireAd() {
-  if (!confirm("¿Marcar como expirada?")) return
+  const { isConfirmed } = await window.Swal.fire({
+    title: "¿Marcar como expirada?",
+    text: "Esta acción no se puede deshacer desde la UI.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, expirar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#ef4444"
+  })
+  if (!isConfirmed) return
   try {
     await api.patch(`/ads/admin/${selected.value.id}/expire`)
     selected.value = { ...selected.value, status: "expired" }
@@ -483,9 +525,24 @@ async function expireAd() {
 }
 
 // ── Verificar pago (desde modal) ───────────────────────────────────────────
+async function _confirmPayAction(action) {
+  const isVerify = action === "verified"
+  return window.Swal.fire({
+    title: isVerify ? "¿Verificar este pago?" : "¿Rechazar este pago?",
+    text: isVerify
+      ? "El pago quedará marcado como verificado."
+      : "El asociado deberá subir un nuevo comprobante.",
+    icon: isVerify ? "question" : "warning",
+    showCancelButton: true,
+    confirmButtonText: isVerify ? "Sí, verificar" : "Sí, rechazar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: isVerify ? "#16a34a" : "#ef4444"
+  })
+}
+
 async function verifyPayment(payId, action) {
-  const label = action === "verified" ? "verificar" : "rechazar"
-  if (!confirm(`¿${label} este pago?`)) return
+  const { isConfirmed } = await _confirmPayAction(action)
+  if (!isConfirmed) return
   try {
     const res = await api.patch(`/ads/admin/payments/${payId}/verify`, { action })
     const idx = selected.value.payments.findIndex(p => p.id === payId)
@@ -497,8 +554,8 @@ async function verifyPayment(payId, action) {
 
 // ── Verificar pago (desde tab Pagos) ──────────────────────────────────────
 async function verifyPaymentDirect(payId, action) {
-  const label = action === "verified" ? "verificar" : "rechazar"
-  if (!confirm(`¿${label} este pago?`)) return
+  const { isConfirmed } = await _confirmPayAction(action)
+  if (!isConfirmed) return
   try {
     await api.patch(`/ads/admin/payments/${payId}/verify`, { action })
     showToast(action === "verified" ? "Pago verificado" : "Pago rechazado", "success")
@@ -662,6 +719,7 @@ onMounted(() => {
 .btn-expire   { background: rgba(245,158,11,.15);  color: #d97706; }
 
 .reject-form, .activate-form { background: rgba(0,0,0,.04); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.reconfig-note { font-size: 11px; color: #2563eb; background: rgba(37,99,235,.08); border-radius: 6px; padding: 6px 10px; }
 .af-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
 .form-ctrl   { width: 100%; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 7px 10px; font-size: 13px; background: transparent; color: inherit; box-sizing: border-box; }
 .form-ctrl:focus { outline: none; border-color: #2563eb; }
