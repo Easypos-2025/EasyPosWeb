@@ -215,12 +215,7 @@ onUnmounted(() => {
 .slot-link:hover { opacity: .9; }
 
 /* ── Media ── */
-.slot-media   { width: 100%; height: 100%; object-fit: cover; display: block; }
-.slot-yt-wrap { flex: 1; background: #000; height: 100%; }
-.slot-yt      { width: 100%; height: 100%; border: none; display: block; }
-.slot-text    { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px; gap: 5px; }
-.slot-text-title { font-size: 13px; font-weight: 700; color: #fff; text-align: center; margin: 0; }
-.slot-text-body  { font-size: 11px; color: rgba(255,255,255,.75); text-align: center; line-height: 1.5; margin: 0; }
+/* slot-media, slot-yt-wrap, slot-yt, slot-text → en bloque <style> global abajo */
 
 /* ── Placeholder ── */
 .slot-placeholder {
@@ -338,4 +333,31 @@ onUnmounted(() => {
   .ph-title { font-size: 12px; }
   .ph-cta   { display: none; }
 }
+</style>
+
+<!-- Estilos globales para PieceContent (render function — scoped no aplica) -->
+<style>
+.slot-media {
+  width: 100%; height: 100%;
+  object-fit: cover; display: block;
+  flex-shrink: 0;
+}
+.slot-yt-wrap {
+  flex: 1; background: #000;
+  width: 100%; height: 100%;
+  display: flex;
+}
+.slot-yt {
+  width: 100%; height: 100%;
+  border: none; display: block; flex: 1;
+}
+.slot-text {
+  flex: 1; width: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 12px; gap: 5px;
+  background: linear-gradient(135deg,#1e3a5f,#0d4f3c);
+}
+.slot-text-title { font-size: 13px; font-weight: 700; color: #fff; text-align: center; margin: 0; }
+.slot-text-body  { font-size: 11px; color: rgba(255,255,255,.75); text-align: center; line-height: 1.5; margin: 0; }
 </style>
