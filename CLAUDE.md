@@ -19,9 +19,17 @@
 - Costo Real = suma de `task_expenses`.
 
 ## 5. REGLAS DE OPERACIÓN
-- **Safe-Manual-Commit**: Solo cuando el usuario escriba la palabra "commit", verifica errores de sintaxis (linter/build) y, si es válido, ejecuta: `git add . && git commit -m "Auto-save: [resumen de cambios]"`
 - **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
-- **Safe-Manual-Commit**: Solo cuando escriba "commit", verifica sintaxis y ejecuta: `git add . && git commit -m "Auto-save: [resumen]"`
+- **Auto-Deploy**: Cuando el usuario escriba la palabra **"commit"**, ejecutar el siguiente flujo completo en orden:
+  1. `npm run build` en frontend — si hay errores, detener y reportar.
+  2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
+  3. `git push origin master`
+  4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb`
+     Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb"`
+  5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
+     `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
+  6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
+  - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
 - Todos los campos donde se decriba un valor de pesos, debe tener correspondiente formato de pesos deacuerdo al pais.
 
