@@ -60,15 +60,15 @@
               >
                 <div class="slide-overlay"></div>
                 <div class="slide-content">
-                  <div class="slide-tag">
-                    <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
-                    <span>{{ profile.name }}</span>
-                  </div>
+                  <h2 class="slide-name">{{ profile.name }}</h2>
                   <p class="slide-desc">
                     {{ profile.landing_description || profile.description || 'Solución integral para tu negocio.' }}
                   </p>
                   <div class="slide-actions">
-                    <h2 class="slide-name">{{ profile.name }}</h2>
+                    <div class="slide-tag">
+                      <i :class="`bi ${profile.icon || 'bi-building'}`"></i>
+                      <span>{{ profile.name }}</span>
+                    </div>
                     <a href="/register" class="btn-slide-cta">
                       <i class="bi bi-rocket-takeoff-fill me-2"></i>Probar Gratis
                     </a>
@@ -1096,21 +1096,23 @@ export default {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .08em;
-  margin-bottom: 20px;
-}
-
-.slide-name {
-  font-size: clamp(1.1rem, 2.4vw, 1.75rem);
-  font-weight: 800;
   margin: 0;
   flex: 1 1 0;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.slide-name {
+  font-size: clamp(1.6rem, 4vw, 3rem);
+  font-weight: 900;
+  margin: 0 0 12px;
+  line-height: 1.08;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.2;
   text-shadow: 0 2px 24px rgba(0,0,0,.5);
-  letter-spacing: -.01em;
+  letter-spacing: -.02em;
 }
 
 .slide-desc {
@@ -1844,9 +1846,10 @@ export default {
   .slider-arrow.right { right: 12px; }
   .slide-item { background-position: top center; }
   .slide-content { padding: 0 6% 90px; }
-  .slide-name { font-size: 1.15rem; white-space: nowrap; flex: 0 0 100%; }
+  .slide-name { font-size: clamp(1.3rem, 5vw, 2rem); }
   .slide-desc { font-size: .95rem; }
   .slide-actions { flex-wrap: wrap; }
+  .slide-tag { flex: 0 0 100%; }
   .multidevice-strip { flex-direction: column; text-align: center; }
   .contact-grid { grid-template-columns: 1fr; }
   .form-row-2 { grid-template-columns: 1fr; }
@@ -1861,7 +1864,7 @@ export default {
   .hero-title { font-size: 1.8rem; }
   .payment-methods { flex-direction: column; align-items: center; }
   .slide-actions { flex-wrap: wrap; }
-  .slide-name { flex: 0 0 100%; white-space: normal; font-size: 1rem; }
+  .slide-tag { flex: 0 0 100%; }
   .btn-slide-cta, .btn-slide-outline { flex: 1; justify-content: center; padding: 11px 16px; font-size: .9rem; }
 }
 
