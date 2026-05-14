@@ -77,6 +77,7 @@ from app.routers.price_lists_router import router as price_lists_router
 from app.routers.purchase_orders_router import router as purchase_orders_router
 from app.routers.pos_sync_router import router as pos_sync_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
+from app.routers.advertisement_router import router as advertisement_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -892,6 +893,86 @@ async def _init_db_data():
                 ))
         await db.commit()
 
+        # ── PAUTAS PUBLICITARIAS: tablas ─────────────────────────────────
+        ad_tables = [
+            """CREATE TABLE IF NOT EXISTS advertisements (
+                id                INT AUTO_INCREMENT PRIMARY KEY,
+                company_id        INT NOT NULL,
+                title             VARCHAR(200) NOT NULL,
+                description       TEXT NULL,
+                cta_url           VARCHAR(500) NULL,
+                notes_to_admin    TEXT NULL,
+                target_profile_id INT NULL,
+                status            VARCHAR(20) NOT NULL DEFAULT 'pending',
+                slot_position     SMALLINT NULL,
+                priority          SMALLINT NOT NULL DEFAULT 0,
+                start_date        DATE NULL,
+                end_date          DATE NULL,
+                rejection_reason  TEXT NULL,
+                approved_by       INT NULL,
+                approved_at       TIMESTAMP NULL,
+                impressions       INT NOT NULL DEFAULT 0,
+                created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_ad_company (company_id),
+                INDEX idx_ad_status  (status),
+                INDEX idx_ad_slot    (slot_position)
+            )""",
+            """CREATE TABLE IF NOT EXISTS ad_pieces (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                advertisement_id INT NOT NULL,
+                piece_type       VARCHAR(20) NOT NULL,
+                media_url        VARCHAR(500) NULL,
+                youtube_id       VARCHAR(20) NULL,
+                text_content     TEXT NULL,
+                order_index      SMALLINT NOT NULL DEFAULT 0,
+                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (advertisement_id) REFERENCES advertisements(id) ON DELETE CASCADE,
+                INDEX idx_ap_ad (advertisement_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS ad_payments (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                advertisement_id INT NOT NULL,
+                company_id       INT NOT NULL,
+                amount           FLOAT NULL,
+                currency_code    VARCHAR(3) NOT NULL DEFAULT 'COP',
+                receipt_url      VARCHAR(500) NULL,
+                payment_date     DATE NULL,
+                status           VARCHAR(20) NOT NULL DEFAULT 'pending',
+                notes            TEXT NULL,
+                verified_by      INT NULL,
+                verified_at      TIMESTAMP NULL,
+                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (advertisement_id) REFERENCES advertisements(id) ON DELETE CASCADE,
+                INDEX idx_apay_ad      (advertisement_id),
+                INDEX idx_apay_company (company_id)
+            )""",
+        ]
+        for sql in ad_tables:
+            try:
+                await db.execute(text(sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── SEED: módulos de pautas en system_modules ──────────────────
+        for route, name, icon, is_sysadmin in [
+            ("/advertising/my-ads",   "Mis Pautas",         "bi-megaphone",       False),
+            ("/sysadmin/advertising", "Gestión de Pautas",  "bi-megaphone-fill",  True),
+        ]:
+            result = await db.execute(select(SystemModule).where(SystemModule.route == route))
+            if not result.scalar_one_or_none():
+                db.add(SystemModule(
+                    name=name, route=route, icon=icon,
+                    parent_id=None, is_active=True, order_index=0,
+                    is_sysadmin=is_sysadmin
+                ))
+        await db.commit()
+
+        # ── PAUTAS: uploads dir ────────────────────────────────────────
+        (UPLOADS_DIR / "ads").mkdir(parents=True, exist_ok=True)
+        (UPLOADS_DIR / "ad_payments").mkdir(parents=True, exist_ok=True)
+
         # ── SEED: módulos Facturación (estructura padre/hijo) ────────────
         async def _get_or_create_module(name, route, icon, parent_id=None):
             r = await db.execute(select(SystemModule).where(SystemModule.route == route))
@@ -925,6 +1006,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/auth/login": (20, 900),
     "/auth/forgot-password": (5, 3600),
     "/qr/prestamo/": (15, 60),
+    "/ads/": (30, 60),
 }
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
     lambda: collections.defaultdict(collections.deque)
@@ -1064,6 +1146,7 @@ routers = [
     asset_inquiries_router,
     pos_sync_router,
     plan_associate_limits_router,
+    advertisement_router,
 ]
 
 for router in routers:

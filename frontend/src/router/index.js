@@ -232,6 +232,14 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Bandeja de Entrada" }
       },
+
+      {
+        path: "/advertising/my-ads",
+        name: "MyAdsView",
+        component: () => import("@/views/advertising/MyAdsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Mis Pautas" }
+      },
       {
         path: "/notifications/access-log",
         name: "UserAccessLogView",
@@ -415,6 +423,14 @@ const routes = [
         component: () => import("@/views/sysadmin/LandingManagerView.vue"),
         requiresAuth: true,
         meta: { title: "Gestión Landing Page" }
+      },
+
+      {
+        path: "/sysadmin/advertising",
+        name: "SysAdminAdsView",
+        component: () => import("@/views/sysadmin/SysAdminAdsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Gestión de Pautas" }
       },
 
       {

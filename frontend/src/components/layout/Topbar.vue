@@ -241,6 +241,23 @@
                 </span>
               </button>
 
+              <!-- Pautas pendientes — SYSADMIN -->
+              <button
+                v-if="companyStore.isSystem"
+                class="notif-subtype-item"
+                :class="{ 'has-count': pendingAdsCount > 0 }"
+                @click="goToAdsReview"
+              >
+                <span class="nsi-icon ads"><i class="bi bi-megaphone-fill"></i></span>
+                <span class="nsi-label">
+                  Pautas pendientes
+                  <small>SYSADMIN › Gestión de Pautas</small>
+                </span>
+                <span class="nsi-count" :class="pendingAdsCount > 0 ? 'active' : 'zero'">
+                  {{ pendingAdsCount }}
+                </span>
+              </button>
+
               <!-- Notificaciones de tarea -->
               <button class="notif-subtype-item" :class="{ 'has-count': unreadNotif > 0 }"
                 @click.stop="taskNotifListOpen = !taskNotifListOpen">
@@ -424,6 +441,7 @@ const companyDropOpen      = ref(false)
 const companyDropRef       = ref(null)
 const notifExpanded        = ref(false)
 const pendingPaymentsCount = ref(0)
+const pendingAdsCount      = ref(0)
 const taskNotifList        = ref([])
 const taskNotifListOpen    = ref(false)
 const unreadUserNotif      = ref(0)
@@ -448,6 +466,7 @@ const isAdminUser = computed(() => {
 const totalNotifCount = computed(() =>
   unreadNotif.value +
   (companyStore.isSystem ? pendingPaymentsCount.value : 0) +
+  (companyStore.isSystem ? pendingAdsCount.value : 0) +
   (isAdminUser.value ? incompleteTaskCount.value : 0) +
   (isAdminUser.value ? newInquiriesCount.value : 0) +
   (newVersionAvailable.value ? 1 : 0)
@@ -539,6 +558,16 @@ async function loadPendingPayments() {
     const prev = pendingPaymentsCount.value
     pendingPaymentsCount.value = res.data.count ?? 0
     if (pendingPaymentsCount.value > prev) playNotifSound()
+  } catch {}
+}
+
+async function loadPendingAds() {
+  if (!companyStore.isSystem) return
+  try {
+    const res  = await api.get("/ads/admin/pending-count")
+    const prev = pendingAdsCount.value
+    pendingAdsCount.value = res.data.count ?? 0
+    if (pendingAdsCount.value > prev) playNotifSound()
   } catch {}
 }
 
@@ -668,6 +697,13 @@ function goToPaymentReview() {
   router.push("/sysadmin/payment-review")
 }
 
+function goToAdsReview() {
+  userDropOpen.value  = false
+  notifExpanded.value = false
+  pendingAdsCount.value = 0
+  router.push("/sysadmin/advertising")
+}
+
 
 function toggleRightPanel() {
   userDropOpen.value  = false
@@ -775,6 +811,7 @@ onMounted(async () => {
     await loadMenuItems()
     loadUnreadCount()
     loadPendingPayments()
+    loadPendingAds()
     loadIncompleteTasks()
     loadNewInquiries()
     checkAppVersion()
@@ -784,7 +821,7 @@ onMounted(async () => {
       getConfigMs("topbar_notif_interval_ms",     60_000),
       getConfigMs("topbar_heartbeat_interval_ms", 180_000),
     ])
-    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments(); loadIncompleteTasks(); loadNewInquiries() }, notifMs)
+    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments(); loadPendingAds(); loadIncompleteTasks(); loadNewInquiries() }, notifMs)
     heartbeatTimer = setInterval(sendHeartbeat, hbMs)
   }
   document.addEventListener("click", handleOutsideClick)
@@ -1122,6 +1159,7 @@ onUnmounted(() => {
 .nsi-icon.messages { background: rgba(59,130,246,.25);  color: #60a5fa; }
 .nsi-icon.news     { background: rgba(168,85,247,.25);  color: #c084fc; }
 .nsi-icon.promo    { background: rgba(16,185,129,.25);  color: #34d399; }
+.nsi-icon.ads      { background: rgba(245,158,11,.25);  color: #f59e0b; }
 
 .nsi-label { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .nsi-label small { font-size: .68rem; opacity: .5; line-height: 1.2; }

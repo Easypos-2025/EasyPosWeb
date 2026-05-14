@@ -635,11 +635,15 @@
       </div>
     </footer>
 
+    <!-- Sidebar publicitario fijo — solo en pantallas ≥1400px -->
+    <LandingAdSidebar class="landing-fixed-sidebar" />
+
   </div>
 </template>
 
 <script>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
+import LandingAdSidebar from "@/components/landing/LandingAdSidebar.vue"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -913,7 +917,8 @@ export default {
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
       formatPrice, renderVal, submitContact,
     }
-  }
+  },
+  components: { LandingAdSidebar },
 }
 </script>
 
@@ -1837,5 +1842,17 @@ export default {
   .payment-methods { flex-direction: column; align-items: center; }
   .slide-actions { flex-direction: column; }
   .btn-slide-cta, .btn-slide-outline { justify-content: center; }
+}
+
+/* ── Sidebar publicitario en landing ── */
+.landing-fixed-sidebar {
+  position: fixed;
+  top: 80px;
+  right: 12px;
+  z-index: 50;
+  display: none;
+}
+@media (min-width: 1400px) {
+  .landing-fixed-sidebar { display: flex; }
 }
 </style>
