@@ -1851,8 +1851,33 @@ export default {
   right: 12px;
   z-index: 50;
   display: none;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  scrollbar-width: none;
 }
-@media (min-width: 1400px) {
+.landing-fixed-sidebar::-webkit-scrollbar { display: none; }
+
+/* Desktop y tablet landscape ≥1200px: columna derecha */
+@media (min-width: 1200px) {
   .landing-fixed-sidebar { display: flex; }
+}
+
+/* Móvil landscape (480px-1199px): barra horizontal inferior */
+@media (max-width: 1199px) and (orientation: landscape) and (min-width: 480px) {
+  .landing-fixed-sidebar {
+    display: flex;
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    max-height: none;
+    padding: 6px 10px;
+    background: rgba(10,15,30,0.92);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    z-index: 80;
+  }
 }
 </style>
