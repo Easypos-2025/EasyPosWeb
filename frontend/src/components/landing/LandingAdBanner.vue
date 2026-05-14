@@ -120,17 +120,44 @@ const slots        = ref([
   { slot: 2, active: false, pieces: [] },
   { slot: 3, active: false, pieces: [] },
 ])
-const slotPieceIdx = ref([0, 0, 0])   // índice de pieza activa por slot
+const slotPieceIdx = ref([0, 0, 0])
+const slotTimers   = [null, null, null]
 
 function currentSlotPiece(slot, si) {
   return slot.pieces[slotPieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
 }
 
-function rotatePieces() {
-  slots.value.forEach((slot, si) => {
-    if (slot.pieces?.length > 1)
-      slotPieceIdx.value[si] = (slotPieceIdx.value[si] + 1) % slot.pieces.length
+function getVideoDuration(url) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video")
+    v.preload = "metadata"; v.src = url
+    v.onloadedmetadata = () => { resolve(Math.max(v.duration * 1000, 4000)); v.src = "" }
+    v.onerror         = () => resolve(60_000)
+    setTimeout(()     => resolve(60_000), 8000)
   })
+}
+
+async function pieceDuration(piece) {
+  if (!piece) return 8_000
+  if (piece.piece_type === "video" && piece.media_url)
+    return await getVideoDuration(piece.media_url)
+  if (piece.piece_type === "youtube") return 5 * 60 * 1000
+  return 8_000
+}
+
+function clearSlotTimers() {
+  slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null })
+}
+
+async function scheduleSlot(si) {
+  const slot = slots.value[si]
+  if (!slot?.pieces?.length || slot.pieces.length <= 1) return
+  const duration = await pieceDuration(slot.pieces[slotPieceIdx.value[si]])
+  slotTimers[si] = setTimeout(() => {
+    const len = slots.value[si]?.pieces?.length ?? 1
+    slotPieceIdx.value[si] = (slotPieceIdx.value[si] + 1) % len
+    scheduleSlot(si)
+  }, duration)
 }
 
 async function loadSlots() {
@@ -139,6 +166,8 @@ async function loadSlots() {
     if (Array.isArray(res.data)) {
       slots.value = res.data
       slotPieceIdx.value = [0, 0, 0]
+      clearSlotTimers()
+      slots.value.forEach((_, si) => scheduleSlot(si))
     }
   } catch {}
 }
@@ -161,22 +190,20 @@ function resetCarouselTimer() {
 }
 
 let refreshTimer = null
-let rotateTimer  = null
 
 onMounted(() => {
   checkOrientation()
   window.addEventListener("resize", () => { checkOrientation(); resetCarouselTimer() })
-  loadSlots()
-  refreshTimer = setInterval(loadSlots,    5 * 60 * 1000)
-  rotateTimer  = setInterval(rotatePieces, 4_000)   // rotar piezas cada 4s
+  loadSlots()  // loadSlots lanza los timers inteligentes por slot
+  refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
   resetCarouselTimer()
 })
 
 onUnmounted(() => {
   window.removeEventListener("resize", checkOrientation)
   if (carouselTimer) clearInterval(carouselTimer)
-  if (rotateTimer)   clearInterval(rotateTimer)
   if (refreshTimer)  clearInterval(refreshTimer)
+  clearSlotTimers()
 })
 </script>
 

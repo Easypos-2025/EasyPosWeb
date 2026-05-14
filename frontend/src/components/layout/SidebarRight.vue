@@ -118,23 +118,51 @@ const SlotContent = defineComponent({
   }
 })
 
-// ── Datos + rotación de piezas ────────────────────────────────────────────
-const slots    = ref([
+// ── Datos + rotación inteligente de piezas ───────────────────────────────
+const slots      = ref([
   { slot: 1, active: false, pieces: [] },
   { slot: 2, active: false, pieces: [] },
   { slot: 3, active: false, pieces: [] },
 ])
-const pieceIdx = ref([0, 0, 0])   // índice de pieza activa por slot
+const pieceIdx   = ref([0, 0, 0])
+const slotTimers = [null, null, null]
 
 function currentPiece(slot, si) {
   return slot.pieces[pieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
 }
 
-function rotatePieces() {
-  slots.value.forEach((slot, si) => {
-    if (slot.pieces?.length > 1)
-      pieceIdx.value[si] = (pieceIdx.value[si] + 1) % slot.pieces.length
+// Detecta duración real del video HTML5
+function getVideoDuration(url) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video")
+    v.preload = "metadata"; v.src = url
+    v.onloadedmetadata = () => { resolve(Math.max(v.duration * 1000, 4000)); v.src = "" }
+    v.onerror         = () => resolve(60_000)
+    setTimeout(()     => resolve(60_000), 8000)
   })
+}
+
+async function pieceDuration(piece) {
+  if (!piece) return 8_000
+  if (piece.piece_type === "video" && piece.media_url)
+    return await getVideoDuration(piece.media_url)
+  if (piece.piece_type === "youtube") return 5 * 60 * 1000  // 5 min sin API
+  return 8_000                                               // imagen / texto
+}
+
+function clearSlotTimers() {
+  slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null })
+}
+
+async function scheduleSlot(si) {
+  const slot = slots.value[si]
+  if (!slot?.pieces?.length || slot.pieces.length <= 1) return
+  const duration = await pieceDuration(slot.pieces[pieceIdx.value[si]])
+  slotTimers[si] = setTimeout(() => {
+    const len = slots.value[si]?.pieces?.length ?? 1
+    pieceIdx.value[si] = (pieceIdx.value[si] + 1) % len
+    scheduleSlot(si)
+  }, duration)
 }
 
 async function loadSlots() {
@@ -143,20 +171,20 @@ async function loadSlots() {
     if (Array.isArray(res.data)) {
       slots.value = res.data
       pieceIdx.value = [0, 0, 0]
+      clearSlotTimers()
+      slots.value.forEach((_, si) => scheduleSlot(si))
     }
   } catch {}
 }
 
 let refreshTimer = null
-let rotateTimer  = null
 onMounted(() => {
   loadSlots()
-  refreshTimer = setInterval(loadSlots,    5 * 60 * 1000)
-  rotateTimer  = setInterval(rotatePieces, 4_000)         // rotar cada 4s
+  refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
 })
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
-  if (rotateTimer)  clearInterval(rotateTimer)
+  clearSlotTimers()
 })
 </script>
 
