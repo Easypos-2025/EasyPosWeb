@@ -1,8 +1,8 @@
 """
-CRUD de límites personalizados por asociado.
+CRUD de límites personalizados por asociado + gestión de registros bloqueados por plan.
 Solo SYSADMIN puede acceder.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -14,29 +14,40 @@ from app.models.company_model import Company
 from app.auth.dependencies import require_sysadmin
 from app.models.user_model import User
 from app.services.plan_limits_service import LIMIT_FIELDS, snapshot_plan_limits
+from app.services.downgrade_service import (
+    apply_downgrade_blocks,
+    get_blocked_summary,
+    unblock_records,
+)
 
 router = APIRouter(prefix="/plan-associate-limits", tags=["PlanAssociateLimits"])
 
 
 def _ser(cpl: CompanyPlanLimits, company: Company = None, plan: Plan = None) -> dict:
     return {
-        "id":                 cpl.id,
-        "company_id":         cpl.company_id,
-        "company_name":       company.name if company else "—",
-        "plan_id":            cpl.plan_id,
-        "plan_name":          plan.name if plan else "—",
-        "max_users":          cpl.max_users,
-        "max_products":       cpl.max_products,
-        "max_categories":     cpl.max_categories,
-        "max_workers":        cpl.max_workers,
-        "max_clients":        cpl.max_clients,
-        "max_bodega_items":   cpl.max_bodega_items,
-        "max_tasks":          cpl.max_tasks,
-        "max_daily_invoices": cpl.max_daily_invoices,
-        "max_assets":         cpl.max_assets,
-        "is_custom":          cpl.is_custom,
-        "notes":              cpl.notes,
-        "updated_at":         cpl.updated_at.isoformat() if cpl.updated_at else None,
+        "id":                  cpl.id,
+        "company_id":          cpl.company_id,
+        "company_name":        company.name if company else "—",
+        "plan_id":             cpl.plan_id,
+        "plan_name":           plan.name if plan else "—",
+        # Límites de conteo
+        "max_users":           cpl.max_users,
+        "max_products":        cpl.max_products,
+        "max_categories":      cpl.max_categories,
+        "max_workers":         cpl.max_workers,
+        "max_clients":         cpl.max_clients,
+        "max_bodega_items":    cpl.max_bodega_items,
+        "max_assets":          cpl.max_assets,
+        "max_waiters":         cpl.max_waiters,
+        # Límites diarios
+        "max_tasks":           cpl.max_tasks,
+        "max_daily_invoices":  cpl.max_daily_invoices,
+        "max_daily_receipts":  cpl.max_daily_receipts,
+        "max_daily_tasks":     cpl.max_daily_tasks,
+        # Meta
+        "is_custom":           cpl.is_custom,
+        "notes":               cpl.notes,
+        "updated_at":          cpl.updated_at.isoformat() if cpl.updated_at else None,
     }
 
 
@@ -45,7 +56,6 @@ async def list_limits(
     _: User = Depends(require_sysadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista todos los snapshots de límites por asociado."""
     result = await db.execute(select(CompanyPlanLimits).order_by(CompanyPlanLimits.company_id))
     rows = result.scalars().all()
     out = []
@@ -62,13 +72,11 @@ async def get_limits_by_company(
     _: User = Depends(require_sysadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Devuelve los límites efectivos de un asociado específico."""
     result = await db.execute(
         select(CompanyPlanLimits).where(CompanyPlanLimits.company_id == company_id)
     )
     cpl = result.scalar_one_or_none()
     if not cpl:
-        # Si no hay snapshot, intentar generarlo desde el plan activo
         cp_res = await db.execute(
             select(CompanyPlan)
             .where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)
@@ -100,7 +108,8 @@ async def update_limits(
 ):
     """
     Actualiza los límites de un asociado.
-    Marca automáticamente is_custom=True si algún límite difiere del plan base.
+    Marca is_custom=True si algún límite difiere del plan base.
+    Si se reducen límites, aplica downgrade automático.
     """
     result = await db.execute(
         select(CompanyPlanLimits).where(CompanyPlanLimits.company_id == company_id)
@@ -110,10 +119,14 @@ async def update_limits(
         raise HTTPException(status_code=404, detail="Snapshot no encontrado. Activa el plan del asociado primero.")
 
     changed = False
+    reduced = False
     for field in LIMIT_FIELDS:
         if field in data:
             val = int(data[field])
-            if getattr(cpl, field) != val:
+            old_val = getattr(cpl, field, -1)
+            if old_val != val:
+                if val != -1 and (old_val == -1 or val < old_val):
+                    reduced = True
                 setattr(cpl, field, val)
                 changed = True
 
@@ -123,19 +136,27 @@ async def update_limits(
     if "notes" in data:
         cpl.notes = (data["notes"] or "").strip() or None
 
-    # Permitir resetear a valores del plan base
     if data.get("reset_to_plan"):
         plan = await db.get(Plan, cpl.plan_id)
         if plan:
             for field in LIMIT_FIELDS:
-                setattr(cpl, field, getattr(plan, field, -1))
+                old_val = getattr(cpl, field, -1)
+                new_val = getattr(plan, field, -1)
+                if new_val != -1 and (old_val == -1 or new_val < old_val):
+                    reduced = True
+                setattr(cpl, field, new_val)
             cpl.is_custom = False
 
     await db.commit()
     await db.refresh(cpl)
+
+    blocked_summary = {}
+    if reduced:
+        blocked_summary = await apply_downgrade_blocks(company_id, db)
+
     company = await db.get(Company, cpl.company_id)
     plan    = await db.get(Plan,    cpl.plan_id)
-    return _ser(cpl, company, plan)
+    return {**_ser(cpl, company, plan), "blocked_summary": blocked_summary}
 
 
 @router.post("/{company_id}/reset")
@@ -144,7 +165,6 @@ async def reset_to_plan(
     _: User = Depends(require_sysadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Resetea los límites del asociado a los valores actuales de su plan base."""
     result = await db.execute(
         select(CompanyPlanLimits).where(CompanyPlanLimits.company_id == company_id)
     )
@@ -154,11 +174,90 @@ async def reset_to_plan(
     plan = await db.get(Plan, cpl.plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan base no encontrado")
+
+    reduced = False
     for field in LIMIT_FIELDS:
-        setattr(cpl, field, getattr(plan, field, -1))
+        old_val = getattr(cpl, field, -1)
+        new_val = getattr(plan, field, -1)
+        if new_val != -1 and (old_val == -1 or new_val < old_val):
+            reduced = True
+        setattr(cpl, field, new_val)
     cpl.is_custom = False
     cpl.notes = None
     await db.commit()
     await db.refresh(cpl)
+
+    blocked_summary = {}
+    if reduced:
+        blocked_summary = await apply_downgrade_blocks(company_id, db)
+
     company = await db.get(Company, cpl.company_id)
-    return _ser(cpl, company, plan)
+    return {**_ser(cpl, company, plan), "blocked_summary": blocked_summary}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS DE DESBLOQUEO MANUAL (SYSADMIN)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{company_id}/blocked")
+async def get_blocked(
+    company_id: int,
+    _: User = Depends(require_sysadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista todos los registros bloqueados por plan para el asociado."""
+    summary = await get_blocked_summary(company_id, db)
+    total = sum(len(v) for v in summary.values())
+    return {"company_id": company_id, "total_blocked": total, "resources": summary}
+
+
+@router.post("/{company_id}/unblock")
+async def unblock_resource(
+    company_id: int,
+    data: dict = Body(...),
+    _: User = Depends(require_sysadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Desbloquea registros específicos de un recurso para el asociado.
+    Body: { "resource": "users", "ids": [1, 2, 3] }
+
+    Recursos válidos: users, pos_waiters, products, categories,
+                      workers, clients, bodega_items, assets
+    """
+    resource = data.get("resource")
+    ids = data.get("ids", [])
+
+    if not resource:
+        raise HTTPException(status_code=400, detail="Campo 'resource' requerido")
+    if not ids or not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="Campo 'ids' debe ser una lista de IDs")
+
+    result = await unblock_records(company_id, resource, [int(i) for i in ids], db)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return {
+        "message":   f"{len(result['unblocked'])} registro(s) desbloqueado(s) correctamente",
+        "resource":  resource,
+        "unblocked": result["unblocked"],
+    }
+
+
+@router.post("/{company_id}/apply-downgrade")
+async def force_downgrade(
+    company_id: int,
+    _: User = Depends(require_sysadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fuerza la aplicación de bloqueos según los límites actuales del plan.
+    Útil si se cambiaron límites manualmente o para recalcular.
+    """
+    blocked_summary = await apply_downgrade_blocks(company_id, db)
+    total = sum(len(v) for v in blocked_summary.values())
+    return {
+        "message":         f"Downgrade aplicado. {total} registro(s) bloqueado(s).",
+        "blocked_summary": blocked_summary,
+    }

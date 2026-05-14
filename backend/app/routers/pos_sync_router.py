@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.database import get_db
+from app.services.plan_limits_service import get_limits
 
 router = APIRouter(prefix="/api/pos", tags=["POS Sync"])
 
@@ -17,6 +18,31 @@ POS_API_KEY = os.getenv("POS_API_KEY", "easypos-sync-key-2024")
 def verify_api_key(x_api_key: str = Header(...)):
     if x_api_key != POS_API_KEY:
         raise HTTPException(status_code=401, detail="API Key inválida")
+
+
+async def _daily_remaining(company_id: int, limit_field: str, table: str, db) -> int:
+    """
+    Devuelve cuántos registros nuevos puede crear hoy la empresa para la tabla dada.
+    -1 = ilimitado. 0 = límite alcanzado.
+    """
+    limits = await get_limits(company_id, db)
+    max_val = limits.get(limit_field, -1)
+    if max_val == -1:
+        return -1
+    today = date.today().isoformat()
+    row = (await db.execute(
+        text(f"SELECT COUNT(*) FROM {table} WHERE company_id=:cid AND date=:today"),
+        {"cid": company_id, "today": today},
+    )).scalar() or 0
+    return max(0, max_val - row)
+
+
+async def _exists_in_table(table: str, pk_col: str, pk_val: str, company_id: int, db) -> bool:
+    row = (await db.execute(
+        text(f"SELECT 1 FROM {table} WHERE {pk_col}=:pk AND company_id=:cid LIMIT 1"),
+        {"pk": pk_val, "cid": company_id},
+    )).fetchone()
+    return row is not None
 
 
 # ─────────────────────────────────────────
@@ -77,7 +103,23 @@ async def push_invoices(
     saved = []
     failed = []
 
+    # Agrupamos por company_id para calcular slots restantes una sola vez por empresa
+    company_remaining: dict[int, int] = {}
+
     for inv in invoices:
+        cid = inv.company_id
+        is_existing = await _exists_in_table("pos_invoices", "invoice_number", inv.invoice_number, cid, db)
+
+        if not is_existing:
+            if cid not in company_remaining:
+                company_remaining[cid] = await _daily_remaining(cid, "max_daily_invoices", "pos_invoices", db)
+            if company_remaining[cid] == 0:
+                failed.append({"invoice_number": inv.invoice_number,
+                               "error": "Límite diario de facturas alcanzado en tu plan"})
+                continue
+            if company_remaining[cid] > 0:
+                company_remaining[cid] -= 1
+
         try:
             await db.execute(text("""
                 INSERT INTO pos_invoices (
@@ -348,7 +390,22 @@ async def push_receipts(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    company_remaining: dict[int, int] = {}
+
     for r in receipts:
+        cid = r.company_id
+        is_existing = await _exists_in_table("pos_receipts", "receipt_number", r.receipt_number, cid, db)
+
+        if not is_existing:
+            if cid not in company_remaining:
+                company_remaining[cid] = await _daily_remaining(cid, "max_daily_receipts", "pos_receipts", db)
+            if company_remaining[cid] == 0:
+                failed.append({"receipt_number": r.receipt_number,
+                               "error": "Límite diario de recibos alcanzado en tu plan"})
+                continue
+            if company_remaining[cid] > 0:
+                company_remaining[cid] -= 1
+
         try:
             await db.execute(text("""
                 INSERT INTO pos_receipts (
@@ -588,7 +645,34 @@ async def push_waiters(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+
+    # Agrupar por company_id para calcular slots disponibles una vez
+    company_slots: dict[int, int] = {}
+
     for w in waiters:
+        cid = w.company_id
+        is_existing = await _exists_in_table("pos_waiters", "id", str(w.id), cid, db)
+
+        if not is_existing:
+            if cid not in company_slots:
+                limits = await get_limits(cid, db)
+                max_w = limits.get("max_waiters", -1)
+                if max_w == -1:
+                    company_slots[cid] = -1
+                else:
+                    active_count = (await db.execute(
+                        text("SELECT COUNT(*) FROM pos_waiters WHERE company_id=:cid AND plan_blocked=0"),
+                        {"cid": cid},
+                    )).scalar() or 0
+                    company_slots[cid] = max(0, max_w - active_count)
+
+            if company_slots[cid] == 0:
+                failed.append({"id": w.id,
+                               "error": "Límite de meseros/cajeros POS alcanzado en tu plan"})
+                continue
+            if company_slots[cid] > 0:
+                company_slots[cid] -= 1
+
         try:
             await db.execute(text("""
                 INSERT INTO pos_waiters (
@@ -623,7 +707,7 @@ async def pull_waiters(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
-    sql = "SELECT * FROM pos_waiters WHERE company_id = :company_id"
+    sql = "SELECT * FROM pos_waiters WHERE company_id = :company_id AND plan_blocked = 0"
     params = {"company_id": company_id}
     if since:
         sql += " AND updated_at >= :since"

@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Integer, String, ForeignKey
+from sqlalchemy import Integer, String, ForeignKey, DateTime
 from app.database import Base
 
 
@@ -12,6 +12,8 @@ class Worker(Base):
     company_id:    Mapped[Optional[int]] = mapped_column(ForeignKey("companies.id_company"), nullable=True, index=True)
     name:          Mapped[str]           = mapped_column(String(100), nullable=False)
     profession_id: Mapped[Optional[int]] = mapped_column(ForeignKey("professions.id"), nullable=True)
-    phone:         Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    phone:           Mapped[Optional[str]]    = mapped_column(String(50), nullable=True)
+    plan_blocked:    Mapped[int]              = mapped_column(Integer, default=0)
+    plan_blocked_at: Mapped[Optional[object]] = mapped_column(DateTime, nullable=True)
 
     profession = relationship("Profession", back_populates="workers", lazy="selectin")

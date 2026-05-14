@@ -17,18 +17,33 @@ from app.models.plan_model import Plan
 LIMIT_FIELDS = [
     "max_users", "max_products", "max_categories", "max_workers",
     "max_clients", "max_bodega_items", "max_tasks", "max_daily_invoices", "max_assets",
+    "max_waiters", "max_daily_receipts", "max_daily_tasks",
+]
+
+# Campos de límite por cantidad total (bloqueo permanente al hacer downgrade)
+COUNT_LIMIT_FIELDS = [
+    "max_users", "max_products", "max_categories", "max_workers",
+    "max_clients", "max_bodega_items", "max_assets", "max_waiters",
+]
+
+# Campos de límite diario (se verifican en el momento de creación/sincronización)
+DAILY_LIMIT_FIELDS = [
+    "max_daily_invoices", "max_daily_receipts", "max_daily_tasks",
 ]
 
 LIMIT_LABELS = {
-    "max_users":          "usuarios",
-    "max_products":       "productos",
-    "max_categories":     "categorías",
-    "max_workers":        "trabajadores",
-    "max_clients":        "clientes",
-    "max_bodega_items":   "artículos de bodega",
-    "max_tasks":          "tareas activas",
-    "max_daily_invoices": "facturas diarias",
-    "max_assets":         "activos",
+    "max_users":           "usuarios",
+    "max_products":        "productos",
+    "max_categories":      "categorías",
+    "max_workers":         "trabajadores",
+    "max_clients":         "clientes",
+    "max_bodega_items":    "artículos de bodega",
+    "max_tasks":           "tareas activas",
+    "max_daily_invoices":  "facturas diarias",
+    "max_assets":          "activos",
+    "max_waiters":         "meseros/cajeros POS",
+    "max_daily_receipts":  "recibos diarios",
+    "max_daily_tasks":     "tareas diarias",
 }
 
 
@@ -78,6 +93,9 @@ async def check_limit(company_id: int, field: str, model, db: AsyncSession,
         return  # ilimitado
 
     stmt = select(func.count()).select_from(model).where(model.company_id == company_id)
+    # Excluir registros ya bloqueados por plan para no contar doble
+    if hasattr(model, "plan_blocked"):
+        stmt = stmt.where(model.plan_blocked == 0)
     if extra_filters:
         for f in extra_filters:
             stmt = stmt.where(f)

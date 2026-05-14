@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from datetime import datetime
+from sqlalchemy import select, func, cast, Date
+from datetime import datetime, date
 from typing import Optional
 
 from app.database import get_db
@@ -13,7 +13,7 @@ from app.models.worker_model import Worker
 from app.models.role_model import Role
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
-from app.services.plan_limits_service import check_limit
+from app.services.plan_limits_service import check_limit, get_limits
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -248,6 +248,23 @@ async def create_task(
 ):
     user = await _get_user(authorization, db)
     await check_limit(user.company_id, "max_tasks", Task, db)
+
+    # Verificar límite diario de creación de tareas
+    limits = await get_limits(user.company_id, db)
+    max_daily = limits.get("max_daily_tasks", -1)
+    if max_daily != -1:
+        today = date.today()
+        daily_count = (await db.execute(
+            select(func.count()).select_from(Task)
+            .where(Task.company_id == user.company_id,
+                   cast(Task.created_at, Date) == today)
+        )).scalar() or 0
+        if daily_count >= max_daily:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Límite de {max_daily} tareas diarias alcanzado en tu plan. Actualiza tu plan para crear más."
+            )
+
     task = Task(
         company_id=user.company_id, title=data.get("title", "").strip(),
         description=data.get("description", ""), asset_id=data.get("asset_id") or None,

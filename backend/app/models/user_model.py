@@ -1,7 +1,7 @@
-from sqlalchemy import String, Integer, ForeignKey
+from sqlalchemy import String, Integer, ForeignKey, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
 from app.database import Base
-from sqlalchemy import Boolean
 
 class User(Base):
 
@@ -17,7 +17,9 @@ class User(Base):
         ForeignKey("companies.id_company"),
         nullable=True
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active:        Mapped[bool]           = mapped_column(Boolean, default=True)
+    plan_blocked:     Mapped[int]            = mapped_column(Integer, default=0)
+    plan_blocked_at:  Mapped[Optional[object]] = mapped_column(DateTime, nullable=True)
 
     # =========================================
     # PERFIL / TEMA

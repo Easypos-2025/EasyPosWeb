@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, String, Text, SmallInteger, DECIMAL, ForeignKey, UniqueConstraint
+from sqlalchemy import Integer, String, Text, SmallInteger, DECIMAL, ForeignKey, UniqueConstraint, DateTime
 from app.database import Base
 
 
@@ -38,3 +38,5 @@ class Asset(Base):
     list_code:            Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     rental_requirements:  Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     general_observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    plan_blocked:         Mapped[int]              = mapped_column(SmallInteger, nullable=False, default=0)
+    plan_blocked_at:      Mapped[Optional[object]] = mapped_column(DateTime, nullable=True)
