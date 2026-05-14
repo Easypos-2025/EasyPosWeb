@@ -124,9 +124,22 @@
             </div>
             <div class="form-group show-landing-toggle">
               <label class="check-label">
-                <input type="checkbox" v-model="prof.show_in_landing" />
-                <span>Mostrar en slider de la landing</span>
+                <input type="checkbox" v-model="prof.is_active" />
+                <span>Perfil activo en el sistema</span>
               </label>
+              <label class="check-label" style="margin-top:6px">
+                <input type="checkbox" v-model="prof.show_in_landing" :disabled="!prof.is_active" />
+                <span :style="!prof.is_active ? 'opacity:.4' : ''">Mostrar en slider de la landing</span>
+              </label>
+              <p v-if="prof.is_active && prof.show_in_landing" class="check-hint check-ok">
+                <i class="bi bi-check-circle-fill me-1"></i>Visible en la landing
+              </p>
+              <p v-else-if="!prof.is_active" class="check-hint check-warn">
+                <i class="bi bi-x-circle-fill me-1"></i>Inactivo — no aparece en la landing
+              </p>
+              <p v-else class="check-hint check-warn">
+                <i class="bi bi-eye-slash-fill me-1"></i>Activo pero oculto en la landing
+              </p>
             </div>
             <button class="btn-save-profile" @click="saveProfile(prof)">
               <i class="bi bi-floppy-fill me-1"></i> Guardar
@@ -495,7 +508,8 @@ export default {
           landing_description: prof.landing_description,
           icon:                prof.icon,
           color_accent:        prof.color_accent,
-          show_in_landing:     !!prof.show_in_landing,  // forzar boolean (no int 0/1)
+          show_in_landing:     !!prof.show_in_landing,
+          is_active:           !!prof.is_active,
         })
         showToast("Perfil actualizado", "success")
         await loadProfiles()  // refrescar desde BD para confirmar
@@ -878,6 +892,13 @@ export default {
 }
 .btn-save:hover { background: #1d4ed8; }
 .btn-save:disabled { opacity: .6; cursor: not-allowed; }
+
+/* Hint de estado debajo de los checkboxes */
+.check-hint {
+  font-size: 11px; font-weight: 600; margin: 4px 0 0; display: flex; align-items: center;
+}
+.check-ok   { color: #16a34a; }
+.check-warn { color: #d97706; }
 
 /* Badge activo/inactivo en perfil */
 .profile-name-row {

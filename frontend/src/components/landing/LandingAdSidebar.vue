@@ -54,7 +54,7 @@
 
         <!-- Placeholder: clic cierra el sidebar (no navega) -->
         <div class="ls-placeholder-link" @click="dismiss" title="Ocultar panel" v-else>
-          <svg viewBox="0 0 180 200" xmlns="http://www.w3.org/2000/svg" class="ls-placeholder-svg">
+          <svg viewBox="0 0 180 200" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" class="ls-placeholder-svg">
             <defs>
               <linearGradient :id="`lpBg${si}`" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%"   stop-color="#2563eb"/>
@@ -322,7 +322,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
 @media (max-width: 767px) and (orientation: portrait) {
   .landing-sidebar {
     width: 100px;
-    top: 62px;
+    top: 68px;           /* igual que el navbar height */
     padding-bottom: 0;
     overflow: hidden;
   }
@@ -337,7 +337,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
 
 /* Pantallas muy pequeñas portrait (<420px) */
 @media (max-width: 420px) and (orientation: portrait) {
-  .landing-sidebar { width: 86px; top: 58px; }
+  .landing-sidebar { width: 86px; top: 68px; }
   .ls-text-title   { font-size: 8px; }
   .ls-header       { padding: 4px 6px; }
 }

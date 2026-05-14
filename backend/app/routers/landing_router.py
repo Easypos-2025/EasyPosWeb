@@ -218,7 +218,7 @@ async def admin_update_profile(profile_id: int, data: dict = Body(...), authoriz
     profile = result.scalar_one_or_none()
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
-    for field in ["image_url", "landing_description", "icon", "color_accent", "show_in_landing"]:
+    for field in ["image_url", "landing_description", "icon", "color_accent", "show_in_landing", "is_active"]:
         if field in data:
             setattr(profile, field, data[field])
     await db.commit()

@@ -33,7 +33,7 @@
 
         <!-- Placeholder "Paute Aquí" — IDs únicos por slot -->
         <div v-else class="ad-placeholder">
-          <svg viewBox="0 0 160 200" xmlns="http://www.w3.org/2000/svg" class="placeholder-svg">
+          <svg viewBox="0 0 160 200" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" class="placeholder-svg">
             <defs>
               <linearGradient :id="`pgBg${si}`" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%"   stop-color="#2563eb"/>
