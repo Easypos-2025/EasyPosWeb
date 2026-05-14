@@ -235,5 +235,25 @@ onMounted(load)
 .btn-outline-danger  { background: #fef2f2; color: #b91c1c; border: 1.5px solid #fecaca; }
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-@media (max-width: 640px) { .form-row2 { grid-template-columns: 1fr; } .span2 { grid-column: span 1; } }
+@media (max-width: 768px) {
+  .page-container { padding: 14px; }
+  .page-header    { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .page-title     { font-size: 17px; }
+  .page-header .btn { width: 100%; justify-content: center; }
+  .sub-card.p-0   { overflow-x: auto; border-radius: 10px; }
+  /* Ocultar columnas menos críticas en tablet */
+  .data-table th:nth-child(5), .data-table td:nth-child(5) { display: none; }
+}
+
+@media (max-width: 576px) {
+  .page-container { padding: 10px; }
+  .page-title     { font-size: 15px; }
+  /* Ocultar también código */
+  .data-table th:nth-child(2), .data-table td:nth-child(2) { display: none; }
+  .data-table th, .data-table td { padding: 8px 8px; font-size: 12px; }
+  .item-desc      { display: none; }
+  .form-row2 { grid-template-columns: 1fr; } .span2 { grid-column: span 1; }
+}
+
+@media (min-width: 577px) and (max-width: 640px) { .form-row2 { grid-template-columns: 1fr; } .span2 { grid-column: span 1; } }
 </style>

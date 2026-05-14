@@ -316,8 +316,29 @@ onMounted(load)
 .spin { display:inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+  .page-container { padding: 14px; }
+  .page-header    { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .page-title     { font-size: 17px; }
+  .page-header .btn { width: 100%; justify-content: center; }
+  .filters-row    { flex-direction: column; }
+  .filters-row .form-control,
+  .filters-row .form-select { max-width: 100% !important; }
+  .table-card     { overflow-x: auto; border-radius: 10px; }
+  /* Ocultar columnas menos críticas */
+  .data-table th:nth-child(1), .data-table td:nth-child(1),
+  .data-table th:nth-child(6), .data-table td:nth-child(6) { display: none; }
+}
+
+@media (max-width: 576px) {
+  .page-container { padding: 10px 12px; }
+  .page-title     { font-size: 15px; }
+  /* Ocultar también documento y dirección */
+  .data-table th:nth-child(3), .data-table td:nth-child(3),
+  .data-table th:nth-child(5), .data-table td:nth-child(5) { display: none; }
+  .data-table th, .data-table td { padding: 8px 8px; font-size: 12px; }
+  /* Botones de acción: solo icono */
+  .btn-sm span, .btn.btn-warning.btn-sm { font-size: 11px; padding: 4px 6px; }
   .form-row2 { grid-template-columns: 1fr; }
-  .page-container { padding: 14px 12px; }
 }
 </style>

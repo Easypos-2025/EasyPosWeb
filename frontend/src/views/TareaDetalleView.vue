@@ -171,37 +171,39 @@
       <!-- ═══════════════════════════════════════════════════
            TABS INFERIORES
       ════════════════════════════════════════════════════ -->
-      <div class="tabs-bar">
-        <button class="tab-btn" :class="{ active: tab === 'evidencias' }"
-          @click="tab = 'evidencias'">
-          <i class="bi bi-camera"></i> Evidencias
-          <span class="tab-badge">{{ evidences.length }}</span>
-        </button>
-        <button class="tab-btn" :class="{ active: tab === 'materiales' }"
-          @click="tab = 'materiales'">
-          <i class="bi bi-boxes"></i> Materiales
-          <span class="tab-badge">{{ materials.length }}</span>
-        </button>
-        <button class="tab-btn" :class="{ active: tab === 'gastos' }"
-          @click="tab = 'gastos'">
-          <i class="bi bi-receipt"></i> Gastos
-          <span class="tab-badge">{{ expenses.length }}</span>
-        </button>
-        <button class="tab-btn" :class="{ active: tab === 'compras' }"
-          @click="tab = 'compras'">
-          <i class="bi bi-cart3"></i> Compras
-          <span class="tab-badge">{{ purchases.length }}</span>
-        </button>
-        <button class="tab-btn" :class="{ active: tab === 'notificaciones' }"
-          @click="tab = 'notificaciones'">
-          <i class="bi bi-bell"></i> Notificaciones
-          <span class="tab-badge" :class="{ 'tab-badge-alert': unreadNotifsCount > 0 }">{{ notifications.length }}</span>
-        </button>
-        <button class="tab-btn" :class="{ active: tab === 'colaboradores' }"
-          @click="tab = 'colaboradores'">
-          <i class="bi bi-people"></i> Colaboradores
-          <span class="tab-badge">{{ collaborators.length }}</span>
-        </button>
+      <div class="tabs-wrap">
+        <div class="tabs-bar">
+          <button class="tab-btn" :class="{ active: tab === 'evidencias' }"
+            @click="tab = 'evidencias'">
+            <i class="bi bi-camera"></i><span class="tab-label"> Evidencias</span>
+            <span class="tab-badge">{{ evidences.length }}</span>
+          </button>
+          <button class="tab-btn" :class="{ active: tab === 'materiales' }"
+            @click="tab = 'materiales'">
+            <i class="bi bi-boxes"></i><span class="tab-label"> Materiales</span>
+            <span class="tab-badge">{{ materials.length }}</span>
+          </button>
+          <button class="tab-btn" :class="{ active: tab === 'gastos' }"
+            @click="tab = 'gastos'">
+            <i class="bi bi-receipt"></i><span class="tab-label"> Gastos</span>
+            <span class="tab-badge">{{ expenses.length }}</span>
+          </button>
+          <button class="tab-btn" :class="{ active: tab === 'compras' }"
+            @click="tab = 'compras'">
+            <i class="bi bi-cart3"></i><span class="tab-label"> Compras</span>
+            <span class="tab-badge">{{ purchases.length }}</span>
+          </button>
+          <button class="tab-btn" :class="{ active: tab === 'notificaciones' }"
+            @click="tab = 'notificaciones'">
+            <i class="bi bi-bell"></i><span class="tab-label"> Avisos</span>
+            <span class="tab-badge" :class="{ 'tab-badge-alert': unreadNotifsCount > 0 }">{{ notifications.length }}</span>
+          </button>
+          <button class="tab-btn" :class="{ active: tab === 'colaboradores' }"
+            @click="tab = 'colaboradores'">
+            <i class="bi bi-people"></i><span class="tab-label"> Colab.</span>
+            <span class="tab-badge">{{ collaborators.length }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- ──────────────── TAB: EVIDENCIAS ──────────────── -->
@@ -1067,8 +1069,16 @@ onMounted(load)
 .border-danger { border-color:#ef4444 !important; }
 
 /* TABS */
+.tabs-wrap {
+  position: relative; margin-bottom: 16px;
+}
+.tabs-wrap::after {
+  content: ""; pointer-events: none;
+  position: absolute; right: 0; top: 0; bottom: 2px; width: 40px;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,.95));
+}
 .tabs-bar {
-  display:flex; gap:2px; margin-bottom:16px; border-bottom:2px solid #f1f5f9;
+  display:flex; gap:2px; border-bottom:2px solid #f1f5f9;
   overflow-x:auto; -webkit-overflow-scrolling:touch;
   scrollbar-width:none;
 }
@@ -1166,6 +1176,15 @@ onMounted(load)
   .span2       { grid-column:span 1; }
   .form-row4   { grid-template-columns:1fr 1fr; }
   .fg.col2     { grid-column:span 2; }
+  /* Tabs: reducir padding para que entren todas sin scroll */
+  .tab-btn     { padding: 8px 8px; font-size: 12px; gap: 3px; }
+  .tab-badge   { padding: 1px 5px; font-size: 10px; }
+}
+
+@media (max-width: 480px) {
+  /* Tabs: solo icono + badge, sin texto */
+  .tab-label   { display: none; }
+  .tab-btn     { padding: 8px 10px; }
 }
 
 /* ── TAB BADGE ALERT ── */

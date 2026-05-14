@@ -7,9 +7,14 @@
         <h1 class="page-title"><i class="bi bi-box-arrow-right me-2"></i>Préstamos de Bodega</h1>
         <p class="page-subtitle">Registro y control de salidas y devoluciones</p>
       </div>
-      <button v-if="canManage" class="btn btn-primary" @click="openCreate">
-        <i class="bi bi-plus-lg"></i> Nuevo préstamo
-      </button>
+      <div class="header-btns">
+        <router-link to="/bodega-items" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-archive"></i> Gestionar bodega
+        </router-link>
+        <button v-if="canManage" class="btn btn-primary" @click="openCreate">
+          <i class="bi bi-plus-lg"></i> Nuevo préstamo
+        </button>
+      </div>
     </div>
 
     <!-- KPI BAR -->
@@ -360,8 +365,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+
+const router = useRouter()
 
 const apiBase  = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 const userInfo = JSON.parse(localStorage.getItem("user") || "{}")
@@ -554,6 +562,7 @@ onMounted(load)
 <style scoped>
 .page-container { padding: 24px; max-width: 1200px; }
 .page-header    { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+.header-btns    { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .page-title     { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
 .page-subtitle  { font-size: 13px; color: #64748b; margin: 0; }
 
