@@ -300,29 +300,44 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
   .landing-sidebar { width: 155px; }
 }
 
-/* Móvil landscape (480px – 767px): más angosto */
+/* Móvil landscape (<768px landscape): más angosto */
 @media (max-width: 767px) and (orientation: landscape) {
   .landing-sidebar {
-    width: 120px;
-    top: 56px;
+    width: 110px;
+    top: 54px;
+    padding-bottom: 0;
+    overflow: hidden;
   }
+  .ls-slots { gap: 4px; padding: 4px; }
+  .ls-slot  { min-height: 0; border-radius: 6px; }
 }
 
-/* Móvil portrait (<768px en portrait): overlay más angosto, slots proporcionales */
+/* Móvil portrait (<768px portrait): llenar toda la altura como en PC */
 @media (max-width: 767px) and (orientation: portrait) {
   .landing-sidebar {
-    width: 110px;
-    top: 60px;
-    padding-bottom: 80px;
+    width: 100px;
+    top: 62px;
+    padding-bottom: 0;   /* sin padding — los slots llenan todo */
+    overflow: hidden;    /* sin scroll — flex reparte el espacio */
   }
-  .ls-slot { min-height: 80px; }
-  .ls-header-title span { display: none; }   /* ocultar texto "Destacados" */
+  .ls-slots {
+    gap: 4px;
+    padding: 4px;
+  }
+  .ls-slot {
+    min-height: 0;       /* flex:1 controla la altura, sin mínimo fijo */
+    border-radius: 6px;
+  }
+  .ls-header        { padding: 6px 8px; }
+  .ls-header-title span { display: none; }  /* solo icono en header */
+  .ls-header-title .bi  { font-size: 14px; }
+  .ls-caption           { font-size: 8px; padding: 8px 4px 4px; }
 }
 
 /* Pantallas muy pequeñas portrait (<420px) */
 @media (max-width: 420px) and (orientation: portrait) {
-  .landing-sidebar { width: 95px; top: 56px; }
-  .ls-text-title { font-size: 9px; }
-  .ls-header { padding: 7px 8px; }
+  .landing-sidebar { width: 86px; top: 58px; }
+  .ls-text-title   { font-size: 8px; }
+  .ls-header       { padding: 5px 7px; }
 }
 </style>
