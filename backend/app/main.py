@@ -955,6 +955,16 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
+        # ── SEED: precios de pautas en system_config ──────────────────
+        for ad_key, ad_val, ad_desc in [
+            ("ad_price_single_profile", "50000",  "Precio pauta dirigida a un perfil (COP)"),
+            ("ad_price_all_profiles",   "80000",  "Precio pauta dirigida a todos los perfiles (COP)"),
+        ]:
+            r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == ad_key))
+            if not r.scalar_one_or_none():
+                db.add(SystemConfig(config_key=ad_key, config_value=ad_val, description=ad_desc, config_type="integer"))
+        await db.commit()
+
         # ── SEED: módulos de pautas en system_modules ──────────────────
         for route, name, icon, is_sysadmin in [
             ("/advertising/my-ads",   "Mis Pautas",         "bi-megaphone",       False),

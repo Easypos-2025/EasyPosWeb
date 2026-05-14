@@ -25,8 +25,7 @@
     <!-- Table -->
     <div class="table-wrap">
       <div v-if="loading" class="empty-state">
-        <div class="spinner-border spinner-border-sm text-secondary me-2"></div>
-        Cargando...
+        <div class="spinner-border spinner-border-sm text-secondary me-2"></div>Cargando...
       </div>
       <div v-else-if="!ads.length" class="empty-state">
         <i class="bi bi-megaphone" style="font-size:2.5rem;opacity:.3"></i>
@@ -55,21 +54,21 @@
             <td>{{ fmtDate(ad.end_date) }}</td>
             <td class="td-center">{{ ad.impressions }}</td>
             <td class="td-actions">
-              <button class="btn-act btn-view" @click="openDetail(ad)" title="Ver detalle">
+              <button class="btn-act btn-view" @click="openDetail(ad)" title="Ver / Editar">
                 <i class="bi bi-eye"></i>
               </button>
-              <button
-                v-if="ad.status === 'pending' || ad.status === 'rejected'"
-                class="btn-act btn-edit" @click="openEdit(ad)" title="Editar"
-              ><i class="bi bi-pencil"></i></button>
-              <button
-                v-if="ad.status === 'expired' || ad.status === 'rejected'"
-                class="btn-act btn-renew" @click="openRenew(ad)" title="Renovar"
-              ><i class="bi bi-arrow-clockwise"></i></button>
-              <button
-                v-if="['pending','rejected','expired'].includes(ad.status)"
-                class="btn-act btn-del" @click="deleteAd(ad)" title="Eliminar"
-              ><i class="bi bi-trash3"></i></button>
+              <button v-if="['pending','rejected'].includes(ad.status)"
+                class="btn-act btn-edit" @click="openEdit(ad)" title="Editar">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button v-if="['expired','rejected'].includes(ad.status)"
+                class="btn-act btn-renew" @click="openRenew(ad)" title="Renovar">
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+              <button v-if="['pending','rejected','expired'].includes(ad.status)"
+                class="btn-act btn-del" @click="deleteAd(ad)" title="Eliminar">
+                <i class="bi bi-trash3"></i>
+              </button>
             </td>
           </tr>
         </tbody>
@@ -87,15 +86,22 @@
         </div>
         <div class="modal-body">
 
-          <!-- Datos generales -->
-          <div class="form-section-label">Información de la pauta</div>
+          <!-- Empresa solicitante -->
+          <div class="company-info-bar">
+            <i class="bi bi-building me-2"></i>
+            <span class="ci-label">Empresa:</span>
+            <span class="ci-name">{{ companyName }}</span>
+          </div>
+
+          <!-- Info general -->
+          <div class="form-section-label mt-2">Información de la pauta</div>
           <div class="form-row">
             <label class="form-lbl">Título *</label>
             <input v-model="form.title" class="form-ctrl" maxlength="200" placeholder="Ej: Promoción de temporada" />
           </div>
           <div class="form-row">
             <label class="form-lbl">Descripción</label>
-            <textarea v-model="form.description" class="form-ctrl" rows="2" placeholder="Descripción breve de la pauta"></textarea>
+            <textarea v-model="form.description" class="form-ctrl" rows="2" placeholder="Descripción breve"></textarea>
           </div>
           <div class="form-row">
             <label class="form-lbl">URL destino (debe iniciar con https://)</label>
@@ -111,13 +117,26 @@
               <input v-model="form.end_date" type="date" class="form-ctrl" />
             </div>
           </div>
-          <div class="form-row">
-            <label class="form-lbl">Perfil objetivo</label>
-            <select v-model="form.target_profile_id" class="form-ctrl">
-              <option :value="null">Todos los perfiles</option>
-              <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
+
+          <!-- Perfil + Precio -->
+          <div class="form-row-2">
+            <div>
+              <label class="form-lbl">Perfil objetivo</label>
+              <select v-model="form.target_profile_id" class="form-ctrl" @change="onProfileChange">
+                <option :value="null">Todos los perfiles</option>
+                <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-lbl">Valor de la pauta</label>
+              <div class="price-display">
+                <i class="bi bi-currency-dollar me-1"></i>
+                <span class="price-val">{{ fmtPrice(currentPrice) }}</span>
+                <span class="price-cur">COP</span>
+              </div>
+            </div>
           </div>
+
           <div class="form-row">
             <label class="form-lbl">Notas para el administrador</label>
             <textarea v-model="form.notes_to_admin" class="form-ctrl" rows="2" placeholder="Instrucciones especiales, preferencias de slot, etc."></textarea>
@@ -126,10 +145,9 @@
           <!-- Piezas multimedia -->
           <div class="form-section-label mt-3">
             Piezas multimedia
-            <span class="pieces-hint">(máx. 3 — imagen/video 8MB c/u)</span>
+            <span class="pieces-hint">(máx. 3 — imagen/video máx. 8 MB c/u)</span>
           </div>
 
-          <!-- Existing pieces -->
           <div v-if="form.pieces.length" class="pieces-list">
             <div v-for="(piece, pi) in form.pieces" :key="piece.id || pi" class="piece-item">
               <div class="piece-preview">
@@ -145,11 +163,11 @@
             </div>
           </div>
 
-          <!-- Add piece buttons (only available after save if editing) -->
           <div v-if="editing && form.pieces.length < 3" class="add-piece-row">
-            <label class="btn-add-piece" title="Subir imagen o video">
+            <label class="btn-add-piece" title="Subir imagen o video (máx. 8MB)">
               <i class="bi bi-upload me-1"></i>Subir archivo
-              <input type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm" @change="uploadPiece" class="hidden-input" />
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm"
+                @change="uploadPiece" class="hidden-input" :disabled="saving" />
             </label>
             <button class="btn-add-piece" @click="showYTForm = !showYTForm">
               <i class="bi bi-youtube me-1"></i>YouTube
@@ -164,16 +182,30 @@
 
           <!-- YouTube sub-form -->
           <div v-if="showYTForm" class="sub-form">
-            <input v-model="ytId" class="form-ctrl" placeholder="ID del video YouTube (ej: dQw4w9WgXcQ)" maxlength="20" />
-            <button class="btn-sub-save" @click="addYoutube"><i class="bi bi-plus me-1"></i>Agregar</button>
-            <button class="btn-sub-cancel" @click="showYTForm=false;ytId=''">Cancelar</button>
+            <div class="yt-input-wrap">
+              <input v-model="ytInput" class="form-ctrl"
+                placeholder="Pega la URL de YouTube: https://www.youtube.com/watch?v=..."
+                @paste.prevent="onYTPaste" />
+              <p class="yt-hint">Acepta: youtube.com/watch?v=..., youtu.be/..., youtube.com/embed/...</p>
+            </div>
+            <div class="sub-actions">
+              <button class="btn-sub-save" @click="addYoutube" :disabled="saving">
+                <i class="bi bi-plus me-1"></i>Agregar
+              </button>
+              <button class="btn-sub-cancel" @click="showYTForm=false;ytInput=''">Cancelar</button>
+            </div>
           </div>
 
           <!-- Text sub-form -->
           <div v-if="showTextForm" class="sub-form">
-            <textarea v-model="textContent" class="form-ctrl" rows="3" maxlength="500" placeholder="Texto de la pieza (máx. 500 caracteres)"></textarea>
-            <button class="btn-sub-save" @click="addText"><i class="bi bi-plus me-1"></i>Agregar</button>
-            <button class="btn-sub-cancel" @click="showTextForm=false;textContent=''">Cancelar</button>
+            <textarea v-model="textContent" class="form-ctrl" rows="3"
+              maxlength="500" placeholder="Texto de la pieza (máx. 500 caracteres)"></textarea>
+            <div class="sub-actions">
+              <button class="btn-sub-save" @click="addText" :disabled="saving">
+                <i class="bi bi-plus me-1"></i>Agregar
+              </button>
+              <button class="btn-sub-cancel" @click="showTextForm=false;textContent=''">Cancelar</button>
+            </div>
           </div>
 
           <!-- Comprobante de pago -->
@@ -182,15 +214,21 @@
             <i class="bi bi-receipt me-1"></i>
             Pago registrado —
             <span class="pay-status-badge" :class="form.payment.status">{{ payStatusLabel(form.payment.status) }}</span>
+            <a v-if="form.payment.receipt_url" :href="form.payment.receipt_url" target="_blank" rel="noopener"
+              class="btn-ver-comp">
+              <i class="bi bi-eye me-1"></i>Ver comprobante
+            </a>
           </div>
           <div v-if="editing" class="form-row">
-            <label class="btn-add-piece" title="Subir comprobante">
-              <i class="bi bi-upload me-1"></i>{{ form.payment ? 'Reemplazar comprobante' : 'Subir comprobante' }}
-              <input type="file" accept=".jpg,.jpeg,.png,.pdf,.webp" @change="uploadPayment" class="hidden-input" />
+            <label class="btn-add-piece" :class="{ 'uploading': saving }">
+              <i class="bi bi-upload me-1"></i>
+              {{ form.payment ? 'Reemplazar comprobante' : 'Subir comprobante' }}
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf,.webp"
+                @change="uploadPayment" class="hidden-input" :disabled="saving" />
             </label>
           </div>
 
-          <!-- Rejection reason -->
+          <!-- Rechazo -->
           <div v-if="form.rejection_reason" class="rejection-box">
             <i class="bi bi-x-circle me-1"></i>
             <strong>Rechazada:</strong> {{ form.rejection_reason }}
@@ -216,7 +254,7 @@
         </div>
         <div class="modal-body">
           <p class="mb-3 text-secondary" style="font-size:.85rem">
-            Se clonarán todas las piezas sin necesidad de re-subirlas. Solo actualiza las fechas y un mensaje al admin si lo deseas.
+            Se clonarán todas las piezas sin re-subirlas. Actualiza las fechas y agrega un mensaje al admin si lo deseas.
           </p>
           <div class="form-row-2">
             <div>
@@ -247,11 +285,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
-import { useModuleName } from "@/composables/useModuleName"
+import { showToast } from "@/utils/toast"
+import { useCompanyStore } from "@/stores/companyStore"
 
-const { moduleName } = useModuleName()
+const companyStore = useCompanyStore()
+const companyName  = computed(() => companyStore.selectedCompany?.name || "—")
 
 const ads      = ref([])
 const stats    = ref({})
@@ -259,11 +299,14 @@ const profiles = ref([])
 const loading  = ref(false)
 const saving   = ref(false)
 
+const priceAll    = ref(0)
+const priceSingle = ref(0)
+
 const showModal    = ref(false)
 const editing      = ref(false)
 const showYTForm   = ref(false)
 const showTextForm = ref(false)
-const ytId         = ref("")
+const ytInput      = ref("")
 const textContent  = ref("")
 
 const showRenewModal = ref(false)
@@ -271,6 +314,10 @@ const renewTarget    = ref(null)
 const renewForm      = ref({ start_date: "", end_date: "", notes_to_admin: "" })
 
 const form = ref(emptyForm())
+
+const currentPrice = computed(() =>
+  form.value.target_profile_id ? priceSingle.value : priceAll.value
+)
 
 const kpis = [
   { key: "active",   label: "Activas",   icon: "bi-broadcast",       color: "#22c55e" },
@@ -287,28 +334,65 @@ function emptyForm() {
   }
 }
 
+// ── Extraer ID de YouTube desde URL completa ───────────────────────────────
+function extractYouTubeId(input) {
+  if (!input) return null
+  const s = input.trim()
+  // ya es un ID puro (11 chars alfanuméricos/guiones)
+  if (/^[A-Za-z0-9_\-]{6,20}$/.test(s) && !s.includes(".")) return s
+  try {
+    const url = new URL(s)
+    // youtu.be/ID
+    if (url.hostname === "youtu.be") return url.pathname.slice(1).split("?")[0]
+    // youtube.com/watch?v=ID
+    const v = url.searchParams.get("v")
+    if (v) return v
+    // youtube.com/embed/ID  o  youtube.com/shorts/ID
+    const parts = url.pathname.split("/").filter(Boolean)
+    if (parts.length >= 2 && ["embed","shorts","v"].includes(parts[0])) return parts[1]
+  } catch {}
+  return null
+}
+
+function onYTPaste(e) {
+  const pasted = (e.clipboardData || window.clipboardData).getData("text")
+  ytInput.value = pasted
+}
+
+// ── Cargar datos ───────────────────────────────────────────────────────────
 async function loadAll() {
   loading.value = true
   try {
-    const [adsRes, statsRes, profRes] = await Promise.all([
+    const [adsRes, statsRes, profRes, priceAll_, priceSingle_] = await Promise.all([
       api.get("/ads/my"),
       api.get("/ads/my/stats"),
       api.get("/business-profiles/"),
+      api.get("/system-config/ad_price_all_profiles").catch(() => ({ data: { config_value: "80000" } })),
+      api.get("/system-config/ad_price_single_profile").catch(() => ({ data: { config_value: "50000" } })),
     ])
     ads.value      = adsRes.data
     stats.value    = statsRes.data
-    profiles.value = profRes.data.filter(p => p.is_active && !p.name?.toLowerCase().includes("sysadmin"))
+    // El endpoint devuelve { data: [...] }
+    const rawProfiles = Array.isArray(profRes.data) ? profRes.data : (profRes.data?.data ?? [])
+    profiles.value = rawProfiles.filter(p => p.is_active && !p.name?.toLowerCase().includes("sysadmin"))
+    priceAll.value    = parseInt(priceAll_.data?.config_value)    || 80000
+    priceSingle.value = parseInt(priceSingle_.data?.config_value) || 50000
+  } catch (e) {
+    showToast("Error al cargar las pautas", "error")
   } finally {
     loading.value = false
   }
 }
 
+function onProfileChange() { /* price updates via computed */ }
+
+// ── Modales ────────────────────────────────────────────────────────────────
 function openNew() {
   form.value = emptyForm()
-  editing.value   = false
-  showYTForm.value  = false
+  editing.value      = false
+  showYTForm.value   = false
   showTextForm.value = false
-  showModal.value = true
+  showModal.value    = true
 }
 
 function openEdit(ad) {
@@ -321,15 +405,13 @@ function openEdit(ad) {
     payment: ad.payments?.[0] || null,
     rejection_reason: ad.rejection_reason || null,
   }
-  editing.value   = true
-  showYTForm.value  = false
+  editing.value      = true
+  showYTForm.value   = false
   showTextForm.value = false
-  showModal.value = true
+  showModal.value    = true
 }
 
-function openDetail(ad) {
-  openEdit(ad)
-}
+function openDetail(ad) { openEdit(ad) }
 
 function openRenew(ad) {
   renewTarget.value = ad
@@ -341,87 +423,100 @@ function closeModal() {
   showModal.value    = false
   showYTForm.value   = false
   showTextForm.value = false
-  ytId.value = ""
-  textContent.value = ""
+  ytInput.value      = ""
+  textContent.value  = ""
 }
 
+// ── CRUD pauta ─────────────────────────────────────────────────────────────
 async function saveAd() {
-  if (!form.value.title.trim()) return alert("El título es requerido")
-  if (!form.value.start_date || !form.value.end_date) return alert("Las fechas son requeridas")
+  if (!form.value.title.trim())        return showToast("El título es requerido", "warning")
+  if (!form.value.start_date)          return showToast("La fecha de inicio es requerida", "warning")
+  if (!form.value.end_date)            return showToast("La fecha de fin es requerida", "warning")
+  if (form.value.start_date > form.value.end_date)
+                                       return showToast("La fecha fin debe ser mayor a la fecha inicio", "warning")
   saving.value = true
   try {
     const payload = {
-      title: form.value.title, description: form.value.description,
-      cta_url: form.value.cta_url || null, notes_to_admin: form.value.notes_to_admin,
-      target_profile_id: form.value.target_profile_id,
-      start_date: form.value.start_date, end_date: form.value.end_date,
+      title:             form.value.title,
+      description:       form.value.description || null,
+      cta_url:           form.value.cta_url || null,
+      notes_to_admin:    form.value.notes_to_admin || null,
+      target_profile_id: form.value.target_profile_id || null,
+      start_date:        form.value.start_date,
+      end_date:          form.value.end_date,
     }
     let saved
     if (editing.value) {
       const res = await api.put(`/ads/${form.value.id}`, payload)
       saved = res.data
+      showToast("Pauta actualizada", "success")
     } else {
       const res = await api.post("/ads/", payload)
       saved = res.data
       form.value.id = saved.id
       editing.value = true
+      showToast("Pauta creada — ahora puedes agregar piezas y el comprobante", "success", 3000)
     }
     form.value.pieces = saved.pieces || []
     await loadAll()
   } catch (e) {
-    alert(e.response?.data?.detail || "Error al guardar la pauta")
+    showToast(e.response?.data?.detail || "Error al guardar la pauta", "error", 3500)
   } finally {
     saving.value = false
   }
 }
 
+// ── Piezas ─────────────────────────────────────────────────────────────────
 async function uploadPiece(e) {
   const file = e.target.files[0]
+  e.target.value = ""
   if (!file) return
   saving.value = true
   try {
     const fd = new FormData()
     fd.append("file", file)
-    const res = await api.post(`/ads/${form.value.id}/pieces/upload`, fd, {
-      headers: { "Content-Type": "multipart/form-data" }
-    })
+    // NO fijar Content-Type manualmente — Axios lo setea con boundary correcto
+    const res = await api.post(`/ads/${form.value.id}/pieces/upload`, fd)
     form.value.pieces.push(res.data)
+    showToast("Pieza agregada", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al subir el archivo")
+    showToast(err.response?.data?.detail || "Error al subir el archivo", "error", 3500)
   } finally {
     saving.value = false
-    e.target.value = ""
   }
 }
 
 async function addYoutube() {
-  if (!ytId.value.trim()) return
+  const id = extractYouTubeId(ytInput.value)
+  if (!id) return showToast("URL de YouTube inválida. Pega la URL completa del video.", "warning", 3000)
   saving.value = true
   try {
-    const res = await api.post(`/ads/${form.value.id}/pieces/youtube`, { youtube_id: ytId.value.trim() })
+    const res = await api.post(`/ads/${form.value.id}/pieces/youtube`, { youtube_id: id })
     form.value.pieces.push(res.data)
     showYTForm.value = false
-    ytId.value = ""
+    ytInput.value = ""
+    showToast("Video de YouTube agregado", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al agregar YouTube")
+    showToast(err.response?.data?.detail || "Error al agregar YouTube", "error", 3500)
   } finally {
     saving.value = false
   }
 }
 
 async function addText() {
-  if (!textContent.value.trim()) return
+  if (!textContent.value.trim()) return showToast("El texto no puede estar vacío", "warning")
   saving.value = true
   try {
     const res = await api.post(`/ads/${form.value.id}/pieces/text`, { text_content: textContent.value.trim() })
     form.value.pieces.push(res.data)
     showTextForm.value = false
     textContent.value = ""
+    showToast("Texto agregado", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al agregar texto")
+    showToast(err.response?.data?.detail || "Error al agregar texto", "error", 3500)
   } finally {
     saving.value = false
   }
@@ -432,63 +527,69 @@ async function deletePiece(piece, pi) {
   try {
     await api.delete(`/ads/${form.value.id}/pieces/${piece.id}`)
     form.value.pieces.splice(pi, 1)
+    showToast("Pieza eliminada", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al eliminar pieza")
+    showToast(err.response?.data?.detail || "Error al eliminar pieza", "error", 3500)
   }
 }
 
+// ── Pago ───────────────────────────────────────────────────────────────────
 async function uploadPayment(e) {
   const file = e.target.files[0]
+  e.target.value = ""
   if (!file) return
   saving.value = true
   try {
     const fd = new FormData()
     fd.append("file", file)
-    const res = await api.post(`/ads/${form.value.id}/payment`, fd, {
-      headers: { "Content-Type": "multipart/form-data" }
-    })
+    // NO fijar Content-Type manualmente — Axios lo setea con boundary correcto
+    const res = await api.post(`/ads/${form.value.id}/payment`, fd)
     form.value.payment = res.data
+    showToast("Comprobante de pago registrado", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al subir comprobante")
+    showToast(err.response?.data?.detail || "Error al subir el comprobante", "error", 3500)
   } finally {
     saving.value = false
-    e.target.value = ""
   }
 }
 
+// ── Eliminación y renovación ───────────────────────────────────────────────
 async function deleteAd(ad) {
   if (!confirm(`¿Eliminar la pauta "${ad.title}"?`)) return
   try {
     await api.delete(`/ads/${ad.id}`)
+    showToast("Pauta eliminada", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al eliminar")
+    showToast(err.response?.data?.detail || "Error al eliminar", "error", 3500)
   }
 }
 
 async function confirmRenew() {
-  if (!renewForm.value.start_date || !renewForm.value.end_date) return alert("Las fechas son requeridas")
+  if (!renewForm.value.start_date || !renewForm.value.end_date)
+    return showToast("Las fechas son requeridas", "warning")
   saving.value = true
   try {
     await api.post(`/ads/${renewTarget.value.id}/renew`, renewForm.value)
     showRenewModal.value = false
+    showToast("Pauta renovada exitosamente", "success")
     await loadAll()
   } catch (err) {
-    alert(err.response?.data?.detail || "Error al renovar")
+    showToast(err.response?.data?.detail || "Error al renovar", "error", 3500)
   } finally {
     saving.value = false
   }
 }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
 function statusLabel(s) {
-  const map = { pending:"Pendiente", approved:"Aprobada", active:"Activa", paused:"Pausada", expired:"Expirada", rejected:"Rechazada" }
-  return map[s] || s
+  return { pending:"Pendiente", approved:"Aprobada", active:"Activa",
+           paused:"Pausada", expired:"Expirada", rejected:"Rechazada" }[s] || s
 }
 function payStatusLabel(s) {
-  const map = { pending:"Pendiente", verified:"Verificado", rejected:"Rechazado" }
-  return map[s] || s
+  return { pending:"Pendiente", verified:"Verificado", rejected:"Rechazado" }[s] || s
 }
 function pieceLabel(p) {
   if (p.piece_type === "image")   return "Imagen"
@@ -502,6 +603,10 @@ function fmtDate(d) {
   const [y, m, dd] = d.split("-")
   return `${dd}/${m}/${y}`
 }
+function fmtPrice(n) {
+  if (!n) return "0"
+  return new Intl.NumberFormat("es-CO").format(n)
+}
 
 onMounted(loadAll)
 </script>
@@ -510,12 +615,9 @@ onMounted(loadAll)
 .myads-root { padding: 16px; max-width: 1100px; margin: 0 auto; }
 
 /* KPI Bar */
-.kpi-bar {
-  display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap;
-}
+.kpi-bar { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .kpi-card {
-  flex: 1; min-width: 110px;
-  background: var(--card-bg, #fff);
+  flex: 1; min-width: 110px; background: var(--card-bg, #fff);
   border-radius: 10px; padding: 12px 14px;
   display: flex; align-items: center; gap: 10px;
   box-shadow: 0 1px 4px rgba(0,0,0,.08);
@@ -537,86 +639,73 @@ onMounted(loadAll)
 
 /* Table */
 .table-wrap {
-  background: var(--card-bg, #fff);
-  border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  overflow-x: auto;
+  background: var(--card-bg, #fff); border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow-x: auto;
 }
-.empty-state {
-  text-align: center; padding: 40px 20px;
-  color: #9ca3af; display: flex; flex-direction: column; align-items: center; gap: 8px;
-}
+.empty-state { text-align: center; padding: 40px 20px; color: #9ca3af; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .ads-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.ads-table th {
-  padding: 10px 12px; background: rgba(0,0,0,.04); font-weight: 700;
-  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
-  white-space: nowrap;
-}
+.ads-table th { padding: 10px 12px; background: rgba(0,0,0,.04); font-weight: 700; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
 .ads-table td { padding: 10px 12px; border-top: 1px solid rgba(0,0,0,.06); vertical-align: middle; }
-.td-title { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.td-center { text-align: center; }
+.td-title   { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-center  { text-align: center; }
 .td-actions { display: flex; gap: 4px; }
 
-.status-badge {
-  display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700;
-}
-.status-badge.pending  { background: rgba(245,158,11,.15);  color: #d97706; }
-.status-badge.approved { background: rgba(59,130,246,.15);  color: #2563eb; }
-.status-badge.active   { background: rgba(34,197,94,.15);   color: #16a34a; }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+.status-badge.pending  { background: rgba(245,158,11,.15); color: #d97706; }
+.status-badge.approved { background: rgba(59,130,246,.15); color: #2563eb; }
+.status-badge.active   { background: rgba(34,197,94,.15);  color: #16a34a; }
 .status-badge.paused   { background: rgba(107,114,128,.15); color: #6b7280; }
 .status-badge.expired  { background: rgba(107,114,128,.1);  color: #9ca3af; }
-.status-badge.rejected { background: rgba(239,68,68,.15);   color: #dc2626; }
+.status-badge.rejected { background: rgba(239,68,68,.15);  color: #dc2626; }
 
-.btn-act {
-  width: 28px; height: 28px; border: none; border-radius: 6px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; font-size: 13px;
-}
+.btn-act { width: 28px; height: 28px; border: none; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px; }
 .btn-view  { background: rgba(59,130,246,.1);  color: #2563eb; }
 .btn-edit  { background: rgba(245,158,11,.1);  color: #d97706; }
 .btn-renew { background: rgba(34,197,94,.1);   color: #16a34a; }
 .btn-del   { background: rgba(239,68,68,.1);   color: #dc2626; }
 
 /* Modal */
-.modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,.5);
-  display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 16px;
-}
-.modal-box {
-  background: var(--card-bg, #fff); border-radius: 14px; width: 100%; max-width: 560px;
-  max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0,0,0,.3);
-}
-.modal-sm { max-width: 400px; }
-.modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid rgba(0,0,0,.08); flex-shrink: 0;
-}
-.modal-title { font-size: 15px; font-weight: 700; margin: 0; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 16px; }
+.modal-box { background: var(--card-bg, #fff); border-radius: 14px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.modal-sm  { max-width: 400px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid rgba(0,0,0,.08); flex-shrink: 0; }
+.modal-title  { font-size: 15px; font-weight: 700; margin: 0; }
 .btn-close-modal { background: none; border: none; font-size: 16px; cursor: pointer; opacity: .5; }
 .btn-close-modal:hover { opacity: 1; }
-.modal-body { padding: 16px 20px; flex: 1; overflow-y: auto; }
-.modal-footer {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid rgba(0,0,0,.08); flex-shrink: 0;
-}
+.modal-body   { padding: 16px 20px; flex: 1; overflow-y: auto; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid rgba(0,0,0,.08); flex-shrink: 0; }
 .btn-cancel { background: none; border: 1px solid rgba(0,0,0,.15); border-radius: 7px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
 .btn-save   { background: #2563eb; color: #fff; border: none; border-radius: 7px; padding: 7px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn-save:disabled { opacity: .5; cursor: not-allowed; }
 
-.form-section-label {
-  font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
-  opacity: .5; margin-bottom: 8px; margin-top: 4px;
+/* Company info bar */
+.company-info-bar {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(37,99,235,.07); border: 1px solid rgba(37,99,235,.15);
+  border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 4px;
 }
+.ci-label { font-weight: 600; opacity: .7; }
+.ci-name  { font-weight: 700; color: #2563eb; }
+
+/* Price display */
+.price-display {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2);
+  border-radius: 6px; padding: 7px 10px; font-size: 13px; min-height: 36px;
+}
+.price-val { font-weight: 800; color: #059669; font-size: 15px; }
+.price-cur { font-size: 10px; font-weight: 600; opacity: .6; }
+
+/* Form */
+.form-section-label { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; opacity: .5; margin-bottom: 8px; margin-top: 4px; }
 .pieces-hint { font-weight: 400; margin-left: 6px; }
-.form-row { margin-bottom: 10px; }
+.form-row   { margin-bottom: 10px; }
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-.form-lbl { font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px; opacity: .75; }
-.form-ctrl {
-  width: 100%; border: 1px solid rgba(0,0,0,.15); border-radius: 6px;
-  padding: 7px 10px; font-size: 13px; background: transparent;
-  color: inherit; box-sizing: border-box;
-}
+.form-lbl   { font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px; opacity: .75; }
+.form-ctrl  { width: 100%; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 7px 10px; font-size: 13px; background: transparent; color: inherit; box-sizing: border-box; }
 .form-ctrl:focus { outline: none; border-color: #2563eb; }
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 14px; }
 
 /* Pieces */
 .pieces-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
@@ -635,30 +724,28 @@ onMounted(loadAll)
   border: 1.5px dashed rgba(0,0,0,.2); border-radius: 7px; font-size: 12px;
   cursor: pointer; background: transparent; color: inherit; transition: border-color .15s;
 }
-.btn-add-piece:hover { border-color: #2563eb; color: #2563eb; }
+.btn-add-piece:hover  { border-color: #2563eb; color: #2563eb; }
+.btn-add-piece.uploading { opacity: .5; cursor: not-allowed; }
 .hidden-input { display: none; }
 
-.pieces-note {
-  font-size: 11px; color: #6b7280; background: rgba(0,0,0,.04);
-  padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
-}
+.pieces-note { font-size: 11px; color: #6b7280; background: rgba(0,0,0,.04); padding: 8px 10px; border-radius: 6px; margin-bottom: 8px; }
 
-.sub-form { background: rgba(0,0,0,.04); border-radius: 8px; padding: 10px; margin-bottom: 8px; display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.sub-form { background: rgba(0,0,0,.04); border-radius: 8px; padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; }
+.yt-input-wrap { display: flex; flex-direction: column; gap: 4px; }
+.yt-hint { font-size: 10px; opacity: .5; margin: 0; }
+.sub-actions { display: flex; gap: 8px; }
 .btn-sub-save   { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.btn-sub-save:disabled { opacity: .5; cursor: not-allowed; }
 .btn-sub-cancel { background: none; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 
-.payment-status { font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.payment-status { font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pay-status-badge { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
 .pay-status-badge.pending  { background: rgba(245,158,11,.15); color: #d97706; }
 .pay-status-badge.verified { background: rgba(34,197,94,.15);  color: #16a34a; }
 .pay-status-badge.rejected { background: rgba(239,68,68,.15);  color: #dc2626; }
+.btn-ver-comp { font-size: 11px; color: #2563eb; text-decoration: none; display: flex; align-items: center; }
 
-.rejection-box {
-  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2);
-  border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #dc2626; margin-top: 10px;
-}
-.mt-2 { margin-top: 8px; }
-.mt-3 { margin-top: 14px; }
+.rejection-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #dc2626; margin-top: 10px; }
 
 @media (max-width: 768px) {
   .form-row-2 { grid-template-columns: 1fr; }

@@ -10,12 +10,33 @@
           <span class="kpi-lbl">{{ k.label }}</span>
         </div>
       </div>
+      <div class="kpi-card kpi-income">
+        <i class="bi bi-cash-coin" style="color:#10b981"></i>
+        <div class="kpi-info">
+          <span class="kpi-val">{{ fmtPrice(totalVerifiedIncome) }}</span>
+          <span class="kpi-lbl">Ingresos verificados (COP)</span>
+        </div>
+      </div>
     </div>
 
-    <!-- Header + filtros -->
-    <div class="section-header">
-      <h5 class="section-title"><i class="bi bi-megaphone-fill me-2"></i>Gestión de Pautas</h5>
-      <div class="filter-wrap">
+    <!-- Tabs -->
+    <div class="tabs-bar">
+      <button class="tab-btn" :class="{ active: tab === 'ads' }" @click="tab='ads'">
+        <i class="bi bi-megaphone me-1"></i>Pautas
+      </button>
+      <button class="tab-btn" :class="{ active: tab === 'payments' }" @click="tab='payments'; loadPayments()">
+        <i class="bi bi-receipt me-1"></i>Pagos
+        <span v-if="pendingPayCount > 0" class="tab-badge">{{ pendingPayCount }}</span>
+      </button>
+      <button class="tab-btn" :class="{ active: tab === 'report' }" @click="tab='report'; loadReport()">
+        <i class="bi bi-bar-chart-line me-1"></i>Reporte Ingresos
+      </button>
+    </div>
+
+    <!-- ── TAB: Pautas ── -->
+    <template v-if="tab === 'ads'">
+      <div class="section-header">
+        <h5 class="section-title"><i class="bi bi-megaphone-fill me-2"></i>Gestión de Pautas</h5>
         <select v-model="filterStatus" @change="loadAds" class="filter-select">
           <option value="">Todos los estados</option>
           <option value="pending">Pendientes</option>
@@ -26,70 +47,171 @@
           <option value="rejected">Rechazadas</option>
         </select>
       </div>
-    </div>
 
-    <!-- Tabla -->
-    <div class="table-wrap">
-      <div v-if="loading" class="empty-state">
-        <div class="spinner-border spinner-border-sm text-secondary me-2"></div>Cargando...
+      <div class="table-wrap">
+        <div v-if="loading" class="empty-state"><div class="spinner-border spinner-border-sm text-secondary me-2"></div>Cargando...</div>
+        <div v-else-if="!ads.length" class="empty-state">
+          <i class="bi bi-megaphone" style="font-size:2.5rem;opacity:.3"></i>
+          <p class="mt-2 mb-0">Sin pautas en este estado.</p>
+        </div>
+        <table v-else class="ads-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Asociado</th><th>Título</th><th>Estado</th>
+              <th>Perfil</th><th>Slot</th><th>Inicio</th><th>Fin</th>
+              <th>Imp.</th><th>Pago</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="ad in ads" :key="ad.id" :class="{ 'row-pending': ad.status==='pending' }">
+              <td class="td-id">{{ ad.id }}</td>
+              <td class="td-company">{{ ad.company_name || '—' }}</td>
+              <td class="td-title">{{ ad.title }}</td>
+              <td><span class="status-badge" :class="ad.status">{{ statusLabel(ad.status) }}</span></td>
+              <td>{{ ad.target_profile_name || 'Todos' }}</td>
+              <td class="td-center">{{ ad.slot_position || '—' }}</td>
+              <td>{{ fmtDate(ad.start_date) }}</td>
+              <td>{{ fmtDate(ad.end_date) }}</td>
+              <td class="td-center">{{ ad.impressions }}</td>
+              <td><span class="pay-badge" :class="latestPayStatus(ad)">{{ latestPayLabel(ad) }}</span></td>
+              <td>
+                <button class="btn-act btn-view" @click="openDetail(ad)" title="Gestionar">
+                  <i class="bi bi-gear"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <div v-else-if="!ads.length" class="empty-state">
-        <i class="bi bi-megaphone" style="font-size:2.5rem;opacity:.3"></i>
-        <p class="mt-2 mb-0">Sin pautas en este estado.</p>
+    </template>
+
+    <!-- ── TAB: Pagos ── -->
+    <template v-if="tab === 'payments'">
+      <div class="section-header">
+        <h5 class="section-title"><i class="bi bi-receipt me-2"></i>Pagos de Pautas</h5>
+        <select v-model="filterPayStatus" @change="loadPayments" class="filter-select">
+          <option value="">Todos</option>
+          <option value="pending">Pendientes</option>
+          <option value="verified">Verificados</option>
+          <option value="rejected">Rechazados</option>
+        </select>
       </div>
-      <table v-else class="ads-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Asociado</th>
-            <th>Título</th>
-            <th>Estado</th>
-            <th>Perfil</th>
-            <th>Slot</th>
-            <th>Inicio</th>
-            <th>Fin</th>
-            <th>Imp.</th>
-            <th>Pago</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="ad in ads" :key="ad.id" :class="{ 'row-pending': ad.status==='pending' }">
-            <td class="td-id">{{ ad.id }}</td>
-            <td class="td-company">{{ ad.company_name || '—' }}</td>
-            <td class="td-title">{{ ad.title }}</td>
-            <td><span class="status-badge" :class="ad.status">{{ statusLabel(ad.status) }}</span></td>
-            <td>{{ ad.target_profile_name || 'Todos' }}</td>
-            <td class="td-center">{{ ad.slot_position || '—' }}</td>
-            <td>{{ fmtDate(ad.start_date) }}</td>
-            <td>{{ fmtDate(ad.end_date) }}</td>
-            <td class="td-center">{{ ad.impressions }}</td>
-            <td>
-              <span class="pay-badge" :class="latestPayStatus(ad)">{{ latestPayLabel(ad) }}</span>
-            </td>
-            <td class="td-actions">
-              <button class="btn-act btn-view" @click="openDetail(ad)" title="Ver detalle / gestionar">
-                <i class="bi bi-gear"></i>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+
+      <div class="table-wrap">
+        <div v-if="loadingPay" class="empty-state"><div class="spinner-border spinner-border-sm text-secondary me-2"></div>Cargando...</div>
+        <div v-else-if="!payments.length" class="empty-state">
+          <i class="bi bi-receipt" style="font-size:2.5rem;opacity:.3"></i>
+          <p class="mt-2 mb-0">Sin pagos en este estado.</p>
+        </div>
+        <table v-else class="ads-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Asociado</th><th>Pauta</th><th>Fecha</th>
+              <th>Monto</th><th>Estado</th><th>Comprobante</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="pay in payments" :key="pay.id" :class="{ 'row-pending': pay.status==='pending' }">
+              <td class="td-id">{{ pay.id }}</td>
+              <td class="td-company">{{ pay.company_name || '—' }}</td>
+              <td class="td-title">{{ pay.ad_title || '—' }}</td>
+              <td>{{ fmtDate(pay.created_at?.split('T')[0]) }}</td>
+              <td class="td-amount">
+                <span v-if="pay.amount">{{ fmtPrice(pay.amount) }} COP</span>
+                <span v-else class="text-muted">—</span>
+              </td>
+              <td><span class="pay-badge" :class="pay.status">{{ payStatusLabel(pay.status) }}</span></td>
+              <td>
+                <a v-if="pay.receipt_url" :href="pay.receipt_url" target="_blank" rel="noopener" class="btn-receipt">
+                  <i class="bi bi-file-earmark-image me-1"></i>Ver
+                </a>
+                <span v-else class="text-muted" style="font-size:11px">Sin comprobante</span>
+              </td>
+              <td class="td-actions-pay">
+                <template v-if="pay.status === 'pending'">
+                  <button class="btn-verify" @click="verifyPaymentDirect(pay.id, 'verified')">
+                    <i class="bi bi-check-circle me-1"></i>Verificar
+                  </button>
+                  <button class="btn-reject-pay" @click="verifyPaymentDirect(pay.id, 'rejected')">
+                    <i class="bi bi-x-circle me-1"></i>Rechazar
+                  </button>
+                </template>
+                <span v-else class="verified-badge" :class="pay.status">
+                  {{ pay.status === 'verified' ? 'Verificado' : 'Rechazado' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- ── TAB: Reporte Ingresos ── -->
+    <template v-if="tab === 'report'">
+      <div class="section-header">
+        <h5 class="section-title"><i class="bi bi-bar-chart-line me-2"></i>Reporte de Ingresos</h5>
+        <div class="report-filters">
+          <select v-model="reportPeriod" @change="loadReport" class="filter-select">
+            <option value="day">Por día</option>
+            <option value="month">Por mes</option>
+            <option value="year">Por año</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <div v-if="loadingReport" class="empty-state"><div class="spinner-border spinner-border-sm text-secondary me-2"></div>Cargando...</div>
+        <div v-else-if="!reportData.length" class="empty-state">
+          <i class="bi bi-graph-up" style="font-size:2.5rem;opacity:.3"></i>
+          <p class="mt-2 mb-0">Sin ingresos verificados en el período.</p>
+        </div>
+        <template v-else>
+          <!-- Totales -->
+          <div class="report-totals">
+            <div class="rt-card">
+              <span class="rt-val">{{ fmtPrice(reportTotal) }}</span>
+              <span class="rt-lbl">Total COP</span>
+            </div>
+            <div class="rt-card">
+              <span class="rt-val">{{ reportQty }}</span>
+              <span class="rt-lbl">Pagos verificados</span>
+            </div>
+            <div class="rt-card">
+              <span class="rt-val">{{ fmtPrice(reportAvg) }}</span>
+              <span class="rt-lbl">Promedio por pauta</span>
+            </div>
+          </div>
+          <table class="ads-table">
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th class="td-right">Cantidad</th>
+                <th class="td-right">Total (COP)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in reportData" :key="row.periodo">
+                <td>{{ row.periodo }}</td>
+                <td class="td-right">{{ row.qty }}</td>
+                <td class="td-right td-money">{{ fmtPrice(row.total) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+      </div>
+    </template>
 
     <!-- MODAL: Detail / Manage -->
     <div v-if="showModal" class="modal-backdrop" @click.self="showModal=false">
       <div class="modal-box">
         <div class="modal-header">
           <h6 class="modal-title">
-            <i class="bi bi-gear-fill me-2"></i>
-            Pauta #{{ selected.id }} — {{ selected.company_name }}
+            <i class="bi bi-gear-fill me-2"></i>Pauta #{{ selected.id }} — {{ selected.company_name }}
           </h6>
           <button class="btn-close-modal" @click="showModal=false"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="modal-body">
 
-          <!-- Info general -->
           <div class="detail-grid">
             <div class="dg-row"><span class="dg-lbl">Título</span><span class="dg-val">{{ selected.title }}</span></div>
             <div class="dg-row" v-if="selected.description"><span class="dg-lbl">Descripción</span><span class="dg-val">{{ selected.description }}</span></div>
@@ -98,24 +220,24 @@
             </div>
             <div class="dg-row"><span class="dg-lbl">Perfil objetivo</span><span class="dg-val">{{ selected.target_profile_name || 'Todos' }}</span></div>
             <div class="dg-row" v-if="selected.notes_to_admin"><span class="dg-lbl">Notas del asociado</span><span class="dg-val">{{ selected.notes_to_admin }}</span></div>
-            <div class="dg-row"><span class="dg-lbl">Estado actual</span>
+            <div class="dg-row"><span class="dg-lbl">Estado</span>
               <span class="status-badge" :class="selected.status">{{ statusLabel(selected.status) }}</span>
             </div>
             <div class="dg-row" v-if="selected.rejection_reason">
-              <span class="dg-lbl">Motivo rechazo</span><span class="dg-val" style="color:#dc2626">{{ selected.rejection_reason }}</span>
+              <span class="dg-lbl">Motivo rechazo</span>
+              <span class="dg-val" style="color:#dc2626">{{ selected.rejection_reason }}</span>
             </div>
           </div>
 
-          <!-- Piezas preview -->
-          <div class="section-lbl mt-3">Piezas multimedia ({{ selected.pieces?.length || 0 }}/3)</div>
+          <!-- Piezas -->
+          <div class="section-lbl mt-3">Piezas ({{ selected.pieces?.length || 0 }}/3)</div>
           <div class="pieces-preview-row">
             <template v-if="selected.pieces?.length">
               <div v-for="p in selected.pieces" :key="p.id" class="piece-card">
                 <img v-if="p.piece_type === 'image'" :src="p.media_url" class="piece-media" />
                 <video v-else-if="p.piece_type === 'video'" :src="p.media_url" class="piece-media" controls muted preload="metadata" />
                 <div v-else-if="p.piece_type === 'youtube'" class="piece-yt">
-                  <i class="bi bi-youtube"></i>
-                  <span>{{ p.youtube_id }}</span>
+                  <i class="bi bi-youtube"></i><span>{{ p.youtube_id }}</span>
                 </div>
                 <div v-else class="piece-txt">{{ p.text_content }}</div>
                 <span class="piece-type-lbl">{{ p.piece_type }}</span>
@@ -129,8 +251,9 @@
           <div v-if="selected.payments?.length">
             <div v-for="pay in selected.payments" :key="pay.id" class="pay-card">
               <div class="pay-info">
-                <span>Enviado: {{ fmtDate(pay.created_at?.split('T')[0]) }}</span>
+                <span>{{ fmtDate(pay.created_at?.split('T')[0]) }}</span>
                 <span class="pay-badge" :class="pay.status">{{ payStatusLabel(pay.status) }}</span>
+                <span v-if="pay.amount" class="pay-amount">{{ fmtPrice(pay.amount) }} COP</span>
               </div>
               <a v-if="pay.receipt_url" :href="pay.receipt_url" target="_blank" rel="noopener" class="btn-receipt">
                 <i class="bi bi-file-earmark-image me-1"></i>Ver comprobante
@@ -147,51 +270,37 @@
           </div>
           <div v-else class="no-pieces">Sin comprobante registrado</div>
 
-          <!-- Acciones SYSADMIN -->
+          <!-- Acciones -->
           <div class="section-lbl mt-3">Acciones</div>
           <div class="action-group">
-
-            <!-- Aprobar (solo pendiente) -->
-            <button
-              v-if="selected.status === 'pending'"
-              class="btn-action btn-approve" @click="approveAd"
-            ><i class="bi bi-check-circle me-1"></i>Aprobar</button>
-
-            <!-- Rechazar (solo pendiente) -->
-            <button
-              v-if="selected.status === 'pending'"
-              class="btn-action btn-reject" @click="rejectOpen = !rejectOpen"
-            ><i class="bi bi-x-circle me-1"></i>Rechazar</button>
-
-            <!-- Rechazar: motivo -->
+            <button v-if="selected.status === 'pending'" class="btn-action btn-approve" @click="approveAd">
+              <i class="bi bi-check-circle me-1"></i>Aprobar
+            </button>
+            <button v-if="selected.status === 'pending'" class="btn-action btn-reject" @click="rejectOpen = !rejectOpen">
+              <i class="bi bi-x-circle me-1"></i>Rechazar
+            </button>
             <div v-if="rejectOpen" class="reject-form">
               <textarea v-model="rejectReason" class="form-ctrl" rows="2" placeholder="Motivo del rechazo..."></textarea>
-              <button class="btn-sub-save" @click="rejectAd"><i class="bi bi-send me-1"></i>Enviar rechazo</button>
-              <button class="btn-sub-cancel" @click="rejectOpen=false;rejectReason=''">Cancelar</button>
+              <div class="sub-actions">
+                <button class="btn-sub-save" @click="rejectAd"><i class="bi bi-send me-1"></i>Enviar</button>
+                <button class="btn-sub-cancel" @click="rejectOpen=false;rejectReason=''">Cancelar</button>
+              </div>
             </div>
-
-            <!-- Activar (aprobada o pausada) -->
-            <template v-if="selected.status === 'approved' || selected.status === 'paused'">
+            <template v-if="['approved','paused'].includes(selected.status)">
               <div class="activate-form">
                 <div class="af-row">
-                  <div>
-                    <label class="form-lbl">Slot *</label>
+                  <div><label class="form-lbl">Slot *</label>
                     <select v-model="activateForm.slot_position" class="form-ctrl-sm">
-                      <option :value="1">Slot 1</option>
-                      <option :value="2">Slot 2</option>
-                      <option :value="3">Slot 3</option>
+                      <option :value="1">Slot 1</option><option :value="2">Slot 2</option><option :value="3">Slot 3</option>
                     </select>
                   </div>
-                  <div>
-                    <label class="form-lbl">Prioridad</label>
+                  <div><label class="form-lbl">Prioridad</label>
                     <input v-model.number="activateForm.priority" type="number" min="0" max="10" class="form-ctrl-sm" />
                   </div>
-                  <div>
-                    <label class="form-lbl">Inicio</label>
+                  <div><label class="form-lbl">Inicio</label>
                     <input v-model="activateForm.start_date" type="date" class="form-ctrl-sm" />
                   </div>
-                  <div>
-                    <label class="form-lbl">Fin</label>
+                  <div><label class="form-lbl">Fin</label>
                     <input v-model="activateForm.end_date" type="date" class="form-ctrl-sm" />
                   </div>
                 </div>
@@ -200,19 +309,12 @@
                 </button>
               </div>
             </template>
-
-            <!-- Pausar (activa) -->
-            <button
-              v-if="selected.status === 'active'"
-              class="btn-action btn-pause" @click="pauseAd"
-            ><i class="bi bi-pause-circle me-1"></i>Pausar</button>
-
-            <!-- Expirar manualmente -->
-            <button
-              v-if="['active','approved','paused'].includes(selected.status)"
-              class="btn-action btn-expire" @click="expireAd"
-            ><i class="bi bi-calendar-x me-1"></i>Marcar expirada</button>
-
+            <button v-if="selected.status === 'active'" class="btn-action btn-pause" @click="pauseAd">
+              <i class="bi bi-pause-circle me-1"></i>Pausar
+            </button>
+            <button v-if="['active','approved','paused'].includes(selected.status)" class="btn-action btn-expire" @click="expireAd">
+              <i class="bi bi-calendar-x me-1"></i>Marcar expirada
+            </button>
           </div>
 
         </div>
@@ -226,19 +328,41 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
+import { showToast } from "@/utils/toast"
 
-const ads         = ref([])
-const summary     = ref({})
-const loading     = ref(false)
+const tab = ref("ads")
+
+// ── Pautas ─────────────────────────────────────────────────────────────────
+const ads          = ref([])
+const summary      = ref({})
+const loading      = ref(false)
 const filterStatus = ref("")
-const showModal   = ref(false)
-const selected    = ref({})
-const saving      = ref(false)
-const rejectOpen  = ref(false)
+const showModal    = ref(false)
+const selected     = ref({})
+const rejectOpen   = ref(false)
 const rejectReason = ref("")
 const activateForm = ref({ slot_position: 1, priority: 0, start_date: "", end_date: "" })
+
+// ── Pagos ──────────────────────────────────────────────────────────────────
+const payments       = ref([])
+const loadingPay     = ref(false)
+const filterPayStatus = ref("pending")
+
+const pendingPayCount = computed(() => payments.value.filter(p => p.status === "pending").length)
+const totalVerifiedIncome = computed(() =>
+  payments.value.filter(p => p.status === "verified").reduce((s, p) => s + (p.amount || 0), 0)
+)
+
+// ── Reporte ────────────────────────────────────────────────────────────────
+const reportData   = ref([])
+const loadingReport = ref(false)
+const reportPeriod  = ref("month")
+
+const reportTotal = computed(() => reportData.value.reduce((s, r) => s + r.total, 0))
+const reportQty   = computed(() => reportData.value.reduce((s, r) => s + r.qty,   0))
+const reportAvg   = computed(() => reportQty.value ? Math.round(reportTotal.value / reportQty.value) : 0)
 
 const kpis = [
   { key: "pending",  label: "Pendientes", icon: "bi-hourglass-split", color: "#f59e0b" },
@@ -247,6 +371,7 @@ const kpis = [
   { key: "expired",  label: "Expiradas",  icon: "bi-calendar-x",      color: "#9ca3af" },
 ]
 
+// ── Cargar datos ───────────────────────────────────────────────────────────
 async function loadAds() {
   loading.value = true
   try {
@@ -257,59 +382,84 @@ async function loadAds() {
     ])
     ads.value     = adsRes.data
     summary.value = sumRes.data
+  } catch {
+    showToast("Error al cargar pautas", "error")
   } finally {
     loading.value = false
   }
 }
 
+async function loadPayments() {
+  loadingPay.value = true
+  try {
+    const params = filterPayStatus.value ? `?status=${filterPayStatus.value}` : ""
+    const res = await api.get(`/ads/admin/payments/list${params}`)
+    payments.value = res.data
+  } catch {
+    showToast("Error al cargar pagos", "error")
+  } finally {
+    loadingPay.value = false
+  }
+}
+
+async function loadReport() {
+  loadingReport.value = true
+  try {
+    const res = await api.get(`/ads/admin/payments/report?period=${reportPeriod.value}`)
+    reportData.value = res.data
+  } catch {
+    showToast("Error al cargar reporte", "error")
+  } finally {
+    loadingReport.value = false
+  }
+}
+
+// ── Detail modal ───────────────────────────────────────────────────────────
 function openDetail(ad) {
   selected.value = { ...ad }
   activateForm.value = {
     slot_position: ad.slot_position || 1,
-    priority: ad.priority || 0,
-    start_date: ad.start_date || "",
-    end_date: ad.end_date || "",
+    priority:      ad.priority || 0,
+    start_date:    ad.start_date || "",
+    end_date:      ad.end_date || "",
   }
   rejectOpen.value   = false
   rejectReason.value = ""
   showModal.value    = true
 }
 
+// ── Acciones sobre pauta ───────────────────────────────────────────────────
 async function approveAd() {
   if (!confirm("¿Aprobar esta pauta?")) return
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/approve`)
     selected.value = { ...selected.value, ...res.data }
+    showToast("Pauta aprobada", "success")
     await loadAds()
-  } catch (e) {
-    alert(e.response?.data?.detail || "Error")
-  }
+  } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
 async function rejectAd() {
-  if (!rejectReason.value.trim()) return alert("El motivo es requerido")
+  if (!rejectReason.value.trim()) return showToast("El motivo es requerido", "warning")
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/reject`, { reason: rejectReason.value })
     selected.value = { ...selected.value, ...res.data }
     rejectOpen.value = false
     rejectReason.value = ""
+    showToast("Pauta rechazada", "success")
     await loadAds()
-  } catch (e) {
-    alert(e.response?.data?.detail || "Error")
-  }
+  } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
 async function activateAd() {
   const f = activateForm.value
-  if (!f.start_date || !f.end_date) return alert("Las fechas son requeridas")
-  if (!f.slot_position) return alert("El slot es requerido")
+  if (!f.start_date || !f.end_date) return showToast("Las fechas son requeridas", "warning")
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/activate`, f)
     selected.value = { ...selected.value, ...res.data }
+    showToast("Pauta activada en slot " + f.slot_position, "success")
     await loadAds()
-  } catch (e) {
-    alert(e.response?.data?.detail || "Error al activar")
-  }
+  } catch (e) { showToast(e.response?.data?.detail || "Error al activar", "error") }
 }
 
 async function pauseAd() {
@@ -317,23 +467,22 @@ async function pauseAd() {
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/pause`)
     selected.value = { ...selected.value, ...res.data }
+    showToast("Pauta pausada", "success")
     await loadAds()
-  } catch (e) {
-    alert(e.response?.data?.detail || "Error")
-  }
+  } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
 async function expireAd() {
-  if (!confirm("¿Marcar como expirada esta pauta?")) return
+  if (!confirm("¿Marcar como expirada?")) return
   try {
     await api.patch(`/ads/admin/${selected.value.id}/expire`)
     selected.value = { ...selected.value, status: "expired" }
+    showToast("Pauta marcada como expirada", "success")
     await loadAds()
-  } catch (e) {
-    alert(e.response?.data?.detail || "Error")
-  }
+  } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
+// ── Verificar pago (desde modal) ───────────────────────────────────────────
 async function verifyPayment(payId, action) {
   const label = action === "verified" ? "verificar" : "rechazar"
   if (!confirm(`¿${label} este pago?`)) return
@@ -341,39 +490,54 @@ async function verifyPayment(payId, action) {
     const res = await api.patch(`/ads/admin/payments/${payId}/verify`, { action })
     const idx = selected.value.payments.findIndex(p => p.id === payId)
     if (idx >= 0) selected.value.payments[idx] = res.data
+    showToast(action === "verified" ? "Pago verificado" : "Pago rechazado", "success")
     await loadAds()
-  } catch (e) {
-    alert(e.response?.data?.detail || "Error")
-  }
+  } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
-function latestPayStatus(ad) {
-  return ad.payments?.[0]?.status || "none"
+// ── Verificar pago (desde tab Pagos) ──────────────────────────────────────
+async function verifyPaymentDirect(payId, action) {
+  const label = action === "verified" ? "verificar" : "rechazar"
+  if (!confirm(`¿${label} este pago?`)) return
+  try {
+    await api.patch(`/ads/admin/payments/${payId}/verify`, { action })
+    showToast(action === "verified" ? "Pago verificado" : "Pago rechazado", "success")
+    await loadPayments()
+    await loadAds()
+  } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function latestPayStatus(ad) { return ad.payments?.[0]?.status || "none" }
 function latestPayLabel(ad) {
-  const map = { pending: "Pendiente", verified: "Verificado", rejected: "Rechazado", none: "Sin pago" }
-  return map[latestPayStatus(ad)] || "—"
+  return { pending:"Pendiente", verified:"Verificado", rejected:"Rechazado", none:"Sin pago" }[latestPayStatus(ad)] || "—"
 }
 function statusLabel(s) {
-  const map = { pending:"Pendiente", approved:"Aprobada", active:"Activa", paused:"Pausada", expired:"Expirada", rejected:"Rechazada" }
-  return map[s] || s
+  return { pending:"Pendiente", approved:"Aprobada", active:"Activa", paused:"Pausada", expired:"Expirada", rejected:"Rechazada" }[s] || s
 }
 function payStatusLabel(s) {
-  const map = { pending:"Pendiente", verified:"Verificado", rejected:"Rechazado" }
-  return map[s] || s
+  return { pending:"Pendiente", verified:"Verificado", rejected:"Rechazado" }[s] || s
 }
 function fmtDate(d) {
   if (!d) return "—"
   const [y, m, dd] = d.split("-")
   return `${dd}/${m}/${y}`
 }
+function fmtPrice(n) {
+  if (!n && n !== 0) return "0"
+  return new Intl.NumberFormat("es-CO").format(Math.round(n))
+}
 
-onMounted(loadAds)
+onMounted(() => {
+  loadAds()
+  loadPayments()
+})
 </script>
 
 <style scoped>
 .sysads-root { padding: 16px; max-width: 1200px; margin: 0 auto; }
 
+/* KPI Bar */
 .kpi-bar { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .kpi-card {
   flex: 1; min-width: 110px; background: var(--card-bg, #fff);
@@ -381,27 +545,48 @@ onMounted(loadAds)
   display: flex; align-items: center; gap: 10px;
   box-shadow: 0 1px 4px rgba(0,0,0,.08);
 }
+.kpi-income { min-width: 200px; }
 .kpi-card .bi { font-size: 22px; flex-shrink: 0; }
 .kpi-info { display: flex; flex-direction: column; }
 .kpi-val  { font-size: 20px; font-weight: 800; line-height: 1; }
 .kpi-lbl  { font-size: 11px; opacity: .6; }
 
+/* Tabs */
+.tabs-bar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid rgba(0,0,0,.08); }
+.tab-btn {
+  background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; color: inherit;
+  opacity: .6; transition: opacity .15s; display: flex; align-items: center; gap: 4px;
+  position: relative;
+}
+.tab-btn:hover { opacity: .85; }
+.tab-btn.active { opacity: 1; border-bottom-color: #2563eb; color: #2563eb; }
+.tab-badge {
+  background: #ef4444; color: #fff; font-size: 9px; font-weight: 800;
+  border-radius: 10px; padding: 1px 5px; line-height: 1.4;
+}
+
+/* Section header */
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
 .section-title  { font-size: 15px; font-weight: 700; margin: 0; }
-.filter-wrap { display: flex; gap: 8px; }
-.filter-select { border: 1px solid rgba(0,0,0,.15); border-radius: 7px; padding: 6px 10px; font-size: 13px; background: transparent; color: inherit; }
+.filter-select  { border: 1px solid rgba(0,0,0,.15); border-radius: 7px; padding: 6px 10px; font-size: 13px; background: transparent; color: inherit; }
+.report-filters { display: flex; gap: 8px; }
 
+/* Table */
 .table-wrap { background: var(--card-bg, #fff); border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow-x: auto; }
 .empty-state { text-align: center; padding: 40px 20px; color: #9ca3af; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .ads-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ads-table th { padding: 10px 12px; background: rgba(0,0,0,.04); font-weight: 700; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
 .ads-table td { padding: 10px 12px; border-top: 1px solid rgba(0,0,0,.06); vertical-align: middle; }
 .row-pending { background: rgba(245,158,11,.04); }
-.td-id { font-weight: 700; opacity: .5; width: 40px; }
-.td-company { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.td-title   { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-id      { font-weight: 700; opacity: .5; width: 40px; }
+.td-company { font-weight: 600; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-title   { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-center  { text-align: center; }
-.td-actions { white-space: nowrap; }
+.td-right   { text-align: right; }
+.td-money   { font-weight: 700; color: #059669; }
+.td-amount  { font-weight: 600; white-space: nowrap; }
+.td-actions-pay { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 
 .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
 .status-badge.pending  { background: rgba(245,158,11,.15); color: #d97706; }
@@ -409,7 +594,7 @@ onMounted(loadAds)
 .status-badge.active   { background: rgba(34,197,94,.15);  color: #16a34a; }
 .status-badge.paused   { background: rgba(107,114,128,.15); color: #6b7280; }
 .status-badge.expired  { background: rgba(107,114,128,.1);  color: #9ca3af; }
-.status-badge.rejected { background: rgba(239,68,68,.15);   color: #dc2626; }
+.status-badge.rejected { background: rgba(239,68,68,.15);  color: #dc2626; }
 
 .pay-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; }
 .pay-badge.pending   { background: rgba(245,158,11,.15); color: #d97706; }
@@ -417,8 +602,22 @@ onMounted(loadAds)
 .pay-badge.rejected  { background: rgba(239,68,68,.15);  color: #dc2626; }
 .pay-badge.none      { background: rgba(0,0,0,.06);       color: #9ca3af; }
 
-.btn-act { width: 30px; height: 30px; border: none; border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.verified-badge { font-size: 11px; font-weight: 700; }
+.verified-badge.verified { color: #16a34a; }
+.verified-badge.rejected { color: #dc2626; }
+
+.btn-act  { width: 30px; height: 30px; border: none; border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
 .btn-view { background: rgba(59,130,246,.1); color: #2563eb; }
+
+.btn-receipt   { display: inline-flex; align-items: center; background: rgba(59,130,246,.1); color: #2563eb; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; text-decoration: none; }
+.btn-verify    { background: rgba(34,197,94,.15); color: #16a34a; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-weight: 600; display: flex; align-items: center; }
+.btn-reject-pay { background: rgba(239,68,68,.15); color: #dc2626; border: none; border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; font-weight: 600; display: flex; align-items: center; }
+
+/* Report totals */
+.report-totals { display: flex; gap: 12px; padding: 14px; flex-wrap: wrap; border-bottom: 1px solid rgba(0,0,0,.06); }
+.rt-card { background: rgba(0,0,0,.04); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; min-width: 120px; }
+.rt-val  { font-size: 18px; font-weight: 800; color: #059669; }
+.rt-lbl  { font-size: 10px; opacity: .6; }
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 16px; }
@@ -440,30 +639,22 @@ onMounted(loadAds)
 .dg-val  { flex: 1; }
 .dg-link { color: #2563eb; word-break: break-all; }
 
-/* Pieces preview */
 .pieces-preview-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.piece-card {
-  width: 120px; background: rgba(0,0,0,.05); border-radius: 8px;
-  overflow: hidden; display: flex; flex-direction: column; position: relative;
-}
+.piece-card { width: 120px; background: rgba(0,0,0,.05); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
 .piece-media { width: 100%; height: 80px; object-fit: cover; display: block; }
 .piece-yt  { height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #ef4444; font-size: 24px; }
-.piece-yt span { font-size: 10px; color: inherit; }
-.piece-txt { padding: 8px; font-size: 11px; color: #374151; height: 80px; overflow: hidden; }
+.piece-yt span { font-size: 10px; }
+.piece-txt { padding: 8px; font-size: 11px; height: 80px; overflow: hidden; }
 .piece-type-lbl { font-size: 9px; font-weight: 700; text-align: center; padding: 3px; opacity: .5; text-transform: uppercase; }
 .no-pieces { font-size: 13px; color: #9ca3af; padding: 10px 0; }
 
-/* Pay card */
 .pay-card { background: rgba(0,0,0,.04); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
-.pay-info { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 8px; }
-.btn-receipt { display: inline-flex; align-items: center; background: rgba(59,130,246,.1); color: #2563eb; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; text-decoration: none; margin-bottom: 8px; }
+.pay-info { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.pay-amount { font-weight: 700; color: #059669; }
 .pay-actions { display: flex; gap: 6px; }
-.btn-verify     { background: rgba(34,197,94,.15); color: #16a34a; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-weight: 600; }
-.btn-reject-pay { background: rgba(239,68,68,.15);  color: #dc2626; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-weight: 600; }
 
-/* Acciones SYSADMIN */
 .action-group { display: flex; flex-direction: column; gap: 10px; }
-.btn-action { border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; width: fit-content; }
+.btn-action   { border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; width: fit-content; }
 .btn-approve  { background: rgba(34,197,94,.15);   color: #16a34a; }
 .btn-reject   { background: rgba(239,68,68,.15);   color: #dc2626; }
 .btn-activate { background: #2563eb; color: #fff; }
@@ -471,13 +662,15 @@ onMounted(loadAds)
 .btn-expire   { background: rgba(245,158,11,.15);  color: #d97706; }
 
 .reject-form, .activate-form { background: rgba(0,0,0,.04); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-.af-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.form-ctrl { width: 100%; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 7px 10px; font-size: 13px; background: transparent; color: inherit; box-sizing: border-box; }
+.af-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.form-ctrl   { width: 100%; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 7px 10px; font-size: 13px; background: transparent; color: inherit; box-sizing: border-box; }
 .form-ctrl:focus { outline: none; border-color: #2563eb; }
 .form-ctrl-sm { width: 100%; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 5px 8px; font-size: 12px; background: transparent; color: inherit; box-sizing: border-box; }
 .form-lbl { font-size: 11px; font-weight: 600; display: block; margin-bottom: 3px; opacity: .65; }
-.btn-sub-save   { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; width: fit-content; }
+.sub-actions    { display: flex; gap: 8px; }
+.btn-sub-save   { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; width: fit-content; display: flex; align-items: center; }
 .btn-sub-cancel { background: none; border: 1px solid rgba(0,0,0,.15); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.text-muted { opacity: .4; }
 
 @media (max-width: 768px) {
   .af-row { grid-template-columns: 1fr 1fr; }

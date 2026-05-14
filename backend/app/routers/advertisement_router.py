@@ -676,6 +676,53 @@ async def admin_stats(
     return counts
 
 
+@router.get("/admin/payments/list")
+async def admin_payments_list(
+    status: str = None,
+    current_user: User = Depends(require_sysadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(AdPayment).order_by(AdPayment.created_at.desc())
+    if status:
+        q = q.where(AdPayment.status == status)
+    res = await db.execute(q)
+    payments = res.scalars().all()
+    result = []
+    for pay in payments:
+        ad = await db.get(Advertisement, pay.advertisement_id)
+        company = await db.get(Company, pay.company_id)
+        result.append({
+            **_ser_payment(pay),
+            "ad_title":    ad.title if ad else None,
+            "company_name": company.name if company else None,
+        })
+    return result
+
+
+@router.get("/admin/payments/report")
+async def admin_payments_report(
+    period: str = "month",   # day | month | year
+    current_user: User = Depends(require_sysadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Income summary grouped by period for verified payments."""
+    if period == "day":
+        trunc = func.date(AdPayment.created_at)
+    elif period == "year":
+        trunc = func.year(AdPayment.created_at)
+    else:
+        trunc = func.date_format(AdPayment.created_at, "%Y-%m")
+
+    res = await db.execute(
+        select(trunc.label("periodo"), func.sum(AdPayment.amount).label("total"), func.count().label("qty"))
+        .where(AdPayment.status == "verified")
+        .group_by(trunc)
+        .order_by(trunc.desc())
+        .limit(60)
+    )
+    return [{"periodo": str(r.periodo), "total": float(r.total or 0), "qty": r.qty} for r in res.all()]
+
+
 # ── Utility ──────────────────────────────────────────────────────────────────
 
 def _parse_date(val) -> date | None:
