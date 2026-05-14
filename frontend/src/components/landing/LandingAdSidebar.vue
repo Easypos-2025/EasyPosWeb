@@ -318,27 +318,28 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer) })
   .ls-slot  { min-height: 0; border-radius: 6px; }
 }
 
-/* Móvil portrait (<768px portrait): llenar toda la altura como en PC */
+/* Móvil portrait (<768px portrait) */
 @media (max-width: 767px) and (orientation: portrait) {
   .landing-sidebar {
-    width: 100px;
-    top: 68px;           /* igual que el navbar height */
+    width: 130px;        /* más ancho: mejor proporción de cada slot */
+    top: 68px;
     padding-bottom: 0;
     overflow: hidden;
   }
-  .ls-slots  { gap: 4px; padding: 4px; }
-  .ls-slot   { min-height: 0; border-radius: 6px; }
-  .ls-header { padding: 5px 7px; }
-  .ls-header-text   { display: none; }   /* ocultar "Destacados" en texto */
-  .ls-header-title .bi { font-size: 13px; }
-  .ls-close-label   { display: none; }   /* solo X en móvil portrait estrecho */
-  .ls-caption       { font-size: 8px; padding: 8px 4px 4px; }
+  .ls-slots  { gap: 5px; padding: 5px; }
+  .ls-slot   { min-height: 0; border-radius: 8px; }
+  .ls-header { padding: 6px 10px; }
+  .ls-header-text      { display: none; }
+  .ls-header-title .bi { font-size: 14px; }
+  .ls-close-label      { display: none; }
+  .ls-caption          { font-size: 9px; padding: 10px 6px 5px; }
 }
 
 /* Pantallas muy pequeñas portrait (<420px) */
 @media (max-width: 420px) and (orientation: portrait) {
-  .landing-sidebar { width: 86px; top: 68px; }
-  .ls-text-title   { font-size: 8px; }
-  .ls-header       { padding: 4px 6px; }
+  .landing-sidebar { width: 115px; top: 68px; }
+  .ls-text-title   { font-size: 9px; }
+  .ls-header       { padding: 5px 8px; }
+  .ls-slots        { gap: 4px; padding: 4px; }
 }
 </style>

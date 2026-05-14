@@ -1202,7 +1202,10 @@ export default {
   .has-ad-sidebar .slider-arrow.right { right: calc(155px + 12px); }
 }
 @media (max-width: 767px) {
-  .has-ad-sidebar .slider-arrow.right { right: calc(100px + 8px); }
+  .has-ad-sidebar .slider-arrow.right { right: calc(130px + 8px); }
+}
+@media (max-width: 420px) {
+  .has-ad-sidebar .slider-arrow.right { right: calc(115px + 8px); }
 }
 
 /* Counter */
