@@ -293,8 +293,8 @@ async def update_ad(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
-        raise HTTPException(status_code=400, detail="Solo se pueden editar pautas en estado pendiente o rechazada")
+    if ad.status not in ("pending", "rejected", "approved", "active"):
+        raise HTTPException(status_code=400, detail="No se puede editar una pauta en este estado")
 
     if "title" in data:
         title = (data["title"] or "").strip()
@@ -359,7 +359,7 @@ async def upload_piece(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
+    if ad.status not in ("pending", "rejected", "approved", "active"):
         raise HTTPException(status_code=400, detail="No se pueden agregar piezas a una pauta en este estado")
 
     count = await _count_pieces(ad_id, db)
@@ -413,7 +413,7 @@ async def add_youtube_piece(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
+    if ad.status not in ("pending", "rejected", "approved", "active"):
         raise HTTPException(status_code=400, detail="No se pueden agregar piezas a una pauta en este estado")
 
     count = await _count_pieces(ad_id, db)
@@ -439,7 +439,7 @@ async def add_text_piece(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
+    if ad.status not in ("pending", "rejected", "approved", "active"):
         raise HTTPException(status_code=400, detail="No se pueden agregar piezas a una pauta en este estado")
 
     count = await _count_pieces(ad_id, db)
@@ -465,7 +465,7 @@ async def add_social_piece(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
+    if ad.status not in ("pending", "rejected", "approved", "active"):
         raise HTTPException(status_code=400, detail="No se pueden agregar piezas a una pauta en este estado")
 
     count = await _count_pieces(ad_id, db)
@@ -504,7 +504,7 @@ async def delete_piece(
     db: AsyncSession = Depends(get_db),
 ):
     ad = await _get_ad_owned(ad_id, current_user.company_id, db)
-    if ad.status not in ("pending", "rejected"):
+    if ad.status not in ("pending", "rejected", "approved", "active"):
         raise HTTPException(status_code=400, detail="No se pueden eliminar piezas en este estado")
 
     res = await db.execute(select(AdPiece).where(AdPiece.id == piece_id, AdPiece.advertisement_id == ad_id))

@@ -93,6 +93,12 @@
             <span class="ci-name">{{ companyName }}</span>
           </div>
 
+          <!-- Aviso pauta activa -->
+          <div v-if="form.status === 'active'" class="active-edit-notice">
+            <i class="bi bi-broadcast me-1"></i>
+            Pauta activa — puedes modificar piezas, redes sociales e información. Los cambios se aplican en vivo.
+          </div>
+
           <!-- Info general -->
           <div class="form-section-label mt-2">Información de la pauta</div>
           <div class="form-row">
@@ -355,7 +361,7 @@ const socialInput    = ref("")
 const detectedPlatform = ref("")
 const textContent    = ref("")
 
-const canEditAd = computed(() => !editing.value || ["pending","rejected"].includes(form.value.status || ""))
+const canEditAd = computed(() => !editing.value || ["pending","rejected","approved","active"].includes(form.value.status || ""))
 const canPayAd  = computed(() => editing.value && ["pending","rejected","approved"].includes(form.value.status || ""))
 
 const showRenewModal = ref(false)
@@ -843,6 +849,12 @@ onMounted(loadAll)
 .btn-ver-comp { font-size: 11px; color: #2563eb; text-decoration: none; display: flex; align-items: center; }
 
 .rejection-box { background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #dc2626; margin-top: 10px; }
+.active-edit-notice {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.25);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600;
+  color: #16a34a; margin-bottom: 10px;
+}
 .info-box { background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.2); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #16a34a; margin-bottom: 8px; display: flex; align-items: center; }
 .platform-detect { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #2563eb; margin-top: 4px; }
 .social-section {
