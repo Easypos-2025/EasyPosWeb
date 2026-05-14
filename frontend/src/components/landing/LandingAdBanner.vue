@@ -105,18 +105,27 @@
 
 <!-- Sub-componente: renderiza una pieza (imagen/video/youtube/texto) -->
 <script>
-import { defineComponent, h, computed } from "vue"
+import { defineComponent, h, computed, ref, watch } from "vue"
 
 const SlotPiece = defineComponent({
   name: "SlotPiece",
   props: { piece: Object, title: String, muted: { type: Boolean, default: true } },
   setup(props) {
+    const iframeRef = ref(null)
+
+    watch(() => props.muted, (muted) => {
+      if (!iframeRef.value) return
+      iframeRef.value.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: muted ? 'mute' : 'unMute', args: [] }), '*'
+      )
+    })
+
     const ytSrc = computed(() => {
       if (!props.piece?.youtube_id) return ""
-      const mute = props.muted ? "&mute=1" : ""
-      return `https://www.youtube.com/embed/${props.piece.youtube_id}?autoplay=1&loop=1&playlist=${props.piece.youtube_id}&controls=0&rel=0${mute}`
+      return `https://www.youtube.com/embed/${props.piece.youtube_id}?autoplay=1&loop=1&playlist=${props.piece.youtube_id}&controls=0&rel=0&enablejsapi=1&mute=1`
     })
-    return { ytSrc }
+
+    return { ytSrc, iframeRef }
   },
   render() {
     const p = this.piece
@@ -135,7 +144,8 @@ const SlotPiece = defineComponent({
     if (piece_type === "youtube")
       return h("div", { class: "slot-yt-wrap" }, [
         h("iframe", {
-          key: this.ytSrc,   // force remount when muted changes
+          ref: this.iframeRef,
+          key: `yt-${p.youtube_id}`,
           src: this.ytSrc, frameborder: "0",
           allow: "autoplay; encrypted-media", allowfullscreen: true, class: "slot-yt"
         })

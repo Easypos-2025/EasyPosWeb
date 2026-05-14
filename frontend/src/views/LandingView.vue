@@ -45,11 +45,6 @@
       <!-- Slider perfiles de negocio -->
       <div class="profiles-section">
         <template v-if="profiles.length">
-          <!-- Floating label -->
-          <div class="slider-floating-label">
-            <i class="bi bi-grid-3x3-gap-fill me-2"></i>Perfiles de Negocio
-          </div>
-
           <div class="profiles-slider">
             <div
               class="slider-track"
@@ -1027,23 +1022,6 @@ export default {
   min-height: 0;
 }
 
-/* Floating label — relativo a profiles-section */
-.slider-floating-label {
-  position: absolute;
-  top: 16px;
-  left: 24px;
-  z-index: 20;
-  background: rgba(0,0,0,.4);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,.18);
-  color: rgba(255,255,255,.9);
-  padding: 5px 14px;
-  border-radius: 20px;
-  font-size: .75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .1em;
-}
 
 .profiles-slider {
   height: 100%;
@@ -1054,10 +1032,13 @@ export default {
 /* Responsive: banner en móvil */
 @media (max-width: 767px) {
   .ad-banner-strip { height: clamp(130px, 22vh, 180px); }
-  .slider-floating-label { top: 10px; left: 14px; font-size: .68rem; padding: 4px 10px; }
 }
 @media (max-width: 767px) and (orientation: portrait) {
   .ad-banner-strip { height: clamp(145px, 27vh, 200px); }
+}
+/* Landscape móvil: pantalla corta → banner mínimo para que los perfiles sean visibles */
+@media (max-height: 480px) and (orientation: landscape) {
+  .ad-banner-strip { height: 68px; }
 }
 
 .slider-track {

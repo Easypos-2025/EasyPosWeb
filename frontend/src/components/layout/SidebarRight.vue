@@ -90,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, defineComponent, h } from "vue"
+import { ref, watch, onMounted, onUnmounted, defineComponent, h } from "vue"
 import api from "@/services/apis"
 
 const emit = defineEmits(["close"])
@@ -99,6 +99,15 @@ const emit = defineEmits(["close"])
 const SlotContent = defineComponent({
   props: { piece: Object, title: String, muted: { type: Boolean, default: true } },
   setup(props) {
+    const iframeRef = ref(null)
+
+    watch(() => props.muted, (muted) => {
+      if (!iframeRef.value) return
+      iframeRef.value.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func: muted ? 'mute' : 'unMute', args: [] }), '*'
+      )
+    })
+
     return () => {
       const p = props.piece
       if (!p) return null
@@ -111,11 +120,11 @@ const SlotContent = defineComponent({
       if (piece_type === "video")
         return [h("video", { src: media_url, autoplay: true, muted: props.muted, loop: true, playsinline: true, preload: "metadata", class: "ad-media" }), caption]
       if (piece_type === "youtube") {
-        const mute = props.muted ? "&mute=1" : ""
         return h("div", { class: "ad-yt-wrap" }, [
           h("iframe", {
-            key: `yt-${youtube_id}-${props.muted}`,  // re-mount al cambiar muted
-            src: `https://www.youtube.com/embed/${youtube_id}?autoplay=1&loop=1&playlist=${youtube_id}&controls=0&rel=0${mute}`,
+            ref: iframeRef,
+            key: `yt-${youtube_id}`,
+            src: `https://www.youtube.com/embed/${youtube_id}?autoplay=1&loop=1&playlist=${youtube_id}&controls=0&rel=0&enablejsapi=1&mute=1`,
             frameborder: "0", allow: "autoplay; encrypted-media", allowfullscreen: true, class: "ad-yt"
           })
         ])
@@ -246,6 +255,7 @@ onUnmounted(() => {
 .ad-slot  {
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
   border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative;
 }
 .ad-slot:last-child { border-bottom: none; }
 
