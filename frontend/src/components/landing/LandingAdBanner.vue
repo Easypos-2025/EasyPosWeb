@@ -254,9 +254,7 @@ function advancePiece(si) {
 
   if (isMobilePortrait.value) {
     if (nextPiece === 0) {
-      let nextSi = (si + 1) % 3
-      let tries = 0
-      while (tries < 3 && !slots.value[nextSi]?.pieces?.length) { nextSi = (nextSi + 1) % 3; tries++ }
+      const nextSi = (si + 1) % 3
       currentSlot.value = nextSi
       scheduleSlot(nextSi)
     } else {
@@ -332,7 +330,13 @@ function clearSlotTimers() {
 async function scheduleSlot(si) {
   cleanPauseCleanup(si)
   const slot = slots.value[si]
-  if (!slot?.pieces?.length) return
+  if (!slot?.pieces?.length) {
+    // Slot vacío en móvil: mostrar placeholder 5s y luego avanzar
+    if (isMobilePortrait.value) {
+      slotTimers[si] = setTimeout(() => advancePiece(si), 5_000)
+    }
+    return
+  }
   if (slot.pieces.length <= 1 && !isMobilePortrait.value) return  // 1 pieza sin rotación en desktop
 
   const piece    = slot.pieces[slotPieceIdx.value[si]]
@@ -344,11 +348,8 @@ async function scheduleSlot(si) {
 function startTimers() {
   clearSlotTimers()
   if (isMobilePortrait.value) {
-    // Empezar desde el primer slot que tenga piezas
-    const firstActive = slots.value.findIndex(s => s.pieces?.length > 0)
-    const startSi = firstActive >= 0 ? firstActive : 0
-    currentSlot.value = startSi
-    scheduleSlot(startSi)
+    currentSlot.value = 0
+    scheduleSlot(0)
   } else {
     slots.value.forEach((_, si) => scheduleSlot(si))  // independiente en desktop
   }
