@@ -267,14 +267,21 @@
   <div class="modal-card">
 
     <h5>Eliminar Usuario</h5>
-    <p>¿Estás seguro?</p>
 
-    <div class="d-flex gap-2">
-      <button class="btn btn-danger" @click="confirmDelete">
+    <div v-if="deleteError" class="delete-error-box">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <p>{{ deleteError }}</p>
+    </div>
+    <p v-else>¿Estás seguro? Esta acción no se puede deshacer.</p>
+
+    <div class="d-flex gap-2 flex-wrap">
+      <button v-if="!deleteError" class="btn btn-danger" @click="confirmDelete">
         Eliminar
       </button>
-
-      <button class="btn btn-secondary" @click="showDeleteModal=false">
+      <button v-if="deleteError" class="btn btn-warning" @click="deactivateUser">
+        <i class="bi bi-person-slash"></i> Desactivar usuario
+      </button>
+      <button class="btn btn-secondary" @click="closeDeleteModal">
         Cancelar
       </button>
     </div>
@@ -570,24 +577,46 @@ const updateUser = async () => {
   }
 }
 
+const deleteError  = ref(null)
+
 const askDeleteUser = (id) => {
   userToDelete.value = id
+  deleteError.value  = null
   showDeleteModal.value = true
+}
+
+const closeDeleteModal = () => {
+  showDeleteModal.value = false
+  userToDelete.value    = null
+  deleteError.value     = null
 }
 
 const confirmDelete = async () => {
   try {
     await api.delete(`/users/${userToDelete.value}`)
-
     showToast("Usuario eliminado", "success")
-
-    showDeleteModal.value = false
-    userToDelete.value = null
-
+    closeDeleteModal()
     await loadUsers()
-
   } catch (e) {
-    showToast(e.response?.data?.detail || "Error", "error")
+    const status = e.response?.status
+    const detail = e.response?.data?.detail || "Error al eliminar el usuario"
+    if (status === 409) {
+      deleteError.value = detail
+    } else {
+      showToast(detail, "error")
+      closeDeleteModal()
+    }
+  }
+}
+
+const deactivateUser = async () => {
+  try {
+    await api.put(`/users/${userToDelete.value}`, { is_active: false })
+    showToast("Usuario desactivado. Ya no podrá iniciar sesión.", "success")
+    closeDeleteModal()
+    await loadUsers()
+  } catch (e) {
+    showToast(e.response?.data?.detail || "Error al desactivar", "error")
   }
 }
 
@@ -668,6 +697,26 @@ onMounted(async () => {
   background:#fff;padding:20px;border-radius:8px;
   width:100%;max-width:400px;
 }
+.delete-error-box {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #fff8e1;
+  border: 1px solid #f9a825;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  color: #5d4037;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.delete-error-box i {
+  color: #f9a825;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.delete-error-box p { margin: 0; }
 
 /* ── PLAN LIMIT BANNER ── */
 .plan-limit-banner {

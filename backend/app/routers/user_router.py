@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.exc import IntegrityError
 from typing import Optional, Union
 
@@ -12,6 +12,9 @@ from app.models.role_module_model import RoleModule
 from app.models.system_module_model import SystemModule
 from app.models.company_plan_model import CompanyPlan
 from app.models.plan_model import Plan
+from app.models.task_model import Task
+from app.models.novelty_model import Novelty
+from app.models.support_ticket_model import SupportTicket
 from passlib.context import CryptContext
 from app.auth.dependencies import get_current_user
 from app.services.plan_limits_service import check_limit
@@ -142,6 +145,42 @@ async def delete_user(id: int, db: AsyncSession = Depends(get_db)):
     user = await db.get(User, id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    await db.delete(user)
-    await db.commit()
-    return {"message": "Usuario eliminado"}
+
+    bloqueos = []
+
+    task_count = (await db.execute(
+        select(func.count()).select_from(Task).where(
+            or_(Task.created_by == id, Task.assigned_to == id)
+        )
+    )).scalar()
+    if task_count:
+        bloqueos.append(f"{task_count} tarea(s)")
+
+    novelty_count = (await db.execute(
+        select(func.count()).select_from(Novelty).where(Novelty.user_id == id)
+    )).scalar()
+    if novelty_count:
+        bloqueos.append(f"{novelty_count} novedad(es)")
+
+    ticket_count = (await db.execute(
+        select(func.count()).select_from(SupportTicket).where(SupportTicket.user_id == id)
+    )).scalar()
+    if ticket_count:
+        bloqueos.append(f"{ticket_count} ticket(s) de soporte")
+
+    if bloqueos:
+        raise HTTPException(
+            status_code=409,
+            detail=f"No se puede eliminar: el usuario tiene {', '.join(bloqueos)} asociado(s). Desactívalo para bloquear su acceso sin perder los registros."
+        )
+
+    try:
+        await db.delete(user)
+        await db.commit()
+        return {"message": "Usuario eliminado"}
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede eliminar el usuario porque tiene registros asociados. Desactívalo para bloquear su acceso sin perder los datos."
+        )
