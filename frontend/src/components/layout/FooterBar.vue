@@ -10,8 +10,12 @@
           alt="EasyPosWeb"
           @error="e => e.target.style.display='none'"
         />
-        <span class="footer-brand-name">EasyPosWeb</span>
       </router-link>
+
+      <a :href="siteUrl" target="_blank" rel="noopener" class="footer-website-link" title="Ir al sitio web">
+        <i class="bi bi-globe2"></i>
+        <span><span class="fw-easy">Easy</span><span class="fw-pos">Pos</span><span class="fw-web">Web</span></span>
+      </a>
 
       <span class="footer-sep">|</span>
       <span class="footer-version">v{{ version }}</span>
@@ -81,6 +85,7 @@ import api from "@/services/apis"
 
 const companyStore = useCompanyStore()
 const version      = __APP_BUILD__
+const siteUrl      = import.meta.env.VITE_SITE_URL || window.location.origin
 const online       = ref(navigator.onLine)
 const apiStatus    = ref(false)
 
@@ -238,7 +243,18 @@ onUnmounted(() => {
 .footer-brand       { display: flex; align-items: center; gap: 6px; flex-shrink: 0; text-decoration: none; opacity: .85; transition: opacity .2s; }
 .footer-brand:hover { opacity: 1; }
 .footer-logo        { height: 22px; width: auto; object-fit: contain; opacity: 0.85; }
-.footer-brand-name  { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: rgba(255,255,255,0.8); white-space: nowrap; }
+
+.footer-website-link {
+  display: flex; align-items: center; gap: 5px;
+  text-decoration: none; flex-shrink: 0;
+  font-size: 12px; font-weight: 700; letter-spacing: .3px;
+  opacity: .85; transition: opacity .2s;
+}
+.footer-website-link:hover { opacity: 1; }
+.footer-website-link .bi   { font-size: 13px; color: rgba(255,255,255,.6); }
+.fw-easy { color: #60a5fa; }
+.fw-pos  { color: #fbbf24; }
+.fw-web  { color: #34d399; }
 .footer-sep         { opacity: 0.2; font-size: 11px; flex-shrink: 0; }
 .footer-version     { opacity: 0.5; font-size: 11px; white-space: nowrap; }
 .footer-status      { font-size: 11px; white-space: nowrap; }

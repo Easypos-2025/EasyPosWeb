@@ -136,14 +136,11 @@
         </Transition>
       </div>
 
-      <!-- Ver sitio web -->
-      <a :href="siteUrl" target="_blank" rel="noopener"
-         class="btn-icon btn-website" title="Ver sitio web">
-        <i class="bi bi-globe2"></i>
-        <span class="btn-label brand-label">
-          <span class="bl-easy">Easy</span><span class="bl-pos">Pos</span><span class="bl-web">Web</span>
-        </span>
-      </a>
+      <!-- Mapa del Sitio -->
+      <router-link to="/navigation-map" class="btn-icon btn-sitemap" title="Mapa del Sitio">
+        <i class="bi bi-compass-fill sitemap-ico"></i>
+        <span class="btn-label sitemap-label">Mapa del Sitio</span>
+      </router-link>
 
       <!-- Dropdown Usuario -->
       <div class="dropdown-wrap" ref="userDropRef">
@@ -1036,25 +1033,23 @@ onUnmounted(() => {
 }
 
 .btn-icon:hover   { background: rgba(255,255,255,0.12); }
-.btn-website {
+.btn-sitemap {
   margin-left: 2px;
-  color: inherit;
   text-decoration: none;
   flex-direction: column;
   gap: 1px;
   padding: 4px 10px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(135deg, rgba(99,102,241,.18) 0%, rgba(16,185,129,.18) 100%);
+  border: 1px solid rgba(99,102,241,.3);
+  color: inherit;
 }
-.btn-website .bi { font-size: 17px; }
-.btn-website:hover { background: rgba(37,99,235,0.18); border-color: rgba(147,197,253,0.35); }
-
-/* Colores tricolor EasyPosWeb (igual que landing) */
-.brand-label { letter-spacing: 0; }
-.bl-easy { color: #2563eb; }
-.bl-pos  { color: #f59e0b; }
-.bl-web  { color: #10b981; }
+.btn-sitemap:hover {
+  background: linear-gradient(135deg, rgba(99,102,241,.32) 0%, rgba(16,185,129,.32) 100%);
+  border-color: rgba(99,102,241,.55);
+}
+.sitemap-ico   { font-size: 17px; color: #818cf8; }
+.sitemap-label { font-size: 9px; letter-spacing: .3px; color: rgba(255,255,255,.8); }
 /* Dropdown usuario */
 .btn-user-drop {
   display: flex; align-items: center; gap: 7px;
