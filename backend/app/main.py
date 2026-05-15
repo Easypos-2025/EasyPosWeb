@@ -132,6 +132,10 @@ async def _init_db_data():
             "ALTER TABLE assets ADD COLUMN additional_reference VARCHAR(300) NULL",
             "ALTER TABLE assets ADD COLUMN list_code INT NULL",
             "ALTER TABLE assets ADD UNIQUE INDEX uq_assets_list_code (list_code)",
+            "ALTER TABLE assets ADD COLUMN rental_requirements TEXT NULL",
+            "ALTER TABLE assets ADD COLUMN general_observations TEXT NULL",
+            "ALTER TABLE assets ADD COLUMN plan_blocked TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE assets ADD COLUMN plan_blocked_at DATETIME NULL",
         ]
         for _sql in _asset_cols:
             try:

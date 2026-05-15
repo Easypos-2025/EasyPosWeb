@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.models.asset_model import Asset
@@ -12,6 +13,7 @@ from app.models.client_model import Client
 from app.models.user_model import User
 from app.schemas.asset_schema import AssetCreate, AssetUpdate
 from app.auth.dependencies import get_current_user
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
@@ -87,6 +89,7 @@ async def create_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    await check_limit(current_user.company_id, "max_assets", Asset, db)
     if data.list_code is not None:
         dup = await db.execute(select(Asset).where(Asset.list_code == data.list_code))
         if dup.scalar_one_or_none():
@@ -94,9 +97,13 @@ async def create_asset(
     asset = Asset(company_id=current_user.company_id)
     _apply(asset, data)
     db.add(asset)
-    await db.commit()
-    await db.refresh(asset)
-    return await _ser(asset, db)
+    try:
+        await db.commit()
+        await db.refresh(asset)
+        return await _ser(asset, db)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail="Error de integridad: verifica categoría, cliente o propietario.")
 
 
 @router.get("/")
@@ -118,7 +125,9 @@ async def get_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    result = await db.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.company_id == current_user.company_id)
+    )
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Activo no encontrado")
@@ -132,7 +141,9 @@ async def update_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    result = await db.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.company_id == current_user.company_id)
+    )
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Activo no encontrado")

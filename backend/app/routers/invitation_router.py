@@ -13,6 +13,7 @@ from app.models.role_model import Role
 from app.models.company_model import Company
 from app.models.user_session_model import UserSession
 from app.auth.jwt_handler import decode_access_token
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/invitations", tags=["Invitations"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -113,6 +114,7 @@ async def register_via_invitation(token: str, data: dict, db: AsyncSession = Dep
     result = await db.execute(select(User).where(User.email == email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
+    await check_limit(inv.company_id, "max_users", User, db)
     db.add(User(nombre=nombre, email=email, password_hash=pwd_context.hash(password),
                 role_id=inv.role_id, company_id=inv.company_id, is_active=True))
     inv.used_at = datetime.utcnow()
