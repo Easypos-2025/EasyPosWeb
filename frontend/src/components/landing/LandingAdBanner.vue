@@ -34,11 +34,11 @@
             </div>
             <!-- Iconos redes sociales del anunciante -->
             <div v-if="slotHasSocial(slot)" class="slot-social-icons">
-              <a v-if="slot.social_instagram" :href="slot.social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-instagram"></i></a>
-              <a v-if="slot.social_tiktok" :href="slot.social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-tiktok"></i></a>
-              <a v-if="slot.social_facebook" :href="slot.social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-facebook"></i></a>
-              <a v-if="slot.social_youtube_channel" :href="slot.social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-youtube"></i></a>
-              <a v-if="slot.social_website" :href="slot.social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-globe2"></i></a>
+              <a v-if="slot.social_instagram" :href="slot.social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-instagram" title="Instagram"><i class="bi bi-instagram"></i></a>
+              <a v-if="slot.social_tiktok" :href="slot.social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-tiktok" title="TikTok"><i class="bi bi-tiktok"></i></a>
+              <a v-if="slot.social_facebook" :href="slot.social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-facebook" title="Facebook"><i class="bi bi-facebook"></i></a>
+              <a v-if="slot.social_youtube_channel" :href="slot.social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-youtube" title="YouTube"><i class="bi bi-youtube"></i></a>
+              <a v-if="slot.social_website" :href="slot.social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-website" title="Sitio web"><i class="bi bi-globe2"></i></a>
             </div>
           </template>
           <!-- Placeholder → contacto -->
@@ -88,11 +88,11 @@
                 </button>
                 <!-- Iconos redes sociales -->
                 <div v-if="slotHasSocial(slots[currentSlot])" class="slot-social-icons">
-                  <a v-if="slots[currentSlot].social_instagram" :href="slots[currentSlot].social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-instagram"></i></a>
-                  <a v-if="slots[currentSlot].social_tiktok" :href="slots[currentSlot].social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-tiktok"></i></a>
-                  <a v-if="slots[currentSlot].social_facebook" :href="slots[currentSlot].social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-facebook"></i></a>
-                  <a v-if="slots[currentSlot].social_youtube_channel" :href="slots[currentSlot].social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-youtube"></i></a>
-                  <a v-if="slots[currentSlot].social_website" :href="slots[currentSlot].social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn"><i class="bi bi-globe2"></i></a>
+                  <a v-if="slots[currentSlot].social_instagram" :href="slots[currentSlot].social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-instagram" title="Instagram"><i class="bi bi-instagram"></i></a>
+                  <a v-if="slots[currentSlot].social_tiktok" :href="slots[currentSlot].social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-tiktok" title="TikTok"><i class="bi bi-tiktok"></i></a>
+                  <a v-if="slots[currentSlot].social_facebook" :href="slots[currentSlot].social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-facebook" title="Facebook"><i class="bi bi-facebook"></i></a>
+                  <a v-if="slots[currentSlot].social_youtube_channel" :href="slots[currentSlot].social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-youtube" title="YouTube"><i class="bi bi-youtube"></i></a>
+                  <a v-if="slots[currentSlot].social_website" :href="slots[currentSlot].social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-website" title="Sitio web"><i class="bi bi-globe2"></i></a>
                 </div>
               </template>
               <template v-else>
@@ -511,14 +511,23 @@ onUnmounted(() => {
   display: flex; flex-direction: column; gap: 5px;
 }
 .slot-soc-btn {
-  width: 26px; height: 26px; border-radius: 6px;
-  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
-  border: 1px solid rgba(255,255,255,.2);
-  color: #fff; font-size: 12px; cursor: pointer;
+  width: 28px; height: 28px; border-radius: 7px;
+  border: none; color: #fff; font-size: 14px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  text-decoration: none; transition: background .2s, transform .15s;
+  text-decoration: none; transition: transform .15s, filter .15s;
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
 }
-.slot-soc-btn:hover { background: rgba(0,0,0,.8); transform: scale(1.1); }
+.slot-soc-btn:hover { transform: scale(1.15); filter: brightness(1.1); }
+
+/* Colores reales de cada red social */
+.soc-instagram {
+  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
+}
+.soc-tiktok    { background: #010101; }
+.soc-tiktok i  { background: linear-gradient(135deg, #69c9d0, #ee1d52); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.soc-facebook  { background: #1877f2; }
+.soc-youtube   { background: #ff0000; }
+.soc-website   { background: #374151; }
 
 /* ── Transición ── */
 .ad-fade-enter-active, .ad-fade-leave-active { transition: opacity .3s; }
