@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, Date
+from sqlalchemy import select, func, cast, Date, delete as sql_delete
 from datetime import datetime, date
 from typing import Optional
 
@@ -14,6 +14,12 @@ from app.models.role_model import Role
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.services.plan_limits_service import check_limit, get_limits
+from app.models.task_evidence_model import TaskEvidence
+from app.models.task_material_model import TaskMaterial
+from app.models.task_expense_model import TaskExpense
+from app.models.task_comment_model import TaskComment
+from app.models.task_progress_report_model import TaskProgressReport
+from app.models.task_purchase_model import TaskPurchase
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -334,6 +340,9 @@ async def delete_task(task_id: int, authorization: str = Header(None), db: Async
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    for child_model in (TaskEvidence, TaskMaterial, TaskExpense,
+                        TaskComment, TaskProgressReport, TaskPurchase):
+        await db.execute(sql_delete(child_model).where(child_model.task_id == task_id))
     await db.delete(task)
     await db.commit()
     return {"message": "Tarea eliminada"}
