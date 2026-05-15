@@ -397,6 +397,13 @@ const routes = [
       },
 
       {
+        path: "/bienvenida",
+        name: "BienvenidaView",
+        component: () => import("@/views/BienvenidaView.vue"),
+        meta: { title: "Bienvenida" }
+      },
+
+      {
         path: "/sysadmin/topbar-menu",
         name: "TopbarMenuManagerView",
         component: () => import("@/views/sysadmin/TopbarMenuManagerView.vue"),

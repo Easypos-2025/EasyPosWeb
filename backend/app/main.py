@@ -78,6 +78,7 @@ from app.routers.purchase_orders_router import router as purchase_orders_router
 from app.routers.pos_sync_router import router as pos_sync_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
 from app.routers.advertisement_router import router as advertisement_router
+from app.routers.welcome_steps_router import router as welcome_steps_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -483,11 +484,12 @@ async def _init_db_data():
 
         # Datos iniciales topbar_menu_items
         defaults_menu = [
-            ("Registro Novedades",    "novedades", "bi-exclamation-triangle", "/novedades",         True,  None, True, 1),
-            ("Abrir Ticket Soporte",  "ticket",    "bi-ticket-detailed",      "/soporte/ticket",    True,  2,    True, 2),
-            ("Ayuda",                 "ayuda",     "bi-question-circle",      None,                 False, None, True, 3),
-            ("Solicitar Productos",   "productos", "bi-bag-plus",             None,                 False, None, True, 4),
-            ("Cláusulas Legales",     "clausulas", "bi-shield-check",         "/clausulas-legales", False, None, True, 5),
+            ("Registro Novedades",    "novedades",   "bi-exclamation-triangle", "/novedades",         True,  None, True, 1),
+            ("Abrir Ticket Soporte",  "ticket",      "bi-ticket-detailed",      "/soporte/ticket",    True,  2,    True, 2),
+            ("Ayuda",                 "ayuda",       "bi-question-circle",      None,                 False, None, True, 3),
+            ("Solicitar Productos",   "productos",   "bi-bag-plus",             None,                 False, None, True, 4),
+            ("Cláusulas Legales",     "clausulas",   "bi-shield-check",         "/clausulas-legales", False, None, True, 5),
+            ("Guía de Inicio",        "bienvenida",  "bi-stars",                "/bienvenida",        False, None, True, 0),
         ]
         for name, key, icon, route, has_ev, min_plan, is_act, order in defaults_menu:
             result = await db.execute(select(TopbarMenuItem).where(TopbarMenuItem.key == key))
@@ -499,6 +501,77 @@ async def _init_db_data():
                 ))
 
         await db.commit()
+
+        # ── TABLA profile_welcome_steps ───────────────────────────────────────
+        try:
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS profile_welcome_steps (
+                    id                  INT AUTO_INCREMENT PRIMARY KEY,
+                    business_profile_id INT NOT NULL,
+                    step_number         INT NOT NULL DEFAULT 0,
+                    icon                VARCHAR(60)  NOT NULL DEFAULT 'bi-star',
+                    title               VARCHAR(120) NOT NULL,
+                    description         TEXT NOT NULL,
+                    route_hint          VARCHAR(150) NULL,
+                    is_active           TINYINT(1) NOT NULL DEFAULT 1,
+                    FOREIGN KEY (business_profile_id) REFERENCES business_profiles(id),
+                    INDEX idx_pws_profile (business_profile_id)
+                )
+            """))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+        # ── SEED pasos bienvenida Perfil Administrativo (id=2) ───────────────
+        from app.models.profile_welcome_step_model import ProfileWelcomeStep
+        _existing_steps = (await db.execute(
+            select(ProfileWelcomeStep).where(ProfileWelcomeStep.business_profile_id == 2)
+        )).scalars().all()
+        if not _existing_steps:
+            _admin_steps = [
+                (1, "bi-shield-lock",    "Configura tus roles",
+                 "Define qué puede ver y hacer cada tipo de usuario en la plataforma. "
+                 "Por ejemplo: un Administrador tiene acceso total, mientras que un Líder de Tareas solo ve las tareas que le asignan.",
+                 "/roles"),
+                (2, "bi-people-fill",    "Crea tus usuarios",
+                 "Agrega a las personas de tu equipo para que puedan ingresar al sistema. "
+                 "Cada usuario tendrá su propio correo y contraseña, y solo verá lo que su rol le permite.",
+                 "/users"),
+                (3, "bi-tags-fill",      "Define categorías de activos",
+                 "Organiza tus propiedades o equipos por tipo: por ejemplo, Edificios, Vehículos o Maquinaria. "
+                 "Esto te ayuda a filtrar y encontrar lo que necesitas más rápido.",
+                 "/asset-categories"),
+                (4, "bi-building-fill",  "Registra tus activos",
+                 "Un activo es cualquier bien que administras: un apartamento, una bodega, un vehículo o un equipo. "
+                 "Aquí los registras con todos sus datos, fotos y documentos.",
+                 "/assets"),
+                (5, "bi-person-badge",   "Agrega tus trabajadores",
+                 "Los trabajadores son el personal de campo que ejecuta las tareas. "
+                 "No necesitan acceso al sistema; el Líder de Tareas reporta por ellos.",
+                 "/workers"),
+                (6, "bi-clipboard2-check-fill", "Crea y asigna tareas",
+                 "Una tarea es cualquier trabajo que se hace sobre un activo: mantenimiento, reparación, inspección, etc. "
+                 "Asígnala a un Líder de Tareas y haz seguimiento del avance en tiempo real.",
+                 "/tasks"),
+            ]
+            for num, icon, title, desc, route in _admin_steps:
+                db.add(ProfileWelcomeStep(
+                    business_profile_id=2, step_number=num,
+                    icon=icon, title=title, description=desc,
+                    route_hint=route, is_active=True
+                ))
+            await db.commit()
+
+        # ── SYSTEM_MODULE: Bienvenida ─────────────────────────────────────────
+        try:
+            from app.models.system_module_model import SystemModule as SM
+            _bv = await db.execute(select(SM).where(SM.route == "/bienvenida"))
+            if not _bv.scalar_one_or_none():
+                db.add(SM(name="Bienvenida", route="/bienvenida", icon="bi-stars",
+                          parent_id=None, is_active=True, order_index=0, is_sysadmin=False))
+                await db.commit()
+        except Exception:
+            await db.rollback()
 
         # ── MIGRACIONES SEGURAS: columnas nuevas en business_profiles ──
         for col_sql in [
@@ -1173,6 +1246,7 @@ routers = [
     pos_sync_router,
     plan_associate_limits_router,
     advertisement_router,
+    welcome_steps_router,
 ]
 
 for router in routers:

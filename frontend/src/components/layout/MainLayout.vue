@@ -149,10 +149,20 @@ watch(() => route.path, () => {
   if (window.innerWidth < 1024) sidebarRightOpen.value = false
 })
 
+function checkFirstLogin() {
+  const u = JSON.parse(localStorage.getItem("user") || "{}")
+  if (!u.id || u.is_system) return          // SYSADMIN no necesita bienvenida
+  const seen = localStorage.getItem(`welcome_seen_${u.id}`)
+  if (!seen && router.currentRoute.value.path !== "/bienvenida") {
+    router.push("/bienvenida")
+  }
+}
+
 onMounted(() => {
   window.addEventListener("resize", handleResize)
   readUserState()
   refreshUser()
+  checkFirstLogin()
 })
 onUnmounted(() => window.removeEventListener("resize", handleResize))
 </script>
