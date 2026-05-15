@@ -50,7 +50,8 @@ async def _can_manage_all(user: User, db: AsyncSession) -> bool:
         return False
     if role.is_system:
         return True
-    return "admin" in role.name.lower() or "auditor" in role.name.lower()
+    name = role.name.lower().strip()
+    return name == "admin" or name == "auditor"
 
 
 def _ser(n: Novelty, user_name="", evidence_count=0):
@@ -229,6 +230,8 @@ async def list_replies(novelty_id: int, authorization: str = Header(None), db: A
 @router.post("/{novelty_id}/replies")
 async def create_reply(novelty_id: int, data: dict, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    if not await _can_manage_all(user, db):
+        raise HTTPException(status_code=403, detail="Sin permiso para responder novedades")
     message = (data.get("message") or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")

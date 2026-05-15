@@ -366,8 +366,11 @@ const apiBase      = import.meta.env.VITE_API_URL || ""
 const storedUser    = ref(null)
 const canManageAll  = computed(() => {
   if (companyStore.isSystem) return true
-  const role = storedUser.value?.role?.toLowerCase() || ""
-  return role.includes("admin") || role.includes("auditor")
+  const u = storedUser.value
+  if (!u) return false
+  if (u.is_system) return true
+  const role = (u.role || "").toLowerCase().trim()
+  return role === "admin" || role === "auditor"
 })
 
 // ── Data ────────────────────────────────────────────
