@@ -1,7 +1,7 @@
 import re
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, or_
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.models.business_profile_module import BusinessProfileModule
@@ -11,6 +11,140 @@ from app.models.user_model import User
 from app.models.company_theme_model import CompanyTheme
 from app.models.role_model import Role
 from app.models.role_module_model import RoleModule
+
+
+async def _cascade_delete_company(company_id: int, db: AsyncSession):
+    """Elimina en cascada TODOS los datos de una empresa (solo SYSADMIN)."""
+    from app.models.user_session_model import UserSession
+    from app.models.invitation_model import InvitationToken
+    from app.models.user_notification_model import UserNotification
+    from app.models.task_model import Task
+    from app.models.task_comment_model import TaskComment
+    from app.models.task_evidence_model import TaskEvidence
+    from app.models.task_material_model import TaskMaterial
+    from app.models.task_expense_model import TaskExpense
+    from app.models.task_purchase_model import TaskPurchase
+    from app.models.task_progress_report_model import TaskProgressReport
+    from app.models.novelty_model import Novelty, NoveltyEvidence, NoveltyReply
+    from app.models.support_ticket_model import SupportTicket, TicketEvidence
+    from app.models.loan_model import Loan
+    from app.models.asset_model import Asset
+    from app.models.asset_media_model import AssetMedia
+    from app.models.asset_inquiry_model import AssetInquiry
+    from app.models.bodega_item_model import BodegaItem
+    from app.models.external_collaborator_model import ExternalCollaborator
+    from app.models.client_model import Client
+    from app.models.worker_model import Worker
+    from app.models.supplier_model import Supplier
+    from app.models.supply_item_model import SupplyItem
+    from app.models.purchase_order_model import PurchaseOrder
+    from app.models.purchase_order_item_model import PurchaseOrderItem
+    from app.models.stock_movement_model import StockMovement
+    from app.models.product_model import Product
+    from app.models.product_category_model import ProductCategory
+    from app.models.product_reference_model import ProductReference
+    from app.models.product_presentation_model import ProductPresentation
+    from app.models.price_list_model import PriceList
+    from app.models.price_list_item_model import PriceListItem
+    from app.models.company_payment_model import CompanyPayment
+    from app.models.company_plan_model import CompanyPlan
+    from app.models.company_plan_limits_model import CompanyPlanLimits
+
+    # 1. Sesiones y tokens de usuarios de la empresa
+    user_ids = [r[0] for r in (await db.execute(
+        select(User.id).where(User.company_id == company_id)
+    )).all()]
+    if user_ids:
+        await db.execute(delete(UserSession).where(UserSession.user_id.in_(user_ids)))
+        await db.execute(delete(InvitationToken).where(InvitationToken.created_by.in_(user_ids)))
+        await db.execute(delete(UserNotification).where(
+            or_(UserNotification.sender_id.in_(user_ids), UserNotification.receiver_id.in_(user_ids))
+        ))
+
+    # 2. Tareas y sus hijos
+    task_ids = [r[0] for r in (await db.execute(
+        select(Task.id).where(Task.company_id == company_id)
+    )).all()]
+    if task_ids:
+        for child in (TaskComment, TaskEvidence, TaskMaterial, TaskExpense, TaskPurchase, TaskProgressReport):
+            await db.execute(delete(child).where(child.task_id.in_(task_ids)))
+        await db.execute(delete(Task).where(Task.company_id == company_id))
+
+    # 3. Novedades (evidence y replies con CASCADE en BD)
+    novelty_ids = [r[0] for r in (await db.execute(
+        select(Novelty.id).where(Novelty.company_id == company_id)
+    )).all()]
+    if novelty_ids:
+        await db.execute(delete(NoveltyEvidence).where(NoveltyEvidence.novelty_id.in_(novelty_ids)))
+        await db.execute(delete(NoveltyReply).where(NoveltyReply.novelty_id.in_(novelty_ids)))
+    await db.execute(delete(Novelty).where(Novelty.company_id == company_id))
+
+    # 4. Tickets de soporte (ticket_evidence con CASCADE en BD)
+    ticket_ids = [r[0] for r in (await db.execute(
+        select(SupportTicket.id).where(SupportTicket.company_id == company_id)
+    )).all()]
+    if ticket_ids:
+        await db.execute(delete(TicketEvidence).where(TicketEvidence.ticket_id.in_(ticket_ids)))
+    await db.execute(delete(SupportTicket).where(SupportTicket.company_id == company_id))
+
+    # 5. Préstamos y bodega
+    await db.execute(delete(Loan).where(Loan.company_id == company_id))
+    await db.execute(delete(BodegaItem).where(BodegaItem.company_id == company_id))
+
+    # 6. Activos (asset_media y asset_inquiries con CASCADE en BD)
+    asset_ids = [r[0] for r in (await db.execute(
+        select(Asset.id).where(Asset.company_id == company_id)
+    )).all()]
+    if asset_ids:
+        await db.execute(delete(AssetMedia).where(AssetMedia.asset_id.in_(asset_ids)))
+        await db.execute(delete(AssetInquiry).where(AssetInquiry.asset_id.in_(asset_ids)))
+    await db.execute(delete(Asset).where(Asset.company_id == company_id))
+
+    # 7. Inventario
+    po_ids = [r[0] for r in (await db.execute(
+        select(PurchaseOrder.id).where(PurchaseOrder.company_id == company_id)
+    )).all()]
+    if po_ids:
+        await db.execute(delete(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id.in_(po_ids)))
+    await db.execute(delete(PurchaseOrder).where(PurchaseOrder.company_id == company_id))
+    await db.execute(delete(StockMovement).where(StockMovement.company_id == company_id))
+
+    pl_ids = [r[0] for r in (await db.execute(
+        select(PriceList.id).where(PriceList.company_id == company_id)
+    )).all()]
+    if pl_ids:
+        await db.execute(delete(PriceListItem).where(PriceListItem.price_list_id.in_(pl_ids)))
+    await db.execute(delete(PriceList).where(PriceList.company_id == company_id))
+
+    prod_ids = [r[0] for r in (await db.execute(
+        select(Product.id).where(Product.company_id == company_id)
+    )).all()]
+    if prod_ids:
+        await db.execute(delete(ProductPresentation).where(ProductPresentation.product_id.in_(prod_ids)))
+    await db.execute(delete(Product).where(Product.company_id == company_id))
+    await db.execute(delete(ProductCategory).where(ProductCategory.company_id == company_id))
+    await db.execute(delete(ProductReference).where(ProductReference.company_id == company_id))
+    await db.execute(delete(Supplier).where(Supplier.company_id == company_id))
+    await db.execute(delete(SupplyItem).where(SupplyItem.company_id == company_id))
+    await db.execute(delete(Client).where(Client.company_id == company_id))
+    await db.execute(delete(Worker).where(Worker.company_id == company_id))
+    await db.execute(delete(ExternalCollaborator).where(ExternalCollaborator.company_id == company_id))
+
+    # 8. Pagos y planes
+    await db.execute(delete(CompanyPayment).where(CompanyPayment.company_id == company_id))
+    await db.execute(delete(CompanyPlan).where(CompanyPlan.company_id == company_id))
+    await db.execute(delete(CompanyPlanLimits).where(CompanyPlanLimits.company_id == company_id))
+
+    # 9. Roles (primero role_modules, luego roles)
+    role_ids = [r[0] for r in (await db.execute(
+        select(Role.id).where(Role.company_id == company_id)
+    )).all()]
+    if role_ids:
+        await db.execute(delete(RoleModule).where(RoleModule.role_id.in_(role_ids)))
+    await db.execute(delete(Role).where(Role.company_id == company_id))
+
+    # 10. Usuarios y tema
+    await db.execute(delete(User).where(User.company_id == company_id))
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
@@ -101,19 +235,19 @@ async def update_company(company_id: int, data: dict, db: AsyncSession = Depends
 async def delete_company(company_id: int, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
     role = await db.get(Role, current_user.role_id)
     is_system = role.is_system if role else False
-    if not is_system and current_user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
+    if not is_system:
+        raise HTTPException(status_code=403, detail="Solo SYSADMIN puede eliminar empresas")
 
     result = await db.execute(select(Company).where(Company.id_company == company_id))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    await db.execute(update(User).where(User.company_id == company_id).values(company_id=None))
+    await _cascade_delete_company(company_id, db)
     await db.execute(delete(CompanyTheme).where(CompanyTheme.company_id == company_id))
     await db.delete(company)
     await db.commit()
-    return {"message": "Empresa eliminada correctamente"}
+    return {"message": "Empresa y todos sus datos eliminados correctamente"}
 
 
 @router.get("/")

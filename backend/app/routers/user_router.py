@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, delete as sql_delete, update as sql_update
 from sqlalchemy.exc import IntegrityError
 from typing import Optional, Union
 
@@ -13,11 +13,59 @@ from app.models.system_module_model import SystemModule
 from app.models.company_plan_model import CompanyPlan
 from app.models.plan_model import Plan
 from app.models.task_model import Task
-from app.models.novelty_model import Novelty
-from app.models.support_ticket_model import SupportTicket
+from app.models.task_comment_model import TaskComment
+from app.models.task_evidence_model import TaskEvidence
+from app.models.task_material_model import TaskMaterial
+from app.models.task_expense_model import TaskExpense
+from app.models.task_purchase_model import TaskPurchase
+from app.models.task_progress_report_model import TaskProgressReport
+from app.models.novelty_model import Novelty, NoveltyEvidence, NoveltyReply
+from app.models.support_ticket_model import SupportTicket, TicketEvidence
+from app.models.user_session_model import UserSession
+from app.models.user_notification_model import UserNotification
+from app.models.invitation_model import InvitationToken
 from passlib.context import CryptContext
 from app.auth.dependencies import get_current_user
 from app.services.plan_limits_service import check_limit
+
+
+async def _cascade_delete_user(user_id: int, db: AsyncSession):
+    """Elimina en cascada todos los registros asociados a un usuario (solo SYSADMIN)."""
+    # Sesiones y tokens
+    await db.execute(sql_delete(UserSession).where(UserSession.user_id == user_id))
+    await db.execute(sql_delete(InvitationToken).where(InvitationToken.created_by == user_id))
+    await db.execute(sql_delete(UserNotification).where(
+        or_(UserNotification.sender_id == user_id, UserNotification.receiver_id == user_id)
+    ))
+
+    # Comentarios de tareas
+    await db.execute(sql_delete(TaskComment).where(TaskComment.user_id == user_id))
+
+    # Tareas (primero hijos, luego la tarea)
+    task_ids_r = await db.execute(
+        select(Task.id).where(or_(Task.created_by == user_id, Task.assigned_to == user_id))
+    )
+    task_ids = [r[0] for r in task_ids_r.all()]
+    if task_ids:
+        for child in (TaskEvidence, TaskMaterial, TaskExpense, TaskPurchase, TaskProgressReport):
+            await db.execute(sql_delete(child).where(child.task_id.in_(task_ids)))
+        await db.execute(sql_delete(Task).where(Task.id.in_(task_ids)))
+
+    # Novedades (evidence y replies tienen CASCADE en BD)
+    novelty_ids_r = await db.execute(select(Novelty.id).where(Novelty.user_id == user_id))
+    novelty_ids = [r[0] for r in novelty_ids_r.all()]
+    if novelty_ids:
+        await db.execute(sql_delete(NoveltyEvidence).where(NoveltyEvidence.novelty_id.in_(novelty_ids)))
+        await db.execute(sql_delete(NoveltyReply).where(NoveltyReply.novelty_id.in_(novelty_ids)))
+        await db.execute(sql_delete(Novelty).where(Novelty.id.in_(novelty_ids)))
+    await db.execute(sql_delete(NoveltyReply).where(NoveltyReply.user_id == user_id))
+
+    # Tickets de soporte (ticket_evidence tiene CASCADE en BD)
+    ticket_ids_r = await db.execute(select(SupportTicket.id).where(SupportTicket.user_id == user_id))
+    ticket_ids = [r[0] for r in ticket_ids_r.all()]
+    if ticket_ids:
+        await db.execute(sql_delete(TicketEvidence).where(TicketEvidence.ticket_id.in_(ticket_ids)))
+        await db.execute(sql_delete(SupportTicket).where(SupportTicket.id.in_(ticket_ids)))
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -141,13 +189,23 @@ async def get_user_modules(user_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{id}")
-async def delete_user(id: int, db: AsyncSession = Depends(get_db)):
+async def delete_user(id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    caller_role = await db.get(Role, current_user.role_id)
+    is_sysadmin = caller_role.is_system if caller_role else False
+
     user = await db.get(User, id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    bloqueos = []
+    if is_sysadmin:
+        # SYSADMIN: cascada completa para limpieza de datos de prueba
+        await _cascade_delete_user(id, db)
+        await db.delete(user)
+        await db.commit()
+        return {"message": "Usuario y todos sus datos eliminados"}
 
+    # No-SYSADMIN: bloquear si tiene registros asociados
+    bloqueos = []
     task_count = (await db.execute(
         select(func.count()).select_from(Task).where(
             or_(Task.created_by == id, Task.assigned_to == id)
