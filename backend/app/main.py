@@ -532,27 +532,27 @@ async def _init_db_data():
                 (1, "bi-shield-lock",    "Configura tus roles",
                  "Define qué puede ver y hacer cada tipo de usuario en la plataforma. "
                  "Por ejemplo: un Administrador tiene acceso total, mientras que un Líder de Tareas solo ve las tareas que le asignan.",
-                 "/roles"),
+                 "/configuration/roles"),
                 (2, "bi-people-fill",    "Crea tus usuarios",
                  "Agrega a las personas de tu equipo para que puedan ingresar al sistema. "
                  "Cada usuario tendrá su propio correo y contraseña, y solo verá lo que su rol le permite.",
-                 "/users"),
+                 "/configuration/users"),
                 (3, "bi-tags-fill",      "Define categorías de activos",
                  "Organiza tus propiedades o equipos por tipo: por ejemplo, Edificios, Vehículos o Maquinaria. "
                  "Esto te ayuda a filtrar y encontrar lo que necesitas más rápido.",
-                 "/asset-categories"),
+                 "/configuration/asset-categories"),
                 (4, "bi-building-fill",  "Registra tus activos",
                  "Un activo es cualquier bien que administras: un apartamento, una bodega, un vehículo o un equipo. "
                  "Aquí los registras con todos sus datos, fotos y documentos.",
-                 "/assets"),
+                 "/configuration/assets"),
                 (5, "bi-person-badge",   "Agrega tus trabajadores",
                  "Los trabajadores son el personal de campo que ejecuta las tareas. "
                  "No necesitan acceso al sistema; el Líder de Tareas reporta por ellos.",
-                 "/workers"),
+                 "/configuration/workers"),
                 (6, "bi-clipboard2-check-fill", "Crea y asigna tareas",
                  "Una tarea es cualquier trabajo que se hace sobre un activo: mantenimiento, reparación, inspección, etc. "
                  "Asígnala a un Líder de Tareas y haz seguimiento del avance en tiempo real.",
-                 "/tasks"),
+                 "/configuration/tasks"),
             ]
             for num, icon, title, desc, route in _admin_steps:
                 db.add(ProfileWelcomeStep(

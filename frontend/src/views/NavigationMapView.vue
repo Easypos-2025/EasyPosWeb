@@ -51,16 +51,17 @@
           <span class="section-count">{{ filteredLeaves.length }}</span>
         </div>
         <div class="cards-row">
-          <router-link
+          <div
             v-for="leaf in filteredLeaves"
             :key="leaf.id"
-            :to="leaf.route || '/dashboard'"
             class="mod-card mod-card--leaf"
+            :class="{ 'mod-card--no-route': !leaf.route }"
+            @click="goTo(leaf.route)"
           >
             <span class="mod-icon"><i :class="`bi ${leaf.icon || 'bi-circle'}`"></i></span>
             <span class="mod-name">{{ leaf.name }}</span>
-            <span class="mod-route">{{ leaf.route }}</span>
-          </router-link>
+            <span class="mod-route">{{ leaf.route || '—' }}</span>
+          </div>
         </div>
       </div>
 
@@ -89,16 +90,17 @@
 
         <!-- Tarjetas de hijos -->
         <div class="cards-row">
-          <router-link
+          <div
             v-for="child in section.visibleChildren"
             :key="child.id"
-            :to="child.route || '/dashboard'"
             class="mod-card"
+            :class="{ 'mod-card--no-route': !child.route }"
+            @click="goTo(child.route)"
           >
             <span class="mod-icon"><i :class="`bi ${child.icon || 'bi-circle'}`"></i></span>
             <span class="mod-name">{{ child.name }}</span>
-            <span class="mod-route">{{ child.route }}</span>
-          </router-link>
+            <span class="mod-route">{{ child.route || '—' }}</span>
+          </div>
         </div>
       </div>
 
@@ -109,11 +111,24 @@
 
 <script setup>
 import { ref, computed } from "vue"
+import { useRouter } from "vue-router"
 import { useMenuStore } from "@/stores/menuStore"
 import { useCompanyStore } from "@/stores/companyStore"
+import { showToast } from "@/utils/toast"
 
-const menuStore   = useMenuStore()
+const menuStore    = useMenuStore()
 const companyStore = useCompanyStore()
+const router       = useRouter()
+
+function goTo(route) {
+  if (!route) {
+    showToast("Este módulo no tiene una vista directa asignada", "warning")
+    return
+  }
+  router.push(route).catch(() => {
+    showToast("No se pudo navegar a ese módulo. Verifica los permisos.", "error")
+  })
+}
 
 const search = ref("")
 
@@ -341,6 +356,14 @@ const totalModules  = computed(() => {
   background: #4f46e5;
   border-color: #4f46e5;
   color: #fff;
+}
+.mod-card--no-route {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.mod-card--no-route:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .mod-icon {

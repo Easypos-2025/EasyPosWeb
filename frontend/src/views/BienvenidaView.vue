@@ -11,7 +11,7 @@
           <span class="hero-sub">Bienvenido a</span>
           <h1 class="hero-title">
             ¡Ya eres parte de la familia
-            <span class="brand-name">EasyPosWeb</span>!
+            <span class="brand-easy">Easy</span><span class="brand-pos">Pos</span><span class="brand-web">Web</span>!
           </h1>
           <p class="hero-desc">
             Esta guía rápida te mostrará los pasos para comenzar a configurar tu plataforma
@@ -145,7 +145,9 @@ onMounted(async () => {
   margin: 0 0 10px;
   line-height: 1.25;
 }
-.brand-name { color: #ffd700; }
+.brand-easy { color: #4caf50; font-weight: 800; }
+.brand-pos  { color: #ff9800; font-weight: 800; }
+.brand-web  { color: #64b5f6; font-weight: 800; }
 .hero-desc  { margin: 0; opacity: .88; font-size: .97rem; line-height: 1.55; }
 
 /* ── STEPS ── */
