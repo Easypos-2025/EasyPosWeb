@@ -221,11 +221,12 @@ const estadoIP     = ref('')
 const detectandoBT = ref(false)
 const errorBT      = ref('')
 // Test universal
-const testando    = ref(false)
-const testEstado  = ref('')   // '' | 'online' | 'offline' | 'classic'
-const testMensaje = ref('')
+const testando      = ref(false)
+const testEstado    = ref('')   // '' | 'online' | 'offline' | 'classic'
+const testMensaje   = ref('')
 const puedeImprimir = ref(false)
-const btGattDevice  = ref(null)
+const btFoundDevice = ref(null)   // device object guardado al hacer "Buscar"
+const btGattDevice  = ref(null)   // device object confirmado con GATT conectado
 const imprimiendo   = ref(false)
 
 // UUIDs conocidos de impresoras térmicas BLE
@@ -266,7 +267,7 @@ function resetDetectores() {
   escaneando.value=false; escaneoHecho.value=false; encontradas.value=[]
   scanProgress.value=0; scanTotal.value=0
   testEstado.value=''; testMensaje.value=''; puedeImprimir.value=false
-  btGattDevice.value=null
+  btFoundDevice.value=null; btGattDevice.value=null
 }
 
 // ── Guardar ───────────────────────────────────────────────────────────────────
