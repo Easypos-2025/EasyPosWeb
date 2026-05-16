@@ -29,7 +29,7 @@ async def get_my_menu(
     result = await db.execute(text("""
         SELECT
             bpm.id        AS bpm_id,
-            sm.name,
+            COALESCE(bpm.display_name, sm.name) AS name,
             sm.route,
             sm.icon,
             COALESCE(bpm.parent_id, parent_bpm.id) AS parent_id
@@ -62,7 +62,8 @@ async def get_menu_by_company(
 
     result = await db.execute(text("""
         SELECT
-            bpm.id AS bpm_id, sm.name, sm.route, sm.icon,
+            bpm.id AS bpm_id, COALESCE(bpm.display_name, sm.name) AS name,
+            sm.route, sm.icon,
             COALESCE(bpm.parent_id, parent_bpm.id) AS parent_id
         FROM system_modules sm
         JOIN business_profile_modules bpm ON bpm.module_id = sm.id
@@ -99,7 +100,8 @@ async def get_menu_by_profile(
     result = await db.execute(text("""
         SELECT
             bpm.id AS bpm_id, sm.id AS module_id,
-            sm.name, sm.route, sm.icon,
+            COALESCE(bpm.display_name, sm.name) AS name,
+            sm.route, sm.icon,
             COALESCE(bpm.parent_id, parent_bpm.id) AS parent_id
         FROM system_modules sm
         JOIN business_profile_modules bpm ON bpm.module_id = sm.id

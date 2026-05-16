@@ -13,6 +13,47 @@
       </select>
     </div>
 
+    <!-- AGREGAR MÓDULO EXISTENTE -->
+    <div v-if="selectedProfileId" class="card smm-card p-3 mt-3">
+      <h5 class="smm-title">
+        <i class="bi bi-plus-circle-fill" style="color:#3b82f6"></i>
+        Agregar módulo existente al perfil
+      </h5>
+
+      <div class="smm-add-form">
+        <div class="smm-add-field">
+          <label class="smm-label">Módulo</label>
+          <select v-model="addForm.module_id" class="form-select smm-select">
+            <option :value="null">— Selecciona un módulo —</option>
+            <option v-for="m in availableModules" :key="m.id" :value="m.id">
+              {{ m.name }} <span v-if="m.route" style="opacity:.6">({{ m.route }})</span>
+            </option>
+          </select>
+        </div>
+
+        <div class="smm-add-field">
+          <label class="smm-label">Nombre en este perfil <span class="smm-optional">(opcional — si difiere del nombre global)</span></label>
+          <input v-model="addForm.display_name" class="form-control smm-input" placeholder="Ej: Und. Medida Rest." />
+        </div>
+
+        <div class="smm-add-field">
+          <label class="smm-label">Colgar bajo</label>
+          <select v-model="addForm.parent_id" class="form-select smm-select">
+            <option :value="null">— Raíz (nivel superior) —</option>
+            <option v-for="m in flatModules" :key="m.id" :value="m.id">
+              {{ m.name }}
+            </option>
+          </select>
+        </div>
+
+        <button class="btn smm-btn-add" :disabled="!addForm.module_id || adding" @click="addModule">
+          <i v-if="adding" class="bi bi-arrow-repeat spin"></i>
+          <i v-else class="bi bi-plus-lg"></i>
+          {{ adding ? 'Agregando...' : 'Agregar' }}
+        </button>
+      </div>
+    </div>
+
     <!-- GESTIÓN DE MENÚ -->
     <div class="card smm-card p-3 mt-3">
       <h5 class="smm-title">
@@ -91,6 +132,52 @@ const modules = ref([])
 const businessProfiles = ref([])
 const selectedProfileId = ref("")
 
+// ── Agregar módulo existente ─────────────────────────────────────────────────
+const availableModules = ref([])   // system_modules aún no en el perfil
+const flatModules = ref([])        // módulos del perfil (para elegir padre)
+const adding = ref(false)
+const addForm = ref({ module_id: null, display_name: "", parent_id: null })
+
+function flatList(nodes, result = []) {
+  nodes.forEach(n => {
+    result.push({ id: n.id, name: n.name })
+    if (n.children?.length) flatList(n.children, result)
+  })
+  return result
+}
+
+async function loadAvailable() {
+  if (!selectedProfileId.value) { availableModules.value = []; return }
+  try {
+    const res = await api.get(`/business-profile-module/available-modules/${selectedProfileId.value}`)
+    availableModules.value = res.data
+  } catch { availableModules.value = [] }
+}
+
+async function addModule() {
+  if (!addForm.value.module_id) return
+  adding.value = true
+  try {
+    await api.post("/business-profile-module/add-module/", {
+      profile_id: selectedProfileId.value,
+      module_id: addForm.value.module_id,
+      parent_id: addForm.value.parent_id || null,
+      display_name: addForm.value.display_name || null
+    })
+    showToast("Módulo agregado al perfil", "success")
+    addForm.value = { module_id: null, display_name: "", parent_id: null }
+    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
+    modules.value = res.data
+    flatModules.value = flatList(modules.value)
+    await loadAvailable()
+    await menuStore.loadMenu()
+  } catch (error) {
+    showToast(error.response?.data?.detail || "Error al agregar módulo", "error")
+  } finally {
+    adding.value = false
+  }
+}
+
 function flattenTree(nodes, parentId = null) {
   let result = []
   nodes.forEach((node, index) => {
@@ -124,11 +211,13 @@ const loadProfiles = async () => {
 }
 
 watch(selectedProfileId, async () => {
-  if (!selectedProfileId.value) { modules.value = []; return }
+  addForm.value = { module_id: null, display_name: "", parent_id: null }
+  if (!selectedProfileId.value) { modules.value = []; availableModules.value = []; flatModules.value = []; return }
   try {
     const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
     modules.value = res.data
-    await menuStore.loadMenu()
+    flatModules.value = flatList(modules.value)
+    await Promise.all([loadAvailable(), menuStore.loadMenu()])
   } catch (error) {
     console.error("Error cargando menú por perfil:", error)
     modules.value = []
@@ -245,6 +334,67 @@ loadProfiles()
   padding-left: 28px;
   border-left: 2px solid #1e3a5f;
 }
+
+/* ── Formulario agregar módulo ── */
+.smm-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.smm-add-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smm-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+
+.smm-optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #475569;
+}
+
+.smm-select, .smm-input {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.smm-select:focus, .smm-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+  outline: none;
+}
+
+.smm-btn-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.smm-btn-add:hover:not(:disabled) { background: #2563eb; }
+.smm-btn-add:disabled { opacity: .5; cursor: not-allowed; }
 
 /* =========================================
    MÓVIL — más espacio para el dedo

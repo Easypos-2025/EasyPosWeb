@@ -159,19 +159,19 @@
       <form @submit.prevent="updateModule">
 
         <div class="mb-2">
-          <input v-model="form.name" class="form-control" placeholder="Nombre" />
+          <input v-model="editForm.name" class="form-control" placeholder="Nombre" />
         </div>
 
         <div class="mb-2">
-          <input v-model="form.route" class="form-control" placeholder="Ruta" />
+          <input v-model="editForm.route" class="form-control" placeholder="Ruta" />
         </div>
 
         <div class="mb-2">
-          <input v-model="form.icon" class="form-control" placeholder="Icono" />
+          <input v-model="editForm.icon" class="form-control" placeholder="Icono" />
         </div>
 
         <div class="mb-2">
-          <select v-model="form.parent_id" class="form-control">
+          <select v-model="editForm.parent_id" class="form-control">
             <option :value="null">Sin padre</option>
             <option v-for="m in modules" :key="m.id" :value="m.id">
               {{ m.name }}
@@ -219,6 +219,8 @@ const treeModules = ref([])
 const showEditModal = ref(false)
 const editingId = ref(null)
 const filterStatus = ref("active")
+
+const editForm = ref({ name: "", route: "", icon: "", parent_id: null })
 
 // ── Reparar perfil ──────────────────────────────────────────────────────────
 const profiles        = ref([])
@@ -370,7 +372,7 @@ const createModule = async () => {
 
   } catch (error) {
     console.error(error)
-    showToast("Error al crear módulo", "error")
+    showToast(error.response?.data?.detail || "Error al crear módulo", "error")
   }
 }
 
@@ -446,43 +448,34 @@ const buildTree = (list) => {
 }
 
 const handleEdit = (item) => {
-
-  form.value = {
+  editForm.value = {
     name: item.name,
     route: item.route,
     icon: item.icon,
     parent_id: item.parent_id
   }
-
   editingId.value = item.id
   showEditModal.value = true
 }
 
 const updateModule = async () => {
   try {
-
-    const payload = { ...form.value }
-
-    payload.parent_id = payload.parent_id 
-      ? Number(payload.parent_id) 
-      : null
-
+    const payload = { ...editForm.value }
+    payload.parent_id = payload.parent_id ? Number(payload.parent_id) : null
     await api.put(`/system-modules/${editingId.value}`, payload)
-
     showToast("Módulo actualizado", "success")
-
     closeModal()
     await loadModules()
-
   } catch (error) {
     console.error(error)
-    showToast("Error al actualizar módulo", "error")
+    showToast(error.response?.data?.detail || "Error al actualizar módulo", "error")
   }
 }
 
 const closeModal = () => {
   showEditModal.value = false
   editingId.value = null
+  editForm.value = { name: "", route: "", icon: "", parent_id: null }
 }
 
 const handleDelete = (item) => {
