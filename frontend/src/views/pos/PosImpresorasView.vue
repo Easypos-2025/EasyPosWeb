@@ -373,6 +373,8 @@ async function detectarBluetooth() {
     })
     modal.value.bluetooth_address = device.id
     modal.value.name = device.name || modal.value.name || 'Impresora Bluetooth'
+    // Guardar referencia del objeto device para usarla en el test sin pasar por getDevices()
+    btFoundDevice.value = device
   } catch(e) { if (e.name!=='NotFoundError') errorBT.value=e.message||'No se pudo conectar' }
   finally { detectandoBT.value=false }
 }
@@ -397,13 +399,35 @@ async function testConexion() {
 
     } else if (tipo==='bluetooth') {
       if (!navigator.bluetooth) { testEstado.value='offline'; testMensaje.value='Web Bluetooth no soportado'; return }
-      const devices=await navigator.bluetooth.getDevices?.()??[]
-      const device=devices.find(d=>d.id===modal.value.bluetooth_address)
+
+      // 1. Usar referencia directa del dispositivo (mismo modal, mismo click de Buscar)
+      let device = btFoundDevice.value
+
+      // 2. Si no hay referencia directa, buscar en getDevices() (dispositivos autorizados previos)
       if (!device) {
-        testEstado.value='offline'
-        testMensaje.value='Dispositivo no autorizado — usa el botón "Buscar" para re-vincularlo'
-        return
+        const known = await navigator.bluetooth.getDevices?.() ?? []
+        device = known.find(d => d.id === modal.value.bluetooth_address) ?? null
       }
+
+      // 3. Si tampoco está disponible → pedir re-vinculación mediante requestDevice
+      if (!device) {
+        testMensaje.value = 'Re-vinculando dispositivo…'
+        try {
+          device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: BLE_SERVICES.map(s => s.svc),
+          })
+          // Actualizar referencia y address por si cambió el ID de sesión
+          btFoundDevice.value = device
+          modal.value.bluetooth_address = device.id
+          if (device.name) modal.value.name = device.name
+        } catch {
+          testEstado.value = 'offline'
+          testMensaje.value = 'No se pudo obtener el dispositivo — asegúrate de seleccionarlo en el diálogo'
+          return
+        }
+      }
+
       // Intentar conexión GATT real
       let server
       try {
