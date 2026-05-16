@@ -1,6 +1,10 @@
-from datetime import date, datetime
+import io
+import uuid
+from datetime import date
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Header, HTTPException
+
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
+from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -9,8 +13,11 @@ from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
+from app.utils.storage import upload_file, delete_file
 
 router = APIRouter(prefix="/api/pos-catalogo/platos", tags=["POS Items"])
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
 async def _get_user(authorization: str, db: AsyncSession) -> User:
@@ -32,20 +39,38 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
+def _process_image(content: bytes) -> bytes:
+    """Redimensiona y recorta la imagen a 800x800 WebP centrado."""
+    img = Image.open(io.BytesIO(content)).convert("RGB")
+    w, h = img.size
+    # Escalar para que el lado corto sea 800px
+    scale = 800 / min(w, h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    # Recorte central 800x800
+    left = (new_w - 800) // 2
+    top  = (new_h - 800) // 2
+    img  = img.crop((left, top, left + 800, top + 800))
+    out  = io.BytesIO()
+    img.save(out, format="WEBP", quality=85)
+    return out.getvalue()
+
+
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
 class ItemIn(BaseModel):
     name: str
     price: Optional[int] = 0
+    compare_price: Optional[int] = None
     category_id: Optional[int] = None
     description: Optional[str] = None
     tax: Optional[float] = 0
     active: Optional[int] = 1
 
 class IngredientIn(BaseModel):
-    supply_item_id: int       # → pos_dish_products.supplier_id
-    quantity: float = 1       # → pos_dish_products.minimum_units
-    unit_id: Optional[int] = None   # → pos_dish_products.measure_id
+    supply_item_id: int
+    quantity: float = 1
+    unit_id: Optional[int] = None
     description: Optional[str] = None
 
 class PrintersIn(BaseModel):
@@ -66,22 +91,37 @@ class ModifierOptionIn(BaseModel):
     quantity: Optional[float] = 1
     sort_order: Optional[int] = 0
 
+class VariantIn(BaseModel):
+    name: str
+    price: int = 0
+    compare_price: Optional[int] = None
+    order_index: Optional[int] = 0
 
-# ─── CRUD Artículos (pos_dishes) ──────────────────────────────────────────────
+class OrderIn(BaseModel):
+    ids: List[int]
+
+
+# ─── CRUD Artículos ────────────────────────────────────────────────────────────
 
 @router.get("")
 async def listar(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     rows = (await db.execute(text("""
         SELECT
-            d.id, d.name, d.price, d.category_id, d.active,
+            d.id, d.name, d.price, d.compare_price, d.category_id, d.active,
             d.description, d.tax, d.photo_path, d.product_code,
+            COALESCE(d.order_index, 0) AS order_index,
             c.name  AS category_name,
             c.color AS category_color,
+            COALESCE(c.order_index, 0) AS category_order,
             (SELECT COUNT(*) FROM pos_dish_products dp
-             WHERE dp.dish_id=d.id AND dp.company_id=d.company_id AND dp.active=1)  AS ingredient_count,
+             WHERE dp.dish_id=d.id AND dp.company_id=d.company_id AND dp.active=1)   AS ingredient_count,
             (SELECT COUNT(*) FROM pos_item_printers ip
-             WHERE ip.item_id=d.id AND ip.company_id=d.company_id)                  AS printer_count,
+             WHERE ip.item_id=d.id AND ip.company_id=d.company_id)                   AS printer_count,
+            (SELECT COUNT(*) FROM pos_item_modifiers m
+             WHERE m.item_id=d.id AND m.company_id=d.company_id AND m.is_active=1)   AS modifier_count,
+            (SELECT COUNT(*) FROM pos_dish_variants v
+             WHERE v.dish_id=d.id AND v.company_id=d.company_id AND v.is_active=1)   AS variant_count,
             cpl.precio_producto AS list_price
         FROM pos_dishes d
         LEFT JOIN pos_item_categories c
@@ -90,7 +130,7 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
                ON cpl.id_producto=d.id AND cpl.company_id=d.company_id
               AND cpl.id_lista=0 AND cpl.id_cliente=0
         WHERE d.company_id=:cid
-        ORDER BY c.name, d.name
+        ORDER BY COALESCE(c.order_index,0), c.name, COALESCE(d.order_index,0), d.name
     """), {"cid": user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 
@@ -98,10 +138,9 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
 @router.post("", status_code=201)
 async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid  = user.company_id
     today = date.today().isoformat()
 
-    # Siguiente ID disponible para la empresa (pos_dishes no tiene auto-increment)
     max_id = (await db.execute(text(
         "SELECT COALESCE(MAX(id), 0) FROM pos_dishes WHERE company_id=:cid"
     ), {"cid": cid})).scalar() or 0
@@ -109,19 +148,18 @@ async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSessio
 
     await db.execute(text("""
         INSERT INTO pos_dishes
-            (id, name, price, category_id, description, tax, active,
-             product_code, synced, company_id, updated_at)
+            (id, name, price, compare_price, category_id, description,
+             tax, active, product_code, synced, company_id, updated_at)
         VALUES
-            (:id, :name, :price, :cat, :desc, :tax, :active,
-             :code, 0, :cid, NOW())
+            (:id, :name, :price, :cp, :cat, :desc,
+             :tax, :active, :code, 0, :cid, NOW())
     """), {
-        "id": new_id, "name": data.name, "price": data.price,
+        "id": new_id, "name": data.name, "price": data.price, "cp": data.compare_price,
         "cat": data.category_id, "desc": data.description,
         "tax": data.tax, "active": data.active,
         "code": f"WEB-{new_id}", "cid": cid,
     })
 
-    # Auto-insertar en lista de precios general
     await db.execute(text("""
         INSERT INTO pos_customer_price_list
             (id_lista, id_cliente, id_producto, id_presentacion,
@@ -135,24 +173,35 @@ async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSessio
     return {"ok": True, "id": new_id}
 
 
+# PUT /orden debe ir ANTES de PUT /{item_id} para no ser capturado como parámetro
+@router.put("/orden")
+async def actualizar_orden(data: OrderIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    for idx, item_id in enumerate(data.ids):
+        await db.execute(text(
+            "UPDATE pos_dishes SET order_index=:ord WHERE id=:id AND company_id=:cid"
+        ), {"ord": idx, "id": item_id, "cid": user.company_id})
+    await db.commit()
+    return {"ok": True}
+
+
 @router.put("/{item_id}")
 async def actualizar(
     item_id: int, data: ItemIn,
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid  = user.company_id
 
     await db.execute(text("""
         UPDATE pos_dishes
-        SET name=:name, price=:price, category_id=:cat,
+        SET name=:name, price=:price, compare_price=:cp, category_id=:cat,
             description=:desc, tax=:tax, active=:active, updated_at=NOW()
         WHERE id=:id AND company_id=:cid
     """), {"id": item_id, "cid": cid, "name": data.name, "price": data.price,
-           "cat": data.category_id, "desc": data.description,
-           "tax": data.tax, "active": data.active})
+           "cp": data.compare_price, "cat": data.category_id,
+           "desc": data.description, "tax": data.tax, "active": data.active})
 
-    # Sync precio en lista general
     await db.execute(text("""
         UPDATE pos_customer_price_list
         SET precio_producto=:precio, fecha=:fecha, updated_at=NOW()
@@ -177,8 +226,120 @@ async def eliminar(item_id: int, authorization: str = Header(None), db: AsyncSes
     return {"ok": True}
 
 
-# ─── Ingredientes / Receta (pos_dish_products) ────────────────────────────────
-# pos_dish_products: dish_id, supplier_id(=insumo), measure_id, minimum_units, description
+# ─── Foto (photo_path) ────────────────────────────────────────────────────────
+
+@router.post("/{item_id}/foto")
+async def upload_foto(
+    item_id: int,
+    file: UploadFile = File(...),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = user.company_id
+
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Imagen demasiado grande (máx 10 MB)")
+
+    webp_bytes = _process_image(content)
+
+    # Eliminar foto anterior si existe
+    old_path = (await db.execute(text(
+        "SELECT photo_path FROM pos_dishes WHERE id=:id AND company_id=:cid"
+    ), {"id": item_id, "cid": cid})).scalar_one_or_none()
+    if old_path:
+        await delete_file(old_path)
+
+    filename = f"dishes/{cid}/{item_id}_{uuid.uuid4().hex[:8]}.webp"
+    url = await upload_file(webp_bytes, filename)
+
+    await db.execute(text(
+        "UPDATE pos_dishes SET photo_path=:url, updated_at=NOW() WHERE id=:id AND company_id=:cid"
+    ), {"url": url, "id": item_id, "cid": cid})
+    await db.commit()
+    return {"ok": True, "url": url}
+
+
+@router.delete("/{item_id}/foto")
+async def delete_foto(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    cid  = user.company_id
+    old_path = (await db.execute(text(
+        "SELECT photo_path FROM pos_dishes WHERE id=:id AND company_id=:cid"
+    ), {"id": item_id, "cid": cid})).scalar_one_or_none()
+    if old_path:
+        await delete_file(old_path)
+    await db.execute(text(
+        "UPDATE pos_dishes SET photo_path=NULL, updated_at=NOW() WHERE id=:id AND company_id=:cid"
+    ), {"id": item_id, "cid": cid})
+    await db.commit()
+    return {"ok": True}
+
+
+# ─── Variantes de precio ───────────────────────────────────────────────────────
+
+@router.get("/{item_id}/variantes")
+async def get_variantes(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    rows = (await db.execute(text("""
+        SELECT id, name, price, compare_price, order_index
+        FROM pos_dish_variants
+        WHERE dish_id=:did AND company_id=:cid AND is_active=1
+        ORDER BY order_index, id
+    """), {"did": item_id, "cid": user.company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.post("/{item_id}/variantes", status_code=201)
+async def crear_variante(
+    item_id: int, data: VariantIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    await db.execute(text("""
+        INSERT INTO pos_dish_variants (company_id, dish_id, name, price, compare_price, order_index)
+        VALUES (:cid, :did, :name, :price, :cp, :ord)
+    """), {"cid": user.company_id, "did": item_id, "name": data.name,
+           "price": data.price, "cp": data.compare_price, "ord": data.order_index})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/{item_id}/variantes/{var_id}")
+async def actualizar_variante(
+    item_id: int, var_id: int, data: VariantIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    await db.execute(text("""
+        UPDATE pos_dish_variants
+        SET name=:name, price=:price, compare_price=:cp, order_index=:ord
+        WHERE id=:id AND dish_id=:did AND company_id=:cid
+    """), {"id": var_id, "did": item_id, "cid": user.company_id,
+           "name": data.name, "price": data.price,
+           "cp": data.compare_price, "ord": data.order_index})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{item_id}/variantes/{var_id}")
+async def eliminar_variante(
+    item_id: int, var_id: int,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    await db.execute(text(
+        "UPDATE pos_dish_variants SET is_active=0 WHERE id=:id AND dish_id=:did AND company_id=:cid"
+    ), {"id": var_id, "did": item_id, "cid": user.company_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ─── Ingredientes / Receta ────────────────────────────────────────────────────
 
 @router.get("/{item_id}/ingredientes")
 async def get_ingredientes(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
@@ -241,7 +402,7 @@ async def del_ingrediente(
     return {"ok": True}
 
 
-# ─── Impresoras del artículo (pos_item_printers) ──────────────────────────────
+# ─── Impresoras ───────────────────────────────────────────────────────────────
 
 @router.get("/{item_id}/impresoras")
 async def get_impresoras(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
@@ -264,7 +425,7 @@ async def set_impresoras(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid  = user.company_id
     await db.execute(text(
         "DELETE FROM pos_item_printers WHERE item_id=:iid AND company_id=:cid"
     ), {"iid": item_id, "cid": cid})
@@ -276,7 +437,7 @@ async def set_impresoras(
     return {"ok": True}
 
 
-# ─── Modificadores (pos_item_modifiers + pos_item_modifier_options) ───────────
+# ─── Modificadores ────────────────────────────────────────────────────────────
 
 @router.get("/{item_id}/modificadores")
 async def get_modificadores(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
