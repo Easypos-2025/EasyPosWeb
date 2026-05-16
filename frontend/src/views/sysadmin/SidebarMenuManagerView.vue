@@ -22,11 +22,15 @@
 
       <div class="smm-add-form">
         <div class="smm-add-field">
-          <label class="smm-label">Módulo</label>
-          <select v-model="addForm.module_id" class="form-select smm-select">
+          <label class="smm-label">
+            Módulo
+            <span v-if="availableModules.length" class="smm-count">({{ availableModules.length }} disponibles)</span>
+            <span v-else-if="selectedProfileId" class="smm-count smm-count--empty">sin módulos nuevos para agregar</span>
+          </label>
+          <select v-model="addForm.module_id" class="form-select smm-select" :disabled="!availableModules.length">
             <option :value="null">— Selecciona un módulo —</option>
             <option v-for="m in availableModules" :key="m.id" :value="m.id">
-              {{ m.name }} <span v-if="m.route" style="opacity:.6">({{ m.route }})</span>
+              {{ m.name }}{{ m.route ? ` (${m.route})` : '' }}
             </option>
           </select>
         </div>
@@ -362,6 +366,18 @@ loadProfiles()
   text-transform: none;
   letter-spacing: 0;
   color: #475569;
+}
+
+.smm-count {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #3b82f6;
+  font-size: 11px;
+}
+
+.smm-count--empty {
+  color: #64748b;
 }
 
 .smm-select, .smm-input {

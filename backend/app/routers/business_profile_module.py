@@ -52,7 +52,7 @@ async def get_available_modules(
     assigned_ids = {r[0] for r in assigned.fetchall()}
 
     all_mods = await db.execute(
-        select(SystemModule).where(SystemModule.is_active == True).order_by(SystemModule.id)
+        select(SystemModule).where(SystemModule.is_active == 1).order_by(SystemModule.id)
     )
     return [
         {"id": m.id, "name": m.name, "route": m.route}
