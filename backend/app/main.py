@@ -77,6 +77,11 @@ from app.routers.price_lists_router import router as price_lists_router
 from app.routers.purchase_orders_router import router as purchase_orders_router
 from app.routers.pos_sync_router import router as pos_sync_router
 from app.routers.pos_dashboard_router import router as pos_dashboard_router
+from app.routers.pos_categorias_router import router as pos_categorias_router
+from app.routers.pos_printers_router import router as pos_printers_router
+from app.routers.pos_cajas_router import router as pos_cajas_router
+from app.routers.pos_lista_precios_router import router as pos_lista_precios_router
+from app.routers.pos_platos_router import router as pos_platos_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
 from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
@@ -1100,6 +1105,141 @@ async def _init_db_data():
         await _get_or_create_module("Recibos",  "/facturacion/reportes/recibos",        "bi-receipt-cutoff",       fact_reportes.id)
         await db.commit()
 
+        # ── POS CATÁLOGO: tablas del módulo restaurante ────────────────────────
+        _pos_cat_tables = [
+            """CREATE TABLE IF NOT EXISTS pos_item_categories (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                company_id  INT          NOT NULL,
+                name        VARCHAR(100) NOT NULL,
+                description VARCHAR(250) NULL,
+                color       VARCHAR(10)  NOT NULL DEFAULT '#1d4ed8',
+                icon        VARCHAR(50)  NOT NULL DEFAULT 'bi-tag',
+                is_active   TINYINT      NOT NULL DEFAULT 1,
+                created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_ic_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_printers (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                company_id  INT          NOT NULL,
+                name        VARCHAR(100) NOT NULL,
+                ip          VARCHAR(50)  NULL,
+                port        INT          NOT NULL DEFAULT 9100,
+                type        VARCHAR(50)  NULL,
+                is_active   TINYINT      NOT NULL DEFAULT 1,
+                created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_printer_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_cash_registers (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                company_id  INT          NOT NULL,
+                name        VARCHAR(100) NOT NULL,
+                type        ENUM('main','auxiliary') NOT NULL DEFAULT 'auxiliary',
+                is_active   TINYINT      NOT NULL DEFAULT 1,
+                created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_cr_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_customer_price_list (
+                id               BIGINT        AUTO_INCREMENT PRIMARY KEY,
+                id_lista         INT           NOT NULL DEFAULT 0,
+                id_cliente       INT           NOT NULL DEFAULT 0,
+                id_producto      INT           NOT NULL,
+                id_presentacion  INT           NULL DEFAULT NULL,
+                precio_producto  DECIMAL(14,2) NOT NULL DEFAULT 0,
+                fecha            DATE          NULL,
+                activa           TINYINT       NOT NULL DEFAULT 1,
+                company_id       INT           NOT NULL,
+                created_at       DATETIME      DEFAULT CURRENT_TIMESTAMP,
+                updated_at       DATETIME      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cpl_key (company_id, id_lista, id_cliente, id_producto, id_presentacion),
+                INDEX idx_cpl_company  (company_id),
+                INDEX idx_cpl_producto (company_id, id_producto),
+                INDEX idx_cpl_lista    (company_id, id_lista)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_item_printers (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                company_id  INT NOT NULL,
+                item_id     INT NOT NULL,
+                printer_id  INT NOT NULL,
+                UNIQUE KEY uq_item_printer (company_id, item_id, printer_id),
+                INDEX idx_ip_company (company_id, item_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_item_modifiers (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                company_id    INT          NOT NULL,
+                item_id       INT          NOT NULL,
+                name          VARCHAR(100) NOT NULL,
+                is_required   TINYINT      NOT NULL DEFAULT 0,
+                is_multiple   TINYINT      NOT NULL DEFAULT 0,
+                min_selection INT          NOT NULL DEFAULT 0,
+                max_selection INT          NOT NULL DEFAULT 1,
+                sort_order    INT          NOT NULL DEFAULT 0,
+                is_active     TINYINT      NOT NULL DEFAULT 1,
+                INDEX idx_im_item (company_id, item_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_item_modifier_options (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                company_id       INT           NOT NULL,
+                modifier_id      INT           NOT NULL,
+                name             VARCHAR(100)  NOT NULL,
+                extra_price      DECIMAL(14,2) NOT NULL DEFAULT 0,
+                supply_item_id   INT           NULL,
+                quantity         DECIMAL(14,4) NOT NULL DEFAULT 1,
+                is_active        TINYINT       NOT NULL DEFAULT 1,
+                sort_order       INT           NOT NULL DEFAULT 0,
+                INDEX idx_imo_modifier (company_id, modifier_id)
+            )""",
+        ]
+        for _sql in _pos_cat_tables:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── POS CATÁLOGO: módulos en system_modules (grupo padre + hijos) ─────
+        pos_parent = await _get_or_create_module(
+            "Catálogo Restaurante", "/pos", "bi-grid-3x3"
+        )
+        _pos_modules = [
+            ("Platos",            "/pos/platos",          "bi-egg-fried",       0),
+            ("Categorías",        "/pos/categorias",      "bi-tags",            1),
+            ("Impresoras",        "/pos/impresoras",      "bi-printer",         2),
+            ("Listas de Precios", "/pos/listas-precios",  "bi-currency-dollar", 3),
+            ("Cajas",             "/pos/cajas",           "bi-cash-stack",      4),
+        ]
+        for _name, _route, _icon, _order in _pos_modules:
+            r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
+            if not r.scalar_one_or_none():
+                _m = SystemModule(
+                    name=_name, route=_route, icon=_icon,
+                    parent_id=pos_parent.id, is_active=True,
+                    order_index=_order, is_sysadmin=False
+                )
+                db.add(_m)
+        await db.commit()
+
+        # Asignar módulos POS catálogo al perfil Restaurante (business_profile_id=1)
+        try:
+            _pos_routes = ["/pos", "/pos/platos", "/pos/categorias",
+                           "/pos/impresoras", "/pos/listas-precios", "/pos/cajas"]
+            for _route in _pos_routes:
+                r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
+                _mod = r.scalar_one_or_none()
+                if _mod:
+                    _exists = await db.execute(text(
+                        "SELECT 1 FROM business_profile_modules "
+                        "WHERE business_profile_id=1 AND module_id=:mid LIMIT 1"
+                    ), {"mid": _mod.id})
+                    if not _exists.fetchone():
+                        await db.execute(text(
+                            "INSERT INTO business_profile_modules "
+                            "(business_profile_id, module_id, parent_id, sort_order) "
+                            "VALUES (1, :mid, :pid, 0)"
+                        ), {"mid": _mod.id, "pid": _mod.parent_id})
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
 
 # ===============================
 # RATE LIMITER (in-memory, single server)
@@ -1250,6 +1390,11 @@ routers = [
     asset_inquiries_router,
     pos_sync_router,
     pos_dashboard_router,
+    pos_categorias_router,
+    pos_printers_router,
+    pos_cajas_router,
+    pos_lista_precios_router,
+    pos_platos_router,
     plan_associate_limits_router,
     advertisement_router,
     welcome_steps_router,

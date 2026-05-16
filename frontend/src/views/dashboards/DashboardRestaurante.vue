@@ -6,7 +6,7 @@
 
     <!-- CABECERA: título + fechero -->
     <div class="dash-header">
-      <h6 class="dash-title">Operación del Restaurante</h6>
+      <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Panel de Operaciones' }}</h6>
       <div class="fechero-wrap">
         <i class="bi bi-calendar3"></i>
         <input type="date" class="fechero-input" v-model="fecha" @change="onFechaChange" />
@@ -226,6 +226,9 @@
 import { ref, computed, onMounted } from 'vue'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
+import { useCompanyStore } from '@/stores/companyStore.js'
+
+const companyStore = useCompanyStore()
 
 // ── Estado ────────────────────────────────────────────────────────────────────
 const fecha      = ref(new Date().toISOString().slice(0, 10))

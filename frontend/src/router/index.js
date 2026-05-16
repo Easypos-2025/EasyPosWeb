@@ -604,6 +604,42 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Entradas de Mercancía" }
       },
+      // ── POS Catálogo Restaurante ──────────────────────────────────────────
+      {
+        path: "/pos/platos",
+        name: "PosPlatosView",
+        component: () => import("@/views/pos/PosPlatosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Platos" }
+      },
+      {
+        path: "/pos/categorias",
+        name: "PosCategoriasView",
+        component: () => import("@/views/pos/PosCategoriasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Categorías de Platos" }
+      },
+      {
+        path: "/pos/impresoras",
+        name: "PosImpresorasView",
+        component: () => import("@/views/pos/PosImpresorasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Impresoras" }
+      },
+      {
+        path: "/pos/listas-precios",
+        name: "PosListaPreciosView",
+        component: () => import("@/views/pos/PosListaPreciosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Listas de Precios" }
+      },
+      {
+        path: "/pos/cajas",
+        name: "PosCajasView",
+        component: () => import("@/views/pos/PosCajasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Cajas" }
+      },
 ]
   }
 

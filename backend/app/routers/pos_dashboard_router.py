@@ -32,6 +32,8 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if not user.company_id:
+        raise HTTPException(status_code=403, detail="Usuario sin empresa asignada")
     return user
 
 
