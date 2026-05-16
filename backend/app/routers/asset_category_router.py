@@ -11,26 +11,34 @@ from app.auth.dependencies import get_current_user
 router = APIRouter(prefix="/asset-categories", tags=["Asset Categories"])
 
 
+@router.get("/")
+async def get_categories(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(AssetCategory)
+        .where(AssetCategory.company_id == (current_user.company_id or 0))
+        .order_by(AssetCategory.name)
+    )
+    return result.scalars().all()
+
+
 @router.post("/")
 async def create_category(
     data: AssetCategoryCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    category = AssetCategory(name=data.name, description=data.description or "")
+    category = AssetCategory(
+        company_id=current_user.company_id or 0,
+        name=data.name,
+        description=data.description or ""
+    )
     db.add(category)
     await db.commit()
     await db.refresh(category)
     return category
-
-
-@router.get("/")
-async def get_categories(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    result = await db.execute(select(AssetCategory).order_by(AssetCategory.name))
-    return result.scalars().all()
 
 
 @router.get("/{category_id:int}")
@@ -39,7 +47,12 @@ async def get_category(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    result = await db.execute(
+        select(AssetCategory).where(
+            AssetCategory.id == category_id,
+            AssetCategory.company_id == (current_user.company_id or 0)
+        )
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
@@ -53,7 +66,12 @@ async def update_category(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    result = await db.execute(
+        select(AssetCategory).where(
+            AssetCategory.id == category_id,
+            AssetCategory.company_id == (current_user.company_id or 0)
+        )
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
@@ -70,7 +88,12 @@ async def delete_category(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(AssetCategory).where(AssetCategory.id == category_id))
+    result = await db.execute(
+        select(AssetCategory).where(
+            AssetCategory.id == category_id,
+            AssetCategory.company_id == (current_user.company_id or 0)
+        )
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")

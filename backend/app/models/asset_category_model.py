@@ -23,16 +23,7 @@ class AssetCategory(Base):
 
     __tablename__ = "asset_categories"
 
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True
-    )
-
-    name: Mapped[str] = mapped_column(
-        String(100),
-        unique=True
-    )
-
-    description: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
