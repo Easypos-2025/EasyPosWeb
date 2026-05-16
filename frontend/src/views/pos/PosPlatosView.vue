@@ -277,12 +277,12 @@ async function cargarCategorias() {
 }
 async function cargarInsumos() {
   try {
-    const{data}=await api.get('/api/supply-items?limit=500')
+    const{data}=await api.get('/supply-items/')
     insumos.value = Array.isArray(data) ? data : (data?.items || [])
   } catch { insumos.value=[] }
 }
 async function cargarUnidades() {
-  try { const{data}=await api.get('/api/measurement-units'); unidades.value=data } catch { unidades.value=[] }
+  try { const{data}=await api.get('/unidades-medida/'); unidades.value=data } catch { unidades.value=[] }
 }
 
 // ── CRUD Artículo ─────────────────────────────────────────────────────────────

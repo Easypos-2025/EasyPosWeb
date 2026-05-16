@@ -3,41 +3,51 @@
     <div class="crud-header">
       <div>
         <h5 class="crud-titulo">Lista de Precios General</h5>
-        <p class="crud-sub">Precio de cada plato en la lista general (id_lista=0). Se crea automáticamente al agregar un plato.</p>
+        <p class="crud-sub">
+          Precio de cada {{ moduleName || 'artículo' }} en la lista general.
+          Se agrega automáticamente al crear un {{ moduleName || 'artículo' }}.
+        </p>
       </div>
       <div class="header-tools">
-        <input v-model="busqueda" class="inp-buscar" placeholder="Buscar plato…" />
+        <input v-model="busqueda" class="inp-buscar" :placeholder="`Buscar ${moduleName || 'artículo'}…`" />
       </div>
     </div>
 
     <div v-if="loading" class="estado-carga"><div class="spinner-border spinner-border-sm text-primary"></div></div>
     <div v-else-if="!filtrados.length" class="estado-vacio">
       <i class="bi bi-currency-dollar"></i>
-      <p>No hay platos en la lista de precios. Crea platos primero.</p>
+      <p>No hay {{ moduleName || 'artículos' }} en la lista de precios. Crea uno primero.</p>
     </div>
     <table v-else class="tabla">
       <thead>
         <tr>
-          <th>Plato</th><th>Categoría</th><th>Presentación</th>
-          <th class="th-precio">Precio</th><th>Estado</th><th></th>
+          <th>{{ moduleName || 'Artículo' }}</th>
+          <th>Categoría</th>
+          <th>Presentación</th>
+          <th class="th-precio">Precio</th>
+          <th>Estado</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="item in filtrados" :key="item.id" :class="{ 'tr-inactiva': !item.activa }">
-          <td class="td-plato">
-            <i class="bi bi-egg-fried me-2 text-primary"></i>{{ item.plato_nombre || `Plato #${item.id_producto}` }}
+          <td class="td-item">
+            <i class="bi bi-box-seam me-2 text-primary"></i>
+            {{ item.item_name || `#${item.id_producto}` }}
           </td>
           <td>
-            <span v-if="item.categoria_nombre" class="badge-cat">{{ item.categoria_nombre }}</span>
+            <span v-if="item.category_name" class="badge-cat">{{ item.category_name }}</span>
             <span v-else class="text-muted">—</span>
           </td>
-          <td class="text-muted">{{ item.presentacion_nombre || '—' }}</td>
+          <td class="text-muted">{{ item.presentation_name || '—' }}</td>
           <td class="td-precio">
             <span v-if="editando !== item.id">{{ fmt(item.precio_producto) }}</span>
-            <input v-else v-model.number="precioEdit" class="inp-precio" type="number" @keyup.enter="guardarPrecio(item)" @blur="guardarPrecio(item)" />
+            <input v-else v-model.number="precioEdit" class="inp-precio" type="number"
+              @keyup.enter="guardarPrecio(item)" @blur="guardarPrecio(item)" />
           </td>
           <td>
-            <button class="badge-estado" :class="item.activa ? 'badge-activa' : 'badge-inactiva'" @click="toggleActiva(item)">
+            <button class="badge-estado" :class="item.activa ? 'badge-activa' : 'badge-inactiva'"
+              @click="toggleActiva(item)">
               {{ item.activa ? 'Activa' : 'Inactiva' }}
             </button>
           </td>
@@ -56,13 +66,18 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
+import { useModuleName } from '@/composables/useModuleName.js'
 
 const BASE = '/api/pos-catalogo/lista-precios'
-const items    = ref([])
-const loading  = ref(true)
-const busqueda = ref('')
-const editando = ref(null)
-const precioEdit = ref(0)
+
+// Nombre dinámico del módulo de artículos (lo que el admin haya configurado en system_modules)
+const { moduleName } = useModuleName('/pos/platos')
+
+const items     = ref([])
+const loading   = ref(true)
+const busqueda  = ref('')
+const editando  = ref(null)
+const precioEdit= ref(0)
 
 const fmtCOP = new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', minimumFractionDigits:0, maximumFractionDigits:0 })
 const fmt = v => fmtCOP.format(v || 0)
@@ -70,7 +85,10 @@ const fmt = v => fmtCOP.format(v || 0)
 const filtrados = computed(() => {
   if (!busqueda.value) return items.value
   const q = busqueda.value.toLowerCase()
-  return items.value.filter(i => (i.plato_nombre || '').toLowerCase().includes(q) || (i.categoria_nombre || '').toLowerCase().includes(q))
+  return items.value.filter(i =>
+    (i.item_name     || '').toLowerCase().includes(q) ||
+    (i.category_name || '').toLowerCase().includes(q)
+  )
 })
 
 onMounted(cargar)
@@ -90,16 +108,21 @@ async function guardarPrecio(item) {
   editando.value = null
   if (precioEdit.value === item.precio_producto) return
   try {
-    await api.put(`${BASE}/${item.id}`, { precio_producto: precioEdit.value, id_presentacion: item.id_presentacion, activa: item.activa })
+    await api.put(`${BASE}/${item.id}`, {
+      precio_producto: precioEdit.value,
+      id_presentacion: item.id_presentacion,
+      activa: item.activa,
+    })
     item.precio_producto = precioEdit.value
-  } catch { showToast('Error al actualizar precio','error') }
+    showToast('Precio actualizado', 'success')
+  } catch { showToast('Error al actualizar precio', 'error') }
 }
 
 async function toggleActiva(item) {
   try {
     await api.patch(`${BASE}/${item.id}/toggle`)
     item.activa = item.activa ? 0 : 1
-  } catch { showToast('Error','error') }
+  } catch { showToast('Error', 'error') }
 }
 </script>
 
@@ -119,7 +142,7 @@ async function toggleActiva(item) {
 .tr-inactiva { opacity:.5; }
 .th-precio,.td-precio { text-align:right; }
 .td-precio { font-size:15px;font-weight:700;color:#1e3a5f; }
-.td-plato  { font-weight:600; }
+.td-item   { font-weight:600; }
 .badge-cat  { background:#eff6ff;color:#1d4ed8;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600; }
 .badge-estado { border:none;border-radius:10px;font-size:11px;padding:3px 10px;font-weight:700;cursor:pointer;transition:.15s; }
 .badge-activa  { background:#dcfce7;color:#16a34a; }
