@@ -247,7 +247,7 @@ async def del_ingrediente(
 async def get_impresoras(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     rows = (await db.execute(text("""
-        SELECT p.id, p.name, p.type, p.ip,
+        SELECT p.id, p.name, p.connection_type, p.ip,
                CASE WHEN ip.id IS NOT NULL THEN 1 ELSE 0 END AS assigned
         FROM pos_printers p
         LEFT JOIN pos_item_printers ip

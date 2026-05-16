@@ -160,7 +160,7 @@
                 <i class="bi bi-printer"></i>
                 <div>
                   <div class="imp-nombre">{{ imp.name }}</div>
-                  <div class="imp-tipo">{{ imp.type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
+                  <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
                 </div>
               </label>
             </div>
