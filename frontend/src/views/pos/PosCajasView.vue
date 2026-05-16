@@ -75,6 +75,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '@/services/apis.js'
+import { showToast } from '@/utils/toast.js'
 
 const BASE     = '/api/pos-catalogo/cajas'
 const items    = ref([])
@@ -104,14 +105,22 @@ async function guardar() {
     const p = { name:modal.value.name, type:modal.value.type, is_active:modal.value.is_active }
     if (modal.value.id) await api.put(`${BASE}/${modal.value.id}`, p)
     else                await api.post(BASE, p)
+    showToast('Caja guardada', 'success')
     cerrarModal(); await cargar()
-  } catch { alert('Error al guardar') }
+  } catch(e) { showToast(e?.response?.data?.detail || 'Error al guardar', 'error') }
   finally { guardando.value = false }
 }
 
 async function eliminar(id) {
-  if (!confirm('¿Desactivar esta caja?')) return
-  try { await api.delete(`${BASE}/${id}`); await cargar() } catch { alert('Error') }
+  const { isConfirmed } = await window.Swal.fire({
+    title: '¿Eliminar esta caja?',
+    icon: 'warning', showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  try { await api.delete(`${BASE}/${id}`); showToast('Caja eliminada', 'success'); await cargar() }
+  catch { showToast('Error al eliminar', 'error') }
 }
 </script>
 

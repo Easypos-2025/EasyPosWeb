@@ -55,6 +55,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
+import { showToast } from '@/utils/toast.js'
 
 const BASE = '/api/pos-catalogo/lista-precios'
 const items    = ref([])
@@ -91,14 +92,14 @@ async function guardarPrecio(item) {
   try {
     await api.put(`${BASE}/${item.id}`, { precio_producto: precioEdit.value, id_presentacion: item.id_presentacion, activa: item.activa })
     item.precio_producto = precioEdit.value
-  } catch { alert('Error al actualizar precio') }
+  } catch { showToast('Error al actualizar precio','error') }
 }
 
 async function toggleActiva(item) {
   try {
     await api.patch(`${BASE}/${item.id}/toggle`)
     item.activa = item.activa ? 0 : 1
-  } catch { alert('Error') }
+  } catch { showToast('Error','error') }
 }
 </script>
 

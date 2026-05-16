@@ -104,8 +104,13 @@ async def eliminar(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    # Eliminar asignaciones artículo→impresora antes de borrar
     await db.execute(text(
-        "UPDATE pos_printers SET is_active=0 WHERE id=:id AND company_id=:cid"
+        "DELETE FROM pos_item_printers WHERE printer_id=:id AND company_id=:cid"
+    ), {"id": printer_id, "cid": user.company_id})
+    # Eliminar registro definitivamente
+    await db.execute(text(
+        "DELETE FROM pos_printers WHERE id=:id AND company_id=:cid"
     ), {"id": printer_id, "cid": user.company_id})
     await db.commit()
     return {"ok": True}

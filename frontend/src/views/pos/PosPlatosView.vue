@@ -231,6 +231,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
+import { showToast } from '@/utils/toast.js'
 
 const BASE = '/api/pos-catalogo/platos'
 
@@ -300,13 +301,20 @@ async function guardarItem() {
               description:modalItem.value.description, tax:modalItem.value.tax, active:modalItem.value.active }
     if (modalItem.value.id) await api.put(`${BASE}/${modalItem.value.id}`, p)
     else await api.post(BASE, p)
+    showToast('Artículo guardado', 'success')
     cerrarModalItem(); await cargarItems()
-  } catch(e) { alert(e?.response?.data?.detail||'Error al guardar') }
+  } catch(e) { showToast(e?.response?.data?.detail||'Error al guardar','error') }
   finally { guardando.value=false }
 }
 async function eliminar(id) {
-  if (!confirm('¿Desactivar este artículo?')) return
-  try { await api.delete(`${BASE}/${id}`); await cargarItems() } catch { alert('Error') }
+  const { isConfirmed } = await window.Swal.fire({
+    title:'¿Desactivar este artículo?', text:'Se ocultará del catálogo pero se conserva el historial.',
+    icon:'warning', showCancelButton:true, confirmButtonColor:'#e11d48',
+    confirmButtonText:'Sí, desactivar', cancelButtonText:'Cancelar',
+  })
+  if (!isConfirmed) return
+  try { await api.delete(`${BASE}/${id}`); showToast('Artículo desactivado','success'); await cargarItems() }
+  catch { showToast('Error al desactivar','error') }
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
@@ -335,12 +343,13 @@ async function agregarIngrediente() {
     })
     formIngrediente.value = { visible:false, supply_item_id:null, quantity:1, unit_id:null }
     await cargarIngredientes(); await cargarItems()
-  } catch { alert('Error al agregar ingrediente') }
+  } catch { showToast('Error al agregar ingrediente','error') }
 }
 async function eliminarIngrediente(insumoId) {
-  if (!confirm('¿Quitar ingrediente?')) return
+  const { isConfirmed } = await window.Swal.fire({ title:'¿Quitar ingrediente?', icon:'warning', showCancelButton:true, confirmButtonColor:'#e11d48', confirmButtonText:'Quitar', cancelButtonText:'Cancelar' })
+  if (!isConfirmed) return
   try { await api.delete(`${BASE}/${panel.value.item.id}/ingredientes/${insumoId}`); await cargarIngredientes(); await cargarItems() }
-  catch { alert('Error') }
+  catch { showToast('Error','error') }
 }
 
 // ── Impresoras ────────────────────────────────────────────────────────────────
@@ -352,8 +361,8 @@ async function cargarImpresoras() {
 }
 async function guardarImpresoras() {
   const ids = impresoras.value.filter(i=>i.assigned).map(i=>i.id)
-  try { await api.put(`${BASE}/${panel.value.item.id}/impresoras`, { printer_ids:ids }); await cargarItems() }
-  catch { alert('Error al guardar impresoras') }
+  try { await api.put(`${BASE}/${panel.value.item.id}/impresoras`, { printer_ids:ids }); showToast('Impresoras guardadas','success'); await cargarItems() }
+  catch { showToast('Error al guardar impresoras','error') }
 }
 
 // ── Modificadores ─────────────────────────────────────────────────────────────
@@ -368,11 +377,12 @@ async function crearModificador() {
   try {
     await api.post(`${BASE}/${panel.value.item.id}/modificadores`, { name:formModificador.value.name, is_required:formModificador.value.is_required, is_multiple:formModificador.value.is_multiple })
     formModificador.value.visible=false; await cargarModificadores()
-  } catch { alert('Error') }
+  } catch { showToast('Error','error') }
 }
 async function eliminarModificador(gId) {
-  if (!confirm('¿Eliminar grupo y sus opciones?')) return
-  try { await api.delete(`${BASE}/${panel.value.item.id}/modificadores/${gId}`); await cargarModificadores() } catch { alert('Error') }
+  const { isConfirmed } = await window.Swal.fire({ title:'¿Eliminar grupo y sus opciones?', icon:'warning', showCancelButton:true, confirmButtonColor:'#e11d48', confirmButtonText:'Eliminar', cancelButtonText:'Cancelar' })
+  if (!isConfirmed) return
+  try { await api.delete(`${BASE}/${panel.value.item.id}/modificadores/${gId}`); await cargarModificadores() } catch { showToast('Error','error') }
 }
 function abrirFormOpcion(g) {
   formOpcion.value = { visible:true, groupId:g.id, groupName:g.name, name:'', extra_price:0 }
@@ -382,10 +392,11 @@ async function crearOpcion() {
   try {
     await api.post(`${BASE}/${panel.value.item.id}/modificadores/${formOpcion.value.groupId}/opciones`, { name:formOpcion.value.name, extra_price:formOpcion.value.extra_price })
     formOpcion.value.visible=false; await cargarModificadores()
-  } catch { alert('Error') }
+  } catch { showToast('Error','error') }
 }
 async function eliminarOpcion(gId, oId) {
-  try { await api.delete(`${BASE}/${panel.value.item.id}/modificadores/${gId}/opciones/${oId}`); await cargarModificadores() } catch { alert('Error') }
+  try { await api.delete(`${BASE}/${panel.value.item.id}/modificadores/${gId}/opciones/${oId}`); await cargarModificadores() }
+  catch { showToast('Error','error') }
 }
 </script>
 
