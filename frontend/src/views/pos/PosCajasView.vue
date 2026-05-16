@@ -18,13 +18,13 @@
     <div v-else class="cajas-grid">
       <div v-for="caja in items" :key="caja.id"
            class="caja-card"
-           :class="{ 'caja-card--principal': caja.tipo==='principal', 'caja-card--inactiva': !caja.activa }">
+           :class="{ 'caja-card--principal': caja.type==='main', 'caja-card--inactiva': !caja.is_active }">
         <div class="caja-top">
-          <i class="bi" :class="caja.tipo==='principal' ? 'bi-cash-coin' : 'bi-cash-stack'"></i>
-          <span class="caja-tipo-badge">{{ caja.tipo }}</span>
+          <i class="bi" :class="caja.type==='main' ? 'bi-cash-coin' : 'bi-cash-stack'"></i>
+          <span class="caja-tipo-badge">{{ caja.type === 'main' ? 'Principal' : 'Auxiliar' }}</span>
         </div>
-        <div class="caja-nombre">{{ caja.nombre }}</div>
-        <div v-if="!caja.activa" class="caja-inactiva">Inactiva</div>
+        <div class="caja-nombre">{{ caja.name }}</div>
+        <div v-if="!caja.is_active" class="caja-inactiva">Inactiva</div>
         <div class="caja-acciones">
           <button class="btn-icono" @click="abrirModal(caja)"><i class="bi bi-pencil"></i></button>
           <button class="btn-icono btn-icono--danger" @click="eliminar(caja.id)"><i class="bi bi-trash"></i></button>
@@ -40,29 +40,29 @@
         </div>
         <div class="modal-body">
           <div class="campo"><label>Nombre *</label>
-            <input v-model="modal.nombre" class="inp" placeholder="Ej: Caja Principal, Caja Bar" />
+            <input v-model="modal.name" class="inp" placeholder="Ej: Caja Principal, Caja Bar" />
           </div>
           <div class="campo"><label>Tipo</label>
             <div class="radio-group">
-              <label class="radio-opt" :class="{ 'radio-opt--sel': modal.tipo==='principal' }">
-                <input type="radio" v-model="modal.tipo" value="principal" /> Principal
+              <label class="radio-opt" :class="{ 'radio-opt--sel': modal.type==='main' }">
+                <input type="radio" v-model="modal.type" value="main" /> Principal
               </label>
-              <label class="radio-opt" :class="{ 'radio-opt--sel': modal.tipo==='auxiliar' }">
-                <input type="radio" v-model="modal.tipo" value="auxiliar" /> Auxiliar
+              <label class="radio-opt" :class="{ 'radio-opt--sel': modal.type==='auxiliary' }">
+                <input type="radio" v-model="modal.type" value="auxiliary" /> Auxiliar
               </label>
             </div>
-            <p v-if="modal.tipo==='principal'" class="tip-principal">
+            <p v-if="modal.type==='main'" class="tip-principal">
               <i class="bi bi-info-circle me-1"></i>Solo puede haber una caja principal. Las demás se cambiarán a auxiliar.
             </p>
           </div>
           <div class="campo-check">
-            <input type="checkbox" v-model="modal.activa" :true-value="1" :false-value="0" id="chkA" />
+            <input type="checkbox" v-model="modal.is_active" :true-value="1" :false-value="0" id="chkA" />
             <label for="chkA">Activa</label>
           </div>
         </div>
         <div class="modal-ftr">
           <button class="btn-cancel" @click="cerrarModal">Cancelar</button>
-          <button class="btn-save" :disabled="guardando || !modal.nombre" @click="guardar">
+          <button class="btn-save" :disabled="guardando || !modal.name" @click="guardar">
             <span v-if="guardando"><span class="spinner-border spinner-border-sm me-1"></span></span>
             <i v-else class="bi bi-check-lg me-1"></i>Guardar
           </button>
@@ -76,37 +76,41 @@
 import { ref, onMounted } from 'vue'
 import api from '@/services/apis.js'
 
-const BASE = '/api/pos-catalogo/cajas'
+const BASE     = '/api/pos-catalogo/cajas'
 const items    = ref([])
 const loading  = ref(true)
 const guardando= ref(false)
-const modal    = ref({ visible:false, id:null, nombre:'', tipo:'auxiliar', activa:1 })
+const modal    = ref({ visible:false, id:null, name:'', type:'auxiliary', is_active:1 })
 
 onMounted(cargar)
+
 async function cargar() {
-  loading.value=true
-  try { const{data}=await api.get(BASE); items.value=data } catch { items.value=[] }
-  finally { loading.value=false }
+  loading.value = true
+  try { const{data} = await api.get(BASE); items.value = data } catch { items.value=[] }
+  finally { loading.value = false }
 }
+
 function abrirModal(c=null) {
-  modal.value=c
-    ? { visible:true, id:c.id, nombre:c.nombre, tipo:c.tipo, activa:c.activa }
-    : { visible:true, id:null, nombre:'', tipo:'auxiliar', activa:1 }
+  modal.value = c
+    ? { visible:true, id:c.id, name:c.name, type:c.type, is_active:c.is_active }
+    : { visible:true, id:null, name:'', type:'auxiliary', is_active:1 }
 }
-function cerrarModal() { modal.value.visible=false }
+function cerrarModal() { modal.value.visible = false }
+
 async function guardar() {
-  if(!modal.value.nombre) return
-  guardando.value=true
+  if (!modal.value.name) return
+  guardando.value = true
   try {
-    const p={nombre:modal.value.nombre,tipo:modal.value.tipo,activa:modal.value.activa}
-    if(modal.value.id) await api.put(`${BASE}/${modal.value.id}`,p)
-    else await api.post(BASE,p)
+    const p = { name:modal.value.name, type:modal.value.type, is_active:modal.value.is_active }
+    if (modal.value.id) await api.put(`${BASE}/${modal.value.id}`, p)
+    else                await api.post(BASE, p)
     cerrarModal(); await cargar()
   } catch { alert('Error al guardar') }
-  finally { guardando.value=false }
+  finally { guardando.value = false }
 }
+
 async function eliminar(id) {
-  if(!confirm('¿Desactivar esta caja?')) return
+  if (!confirm('¿Desactivar esta caja?')) return
   try { await api.delete(`${BASE}/${id}`); await cargar() } catch { alert('Error') }
 }
 </script>

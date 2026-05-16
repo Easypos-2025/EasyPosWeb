@@ -179,6 +179,25 @@
             </div>
           </template>
 
+          <!-- ── TEST DE CONEXIÓN (universal) ──────────────────────────────── -->
+          <div v-if="puedeGuardar" class="test-box">
+            <div class="test-row">
+              <span class="test-label">
+                <i class="bi bi-activity me-1"></i>Probar conexión
+              </span>
+              <button class="btn-test-conn" :disabled="testando" @click="testConexion">
+                <span v-if="testando"><span class="spinner-border spinner-border-sm me-1"></span>Probando…</span>
+                <span v-else><i class="bi bi-send me-1"></i>Probar ahora</span>
+              </button>
+            </div>
+            <div v-if="testEstado === 'online'" class="test-result test-ok">
+              <i class="bi bi-check-circle-fill me-1"></i>En línea — impresora respondió correctamente
+            </div>
+            <div v-else-if="testEstado === 'offline'" class="test-result test-fail">
+              <i class="bi bi-x-circle-fill me-1"></i>Sin respuesta — verifica que esté encendida y accesible
+            </div>
+          </div>
+
           <div class="campo-check">
             <input type="checkbox" v-model="modal.is_active" :true-value="1" :false-value="0" id="chkA" />
             <label for="chkA">Activa</label>
@@ -248,6 +267,10 @@ const estadoIP    = ref('')   // '' | 'online' | 'offline'
 const detectandoBT = ref(false)
 const errorBT      = ref('')
 
+// Test conexión universal
+const testando  = ref(false)
+const testEstado= ref('')   // '' | 'online' | 'offline'
+
 // ── Validación para habilitar guardar ─────────────────────────────────────────
 const puedeGuardar = computed(() => {
   const t = modal.value.connection_type
@@ -295,6 +318,7 @@ function resetDetectores() {
   errorUSB.value=''; errorBT.value=''; estadoIP.value=''
   escaneando.value=false; escaneoHecho.value=false; encontradas.value=[]
   scanProgress.value=0; scanTotal.value=0
+  testEstado.value=''; testando.value=false
 }
 
 // ── Guardar ───────────────────────────────────────────────────────────────────
@@ -425,6 +449,36 @@ async function probarIP() {
   probando.value = false
 }
 
+// ── TEST CONEXIÓN UNIVERSAL ───────────────────────────────────────────────────
+async function testConexion() {
+  testando.value = true
+  testEstado.value = ''
+  const tipo = modal.value.connection_type
+  let ok = false
+
+  if (tipo === 'network' && modal.value.ip) {
+    ok = await probarConexion(modal.value.ip, 2500)
+
+  } else if (tipo === 'usb' && modal.value.usb_device_id) {
+    // Verifica si el dispositivo USB sigue conectado y autorizado
+    if (navigator.usb) {
+      const [vendorId, productId] = modal.value.usb_device_id.split(':').map(Number)
+      const devices = await navigator.usb.getDevices()
+      ok = devices.some(d => d.vendorId === vendorId && d.productId === productId)
+    }
+
+  } else if (tipo === 'bluetooth' && modal.value.bluetooth_address) {
+    // Verifica si el dispositivo BT sigue disponible en los dispositivos pareados
+    if (navigator.bluetooth?.getDevices) {
+      const devices = await navigator.bluetooth.getDevices()
+      ok = devices.some(d => d.id === modal.value.bluetooth_address)
+    }
+  }
+
+  testEstado.value = ok ? 'online' : 'offline'
+  testando.value = false
+}
+
 // ── BLUETOOTH: Web Bluetooth API ──────────────────────────────────────────────
 async function detectarBluetooth() {
   errorBT.value = ''
@@ -532,6 +586,16 @@ async function detectarBluetooth() {
 .ip-online i  { font-size:8px; }
 .ip-offline { color:#dc2626; }
 .ip-offline i { font-size:8px; }
+
+/* Test de conexión universal */
+.test-box     { background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px; }
+.test-row     { display:flex;align-items:center;justify-content:space-between;gap:10px; }
+.test-label   { font-size:13px;font-weight:600;color:#475569; }
+.btn-test-conn { display:flex;align-items:center;gap:4px;background:#0f172a;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity .15s; }
+.btn-test-conn:disabled { opacity:.5;cursor:not-allowed; }
+.test-result  { font-size:12px;font-weight:600;border-radius:6px;padding:7px 10px; }
+.test-ok      { background:#f0fdf4;color:#16a34a; }
+.test-fail    { background:#fff1f2;color:#dc2626; }
 
 @media(max-width:768px){
   .crud-header{flex-direction:column;gap:10px;}
