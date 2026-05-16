@@ -1105,6 +1105,20 @@ async def _init_db_data():
         await _get_or_create_module("Recibos",  "/facturacion/reportes/recibos",        "bi-receipt-cutoff",       fact_reportes.id)
         await db.commit()
 
+        # ── pos_printers: rediseño tipo conexión ──────────────────────────────────
+        for _sql in [
+            "ALTER TABLE pos_printers ADD COLUMN connection_type VARCHAR(20) NOT NULL DEFAULT 'network'",
+            "ALTER TABLE pos_printers DROP COLUMN type",
+            "ALTER TABLE pos_printers MODIFY COLUMN port INT NULL DEFAULT 9100",
+            "ALTER TABLE pos_printers ADD COLUMN bluetooth_address VARCHAR(30) NULL",
+            "ALTER TABLE pos_printers ADD COLUMN usb_device_id VARCHAR(200) NULL",
+        ]:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
         # ── asset_categories: agregar company_id (fix aislamiento multi-tenant) ─
         for _sql in [
             "ALTER TABLE asset_categories ADD COLUMN company_id INT NOT NULL DEFAULT 0",

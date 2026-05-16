@@ -33,9 +33,10 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
 
 class PrinterIn(BaseModel):
     name: str
+    connection_type: Optional[str] = "network"   # usb | network | bluetooth
     ip: Optional[str] = None
-    port: Optional[int] = 9100
-    type: Optional[str] = None
+    bluetooth_address: Optional[str] = None
+    usb_device_id: Optional[str] = None
     is_active: Optional[int] = 1
 
 
@@ -52,10 +53,19 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
 async def crear(data: PrinterIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     await db.execute(text("""
-        INSERT INTO pos_printers (company_id, name, ip, port, type, is_active)
-        VALUES (:cid, :name, :ip, :port, :type, :active)
-    """), {"cid": user.company_id, "name": data.name, "ip": data.ip,
-           "port": data.port, "type": data.type, "active": data.is_active})
+        INSERT INTO pos_printers
+            (company_id, name, connection_type, ip, bluetooth_address, usb_device_id, is_active)
+        VALUES
+            (:cid, :name, :ctype, :ip, :bt, :usb, :active)
+    """), {
+        "cid":    user.company_id,
+        "name":   data.name,
+        "ctype":  data.connection_type,
+        "ip":     data.ip,
+        "bt":     data.bluetooth_address,
+        "usb":    data.usb_device_id,
+        "active": data.is_active,
+    })
     await db.commit()
     row = (await db.execute(text(
         "SELECT * FROM pos_printers WHERE company_id=:cid ORDER BY id DESC LIMIT 1"
@@ -64,20 +74,35 @@ async def crear(data: PrinterIn, authorization: str = Header(None), db: AsyncSes
 
 
 @router.put("/{printer_id}")
-async def actualizar(printer_id: int, data: PrinterIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+async def actualizar(
+    printer_id: int, data: PrinterIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
     user = await _get_user(authorization, db)
     await db.execute(text("""
         UPDATE pos_printers
-        SET name=:name, ip=:ip, port=:port, type=:type, is_active=:active
+        SET name=:name, connection_type=:ctype, ip=:ip,
+            bluetooth_address=:bt, usb_device_id=:usb, is_active=:active
         WHERE id=:id AND company_id=:cid
-    """), {"id": printer_id, "cid": user.company_id, "name": data.name,
-           "ip": data.ip, "port": data.port, "type": data.type, "active": data.is_active})
+    """), {
+        "id":     printer_id,
+        "cid":    user.company_id,
+        "name":   data.name,
+        "ctype":  data.connection_type,
+        "ip":     data.ip,
+        "bt":     data.bluetooth_address,
+        "usb":    data.usb_device_id,
+        "active": data.is_active,
+    })
     await db.commit()
     return {"ok": True}
 
 
 @router.delete("/{printer_id}")
-async def eliminar(printer_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+async def eliminar(
+    printer_id: int,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
     user = await _get_user(authorization, db)
     await db.execute(text(
         "UPDATE pos_printers SET is_active=0 WHERE id=:id AND company_id=:cid"
