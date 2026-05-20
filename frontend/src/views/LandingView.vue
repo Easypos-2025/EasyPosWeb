@@ -1,5 +1,5 @@
 <template>
-  <div class="landing-root" :class="{ 'has-ad-sidebar': !sidebarDismissed }">
+  <div class="landing-root">
 
     <!-- ══════════════════════════════════════════════
          NAVBAR FIJA
