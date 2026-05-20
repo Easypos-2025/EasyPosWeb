@@ -674,6 +674,7 @@ async def admin_approve(
     ad.approved_by = current_user.id
     ad.approved_at = datetime.utcnow()
     await db.commit()
+    await db.refresh(ad)
     _notify_landing_changed()
     return await _ser_ad(ad, db)
 
@@ -694,6 +695,7 @@ async def admin_reject(
     ad.status           = "rejected"
     ad.rejection_reason = reason
     await db.commit()
+    await db.refresh(ad)
     return await _ser_ad(ad, db)
 
 
@@ -728,6 +730,7 @@ async def admin_activate(
     ad.priority      = int(data.get("priority") or 0)
     ad.status        = "active"
     await db.commit()
+    await db.refresh(ad)
     _notify_landing_changed()
     return await _ser_ad(ad, db)
 
@@ -743,6 +746,7 @@ async def admin_pause(
         raise HTTPException(status_code=400, detail="Solo se pueden pausar pautas activas")
     ad.status = "paused"
     await db.commit()
+    await db.refresh(ad)
     _notify_landing_changed()
     return await _ser_ad(ad, db)
 
