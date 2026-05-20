@@ -97,8 +97,20 @@ async def get_plans_with_features(db: AsyncSession = Depends(get_db)):
     categories = {}
     for f in features:
         categories.setdefault(f.category, []).append(_ser_feature(f))
+    LIMIT_FIELDS = [
+        "max_users", "max_products", "max_categories", "max_workers",
+        "max_clients", "max_bodega_items", "max_assets", "max_waiters",
+        "max_tasks", "max_daily_invoices", "max_daily_receipts", "max_daily_tasks",
+    ]
+
+    def _plan_ser(p):
+        base = {"id": p.id, "name": p.name, "price": p.price}
+        for f in LIMIT_FIELDS:
+            base[f] = getattr(p, f, -1)
+        return base
+
     return JSONResponse(content={
-        "plans": [{"id": p.id, "name": p.name, "price": p.price} for p in plans],
+        "plans": [_plan_ser(p) for p in plans],
         "feature_groups": [{"category": cat, "features": feats} for cat, feats in categories.items()],
     }, headers=_NO_CACHE)
 

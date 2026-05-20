@@ -72,19 +72,6 @@ router = APIRouter(prefix="/users", tags=["users"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-async def _get_plan_limit(company_id: int, db: AsyncSession):
-    result = await db.execute(
-        select(CompanyPlan)
-        .where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)
-        .order_by(CompanyPlan.id.desc())
-    )
-    cp = result.scalar_one_or_none()
-    if not cp:
-        return 1, "Sin plan"
-    plan = await db.get(Plan, cp.plan_id)
-    return (plan.max_users if plan else 1), (plan.name if plan else "Sin plan")
-
-
 @router.get("/plan-limit")
 async def get_plan_limit(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     role = await db.get(Role, current_user.role_id)
@@ -93,9 +80,33 @@ async def get_plan_limit(db: AsyncSession = Depends(get_db), current_user: User 
         return {"current": 0, "max": -1, "plan_name": "SYSADMIN", "can_add": True}
 
     company_id = current_user.company_id
-    max_users, plan_name = await _get_plan_limit(company_id, db)
-    current_count = (await db.execute(select(func.count()).select_from(User).where(User.company_id == company_id))).scalar()
-    return {"current": current_count, "max": max_users, "plan_name": plan_name, "can_add": (max_users == -1) or (current_count < max_users)}
+
+    # Usa get_limits que respeta CompanyPlanLimits (overrides por asociado) con fallback al Plan
+    from app.services.plan_limits_service import get_limits
+    limits = await get_limits(company_id, db)
+    max_users = limits.get("max_users", 1)
+
+    # Nombre del plan activo
+    cp_res = await db.execute(
+        select(CompanyPlan).where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)
+        .order_by(CompanyPlan.id.desc())
+    )
+    cp = cp_res.scalar_one_or_none()
+    plan_name = "Sin plan"
+    if cp:
+        plan = await db.get(Plan, cp.plan_id)
+        plan_name = plan.name if plan else "Sin plan"
+
+    current_count = (await db.execute(
+        select(func.count()).select_from(User).where(User.company_id == company_id)
+    )).scalar() or 0
+
+    return {
+        "current":  current_count,
+        "max":      max_users,
+        "plan_name": plan_name,
+        "can_add":  (max_users == -1) or (current_count < max_users),
+    }
 
 
 @router.post("/", response_model=UserResponse)

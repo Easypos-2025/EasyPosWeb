@@ -410,10 +410,9 @@
               </tr>
               <tr v-for="feat in group.features" :key="feat.id" class="feat-row">
                 <td class="feat-name">{{ feat.feature_name }}</td>
-                <td class="feat-val">{{ renderVal(feat.val_free) }}</td>
-                <td class="feat-val">{{ renderVal(feat.val_basic) }}</td>
-                <td class="feat-val">{{ renderVal(feat.val_standard) }}</td>
-                <td class="feat-val">{{ renderVal(feat.val_premium) }}</td>
+                <td v-for="(plan, pi) in planData.plans" :key="plan.id" class="feat-val">
+                  {{ renderFeatVal(feat, plan, pi) }}
+                </td>
               </tr>
             </template>
           </tbody>
@@ -803,11 +802,39 @@ export default {
       return new Intl.NumberFormat("es-CO").format(price)
     }
     function renderVal(val) {
-      if (!val || val === "") return "—"
-      const v = val.toLowerCase()
+      if (val === null || val === undefined || val === "") return "—"
+      if (val === -1) return "Ilimitado"
+      const v = String(val).toLowerCase()
       if (v === "x") return "✓"
-      if (v === "ilim") return "Ilimitado"
-      return val
+      if (v === "ilim" || v === "ilimitado") return "Ilimitado"
+      return String(val)
+    }
+
+    // Mapeo feature_name → campo del Plan para mostrar límites reales desde BD
+    const FEAT_FIELD_MAP = {
+      "usuarios":    "max_users",
+      "productos":   "max_products",
+      "categorías":  "max_categories",
+      "trabajadores":"max_workers",
+      "clientes":    "max_clients",
+      "activos":     "max_assets",
+      "meseros":     "max_waiters",
+      "tareas":      "max_tasks",
+      "facturas x mes": "max_daily_invoices",
+      "recibos x mes":  "max_daily_receipts",
+    }
+    const STATIC_COLS = ["val_free", "val_basic", "val_standard", "val_premium"]
+
+    function renderFeatVal(feat, plan, planIndex) {
+      // Busca si el feature_name coincide con un campo de límite del Plan
+      const key = feat.feature_name?.toLowerCase().trim()
+      const field = Object.entries(FEAT_FIELD_MAP).find(([k]) => key?.includes(k))?.[1]
+      if (field && plan[field] !== undefined) {
+        return renderVal(plan[field])
+      }
+      // Fallback: usar val_free/basic/standard/premium por posición
+      const staticVal = feat[STATIC_COLS[planIndex]]
+      return renderVal(staticVal ?? feat[STATIC_COLS[Math.min(planIndex, 3)]])
     }
 
     // ── Contacto ──────────────────────────────────────────────
@@ -924,7 +951,7 @@ export default {
       submitting, contactSuccess, contactError, currentYear,
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
-      formatPrice, renderVal, submitContact,
+      formatPrice, renderVal, renderFeatVal, submitContact,
       sidebarDismissed,
     }
   },
