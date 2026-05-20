@@ -25,7 +25,7 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
   - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
 - Todos los campos donde se describa un valor de pesos debe tener el formato de moneda correspondiente al país del Asociado.
-
+-la apliacion esta enfocada todo se haga en un 80% desde movil, entonces siempre tener en cuenta los dos media querys, para los dos tamaños de movil, para tablet y para pc
 ---
 
 ## 3. REGLAS TÉCNICAS

@@ -136,10 +136,10 @@
         </Transition>
       </div>
 
-      <!-- Mapa del Sitio -->
-      <router-link to="/navigation-map" class="btn-icon btn-sitemap" title="Mapa del Sitio">
+      <!-- Mapa -->
+      <router-link to="/navigation-map" class="btn-icon btn-sitemap" title="Mapa">
         <i class="bi bi-compass-fill sitemap-ico"></i>
-        <span class="btn-label sitemap-label">Mapa del Sitio</span>
+        <span class="btn-label sitemap-label">Mapa</span>
       </router-link>
 
       <!-- Dropdown Usuario -->
@@ -813,6 +813,7 @@ onMounted(async () => {
     loadNewInquiries()
     checkAppVersion()
     sendHeartbeat()
+    startAdsSse()
 
     const [notifMs, hbMs] = await Promise.all([
       getConfigMs("topbar_notif_interval_ms",     60_000),
@@ -824,9 +825,20 @@ onMounted(async () => {
   document.addEventListener("click", handleOutsideClick)
 })
 
+// SSE: recarga pautas en SidebarRight cuando el admin cambia una pauta
+let adsSseSource = null
+function startAdsSse() {
+  const base = import.meta.env.VITE_API_URL || ""
+  adsSseSource = new EventSource(`${base}/landing/events`)
+  adsSseSource.addEventListener("landing_updated", () => {
+    window.dispatchEvent(new CustomEvent("ads-refresh"))
+  })
+}
+
 onUnmounted(() => {
   if (notifTimer)     clearInterval(notifTimer)
   if (heartbeatTimer) clearInterval(heartbeatTimer)
+  if (adsSseSource)   adsSseSource.close()
   document.removeEventListener("click", handleOutsideClick)
 })
 </script>

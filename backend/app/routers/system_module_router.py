@@ -34,13 +34,17 @@ def build_tree(modules):
 async def create_module(data: SystemModuleCreate, db: AsyncSession = Depends(get_db)):
     payload = data.dict()
     payload["route"] = payload.get("route") or ""
+    if payload["route"]:
+        existing = await db.execute(select(SystemModule).where(SystemModule.route == payload["route"]))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=422, detail=f"Ya existe un módulo con la ruta '{payload['route']}'. Para agregarlo a otro perfil, usa 'Agregar módulo existente' en Gestión de Menú.")
     module = SystemModule(**payload)
     db.add(module)
     try:
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=422, detail="Error al crear el módulo. Verifica los datos.")
+        raise HTTPException(status_code=422, detail="Error de integridad al crear el módulo. Verifica los datos.")
     await db.refresh(module)
     return {"id": module.id, "name": module.name, "route": module.route, "icon": module.icon,
             "parent_id": module.parent_id, "is_active": module.is_active, "children": []}

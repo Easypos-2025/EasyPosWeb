@@ -246,13 +246,17 @@ async function loadSlots() {
 }
 
 let refreshTimer = null
+function onAdsRefresh() { loadSlots() }
+
 onMounted(() => {
   loadSlots()
   refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
+  window.addEventListener("ads-refresh", onAdsRefresh)
 })
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
   clearSlotTimers()
+  window.removeEventListener("ads-refresh", onAdsRefresh)
 })
 </script>
 

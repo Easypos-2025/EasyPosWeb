@@ -1,0 +1,74 @@
+# CLAUDE_PERFIL_ADMON_TAREAS.md
+# business_profile_id = 2
+
+## 1. ROLES Y LÓGICA
+- ADMIN: Total. | TASK_LEADER: Sus tareas, avances, evidencias. | AUDITOR: Lectura, asignación, mensajes.
+- WORKERS: Solo registro (sin login). Task Leader reporta por ellos.
+
+## 2. ESTADOS (task_status)
+1. Pendiente (Naranja) | 2. Asignada (Azul) | 3. En Progreso (Verde) | 4. En Revisión (Morado) | 5. Finalizada (Verde oscuro) | 6. Cancelada (Rojo).
+
+## 3. ESQUEMA
+- Existentes: `tasks`, `task_status`, `task_evidence`, `task_material`, `task_comment`, `assets`, `workers`.
+- Nuevas: `task_expenses` (gastos), `task_progress_reports` (% avance).
+
+## 4. REGLAS CRÍTICAS
+- Task Leader solo ve lo propio. Finalizar requiere >=1 evidencia.
+- KPI Dashboard: Pendientes, Ejecución, Atrasadas (fecha_fin < hoy), Finalizadas.
+- UI: SidebarRight oculta divs vacíos (`v-if`). 
+- Costo Real = suma de `task_expenses`.
+
+## 5. REGLAS DE OPERACIÓN
+- **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
+- **Auto-Deploy**: Cuando el usuario escriba la palabra **"commit"**, ejecutar el siguiente flujo completo en orden:
+  1. `npm run build` en frontend — si hay errores, detener y reportar.
+  2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
+  3. `git push origin master`
+  4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb`
+     Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb"`
+  5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
+     `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
+  6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
+  - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
+- **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
+- Todos los campos donde se decriba un valor de pesos, debe tener correspondiente formato de pesos deacuerdo al pais.
+
+## 6. REGLAS DE CAMBIO DE PERFIL
+- **Switch-Profile**: Cuando el usuario diga "Cambiar a perfil [NOMBRE]", debes:
+  1. Renombrar el `CLAUDE.md` actual a `CLAUDE_PERFIL_[NOMBRE_ANTERIOR].md`.
+  2. Buscar el archivo `CLAUDE_PERFIL_[NOMBRE_NUEVO].md` y renombrarlo a `CLAUDE.md`.
+  3. Confirmar que el cambio se hizo y resumir las nuevas reglas activas.
+
+## 7. REGLAS TÉCNICAS
+- **i18n**: Usar `vue-i18n` para traducciones. Idioma default: `es`.
+- **Moneda**: Formatear siempre según el Asociado (`currency_code`). Usar `Intl.NumberFormat`.
+- **Backend**: Los mensajes de error de la API deben venir del backend ya traducidos o con códigos de error estándar.
+
+
+## 8. REGLA: NUEVA VISTA → SIEMPRE REGISTRAR EN system_modules
+- **Auto-SystemModule**: Cada vez que se cree una vista nueva con ruta propia (`/xxx/yyy`), ejecutar automáticamente:
+  ```sql
+  INSERT INTO system_modules (name, route, icon, parent_id, is_active, order_index, is_sysadmin)
+  VALUES ('[Nombre]', '/ruta/vista', 'bi-icon', NULL, 1, 0, 0);
+  ```
+  - `parent_id = NULL` para que el usuario lo asigne en SidebarMenuManager.
+  - `is_sysadmin = 0` salvo que sea exclusiva de SYSADMIN.
+  - Sin esta entrada la vista no aparece en el menú ni funciona el sistema de permisos por roles.
+
+## 9. REGLA: NUEVO PERFIL DE NEGOCIO → BARRA DE INDICADORES OBLIGATORIA
+- **Auto-KPI-Bar**: Todo dashboard de perfil de negocio nuevo (incluyendo SYSADMIN) debe incluir una barra de indicadores (KPI bar) al inicio de la vista.
+- La barra muestra tarjetas de métricas clave del perfil (ej: totales, pendientes, alertas).
+- Todos los perfiles actuales ya la tienen; es regla global para perfiles futuros.
+- La barra de indicadores debe ser responsive y alineada al diseño del perfil activo.
+
+## 10. REGLA: CAPTIONS DINÁMICOS DESDE BD
+- **Dynamic-Captions**: Ningún caption visible (títulos, botones, placeholders, mensajes vacíos) debe tener quemado el nombre de un módulo o entidad que provenga de `system_modules`.
+- Usar siempre el composable `useModuleName()` (`@/composables/useModuleName.js`):
+  - Sin parámetro → usa la ruta actual para encontrar el módulo en `menuStore`.
+  - Con ruta explícita → `useModuleName('/ruta/modulo')` para referenciar otro módulo (ej: padre).
+- Ejemplos correctos: `Nuevo {{ moduleName }}`, `:placeholder="\`Buscar ${moduleName}...\`"`.
+- Si el nombre cambia en BD, todos los captions se actualizan solos sin tocar código.
+- **Aplica a todas las vistas nuevas y a las existentes cuando se modifiquen.**
+
+## 11. HOJA DE RUTA
+1. DB Status + Dashboard KPIs. | 2. CRUD Tareas. | 3. Vista Task Leader. | 4. Evidencias/Materiales. | 5. Vista Auditor. | 6. Reportes & PDF. | 7. Mensajería.

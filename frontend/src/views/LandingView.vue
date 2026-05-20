@@ -638,8 +638,8 @@
       </div>
     </footer>
 
-    <!-- Sidebar publicitario fijo — solo en pantallas ≥1400px -->
-    <LandingAdSidebar class="landing-fixed-sidebar" />
+    <!-- Sidebar publicitario fijo reservado para uso futuro -->
+    <!-- <LandingAdSidebar class="landing-fixed-sidebar" /> -->
 
   </div>
 </template>

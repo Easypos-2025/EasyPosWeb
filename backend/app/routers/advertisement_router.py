@@ -716,6 +716,10 @@ async def admin_activate(
     if slot not in (1, 2, 3):
         raise HTTPException(status_code=400, detail="slot_position debe ser 1, 2 o 3")
 
+    piece_count = await _count_pieces(ad.id, db)
+    if piece_count == 0:
+        raise HTTPException(status_code=400, detail="La pauta no tiene piezas (imagen/video/YouTube). Agrega contenido antes de activar.")
+
     start = _parse_date(data.get("start_date")) or ad.start_date
     end   = _parse_date(data.get("end_date")) or ad.end_date
     if not start or not end or start > end:

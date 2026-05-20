@@ -7,7 +7,29 @@
       "Read(//c/Program Files/**)",
       "Read(//c/xampp/mysql/bin/**)",
       "Bash(venv/Scripts/python -c ' *)",
-      "Bash(../venv/Scripts/python -c ' *)"
+      "Bash(../venv/Scripts/python -c ' *)",
+      "Bash(grep -A 40 \"^CREATE TABLE \\\\`companies\\\\`\" \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\easyposweb_backup.sql\")",
+      "Bash(grep -E \"migration.*\\\\.sql|\\\\.sql$\")",
+      "Bash(grep -E \"\\\\.py$|\\\\.txt$\")",
+      "Bash(grep -A 30 \"^CREATE TABLE \\\\`users\\\\`\" \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\easyposweb_backup.sql\")",
+      "Bash(grep -A 15 \"^CREATE TABLE \\\\`product_categories\\\\`\" \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\easyposweb_backup.sql\")",
+      "Bash(scp -i \"C:\\\\Users\\\\Personal\\\\.ssh\\\\id_ed25519\" \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\\\\migrations\\\\migration_plan_downgrade.sql\" root@209.38.152.254:/tmp/migration_plan_downgrade.sql)",
+      "Bash(Get-ChildItem -Path \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\" -Recurse -Filter \"*routes*\" -Directory)",
+      "Bash(grep -A 50 \"INSERT INTO \\\\`system_modules\\\\`\" easyposweb_backup.sql)",
+      "Bash(grep \"^INSERT INTO \\\\`business_profile_modules\\\\`\" easyposweb_backup.sql)",
+      "Bash(grep -A 50 \"CREATE TABLE.*\\\\`products\\\\`\" '/d/AAA Proyectos Claude-Code/EasyPosWeb/easyposweb_backup.sql')",
+      "Bash(grep -A 30 \"CREATE TABLE.*\\\\`product_categories\\\\`\" '/d/AAA Proyectos Claude-Code/EasyPosWeb/easyposweb_backup.sql')",
+      "Bash(grep -A 25 \"CREATE TABLE.*\\\\`price_lists\\\\`\" '/d/AAA Proyectos Claude-Code/EasyPosWeb/easyposweb_backup.sql')",
+      "Bash(grep -A 25 \"CREATE TABLE.*\\\\`measurement_units\\\\`\" '/d/AAA Proyectos Claude-Code/EasyPosWeb/easyposweb_backup.sql')",
+      "Bash(grep -A 30 \"CREATE TABLE.*\\\\`price_list_items\\\\`\" '/d/AAA Proyectos Claude-Code/EasyPosWeb/easyposweb_backup.sql')",
+      "Bash(xargs wc -l)",
+      "Bash(grep -n \"CREATE TABLE.*pos_dishes\\\\|CREATE TABLE.*pos_item\" \"d:\\\\\\\\AAA Proyectos Claude-Code\\\\\\\\EasyPosWeb\\\\\\\\easyposweb_backup.sql\")",
+      "Bash(grep -n \"CREATE TABLE.*pos_item\\\\|pos_printers\\\\|pos_categories\\\\|pos_customer_price\" \"d:\\\\\\\\AAA Proyectos Claude-Code\\\\\\\\EasyPosWeb\\\\\\\\easyposweb_backup.sql\")",
+      "PowerShell(Wait-Process -Name powershell -Timeout 10 -ErrorAction SilentlyContinue)",
+      "Bash(Get-ChildItem -Path \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\sysadmin\" -Recurse -Filter \"*.vue\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(find frontend/src/components/landing -name \"*.vue\")",
+      "Bash(dir frontend\\\\src\\\\components\\\\landing /b)"
     ]
   }
 }
