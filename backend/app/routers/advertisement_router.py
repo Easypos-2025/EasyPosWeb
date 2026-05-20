@@ -666,8 +666,10 @@ async def admin_approve(
     ad = await db.get(Advertisement, ad_id)
     if not ad:
         raise HTTPException(status_code=404, detail="Pauta no encontrada")
-    if ad.status != "pending":
-        raise HTTPException(status_code=400, detail="Solo se pueden aprobar pautas pendientes")
+    if ad.status in ("approved", "active", "paused"):
+        return await _ser_ad(ad, db)
+    if ad.status not in ("pending",):
+        raise HTTPException(status_code=400, detail=f"No se puede aprobar una pauta en estado '{ad.status}'")
     ad.status      = "approved"
     ad.approved_by = current_user.id
     ad.approved_at = datetime.utcnow()

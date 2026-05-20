@@ -455,6 +455,21 @@ function openDetail(ad) {
   showModal.value    = true
 }
 
+// ── Sync selected desde BD (ignora filtro de lista) ──────────────────────
+async function syncSelected() {
+  if (!selected.value?.id) return
+  try {
+    const res = await api.get(`/ads/admin/${selected.value.id}`)
+    selected.value = { ...res.data }
+    activateForm.value = {
+      slot_position: res.data.slot_position || 1,
+      priority:      res.data.priority      || 0,
+      start_date:    res.data.start_date    || "",
+      end_date:      res.data.end_date      || "",
+    }
+  } catch {}
+}
+
 // ── Acciones sobre pauta ───────────────────────────────────────────────────
 async function approveAd() {
   const { isConfirmed } = await window.Swal.fire({
@@ -470,8 +485,8 @@ async function approveAd() {
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/approve`)
     selected.value = { ...selected.value, ...res.data }
-    showToast("Pauta aprobada", "success")
-    await loadAds()
+    showToast(res.data.status === "pending" ? "Sin cambios (ya aprobada)" : "Pauta aprobada", "success")
+    await Promise.all([loadAds(), syncSelected()])
   } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
@@ -483,28 +498,26 @@ async function rejectAd() {
     rejectOpen.value = false
     rejectReason.value = ""
     showToast("Pauta rechazada", "success")
-    await loadAds()
+    await Promise.all([loadAds(), syncSelected()])
   } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
 async function activateAd() {
   const f = activateForm.value
   if (!f.start_date || !f.end_date) return showToast("Las fechas son requeridas", "warning")
+  const wasActive = selected.value.status === "active"
   try {
     const res = await api.patch(`/ads/admin/${selected.value.id}/activate`, f)
     selected.value = { ...selected.value, ...res.data }
-    const isReconfig = selected.value.status === "active"
+    const isReconfig = wasActive
     showToast(
       isReconfig ? `Pauta reconfigurada en slot ${f.slot_position}` : `Pauta activada en slot ${f.slot_position}`,
       "success"
     )
-    await loadAds()
+    await Promise.all([loadAds(), syncSelected()])
   } catch (e) {
     showToast(e.response?.data?.detail || "Error al activar", "error")
-    // Recargar para mostrar estado real desde BD
-    await loadAds()
-    const fresh = ads.value.find(a => a.id === selected.value.id)
-    if (fresh) selected.value = { ...fresh }
+    await Promise.all([loadAds(), syncSelected()])
   }
 }
 
@@ -523,7 +536,7 @@ async function pauseAd() {
     const res = await api.patch(`/ads/admin/${selected.value.id}/pause`)
     selected.value = { ...selected.value, ...res.data }
     showToast("Pauta pausada", "success")
-    await loadAds()
+    await Promise.all([loadAds(), syncSelected()])
   } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
@@ -540,9 +553,8 @@ async function expireAd() {
   if (!isConfirmed) return
   try {
     await api.patch(`/ads/admin/${selected.value.id}/expire`)
-    selected.value = { ...selected.value, status: "expired" }
     showToast("Pauta marcada como expirada", "success")
-    await loadAds()
+    await Promise.all([loadAds(), syncSelected()])
   } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
