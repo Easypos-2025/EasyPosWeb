@@ -142,7 +142,7 @@ const SlotPiece = defineComponent({
   setup(props) {
     const ytSrc = computed(() => {
       if (!props.piece?.youtube_id) return ""
-      return `https://www.youtube.com/embed/${props.piece.youtube_id}?autoplay=1&loop=1&playlist=${props.piece.youtube_id}&controls=0&rel=0&enablejsapi=1&mute=1`
+      return `https://www.youtube.com/embed/${props.piece.youtube_id}?autoplay=1&controls=0&rel=0&enablejsapi=1&mute=1`
     })
     return { ytSrc }
   },
@@ -291,7 +291,8 @@ function attachPauseListener(si, piece) {
       if (evt.source !== iframe?.contentWindow) return
       try {
         const d = JSON.parse(evt.data)
-        if (d.event === 'infoDelivery' && d.info?.playerState === 2) advancePiece(si)
+        // playerState 0 = ended (avanzar); ignorar 2 = paused (puede dispararse al cargar)
+        if (d.event === 'infoDelivery' && d.info?.playerState === 0) advancePiece(si)
       } catch {}
     }
     window.addEventListener('message', onMsg)
@@ -317,8 +318,8 @@ function getVideoDuration(url) {
 async function pieceDuration(piece) {
   if (!piece) return 8_000
   if (piece.piece_type === "video" && piece.media_url) return await getVideoDuration(piece.media_url)
-  // En móvil el carrusel no puede esperar 5 minutos por YouTube
-  if (piece.piece_type === "youtube") return isMobilePortrait.value ? 20_000 : 5 * 60 * 1000
+  // Timeout de fallback si el evento 'ended' no llega (proxy, iframe restrictions)
+  if (piece.piece_type === "youtube") return isMobilePortrait.value ? 20_000 : 3 * 60 * 1000
   return 8_000   // imagen / texto
 }
 
@@ -371,8 +372,14 @@ function goToSlot(idx) {
 async function loadSlots() {
   try {
     const res = await api.get("/ads/active-slots")
-    if (Array.isArray(res.data)) {
-      slots.value        = res.data
+    if (!Array.isArray(res.data)) return
+    // Solo reiniciar rotación si cambiaron los ads asignados a los slots
+    const changed = res.data.some((s, i) =>
+      s.ad_id !== slots.value[i]?.ad_id ||
+      s.pieces?.length !== slots.value[i]?.pieces?.length
+    )
+    slots.value = res.data
+    if (changed) {
       slotPieceIdx.value = [0, 0, 0]
       currentSlot.value  = 0
       startTimers()

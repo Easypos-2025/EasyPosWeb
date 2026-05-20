@@ -236,8 +236,13 @@ async function scheduleSlot(si) {
 async function loadSlots() {
   try {
     const res = await api.get("/ads/active-slots")
-    if (Array.isArray(res.data)) {
-      slots.value = res.data
+    if (!Array.isArray(res.data)) return
+    const changed = res.data.some((s, i) =>
+      s.ad_id !== slots.value[i]?.ad_id ||
+      s.pieces?.length !== slots.value[i]?.pieces?.length
+    )
+    slots.value = res.data
+    if (changed) {
       pieceIdx.value = [0, 0, 0]
       clearSlotTimers()
       slots.value.forEach((_, si) => scheduleSlot(si))
