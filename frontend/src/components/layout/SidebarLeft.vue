@@ -172,20 +172,23 @@ function filterMenuByPermissions(menu, permissions) {
     return menu
   }
 
+  const findPerm = (permissions, item) =>
+    permissions.find(p =>
+      item.route
+        ? p.module_route === item.route
+        : p.module_name?.toLowerCase().trim() === item.name?.toLowerCase().trim()
+    )
+
   return menu
     .map(item => {
 
-      const perm = permissions.find(p =>
-        p.module_name?.toLowerCase().trim() === item.name?.toLowerCase().trim()
-      )
+      const perm = findPerm(permissions, item)
 
       let children = []
 
       if (item.children && item.children.length) {
         children = item.children.filter(child => {
-          const childPerm = permissions.find(p =>
-            p.module_name?.toLowerCase().trim() === child.name?.toLowerCase().trim()
-          )
+          const childPerm = findPerm(permissions, child)
           return childPerm?.can_view
         })
       }
