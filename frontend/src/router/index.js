@@ -441,6 +441,14 @@ const routes = [
       },
 
       {
+        path: "/sysadmin/help",
+        name: "SysAdminHelpView",
+        component: () => import("@/views/sysadmin/SysAdminHelpView.vue"),
+        requiresAuth: true,
+        meta: { title: "Gestión de Ayuda" }
+      },
+
+      {
         path: "/sysadmin/payment-review",
         name: "PaymentReviewView",
         component: () => import("@/views/sysadmin/PaymentReviewView.vue"),
@@ -559,6 +567,14 @@ const routes = [
         component: () => import("@/views/ConceptosComprasView.vue"),
         requiresAuth: true,
         meta: { title: "Conceptos de Compra" }
+      },
+
+      // ── Ayuda ──────────────────────────────────────────────────────
+      {
+        path: "/ayuda",
+        name: "HelpView",
+        component: () => import("@/views/HelpView.vue"),
+        meta: { requiresAuth: true, title: "Ayuda" }
       },
 
       // ── Inventario ─────────────────────────────────────────────────

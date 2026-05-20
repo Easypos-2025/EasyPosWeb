@@ -29,7 +29,12 @@
       "Bash(Get-ChildItem -Path \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\sysadmin\" -Recurse -Filter \"*.vue\")",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(find frontend/src/components/landing -name \"*.vue\")",
-      "Bash(dir frontend\\\\src\\\\components\\\\landing /b)"
+      "Bash(dir frontend\\\\src\\\\components\\\\landing /b)",
+      "Bash(sed -n '55,65p' backend/app/main.py)",
+      "Bash(sed -n '1390,1400p' backend/app/main.py)",
+      "Bash(New-Item -ItemType File -Force \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\HelpView.vue\")",
+      "Bash(Out-Null)",
+      "Bash(Get-Content \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\HelpView.vue\" -Raw)"
     ]
   }
 }

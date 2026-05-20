@@ -67,8 +67,12 @@
       </div>
     </Transition>
 
-    <!-- ── DERECHA: paute aquí + copyright ── -->
+    <!-- ── DERECHA: ayuda + paute aquí + copyright ── -->
     <div class="footer-right">
+      <router-link to="/ayuda" class="footer-help-link" title="Centro de Ayuda">
+        <i class="bi bi-question-circle"></i>
+        <span class="footer-help-txt">Ayuda</span>
+      </router-link>
       <a href="#contacto" class="footer-adcta">
         <i class="bi bi-megaphone-fill me-1"></i>¡Paute aquí!
       </a>
@@ -295,6 +299,16 @@ onUnmounted(() => {
 /* ── DERECHA ── */
 .footer-right { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .footer-copy  { white-space: nowrap; opacity: 0.35; font-size: 11px; }
+
+.footer-help-link {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600; letter-spacing: .2px;
+  color: rgba(255,255,255,.55); text-decoration: none;
+  transition: color .15s;
+  white-space: nowrap;
+}
+.footer-help-link:hover { color: #60a5fa; }
+.footer-help-link .bi  { font-size: 13px; }
 .footer-adcta {
   display: flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 700; letter-spacing: .3px;
@@ -357,6 +371,7 @@ onUnmounted(() => {
   .footer-content    { padding: 0 10px; }
   .assoc-inline      { max-width: 180px; margin-right: 6px; }
   .assoc-meta        { display: none; }
+  .footer-help-txt   { display: none; }
 }
 @media (max-width: 576px) {
   .footer-adcta { font-size: 10px; padding: 2px 8px; }
