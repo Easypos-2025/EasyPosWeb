@@ -7,27 +7,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-_sse_subscribers: set[asyncio.Queue] = set()
+from app.utils.sse import _sse_subscribers, sse_generator, notify_landing_changed
 
-async def _sse_generator(queue: asyncio.Queue):
-    try:
-        yield "event: connected\ndata: ok\n\n"
-        while True:
-            try:
-                msg = await asyncio.wait_for(queue.get(), timeout=25)
-                yield msg
-            except asyncio.TimeoutError:
-                yield ": heartbeat\n\n"
-    finally:
-        _sse_subscribers.discard(queue)
-
-def _notify_landing_changed():
-    msg = "event: landing_updated\ndata: ok\n\n"
-    for q in list(_sse_subscribers):
-        try:
-            q.put_nowait(msg)
-        except (asyncio.QueueFull, Exception):
-            _sse_subscribers.discard(q)
+# Aliases para no romper código interno que use los nombres viejos
+_sse_generator = sse_generator
+_notify_landing_changed = notify_landing_changed
 
 from app.database import get_db
 from app.utils.storage import upload_file

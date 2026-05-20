@@ -15,7 +15,7 @@ from app.models.company_model import Company
 from app.models.business_profile_model import BusinessProfile
 from app.auth.dependencies import get_current_user, require_sysadmin
 from app.utils.storage import upload_file, delete_file
-from app.routers.landing_router import _notify_landing_changed
+from app.utils.sse import notify_landing_changed as _notify_landing_changed
 
 router = APIRouter(prefix="/ads", tags=["Advertisements"])
 
@@ -330,6 +330,7 @@ async def update_ad(
         ad.rejection_reason = None
 
     await db.commit()
+    _notify_landing_changed()
     await db.refresh(ad)
     return await _ser_ad(ad, db)
 
