@@ -646,7 +646,8 @@
 
 <script>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
-import LandingAdBanner from "@/components/landing/LandingAdBanner.vue"
+import LandingAdBanner  from "@/components/landing/LandingAdBanner.vue"
+import LandingAdSidebar from "@/components/landing/LandingAdSidebar.vue"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -900,7 +901,10 @@ export default {
 
       // SSE: recarga inmediata cuando el admin cambia datos
       sseSource = new EventSource(`${API}/landing/events`)
-      sseSource.addEventListener("landing_updated", () => loadData())
+      sseSource.addEventListener("landing_updated", () => {
+        loadData()
+        window.dispatchEvent(new CustomEvent("ads-refresh"))
+      })
 
       // Polling de respaldo: por si el SSE falla (proxy, Cloudflare, etc.)
       pollTimer = setInterval(() => loadData(), 45000)
@@ -921,7 +925,7 @@ export default {
       formatPrice, renderVal, submitContact,
     }
   },
-  components: { LandingAdBanner },
+  components: { LandingAdBanner, LandingAdSidebar },
 }
 </script>
 

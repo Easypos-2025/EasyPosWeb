@@ -382,15 +382,19 @@ async function loadSlots() {
 
 let refreshTimer = null
 
+function onAdsRefresh() { loadSlots() }
+
 onMounted(() => {
   checkOrientation()
-  window.addEventListener("resize", () => { checkOrientation() })
+  window.addEventListener("resize", checkOrientation)
+  window.addEventListener("ads-refresh", onAdsRefresh)
   loadSlots()
   refreshTimer = setInterval(loadSlots, 5 * 60 * 1000)
 })
 
 onUnmounted(() => {
   window.removeEventListener("resize", checkOrientation)
+  window.removeEventListener("ads-refresh", onAdsRefresh)
   if (refreshTimer) clearInterval(refreshTimer)
   clearSlotTimers()
 })

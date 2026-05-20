@@ -15,6 +15,7 @@ from app.models.company_model import Company
 from app.models.business_profile_model import BusinessProfile
 from app.auth.dependencies import get_current_user, require_sysadmin
 from app.utils.storage import upload_file, delete_file
+from app.routers.landing_router import _notify_landing_changed
 
 router = APIRouter(prefix="/ads", tags=["Advertisements"])
 
@@ -670,6 +671,7 @@ async def admin_approve(
     ad.approved_by = current_user.id
     ad.approved_at = datetime.utcnow()
     await db.commit()
+    _notify_landing_changed()
     return await _ser_ad(ad, db)
 
 
@@ -702,10 +704,10 @@ async def admin_activate(
     ad = await db.get(Advertisement, ad_id)
     if not ad:
         raise HTTPException(status_code=404, detail="Pauta no encontrada")
-    if ad.status not in ("approved", "paused", "active"):
+    if ad.status not in ("approved", "paused", "active", "expired"):
         raise HTTPException(
             status_code=400,
-            detail=f"No se puede activar una pauta en estado '{ad.status}'. Debe estar aprobada, pausada o activa."
+            detail=f"No se puede activar una pauta en estado '{ad.status}'. Debe estar aprobada, pausada, activa o expirada."
         )
 
     slot = data.get("slot_position")
@@ -723,6 +725,7 @@ async def admin_activate(
     ad.priority      = int(data.get("priority") or 0)
     ad.status        = "active"
     await db.commit()
+    _notify_landing_changed()
     return await _ser_ad(ad, db)
 
 
@@ -737,6 +740,7 @@ async def admin_pause(
         raise HTTPException(status_code=400, detail="Solo se pueden pausar pautas activas")
     ad.status = "paused"
     await db.commit()
+    _notify_landing_changed()
     return await _ser_ad(ad, db)
 
 
@@ -751,6 +755,7 @@ async def admin_expire(
         raise HTTPException(status_code=404, detail="Pauta no encontrada")
     ad.status = "expired"
     await db.commit()
+    _notify_landing_changed()
     return {"ok": True}
 
 
