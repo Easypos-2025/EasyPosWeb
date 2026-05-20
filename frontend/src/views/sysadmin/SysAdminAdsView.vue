@@ -308,11 +308,15 @@
                 <button class="btn-sub-cancel" @click="rejectOpen=false;rejectReason=''">Cancelar</button>
               </div>
             </div>
-            <template v-if="['approved','paused','active'].includes(selected.status)">
+            <template v-if="selected.status">
               <div class="activate-form">
                 <div v-if="selected.status === 'active'" class="reconfig-note">
                   <i class="bi bi-info-circle me-1"></i>
-                  Pauta actualmente activa. Puedes cambiar slot, fechas o prioridad.
+                  Pauta activa. Puedes cambiar slot, fechas o prioridad.
+                </div>
+                <div v-else-if="selected.status === 'pending'" class="reconfig-note" style="background:#1e3a5f;border-color:#3b82f6">
+                  <i class="bi bi-lightning-charge me-1" style="color:#60a5fa"></i>
+                  Activar directamente asignará slot y cambiará el estado a <strong>activa</strong>.
                 </div>
                 <div class="af-row">
                   <div><label class="form-lbl">Slot *</label>
@@ -332,7 +336,7 @@
                 </div>
                 <button class="btn-action btn-activate" @click="activateAd">
                   <i :class="selected.status === 'active' ? 'bi bi-pencil-square' : 'bi bi-broadcast'" class="me-1"></i>
-                  {{ selected.status === 'active' ? 'Reconfigurar pauta' : 'Activar pauta' }}
+                  {{ selected.status === 'active' ? 'Reconfigurar' : 'Activar en slot' }}
                 </button>
               </div>
             </template>

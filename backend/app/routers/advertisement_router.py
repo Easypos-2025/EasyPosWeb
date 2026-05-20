@@ -709,11 +709,8 @@ async def admin_activate(
     ad = await db.get(Advertisement, ad_id)
     if not ad:
         raise HTTPException(status_code=404, detail="Pauta no encontrada")
-    if ad.status not in ("approved", "paused", "active", "expired"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se puede activar una pauta en estado '{ad.status}'. Debe estar aprobada, pausada, activa o expirada."
-        )
+    if ad.status not in ("pending", "approved", "paused", "active", "expired", "rejected"):
+        raise HTTPException(status_code=400, detail=f"No se puede activar esta pauta (estado: '{ad.status}')")
 
     slot = data.get("slot_position")
     if slot not in (1, 2, 3):

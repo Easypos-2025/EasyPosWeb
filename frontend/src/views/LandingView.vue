@@ -915,6 +915,8 @@ export default {
       if (sseSource) sseSource.close()
     })
 
+    const sidebarDismissed = ref(false)
+
     return {
       sections, profiles, planData, activeSlide, isPaused, lastUpdated, mobileOpen,
       featuresGrid, featureItems, freePlanItems, aboutItems,
@@ -923,6 +925,7 @@ export default {
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
       formatPrice, renderVal, submitContact,
+      sidebarDismissed,
     }
   },
   components: { LandingAdBanner, LandingAdSidebar },
@@ -1865,4 +1868,32 @@ export default {
   .btn-slide-cta, .btn-slide-outline { flex: 1; justify-content: center; padding: 11px 16px; font-size: .9rem; }
 }
 
+/* ════════════════════════════════════════════════════
+   SIDEBAR PUBLICITARIO FIJO (≥1400px)
+════════════════════════════════════════════════════ */
+.landing-fixed-sidebar {
+  display: none;
+}
+
+@media (min-width: 1400px) {
+  .landing-root.has-ad-sidebar {
+    padding-right: 220px;
+  }
+  .landing-fixed-sidebar {
+    display: block;
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 210px;
+    height: 100vh;
+    z-index: 50;
+    background: #0a0e1a;
+    border-left: 1px solid #1e293b;
+  }
+}
+
+@media (min-width: 1600px) {
+  .landing-root.has-ad-sidebar { padding-right: 260px; }
+  .landing-fixed-sidebar { width: 250px; }
+}
 </style>
