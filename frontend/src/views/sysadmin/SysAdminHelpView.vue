@@ -391,14 +391,21 @@ loadArticles()
 }
 .sh-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: #475569; }
 .sh-input, .sh-textarea {
-  background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #334155;
   border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none;
   transition: border-color .2s;
+  width: 100%;
 }
 .sh-input:focus, .sh-textarea:focus, .sh-select:focus {
   border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.2);
 }
-.sh-textarea { resize: vertical; font-family: inherit; }
+.sh-textarea {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
 
 /* ── GIF area ── */
 .sh-gif-area { display: flex; flex-direction: column; gap: 10px; }
