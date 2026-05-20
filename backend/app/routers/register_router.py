@@ -1,4 +1,7 @@
 import re
+import secrets
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,11 +14,12 @@ from app.models.company_model import Company
 from app.models.company_payment_model import CompanyPayment
 from app.models.company_plan_model import CompanyPlan
 from app.models.company_theme_model import CompanyTheme
+from app.models.password_reset_token import PasswordResetToken
 from app.models.plan_model import Plan
 from app.models.role_model import Role
 from app.models.role_module_model import RoleModule
 from app.models.user_model import User
-from app.utils.email_service import send_payment_received
+from app.utils.email_service import send_payment_received, send_verification_email
 
 router = APIRouter(prefix="/register", tags=["Register"])
 
@@ -89,7 +93,7 @@ async def register_associate(data: AssociateRegisterRequest, request: Request,
 
         user = User(nombre=data.admin_nombre, email=data.admin_email,
                     password_hash=hash_password(data.admin_password),
-                    role_id=role.id, company_id=company.id_company, is_active=True)
+                    role_id=role.id, company_id=company.id_company, is_active=False)
         db.add(user)
         await db.flush()
 
@@ -119,9 +123,44 @@ async def register_associate(data: AssociateRegisterRequest, request: Request,
         await db.rollback()
         raise HTTPException(status_code=500, detail="Error al crear la cuenta. Intenta de nuevo.") from e
 
+    # Crear token de verificación de email (48h)
+    verify_token = secrets.token_urlsafe(32)
+    db_token = PasswordResetToken(
+        user_id    = user.id,
+        token      = verify_token,
+        expires_at = datetime.utcnow() + timedelta(hours=48),
+    )
+    db.add(db_token)
+    await db.commit()
+
+    background_tasks.add_task(send_verification_email, data.admin_email, verify_token, data.company_name)
+
     if is_paid:
         background_tasks.add_task(send_payment_received, company_name=data.company_name,
                                   plan_name=plan.name, amount=plan.price, admin_email=data.admin_email)
 
-    return {"message": "Cuenta creada exitosamente", "company": data.company_name, "email": data.admin_email,
-            "payment_status": "pending_payment" if is_paid else "active", "plan_name": plan.name, "is_paid": is_paid}
+    return {"message": "Revisa tu correo para activar la cuenta", "company": data.company_name,
+            "email": data.admin_email, "payment_status": "pending_payment" if is_paid else "active",
+            "plan_name": plan.name, "is_paid": is_paid, "requires_verification": True}
+
+
+@router.get("/verify-email")
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(PasswordResetToken).where(
+            PasswordResetToken.token == token,
+            PasswordResetToken.expires_at > datetime.utcnow(),
+        )
+    )
+    db_token = result.scalar_one_or_none()
+    if not db_token:
+        raise HTTPException(status_code=400, detail="El enlace de verificación es inválido o ha expirado.")
+
+    user = await db.get(User, db_token.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    user.is_active = True
+    await db.delete(db_token)
+    await db.commit()
+    return {"message": "Cuenta activada exitosamente. Ya puedes iniciar sesión.", "email": user.email}

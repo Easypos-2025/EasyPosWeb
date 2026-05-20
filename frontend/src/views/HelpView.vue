@@ -61,13 +61,14 @@
             <Transition name="help-expand">
               <div v-if="expanded[article.id]" class="help-card-body">
                 <p v-if="article.description" class="help-description" v-html="formatDesc(article.description)"></p>
-                <div v-if="article.gif_url" class="help-gif-wrap">
+                <div v-if="article.gif_url" class="help-gif-wrap" @click="openLightbox(article.gif_url, article.title)">
                   <img
                     :src="article.gif_url"
                     :alt="article.title"
                     class="help-gif"
                     loading="lazy"
                   />
+                  <div class="help-gif-zoom-hint"><i class="bi bi-zoom-in"></i> Clic para ampliar</div>
                 </div>
               </div>
             </Transition>
@@ -77,6 +78,19 @@
     </div>
 
   </div>
+
+  <!-- Lightbox GIF -->
+  <teleport to="body">
+    <Transition name="lightbox-fade">
+      <div v-if="lightbox.open" class="help-lightbox" @click="closeLightbox" @keydown.esc="closeLightbox" tabindex="0">
+        <button class="help-lb-close" @click.stop="closeLightbox"><i class="bi bi-x-lg"></i></button>
+        <div class="help-lb-inner" @click.stop>
+          <p class="help-lb-title">{{ lightbox.title }}</p>
+          <img :src="lightbox.src" :alt="lightbox.title" class="help-lb-img" />
+        </div>
+      </div>
+    </Transition>
+  </teleport>
 </template>
 
 <script setup>
@@ -90,6 +104,7 @@ const articles     = ref([])
 const loading      = ref(false)
 const searchQuery  = ref("")
 const expanded     = ref({})
+const lightbox     = ref({ open: false, src: "", title: "" })
 let   searchTimer  = null
 
 async function loadArticles() {
@@ -128,6 +143,15 @@ const groupedArticles = computed(() => {
 // Convierte saltos de línea en <br>
 function formatDesc(text) {
   return text.replace(/\n/g, "<br>")
+}
+
+function openLightbox(src, title) {
+  lightbox.value = { open: true, src, title }
+  document.body.style.overflow = "hidden"
+}
+function closeLightbox() {
+  lightbox.value.open = false
+  document.body.style.overflow = ""
 }
 
 loadArticles()
@@ -237,14 +261,56 @@ loadArticles()
 
 .help-gif-wrap {
   border-radius: 8px; overflow: hidden;
-  border: 1px solid #334155;
-  background: #0f172a;
-  max-width: 100%;
+  border: 1px solid #334155; background: #0f172a;
+  max-width: 100%; cursor: zoom-in; position: relative;
+}
+.help-gif-wrap:hover .help-gif-zoom-hint { opacity: 1; }
+.help-gif-zoom-hint {
+  position: absolute; bottom: 8px; right: 8px;
+  background: rgba(0,0,0,.65); color: #fff;
+  font-size: 11px; padding: 3px 9px; border-radius: 20px;
+  pointer-events: none; opacity: 0; transition: opacity .2s;
+  display: flex; align-items: center; gap: 4px;
 }
 .help-gif {
-  display: block; width: 100%; max-height: 500px;
-  object-fit: contain;
+  display: block; width: 100%; max-height: 420px;
+  object-fit: contain; transition: transform .2s;
 }
+.help-gif-wrap:hover .help-gif { transform: scale(1.01); }
+
+/* ── Lightbox ── */
+.help-lightbox {
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,.88);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; cursor: zoom-out;
+  backdrop-filter: blur(6px);
+}
+.help-lb-close {
+  position: absolute; top: 16px; right: 16px;
+  background: rgba(255,255,255,.15); border: none; color: #fff;
+  border-radius: 50%; width: 36px; height: 36px; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .15s; z-index: 1;
+}
+.help-lb-close:hover { background: rgba(239,68,68,.6); }
+.help-lb-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  max-width: 90vw; max-height: 90vh; cursor: default;
+}
+.help-lb-title {
+  color: rgba(255,255,255,.8); font-size: 13px; font-weight: 600;
+  text-align: center; margin: 0;
+}
+.help-lb-img {
+  max-width: 90vw; max-height: 82vh;
+  object-fit: contain; border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+
+/* Transición lightbox */
+.lightbox-fade-enter-active, .lightbox-fade-leave-active { transition: opacity .2s; }
+.lightbox-fade-enter-from, .lightbox-fade-leave-to       { opacity: 0; }
 
 /* ── Transición expand ── */
 .help-expand-enter-active,

@@ -9,26 +9,18 @@
         </a>
       </div>
 
-      <!-- ÉXITO -->
+      <!-- ÉXITO — verificación pendiente -->
       <div v-if="success" class="reg-success">
-        <div class="success-icon"><i class="bi bi-check-circle-fill"></i></div>
-        <h2>¡Cuenta creada!</h2>
-        <p>Tu empresa <strong>{{ successData.company }}</strong> ya está registrada.</p>
-        <template v-if="successData.is_paid">
-          <p class="success-sub">
-            Seleccionaste el plan <strong>{{ successData.plan_name }}</strong>.
-            Inicia sesión para completar el pago y activar tu cuenta.
-          </p>
-          <button class="btn-go-login" @click="router.push('/login')">
-            <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión y Pagar
-          </button>
-        </template>
-        <template v-else>
-          <p class="success-sub">Inicia sesión con <strong>{{ successData.email }}</strong></p>
-          <button class="btn-go-login" @click="router.push('/login')">
-            <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión
-          </button>
-        </template>
+        <div class="success-icon" style="color:#10b981"><i class="bi bi-envelope-check-fill"></i></div>
+        <h2>¡Casi listo!</h2>
+        <p>Tu empresa <strong>{{ successData.company }}</strong> fue registrada.</p>
+        <p class="success-sub">
+          Enviamos un enlace de confirmación a <strong>{{ successData.email }}</strong>.<br>
+          Revisa tu bandeja de entrada (y carpeta de spam) y haz clic en el enlace para activar tu cuenta.
+        </p>
+        <p class="success-hint">
+          <i class="bi bi-clock me-1"></i> El enlace expira en 48 horas.
+        </p>
       </div>
 
       <!-- FORMULARIO -->
@@ -667,6 +659,7 @@ export default {
 .success-icon { font-size: 4rem; color: #10b981; margin-bottom: 16px; }
 .reg-success h2 { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
 .reg-success p  { color: #64748b; margin-bottom: 8px; }
+.success-hint  { font-size: .82rem; color: #94a3b8; margin-top: 12px; }
 .success-sub { font-size: .9rem; }
 .btn-go-login {
   display: inline-flex; align-items: center; justify-content: center;

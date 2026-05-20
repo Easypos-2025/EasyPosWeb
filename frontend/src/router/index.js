@@ -74,6 +74,12 @@ const routes = [
   },
 
   {
+    path: "/verify-email",
+    name: "VerifyEmail",
+    component: () => import("@/views/VerifyEmailView.vue"),
+    meta: { title: "Verificar Email" }
+  },
+  {
     path: "/register",
     name: "RegisterAssociate",
     component: () => import("@/views/RegisterAssociateView.vue"),
@@ -687,6 +693,7 @@ router.beforeEach(async (to, from, next) => {
     to.path === "/landing" ||
     to.path === "/forgot-password" ||
     to.path === "/reset-password" ||
+    to.path === "/verify-email" ||
     to.path === "/business-profiles" ||
     to.path === "/register" ||
     to.path === "/payment-pending" ||

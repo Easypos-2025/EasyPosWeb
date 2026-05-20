@@ -178,6 +178,35 @@ def _send_smtp(to: str, subject: str, body_html: str):
 
 # ── Funciones de negocio ──────────────────────────────────────────────────────
 
+def send_verification_email(to_email: str, token: str, company_name: str):
+    verify_link = f"{FRONTEND_URL}/verify-email?token={token}"
+    content = f"""
+    <h2 style="margin:0 0 16px;color:#10b981;font-size:20px;">
+      &#9989; Confirma tu cuenta en EasyPosWeb
+    </h2>
+    <p style="margin:0 0 12px;">Hola,</p>
+    <p style="margin:0 0 8px;">
+      Tu empresa <strong>{company_name}</strong> ha sido registrada exitosamente.
+    </p>
+    <p style="margin:0 0 20px;">
+      Para activar tu cuenta y comenzar a usar la plataforma, confirma tu correo electrónico:
+    </p>
+    <p style="margin:0 0 24px;">
+      <a href="{verify_link}"
+         style="display:inline-block;background:#10b981;color:#ffffff;
+                padding:12px 28px;border-radius:8px;text-decoration:none;
+                font-weight:700;font-size:14px;">
+        Confirmar mi cuenta
+      </a>
+    </p>
+    <p style="margin:0;font-size:12px;color:#64748b;">
+      &#9201; Este enlace expirará en <strong>48 horas</strong>.<br>
+      Si no creaste esta cuenta, ignora este mensaje.
+    </p>
+    """
+    _send(to_email, "Confirma tu cuenta — EasyPosWeb", _wrap_email("#10b981", content))
+
+
 def send_reset_email(to_email: str, token: str):
     reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
     content = f"""

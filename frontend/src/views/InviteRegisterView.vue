@@ -22,12 +22,14 @@
         <a href="/login" class="btn-go-login">Ir al login</a>
       </div>
 
-      <!-- Registro exitoso -->
+      <!-- Registro exitoso — verificación pendiente -->
       <div v-else-if="registered" class="invite-success">
-        <i class="bi bi-check-circle-fill"></i>
-        <h2>¡Cuenta creada!</h2>
-        <p>Tu cuenta fue registrada en <strong>{{ info.company_name }}</strong> con el rol <strong>{{ info.role_name }}</strong>.</p>
-        <a href="/login" class="btn-go-login">Iniciar sesión</a>
+        <i class="bi bi-envelope-check-fill" style="color:#10b981"></i>
+        <h2>¡Casi listo!</h2>
+        <p>Te enviamos un enlace de confirmación a <strong>{{ registeredEmail }}</strong>.</p>
+        <p style="font-size:12px;color:#94a3b8;margin-top:6px">
+          <i class="bi bi-clock me-1"></i>Revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta. Expira en 48h.
+        </p>
       </div>
 
       <!-- Formulario de registro -->
@@ -122,7 +124,8 @@ const token = route.params.token
 
 const loading     = ref(true)
 const tokenError  = ref("")
-const registered  = ref(false)
+const registered      = ref(false)
+const registeredEmail = ref("")
 const saving      = ref(false)
 const apiError    = ref("")
 const showPass    = ref(false)
@@ -184,6 +187,7 @@ async function register() {
       email:    form.value.email.trim().toLowerCase(),
       password: form.value.password,
     })
+    registeredEmail.value = form.value.email.trim().toLowerCase()
     registered.value = true
   } catch (e) {
     apiError.value = e.response?.data?.detail || "Error al crear la cuenta"

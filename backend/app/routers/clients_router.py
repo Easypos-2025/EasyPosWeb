@@ -32,7 +32,11 @@ async def list_clients(
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
-        select(Client).where(Client.company_id == current_user.company_id).order_by(Client.name)
+        select(Client).where(
+            Client.company_id == current_user.company_id,
+            Client.is_active == 1,
+            Client.plan_blocked == 0,
+        ).order_by(Client.name)
     )
     return [_ser(c) for c in result.scalars().all()]
 

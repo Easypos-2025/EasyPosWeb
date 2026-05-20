@@ -14,8 +14,15 @@ def _ser(p: Profession):
 
 
 @router.get("/")
-async def get_professions(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Profession).order_by(Profession.name))
+async def get_professions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Profession)
+        .where(Profession.company_id == current_user.company_id)
+        .order_by(Profession.name)
+    )
     return [_ser(p) for p in result.scalars().all()]
 
 
@@ -23,17 +30,26 @@ async def get_professions(db: AsyncSession = Depends(get_db)):
 async def create_profession(
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     name = (data.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
 
-    result = await db.execute(select(Profession).where(Profession.name == name))
-    if result.scalar_one_or_none():
+    existing = await db.execute(
+        select(Profession).where(
+            Profession.name == name,
+            Profession.company_id == current_user.company_id,
+        )
+    )
+    if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Ya existe la profesión '{name}'")
 
-    p = Profession(name=name, description=(data.get("description") or "").strip() or None)
+    p = Profession(
+        company_id  = current_user.company_id,
+        name        = name,
+        description = (data.get("description") or "").strip() or None,
+    )
     db.add(p)
     await db.commit()
     await db.refresh(p)
@@ -45,9 +61,15 @@ async def update_profession(
     profession_id: int,
     data: dict = Body(...),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    p = await db.get(Profession, profession_id)
+    result = await db.execute(
+        select(Profession).where(
+            Profession.id == profession_id,
+            Profession.company_id == current_user.company_id,
+        )
+    )
+    p = result.scalar_one_or_none()
     if not p:
         raise HTTPException(status_code=404, detail="Profesión no encontrada")
 
@@ -66,16 +88,22 @@ async def update_profession(
 async def delete_profession(
     profession_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    p = await db.get(Profession, profession_id)
+    result = await db.execute(
+        select(Profession).where(
+            Profession.id == profession_id,
+            Profession.company_id == current_user.company_id,
+        )
+    )
+    p = result.scalar_one_or_none()
     if not p:
         raise HTTPException(status_code=404, detail="Profesión no encontrada")
 
     if p.workers:
         raise HTTPException(
             status_code=409,
-            detail=f"No se puede eliminar: hay {len(p.workers)} ejecutor(es) con esta profesión"
+            detail=f"No se puede eliminar: hay {len(p.workers)} ejecutor(es) con esta profesión",
         )
 
     await db.delete(p)

@@ -1,18 +1,21 @@
+import secrets
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from passlib.context import CryptContext
 
 from app.database import get_db
 from app.models.invitation_model import InvitationToken
+from app.models.password_reset_token import PasswordResetToken
 from app.models.user_model import User
 from app.models.role_model import Role
 from app.models.company_model import Company
 from app.models.user_session_model import UserSession
 from app.auth.jwt_handler import decode_access_token
+from app.utils.email_service import send_verification_email
 from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/invitations", tags=["Invitations"])
@@ -93,7 +96,7 @@ async def get_invitation(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{token}/register")
-async def register_via_invitation(token: str, data: dict, db: AsyncSession = Depends(get_db)):
+async def register_via_invitation(token: str, data: dict, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InvitationToken).where(InvitationToken.token == token))
     inv = result.scalar_one_or_none()
     if not inv:
@@ -115,8 +118,24 @@ async def register_via_invitation(token: str, data: dict, db: AsyncSession = Dep
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
     await check_limit(inv.company_id, "max_users", User, db)
-    db.add(User(nombre=nombre, email=email, password_hash=pwd_context.hash(password),
-                role_id=inv.role_id, company_id=inv.company_id, is_active=True))
+
+    new_user = User(nombre=nombre, email=email, password_hash=pwd_context.hash(password),
+                    role_id=inv.role_id, company_id=inv.company_id, is_active=False)
+    db.add(new_user)
     inv.used_at = datetime.utcnow()
+    await db.flush()
+
+    verify_token = secrets.token_urlsafe(32)
+    db.add(PasswordResetToken(
+        user_id    = new_user.id,
+        token      = verify_token,
+        expires_at = datetime.utcnow() + timedelta(hours=48),
+    ))
     await db.commit()
-    return {"ok": True, "message": "Cuenta creada. Ya puedes iniciar sesión."}
+
+    # Obtener nombre de la empresa para el email
+    company = await db.get(Company, inv.company_id)
+    company_name = company.name if company else "EasyPosWeb"
+    background_tasks.add_task(send_verification_email, email, verify_token, company_name)
+
+    return {"ok": True, "message": "Revisa tu correo para activar tu cuenta.", "requires_verification": True}
