@@ -298,7 +298,8 @@ const filtered = computed(() => {
   if (!q) return rows.value
   return rows.value.filter(r =>
     r.company_name.toLowerCase().includes(q) ||
-    r.plan_name.toLowerCase().includes(q)
+    r.plan_name.toLowerCase().includes(q) ||
+    (r.identification_number || "").toLowerCase().includes(q)
   )
 })
 

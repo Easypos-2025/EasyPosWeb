@@ -26,10 +26,11 @@ router = APIRouter(prefix="/plan-associate-limits", tags=["PlanAssociateLimits"]
 def _ser(cpl: CompanyPlanLimits, company: Company = None, plan: Plan = None) -> dict:
     return {
         "id":                  cpl.id,
-        "company_id":          cpl.company_id,
-        "company_name":        company.name if company else "—",
-        "plan_id":             cpl.plan_id,
-        "plan_name":           plan.name if plan else "—",
+        "company_id":              cpl.company_id,
+        "company_name":            company.name if company else "—",
+        "identification_number":   company.identification_number if company else "",
+        "plan_id":                 cpl.plan_id,
+        "plan_name":               plan.name if plan else "—",
         # Límites de conteo
         "max_users":           cpl.max_users,
         "max_products":        cpl.max_products,
@@ -56,6 +57,26 @@ async def list_limits(
     _: User = Depends(require_sysadmin),
     db: AsyncSession = Depends(get_db),
 ):
+    # Obtener todas las empresas con plan activo
+    all_cp = await db.execute(
+        select(CompanyPlan)
+        .where(CompanyPlan.is_active == True)
+        .order_by(CompanyPlan.company_id)
+    )
+    active_plans = {cp.company_id: cp.plan_id for cp in all_cp.scalars().all()}
+
+    # Auto-generar snapshots para empresas sin registro
+    existing_res = await db.execute(select(CompanyPlanLimits.company_id))
+    existing_ids = {r[0] for r in existing_res.fetchall()}
+
+    for company_id, plan_id in active_plans.items():
+        if company_id not in existing_ids:
+            await snapshot_plan_limits(company_id, plan_id, db)
+
+    if set(active_plans.keys()) - existing_ids:
+        await db.commit()
+
+    # Devolver todos los registros ordenados por empresa
     result = await db.execute(select(CompanyPlanLimits).order_by(CompanyPlanLimits.company_id))
     rows = result.scalars().all()
     out = []
