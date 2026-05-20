@@ -101,6 +101,7 @@ async def get_menu_by_profile(
         SELECT
             bpm.id AS bpm_id, sm.id AS module_id,
             COALESCE(bpm.display_name, sm.name) AS name,
+            bpm.display_name,
             sm.route, sm.icon,
             COALESCE(bpm.parent_id, parent_bpm.id) AS parent_id
         FROM system_modules sm
@@ -113,7 +114,8 @@ async def get_menu_by_profile(
     """), {"profile_id": profile_id})
     modules = result.fetchall()
 
-    data = [{"id": m.bpm_id, "name": m.name, "route": m.route, "icon": m.icon, "parent_id": m.parent_id}
+    data = [{"id": m.bpm_id, "name": m.name, "display_name": m.display_name,
+             "route": m.route, "icon": m.icon, "parent_id": m.parent_id}
             for m in modules]
     return _build_tree(data)
 

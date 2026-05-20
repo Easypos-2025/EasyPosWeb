@@ -61,6 +61,36 @@ async def get_available_modules(
     ]
 
 
+@router.patch("/{bpm_id}")
+async def update_module_assignment(
+    bpm_id: int,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    bpm = await db.get(BusinessProfileModule, bpm_id)
+    if not bpm:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+
+    if "parent_id" in data:
+        new_parent = data["parent_id"]
+        if new_parent is not None:
+            # Verificar que el padre pertenece al mismo perfil
+            parent = await db.get(BusinessProfileModule, new_parent)
+            if not parent or parent.business_profile_id != bpm.business_profile_id:
+                raise HTTPException(status_code=400, detail="El padre no pertenece al mismo perfil")
+            # Evitar ciclo: el nuevo padre no puede ser un descendiente del nodo
+            if new_parent == bpm_id:
+                raise HTTPException(status_code=400, detail="Un módulo no puede ser su propio padre")
+        bpm.parent_id = new_parent
+
+    if "display_name" in data:
+        bpm.display_name = data["display_name"] or None
+
+    await db.commit()
+    return {"message": "Asignación actualizada"}
+
+
 @router.post("/add-module/")
 async def add_module_to_profile(
     data: dict,

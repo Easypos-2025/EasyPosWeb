@@ -91,6 +91,9 @@
             </span>
             <span class="smm-name">{{ element.name }}</span>
             <span class="smm-route">{{ element.route || '—' }}</span>
+            <button class="smm-btn-edit" title="Editar asignación" @click.stop="openEdit(element)">
+              <i class="bi bi-pencil-square"></i>
+            </button>
 
             <!-- HIJOS -->
             <draggable
@@ -111,6 +114,9 @@
                   </span>
                   <span class="smm-name">{{ child.name }}</span>
                   <span class="smm-route">{{ child.route }}</span>
+                  <button class="smm-btn-edit" title="Editar asignación" @click.stop="openEdit(child)">
+                    <i class="bi bi-pencil-square"></i>
+                  </button>
                 </div>
               </template>
             </draggable>
@@ -122,10 +128,55 @@
     </div>
 
   </div>
+
+  <!-- MODAL EDITAR ASIGNACIÓN -->
+  <teleport to="body">
+    <div v-if="editModal.open" class="smm-overlay" @click.self="closeEdit">
+      <div class="smm-modal">
+        <div class="smm-modal-header">
+          <span><i class="bi bi-pencil-square"></i> Editar asignación</span>
+          <button class="smm-modal-close" @click="closeEdit"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <div class="smm-modal-body">
+          <div class="smm-add-field">
+            <label class="smm-label">Módulo</label>
+            <div class="smm-module-info">{{ editModal.name }} <span class="smm-route" style="display:inline">{{ editModal.route }}</span></div>
+          </div>
+
+          <div class="smm-add-field">
+            <label class="smm-label">Colgar bajo</label>
+            <select v-model="editForm.parent_id" class="form-select smm-select">
+              <option :value="null">— Raíz (nivel superior) —</option>
+              <option
+                v-for="m in editableParents"
+                :key="m.id"
+                :value="m.id"
+              >{{ m.name }}</option>
+            </select>
+          </div>
+
+          <div class="smm-add-field">
+            <label class="smm-label">Nombre en este perfil <span class="smm-optional">(opcional)</span></label>
+            <input v-model="editForm.display_name" class="form-control smm-input" placeholder="Dejar vacío para usar el nombre global" />
+          </div>
+        </div>
+
+        <div class="smm-modal-footer">
+          <button class="btn smm-btn-cancel" @click="closeEdit">Cancelar</button>
+          <button class="btn smm-btn-add" :disabled="saving" @click="saveEdit">
+            <i v-if="saving" class="bi bi-arrow-repeat spin"></i>
+            <i v-else class="bi bi-check-lg"></i>
+            {{ saving ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </teleport>
 </template>
 
 <script setup>
-import { ref, watch } from "vue"
+import { ref, watch, computed } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useMenuStore } from "@/stores/menuStore"
@@ -229,6 +280,45 @@ watch(selectedProfileId, async () => {
 })
 
 loadProfiles()
+
+// ── Editar asignación existente ──────────────────────────────────────────────
+const editModal = ref({ open: false, bpmId: null, name: '', route: '' })
+const editForm  = ref({ parent_id: null, display_name: '' })
+const saving    = ref(false)
+
+// Opciones de padre: todos los items del perfil excepto el propio bpmId
+const editableParents = computed(() =>
+  flatModules.value.filter(m => m.id !== editModal.value.bpmId)
+)
+
+function openEdit(item) {
+  editModal.value = { open: true, bpmId: item.id, name: item.name, route: item.route || '' }
+  editForm.value  = { parent_id: item.parent_id ?? null, display_name: item.display_name ?? '' }
+}
+
+function closeEdit() {
+  editModal.value.open = false
+}
+
+async function saveEdit() {
+  saving.value = true
+  try {
+    await api.patch(`/business-profile-module/${editModal.value.bpmId}`, {
+      parent_id:    editForm.value.parent_id,
+      display_name: editForm.value.display_name || null
+    })
+    showToast("Asignación actualizada", "success")
+    closeEdit()
+    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
+    modules.value    = res.data
+    flatModules.value = flatList(modules.value)
+    await menuStore.loadMenu()
+  } catch (error) {
+    showToast(error.response?.data?.detail || "Error al actualizar", "error")
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -412,6 +502,101 @@ loadProfiles()
 .smm-btn-add:hover:not(:disabled) { background: #2563eb; }
 .smm-btn-add:disabled { opacity: .5; cursor: not-allowed; }
 
+/* ── Botón editar por ítem ── */
+.smm-btn-edit {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #64748b;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.smm-btn-edit:hover { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
+
+/* ── Info módulo en modal ── */
+.smm-module-info {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* ── Overlay + Modal ── */
+.smm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.smm-modal {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+
+.smm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #334155;
+  font-size: 15px;
+  font-weight: 700;
+  color: #e2e8f0;
+  gap: 10px;
+}
+
+.smm-modal-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: color .15s;
+}
+.smm-modal-close:hover { color: #f87171; }
+
+.smm-modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.smm-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid #334155;
+}
+
+.smm-btn-cancel {
+  background: #0f172a;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 8px 18px;
+}
+.smm-btn-cancel:hover { background: #1e293b; }
+
 /* =========================================
    MÓVIL — más espacio para el dedo
 ========================================= */
@@ -448,4 +633,7 @@ loadProfiles()
     padding: 20px 12px;
   }
 }
+
+.spin { animation: spin .7s linear infinite; }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 </style>
