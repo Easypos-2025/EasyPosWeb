@@ -13,6 +13,9 @@ from app.models.worker_model import Worker
 from app.models.role_model import Role
 from app.models.role_module_model import RoleModule
 from app.models.system_module_model import SystemModule
+from app.models.task_material_model import TaskMaterial
+from app.models.task_expense_model import TaskExpense
+from app.models.task_purchase_model import TaskPurchase
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.services.plan_limits_service import check_limit, get_limits
@@ -171,6 +174,43 @@ async def get_incomplete_tasks(
         "sin_asignar":     sin_asignar,
         "info_incompleta": [_serialize(t, sm, wm, um) for t in r2.scalars().all()],
     }
+
+
+@router.get("/report")
+async def get_task_report(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    """Tareas con costo calculado = materiales + gastos + compras, ordenadas por start_date asc."""
+    user = await _get_user(authorization, db)
+    role = await _get_role(user, db)
+    is_sys = role.is_system if role else False
+
+    sm = await _status_map(db)
+    wm = await _worker_map(db)
+    um = await _user_map(db)
+
+    conds = [] if is_sys else [Task.company_id == user.company_id]
+    result = await db.execute(
+        select(Task).where(*conds)
+        .order_by(Task.start_date.is_(None), Task.start_date.asc())
+    )
+    tasks = result.scalars().all()
+    task_ids = [t.id for t in tasks]
+
+    if task_ids:
+        mat_res   = await db.execute(select(TaskMaterial.task_id, func.sum(TaskMaterial.unit_cost * TaskMaterial.quantity)).where(TaskMaterial.task_id.in_(task_ids)).group_by(TaskMaterial.task_id))
+        exp_res   = await db.execute(select(TaskExpense.task_id,  func.sum(TaskExpense.amount)).where(TaskExpense.task_id.in_(task_ids)).group_by(TaskExpense.task_id))
+        purch_res = await db.execute(select(TaskPurchase.task_id, func.sum(TaskPurchase.amount)).where(TaskPurchase.task_id.in_(task_ids)).group_by(TaskPurchase.task_id))
+        mat_costs   = {r[0]: float(r[1] or 0) for r in mat_res.all()}
+        exp_costs   = {r[0]: float(r[1] or 0) for r in exp_res.all()}
+        purch_costs = {r[0]: float(r[1] or 0) for r in purch_res.all()}
+    else:
+        mat_costs = exp_costs = purch_costs = {}
+
+    rows = []
+    for t in tasks:
+        base = _serialize(t, sm, wm, um)
+        base["calculated_cost"] = (mat_costs.get(t.id, 0) + exp_costs.get(t.id, 0) + purch_costs.get(t.id, 0))
+        rows.append(base)
+    return rows
 
 
 @router.get("/users-list")

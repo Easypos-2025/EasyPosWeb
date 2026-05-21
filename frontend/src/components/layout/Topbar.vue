@@ -442,6 +442,7 @@ const pendingAdsCount      = ref(0)
 const taskNotifList        = ref([])
 const taskNotifListOpen    = ref(false)
 const unreadUserNotif      = ref(0)
+const _prevUserNotif       = ref(0)
 const incompleteTaskCount  = ref(0)
 const incompleteTaskList   = ref([])
 const incompleteListOpen   = ref(false)
@@ -462,6 +463,7 @@ const isAdminUser = computed(() => {
 
 const totalNotifCount = computed(() =>
   unreadNotif.value +
+  unreadUserNotif.value +
   (companyStore.isSystem ? pendingPaymentsCount.value : 0) +
   (companyStore.isSystem ? pendingAdsCount.value : 0) +
   (isAdminUser.value ? incompleteTaskCount.value : 0) +
@@ -546,6 +548,18 @@ function fmtRelative(iso) {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24)  return `hace ${hrs}h`
   return `hace ${Math.floor(hrs / 24)}d`
+}
+
+async function loadUserNotifCount() {
+  if (!localStorage.getItem("token")) return
+  try {
+    const res  = await api.get("/user-notifications/inbox/count")
+    const prev = _prevUserNotif.value
+    const cnt  = res.data?.count ?? 0
+    _prevUserNotif.value   = cnt
+    unreadUserNotif.value  = cnt
+    if (cnt > prev) playNotifSound()
+  } catch {}
 }
 
 async function loadPendingPayments() {
@@ -672,7 +686,13 @@ async function toggleDropdown() {
 async function toggleUserDropdown() {
   await unlockAudio()
   userDropOpen.value = !userDropOpen.value
-  if (userDropOpen.value) dropdownOpen.value = false
+  if (userDropOpen.value) {
+    dropdownOpen.value = false
+    // Refrescar contadores al abrir para evitar datos rancios
+    loadUnreadCount()
+    loadUserNotifCount()
+    loadIncompleteTasks()
+  }
   if (!userDropOpen.value) { notifExpanded.value = false; taskNotifListOpen.value = false; incompleteListOpen.value = false }
 }
 
@@ -807,6 +827,7 @@ onMounted(async () => {
     await loadPlan(companyStore.selectedCompany?.id)
     await loadMenuItems()
     loadUnreadCount()
+    loadUserNotifCount()
     loadPendingPayments()
     loadPendingAds()
     loadIncompleteTasks()
@@ -819,7 +840,7 @@ onMounted(async () => {
       getConfigMs("topbar_notif_interval_ms",     60_000),
       getConfigMs("topbar_heartbeat_interval_ms", 180_000),
     ])
-    notifTimer     = setInterval(() => { loadUnreadCount(); loadPendingPayments(); loadPendingAds(); loadIncompleteTasks(); loadNewInquiries() }, notifMs)
+    notifTimer     = setInterval(() => { loadUnreadCount(); loadUserNotifCount(); loadPendingPayments(); loadPendingAds(); loadIncompleteTasks(); loadNewInquiries() }, notifMs)
     heartbeatTimer = setInterval(sendHeartbeat, hbMs)
   }
   document.addEventListener("click", handleOutsideClick)

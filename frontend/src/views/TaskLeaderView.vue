@@ -131,6 +131,10 @@
           <i class="bi bi-cash"></i>
           ${{ task.budget_labor_cost.toLocaleString('es-CO') }}
         </div>
+        <div class="card-date">
+          <i class="bi bi-calendar3"></i>
+          {{ fmtDate(task.created_at) }}
+        </div>
         <div class="card-actions" @click.stop>
           <button
             v-if="isWorker"
@@ -304,7 +308,7 @@ const loading  = ref(true)
 const saving   = ref(false)
 const showModal  = ref(false)
 const editing    = ref({})
-const activeTab    = ref("all")
+const activeTab    = ref("pending")
 const filterWorker = ref(null)
 const viewMode     = ref("card")
 
@@ -397,7 +401,7 @@ async function load() {
     if (!isWorker) promises.push(api.get("/workers/"))
 
     const results = await Promise.all(promises)
-    tasks.value    = results[0].data
+    tasks.value    = (results[0].data || []).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
     assets.value   = results[1].data
     statuses.value = results[2].data
     if (!isWorker) workers.value = results[3].data
@@ -517,6 +521,7 @@ onMounted(load)
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-budget { font-size: 12px; color: #16a34a; font-weight: 600;
   display:flex; align-items:center; gap:4px; }
+.card-date   { font-size: 11px; color: #94a3b8; display:flex; align-items:center; gap:4px; margin-top:2px; }
 
 /* WORKER INFO */
 .card-workers { display: flex; flex-wrap: wrap; gap: 6px; }

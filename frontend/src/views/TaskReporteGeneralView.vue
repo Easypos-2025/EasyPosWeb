@@ -31,6 +31,7 @@
         <div class="fg">
           <label>Estado</label>
           <select v-model="filterStatus" class="form-select">
+            <option value="activas">Activas (sin finalizadas)</option>
             <option value="">Todos</option>
             <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.name }}</option>
           </select>
@@ -102,57 +103,41 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>#</th>
               <th>Tarea</th>
               <th class="text-center">Estado</th>
-              <th>Task Leader</th>
-              <th class="text-center">Avance</th>
               <th class="text-right">Presupuesto</th>
-              <th class="text-right">Costo</th>
-              <th>Inicio</th>
-              <th>Límite</th>
-              <th>Cierre</th>
+              <th class="text-right">Costo real</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="t in filtered" :key="t.id"
-              :class="{ 'row-overdue': isOverdue(t) }">
-              <td class="text-muted">{{ t.id }}</td>
+              class="row-clickable"
+              :class="{ 'row-overdue': isOverdue(t) }"
+              @click="goToTask(t)">
               <td>
                 <strong>{{ t.title }}</strong>
-                <div v-if="t.description" class="task-desc">{{ t.description }}</div>
+                <div class="task-meta">
+                  <span v-if="t.assigned_to" class="meta-chip"><i class="bi bi-person-check"></i> {{ userName(t.assigned_to) }}</span>
+                  <span v-if="t.start_date" class="meta-chip"><i class="bi bi-calendar3"></i> {{ fmtDate(t.start_date) }}</span>
+                  <span v-if="isOverdue(t)" class="meta-chip meta-red"><i class="bi bi-exclamation-triangle-fill"></i> Atrasada</span>
+                </div>
               </td>
               <td class="text-center">
                 <span class="status-badge" :class="statusClass(t.status_id)">{{ t.status_name }}</span>
               </td>
-              <td class="text-muted">{{ userName(t.assigned_to) }}</td>
-              <td class="text-center">
-                <div class="progress-mini">
-                  <div class="progress-track-sm">
-                    <div class="progress-fill-sm"
-                      :class="t.progress===100?'fill-green':'fill-blue'"
-                      :style="{ width: t.progress+'%' }"></div>
-                  </div>
-                  <span class="prog-num">{{ t.progress }}%</span>
-                </div>
-              </td>
               <td class="text-right text-muted">${{ fmt(t.budget_labor_cost) }}</td>
-              <td class="text-right" :class="t.actual_labor_cost > t.budget_labor_cost && t.budget_labor_cost > 0 ? 'text-danger' : ''">
-                ${{ fmt(t.actual_labor_cost) }}
+              <td class="text-right" :class="t.calculated_cost > t.budget_labor_cost && t.budget_labor_cost > 0 ? 'text-danger' : ''">
+                ${{ fmt(t.calculated_cost) }}
               </td>
-              <td class="text-muted">{{ fmtDate(t.start_date)||'—' }}</td>
-              <td class="text-muted" :class="isOverdue(t)?'text-danger':''">{{ fmtDate(t.due_date)||'—' }}</td>
-              <td class="text-muted">{{ fmtDate(t.closed_at)||'—' }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="5" class="text-right"><strong>Totales ({{ filtered.length }} tareas):</strong></td>
+              <td colspan="2" class="text-right"><strong>Totales ({{ filtered.length }} tareas):</strong></td>
               <td class="text-right"><strong>${{ fmt(totals.budget) }}</strong></td>
               <td class="text-right" :class="totals.cost > totals.budget && totals.budget > 0 ? 'text-danger' : ''">
                 <strong>${{ fmt(totals.cost) }}</strong>
               </td>
-              <td colspan="3"></td>
             </tr>
           </tfoot>
         </table>
@@ -164,8 +149,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+
+const router = useRouter()
 
 const allTasks  = ref([])
 const statuses  = ref([])
@@ -174,7 +162,7 @@ const loading   = ref(true)
 
 const filterFrom   = ref("")
 const filterTo     = ref("")
-const filterStatus = ref("")
+const filterStatus = ref("activas")
 const filterUser   = ref("")
 const search       = ref("")
 
@@ -186,7 +174,10 @@ const filtered = computed(() => {
   return allTasks.value.filter(t => {
     const matchSearch = !search.value ||
       t.title?.toLowerCase().includes(search.value.toLowerCase())
-    const matchStatus = !filterStatus.value || t.status_id === Number(filterStatus.value)
+    const matchStatus =
+      filterStatus.value === "activas" ? ![5,6].includes(t.status_id) :
+      !filterStatus.value ? true :
+      t.status_id === Number(filterStatus.value)
     const matchUser   = filterUser.value === ""
       ? true : filterUser.value === -1 ? !t.assigned_to : t.assigned_to === Number(filterUser.value)
 
@@ -202,7 +193,7 @@ const filtered = computed(() => {
 
 const totals = computed(() => ({
   budget: filtered.value.reduce((s, t) => s + (t.budget_labor_cost||0), 0),
-  cost:   filtered.value.reduce((s, t) => s + (t.actual_labor_cost||0), 0),
+  cost:   filtered.value.reduce((s, t) => s + (t.calculated_cost||0), 0),
 }))
 
 const avgProgress = computed(() => {
@@ -222,6 +213,10 @@ function userName(id)    { return users.value.find(u => u.id === id)?.nombre || 
 function isOverdue(t)    { return t.due_date && new Date(t.due_date) < new Date() && ![5,6].includes(t.status_id) }
 function fmt(n)          { return Number(n||0).toLocaleString("es-CO") }
 function fmtDate(iso)    { return iso ? new Date(iso).toLocaleDateString("es-CO", { day:"2-digit", month:"short", year:"numeric" }) : "" }
+
+function goToTask(t) {
+  router.push(`/tasks/${t.id}/detalle`)
+}
 
 function clearFilters()  {
   filterFrom.value = ""; filterTo.value = ""; filterStatus.value = ""
@@ -249,7 +244,7 @@ async function load() {
   loading.value = true
   try {
     const [tRes, sRes, uRes] = await Promise.all([
-      api.get("/tasks/"),
+      api.get("/tasks/report"),
       api.get("/task-status/"),
       api.get("/users/"),
     ])
@@ -299,6 +294,11 @@ onMounted(load)
 .data-table tr:hover td { background:#f8fafc; }
 .row-overdue td { background:#fff5f5 !important; }
 .total-row td { background:#f0fdf4 !important; }
+.row-clickable { cursor:pointer; }
+.row-clickable:hover td { background:#f0f9ff !important; }
+.task-meta { display:flex; flex-wrap:wrap; gap:6px; margin-top:3px; }
+.meta-chip { display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#64748b; background:#f1f5f9; border-radius:10px; padding:1px 7px; }
+.meta-red  { color:#dc2626; background:#fef2f2; }
 .text-center { text-align:center; }
 .text-right  { text-align:right; }
 .text-muted  { color:#94a3b8 !important; }
@@ -336,11 +336,7 @@ onMounted(load)
   .quick-stats     { gap: 6px; }
   .qs-item         { padding: 6px 10px; font-size: 12px; }
   .table-card      { overflow-x: auto; }
-  /* Ocultar columnas menos prioritarias */
-  .data-table th:nth-child(1), .data-table td:nth-child(1),
-  .data-table th:nth-child(6), .data-table td:nth-child(6),
-  .data-table th:nth-child(7), .data-table td:nth-child(7),
-  .data-table th:nth-child(10),.data-table td:nth-child(10) { display: none; }
+  /* tabla compacta en móvil */
 }
 
 @media (max-width: 576px) {
@@ -348,10 +344,6 @@ onMounted(load)
   .page-title     { font-size: 15px; }
   .filters-grid   { grid-template-columns: 1fr; }
   .actions-fg     { flex-direction: row; }
-  /* Ocultar también inicio y Task Leader */
-  .data-table th:nth-child(4), .data-table td:nth-child(4),
-  .data-table th:nth-child(8), .data-table td:nth-child(8) { display: none; }
-  .task-desc { display: none; }
   .data-table th, .data-table td { padding: 8px 6px; font-size: 11px; }
 }
 

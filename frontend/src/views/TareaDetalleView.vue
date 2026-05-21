@@ -641,7 +641,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
@@ -756,22 +756,23 @@ function clearError(e) { e.target.classList.remove("field-invalid") }
 
 // ── Carga principal ──────────────────────────────────────────
 async function load() {
+  const id = route.params.taskId   // siempre fresco aunque el param cambie
   loading.value = true
   try {
     const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes, collabRes,
            purchRes, insumoRes, unidadRes, cgastoRes, ccompraRes] =
       await Promise.all([
-        api.get(`/tasks/${taskId}`),
+        api.get(`/tasks/${id}`),
         api.get("/tasks/assets-list"),
         api.get("/workers/"),
         api.get("/users/"),
         api.get("/task-status/"),
-        api.get(`/task-evidence/${taskId}`),
-        api.get(`/task-materials/${taskId}`),
-        api.get(`/task-expenses/${taskId}`),
-        api.get(`/task-comments/${taskId}`),
-        api.get(`/task-collaborators/${taskId}`),
-        api.get(`/task-purchases/${taskId}`),
+        api.get(`/task-evidence/${id}`),
+        api.get(`/task-materials/${id}`),
+        api.get(`/task-expenses/${id}`),
+        api.get(`/task-comments/${id}`),
+        api.get(`/task-collaborators/${id}`),
+        api.get(`/task-purchases/${id}`),
         api.get("/insumos/"),
         api.get("/unidades-medida/"),
         api.get("/conceptos-gastos/"),
@@ -1033,6 +1034,14 @@ async function removeCollab(userId) {
     showToast(e.response?.data?.detail || "Error al eliminar colaborador", "error")
   }
 }
+
+// Recargar cuando se navega de una tarea a otra (mismo componente, param distinto)
+watch(() => route.params.taskId, (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    window.scrollTo(0, 0)
+    load()
+  }
+})
 
 onMounted(load)
 </script>
