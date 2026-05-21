@@ -190,40 +190,43 @@
                 <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
-            <div class="row g-2">
-              <div class="col-6">
-                <div class="fg">
-                  <label>Propietario</label>
-                  <select v-model="editForm.owner_id" class="form-select">
-                    <option :value="null">— Sin propietario —</option>
-                    <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
-                  </select>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="fg">
-                  <label>Arrendatario</label>
-                  <select v-model="editForm.client_id" class="form-select">
-                    <option :value="null">— Sin arrendatario —</option>
-                    <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
-                  </select>
-                </div>
-              </div>
+            <!-- Propietario (solo propietario, arrendatario va en contrato de arriendo) -->
+            <div class="fg">
+              <label>Propietario</label>
+              <select v-model="editForm.owner_id" class="form-select">
+                <option :value="null">— Sin propietario —</option>
+                <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
             </div>
+
             <div class="row g-2">
               <div class="col-6">
                 <div class="fg">
                   <label>Teléfono</label>
-                  <input v-model="editForm.phone" class="form-control" placeholder="Ej: 300 000 0000" />
+                  <input
+                    v-model="editForm.phone"
+                    type="tel"
+                    maxlength="10"
+                    class="form-control"
+                    placeholder="Ej: 3001234567"
+                    @input="editForm.phone = editForm.phone.replace(/\D/g, '').slice(0, 10)"
+                  />
                 </div>
               </div>
               <div class="col-6">
                 <div class="fg">
                   <label>Sector</label>
-                  <input v-model.number="editForm.sector_id" type="number" class="form-control" placeholder="ID de sector" />
+                  <select v-model="editForm.sector_id" class="form-select">
+                    <option :value="null">— Sin sector —</option>
+                    <option v-for="s in sectors" :key="s.id" :value="s.id">{{ s.name }}</option>
+                  </select>
+                  <small v-if="!sectors.length" class="text-muted">
+                    <router-link to="/configuration/activos-sectores">Crea sectores aquí</router-link>
+                  </small>
                 </div>
               </div>
             </div>
+
             <div class="fg">
               <label>Dirección</label>
               <input v-model="editForm.address" class="form-control" placeholder="Calle / Carrera / Avenida..." />
@@ -235,16 +238,6 @@
             <div class="fg">
               <label>Descripción</label>
               <textarea v-model="editForm.description" class="form-control" rows="3" />
-            </div>
-            <div class="fg">
-              <label>Requisitos de Arriendo</label>
-              <textarea v-model="editForm.rental_requirements" class="form-control" rows="3"
-                placeholder="Ej: Fiador, depósito 2 meses, ingresos mínimos 3x canon..." />
-            </div>
-            <div class="fg">
-              <label>Observaciones Generales</label>
-              <textarea v-model="editForm.general_observations" class="form-control" rows="3"
-                placeholder="Información adicional visible en la página pública del activo..." />
             </div>
           </template>
 
@@ -490,6 +483,7 @@ const showModal     = ref(false)
 const saving        = ref(false)
 const activeTab     = ref("general")
 const editForm      = ref({})
+const sectors       = ref([])
 const qrBlobUrl      = ref(null)
 const qrUrl          = ref("")
 const urlCopied      = ref(false)
@@ -498,13 +492,12 @@ const previewData    = ref(null)
 const previewLoading = ref(false)
 
 const EMPTY_FORM = () => ({
-  id: null, name: "", short_name: "", category_id: "", client_id: null, owner_id: null,
+  id: null, name: "", short_name: "", category_id: "", owner_id: null,
   description: "", location: "", address: "", phone: "", sector_id: null,
   is_rented: 0, is_active: 1, has_sale_option: 0,
   canon_value: null, cadastral_value: null, commercial_value: null, sale_price: null,
   appraisal_year: null, acquisition_type: "", registration: "", property_number: "",
   additional_reference: "", list_code: null,
-  rental_requirements: "", general_observations: "",
 })
 
 const filtered = computed(() =>
@@ -529,14 +522,16 @@ function categoryName(id) {
 
 async function load() {
   try {
-    const [aRes, cRes, clRes] = await Promise.all([
+    const [aRes, cRes, clRes, sRes] = await Promise.all([
       api.get("/assets/"),
       api.get("/asset-categories/"),
       api.get("/clients"),
+      api.get("/asset-sectors/"),
     ])
     assets.value     = aRes.data
     categories.value = cRes.data
-    clients.value    = clRes.data.filter(c => c.is_active)
+    clients.value    = clRes.data
+    sectors.value    = sRes.data
   } catch {
     showToast("Error cargando activos", "error")
   }

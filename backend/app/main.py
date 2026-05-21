@@ -57,6 +57,8 @@ from app.routers.clients_router import router as clients_router
 from app.routers.invitation_router import router as invitation_router
 from app.routers.landing_router import router as landing_router
 from app.routers.help_router import router as help_router
+from app.routers.asset_sector_router import router as asset_sector_router
+from app.routers.company_asset_content_router import router as company_asset_content_router
 from app.routers.register_router import router as register_router
 from app.routers.payment_router import router as payment_router
 from app.routers.task_collaborators_router import router as task_collaborators_router
@@ -1394,6 +1396,8 @@ routers = [
     invitation_router,
     landing_router,
     help_router,
+    asset_sector_router,
+    company_asset_content_router,
     register_router,
     payment_router,
     task_collaborators_router,

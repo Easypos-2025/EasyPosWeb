@@ -19,17 +19,16 @@ router = APIRouter(prefix="/assets", tags=["Assets"])
 
 
 async def _ser(asset: Asset, db: AsyncSession) -> dict:
-    cat   = await db.get(AssetCategory, asset.category_id) if asset.category_id else None
-    cli   = await db.get(Client, asset.client_id)          if asset.client_id   else None
-    owner = await db.get(Client, asset.owner_id)           if asset.owner_id    else None
+    from app.models.asset_sector_model import AssetSector
+    cat    = await db.get(AssetCategory, asset.category_id) if asset.category_id else None
+    owner  = await db.get(Client, asset.owner_id)           if asset.owner_id    else None
+    sector = await db.get(AssetSector, asset.sector_id)     if asset.sector_id   else None
     return {
         "id":                   asset.id,
         "name":                 asset.name,
         "short_name":           asset.short_name or "",
         "category_id":          asset.category_id,
         "category_name":        cat.name if cat else "",
-        "client_id":            asset.client_id,
-        "client_name":          cli.name if cli else "",
         "owner_id":             asset.owner_id,
         "owner_name":           owner.name if owner else "",
         "description":          asset.description or "",
@@ -37,6 +36,7 @@ async def _ser(asset: Asset, db: AsyncSession) -> dict:
         "address":              asset.address or "",
         "phone":                asset.phone or "",
         "sector_id":            asset.sector_id,
+        "sector_name":          sector.name if sector else "",
         "is_rented":            asset.is_rented or 0,
         "is_active":            asset.is_active if asset.is_active is not None else 1,
         "has_sale_option":      asset.has_sale_option or 0,
@@ -50,8 +50,6 @@ async def _ser(asset: Asset, db: AsyncSession) -> dict:
         "property_number":      asset.property_number or "",
         "additional_reference": asset.additional_reference or "",
         "list_code":            asset.list_code,
-        "rental_requirements":  asset.rental_requirements or "",
-        "general_observations": asset.general_observations or "",
     }
 
 
@@ -59,7 +57,6 @@ def _apply(asset: Asset, data: AssetCreate) -> None:
     asset.name                 = data.name
     asset.short_name           = data.short_name or None
     asset.category_id          = data.category_id
-    asset.client_id            = data.client_id
     asset.owner_id             = data.owner_id
     asset.description          = data.description or None
     asset.location             = data.location or None
@@ -79,8 +76,6 @@ def _apply(asset: Asset, data: AssetCreate) -> None:
     asset.property_number      = data.property_number or None
     asset.additional_reference = data.additional_reference or None
     asset.list_code            = data.list_code
-    asset.rental_requirements  = data.rental_requirements or None
-    asset.general_observations = data.general_observations or None
 
 
 @router.post("/")

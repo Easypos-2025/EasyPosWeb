@@ -575,6 +575,20 @@ const routes = [
         meta: { title: "Conceptos de Compra" }
       },
 
+      // ── Configuración Activos ──────────────────────────────────────
+      {
+        path: "/configuration/activos-sectores",
+        name: "AssetSectorsView",
+        component: () => import("@/views/AssetSectorsView.vue"),
+        meta: { requiresAuth: true, title: "Sectores" }
+      },
+      {
+        path: "/configuration/activos-contenido",
+        name: "AssetContentView",
+        component: () => import("@/views/AssetContentView.vue"),
+        meta: { requiresAuth: true, title: "Contenido Activos" }
+      },
+
       // ── Ayuda ──────────────────────────────────────────────────────
       {
         path: "/ayuda",

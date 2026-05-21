@@ -61,6 +61,8 @@ from app.models.topbar_menu_item_model import TopbarMenuItem
 from app.models.novelty_model import Novelty, NoveltyEvidence
 from app.models.support_ticket_model import SupportTicket, TicketEvidence
 from app.models.help_article_model import HelpArticle
+from app.models.asset_sector_model import AssetSector
+from app.models.company_asset_content_model import CompanyAssetContent
 from app.models.system_config_model import SystemConfig
 from app.models.client_model import Client
 from app.models.invitation_model import InvitationToken
