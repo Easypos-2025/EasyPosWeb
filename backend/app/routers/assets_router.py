@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.asset_model import Asset
 from app.models.asset_category_model import AssetCategory
+from app.models.asset_sector_model import AssetSector
 from app.models.client_model import Client
 from app.models.user_model import User
 from app.schemas.asset_schema import AssetCreate, AssetUpdate
@@ -19,7 +20,6 @@ router = APIRouter(prefix="/assets", tags=["Assets"])
 
 
 async def _ser(asset: Asset, db: AsyncSession) -> dict:
-    from app.models.asset_sector_model import AssetSector
     cat    = await db.get(AssetCategory, asset.category_id) if asset.category_id else None
     owner  = await db.get(Client, asset.owner_id)           if asset.owner_id    else None
     sector = await db.get(AssetSector, asset.sector_id)     if asset.sector_id   else None
@@ -84,6 +84,10 @@ async def create_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    if not data.name or not data.name.strip():
+        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    if not data.category_id:
+        raise HTTPException(status_code=400, detail="La categoría es obligatoria")
     await check_limit(current_user.company_id, "max_assets", Asset, db)
     if data.list_code is not None:
         dup = await db.execute(select(Asset).where(Asset.list_code == data.list_code))
@@ -96,9 +100,9 @@ async def create_asset(
         await db.commit()
         await db.refresh(asset)
         return await _ser(asset, db)
-    except IntegrityError:
+    except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=422, detail="Error de integridad: verifica categoría, cliente o propietario.")
+        raise HTTPException(status_code=422, detail=f"Error de integridad: verifica categoría o propietario. ({e.orig})")
 
 
 @router.get("/")

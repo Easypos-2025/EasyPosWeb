@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class AssetCreate(BaseModel):
     name:                 str
-    category_id:          int
+    category_id:          Optional[int]     = None
     short_name:           Optional[str]     = None
     client_id:            Optional[int]     = None
     owner_id:             Optional[int]     = None
