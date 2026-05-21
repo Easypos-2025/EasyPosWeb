@@ -17,11 +17,13 @@ import './styles/variables.css'
 import "./styles/forms.css"
 import { createPinia } from "pinia"
 import "cropperjs/dist/cropper.css"
+import CurrencyInput from "./components/CurrencyInput.vue"
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(router)
 app.use(pinia)
+app.component("CurrencyInput", CurrencyInput)
 
 app.mount("#app")

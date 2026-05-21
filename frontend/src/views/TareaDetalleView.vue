@@ -150,8 +150,8 @@
           <!-- PRESUPUESTO -->
           <div class="fg">
             <label>Presupuesto estimado ($)</label>
-            <input v-if="!isWorkerRole" v-model.number="form.budget_labor_cost"
-              type="number" min="0" class="form-control" placeholder="0" />
+            <CurrencyInput v-if="!isWorkerRole" v-model="form.budget_labor_cost"
+              class="form-control" placeholder="0" />
             <div v-else class="read-field">
               ${{ (task.budget_labor_cost || 0).toLocaleString('es-CO') }}
             </div>
@@ -306,7 +306,7 @@
             </div>
             <div class="fg">
               <label>Costo unit. ($)</label>
-              <input v-model.number="matForm.unit_cost" type="number" min="0"
+              <CurrencyInput v-model="matForm.unit_cost"
                 class="form-control" placeholder="0" />
             </div>
             <div class="fg">
@@ -379,7 +379,7 @@
             </div>
             <div class="fg">
               <label>Monto ($) *</label>
-              <input v-model.number="expForm.amount" type="number" min="0"
+              <CurrencyInput v-model="expForm.amount"
                 class="form-control" placeholder="0" />
             </div>
             <div class="fg">
@@ -452,7 +452,7 @@
             </div>
             <div class="fg">
               <label>Monto ($) *</label>
-              <input v-model.number="purchForm.amount" type="number" min="0"
+              <CurrencyInput v-model="purchForm.amount"
                 class="form-control" placeholder="0" />
             </div>
             <div class="fg">

@@ -254,8 +254,7 @@
             </div>
             <div class="fg">
               <label>Valor Venta</label>
-              <input v-model.number="editForm.sale_price" type="number" min="0" step="1000" class="form-control" placeholder="0" />
-              <span v-if="editForm.sale_price" class="hint-fmt">{{ fmt(editForm.sale_price) }}</span>
+              <CurrencyInput v-model="editForm.sale_price" class="form-control" placeholder="0" />
             </div>
             <div class="row g-2">
               <div class="col-6">

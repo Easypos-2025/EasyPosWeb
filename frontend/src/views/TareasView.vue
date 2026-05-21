@@ -261,7 +261,7 @@
           <div class="form-row2">
             <div class="fg">
               <label>Presupuesto estimado ($)</label>
-              <input v-model.number="form.budget_labor_cost" type="number" min="0"
+              <CurrencyInput v-model="form.budget_labor_cost"
                 class="form-control" placeholder="0" />
             </div>
             <div class="fg">

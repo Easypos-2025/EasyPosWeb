@@ -49,11 +49,8 @@
         </div>
         <div class="fg actions-fg">
           <label>&nbsp;</label>
-          <button class="btn btn-primary" @click="applyFilters">
-            <i class="bi bi-funnel"></i> Filtrar
-          </button>
-          <button class="btn btn-secondary" @click="clearFilters">
-            <i class="bi bi-x"></i> Limpiar
+          <button class="btn btn-outline-secondary" @click="clearFilters">
+            <i class="bi bi-x-circle"></i> Limpiar filtros
           </button>
         </div>
       </div>
@@ -226,7 +223,6 @@ function isOverdue(t)    { return t.due_date && new Date(t.due_date) < new Date(
 function fmt(n)          { return Number(n||0).toLocaleString("es-CO") }
 function fmtDate(iso)    { return iso ? new Date(iso).toLocaleDateString("es-CO", { day:"2-digit", month:"short", year:"numeric" }) : "" }
 
-function applyFilters()  { /* Los filtros son reactivos, solo para trigger visual */ }
 function clearFilters()  {
   filterFrom.value = ""; filterTo.value = ""; filterStatus.value = ""
   filterUser.value = ""; search.value = ""

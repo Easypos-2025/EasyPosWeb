@@ -89,7 +89,7 @@
           </div>
           <div class="fg">
             <label>Costo unitario ($)</label>
-            <input v-model.number="matForm.unit_cost" type="number" min="0"
+            <CurrencyInput v-model="matForm.unit_cost"
               class="form-control" placeholder="0" />
           </div>
           <div class="fg total-col">
@@ -161,7 +161,7 @@
           </div>
           <div class="fg">
             <label>Monto ($) *</label>
-            <input v-model.number="expForm.amount" type="number" min="0"
+            <CurrencyInput v-model="expForm.amount"
               class="form-control" placeholder="0" />
           </div>
           <div class="fg">

@@ -120,7 +120,7 @@
               </div>
               <div class="fg" style="flex:1">
                 <label v-if="idx === 0">Precio unit.</label>
-                <input v-model.number="item.unit_price" type="number" min="0" step="0.01" class="form-control" />
+                <CurrencyInput v-model="item.unit_price" class="form-control" />
               </div>
               <div class="fg" style="flex:1">
                 <label v-if="idx === 0">Subtotal</label>

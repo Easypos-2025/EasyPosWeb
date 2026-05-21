@@ -114,7 +114,7 @@
             </div>
             <div class="fg">
               <label>Costo unitario</label>
-              <input v-model.number="form.cost_price" type="number" min="0" step="0.01" class="form-control" />
+              <CurrencyInput v-model="form.cost_price" class="form-control" />
             </div>
           </div>
           <div class="form-row2">

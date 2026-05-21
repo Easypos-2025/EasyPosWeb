@@ -122,11 +122,11 @@
           <div class="form-row3">
             <div class="fg">
               <label>Precio de venta *</label>
-              <input v-model.number="form.base_price" type="number" min="0" step="0.01" class="form-control" />
+              <CurrencyInput v-model="form.base_price" class="form-control" />
             </div>
             <div class="fg">
               <label>Costo</label>
-              <input v-model.number="form.cost_price" type="number" min="0" step="0.01" class="form-control" />
+              <CurrencyInput v-model="form.cost_price" class="form-control" />
             </div>
             <div class="fg">
               <label>% Impuesto</label>
