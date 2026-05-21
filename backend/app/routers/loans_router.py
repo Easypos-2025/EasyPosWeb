@@ -13,9 +13,30 @@ from app.models.bodega_item_model import BodegaItem
 from app.models.external_collaborator_model import ExternalCollaborator
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.models.role_model import Role
+from app.models.role_module_model import RoleModule
+from app.models.system_module_model import SystemModule
 
 router = APIRouter(prefix="/loans", tags=["Loans"])
 QR_EXPIRY_HOURS = 72
+LOANS_ROUTE = "/loans/prestamos"
+
+
+async def _get_loan_perms(user: User, db: AsyncSession):
+    """Devuelve (is_sys, can_view_all, can_create, can_edit) para el usuario en el módulo de préstamos."""
+    role = await db.get(Role, user.role_id)
+    if role and role.is_system:
+        return True, True, True, True
+
+    result = await db.execute(
+        select(RoleModule)
+        .join(SystemModule, SystemModule.id == RoleModule.module_id)
+        .where(RoleModule.role_id == user.role_id, SystemModule.route == LOANS_ROUTE)
+    )
+    perm = result.scalar_one_or_none()
+    if not perm:
+        return False, False, False, False
+    return False, bool(perm.can_view_all), bool(perm.can_create), bool(perm.can_edit)
 
 
 async def _ser(loan: Loan, db: AsyncSession):
@@ -46,14 +67,27 @@ async def _ser(loan: Loan, db: AsyncSession):
 
 @router.get("/")
 async def list_loans(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Loan).where(Loan.company_id == current_user.company_id).order_by(Loan.created_at.desc()))
+    is_sys, can_view_all, _, _ = await _get_loan_perms(current_user, db)
+
+    conds = [] if is_sys else [Loan.company_id == current_user.company_id]
+    if not is_sys and not can_view_all:
+        conds.append(Loan.task_leader_id == current_user.id)
+
+    result = await db.execute(select(Loan).where(*conds).order_by(Loan.created_at.desc()))
     return [await _ser(l, db) for l in result.scalars().all()]
 
 
 @router.get("/stats")
 async def loan_stats(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    async def cnt(*conds):
-        return (await db.execute(select(func.count()).select_from(Loan).where(Loan.company_id == current_user.company_id, *conds))).scalar()
+    is_sys, can_view_all, _, _ = await _get_loan_perms(current_user, db)
+
+    base_conds = [] if is_sys else [Loan.company_id == current_user.company_id]
+    if not is_sys and not can_view_all:
+        base_conds.append(Loan.task_leader_id == current_user.id)
+
+    async def cnt(*extra):
+        return (await db.execute(select(func.count()).select_from(Loan).where(*base_conds, *extra))).scalar()
+
     return {"total": await cnt(),
             "pendiente_confirmacion": await cnt(Loan.estado == "pendiente_confirmacion"),
             "activo": await cnt(Loan.estado == "activo"),
@@ -63,6 +97,10 @@ async def loan_stats(current_user: User = Depends(get_current_user), db: AsyncSe
 
 @router.post("/")
 async def create_loan(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    _, _, can_create, _ = await _get_loan_perms(current_user, db)
+    if not can_create:
+        raise HTTPException(status_code=403, detail="Sin permiso para crear préstamos")
+
     result = await db.execute(select(BodegaItem).where(BodegaItem.id == data.get("bodega_item_id"), BodegaItem.company_id == current_user.company_id))
     item = result.scalar_one_or_none()
     if not item:
@@ -73,7 +111,6 @@ async def create_loan(data: dict = Body(...), current_user: User = Depends(get_c
     if item.cantidad_disponible < cantidad:
         raise HTTPException(status_code=409, detail=f"Stock insuficiente. Disponible: {item.cantidad_disponible}")
 
-    # Líder de tarea — obligatorio (usuario registrado del sistema)
     task_leader_id = data.get("task_leader_id")
     if not task_leader_id:
         raise HTTPException(status_code=400, detail="El líder de tarea es obligatorio")
@@ -81,7 +118,6 @@ async def create_loan(data: dict = Body(...), current_user: User = Depends(get_c
     if not leader or leader.company_id != current_user.company_id:
         raise HTTPException(status_code=404, detail="Líder de tarea no encontrado en esta empresa")
 
-    # Colaborador externo — opcional
     collab = None
     if data.get("external_collaborator_id"):
         result = await db.execute(select(ExternalCollaborator).where(ExternalCollaborator.id == data["external_collaborator_id"], ExternalCollaborator.company_id == current_user.company_id))
@@ -111,7 +147,13 @@ async def create_loan(data: dict = Body(...), current_user: User = Depends(get_c
 
 @router.get("/{loan_id}/qr")
 async def get_qr_image(loan_id: int, request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Loan).where(Loan.id == loan_id, Loan.company_id == current_user.company_id))
+    is_sys, can_view_all, _, _ = await _get_loan_perms(current_user, db)
+
+    conds = [Loan.id == loan_id, Loan.company_id == current_user.company_id]
+    if not is_sys and not can_view_all:
+        conds.append(Loan.task_leader_id == current_user.id)
+
+    result = await db.execute(select(Loan).where(*conds))
     loan = result.scalar_one_or_none()
     if not loan:
         raise HTTPException(status_code=404, detail="Préstamo no encontrado")
@@ -136,6 +178,10 @@ async def get_qr_image(loan_id: int, request: Request, current_user: User = Depe
 
 @router.post("/{loan_id}/activar-retorno")
 async def activar_retorno(loan_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    _, _, _, can_edit = await _get_loan_perms(current_user, db)
+    if not can_edit:
+        raise HTTPException(status_code=403, detail="Sin permiso para modificar préstamos")
+
     result = await db.execute(select(Loan).where(Loan.id == loan_id, Loan.company_id == current_user.company_id))
     loan = result.scalar_one_or_none()
     if not loan:
@@ -151,6 +197,10 @@ async def activar_retorno(loan_id: int, current_user: User = Depends(get_current
 
 @router.patch("/{loan_id}/cerrar")
 async def cerrar_loan(loan_id: int, data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    _, _, _, can_edit = await _get_loan_perms(current_user, db)
+    if not can_edit:
+        raise HTTPException(status_code=403, detail="Sin permiso para modificar préstamos")
+
     result = await db.execute(select(Loan).where(Loan.id == loan_id, Loan.company_id == current_user.company_id))
     loan = result.scalar_one_or_none()
     if not loan:

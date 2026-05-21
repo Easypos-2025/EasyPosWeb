@@ -50,6 +50,7 @@ class RoleModule(Base):
     # =========================================
 
     can_view: Mapped[bool] = mapped_column(default=True)
+    can_view_all: Mapped[bool] = mapped_column(default=False)
     can_create: Mapped[bool] = mapped_column(default=False)
     can_edit: Mapped[bool] = mapped_column(default=False)
     can_delete: Mapped[bool] = mapped_column(default=False)

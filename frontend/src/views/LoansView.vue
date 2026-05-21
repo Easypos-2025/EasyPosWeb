@@ -368,12 +368,19 @@ import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import { usePermissionsStore } from "@/stores/permissionsStore"
 
 const router = useRouter()
+const permStore = usePermissionsStore()
 
-const apiBase  = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
-const userInfo = JSON.parse(localStorage.getItem("user") || "{}")
-const canManage = !['WORKER','AUDITOR'].some(r => (userInfo.role || '').toUpperCase().includes(r))
+const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+
+// Permisos reales desde BD — sin hardcode de nombres de rol
+const perms     = computed(() => permStore.forRoute("/loans/prestamos"))
+const canCreate = computed(() => perms.value.can_create)
+const canEdit   = computed(() => perms.value.can_edit)
+// canManage agrupa las acciones que modifican el préstamo
+const canManage = computed(() => canCreate.value || canEdit.value)
 
 const loans        = ref([])
 const bodegaItems  = ref([])
@@ -556,7 +563,10 @@ async function submitCerrar() {
   } finally { cerrando.value = false }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await permStore.load()
+  await load()
+})
 </script>
 
 <style scoped>

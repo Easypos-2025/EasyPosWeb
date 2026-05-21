@@ -124,6 +124,7 @@
                   <tr>
                     <th style="min-width:200px">Módulo</th>
                     <th class="text-center">Ver</th>
+                    <th class="text-center">Ver Todos</th>
                     <th class="text-center">Crear</th>
                     <th class="text-center">Editar</th>
                     <th class="text-center">Eliminar</th>
@@ -136,6 +137,11 @@
                       <input type="checkbox"
                         :checked="getPerm(mod.id, 'can_view')"
                         @change="togglePerm(mod.id, 'can_view')" />
+                    </td>
+                    <td class="text-center">
+                      <input type="checkbox"
+                        :checked="getPerm(mod.id, 'can_view_all')"
+                        @change="togglePerm(mod.id, 'can_view_all')" />
                     </td>
                     <td class="text-center">
                       <input type="checkbox"
@@ -269,11 +275,12 @@ async function loadRolePerms(roleId) {
     editablePerms.value = allModules.value.map(mod => {
       const found = res.data.find(r => r.module_id === mod.id)
       return {
-        module_id:  mod.id,
-        can_view:   found?.can_view   ?? false,
-        can_create: found?.can_create ?? false,
-        can_edit:   found?.can_edit   ?? false,
-        can_delete: found?.can_delete ?? false,
+        module_id:    mod.id,
+        can_view:     found?.can_view     ?? false,
+        can_view_all: found?.can_view_all ?? false,
+        can_create:   found?.can_create   ?? false,
+        can_edit:     found?.can_edit     ?? false,
+        can_delete:   found?.can_delete   ?? false,
       }
     })
   } catch {
@@ -299,7 +306,7 @@ async function savePermissions() {
   saving.value = true
   try {
     const payload = editablePerms.value.filter(
-      p => p.can_view || p.can_create || p.can_edit || p.can_delete
+      p => p.can_view || p.can_view_all || p.can_create || p.can_edit || p.can_delete
     )
     await api.post(`/roles/${selectedRole.value.id}/modules/`, payload)
     showToast("Permisos guardados", "success")

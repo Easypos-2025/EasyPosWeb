@@ -91,10 +91,10 @@
 
 <script setup>
 
-import api from "@/services/apis"
 import { ref, onMounted, watch, computed } from "vue"
 import { useMenuStore } from "@/stores/menuStore"
 import { useCompanyStore } from "@/stores/companyStore"
+import { usePermissionsStore } from "@/stores/permissionsStore"
 import { storeToRefs } from "pinia"
 import { useRoute } from "vue-router"
 
@@ -105,19 +105,16 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "expand", "collapse"])
 
-const permissions = ref([])
 const route = useRoute()
 const menuStore = useMenuStore()
 const companyStore = useCompanyStore()
+const permStore = usePermissionsStore()
 const { menu } = storeToRefs(menuStore)
-const roleName = ref("")
 const ready = ref(false)
-const roleId = ref(null)
 
 
 const filteredMenu = computed(() => {
-  //if (!roleName.value) return menu.value
-  return filterMenuByPermissions(menu.value, permissions.value)
+  return filterMenuByPermissions(menu.value, permStore.perms)
 })
 
 
@@ -141,36 +138,8 @@ const handleMouseLeave = () => {
   }
 }
 
-const loadPermissions = async () => {
-  try {
-
-    const resUser = await api.get("/auth/me/")
-
-    //console.log("USER DATA:", resUser.data)
-
-    roleName.value = resUser.data.role   // 🔥 AQUÍ ESTÁ EL FIX
-
-    const roleId = resUser.data.role_id
-
-    const res = await api.get(`/roles/${roleId}/modules/`)
-
-    permissions.value = res.data
-
-    //console.log("PERMISSIONS:", permissions.value)
-
-  } catch (error) {
-    console.error("Error cargando permisos", error)
-  }
-}
-
 function filterMenuByPermissions(menu, permissions) {
-  //console.log("filterMenuByPermissions")
-
-  // 🔥 SYSADMIN → SIN FILTRO
-  if (roleName.value === "SYSADMIN") {
-    //console.log("🟢 SYSADMIN → sin filtro")
-    return menu
-  }
+  if (permStore.isSystem) return menu
 
   const findPerm = (permissions, item) =>
     permissions.find(p =>
@@ -250,7 +219,7 @@ watch(
 )
 
 onMounted(async () => {
-  await loadPermissions()
+  await permStore.load()
   const companyId = companyStore.selectedCompany?.id ?? null
   await menuStore.loadMenu(companyId)
   ready.value = true

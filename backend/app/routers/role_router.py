@@ -138,10 +138,11 @@ async def get_modules_by_role(
             "module_id":    m.id,
             "module_name":  m.name,
             "module_route": m.route or "",
-            "can_view":     permissions_map[m.id].can_view    if m.id in permissions_map else False,
-            "can_create":   permissions_map[m.id].can_create  if m.id in permissions_map else False,
-            "can_edit":     permissions_map[m.id].can_edit    if m.id in permissions_map else False,
-            "can_delete":   permissions_map[m.id].can_delete  if m.id in permissions_map else False,
+            "can_view":     permissions_map[m.id].can_view     if m.id in permissions_map else False,
+            "can_view_all": permissions_map[m.id].can_view_all if m.id in permissions_map else False,
+            "can_create":   permissions_map[m.id].can_create   if m.id in permissions_map else False,
+            "can_edit":     permissions_map[m.id].can_edit     if m.id in permissions_map else False,
+            "can_delete":   permissions_map[m.id].can_delete   if m.id in permissions_map else False,
         }
         for m in modules
     ]
@@ -165,7 +166,8 @@ async def assign_modules_to_role(
     for m in modules:
         db.add(RoleModule(
             role_id=role_id, module_id=m["module_id"],
-            can_view=m.get("can_view", True), can_create=m.get("can_create", False),
+            can_view=m.get("can_view", True), can_view_all=m.get("can_view_all", False),
+            can_create=m.get("can_create", False),
             can_edit=m.get("can_edit", False), can_delete=m.get("can_delete", False),
         ))
 

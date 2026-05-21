@@ -13,7 +13,7 @@
 
     <!-- TABS -->
     <div class="tabs-row">
-      <button class="tab-btn" :class="{ active: activeTab === 'sin_asignar' }" @click="activeTab = 'sin_asignar'">
+      <button v-if="perms.can_view_all" class="tab-btn" :class="{ active: activeTab === 'sin_asignar' }" @click="activeTab = 'sin_asignar'">
         <i class="bi bi-person-x"></i> Sin Asignar
         <span class="tab-count tab-orange">{{ data.sin_asignar?.length || 0 }}</span>
       </button>
@@ -202,9 +202,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import { usePermissionsStore } from "@/stores/permissionsStore"
+
+const permStore = usePermissionsStore()
+const perms     = computed(() => permStore.forRoute("/tasks/completar-info"))
 
 const data        = ref({ sin_asignar: [], info_incompleta: [] })
 const assets      = ref([])
@@ -242,6 +246,8 @@ function assetName(id) {
 async function load() {
   loading.value = true
   try {
+    // Si no tiene can_view_all el backend ya filtra; pasamos el flag para dejar
+    // consistencia visual y evitar que el tab "Sin Asignar" aparezca vacío de forma confusa
     const [incRes, assetsRes, usersRes, workersRes] = await Promise.allSettled([
       api.get("/tasks/incomplete-info"),
       api.get("/assets/"),
@@ -252,6 +258,9 @@ async function load() {
     if (assetsRes.status  === "fulfilled") assets.value  = assetsRes.value.data
     if (usersRes.status   === "fulfilled") users.value   = usersRes.value.data
     if (workersRes.status === "fulfilled") workers.value = workersRes.value.data
+
+    // Sin can_view_all ir directamente a la tab de info incompleta
+    if (!perms.value.can_view_all) activeTab.value = "info_incompleta"
   } catch {
     showToast("Error cargando datos", "error")
   } finally {
@@ -340,7 +349,10 @@ async function saveComplete() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await permStore.load()
+  await load()
+})
 </script>
 
 <style scoped>

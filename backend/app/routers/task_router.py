@@ -11,6 +11,8 @@ from app.models.asset_model import Asset
 from app.models.user_model import User
 from app.models.worker_model import Worker
 from app.models.role_model import Role
+from app.models.role_module_model import RoleModule
+from app.models.system_module_model import SystemModule
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.services.plan_limits_service import check_limit, get_limits
@@ -22,6 +24,21 @@ from app.models.task_progress_report_model import TaskProgressReport
 from app.models.task_purchase_model import TaskPurchase
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
+COMPLETAR_ROUTE = "/tasks/completar-info"
+
+
+async def _can_view_all_tasks(user: User, db: AsyncSession) -> bool:
+    """True si el rol puede ver todas las tareas (no filtrar por usuario)."""
+    role = await db.get(Role, user.role_id)
+    if role and role.is_system:
+        return True
+    result = await db.execute(
+        select(RoleModule)
+        .join(SystemModule, SystemModule.id == RoleModule.module_id)
+        .where(RoleModule.role_id == user.role_id, SystemModule.route == COMPLETAR_ROUTE)
+    )
+    perm = result.scalar_one_or_none()
+    return bool(perm.can_view_all) if perm else False
 
 
 async def _get_user(authorization: str, db: AsyncSession):
@@ -133,15 +150,25 @@ async def get_incomplete_tasks(
     role = await _get_role(user, db)
     is_sys = role.is_system if role else False
 
+    # Si no tiene can_view_all, forzar filtro por usuario asignado
+    view_all = is_sys or await _can_view_all_tasks(user, db)
+    filter_by_user = mine or not view_all
+
     base_conds = [] if is_sys else [Task.company_id == user.company_id]
-    if mine:
+    if filter_by_user:
         base_conds.append(Task.assigned_to == user.id)
 
-    r1 = await db.execute(select(Task).where(*base_conds, Task.status_id == 1, Task.assigned_to == None))
+    # Sin can_view_all no tiene sentido mostrar tareas sin asignar (assigned_to es None)
+    if not view_all:
+        sin_asignar = []
+    else:
+        r1 = await db.execute(select(Task).where(*base_conds, Task.status_id == 1, Task.assigned_to == None))
+        sin_asignar = [_serialize(t, sm, wm, um) for t in r1.scalars().all()]
+
     r2 = await db.execute(select(Task).where(*base_conds, Task.status_id == 2, (Task.worker_id == None) | (Task.due_date == None)))
 
     return {
-        "sin_asignar":     [_serialize(t, sm, wm, um) for t in r1.scalars().all()],
+        "sin_asignar":     sin_asignar,
         "info_incompleta": [_serialize(t, sm, wm, um) for t in r2.scalars().all()],
     }
 
