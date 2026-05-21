@@ -18,6 +18,7 @@
     <div class="filters-row">
       <input v-model="search" class="form-control" placeholder="Buscar tarea..." style="max-width:260px" />
       <select v-model="filterStatus" class="form-select" style="max-width:180px">
+        <option value="activas">Pendientes (activas)</option>
         <option value="">Todos los estados</option>
         <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.name }}</option>
       </select>
@@ -338,7 +339,7 @@ const saving   = ref(false)
 const showModal = ref(false)
 const editMode  = ref(false)
 const search    = ref("")
-const filterStatus = ref("")
+const filterStatus = ref("activas")
 
 // ── Colaboradores (modal editar) ─────────────────────────────────
 const collaborators    = ref([])
@@ -364,7 +365,9 @@ const filtered = computed(() =>
   tasks.value.filter(t => {
     const matchSearch = !search.value ||
       t.title.toLowerCase().includes(search.value.toLowerCase())
-    const matchStatus = !filterStatus.value ||
+    const matchStatus =
+      filterStatus.value === "activas" ? ![5, 6].includes(t.status_id) :
+      !filterStatus.value ? true :
       t.status_id === Number(filterStatus.value)
     return matchSearch && matchStatus
   })

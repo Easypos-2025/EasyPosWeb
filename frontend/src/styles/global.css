@@ -114,7 +114,7 @@ VALIDACIÓN — campo inválido
   outline: none !important;
 }
 
-input, select {
+input:not([type="checkbox"]):not([type="radio"]), select {
   color: #000 !important;
   background-color: #fff !important;
 }
@@ -134,7 +134,7 @@ input::placeholder {
 }
 
 /* 🔥 CUANDO ESCRIBES */
-input:focus,
-input:active {
+input:not([type="checkbox"]):not([type="radio"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):active {
   color: #000 !important;
 }

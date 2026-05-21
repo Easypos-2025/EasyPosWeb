@@ -323,6 +323,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "TaskReporteGeneralView" }
       },
+      {
+        path: "/AdminTasks",
+        name: "AdminTasksView",
+        component: () => import("@/views/AdminTasksView.vue"),
+        requiresAuth: true,
+        meta: { title: "Informes de Tareas" }
+      },
       /* MÓDULOS SYSTEM
       /* PERFIL (CONFIGURACIÓN EMPRESA) */
       /* MÓDULOS EMPRESA*/  

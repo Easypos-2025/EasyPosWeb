@@ -36,6 +36,7 @@
             <th>#</th>
             <th>Nombre</th>
             <th>Profesión</th>
+            <th>Teléfono</th>
             <th style="width:100px" class="text-center">Acciones</th>
           </tr>
         </thead>
@@ -47,6 +48,7 @@
               <span v-if="w.profession_name" class="prof-badge">{{ w.profession_name }}</span>
               <span v-else class="text-muted">—</span>
             </td>
+            <td class="text-muted">{{ w.phone || '—' }}</td>
             <td class="text-center" @click.stop>
               <div class="d-flex gap-1 justify-content-center">
                 <button class="btn btn-warning btn-sm" @click="openEdit(w)">
@@ -59,7 +61,7 @@
             </td>
           </tr>
           <tr v-if="filtered.length === 0">
-            <td colspan="4" class="text-center text-muted py-4">
+            <td colspan="5" class="text-center text-muted py-4">
               <i class="bi bi-person-x" style="font-size:28px;display:block;margin-bottom:8px"></i>
               No hay ejecutores con estos filtros
             </td>
