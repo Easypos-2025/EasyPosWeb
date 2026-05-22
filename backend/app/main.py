@@ -63,7 +63,6 @@ from app.routers.register_router import router as register_router
 from app.routers.payment_router import router as payment_router
 from app.routers.task_collaborators_router import router as task_collaborators_router
 from app.routers.user_notification_router import router as user_notification_router
-from app.routers.insumos_router import router as insumos_router
 from app.routers.unidades_medida_router import router as unidades_medida_router
 from app.routers.conceptos_gastos_router import router as conceptos_gastos_router
 from app.routers.conceptos_compras_router import router as conceptos_compras_router
@@ -415,6 +414,16 @@ async def _init_db_data():
             db.add(SystemModule(
                 name="Firma de Email", route="/sysadmin/email-footer",
                 icon="bi-envelope-paper", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=True
+            ))
+            await db.commit()
+
+        # Registrar módulo Gestión de Ayuda en system_modules si no existe
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/help"))
+        if not result.scalar_one_or_none():
+            db.add(SystemModule(
+                name="Gestión de Ayuda", route="/sysadmin/help",
+                icon="bi-question-circle-fill", parent_id=None, is_active=True,
                 order_index=0, is_sysadmin=True
             ))
             await db.commit()
@@ -967,7 +976,6 @@ async def _init_db_data():
 
         # ── SEED: módulos catálogo tareas ────────────────────────────────
         for route, name, icon in [
-            ("/configuration/insumos",          "Insumos",           "bi-boxes"),
             ("/configuration/unidades-medida",  "Unidades de Medida","bi-rulers"),
             ("/configuration/conceptos-gastos", "Conceptos de Gasto","bi-receipt"),
             ("/configuration/conceptos-compras","Conceptos de Compra","bi-cart3"),
@@ -1462,7 +1470,6 @@ routers = [
     payment_router,
     task_collaborators_router,
     user_notification_router,
-    insumos_router,
     unidades_medida_router,
     conceptos_gastos_router,
     conceptos_compras_router,

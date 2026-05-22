@@ -844,6 +844,9 @@ onMounted(async () => {
     heartbeatTimer = setInterval(sendHeartbeat, hbMs)
   }
   document.addEventListener("click", handleOutsideClick)
+  document.addEventListener("click", () => {
+    try { if (_actx?.state === "suspended") _actx.resume() } catch {}
+  }, { once: true })
 })
 
 // SSE: recarga pautas en SidebarRight cuando el admin cambia una pauta

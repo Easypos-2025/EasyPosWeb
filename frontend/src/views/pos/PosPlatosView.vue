@@ -447,8 +447,11 @@ async function cargarCategorias() {
   catch { categorias.value = [] }
 }
 async function cargarInsumos() {
-  try { const{data} = await api.get('/supply-items/'); insumos.value = Array.isArray(data) ? data : (data?.items || []) }
-  catch { insumos.value = [] }
+  try {
+    const { data } = await api.get('/supply-items/')
+    const all = Array.isArray(data) ? data : (data?.items || [])
+    insumos.value = all.filter(i => i.is_active !== false)
+  } catch { insumos.value = [] }
 }
 async function cargarUnidades() {
   try { const{data} = await api.get('/unidades-medida/'); unidades.value = data }

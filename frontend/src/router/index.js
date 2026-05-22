@@ -554,13 +554,6 @@ const routes = [
 
       // ── Catálogos de tareas ─────────────────────────────────────
       {
-        path: "/configuration/insumos",
-        name: "InsumosCrudView",
-        component: () => import("@/views/InsumosCrudView.vue"),
-        requiresAuth: true,
-        meta: { title: "Insumos" }
-      },
-      {
         path: "/configuration/unidades-medida",
         name: "UnidadesMedidaView",
         component: () => import("@/views/UnidadesMedidaView.vue"),

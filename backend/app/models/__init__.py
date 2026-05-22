@@ -71,7 +71,6 @@ from app.models.plan_feature_model import PlanFeature
 from app.models.landing_contact_model import LandingContact
 from app.models.company_payment_model import CompanyPayment
 from app.models.plan_price_model import PlanPrice
-from app.models.insumo_model import Insumo
 from app.models.unidad_medida_model import UnidadMedida
 from app.models.concepto_gasto_model import ConceptoGasto
 from app.models.concepto_compra_model import ConceptoCompra

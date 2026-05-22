@@ -32,12 +32,18 @@ def _ser(n: UserNotification, sender_name: str = None, receiver_name: str = None
             "created_at": n.created_at.isoformat() if n.created_at else None}
 
 
+_SYSTEM_ACCESS_TITLES = ("Entrada al sistema", "Salida del sistema")
+
 @router.get("/inbox/count")
 async def inbox_count(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     count = (await db.execute(
         select(func.count()).select_from(UserNotification)
-        .where(UserNotification.receiver_id == user.id, UserNotification.is_read == False)
+        .where(
+            UserNotification.receiver_id == user.id,
+            UserNotification.is_read == False,
+            UserNotification.title.notin_(_SYSTEM_ACCESS_TITLES),
+        )
     )).scalar()
     return {"count": count}
 

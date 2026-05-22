@@ -356,7 +356,7 @@ async def get_ingredientes(item_id: int, authorization: str = Header(None), db: 
             mu.name         AS unit_nombre,
             mu.abreviatura  AS unit_abrev
         FROM pos_dish_products dp
-        JOIN supply_items s ON s.id = dp.supplier_id
+        JOIN supply_items s ON s.id = dp.supplier_id AND s.company_id = :cid
         LEFT JOIN measurement_units mu ON mu.id = dp.measure_id
         WHERE dp.dish_id=:pid AND dp.company_id=:cid AND dp.active=1
         ORDER BY s.name
@@ -370,6 +370,11 @@ async def add_ingrediente(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    valid = (await db.execute(text(
+        "SELECT id FROM supply_items WHERE id=:sid AND company_id=:cid AND is_active=1"
+    ), {"sid": data.supply_item_id, "cid": user.company_id})).fetchone()
+    if not valid:
+        raise HTTPException(status_code=400, detail="Insumo no válido para esta empresa")
     await db.execute(text("""
         INSERT INTO pos_dish_products
             (dish_id, supplier_id, measure_id, minimum_units, description, active, synced, company_id)
