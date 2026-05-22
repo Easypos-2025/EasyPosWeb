@@ -457,7 +457,7 @@ const handleEdit = (item) => {
     icon: item.icon,
     parent_id: item.parent_id
   }
-  editingId.value = item.id
+  editingId.value = item.module_id ?? item.id
   showEditModal.value = true
 }
 

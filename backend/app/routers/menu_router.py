@@ -114,8 +114,9 @@ async def get_menu_by_profile(
     """), {"profile_id": profile_id})
     modules = result.fetchall()
 
-    data = [{"id": m.bpm_id, "name": m.name, "display_name": m.display_name,
-             "route": m.route, "icon": m.icon, "parent_id": m.parent_id}
+    data = [{"id": m.bpm_id, "module_id": m.module_id, "name": m.name,
+             "display_name": m.display_name, "route": m.route, "icon": m.icon,
+             "parent_id": m.parent_id}
             for m in modules]
     return _build_tree(data)
 
