@@ -34,10 +34,15 @@ def build_tree(modules):
 async def create_module(data: SystemModuleCreate, db: AsyncSession = Depends(get_db)):
     payload = data.dict()
     payload["route"] = payload.get("route") or ""
-    if payload["route"]:
-        existing = await db.execute(select(SystemModule).where(SystemModule.route == payload["route"]))
+    if payload["route"] and payload.get("parent_id"):
+        existing = await db.execute(
+            select(SystemModule).where(
+                SystemModule.route == payload["route"],
+                SystemModule.parent_id == payload["parent_id"]
+            )
+        )
         if existing.scalar_one_or_none():
-            raise HTTPException(status_code=422, detail=f"Ya existe un módulo con la ruta '{payload['route']}'. Para agregarlo a otro perfil, usa 'Agregar módulo existente' en Gestión de Menú.")
+            raise HTTPException(status_code=422, detail=f"Ya existe un módulo con la ruta '{payload['route']}' bajo ese mismo padre.")
     module = SystemModule(**payload)
     db.add(module)
     try:
