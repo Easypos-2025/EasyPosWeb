@@ -450,14 +450,19 @@ const buildTree = (list) => {
   return roots
 }
 
-const handleEdit = (item) => {
-  editForm.value = {
-    name: item.name,
-    route: item.route,
-    icon: item.icon,
-    parent_id: item.parent_id
+const handleEdit = async (item) => {
+  const smId = item.module_id ?? item.id
+  editingId.value = smId
+  if (item.module_id) {
+    try {
+      const { data } = await api.get(`/system-modules/${smId}`)
+      editForm.value = { name: data.name, route: data.route, icon: data.icon, parent_id: data.parent_id }
+    } catch {
+      editForm.value = { name: item.name, route: item.route, icon: item.icon, parent_id: null }
+    }
+  } else {
+    editForm.value = { name: item.name, route: item.route, icon: item.icon, parent_id: item.parent_id }
   }
-  editingId.value = item.module_id ?? item.id
   showEditModal.value = true
 }
 
