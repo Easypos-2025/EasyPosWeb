@@ -649,6 +649,20 @@ const routes = [
       },
       // ── POS Catálogo Restaurante ──────────────────────────────────────────
       {
+        path: "/pos/zonas",
+        name: "PosZonasView",
+        component: () => import("@/views/pos/PosZonasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Zonas" }
+      },
+      {
+        path: "/pos/mesas",
+        name: "PosMesasView",
+        component: () => import("@/views/pos/PosMesasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Mesas" }
+      },
+      {
         path: "/pos/platos",
         name: "PosPlatosView",
         component: () => import("@/views/pos/PosPlatosView.vue"),

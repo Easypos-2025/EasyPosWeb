@@ -85,6 +85,7 @@ from app.routers.pos_printers_router import router as pos_printers_router
 from app.routers.pos_cajas_router import router as pos_cajas_router
 from app.routers.pos_lista_precios_router import router as pos_lista_precios_router
 from app.routers.pos_platos_router import router as pos_platos_router
+from app.routers.pos_tables_router import router as pos_tables_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
 from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
@@ -1225,16 +1226,55 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
+        # ── POS: tablas zonas y mesas ─────────────────────────────────────────
+        _pos_tables_sql = [
+            """CREATE TABLE IF NOT EXISTS pos_zones (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                company_id  INT          NOT NULL,
+                name        VARCHAR(100) NOT NULL,
+                description VARCHAR(255) NULL,
+                color       VARCHAR(10)  NOT NULL DEFAULT '#1d4ed8',
+                icon        VARCHAR(50)  NOT NULL DEFAULT 'bi-grid',
+                is_active   TINYINT      NOT NULL DEFAULT 1,
+                order_index INT          NOT NULL DEFAULT 0,
+                created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pz_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS pos_tables (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                company_id       INT         NOT NULL,
+                zone_id          INT         NOT NULL,
+                name             VARCHAR(50) NOT NULL,
+                capacity         INT         NOT NULL DEFAULT 4,
+                status           ENUM('free','occupied','bill_requested') NOT NULL DEFAULT 'free',
+                current_order_id INT         NULL,
+                is_active        TINYINT     NOT NULL DEFAULT 1,
+                order_index      INT         NOT NULL DEFAULT 0,
+                created_at       DATETIME    DEFAULT CURRENT_TIMESTAMP,
+                updated_at       DATETIME    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_pt_company (company_id),
+                INDEX idx_pt_zone    (company_id, zone_id)
+            )""",
+        ]
+        for _sql in _pos_tables_sql:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
         # ── POS CATÁLOGO: módulos en system_modules (grupo padre + hijos) ─────
         pos_parent = await _get_or_create_module(
             "Catálogo Restaurante", "/pos", "bi-grid-3x3"
         )
         _pos_modules = [
-            ("Platos",            "/pos/platos",          "bi-egg-fried",       0),
-            ("Categorías",        "/pos/categorias",      "bi-tags",            1),
-            ("Impresoras",        "/pos/impresoras",      "bi-printer",         2),
-            ("Listas de Precios", "/pos/listas-precios",  "bi-currency-dollar", 3),
-            ("Cajas",             "/pos/cajas",           "bi-cash-stack",      4),
+            ("Zonas",             "/pos/zonas",           "bi-grid-3x3-gap",    0),
+            ("Mesas",             "/pos/mesas",           "bi-table",           1),
+            ("Platos",            "/pos/platos",          "bi-egg-fried",       2),
+            ("Categorías",        "/pos/categorias",      "bi-tags",            3),
+            ("Impresoras",        "/pos/impresoras",      "bi-printer",         4),
+            ("Listas de Precios", "/pos/listas-precios",  "bi-currency-dollar", 5),
+            ("Cajas",             "/pos/cajas",           "bi-cash-stack",      6),
         ]
         for _name, _route, _icon, _order in _pos_modules:
             r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
@@ -1249,8 +1289,8 @@ async def _init_db_data():
 
         # Asignar módulos POS catálogo al perfil Restaurante (business_profile_id=1)
         try:
-            _pos_routes = ["/pos", "/pos/platos", "/pos/categorias",
-                           "/pos/impresoras", "/pos/listas-precios", "/pos/cajas"]
+            _pos_routes = ["/pos", "/pos/zonas", "/pos/mesas", "/pos/platos",
+                           "/pos/categorias", "/pos/impresoras", "/pos/listas-precios", "/pos/cajas"]
             for _route in _pos_routes:
                 r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
                 _mod = r.scalar_one_or_none()
@@ -1427,6 +1467,7 @@ routers = [
     pos_cajas_router,
     pos_lista_precios_router,
     pos_platos_router,
+    pos_tables_router,
     plan_associate_limits_router,
     advertisement_router,
     welcome_steps_router,
