@@ -647,6 +647,15 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Entradas de Mercancía" }
       },
+      // ── Dashboard Restaurante ─────────────────────────────────────────────
+      {
+        path: "/restaurante",
+        name: "RestauranteDashboardView",
+        component: () => import("@/views/pos/RestauranteDashboardView.vue"),
+        requiresAuth: true,
+        meta: { title: "Dashboard Restaurante" }
+      },
+
       // ── POS Catálogo Restaurante ──────────────────────────────────────────
       {
         path: "/pos/zonas",

@@ -95,11 +95,37 @@ async def get_kpis(
           AND cancelled = 0
     """), {"cid": cid, "fecha": fecha})).mappings().one()
 
+    # Estado de mesas (pos_tables nuevo)
+    r_mesas = (await db.execute(text("""
+        SELECT
+            COALESCE(SUM(CASE WHEN status='free'           THEN 1 ELSE 0 END), 0) AS libres,
+            COALESCE(SUM(CASE WHEN status='occupied'       THEN 1 ELSE 0 END), 0) AS ocupadas,
+            COALESCE(SUM(CASE WHEN status='bill_requested' THEN 1 ELSE 0 END), 0) AS cuenta,
+            COUNT(*) AS total
+        FROM pos_tables
+        WHERE company_id=:cid AND is_active=1
+    """), {"cid": cid})).mappings().one()
+
+    # Alertas de stock crítico
+    r_stock = (await db.execute(text("""
+        SELECT COUNT(*) AS cnt
+        FROM supply_items
+        WHERE company_id=:cid AND is_active=1
+          AND control_stock=1 AND min_stock > 0 AND stock_qty <= min_stock
+    """), {"cid": cid})).mappings().one()
+
     return {
         "ventas_facturas":  {"total": int(r_fact["total"]), "count": int(r_fact["cnt"])},
         "ventas_recibos":   {"total": int(r_rec["total"]),  "count": int(r_rec["cnt"])},
         "comandas_abiertas":{"total": int(r_cmd["total"]),  "count": int(r_cmd["cnt"])},
         "plataforma":       {"total": int(r_plat["total"]), "count": int(r_plat["cnt"])},
+        "mesas": {
+            "libres":   int(r_mesas["libres"]),
+            "ocupadas": int(r_mesas["ocupadas"]),
+            "cuenta":   int(r_mesas["cuenta"]),
+            "total":    int(r_mesas["total"]),
+        },
+        "stock_alertas": int(r_stock["cnt"]),
         "fecha": fecha,
         "today": today,
     }
@@ -290,3 +316,65 @@ async def abrir_mesa(
     await db.commit()
 
     return {"ok": True, "order_number": order_number}
+
+
+# ─── Últimas transacciones del día ────────────────────────────────────────────
+
+@router.get("/ultimas-transacciones")
+async def ultimas_transacciones(
+    fecha: Optional[str] = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    fecha = fecha or date.today().isoformat()
+
+    rows = (await db.execute(text("""
+        SELECT tipo, numero, hora, total, cliente
+        FROM (
+            SELECT 'Factura' AS tipo,
+                   invoice_number AS numero,
+                   time AS hora,
+                   (cash_amount + credit_card_amount + debit_card_amount + adjustment - discount) AS total,
+                   customer_id AS cliente
+            FROM pos_invoices
+            WHERE company_id=:cid AND date=:fecha AND voided=0
+            UNION ALL
+            SELECT 'Recibo' AS tipo,
+                   receipt_number AS numero,
+                   time AS hora,
+                   (cash_amount + credit_card_amount + debit_card_amount + adjustment - discount) AS total,
+                   customer_id AS cliente
+            FROM pos_receipts
+            WHERE company_id=:cid AND date=:fecha AND voided=0
+        ) t
+        ORDER BY hora DESC
+        LIMIT 10
+    """), {"cid": cid, "fecha": fecha})).mappings().all()
+
+    return [dict(r) for r in rows]
+
+
+# ─── Stock crítico ────────────────────────────────────────────────────────────
+
+@router.get("/stock-alertas")
+async def stock_alertas(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+
+    rows = (await db.execute(text("""
+        SELECT s.id, s.name, s.stock_qty, s.min_stock, u.name AS unit_name
+        FROM supply_items s
+        LEFT JOIN measurement_units u ON u.id = s.unit_id
+        WHERE s.company_id=:cid AND s.is_active=1
+          AND s.control_stock=1 AND s.min_stock > 0
+          AND s.stock_qty <= s.min_stock
+        ORDER BY (s.stock_qty / s.min_stock) ASC
+        LIMIT 10
+    """), {"cid": cid})).mappings().all()
+
+    return [dict(r) for r in rows]

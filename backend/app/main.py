@@ -1264,6 +1264,26 @@ async def _init_db_data():
                 await db.rollback()
 
         # ── POS CATÁLOGO: módulos en system_modules (grupo padre + hijos) ─────
+        # ── Dashboard Restaurante ─────────────────────────────────────────────
+        await _get_or_create_module("Restaurante", "/restaurante", "bi-shop-window")
+        try:
+            r = await db.execute(select(SystemModule).where(SystemModule.route == "/restaurante"))
+            _dash = r.scalar_one_or_none()
+            if _dash:
+                _exists = await db.execute(text(
+                    "SELECT 1 FROM business_profile_modules "
+                    "WHERE business_profile_id=1 AND module_id=:mid LIMIT 1"
+                ), {"mid": _dash.id})
+                if not _exists.fetchone():
+                    await db.execute(text(
+                        "INSERT INTO business_profile_modules "
+                        "(business_profile_id, module_id, parent_id, sort_order) "
+                        "VALUES (1, :mid, NULL, 0)"
+                    ), {"mid": _dash.id})
+                    await db.commit()
+        except Exception:
+            await db.rollback()
+
         pos_parent = await _get_or_create_module(
             "Catálogo Restaurante", "/pos", "bi-grid-3x3"
         )
