@@ -104,7 +104,10 @@
           v-for="node in profileTree"
           :key="node.id"
           :item="node"
-          :preview="true"
+          :no-drag="true"
+          @delete="handleDelete"
+          @edit="handleEdit"
+          @toggle="handleToggle"
         />
       </ul>
     </template>
