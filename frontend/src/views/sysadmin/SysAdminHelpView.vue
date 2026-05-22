@@ -11,11 +11,19 @@
 
     <!-- Filtros -->
     <div class="sh-filters">
-      <select v-model="filterProfile" class="sh-select" @change="loadArticles">
+      <input v-model="filterKeyword" class="sh-input sh-search" placeholder="Buscar por título, descripción o palabras clave…" />
+      <select v-model="filterProfile" class="sh-select">
         <option value="">Todos los perfiles</option>
-        <option :value="null">General (sin perfil)</option>
+        <option value="__general__">General (sin perfil)</option>
         <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
+      <select v-model="filterCategory" class="sh-select">
+        <option value="">Todas las categorías</option>
+        <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+      </select>
+      <button v-if="filterKeyword || filterProfile || filterCategory" class="sh-btn-clear" @click="clearFilters" title="Limpiar filtros">
+        <i class="bi bi-x-lg"></i>
+      </button>
     </div>
 
     <!-- Tabla -->
@@ -30,7 +38,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="a in articles" :key="a.id">
+          <tr v-for="a in filteredArticles" :key="a.id">
             <td class="sh-id">{{ a.id }}</td>
             <td><span class="sh-badge" :class="a.profile_id ? 'badge-profile' : 'badge-general'">{{ profileName(a.profile_id) }}</span></td>
             <td class="sh-cat">{{ a.category }}</td>
@@ -50,8 +58,8 @@
               <button class="sh-btn-icon sh-btn-del" title="Eliminar" @click="deleteArticle(a)"><i class="bi bi-trash"></i></button>
             </td>
           </tr>
-          <tr v-if="!articles.length">
-            <td colspan="8" class="sh-empty">No hay artículos</td>
+          <tr v-if="!filteredArticles.length">
+            <td colspan="8" class="sh-empty">{{ articles.length ? 'Sin resultados para los filtros aplicados' : 'No hay artículos' }}</td>
           </tr>
         </tbody>
       </table>
@@ -169,12 +177,14 @@ import { ref, computed } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
-const articles      = ref([])
-const profiles      = ref([])
-const loading       = ref(false)
-const saving        = ref(false)
-const uploading     = ref(false)
-const filterProfile = ref("")
+const articles       = ref([])
+const profiles       = ref([])
+const loading        = ref(false)
+const saving         = ref(false)
+const uploading      = ref(false)
+const filterProfile  = ref("__general__")
+const filterCategory = ref("")
+const filterKeyword  = ref("")
 
 const modal = ref({ open: false, id: null })
 const form  = ref(emptyForm())
@@ -183,8 +193,24 @@ function emptyForm() {
   return { profile_id: null, category: "General", title: "", description: "", keywords: "", gif_url: "", order_index: 0, is_active: 1 }
 }
 
-// Categorías únicas para datalist
-const categories = computed(() => [...new Set(articles.value.map(a => a.category).filter(Boolean))])
+const categories = computed(() => [...new Set(articles.value.map(a => a.category).filter(Boolean))].sort())
+
+const filteredArticles = computed(() => {
+  const kw  = filterKeyword.value.trim().toLowerCase()
+  return articles.value.filter(a => {
+    if (filterProfile.value === "__general__" && a.profile_id !== null) return false
+    if (filterProfile.value && filterProfile.value !== "__general__" && a.profile_id !== filterProfile.value) return false
+    if (filterCategory.value && a.category !== filterCategory.value) return false
+    if (kw && ![a.title, a.description, a.keywords, a.category].some(f => f?.toLowerCase().includes(kw))) return false
+    return true
+  })
+})
+
+function clearFilters() {
+  filterKeyword.value  = ""
+  filterProfile.value  = ""
+  filterCategory.value = ""
+}
 
 function profileName(id) {
   if (!id) return "General"
@@ -194,11 +220,12 @@ function profileName(id) {
 async function loadArticles() {
   loading.value = true
   try {
-    const params = filterProfile.value !== "" ? { profile_id: filterProfile.value === null ? "null" : filterProfile.value } : {}
-    const res = await api.get("/help/admin/list", { params })
+    const res = await api.get("/help/admin/list")
     articles.value = res.data
-  } catch { articles.value = [] }
-  finally { loading.value = false }
+  } catch (e) {
+    articles.value = []
+    showToast(e.response?.data?.detail || "Error al cargar artículos", "error")
+  } finally { loading.value = false }
 }
 
 async function loadProfiles() {
@@ -301,7 +328,19 @@ loadArticles()
 }
 .sh-btn-new:hover { background: #2563eb; }
 
-.sh-filters { margin-bottom: 14px; }
+.sh-filters {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 14px; align-items: center;
+}
+.sh-search {
+  flex: 1; min-width: 200px;
+}
+.sh-btn-clear {
+  background: transparent; border: 1px solid #334155; color: #94a3b8;
+  border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 13px;
+  transition: background .15s, color .15s;
+}
+.sh-btn-clear:hover { background: rgba(239,68,68,.15); color: #f87171; border-color: #ef4444; }
 
 .sh-select {
   background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
@@ -454,10 +493,14 @@ loadArticles()
 @media (max-width: 768px) {
   .sh-container { padding: 16px; }
   .sh-row2 { grid-template-columns: 1fr; }
+  .sh-filters { flex-direction: column; }
+  .sh-search, .sh-select { width: 100%; min-width: unset; }
   .sh-table th:nth-child(6),
   .sh-table td:nth-child(6) { display: none; }
 }
 @media (max-width: 576px) {
   .sh-container { padding: 12px; }
+  .sh-table th:nth-child(5),
+  .sh-table td:nth-child(5) { display: none; }
 }
 </style>

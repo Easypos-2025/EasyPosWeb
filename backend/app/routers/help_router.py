@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, case
 
 from app.database import get_db
 from app.models.help_article_model import HelpArticle
@@ -77,13 +77,16 @@ async def list_help(
 
 @router.get("/admin/list")
 async def admin_list(
-    profile_id: int = None,
-    _: User = Depends(require_sysadmin),
+    _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(HelpArticle).order_by(HelpArticle.profile_id.nulls_first(), HelpArticle.category, HelpArticle.order_index)
-    if profile_id is not None:
-        stmt = select(HelpArticle).where(HelpArticle.profile_id == profile_id).order_by(HelpArticle.category, HelpArticle.order_index)
+    stmt = select(HelpArticle).order_by(
+        case((HelpArticle.profile_id.is_(None), 0), else_=1),
+        HelpArticle.profile_id,
+        HelpArticle.category,
+        HelpArticle.order_index,
+        HelpArticle.id,
+    )
     result = await db.execute(stmt)
     return [_ser(a) for a in result.scalars().all()]
 
