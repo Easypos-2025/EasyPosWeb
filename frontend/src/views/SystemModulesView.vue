@@ -450,18 +450,27 @@ const buildTree = (list) => {
   return roots
 }
 
+function findSmIdByRoute(route, nodes) {
+  for (const n of nodes) {
+    if (n.route === route) return n.id
+    const found = findSmIdByRoute(route, n.children || [])
+    if (found) return found
+  }
+  return null
+}
+
 const handleEdit = async (item) => {
-  const smId = item.module_id ?? item.id
+  // Prioridad: module_id explícito → buscar por ruta en modules → item.id
+  let smId = item.module_id
+  if (!smId && item.route) smId = findSmIdByRoute(item.route, modules.value)
+  if (!smId) smId = item.id
+
   editingId.value = smId
-  if (item.module_id) {
-    try {
-      const { data } = await api.get(`/system-modules/${smId}`)
-      editForm.value = { name: data.name, route: data.route, icon: data.icon, parent_id: data.parent_id }
-    } catch {
-      editForm.value = { name: item.name, route: item.route, icon: item.icon, parent_id: null }
-    }
-  } else {
-    editForm.value = { name: item.name, route: item.route, icon: item.icon, parent_id: item.parent_id }
+  try {
+    const { data } = await api.get(`/system-modules/${smId}`)
+    editForm.value = { name: data.name, route: data.route, icon: data.icon, parent_id: data.parent_id }
+  } catch {
+    editForm.value = { name: item.name, route: item.route, icon: item.icon, parent_id: null }
   }
   showEditModal.value = true
 }
