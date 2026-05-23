@@ -157,7 +157,7 @@ async def _init_db_data():
         try:
             from app.models.system_module_model import SystemModule as SM
             _existing = await db.execute(select(SM).where(SM.route == "/assets/inquiries"))
-            if not _existing.scalar_one_or_none():
+            if not _existing.scalars().first():
                 db.add(SM(name="Consultas Activos", route="/assets/inquiries",
                           icon="bi-chat-dots", parent_id=None, is_active=True, order_index=0, is_sysadmin=False))
                 await db.commit()
@@ -390,7 +390,7 @@ async def _init_db_data():
         # Registrar módulo Clientes en system_modules si no existe
         from app.models.system_module_model import SystemModule
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/configuration/clients"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Clientes", route="/configuration/clients",
                 icon="bi-people", parent_id=None, is_active=True,
@@ -400,7 +400,7 @@ async def _init_db_data():
 
         # Registrar módulo Completar Tareas en system_modules si no existe
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/tasks/completar-info"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Completar Información Tareas", route="/tasks/completar-info",
                 icon="bi-clipboard-check", parent_id=None, is_active=True,
@@ -410,7 +410,7 @@ async def _init_db_data():
 
         # Registrar módulo Firma de Email en system_modules si no existe
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/email-footer"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Firma de Email", route="/sysadmin/email-footer",
                 icon="bi-envelope-paper", parent_id=None, is_active=True,
@@ -420,7 +420,7 @@ async def _init_db_data():
 
         # Registrar módulo Gestión de Ayuda en system_modules si no existe
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/help"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Gestión de Ayuda", route="/sysadmin/help",
                 icon="bi-question-circle-fill", parent_id=None, is_active=True,
@@ -439,7 +439,7 @@ async def _init_db_data():
         ]
         for mod_name, mod_route, mod_icon in inventory_modules:
             result = await db.execute(select(SystemModule).where(SystemModule.route == mod_route))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(SystemModule(
                     name=mod_name, route=mod_route,
                     icon=mod_icon, parent_id=None, is_active=True,
@@ -468,7 +468,7 @@ async def _init_db_data():
 
         # Registrar módulos inbox/outbox en system_modules
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/notifications/inbox"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Bandeja de Entrada", route="/notifications/inbox",
                 icon="bi-envelope-open", parent_id=None, is_active=True,
@@ -477,7 +477,7 @@ async def _init_db_data():
             await db.commit()
 
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/notifications/outbox"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Mensajes Enviados", route="/notifications/outbox",
                 icon="bi-send", parent_id=None, is_active=True,
@@ -502,7 +502,7 @@ async def _init_db_data():
         ]
         for key, value, desc, ctype in defaults_config:
             result = await db.execute(select(SystemConfig).where(SystemConfig.config_key == key))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(SystemConfig(config_key=key, config_value=value, description=desc, config_type=ctype))
 
         # Datos iniciales topbar_menu_items
@@ -516,7 +516,7 @@ async def _init_db_data():
         ]
         for name, key, icon, route, has_ev, min_plan, is_act, order in defaults_menu:
             result = await db.execute(select(TopbarMenuItem).where(TopbarMenuItem.key == key))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(TopbarMenuItem(
                     name=name, key=key, icon=icon, route=route,
                     has_evidence=has_ev, min_plan_id=min_plan,
@@ -589,7 +589,7 @@ async def _init_db_data():
         try:
             from app.models.system_module_model import SystemModule as SM
             _bv = await db.execute(select(SM).where(SM.route == "/bienvenida"))
-            if not _bv.scalar_one_or_none():
+            if not _bv.scalars().first():
                 db.add(SM(name="Bienvenida", route="/bienvenida", icon="bi-stars",
                           parent_id=None, is_active=True, order_index=0, is_sysadmin=False))
                 await db.commit()
@@ -698,7 +698,7 @@ async def _init_db_data():
         ]
         for s in seed_sections:
             result = await db.execute(select(LandingSection).where(LandingSection.section_key == s["section_key"]))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(LandingSection(**s))
         await db.commit()
 
@@ -815,7 +815,7 @@ async def _init_db_data():
 
         # ── SEED: system_config email_sender_landing ───────────────────
         result = await db.execute(select(SystemConfig).where(SystemConfig.config_key == "email_sender_landing"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemConfig(
                 config_key="email_sender_landing",
                 config_value="easypos.co@gmail.com",
@@ -826,7 +826,7 @@ async def _init_db_data():
 
         # ── SEED: módulo landing-manager en system_modules ─────────────
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/landing-manager"))
-        if not result.scalar_one_or_none():
+        if not result.scalars().first():
             db.add(SystemModule(
                 name="Gestión Landing Page",
                 route="/sysadmin/landing-manager",
@@ -952,7 +952,7 @@ async def _init_db_data():
             ("/payment-history",          "Historial de Pagos", "bi-clock-history",      False),
         ]:
             result = await db.execute(select(SystemModule).where(SystemModule.route == route))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0,
@@ -967,7 +967,7 @@ async def _init_db_data():
             ("/loans/prestamos",                      "Préstamos",              "bi-box-arrow-right"),
         ]:
             result = await db.execute(select(SystemModule).where(SystemModule.route == route))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0, is_sysadmin=False
@@ -981,7 +981,7 @@ async def _init_db_data():
             ("/configuration/conceptos-compras","Conceptos de Compra","bi-cart3"),
         ]:
             result = await db.execute(select(SystemModule).where(SystemModule.route == route))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0, is_sysadmin=False
@@ -1072,7 +1072,7 @@ async def _init_db_data():
             ("ad_price_all_profiles",   "80000",  "Precio pauta dirigida a todos los perfiles (COP)"),
         ]:
             r = await db.execute(select(SystemConfig).where(SystemConfig.config_key == ad_key))
-            if not r.scalar_one_or_none():
+            if not r.scalars().first():
                 db.add(SystemConfig(config_key=ad_key, config_value=ad_val, description=ad_desc, config_type="integer"))
         await db.commit()
 
@@ -1082,7 +1082,7 @@ async def _init_db_data():
             ("/sysadmin/advertising", "Gestión de Pautas",  "bi-megaphone-fill",  True),
         ]:
             result = await db.execute(select(SystemModule).where(SystemModule.route == route))
-            if not result.scalar_one_or_none():
+            if not result.scalars().first():
                 db.add(SystemModule(
                     name=name, route=route, icon=icon,
                     parent_id=None, is_active=True, order_index=0,
@@ -1097,7 +1097,7 @@ async def _init_db_data():
         # ── SEED: módulos Facturación (estructura padre/hijo) ────────────
         async def _get_or_create_module(name, route, icon, parent_id=None):
             r = await db.execute(select(SystemModule).where(SystemModule.route == route))
-            m = r.scalar_one_or_none()
+            m = r.scalars().first()
             if not m:
                 m = SystemModule(
                     name=name, route=route, icon=icon,
@@ -1276,7 +1276,7 @@ async def _init_db_data():
         await _get_or_create_module("Restaurante", "/restaurante", "bi-shop-window")
         try:
             r = await db.execute(select(SystemModule).where(SystemModule.route == "/restaurante"))
-            _dash = r.scalar_one_or_none()
+            _dash = r.scalars().first()
             if _dash:
                 _exists = await db.execute(text(
                     "SELECT 1 FROM business_profile_modules "
@@ -1306,7 +1306,7 @@ async def _init_db_data():
         ]
         for _name, _route, _icon, _order in _pos_modules:
             r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
-            if not r.scalar_one_or_none():
+            if not r.scalars().first():
                 _m = SystemModule(
                     name=_name, route=_route, icon=_icon,
                     parent_id=pos_parent.id, is_active=True,
@@ -1321,7 +1321,7 @@ async def _init_db_data():
                            "/pos/categorias", "/pos/impresoras", "/pos/listas-precios", "/pos/cajas"]
             for _route in _pos_routes:
                 r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
-                _mod = r.scalar_one_or_none()
+                _mod = r.scalars().first()
                 if _mod:
                     _exists = await db.execute(text(
                         "SELECT 1 FROM business_profile_modules "
