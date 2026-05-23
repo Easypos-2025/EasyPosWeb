@@ -238,28 +238,30 @@
 
       <h5>Editar Usuario</h5>
 
-      <input v-model="editForm.nombre" class="form-control mb-2" />
-      <input v-model="editForm.email" class="form-control mb-2" />
-      <div class="mb-2">
-        <label class="d-flex align-items-center gap-2">
-          <input type="checkbox" v-model="editForm.is_active" />
-          <span>Usuario activo</span>
-        </label>
-      </div>
+      <form @submit.prevent="updateUser" autocomplete="off">
+        <input v-model="editForm.nombre" class="form-control mb-2" placeholder="Nombre" />
+        <input v-model="editForm.email" class="form-control mb-2" placeholder="Email" />
+        <div class="mb-2">
+          <label class="d-flex align-items-center gap-2">
+            <input type="checkbox" v-model="editForm.is_active" />
+            <span>Usuario activo</span>
+          </label>
+        </div>
 
-      <div class="mb-2">
-        <label>Rol</label>
-        <select v-model="editForm.role_id" class="form-control">
-          <option v-for="role in roles" :key="role.id" :value="role.id">
-            {{ role.name }}
-          </option>
-        </select>
-      </div>
+        <div class="mb-2">
+          <label>Rol</label>
+          <select v-model="editForm.role_id" class="form-control">
+            <option v-for="role in roles" :key="role.id" :value="role.id">
+              {{ role.name }}
+            </option>
+          </select>
+        </div>
 
-      <div class="d-flex gap-2">
-        <button class="btn btn-primary" @click="updateUser">Guardar</button>
-        <button class="btn btn-secondary" @click="closeModal">Cancelar</button>
-      </div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Guardar</button>
+          <button type="button" class="btn btn-secondary" @click="closeModal">Cancelar</button>
+        </div>
+      </form>
 
     </div>
   </div>
