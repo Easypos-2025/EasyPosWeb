@@ -114,11 +114,13 @@ async def get_task_stats(authorization: str = Header(None), db: AsyncSession = D
     is_sys = role.is_system if role else False
     can_see_all = is_sys or "admin" in role_name or "auditor" in role_name
 
-    base_conds = []
-    if not is_sys:
-        base_conds.append(Task.company_id == user.company_id)
-    if not can_see_all:
-        base_conds.append(Task.assigned_to == user.id)
+    # SYSADMIN solo ve sus propias tareas asignadas; no debe ver tareas operativas de otros asociados
+    if is_sys:
+        base_conds = [Task.assigned_to == user.id]
+    else:
+        base_conds = [Task.company_id == user.company_id]
+        if not can_see_all:
+            base_conds.append(Task.assigned_to == user.id)
 
     async def cnt(*extra):
         return (await db.execute(select(func.count()).select_from(Task).where(*base_conds, *extra))).scalar()
@@ -153,11 +155,20 @@ async def get_incomplete_tasks(
     role = await _get_role(user, db)
     is_sys = role.is_system if role else False
 
-    # Si no tiene can_view_all, forzar filtro por usuario asignado
-    view_all = is_sys or await _can_view_all_tasks(user, db)
+    # SYSADMIN solo ve tareas que le asignaron explícitamente; no mezclar con tareas de asociados
+    if is_sys:
+        base_conds = [Task.assigned_to == user.id]
+        sin_asignar = []  # sin_asignar nunca aplica a SYSADMIN (assigned_to no puede ser None y user.id a la vez)
+        r2 = await db.execute(select(Task).where(*base_conds, Task.status_id == 2, (Task.worker_id == None) | (Task.due_date == None)))
+        return {
+            "sin_asignar":     sin_asignar,
+            "info_incompleta": [_serialize(t, sm, wm, um) for t in r2.scalars().all()],
+        }
+
+    view_all = await _can_view_all_tasks(user, db)
     filter_by_user = mine or not view_all
 
-    base_conds = [] if is_sys else [Task.company_id == user.company_id]
+    base_conds = [Task.company_id == user.company_id]
     if filter_by_user:
         base_conds.append(Task.assigned_to == user.id)
 
