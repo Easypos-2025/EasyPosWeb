@@ -34,13 +34,14 @@
       <table v-else class="sh-table">
         <thead>
           <tr>
-            <th>#</th><th>Perfil</th><th>Categoría</th><th>Título</th><th>GIF</th><th>Orden</th><th>Activo</th><th></th>
+            <th>#</th><th>Perfil</th><th>Ruta vista</th><th>Categoría</th><th>Título</th><th>GIF</th><th>Orden</th><th>Activo</th><th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="a in filteredArticles" :key="a.id">
             <td class="sh-id">{{ a.id }}</td>
             <td><span class="sh-badge" :class="a.profile_id ? 'badge-profile' : 'badge-general'">{{ profileName(a.profile_id) }}</span></td>
+            <td class="sh-route"><span v-if="a.view_route" class="sh-route-badge">{{ a.view_route }}</span><span v-else class="sh-no-gif">—</span></td>
             <td class="sh-cat">{{ a.category }}</td>
             <td class="sh-ttl">{{ a.title }}</td>
             <td>
@@ -96,6 +97,11 @@
             <div class="sh-field">
               <label class="sh-label">Título *</label>
               <input v-model="form.title" class="sh-input" placeholder="Ej: Cómo crear un usuario" />
+            </div>
+
+            <div class="sh-field">
+              <label class="sh-label">Ruta de vista <span class="sh-hint">(acceso directo desde la vista — ej: /inventory/products)</span></label>
+              <input v-model="form.view_route" class="sh-input" placeholder="/ruta/de/la/vista" />
             </div>
 
             <div class="sh-field">
@@ -190,7 +196,7 @@ const modal = ref({ open: false, id: null })
 const form  = ref(emptyForm())
 
 function emptyForm() {
-  return { profile_id: null, category: "General", title: "", description: "", keywords: "", gif_url: "", order_index: 0, is_active: 1 }
+  return { profile_id: null, view_route: "", category: "General", title: "", description: "", keywords: "", gif_url: "", order_index: 0, is_active: 1 }
 }
 
 const categories = computed(() => [...new Set(articles.value.map(a => a.category).filter(Boolean))].sort())
@@ -373,6 +379,12 @@ loadArticles()
 
 .sh-gif-thumb { width: 48px; height: 32px; object-fit: cover; border-radius: 4px; }
 .sh-no-gif    { color: #475569; }
+.sh-route     { max-width: 160px; }
+.sh-route-badge {
+  font-size: 11px; background: #eff6ff; color: #1d4ed8;
+  border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 6px;
+  font-family: monospace;
+}
 
 .sh-active { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 8px; }
 .active-yes { background: rgba(34,197,94,.15); color: #4ade80; }

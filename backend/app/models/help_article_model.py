@@ -8,6 +8,7 @@ class HelpArticle(Base):
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
     profile_id  = Column(Integer, nullable=True)
+    view_route  = Column(String(200), nullable=True)   # ruta de la vista asociada, ej: /inventory/products
     category    = Column(String(100), nullable=False, default="General")
     title       = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)

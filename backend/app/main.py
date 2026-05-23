@@ -153,6 +153,15 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
+        # ── Migración: view_route en help_articles ────────────────────────────
+        try:
+            await db.execute(text(
+                "ALTER TABLE help_articles ADD COLUMN view_route VARCHAR(200) NULL"
+            ))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
         # ── SYSTEM_MODULE: Consultas de Activos ───────────────────────────────
         try:
             from app.models.system_module_model import SystemModule as SM

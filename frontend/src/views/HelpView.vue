@@ -45,6 +45,7 @@
           <div
             v-for="article in group.articles"
             :key="article.id"
+            :id="`help-article-${article.id}`"
             class="help-card"
             :class="{ expanded: expanded[article.id] }"
           >
@@ -98,7 +99,10 @@ import { ref, computed } from "vue"
 import api from "@/services/apis"
 import { useModuleName } from "@/composables/useModuleName"
 
+import { useRoute as useVueRoute } from 'vue-router'
+
 const { moduleName } = useModuleName()
+const vueRoute = useVueRoute()
 
 const articles     = ref([])
 const loading      = ref(false)
@@ -113,6 +117,16 @@ async function loadArticles() {
     const params = searchQuery.value.trim() ? { q: searchQuery.value.trim() } : {}
     const res = await api.get("/help/", { params })
     articles.value = res.data
+    // Auto-expandir artículo si viene por query param ?article=ID
+    const targetId = parseInt(vueRoute.query.article)
+    if (targetId) {
+      expanded.value = { [targetId]: true }
+      // Scroll suave al artículo después del render
+      setTimeout(() => {
+        const el = document.getElementById(`help-article-${targetId}`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 200)
+    }
   } catch {
     articles.value = []
   } finally {

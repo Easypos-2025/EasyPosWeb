@@ -1,7 +1,8 @@
 import uuid
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, case
 
@@ -22,6 +23,7 @@ def _ser(a: HelpArticle) -> dict:
     return {
         "id":          a.id,
         "profile_id":  a.profile_id,
+        "view_route":  a.view_route,
         "category":    a.category,
         "title":       a.title,
         "description": a.description,
@@ -103,6 +105,7 @@ async def create_article(
 
     article = HelpArticle(
         profile_id  = data.get("profile_id") or None,
+        view_route  = (data.get("view_route") or "").strip() or None,
         category    = (data.get("category") or "General").strip(),
         title       = title,
         description = (data.get("description") or "").strip() or None,
@@ -135,6 +138,8 @@ async def update_article(
         article.title = title
     if "profile_id" in data:
         article.profile_id = data["profile_id"] or None
+    if "view_route" in data:
+        article.view_route = (data["view_route"] or "").strip() or None
     if "category" in data:
         article.category = (data["category"] or "General").strip()
     if "description" in data:
@@ -167,6 +172,24 @@ async def delete_article(
     await db.delete(article)
     await db.commit()
     return {"ok": True}
+
+
+@router.get("/by-route")
+async def get_by_route(
+    route: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Devuelve el primer artículo activo asociado a una ruta de vista."""
+    stmt = select(HelpArticle).where(
+        HelpArticle.is_active == 1,
+        HelpArticle.view_route == route,
+    ).order_by(HelpArticle.order_index, HelpArticle.id).limit(1)
+    result = await db.execute(stmt)
+    article = result.scalars().first()
+    if not article:
+        return None
+    return _ser(article)
 
 
 @router.post("/{article_id}/upload-gif")

@@ -57,6 +57,8 @@
 
     <Footer class="footer" />
 
+    <HelpButton />
+
     <!-- Modal upgrade (vista rápida del estado) -->
     <PlanUpgradeModal
       v-if="showUpgradeModal"
@@ -76,6 +78,7 @@ import Sidebar from "@/components/layout/SidebarLeft.vue"
 import RightSidebar from "@/components/layout/SidebarRight.vue"
 import Footer from "@/components/layout/FooterBar.vue"
 import PlanUpgradeModal from "@/components/plans/PlanUpgradeModal.vue"
+import HelpButton from "@/components/common/HelpButton.vue"
 import api from "@/services/apis"
 
 const router    = useRouter()

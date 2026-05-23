@@ -16,33 +16,83 @@
       <div class="form-grid">
 
         <div class="fg full">
-          <label>Nombre</label>
-          <input v-model="company.name" class="fi" />
+          <label>Nombre <span class="req">*</span></label>
+          <input v-model="company.name" class="fi" placeholder="Razón social" />
         </div>
 
         <div class="fg">
-          <label>Documento / NIT</label>
-          <input v-model="company.identification_number" class="fi" />
+          <label>Documento / NIT <span class="req">*</span></label>
+          <input v-model="company.identification_number" class="fi" placeholder="Ej: 900123456" />
         </div>
 
         <div class="fg">
-          <label>Email</label>
-          <input v-model="company.email" type="email" class="fi" />
+          <label>Dígito verificador <span class="req">*</span></label>
+          <input v-model="company.dv" class="fi" maxlength="1" placeholder="0" />
         </div>
 
         <div class="fg">
-          <label>Teléfono</label>
-          <input v-model="company.phone" class="fi" />
+          <label>Email <span class="req">*</span></label>
+          <input v-model="company.email" type="email" class="fi" placeholder="empresa@correo.com" />
         </div>
 
         <div class="fg">
-          <label>Dirección</label>
-          <input v-model="company.address" class="fi" />
+          <label>Teléfono <span class="req">*</span></label>
+          <input v-model="company.phone" class="fi" placeholder="3001234567" />
+        </div>
+
+        <div class="fg full">
+          <label>Dirección <span class="req">*</span></label>
+          <input v-model="company.address" class="fi" placeholder="Calle, carrera, número..." />
+        </div>
+
+        <div class="fg">
+          <label>País <span class="req">*</span></label>
+          <select v-model="company.country_id" class="fi"
+                  @change="company.department_id = null; company.municipality_id = null">
+            <option :value="null" disabled>Selecciona país</option>
+            <option v-for="c in countries" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </div>
+
+        <div class="fg">
+          <label>Departamento <span class="req">*</span></label>
+          <select v-model="company.department_id" class="fi"
+                  :disabled="!company.country_id"
+                  @change="company.municipality_id = null">
+            <option :value="null" disabled>Selecciona departamento</option>
+            <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+          </select>
+        </div>
+
+        <div class="fg">
+          <label>Municipio <span class="req">*</span></label>
+          <select v-model="company.municipality_id" class="fi" :disabled="!company.department_id">
+            <option :value="null" disabled>Selecciona municipio</option>
+            <option v-for="m in municipalities" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+        </div>
+
+        <div class="fg">
+          <label>Moneda <span class="req">*</span></label>
+          <select v-model="company.type_currency_id" class="fi">
+            <option :value="null" disabled>Selecciona moneda</option>
+            <option v-for="cur in currencies" :key="cur.id" :value="cur.id">
+              {{ cur.name }} ({{ cur.symbol || cur.code }})
+            </option>
+          </select>
+        </div>
+
+        <div class="fg">
+          <label>Idioma <span class="req">*</span></label>
+          <select v-model="company.language_id" class="fi">
+            <option :value="null" disabled>Selecciona idioma</option>
+            <option v-for="l in languages" :key="l.id" :value="l.id">{{ l.name }}</option>
+          </select>
         </div>
 
         <div class="fg full">
           <label>Descripción <span class="optional">(opcional)</span></label>
-          <textarea v-model="company.description" class="fi" rows="2"></textarea>
+          <textarea v-model="company.description" class="fi" rows="2" placeholder="Describe brevemente la empresa..."></textarea>
         </div>
 
       </div>
@@ -136,7 +186,7 @@
 
 <script setup>
 
-import { ref, watch, watchEffect, onMounted, nextTick } from "vue"
+import { ref, watch, watchEffect, computed, onMounted, nextTick } from "vue"
 import { applyTheme, getThemeState } from "@/utils/theme"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
@@ -144,21 +194,57 @@ import ImageUploader from "@/components/common/ImageUploader.vue"
 import { useCompanyStore } from "@/stores/companyStore"
 
 const companyStore = useCompanyStore()
-const themeState   = getThemeState()   // mismo estado que usa el Topbar
+const themeState   = getThemeState()
 
 const isProfileReady  = ref(false)
 const loading         = ref(false)
 const themeOriginal   = ref(null)
-const currentLogo     = ref("")      // ref dedicado para el ImageUploader
+const currentLogo     = ref("")
 
-// Cuando el companyStore carga el logo (para el topbar), lo usamos aquí también
 watchEffect(() => {
   if (themeState.logo) currentLogo.value = themeState.logo
 })
 
+// Catálogos
+const countries      = ref([])
+const allDepartments = ref([])
+const allMunicipalities = ref([])
+const currencies     = ref([])
+const languages      = ref([])
+
+const departments  = computed(() =>
+  company.value.country_id
+    ? allDepartments.value.filter(d => d.country_id == company.value.country_id)
+    : allDepartments.value
+)
+const municipalities = computed(() =>
+  company.value.department_id
+    ? allMunicipalities.value.filter(m => m.department_id == company.value.department_id)
+    : allMunicipalities.value
+)
+
+async function loadCatalogs() {
+  try {
+    const [c, d, m, cur, lang] = await Promise.all([
+      api.get("/countries/"),
+      api.get("/departments/"),
+      api.get("/municipalities/"),
+      api.get("/type-currencies/"),
+      api.get("/languages/"),
+    ])
+    countries.value         = c.data
+    allDepartments.value    = d.data
+    allMunicipalities.value = m.data
+    currencies.value        = cur.data
+    languages.value         = lang.data
+  } catch {}
+}
+
 const company = ref({
   id_company: null, name: "", description: "",
-  identification_number: "", email: "", phone: "", address: ""
+  identification_number: "", dv: "", email: "", phone: "", address: "",
+  country_id: null, department_id: null, municipality_id: null,
+  type_currency_id: null, language_id: null,
 })
 
 const perfil = ref({
@@ -244,7 +330,7 @@ watch(
 )
 
 onMounted(async () => {
-  await Promise.all([loadCompany(), loadPerfil()])
+  await Promise.all([loadCatalogs(), loadCompany(), loadPerfil()])
   await nextTick()
   isProfileReady.value = true
 })
@@ -314,6 +400,7 @@ onMounted(async () => {
 }
 
 .optional { font-weight: 400; text-transform: none; letter-spacing: 0; color: #94a3b8; }
+.req      { color: #ef4444; font-weight: 700; }
 
 /* ── INPUT BASE ── */
 .fi {

@@ -15,9 +15,9 @@ export const useCompanyStore = defineStore("company", () => {
       const colorsRes = await api.get(`/company-theme/${companyId}/colors`)
       applyTheme(colorsRes.data)
 
-      // 2. Logo en segundo plano — no bloquea la UI
+      // 2. Logo en segundo plano — no bloquea la UI (siempre aplica para limpiar logo si no tiene)
       api.get(`/company-theme/${companyId}`)
-        .then(res => { if (res.data?.logo) applyTheme(res.data) })
+        .then(res => { if (res.data) applyTheme(res.data) })
         .catch(() => {})
     } catch {}
   }

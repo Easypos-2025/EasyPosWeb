@@ -37,10 +37,8 @@ export function applyTheme(perfil) {
     root.style.setProperty("--color-text", perfil.font_color)
   }
 
-  // 🔥 LOGO REACTIVO
-  if (perfil.logo) {
-    themeState.logo = perfil.logo
-  }
+  // 🔥 LOGO REACTIVO — siempre actualizar (incluso vacío) para que al cambiar empresa se limpie
+  themeState.logo = perfil.logo ?? ""
 
   localStorage.setItem("app_theme", JSON.stringify(perfil))
   

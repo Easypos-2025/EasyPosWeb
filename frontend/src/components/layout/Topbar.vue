@@ -798,7 +798,7 @@ async function logout() {
   router.push("/login")
 }
 
-watchEffect(() => { if (theme.logo) logo.value = theme.logo })
+watchEffect(() => { logo.value = theme.logo ?? "" })
 
 let notifTimer     = null
 let heartbeatTimer = null
