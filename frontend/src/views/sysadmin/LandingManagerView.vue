@@ -77,17 +77,15 @@
       <div v-else class="profiles-grid">
         <div v-for="prof in profiles" :key="prof.id" class="profile-edit-card">
           <div class="profile-img-area">
-            <img v-if="prof.image_url" :src="prof.image_url" :alt="prof.name" class="profile-thumb" />
-            <div v-else class="profile-thumb-placeholder">
-              <i :class="`bi ${prof.icon || 'bi-building'}`"></i>
-            </div>
-            <label class="btn-upload-img" :for="`upload-${prof.id}`">
-              <i class="bi bi-camera-fill me-1"></i> Cambiar imagen
-              <input
-                :id="`upload-${prof.id}`" type="file" accept="image/*"
-                style="display:none" @change="uploadProfileImage($event, prof)"
-              />
-            </label>
+            <ImageUploaderPro
+              :current-url="prof.image_url"
+              :output-width="600"
+              output-format="jpeg"
+              :output-quality="0.88"
+              label="Sin imagen"
+              :show-remove="false"
+              @change="uploadProfileImage($event, prof)"
+            />
           </div>
           <div class="profile-edit-body">
             <div class="profile-name-row">
@@ -305,16 +303,19 @@
             </div>
           </div>
           <div class="form-group">
-            <label>URL de imagen</label>
-            <div class="image-input-row">
-              <input v-model="sectionModal.data.image_url" class="form-ctrl-sm" placeholder="/uploads/landing/foto.jpg" />
-              <label class="btn-upload-inline">
-                <i class="bi bi-upload me-1"></i> Subir
-                <input type="file" accept="image/*" style="display:none" @change="uploadSectionImage" />
-              </label>
-            </div>
-            <img v-if="sectionModal.data.image_url" :src="sectionModal.data.image_url"
-                 class="image-preview-sm mt-2" alt="preview" />
+            <label>Imagen de sección</label>
+            <ImageUploaderPro
+              :current-url="sectionModal.data.image_url"
+              :output-width="1200"
+              :output-height="630"
+              output-format="jpeg"
+              :output-quality="0.88"
+              label="Sin imagen"
+              :show-remove="false"
+              @change="uploadSectionImage"
+            />
+            <input v-model="sectionModal.data.image_url" class="form-ctrl-sm mt-2"
+                   placeholder="/uploads/landing/foto.jpg (URL manual opcional)" />
           </div>
           <div class="form-row-2">
             <div class="form-group">
@@ -399,6 +400,7 @@
 import { ref, reactive, computed, onMounted } from "vue"
 import { showToast } from "@/utils/toast"
 import api from "@/services/apis"
+import ImageUploaderPro from "@/components/common/ImageUploaderPro.vue"
 
 export default {
   name: "LandingManagerView",
@@ -474,11 +476,9 @@ export default {
       } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
-    async function uploadSectionImage(event) {
-      const file = event.target.files[0]
-      if (!file) return
+    async function uploadSectionImage(blob) {
       const fd = new FormData()
-      fd.append("file", file)
+      fd.append("file", blob, `section_${Date.now()}.jpg`)
       try {
         const res = await api.post("/landing/admin/upload", fd, {
           headers: { "Content-Type": "multipart/form-data" }
@@ -516,11 +516,9 @@ export default {
       } catch (e) { showToast(e.response?.data?.detail || e.message, "error") }
     }
 
-    async function uploadProfileImage(event, prof) {
-      const file = event.target.files[0]
-      if (!file) return
+    async function uploadProfileImage(blob, prof) {
       const fd = new FormData()
-      fd.append("file", file)
+      fd.append("file", blob, `profile_${prof.id}_${Date.now()}.jpg`)
       try {
         const res = await api.post("/landing/admin/upload", fd, {
           headers: { "Content-Type": "multipart/form-data" }
@@ -642,6 +640,7 @@ export default {
 
     return {
       activeTab, tabs,
+      ImageUploaderPro,
       sections, loadingSections, sectionModal, savingSection,
       openEditSection, openNewSection, saveSection, toggleSection, uploadSectionImage,
       profiles, loadingProfiles, saveProfile, uploadProfileImage,

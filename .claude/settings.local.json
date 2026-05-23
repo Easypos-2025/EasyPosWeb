@@ -34,7 +34,29 @@
       "Bash(sed -n '1390,1400p' backend/app/main.py)",
       "Bash(New-Item -ItemType File -Force \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\HelpView.vue\")",
       "Bash(Out-Null)",
-      "Bash(Get-Content \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\HelpView.vue\" -Raw)"
+      "Bash(Get-Content \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\HelpView.vue\" -Raw)",
+      "Bash(grep -E \"\\\\.\\(vue|ts|js|py\\)$\")",
+      "Bash(mysql -u root -p123456 easyposweb -e \"ALTER TABLE role_modules ADD COLUMN IF NOT EXISTS can_view_all BOOLEAN NOT NULL DEFAULT FALSE;\")",
+      "Bash(grep -v \"//.*notification\")",
+      "Bash(grep -rn \"mesa\\\\|comanda\\\\|orden\\\\|pedido\\\\|cocina\\\\|kitchen\\\\|mesero\\\\|waiter\" backend/app/routers/ --include=\"*.py\" -l)",
+      "Bash(grep -rn \"Mesa\\\\|Comanda\\\\|Orden\\\\|Pedido\\\\|Cocina\" backend/app/models/ --include=\"*.py\" -l)",
+      "Bash(Get-ChildItem -Path \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(grep -A 30 \"^CREATE TABLE IF NOT EXISTS \\\\`pos_dishes\\\\`\" \"d:/AAA Proyectos Claude-Code/EasyPosWeb/schema_DO_easypos_sync.sql\")",
+      "Bash(grep -A 20 \"^CREATE TABLE IF NOT EXISTS \\\\`pos_cash_registers\\\\`\" \"d:/AAA Proyectos Claude-Code/EasyPosWeb/backend/app/main.py\")",
+      "Bash(python -c \"from app.routers.pos_tables_router import router; print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; [print\\(n.name\\) for n in ast.walk\\(ast.parse\\(open\\('app/auth/jwt_handler.py'\\).read\\(\\)\\)\\) if isinstance\\(n, \\(ast.FunctionDef, ast.AsyncFunctionDef\\)\\)]\")",
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(Get-ChildItem -Path \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\\\\app\" -Filter \"main.py\" -Recurse)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(Get-ChildItem -Name)",
+      "Bash(findstr /i \"pos\")",
+      "Bash(python -c \"from app.routers.pos_dashboard_router import router; print\\('OK'\\)\")",
+      "Bash(Select-Object -First 20)",
+      "Bash(Remove-Item \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\\\\app\\\\routers\\\\insumos_router.py\" -Force)",
+      "Bash(Remove-Item \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\\\\app\\\\models\\\\insumo_model.py\" -Force)",
+      "Bash(Remove-Item \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\InsumosCrudView.vue\" -Force)",
+      "Bash(Write-Output \"Archivos eliminados\")"
     ]
   }
 }

@@ -203,10 +203,9 @@ async def update_company(company_id: int, data: dict, db: AsyncSession = Depends
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    required_fields = ["name", "identification_number", "dv", "address", "phone", "email",
-                       "business_profile_id", "language_id", "country_id", "department_id",
-                       "municipality_id", "type_currency_id"]
-    for field in required_fields:
+    # Validar solo los campos editables en el formulario de perfil
+    text_required = ["name", "identification_number", "address", "phone", "email"]
+    for field in text_required:
         if not data.get(field):
             raise HTTPException(status_code=400, detail=f"El campo {field} es obligatorio")
 
@@ -215,18 +214,27 @@ async def update_company(company_id: int, data: dict, db: AsyncSession = Depends
 
     company.name = data["name"]
     company.identification_number = data["identification_number"]
-    company.dv = data["dv"]
+    # dv puede ser 0 (válido para NITs con dígito verificador = 0)
+    if data.get("dv") is not None:
+        company.dv = data["dv"]
     company.address = data["address"]
     company.phone = data["phone"]
     company.email = data["email"]
     company.description = data.get("description") or ""
     company.state = data.get("state", 1)
-    company.business_profile_id = data["business_profile_id"]
-    company.language_id = data["language_id"]
-    company.country_id = data["country_id"]
-    company.department_id = data["department_id"]
-    company.municipality_id = data["municipality_id"]
-    company.type_currency_id = data["type_currency_id"]
+    # FK opcionales: solo actualizar si vienen en el payload y son válidos
+    if data.get("business_profile_id"):
+        company.business_profile_id = data["business_profile_id"]
+    if data.get("language_id"):
+        company.language_id = data["language_id"]
+    if data.get("country_id"):
+        company.country_id = data["country_id"]
+    if data.get("department_id"):
+        company.department_id = data["department_id"]
+    if data.get("municipality_id"):
+        company.municipality_id = data["municipality_id"]
+    if data.get("type_currency_id"):
+        company.type_currency_id = data["type_currency_id"]
     await db.commit()
     return {"message": "Empresa actualizada correctamente"}
 

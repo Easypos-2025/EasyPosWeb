@@ -51,15 +51,24 @@ INTERCEPTOR RESPONSE
 Manejo global de errores
 ========================================= */
 
+let _redirecting = false
+
 api.interceptors.response.use(
   res => res,
   err => {
-  //console.log("API URL:", import.meta.env.VITE_API_URL)
-    if (err.response?.status === 401) {
+    if (err.response?.status === 401 && !_redirecting) {
+      _redirecting = true
       localStorage.removeItem("token")
       localStorage.removeItem("user")
 
-      //window.location.href = "/login"
+      // Importación dinámica para evitar dependencia circular con el store
+      import("@/utils/toast").then(({ showToast }) => {
+        showToast("Sesión expirada. Redirigiendo al inicio de sesión...", "warning")
+      }).catch(() => {})
+
+      setTimeout(() => {
+        window.location.href = "/login"
+      }, 1800)
     }
 
     return Promise.reject(err)
