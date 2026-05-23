@@ -120,6 +120,13 @@
               <span v-if="isItemPending(item)" class="badge-soon">Próximo</span>
             </button>
 
+            <!-- Mapa de navegación — siempre visible -->
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item" @click="dropdownOpen = false; $router.push('/navigation-map')">
+              <span class="item-icon"><i class="bi bi-compass-fill" style="color:#818cf8"></i></span>
+              <span class="item-name">Mapa de navegación</span>
+            </button>
+
             <template v-if="canInvite">
               <div class="dropdown-divider"></div>
               <button class="dropdown-item" @click="goInvite">
@@ -136,10 +143,10 @@
         </Transition>
       </div>
 
-      <!-- Mapa -->
-      <router-link to="/navigation-map" class="btn-icon btn-sitemap" title="Mapa">
-        <i class="bi bi-compass-fill sitemap-ico"></i>
-        <span class="btn-label sitemap-label">Mapa</span>
+      <!-- Guía de inicio -->
+      <router-link to="/bienvenida" class="btn-icon btn-sitemap" title="Guía de inicio">
+        <i class="bi bi-journal-bookmark-fill sitemap-ico"></i>
+        <span class="btn-label sitemap-label">Guía</span>
       </router-link>
 
       <!-- Dropdown Usuario -->
