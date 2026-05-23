@@ -100,8 +100,36 @@
             </div>
 
             <div class="sh-field">
-              <label class="sh-label">Ruta de vista <span class="sh-hint">(acceso directo desde la vista — ej: /inventory/products)</span></label>
-              <input v-model="form.view_route" class="sh-input" placeholder="/ruta/de/la/vista" />
+              <label class="sh-label">
+                Vista asociada
+                <span class="sh-hint">— el botón ? de esa vista abrirá este artículo directamente</span>
+              </label>
+              <select class="sh-select" @change="onModuleSelect($event)">
+                <option value="">— Seleccionar vista del sistema —</option>
+                <optgroup label="Vistas del asociado">
+                  <option
+                    v-for="m in modules.filter(x => !x.is_sysadmin)"
+                    :key="m.id"
+                    :value="m.route"
+                    :selected="form.view_route === m.route"
+                  >{{ m.name }} — {{ m.route }}</option>
+                </optgroup>
+                <optgroup label="Vistas SYSADMIN">
+                  <option
+                    v-for="m in modules.filter(x => x.is_sysadmin)"
+                    :key="m.id"
+                    :value="m.route"
+                    :selected="form.view_route === m.route"
+                  >{{ m.name }} — {{ m.route }}</option>
+                </optgroup>
+              </select>
+              <div class="sh-route-manual">
+                <span class="sh-hint">Ruta seleccionada:</span>
+                <code class="sh-route-code">{{ form.view_route || '(ninguna)' }}</code>
+                <button v-if="form.view_route" type="button" class="sh-clear-route" @click="form.view_route = ''" title="Limpiar">
+                  <i class="bi bi-x"></i>
+                </button>
+              </div>
             </div>
 
             <div class="sh-field">
@@ -185,6 +213,7 @@ import { showToast } from "@/utils/toast"
 
 const articles       = ref([])
 const profiles       = ref([])
+const modules        = ref([])   // system_modules con ruta
 const loading        = ref(false)
 const saving         = ref(false)
 const uploading      = ref(false)
@@ -239,6 +268,18 @@ async function loadProfiles() {
     const res = await api.get("/business-profiles/")
     profiles.value = res.data.data ?? res.data
   } catch {}
+}
+
+async function loadModules() {
+  try {
+    const res = await api.get("/system-modules/flat/")
+    // Solo los que tienen ruta propia (excluir grupos/padres sin ruta)
+    modules.value = res.data.filter(m => m.route && m.route.trim() !== "")
+  } catch {}
+}
+
+function onModuleSelect(e) {
+  form.value.view_route = e.target.value || ""
 }
 
 function openNew() {
@@ -314,6 +355,7 @@ async function deleteArticle(a) {
 }
 
 loadProfiles()
+loadModules()
 loadArticles()
 </script>
 
@@ -385,6 +427,18 @@ loadArticles()
   border: 1px solid #bfdbfe; border-radius: 4px; padding: 2px 6px;
   font-family: monospace;
 }
+.sh-route-manual {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px;
+}
+.sh-route-code {
+  font-size: 12px; background: #1e293b; color: #7dd3fc;
+  border-radius: 4px; padding: 3px 8px; font-family: monospace;
+}
+.sh-clear-route {
+  background: none; border: none; color: #94a3b8; cursor: pointer;
+  font-size: 14px; padding: 0 2px; line-height: 1;
+}
+.sh-clear-route:hover { color: #ef4444; }
 
 .sh-active { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 8px; }
 .active-yes { background: rgba(34,197,94,.15); color: #4ade80; }
