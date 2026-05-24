@@ -119,7 +119,6 @@ async def get_ventas(
                    ON ro.receipt_number = rc.receipt_number
                   AND ro.company_id     = rc.company_id
                   AND ro.date           = rc.date
-                  AND ro.cancelled      = 0
             WHERE rc.company_id = :cid
               AND rc.date BETWEEN :desde AND :hasta
               AND rc.voided = 0
@@ -230,7 +229,6 @@ async def get_venta_detalle(
                    ON ro.receipt_number = rc.receipt_number
                   AND ro.company_id     = rc.company_id
                   AND ro.date           = rc.date
-                  AND ro.cancelled      = 0
             LEFT JOIN pos_waiters w
                    ON w.id = ro.waiter_id AND w.company_id = rc.company_id
             WHERE rc.company_id    = :cid
