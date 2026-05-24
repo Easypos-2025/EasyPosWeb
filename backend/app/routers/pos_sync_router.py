@@ -356,7 +356,7 @@ async def pull_order_details(
 # RECEIPTS (recibos) — misma normalización que invoices
 # ═════════════════════════════════════════
 class ReceiptIn(BaseModel):
-    receipt_number: str
+    invoice_number: str            # VB6 envía invoice_number; DB columna = receipt_number
     company_id: int
     date: Optional[str] = None
     cash_amount: Optional[int] = 0
@@ -380,7 +380,7 @@ class ReceiptIn(BaseModel):
     manual_receipt: Optional[int] = 0
     resolution_id: Optional[int] = 0
     reservation_receipt: Optional[str] = "0"
-    delivery_receipt: Optional[int] = 0
+    delivery_invoice: Optional[int] = 0   # VB6 envía delivery_invoice; DB columna = delivery_receipt
 
 
 @router.post("/sync/push/receipts")
@@ -394,13 +394,13 @@ async def push_receipts(
 
     for r in receipts:
         cid = r.company_id
-        is_existing = await _exists_in_table("pos_receipts", "receipt_number", r.receipt_number, cid, db)
+        is_existing = await _exists_in_table("pos_receipts", "receipt_number", r.invoice_number, cid, db)
 
         if not is_existing:
             if cid not in company_remaining:
                 company_remaining[cid] = await _daily_remaining(cid, "max_daily_receipts", "pos_receipts", db)
             if company_remaining[cid] == 0:
-                failed.append({"receipt_number": r.receipt_number,
+                failed.append({"invoice_number": r.invoice_number,
                                "error": "Límite diario de recibos alcanzado en tu plan"})
                 continue
             if company_remaining[cid] > 0:
@@ -416,12 +416,12 @@ async def push_receipts(
                     currency_type, foreign_amount, manual_receipt, resolution_id,
                     reservation_receipt, delivery_receipt, synced, updated_at
                 ) VALUES (
-                    :receipt_number, :company_id, :date, :cash_amount, :discount,
+                    :invoice_number, :company_id, :date, :cash_amount, :discount,
                     :customer_id, :employee_id, :voided, :paid_vat, :adjustment,
                     :credit_card_amount, :debit_card_amount, :tip, :shift,
                     :time, :time_text, :extra_tip, :amount_without_tip, :analyzed,
                     :currency_type_id, :foreign_amount, :manual_receipt, :resolution_id,
-                    :reservation_receipt, :delivery_receipt, 1, NOW()
+                    :reservation_receipt, :delivery_invoice, 1, NOW()
                 )
                 ON DUPLICATE KEY UPDATE
                     cash_amount        = VALUES(cash_amount),
@@ -439,9 +439,9 @@ async def push_receipts(
                     synced             = 1,
                     updated_at         = NOW()
             """), r.dict())
-            saved.append(r.receipt_number)
+            saved.append(r.invoice_number)
         except Exception as e:
-            failed.append({"receipt_number": r.receipt_number, "error": str(e)})
+            failed.append({"invoice_number": r.invoice_number, "error": str(e)})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(receipts), "total_saved": len(saved), "total_failed": len(failed)}
