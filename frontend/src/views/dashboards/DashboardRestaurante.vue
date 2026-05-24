@@ -284,10 +284,12 @@ onMounted(() => Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()]))
 
 watch(fechaKpi, () => cargarKpis())
 
+const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined)
+
 async function cargarKpis() {
   kpiLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fechaKpi.value } })
+    const { data } = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fechaKpi.value, company_id: selectedCid.value } })
     kpiData.value = data
   } catch {
     kpiData.value = null
@@ -299,7 +301,7 @@ async function cargarKpis() {
 async function cargarMesas() {
   mesasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/mesas')
+    const { data } = await api.get('/api/pos-dashboard/mesas', { params: { company_id: selectedCid.value } })
     mesas.value = data
   } catch {
     mesas.value = []
@@ -310,7 +312,7 @@ async function cargarMesas() {
 
 async function cargarMeseros() {
   try {
-    const { data } = await api.get('/api/pos-dashboard/meseros')
+    const { data } = await api.get('/api/pos-dashboard/meseros', { params: { company_id: selectedCid.value } })
     meseros.value = data
   } catch {
     meseros.value = []
@@ -321,7 +323,7 @@ async function cargarAbiertas() {
   if (abiertasLoading.value) return
   abiertasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/abiertas')
+    const { data } = await api.get('/api/pos-dashboard/abiertas', { params: { company_id: selectedCid.value } })
     abiertas.value = data
   } catch {
     abiertas.value = []
@@ -334,7 +336,7 @@ async function cargarFacturadas() {
   if (facturadasLoading.value) return
   facturadasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/facturadas', { params: { fecha: fecha.value } })
+    const { data } = await api.get('/api/pos-dashboard/facturadas', { params: { fecha: fecha.value, company_id: selectedCid.value } })
     facturadas.value = data
   } catch {
     facturadas.value = []
@@ -366,7 +368,7 @@ async function confirmarAbrirMesa() {
       guests_count: modalMesa.value.guests_count,
       notes:        modalMesa.value.notes,
       delivery:     0,
-    })
+    }, { params: { company_id: selectedCid.value } })
     cerrarModal()
     await Promise.all([cargarMesas(), cargarKpis()])
     tabActivo.value = 'abiertas'

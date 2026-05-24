@@ -37,16 +37,24 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
+def _resolve_cid(user: User, override: Optional[int]) -> int:
+    """SYSADMIN (role.is_system) puede consultar cualquier empresa via override."""
+    if override and user.role and user.role.is_system:
+        return override
+    return user.company_id
+
+
 # ─── KPIs ─────────────────────────────────────────────────────────────────────
 
 @router.get("/kpis")
 async def get_kpis(
     fecha: Optional[str] = None,
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
     fecha = fecha or date.today().isoformat()
     today = date.today().isoformat()
 
@@ -135,11 +143,12 @@ async def get_kpis(
 
 @router.get("/mesas")
 async def get_mesas(
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
     today = date.today().isoformat()
 
     rows = (await db.execute(text("""
@@ -168,11 +177,12 @@ async def get_mesas(
 
 @router.get("/meseros")
 async def get_meseros(
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
 
     rows = (await db.execute(text("""
         SELECT id, name FROM pos_waiters
@@ -187,11 +197,12 @@ async def get_meseros(
 
 @router.get("/abiertas")
 async def get_abiertas(
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
     today = date.today().isoformat()
 
     rows = (await db.execute(text("""
@@ -227,11 +238,12 @@ async def get_abiertas(
 @router.get("/facturadas")
 async def get_facturadas(
     fecha: Optional[str] = None,
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
     fecha = fecha or date.today().isoformat()
 
     rows = (await db.execute(text("""
@@ -267,11 +279,12 @@ class AbrirMesaIn(BaseModel):
 @router.post("/abrir-mesa")
 async def abrir_mesa(
     data: AbrirMesaIn,
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
     today = date.today().isoformat()
     now_time = datetime.now().strftime("%H:%M:%S")
 
@@ -323,11 +336,12 @@ async def abrir_mesa(
 @router.get("/ultimas-transacciones")
 async def ultimas_transacciones(
     fecha: Optional[str] = None,
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
     fecha = fecha or date.today().isoformat()
 
     rows = (await db.execute(text("""
@@ -360,11 +374,12 @@ async def ultimas_transacciones(
 
 @router.get("/stock-alertas")
 async def stock_alertas(
+    company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = _resolve_cid(user, company_id)
 
     rows = (await db.execute(text("""
         SELECT s.id, s.name, s.stock_qty, s.min_stock, u.name AS unit_name
