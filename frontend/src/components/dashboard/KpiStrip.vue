@@ -4,7 +4,7 @@
       v-for="(kpi, i) in kpis"
       :key="i"
       class="kpi-item"
-      :class="{ 'kpi-item--divider': i < kpis.length - 1 }"
+      :class="{ 'kpi-item--divider': i < kpis.length - 1 || modelValue !== null }"
       :title="kpi.label"
     >
       <div class="kpi-icon-wrap">
@@ -18,15 +18,33 @@
         <span v-if="showLabels && kpi.label" class="kpi-label">{{ kpi.label }}</span>
       </div>
     </div>
+
+    <!-- Selector de fecha (solo Facturas / Recibos) -->
+    <div v-if="modelValue !== null" class="kpi-item kpi-item--fecha">
+      <div class="kpi-icon-wrap">
+        <i class="bi bi-calendar3"></i>
+      </div>
+      <div class="kpi-text">
+        <input
+          type="date"
+          class="kpi-date-input"
+          :value="modelValue"
+          @change="$emit('update:modelValue', $event.target.value)"
+        />
+        <span class="kpi-label">Fact / Recibos</span>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 defineProps({
-  kpis:       { type: Array,   default: () => [] },
-  loading:    { type: Boolean, default: false },
-  showLabels: { type: Boolean, default: false },
+  kpis:        { type: Array,   default: () => [] },
+  loading:     { type: Boolean, default: false },
+  showLabels:  { type: Boolean, default: false },
+  modelValue:  { type: String,  default: null },
 })
+defineEmits(['update:modelValue'])
 </script>
 
 <style scoped>
@@ -113,15 +131,36 @@ defineProps({
   50%       { opacity: 0.4; }
 }
 
+.kpi-date-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.35);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+  line-height: 1.4;
+}
+.kpi-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
 /* RESPONSIVE */
 @media (max-width: 768px) {
   .kpi-strip   { flex-wrap: wrap; margin: -16px -16px 16px; }
   .kpi-item    { flex: 1 1 45%; padding: 10px 12px; }
   .kpi-item--divider::after { display: none; }
   .kpi-value   { font-size: 18px; }
+  .kpi-item--fecha { flex: 1 1 100%; border-top: 1px solid rgba(255,255,255,0.1); }
 }
 
 @media (max-width: 480px) {
   .kpi-item { flex: 1 1 50%; }
+  .kpi-item--fecha { flex: 1 1 100%; }
 }
 </style>

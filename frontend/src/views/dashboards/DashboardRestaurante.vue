@@ -2,7 +2,7 @@
   <div class="dashboard-content">
 
     <!-- KPI BAR -->
-    <KpiStrip :kpis="kpis" :loading="kpiLoading" :showLabels="true" />
+    <KpiStrip :kpis="kpis" :loading="kpiLoading" :showLabels="true" v-model="fechaKpi" />
 
     <!-- CABECERA: título + fechero -->
     <div class="dash-header">
@@ -223,7 +223,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
@@ -231,7 +231,8 @@ import { useCompanyStore } from '@/stores/companyStore.js'
 const companyStore = useCompanyStore()
 
 // ── Estado ────────────────────────────────────────────────────────────────────
-const fecha      = ref(new Date().toISOString().slice(0, 10))
+const fecha      = ref(new Date().toISOString().slice(0, 10))  // controla tab Facturadas
+const fechaKpi   = ref(new Date().toISOString().slice(0, 10))  // controla KPIs Facturas/Recibos
 const tabActivo  = ref('nueva')
 
 const kpiLoading        = ref(true)
@@ -281,10 +282,12 @@ const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zon
 // ── Carga inicial ─────────────────────────────────────────────────────────────
 onMounted(() => Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()]))
 
+watch(fechaKpi, () => cargarKpis())
+
 async function cargarKpis() {
   kpiLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fecha.value } })
+    const { data } = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fechaKpi.value } })
     kpiData.value = data
   } catch {
     kpiData.value = null
@@ -341,7 +344,6 @@ async function cargarFacturadas() {
 }
 
 function onFechaChange() {
-  cargarKpis()
   if (tabActivo.value === 'facturadas') cargarFacturadas()
 }
 

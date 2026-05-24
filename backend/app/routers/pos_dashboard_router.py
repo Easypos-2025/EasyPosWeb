@@ -83,17 +83,17 @@ async def get_kpis(
           AND delivery = 0
     """), {"cid": cid, "today": today})).mappings().one()
 
-    # Plataforma / Delivery (fecha seleccionada, cualquier estado)
+    # Plataforma / Delivery — siempre HOY (operativo en tiempo real)
     r_plat = (await db.execute(text("""
         SELECT
             COALESCE(SUM(amount), 0) AS total,
             COUNT(*)                 AS cnt
         FROM pos_orders
         WHERE company_id = :cid
-          AND date = :fecha
+          AND date = :today
           AND delivery = 1
           AND cancelled = 0
-    """), {"cid": cid, "fecha": fecha})).mappings().one()
+    """), {"cid": cid, "today": today})).mappings().one()
 
     # Estado de mesas (pos_tables nuevo)
     r_mesas = (await db.execute(text("""

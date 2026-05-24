@@ -413,7 +413,7 @@ async def push_receipts(
                     customer_id, employee_id, voided, paid_vat, adjustment,
                     credit_card_amount, debit_card_amount, tip, shift,
                     time, time_text, extra_tip, amount_without_tip, analyzed,
-                    currency_type_id, foreign_amount, manual_receipt, resolution_id,
+                    currency_type, foreign_amount, manual_receipt, resolution_id,
                     reservation_receipt, delivery_receipt, synced, updated_at
                 ) VALUES (
                     :receipt_number, :company_id, :date, :cash_amount, :discount,
@@ -434,7 +434,7 @@ async def push_receipts(
                     tip                = VALUES(tip),
                     extra_tip          = VALUES(extra_tip),
                     amount_without_tip = VALUES(amount_without_tip),
-                    currency_type_id   = VALUES(currency_type_id),
+                    currency_type      = VALUES(currency_type),
                     delivery_receipt   = VALUES(delivery_receipt),
                     synced             = 1,
                     updated_at         = NOW()
