@@ -58,21 +58,21 @@ async def get_kpis(
     fecha = fecha or date.today().isoformat()
     today = date.today().isoformat()
 
-    # Ventas Facturas (DIAN)
+    # Ventas Facturas (DIAN) — excluye propinas (tip + extra_tip)
     r_fact = (await db.execute(text("""
         SELECT
             COALESCE(SUM(cash_amount + credit_card_amount + debit_card_amount
-                        + adjustment - discount), 0) AS total,
+                        + adjustment - discount - tip - extra_tip), 0) AS total,
             COUNT(*) AS cnt
         FROM pos_invoices
         WHERE company_id = :cid AND date = :fecha AND voided = 0
     """), {"cid": cid, "fecha": fecha})).mappings().one()
 
-    # Ventas Recibos (no DIAN)
+    # Ventas Recibos (no DIAN) — excluye propinas (tip + extra_tip)
     r_rec = (await db.execute(text("""
         SELECT
             COALESCE(SUM(cash_amount + credit_card_amount + debit_card_amount
-                        + adjustment - discount), 0) AS total,
+                        + adjustment - discount - tip - extra_tip), 0) AS total,
             COUNT(*) AS cnt
         FROM pos_receipts
         WHERE company_id = :cid AND date = :fecha AND voided = 0
