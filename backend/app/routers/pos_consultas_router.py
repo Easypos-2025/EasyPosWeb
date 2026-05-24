@@ -72,6 +72,11 @@ async def get_ventas(
                   + COALESCE(i.debit_card_amount, 0)
                   + COALESCE(i.adjustment, 0)
                   - COALESCE(i.discount, 0)                AS valor,
+                COALESCE(i.tip, 0) + COALESCE(i.extra_tip, 0) AS propina,
+                COALESCE(
+                    (SELECT SUM(amount) FROM factura_domicilio
+                     WHERE invoice_number = i.invoice_number AND company_id = i.company_id), 0
+                )                                          AS domicilio,
                 COALESCE(o.table_name, '')                 AS mesa,
                 COALESCE(i.shift, '')                      AS turno,
                 'factura'                                  AS tipo
@@ -101,6 +106,11 @@ async def get_ventas(
                   + COALESCE(rc.debit_card_amount, 0)
                   + COALESCE(rc.adjustment, 0)
                   - COALESCE(rc.discount, 0)              AS valor,
+                COALESCE(rc.tip, 0) + COALESCE(rc.extra_tip, 0) AS propina,
+                COALESCE(
+                    (SELECT SUM(amount) FROM recibos_domicilio
+                     WHERE invoice_number = rc.receipt_number AND company_id = rc.company_id), 0
+                )                                         AS domicilio,
                 COALESCE(ro.table_name, '')               AS mesa,
                 COALESCE(rc.shift, '')                    AS turno,
                 'recibo'                                  AS tipo

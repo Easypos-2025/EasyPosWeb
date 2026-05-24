@@ -1218,6 +1218,85 @@ async def push_receipt_payments(
             "total_sent": len(payments), "total_saved": len(saved), "total_failed": len(failed)}
 
 
+# ═════════════════════════════════════════
+# DOMICILIOS — factura_domicilio / recibos_domicilio
+# ═════════════════════════════════════════
+
+class DeliveryFeeIn(BaseModel):
+    invoice_number: str
+    company_id:     int
+    amount:         Optional[float] = 0
+    date:           Optional[str]   = None
+    order_number:   Optional[str]   = ""
+    employee_id:    Optional[int]   = 0
+    customer_id:    Optional[int]   = 0
+    synced:         Optional[int]   = 0
+
+
+@router.post("/sync/push/invoice-delivery-fees")
+async def push_factura_domicilio(
+    items: List[DeliveryFeeIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.invoice_number}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO factura_domicilio
+                    (invoice_number, company_id, amount, date, order_number,
+                     employee_id, customer_id, synced, updated_at)
+                VALUES
+                    (:invoice_number, :company_id, :amount, :date, :order_number,
+                     :employee_id, :customer_id, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    amount         = VALUES(amount),
+                    date           = VALUES(date),
+                    order_number   = VALUES(order_number),
+                    synced         = 1,
+                    updated_at     = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.post("/sync/push/receipt-delivery-fees")
+async def push_recibos_domicilio(
+    items: List[DeliveryFeeIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.invoice_number}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO recibos_domicilio
+                    (invoice_number, company_id, amount, date, order_number,
+                     employee_id, customer_id, synced, updated_at)
+                VALUES
+                    (:invoice_number, :company_id, :amount, :date, :order_number,
+                     :employee_id, :customer_id, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    amount         = VALUES(amount),
+                    date           = VALUES(date),
+                    order_number   = VALUES(order_number),
+                    synced         = 1,
+                    updated_at     = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
 @router.get("/sync/pull/receipt-payments")
 async def pull_receipt_payments(
     company_id: int = Query(...),

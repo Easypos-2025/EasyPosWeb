@@ -14,16 +14,14 @@
           </div>
         </div>
 
-        <!-- Desde -->
+        <!-- Desde + Hasta en la misma línea -->
         <div class="vc-filter-group">
-          <label class="vc-label">Desde</label>
-          <input type="date" v-model="filtro.desde" class="vc-input" @change="buscar" />
-        </div>
-
-        <!-- Hasta -->
-        <div class="vc-filter-group">
-          <label class="vc-label">Hasta</label>
-          <input type="date" v-model="filtro.hasta" class="vc-input" @change="buscar" />
+          <label class="vc-label">Desde / Hasta</label>
+          <div class="vc-fechas-row">
+            <input type="date" v-model="filtro.desde" class="vc-input" @change="buscar" />
+            <span class="vc-fecha-sep">—</span>
+            <input type="date" v-model="filtro.hasta" class="vc-input" @change="buscar" />
+          </div>
         </div>
 
         <button class="btn btn-primary vc-btn-buscar" @click="buscar" :disabled="cargandoLista">
@@ -32,10 +30,23 @@
         </button>
       </div>
 
-      <!-- Totales rápidos -->
+      <!-- Totales: venta real + propinas + domicilios -->
       <div v-if="!cargandoLista && lista.length" class="vc-totales">
-        <span><strong>{{ lista.length }}</strong> registros</span>
-        <span class="ms-3"><strong>{{ fmt(totalGeneral) }}</strong> total</span>
+        <span class="vc-total-chip">
+          <span class="vc-total-lbl">{{ lista.length }} registros</span>
+        </span>
+        <span class="vc-total-chip vc-total-chip--green">
+          <span class="vc-total-lbl">Venta Real</span>
+          <strong>{{ fmt(totalVentaReal) }}</strong>
+        </span>
+        <span v-if="totalPropinas > 0" class="vc-total-chip vc-total-chip--orange">
+          <span class="vc-total-lbl">Propinas</span>
+          <strong>{{ fmt(totalPropinas) }}</strong>
+        </span>
+        <span v-if="totalDomicilios > 0" class="vc-total-chip vc-total-chip--blue">
+          <span class="vc-total-lbl">Domicilios</span>
+          <strong>{{ fmt(totalDomicilios) }}</strong>
+        </span>
       </div>
     </div>
 
@@ -66,13 +77,16 @@
                 </span>
                 {{ item.numero }}
               </span>
-              <span class="vc-valor">{{ fmt(item.valor) }}</span>
+              <span class="vc-valor">{{ fmt(ventaReal(item)) }}</span>
             </div>
             <div class="vc-row-bot">
-              <span class="vc-mesa">
-                <i class="bi bi-table"></i> {{ item.mesa || '—' }}
+              <span class="vc-mesa"><i class="bi bi-table"></i> {{ item.mesa || '—' }}</span>
+              <span v-if="item.propina > 0" class="vc-chip-propina" title="Propina">
+                +{{ fmt(item.propina) }}
               </span>
-              <span class="vc-turno text-muted">T{{ item.turno || '—' }}</span>
+              <span v-if="item.domicilio > 0" class="vc-chip-domicilio" title="Domicilio">
+                <i class="bi bi-bicycle"></i>{{ fmt(item.domicilio) }}
+              </span>
               <span class="vc-hora text-muted ms-auto">{{ item.hora }}</span>
             </div>
           </div>
@@ -221,7 +235,10 @@ const itemExpandido  = ref(null)
 const insumos        = ref([])
 const cargandoInsumos= ref(false)
 
-const totalGeneral = computed(() => lista.value.reduce((s, r) => s + (r.valor || 0), 0))
+const ventaReal      = (r) => (r.valor || 0) - (r.propina || 0) - (r.domicilio || 0)
+const totalVentaReal  = computed(() => lista.value.reduce((s, r) => s + ventaReal(r), 0))
+const totalPropinas   = computed(() => lista.value.reduce((s, r) => s + (r.propina   || 0), 0))
+const totalDomicilios = computed(() => lista.value.reduce((s, r) => s + (r.domicilio || 0), 0))
 
 async function buscar() {
   cargandoLista.value = true
@@ -376,12 +393,58 @@ onMounted(buscar)
   white-space: nowrap;
 }
 
+.vc-fechas-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vc-fecha-sep {
+  color: #94a3b8;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 .vc-totales {
   margin-top: 8px;
-  font-size: 13px;
-  color: #475569;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   border-top: 1px solid #f1f5f9;
   padding-top: 8px;
+}
+
+.vc-total-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 13px;
+  border-left: 3px solid #cbd5e1;
+}
+.vc-total-chip--green  {
+  background: #f0fdf4;
+  color: #15803d;
+  border-left-color: #22c55e;
+}
+.vc-total-chip--orange {
+  background: #fff7ed;
+  color: #c2410c;
+  border-left-color: #f97316;
+}
+.vc-total-chip--blue   {
+  background: #eff6ff;
+  color: #1e40af;
+  border-left-color: #3b82f6;
+}
+.vc-total-lbl {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  opacity: 0.7;
+  margin-right: 3px;
 }
 
 /* ── Paneles ────────────────────────────────────────────── */
@@ -453,6 +516,16 @@ onMounted(buscar)
   color: #64748b;
 }
 .vc-hora { font-size: 11px; }
+
+.vc-chip-propina, .vc-chip-domicilio {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.vc-chip-propina  { background: #fff7ed; color: #c2410c; }
+.vc-chip-domicilio{ background: #eff6ff; color: #1d4ed8; display: flex; align-items: center; gap: 3px; }
 
 /* ── Detalle header ─────────────────────────────────────── */
 .vc-det-header {
