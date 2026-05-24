@@ -1335,7 +1335,7 @@ async def push_receipt_payments(
 
 
 # ═════════════════════════════════════════
-# DOMICILIOS — factura_domicilio / recibos_domicilio
+# DELIVERY FEES — invoice_delivery_fees / receipt_delivery_fees
 # ═════════════════════════════════════════
 
 class DeliveryFeeIn(BaseModel):
@@ -1350,7 +1350,7 @@ class DeliveryFeeIn(BaseModel):
 
 
 @router.post("/sync/push/invoice-delivery-fees")
-async def push_factura_domicilio(
+async def push_invoice_delivery_fees(
     items: List[DeliveryFeeIn],
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
@@ -1360,7 +1360,7 @@ async def push_factura_domicilio(
         key = f"{item.invoice_number}|{item.company_id}"
         try:
             await db.execute(text("""
-                INSERT INTO factura_domicilio
+                INSERT INTO invoice_delivery_fees
                     (invoice_number, company_id, amount, date, order_number,
                      employee_id, customer_id, synced, updated_at)
                 VALUES
@@ -1382,7 +1382,7 @@ async def push_factura_domicilio(
 
 
 @router.post("/sync/push/receipt-delivery-fees")
-async def push_recibos_domicilio(
+async def push_receipt_delivery_fees(
     items: List[DeliveryFeeIn],
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
@@ -1392,7 +1392,7 @@ async def push_recibos_domicilio(
         key = f"{item.invoice_number}|{item.company_id}"
         try:
             await db.execute(text("""
-                INSERT INTO recibos_domicilio
+                INSERT INTO receipt_delivery_fees
                     (invoice_number, company_id, amount, date, order_number,
                      employee_id, customer_id, synced, updated_at)
                 VALUES

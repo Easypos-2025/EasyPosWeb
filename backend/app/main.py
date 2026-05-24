@@ -884,10 +884,22 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
-        # ── MIGRACIÓN: tabla colaborador_tarea ──────────────────────────
+        # ── MIGRACIÓN: renombrar tablas con nombres en español ─────────
+        for old_name, new_name in [
+            ("colaborador_tarea", "task_collaborators"),
+            ("factura_domicilio",  "invoice_delivery_fees"),
+            ("recibos_domicilio",  "receipt_delivery_fees"),
+        ]:
+            try:
+                await db.execute(text(f"RENAME TABLE {old_name} TO {new_name}"))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── MIGRACIÓN: tabla task_collaborators ─────────────────────────
         try:
             await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS colaborador_tarea (
+                CREATE TABLE IF NOT EXISTS task_collaborators (
                     id          INT AUTO_INCREMENT PRIMARY KEY,
                     task_id     INT NOT NULL,
                     user_id     INT NOT NULL,
@@ -902,6 +914,41 @@ async def _init_db_data():
             await db.commit()
         except Exception:
             await db.rollback()
+
+        # ── MIGRACIÓN: tablas de domicilios (nombres en inglés) ─────────
+        for ddl in [
+            """CREATE TABLE IF NOT EXISTS invoice_delivery_fees (
+                id             INT AUTO_INCREMENT PRIMARY KEY,
+                invoice_number VARCHAR(20)  NOT NULL,
+                company_id     INT          NOT NULL,
+                amount         FLOAT        DEFAULT 0,
+                date           DATE         NULL,
+                order_number   VARCHAR(50)  NULL DEFAULT '',
+                employee_id    INT          DEFAULT 0,
+                customer_id    INT          DEFAULT 0,
+                synced         TINYINT(1)   DEFAULT 0,
+                updated_at     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_inv_company (invoice_number, company_id)
+            ) COLLATE=utf8mb4_general_ci""",
+            """CREATE TABLE IF NOT EXISTS receipt_delivery_fees (
+                id             INT AUTO_INCREMENT PRIMARY KEY,
+                invoice_number VARCHAR(20)  NOT NULL,
+                company_id     INT          NOT NULL,
+                amount         FLOAT        DEFAULT 0,
+                date           DATE         NULL,
+                order_number   VARCHAR(50)  NULL DEFAULT '',
+                employee_id    INT          DEFAULT 0,
+                customer_id    INT          DEFAULT 0,
+                synced         TINYINT(1)   DEFAULT 0,
+                updated_at     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_rec_company (invoice_number, company_id)
+            ) COLLATE=utf8mb4_general_ci""",
+        ]:
+            try:
+                await db.execute(text(ddl))
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
         # ── MIGRACIÓN: system_modules — columna is_sysadmin ─────────────
         for col_sql in [

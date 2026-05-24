@@ -74,7 +74,7 @@ async def get_ventas(
                   - COALESCE(i.discount, 0)                AS valor,
                 COALESCE(i.tip, 0) + COALESCE(i.extra_tip, 0) AS propina,
                 COALESCE(
-                    (SELECT SUM(amount) FROM factura_domicilio
+                    (SELECT SUM(amount) FROM invoice_delivery_fees
                      WHERE invoice_number = i.invoice_number AND company_id = i.company_id), 0
                 )                                          AS domicilio,
                 COALESCE(o.table_name, '')                 AS mesa,
@@ -108,7 +108,7 @@ async def get_ventas(
                   - COALESCE(rc.discount, 0)              AS valor,
                 COALESCE(rc.tip, 0) + COALESCE(rc.extra_tip, 0) AS propina,
                 COALESCE(
-                    (SELECT SUM(amount) FROM recibos_domicilio
+                    (SELECT SUM(amount) FROM receipt_delivery_fees
                      WHERE invoice_number = rc.receipt_number AND company_id = rc.company_id), 0
                 )                                         AS domicilio,
                 COALESCE(ro.table_name, '')               AS mesa,
