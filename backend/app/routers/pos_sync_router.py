@@ -91,6 +91,122 @@ async def get_users(
     return {"total": len(rows), "users": [dict(r) for r in rows]}
 
 
+# ═════════════════════════════════════════
+# ORDERS / COMANDAS — pos_orders + pos_receipt_orders
+# ═════════════════════════════════════════
+
+class OrderIn(BaseModel):
+    order_number:  str
+    date:          str
+    invoice_number: Optional[str] = "0"
+    company_id:    int
+    table_name:    Optional[str]  = ""
+    time:          Optional[str]  = None
+    waiter_id:     Optional[int]  = 0
+    cancelled:     Optional[int]  = 0
+    amount:        Optional[int]  = 0
+    notes:         Optional[str]  = ""
+    complimentary: Optional[int]  = 0
+    guests_count:  Optional[int]  = 0
+    delivery:      Optional[int]  = 0
+    customer_id:   Optional[int]  = 0
+    table_id:      Optional[int]  = 0
+
+
+@router.post("/sync/push/orders")
+async def push_orders(
+    orders: List[OrderIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for o in orders:
+        key = f"{o.order_number}|{o.date}|{o.invoice_number}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_orders
+                    (order_number, date, invoice_number, table_name, time,
+                     waiter_id, cancelled, amount, notes, complimentary,
+                     guests_count, delivery, customer_id, table_id,
+                     synced, company_id, updated_at)
+                VALUES
+                    (:order_number, :date, :invoice_number, :table_name, :time,
+                     :waiter_id, :cancelled, :amount, :notes, :complimentary,
+                     :guests_count, :delivery, :customer_id, :table_id,
+                     1, :company_id, NOW())
+                ON DUPLICATE KEY UPDATE
+                    table_name    = VALUES(table_name),
+                    invoice_number= VALUES(invoice_number),
+                    cancelled     = VALUES(cancelled),
+                    amount        = VALUES(amount),
+                    waiter_id     = VALUES(waiter_id),
+                    synced        = 1,
+                    updated_at    = NOW()
+            """), o.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+class ReceiptOrderIn(BaseModel):
+    order_number:  str
+    date:          str
+    receipt_number: Optional[str] = "0"
+    company_id:    int
+    table_name:    Optional[str]  = ""
+    time:          Optional[str]  = None
+    waiter_id:     Optional[int]  = 0
+    cancelled:     Optional[int]  = 0
+    amount:        Optional[int]  = 0
+    notes:         Optional[str]  = ""
+    complimentary: Optional[int]  = 0
+    guests_count:  Optional[int]  = 0
+    delivery:      Optional[int]  = 0
+    customer_id:   Optional[int]  = 0
+    table_id:      Optional[int]  = 0
+
+
+@router.post("/sync/push/receipt-orders")
+async def push_receipt_orders(
+    orders: List[ReceiptOrderIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for o in orders:
+        key = f"{o.order_number}|{o.date}|{o.receipt_number}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_orders
+                    (order_number, date, receipt_number, table_name, time,
+                     waiter_id, cancelled, amount, notes, complimentary,
+                     guests_count, delivery, customer_id, table_id,
+                     synced, company_id, updated_at)
+                VALUES
+                    (:order_number, :date, :receipt_number, :table_name, :time,
+                     :waiter_id, :cancelled, :amount, :notes, :complimentary,
+                     :guests_count, :delivery, :customer_id, :table_id,
+                     1, :company_id, NOW())
+                ON DUPLICATE KEY UPDATE
+                    table_name     = VALUES(table_name),
+                    receipt_number = VALUES(receipt_number),
+                    cancelled      = VALUES(cancelled),
+                    amount         = VALUES(amount),
+                    waiter_id      = VALUES(waiter_id),
+                    synced         = 1,
+                    updated_at     = NOW()
+            """), o.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
+
+
 # ─────────────────────────────────────────
 # PUSH — VB6 envía facturas al servidor
 # ─────────────────────────────────────────
