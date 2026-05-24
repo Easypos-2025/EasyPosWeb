@@ -699,6 +699,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Cajas" }
       },
+      {
+        path: "/pos/consultas/ventas",
+        name: "VentasConsultaView",
+        component: () => import("@/views/pos/VentasConsultaView.vue"),
+        requiresAuth: true,
+        meta: { title: "Consulta de Ventas" }
+      },
 ]
   }
 

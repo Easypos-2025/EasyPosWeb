@@ -264,12 +264,16 @@ const kpis = computed(() => {
   if (!d) return [
     { icon: 'bi-receipt-cutoff', label: 'Ventas Facturas',   value: '—' },
     { icon: 'bi-journal-text',   label: 'Ventas Recibos',    value: '—' },
+    { icon: 'bi-graph-up-arrow', label: 'Total Fact+Rec',    value: '—' },
     { icon: 'bi-table',          label: 'Comandas Abiertas', value: '—' },
     { icon: 'bi-globe',          label: 'Plataforma',        value: '—' },
   ]
+  const totalFactRec = d.ventas_facturas.total + d.ventas_recibos.total
+  const countFactRec = d.ventas_facturas.count + d.ventas_recibos.count
   return [
     { icon: 'bi-receipt-cutoff', label: `Facturas (${d.ventas_facturas.count})`,   value: fmt(d.ventas_facturas.total) },
     { icon: 'bi-journal-text',   label: `Recibos (${d.ventas_recibos.count})`,     value: fmt(d.ventas_recibos.total) },
+    { icon: 'bi-graph-up-arrow', label: `Total (${countFactRec})`,                 value: fmt(totalFactRec) },
     { icon: 'bi-table',          label: `Abiertas (${d.comandas_abiertas.count})`, value: fmt(d.comandas_abiertas.total) },
     { icon: 'bi-globe',          label: `Plataforma (${d.plataforma.count})`,      value: fmt(d.plataforma.total) },
   ]

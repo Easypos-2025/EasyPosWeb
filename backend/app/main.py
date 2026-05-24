@@ -79,6 +79,7 @@ from app.routers.price_lists_router import router as price_lists_router
 from app.routers.purchase_orders_router import router as purchase_orders_router
 from app.routers.pos_sync_router import router as pos_sync_router
 from app.routers.pos_dashboard_router import router as pos_dashboard_router
+from app.routers.pos_consultas_router import router as pos_consultas_router
 from app.routers.pos_categorias_router import router as pos_categorias_router
 from app.routers.pos_printers_router import router as pos_printers_router
 from app.routers.pos_cajas_router import router as pos_cajas_router
@@ -1498,6 +1499,7 @@ routers = [
     asset_inquiries_router,
     pos_sync_router,
     pos_dashboard_router,
+    pos_consultas_router,
     pos_categorias_router,
     pos_printers_router,
     pos_cajas_router,
