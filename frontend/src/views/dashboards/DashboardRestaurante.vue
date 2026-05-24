@@ -4,13 +4,9 @@
     <!-- KPI BAR -->
     <KpiStrip :kpis="kpis" :loading="kpiLoading" :showLabels="true" v-model="fechaKpi" />
 
-    <!-- CABECERA: título + fechero -->
+    <!-- CABECERA: título -->
     <div class="dash-header">
       <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Panel de Operaciones' }}</h6>
-      <div class="fechero-wrap">
-        <i class="bi bi-calendar3"></i>
-        <input type="date" class="fechero-input" v-model="fecha" @change="onFechaChange" />
-      </div>
     </div>
 
     <!-- TABS -->
@@ -231,8 +227,7 @@ import { useCompanyStore } from '@/stores/companyStore.js'
 const companyStore = useCompanyStore()
 
 // ── Estado ────────────────────────────────────────────────────────────────────
-const fecha      = ref(new Date().toISOString().slice(0, 10))  // controla tab Facturadas
-const fechaKpi   = ref(new Date().toISOString().slice(0, 10))  // controla KPIs Facturas/Recibos
+const fechaKpi   = ref(new Date().toISOString().slice(0, 10))  // fecha única: KPIs + Facturadas
 const tabActivo  = ref('nueva')
 
 const kpiLoading        = ref(true)
@@ -286,7 +281,10 @@ const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zon
 // ── Carga inicial ─────────────────────────────────────────────────────────────
 onMounted(() => Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()]))
 
-watch(fechaKpi, () => cargarKpis())
+watch(fechaKpi, () => {
+  cargarKpis()
+  if (tabActivo.value === 'facturadas') cargarFacturadas()
+})
 
 const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined)
 
@@ -340,17 +338,13 @@ async function cargarFacturadas() {
   if (facturadasLoading.value) return
   facturadasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/facturadas', { params: { fecha: fecha.value, company_id: selectedCid.value } })
+    const { data } = await api.get('/api/pos-dashboard/facturadas', { params: { fecha: fechaKpi.value, company_id: selectedCid.value } })
     facturadas.value = data
   } catch {
     facturadas.value = []
   } finally {
     facturadasLoading.value = false
   }
-}
-
-function onFechaChange() {
-  if (tabActivo.value === 'facturadas') cargarFacturadas()
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────

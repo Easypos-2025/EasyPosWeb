@@ -25,13 +25,21 @@
         <i class="bi bi-calendar3"></i>
       </div>
       <div class="kpi-text">
-        <input
-          type="date"
-          class="kpi-date-input"
-          :value="modelValue"
-          @change="$emit('update:modelValue', $event.target.value)"
-        />
-        <span class="kpi-label">Fact / Recibos</span>
+        <div class="kpi-date-row">
+          <input
+            type="date"
+            class="kpi-date-input"
+            :value="modelValue"
+            @change="$emit('update:modelValue', $event.target.value)"
+          />
+          <button
+            class="kpi-hoy-btn"
+            :class="{ 'kpi-hoy-btn--active': modelValue === today }"
+            @click="$emit('update:modelValue', today)"
+            title="Ir a hoy"
+          >Hoy</button>
+        </div>
+        <span class="kpi-label">Fact / Recibos / Facturadas</span>
       </div>
     </div>
   </div>
@@ -45,6 +53,8 @@ defineProps({
   modelValue:  { type: String,  default: null },
 })
 defineEmits(['update:modelValue'])
+
+const today = new Date().toISOString().slice(0, 10)
 </script>
 
 <style scoped>
@@ -131,6 +141,12 @@ defineEmits(['update:modelValue'])
   50%       { opacity: 0.4; }
 }
 
+.kpi-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .kpi-date-input {
   background: transparent;
   border: none;
@@ -143,12 +159,30 @@ defineEmits(['update:modelValue'])
   padding: 0;
   width: 100%;
   line-height: 1.4;
+  min-width: 0;
 }
 .kpi-date-input::-webkit-calendar-picker-indicator {
   filter: invert(1);
   cursor: pointer;
   opacity: 0.75;
 }
+
+.kpi-hoy-btn {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 5px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  cursor: pointer;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.kpi-hoy-btn:hover         { background: rgba(255,255,255,0.28); }
+.kpi-hoy-btn--active       { background: rgba(255,255,255,0.08); opacity: 0.5; cursor: default; }
 
 /* RESPONSIVE */
 @media (max-width: 768px) {
