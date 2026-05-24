@@ -167,7 +167,7 @@ async def push_invoices(
         "total_failed": len(failed),
     }
 
-
+ 
 # ─────────────────────────────────────────
 # PULL — VB6 pide facturas desde el servidor
 # ─────────────────────────────────────────
@@ -1341,3 +1341,428 @@ async def pull_cash_closings(
     sql += " ORDER BY updated_at ASC LIMIT 500"
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "since": since, "cash_closings": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# ORDER DETAIL PRODUCTS (detalle_comanda_producto)
+# ═════════════════════════════════════════
+class OrderDetailProductIn(BaseModel):
+    order_number: str
+    date: str
+    invoice_number: str
+    dish_id: int
+    item: int
+    group_id: int
+    item_id: int
+    quantity: Optional[float] = 0
+    company_id: int
+
+
+@router.post("/sync/push/order-detail-products")
+async def push_order_detail_products(
+    records: List[OrderDetailProductIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in records:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_order_detail_products
+                    (order_number, date, invoice_number, dish_id, item, group_id, item_id,
+                     quantity, synced, company_id, updated_at)
+                VALUES
+                    (:order_number, :date, :invoice_number, :dish_id, :item, :group_id, :item_id,
+                     :quantity, 1, :company_id, NOW())
+                ON DUPLICATE KEY UPDATE
+                    quantity   = VALUES(quantity),
+                    synced     = 1,
+                    updated_at = NOW()
+            """), r.dict())
+            saved.append(r.order_number)
+        except Exception as e:
+            failed.append({"order_number": r.order_number, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/order-detail-products")
+async def pull_order_detail_products(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_order_detail_products WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "order_detail_products": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# RECEIPT ORDER DETAIL PRODUCTS (recibos_detalle_comanda_producto)
+# ═════════════════════════════════════════
+class ReceiptOrderDetailProductIn(BaseModel):
+    order_number: str
+    date: str
+    receipt_number: str
+    dish_id: int
+    item: int
+    group_id: int
+    item_id: int
+    quantity: Optional[float] = 0
+    company_id: int
+
+
+@router.post("/sync/push/receipt-order-detail-products")
+async def push_receipt_order_detail_products(
+    records: List[ReceiptOrderDetailProductIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in records:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_order_detail_products
+                    (order_number, date, receipt_number, dish_id, item, group_id, item_id,
+                     quantity, synced, company_id, updated_at)
+                VALUES
+                    (:order_number, :date, :receipt_number, :dish_id, :item, :group_id, :item_id,
+                     :quantity, 1, :company_id, NOW())
+                ON DUPLICATE KEY UPDATE
+                    quantity   = VALUES(quantity),
+                    synced     = 1,
+                    updated_at = NOW()
+            """), r.dict())
+            saved.append(r.order_number)
+        except Exception as e:
+            failed.append({"order_number": r.order_number, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/receipt-order-detail-products")
+async def pull_receipt_order_detail_products(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_receipt_order_detail_products WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipt_order_detail_products": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# DISH PRODUCTS (plato_producto)
+# ═════════════════════════════════════════
+class DishProductIn(BaseModel):
+    dish_id: int
+    measure_id: int
+    supplier_id: int
+    minimum_units: Optional[float] = 0
+    presentation_value: Optional[float] = 0
+    description: Optional[str] = None
+    active: Optional[int] = 0
+    company_id: int
+
+
+@router.post("/sync/push/dish-products")
+async def push_dish_products(
+    records: List[DishProductIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in records:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_dish_products
+                    (dish_id, supplier_id, measure_id, minimum_units, presentation_value,
+                     description, active, synced, company_id, updated_at)
+                VALUES
+                    (:dish_id, :supplier_id, :measure_id, :minimum_units, :presentation_value,
+                     :description, :active, 1, :company_id, NOW())
+                ON DUPLICATE KEY UPDATE
+                    minimum_units      = VALUES(minimum_units),
+                    presentation_value = VALUES(presentation_value),
+                    description        = VALUES(description),
+                    active             = VALUES(active),
+                    synced             = 1,
+                    updated_at         = NOW()
+            """), r.dict())
+            saved.append(r.dish_id)
+        except Exception as e:
+            failed.append({"dish_id": r.dish_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/dish-products")
+async def pull_dish_products(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_dish_products WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "dish_products": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# DISH PRINTERS (plato_impresoras)
+# ═════════════════════════════════════════
+class DishPrinterIn(BaseModel):
+    item_id: int
+    printer_id: int
+    print_copies: Optional[int] = 1
+    company_id: int
+
+
+@router.post("/sync/push/dish-printers")
+async def push_dish_printers(
+    records: List[DishPrinterIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    # Group by (company_id, item_id) and delete+insert per dish
+    processed: set = set()
+    for r in records:
+        key = (r.company_id, r.item_id)
+        if key not in processed:
+            await db.execute(text(
+                "DELETE FROM pos_item_printers WHERE company_id = :cid AND item_id = :iid"
+            ), {"cid": r.company_id, "iid": r.item_id})
+            processed.add(key)
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_item_printers (company_id, item_id, printer_id)
+                VALUES (:company_id, :item_id, :printer_id)
+            """), r.dict())
+            saved.append(r.item_id)
+        except Exception as e:
+            failed.append({"item_id": r.item_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/dish-printers")
+async def pull_dish_printers(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(
+        text("SELECT * FROM pos_item_printers WHERE company_id = :cid"),
+        {"cid": company_id}
+    )).mappings().all()
+    return {"total": len(rows), "dish_printers": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# DISH ASSEMBLY (plato_armar)
+# ═════════════════════════════════════════
+class DishAssemblyIn(BaseModel):
+    dish_id: int
+    category_code: int
+    max_choices: Optional[int] = 0
+    is_active: Optional[int] = 0
+    is_required: Optional[int] = 0
+    print_on_change_only: Optional[int] = 0
+    company_id: int
+
+
+@router.post("/sync/push/dish-assembly")
+async def push_dish_assembly(
+    records: List[DishAssemblyIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in records:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_dish_assembly
+                    (company_id, dish_id, category_code, max_choices, is_active,
+                     is_required, print_on_change_only, synced, updated_at)
+                VALUES
+                    (:company_id, :dish_id, :category_code, :max_choices, :is_active,
+                     :is_required, :print_on_change_only, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    max_choices          = VALUES(max_choices),
+                    is_active            = VALUES(is_active),
+                    is_required          = VALUES(is_required),
+                    print_on_change_only = VALUES(print_on_change_only),
+                    synced               = 1,
+                    updated_at           = NOW()
+            """), r.dict())
+            saved.append(r.dish_id)
+        except Exception as e:
+            failed.append({"dish_id": r.dish_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/dish-assembly")
+async def pull_dish_assembly(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_dish_assembly WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "dish_assembly": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# DISH ASSEMBLY DETAIL (plato_armar_detalle)
+# ═════════════════════════════════════════
+class DishAssemblyDetailIn(BaseModel):
+    dish_id: int
+    category_code: int
+    item: int
+    position: int
+    supply_price: Optional[float] = 0
+    discount_qty: Optional[float] = 0
+    is_default: Optional[int] = 0
+    company_id: int
+
+
+@router.post("/sync/push/dish-assembly-detail")
+async def push_dish_assembly_detail(
+    records: List[DishAssemblyDetailIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in records:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_dish_assembly_detail
+                    (company_id, dish_id, category_code, item, position,
+                     supply_price, discount_qty, is_default, synced, updated_at)
+                VALUES
+                    (:company_id, :dish_id, :category_code, :item, :position,
+                     :supply_price, :discount_qty, :is_default, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    supply_price = VALUES(supply_price),
+                    discount_qty = VALUES(discount_qty),
+                    is_default   = VALUES(is_default),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), r.dict())
+            saved.append(r.dish_id)
+        except Exception as e:
+            failed.append({"dish_id": r.dish_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/dish-assembly-detail")
+async def pull_dish_assembly_detail(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_dish_assembly_detail WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "dish_assembly_detail": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# DAILY MENU (menu_diario)
+# ═════════════════════════════════════════
+class DailyMenuIn(BaseModel):
+    menu_id: int
+    item_id: int
+    date: Optional[str] = None
+    category: Optional[str] = "0"
+    description: Optional[str] = "0"
+    group_by: Optional[int] = 0
+    selected: Optional[int] = 0
+    company_id: int
+
+
+@router.post("/sync/push/daily-menu")
+async def push_daily_menu(
+    records: List[DailyMenuIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in records:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_daily_menu
+                    (company_id, menu_id, item_id, date, category,
+                     description, group_by, selected, synced, updated_at)
+                VALUES
+                    (:company_id, :menu_id, :item_id, :date, :category,
+                     :description, :group_by, :selected, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    date        = VALUES(date),
+                    category    = VALUES(category),
+                    description = VALUES(description),
+                    group_by    = VALUES(group_by),
+                    selected    = VALUES(selected),
+                    synced      = 1,
+                    updated_at  = NOW()
+            """), r.dict())
+            saved.append(r.menu_id)
+        except Exception as e:
+            failed.append({"menu_id": r.menu_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/daily-menu")
+async def pull_daily_menu(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM pos_daily_menu WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 500"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "daily_menu": [dict(r) for r in rows]}

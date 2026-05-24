@@ -31,11 +31,20 @@ Public Sub SincronizarTodo(lblEstado As Label)
     SyncRecibosFormaPago lblEstado
     SyncCajasCierres lblEstado
 
+    ' Tablas transaccionales de productos en comandas
+    SyncDetalleComandaProducto lblEstado
+    SyncRecibosDetalleComandaProducto lblEstado
+
     ' Tablas catálogo (se sincronizan completas, sin filtro)
     SyncPlatos lblEstado
+    SyncPlatoProducto lblEstado
+    SyncPlatoImpresoras lblEstado
+    SyncPlatoArmar lblEstado
+    SyncPlatoArmarDetalle lblEstado
     SyncEmpleados lblEstado
     SyncMeseros lblEstado
     SyncMesas lblEstado
+    SyncMenuDiario lblEstado
 
     lblEstado.Caption = "Sync completo: " & Now()
 End Sub
@@ -852,6 +861,297 @@ Private Sub SyncMeseros(lblEstado As Label)
     json = json & "]": rs.Close
 
     ApiPost "/sync/push/waiters", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 16. DETALLE COMANDA PRODUCTO — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncDetalleComandaProducto(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando detalle comanda productos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM detalle_comanda_producto WHERE Enviada_MySql = 0 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, keys As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        Dim nroPedido As String: nroPedido = EscJson(rs("Nro_pedido"))
+        Dim fecha As String:     fecha = FechaSQL(rs("Fecha"))
+        Dim nroFac As String:    nroFac = EscJson(rs("Nro_Factura"))
+        Dim dishId As Long:      dishId = Nz(rs("Id_Plato"), 0)
+        Dim itm As Long:         itm = Nz(rs("Item"), 0)
+        Dim grpId As Long:       grpId = Nz(rs("Id_Grupo"), 0)
+        Dim itmId As Long:       itmId = Nz(rs("Id_Item"), 0)
+
+        json = json & sep & "{"
+        json = json & """order_number"":""" & nroPedido & ""","
+        json = json & """date"":""" & fecha & ""","
+        json = json & """invoice_number"":""" & nroFac & ""","
+        json = json & """dish_id"":" & dishId & ","
+        json = json & """item"":" & itm & ","
+        json = json & """group_id"":" & grpId & ","
+        json = json & """item_id"":" & itmId & ","
+        json = json & """quantity"":" & Nz(rs("Cantidad"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+
+        If keys <> "" Then keys = keys & " OR "
+        keys = keys & "(Nro_pedido='" & nroPedido & "' AND Fecha='" & fecha & "' AND Nro_Factura='" & nroFac & "' AND Id_Plato=" & dishId & " AND Item=" & itm & " AND Id_Grupo=" & grpId & " AND Id_Item=" & itmId & ")"
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/order-detail-products", json)
+    If TotalSaved(resp) > 0 And keys <> "" Then
+        conn.Execute "UPDATE detalle_comanda_producto SET Enviada_MySql=1 WHERE " & keys
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 17. RECIBOS DETALLE COMANDA PRODUCTO — transaccional
+' ════════════════════════════════════════════════════════════
+Private Sub SyncRecibosDetalleComandaProducto(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando recibos detalle comanda productos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM recibos_detalle_comanda_producto WHERE Enviada_MySql = 0 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, keys As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        Dim nroPedido As String: nroPedido = EscJson(rs("Nro_pedido"))
+        Dim fecha As String:     fecha = FechaSQL(rs("Fecha"))
+        Dim nroFac As String:    nroFac = EscJson(rs("Nro_Factura"))
+        Dim dishId As Long:      dishId = Nz(rs("Id_Plato"), 0)
+        Dim itm As Long:         itm = Nz(rs("Item"), 0)
+        Dim grpId As Long:       grpId = Nz(rs("Id_Grupo"), 0)
+        Dim itmId As Long:       itmId = Nz(rs("Id_Item"), 0)
+
+        json = json & sep & "{"
+        json = json & """order_number"":""" & nroPedido & ""","
+        json = json & """date"":""" & fecha & ""","
+        json = json & """receipt_number"":""" & nroFac & ""","
+        json = json & """dish_id"":" & dishId & ","
+        json = json & """item"":" & itm & ","
+        json = json & """group_id"":" & grpId & ","
+        json = json & """item_id"":" & itmId & ","
+        json = json & """quantity"":" & Nz(rs("Cantidad"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+
+        If keys <> "" Then keys = keys & " OR "
+        keys = keys & "(Nro_pedido='" & nroPedido & "' AND Fecha='" & fecha & "' AND Nro_Factura='" & nroFac & "' AND Id_Plato=" & dishId & " AND Item=" & itm & " AND Id_Grupo=" & grpId & " AND Id_Item=" & itmId & ")"
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/receipt-order-detail-products", json)
+    If TotalSaved(resp) > 0 And keys <> "" Then
+        conn.Execute "UPDATE recibos_detalle_comanda_producto SET Enviada_MySql=1 WHERE " & keys
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 18. PLATO PRODUCTO — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncPlatoProducto(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando plato_producto..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM plato_producto", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """dish_id"":" & Nz(rs("Id_Plato"), 0) & ","
+        json = json & """measure_id"":" & Nz(rs("Id_Forma_Medida"), 0) & ","
+        json = json & """supplier_id"":" & Nz(rs("id_proveedor"), 0) & ","
+        json = json & """minimum_units"":" & Nz(rs("Unidades_Minimas"), 0) & ","
+        json = json & """presentation_value"":" & Nz(rs("Valor_Presentacion"), 0) & ","
+        json = json & """description"":""" & EscJson(Nz(rs("Descripcion"), "")) & ""","
+        json = json & """active"":" & Nz(rs("Activo"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/dish-products", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 19. PLATO IMPRESORAS — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncPlatoImpresoras(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando plato_impresoras..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM plato_impresoras", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """item_id"":" & Nz(rs("Id_Plato"), 0) & ","
+        json = json & """printer_id"":" & Nz(rs("Id_Impresora"), 0) & ","
+        json = json & """print_copies"":" & Nz(rs("Cant_Impresiones"), 1) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/dish-printers", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 20. PLATO ARMAR — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncPlatoArmar(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando plato_armar..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM plato_armar", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """dish_id"":" & Nz(rs("Id_Plato"), 0) & ","
+        json = json & """category_code"":" & Nz(rs("Cod_Categoria"), 0) & ","
+        json = json & """max_choices"":" & Nz(rs("Cantidad_Elegir"), 0) & ","
+        json = json & """is_active"":" & Nz(rs("Activa"), 0) & ","
+        json = json & """is_required"":" & Nz(rs("Exgir_Seleccion"), 0) & ","
+        json = json & """print_on_change_only"":" & Nz(rs("Imprimir_Armar_Solo_Cambio"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/dish-assembly", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 21. PLATO ARMAR DETALLE — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncPlatoArmarDetalle(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando plato_armar_detalle..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM plato_armar_detalle", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """dish_id"":" & Nz(rs("Id_Plato"), 0) & ","
+        json = json & """category_code"":" & Nz(rs("Cod_Categoria"), 0) & ","
+        json = json & """item"":" & Nz(rs("Item"), 0) & ","
+        json = json & """position"":" & Nz(rs("Posicion"), 0) & ","
+        json = json & """supply_price"":" & Nz(rs("Precio_Insumo"), 0) & ","
+        json = json & """discount_qty"":" & Nz(rs("Cantidad_Descontar"), 0) & ","
+        json = json & """is_default"":" & Nz(rs("Por_Default"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/dish-assembly-detail", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 22. MENU DIARIO — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncMenuDiario(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando menú diario..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM menu_diario", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """menu_id"":" & Nz(rs("Id_Menu"), 0) & ","
+        json = json & """item_id"":" & Nz(rs("Id_Item"), 0) & ","
+        json = json & """date"":""" & EscJson(Nz(rs("Fecha"), "")) & ""","
+        json = json & """category"":""" & EscJson(Nz(rs("Categoria"), "")) & ""","
+        json = json & """description"":""" & EscJson(Nz(rs("Descripcion"), "")) & ""","
+        json = json & """group_by"":" & Nz(rs("Agrupar"), 0) & ","
+        json = json & """selected"":" & Nz(rs("Seleccionado"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/daily-menu", json
 
 Salir:
     On Error Resume Next: conn.Close: Exit Sub

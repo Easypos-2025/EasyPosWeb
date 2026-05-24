@@ -24,6 +24,7 @@ from app.models.support_ticket_model import SupportTicket, TicketEvidence
 from app.models.user_session_model import UserSession
 from app.models.user_notification_model import UserNotification
 from app.models.invitation_model import InvitationToken
+from app.models.password_reset_token import PasswordResetToken
 from passlib.context import CryptContext
 from app.auth.dependencies import get_current_user
 from app.services.plan_limits_service import check_limit
@@ -32,6 +33,7 @@ from app.services.plan_limits_service import check_limit
 async def _cascade_delete_user(user_id: int, db: AsyncSession):
     """Elimina en cascada todos los registros asociados a un usuario (solo SYSADMIN)."""
     # Sesiones y tokens
+    await db.execute(sql_delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
     await db.execute(sql_delete(UserSession).where(UserSession.user_id == user_id))
     await db.execute(sql_delete(InvitationToken).where(InvitationToken.created_by == user_id))
     await db.execute(sql_delete(UserNotification).where(

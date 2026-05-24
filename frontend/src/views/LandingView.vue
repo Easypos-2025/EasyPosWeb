@@ -136,7 +136,7 @@
           {{ sections.hero?.subtitle }}
         </p>
         <div class="hero-actions animate-slide-up delay-2">
-          <a :href="sections.hero?.cta_url || '/register'" class="btn-hero-primary">
+          <a href="/register" class="btn-hero-primary">
             <i class="bi bi-rocket-takeoff-fill me-2"></i>
             {{ sections.hero?.cta_text || 'Empezar Gratis' }}
           </a>
@@ -214,7 +214,7 @@
               <i class="bi bi-check-circle-fill me-2"></i>{{ item }}
             </li>
           </ul>
-          <a :href="sections.multidevice?.cta_url || '#'" class="btn-strip-cta">
+          <a href="/register" class="btn-strip-cta">
             {{ sections.multidevice?.cta_text || 'Registrarse Ahora' }}
             <i class="bi bi-arrow-right ms-2"></i>
           </a>
@@ -342,7 +342,7 @@
           </li>
         </ul>
         <div class="free-plan-cta-wrap">
-          <a :href="sections.free_plan?.cta_url || '/register'" class="btn-free-primary">
+          <a href="/register" class="btn-free-primary">
             <i class="bi bi-rocket-takeoff-fill me-2"></i>
             {{ sections.free_plan?.cta_text || 'Registrarse Gratis' }}
           </a>

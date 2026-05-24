@@ -49,6 +49,7 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     from app.models.company_payment_model import CompanyPayment
     from app.models.company_plan_model import CompanyPlan
     from app.models.company_plan_limits_model import CompanyPlanLimits
+    from app.models.password_reset_token import PasswordResetToken
 
     # 1. Sesiones y tokens de usuarios de la empresa
     user_ids = [r[0] for r in (await db.execute(
@@ -144,6 +145,8 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     await db.execute(delete(Role).where(Role.company_id == company_id))
 
     # 10. Usuarios y tema
+    if user_ids:
+        await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(user_ids)))
     await db.execute(delete(User).where(User.company_id == company_id))
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
