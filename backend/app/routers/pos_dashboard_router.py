@@ -103,16 +103,23 @@ async def get_kpis(
           AND cancelled = 0
     """), {"cid": cid, "today": today})).mappings().one()
 
-    # Estado de mesas (pos_tables nuevo)
+    # Estado de mesas (pos_tables_layout + pos_orders)
     r_mesas = (await db.execute(text("""
         SELECT
-            COALESCE(SUM(CASE WHEN status='free'           THEN 1 ELSE 0 END), 0) AS libres,
-            COALESCE(SUM(CASE WHEN status='occupied'       THEN 1 ELSE 0 END), 0) AS ocupadas,
-            COALESCE(SUM(CASE WHEN status='bill_requested' THEN 1 ELSE 0 END), 0) AS cuenta,
-            COUNT(*) AS total
-        FROM pos_tables
-        WHERE company_id=:cid AND is_active=1
-    """), {"cid": cid})).mappings().one()
+            COALESCE(SUM(CASE WHEN o.order_number IS NULL     THEN 1 ELSE 0 END), 0) AS libres,
+            COALESCE(SUM(CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END), 0) AS ocupadas,
+            0 AS cuenta,
+            COUNT(t.id) AS total
+        FROM pos_tables_layout t
+        LEFT JOIN pos_orders o
+               ON o.table_id    = t.id
+              AND o.company_id  = :cid
+              AND o.date        = :today
+              AND o.invoice_number = '0'
+              AND o.cancelled   = 0
+              AND o.delivery    = 0
+        WHERE t.company_id = :cid AND t.active = 1
+    """), {"cid": cid, "today": today})).mappings().one()
 
     # Alertas de stock crítico
     r_stock = (await db.execute(text("""
