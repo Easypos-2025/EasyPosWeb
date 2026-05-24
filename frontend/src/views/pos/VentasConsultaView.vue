@@ -24,6 +24,11 @@
           </div>
         </div>
 
+        <button class="btn btn-outline-secondary vc-btn-hoy" @click="irHoy" title="Ir a hoy">
+          <i class="bi bi-calendar-check"></i>
+          <span>Hoy</span>
+        </button>
+
         <button class="btn btn-primary vc-btn-buscar" @click="buscar" :disabled="cargandoLista">
           <i class="bi bi-search"></i>
           <span>Buscar</span>
@@ -206,7 +211,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
 
@@ -260,6 +265,7 @@ async function buscar() {
     lista.value = []
   } finally {
     cargandoLista.value = false
+    _startRefresh()
   }
 }
 
@@ -310,7 +316,32 @@ async function verInsumos(item) {
   }
 }
 
-onMounted(buscar)
+function irHoy() {
+  const hoyStr = new Date().toISOString().slice(0, 10)
+  filtro.value.desde = hoyStr
+  filtro.value.hasta = hoyStr
+  buscar()
+}
+
+let _refreshTimer = null
+
+function _startRefresh() {
+  _stopRefresh()
+  const hoyStr = new Date().toISOString().slice(0, 10)
+  if (filtro.value.hasta >= hoyStr) {
+    _refreshTimer = setInterval(() => {
+      const nowHoy = new Date().toISOString().slice(0, 10)
+      if (filtro.value.hasta >= nowHoy) buscar()
+    }, 30000)
+  }
+}
+
+function _stopRefresh() {
+  if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null }
+}
+
+onMounted(() => { buscar(); _startRefresh() })
+onUnmounted(_stopRefresh)
 </script>
 
 <style scoped>
@@ -383,6 +414,15 @@ onMounted(buscar)
   outline: none;
 }
 .vc-input:focus { border-color: #3b82f6; background: #fff; }
+
+.vc-btn-hoy {
+  height: 34px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 
 .vc-btn-buscar {
   height: 34px;
@@ -645,8 +685,8 @@ onMounted(buscar)
   .vc-filter-row {
     gap: 10px;
   }
-  .vc-btn-buscar span { display: none; }
-  .vc-btn-buscar { padding: 0 12px; }
+  .vc-btn-buscar span, .vc-btn-hoy span { display: none; }
+  .vc-btn-buscar, .vc-btn-hoy { padding: 0 12px; }
 }
 
 @media (max-width: 576px) {
@@ -658,7 +698,7 @@ onMounted(buscar)
     width: 100%;
     justify-content: center;
   }
-  .vc-btn-buscar span { display: inline; }
+  .vc-btn-buscar span, .vc-btn-hoy span { display: inline; }
   .vc-radios { flex-wrap: wrap; }
   .vc-det-meta { gap: 6px; }
   .vc-table th:nth-child(3),

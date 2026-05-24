@@ -85,7 +85,6 @@ async def get_ventas(
                    ON o.invoice_number = i.invoice_number
                   AND o.company_id     = i.company_id
                   AND o.date           = i.date
-                  AND o.cancelled      = 0
                   AND o.delivery       = 0
             WHERE i.company_id = :cid
               AND i.date BETWEEN :desde AND :hasta
@@ -173,7 +172,6 @@ async def get_venta_detalle(
                    ON o.invoice_number = i.invoice_number
                   AND o.company_id     = i.company_id
                   AND o.date           = i.date
-                  AND o.cancelled      = 0
             LEFT JOIN pos_waiters w
                    ON w.id = o.waiter_id AND w.company_id = i.company_id
             WHERE i.company_id    = :cid
@@ -190,16 +188,15 @@ async def get_venta_detalle(
                 od.dish_id,
                 COALESCE(d.name, od.dish_id)              AS plato,
                 od.quantity,
-                od.price,
-                od.quantity * od.price                    AS subtotal,
-                od.item,
-                od.group_id,
-                od.item_id
+                COALESCE(d.price, 0)                      AS price,
+                COALESCE(od.amount, 0)                    AS subtotal,
+                od.item
             FROM pos_order_details od
-            LEFT JOIN pos_dishes d ON d.id = od.dish_id
+            LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
             WHERE od.company_id    = :cid
               AND od.invoice_number = :numero
               AND od.date          = :fecha
+              AND od.depends_on    = 0
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
@@ -244,16 +241,15 @@ async def get_venta_detalle(
                 od.dish_id,
                 COALESCE(d.name, od.dish_id)              AS plato,
                 od.quantity,
-                od.price,
-                od.quantity * od.price                    AS subtotal,
-                od.item,
-                od.group_id,
-                od.item_id
+                COALESCE(d.price, 0)                      AS price,
+                COALESCE(od.amount, 0)                    AS subtotal,
+                od.item
             FROM pos_receipt_order_details od
-            LEFT JOIN pos_dishes d ON d.id = od.dish_id
+            LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
             WHERE od.company_id     = :cid
-              AND od.invoice_number  = :numero
+              AND od.receipt_number  = :numero
               AND od.date           = :fecha
+              AND od.depends_on     = 0
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
@@ -284,8 +280,10 @@ async def get_detalle_productos(
 
     if tipo == "factura":
         tabla = "pos_order_detail_products"
+        col   = "invoice_number"
     elif tipo == "recibo":
         tabla = "pos_receipt_order_detail_products"
+        col   = "receipt_number"
     else:
         raise HTTPException(status_code=400, detail="tipo debe ser 'factura' o 'recibo'")
 
@@ -300,11 +298,11 @@ async def get_detalle_productos(
                ON si.id = dp.item_id AND si.company_id = :cid
         LEFT JOIN measurement_units mu
                ON mu.id = si.unit_id
-        WHERE dp.company_id     = :cid
-          AND dp.invoice_number = :numero
-          AND dp.date           = :fecha
-          AND dp.dish_id        = :dish_id
-          AND dp.item           = :item
+        WHERE dp.company_id  = :cid
+          AND dp.{col}       = :numero
+          AND dp.date        = :fecha
+          AND dp.dish_id     = :dish_id
+          AND dp.item        = :item
         ORDER BY dp.group_id, dp.item_id
     """), {
         "cid": cid,
