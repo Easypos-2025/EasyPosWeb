@@ -1,5 +1,9 @@
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
+
+_BOG = timezone(timedelta(hours=-5))
+def _today() -> str:
+    return datetime.now(_BOG).date().isoformat()
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +59,7 @@ async def get_ventas(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    hoy = date.today().isoformat()
+    hoy = _today()
     desde = desde or hoy
     hasta = hasta or hoy
 

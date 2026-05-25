@@ -1,5 +1,9 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
+
+_BOG = timezone(timedelta(hours=-5))
+def _today() -> str:
+    return datetime.now(_BOG).date().isoformat()
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -55,8 +59,8 @@ async def get_kpis(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    fecha = fecha or date.today().isoformat()
-    today = date.today().isoformat()
+    fecha = fecha or _today()
+    today = _today()
 
     # Ventas Facturas (DIAN) — excluye propinas (tip + extra_tip)
     r_fact = (await db.execute(text("""
@@ -156,7 +160,7 @@ async def get_mesas(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    today = date.today().isoformat()
+    today = _today()
 
     rows = (await db.execute(text("""
         SELECT
@@ -210,7 +214,7 @@ async def get_abiertas(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    today = date.today().isoformat()
+    today = _today()
 
     rows = (await db.execute(text("""
         SELECT
@@ -251,7 +255,7 @@ async def get_facturadas(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    fecha = fecha or date.today().isoformat()
+    fecha = fecha or _today()
 
     rows = (await db.execute(text("""
         SELECT
@@ -292,7 +296,7 @@ async def abrir_mesa(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    today = date.today().isoformat()
+    today = _today()
     now_time = datetime.now().strftime("%H:%M:%S")
 
     # Verificar que la mesa no esté ya abierta
@@ -349,7 +353,7 @@ async def ultimas_transacciones(
 ):
     user = await _get_user(authorization, db)
     cid = _resolve_cid(user, company_id)
-    fecha = fecha or date.today().isoformat()
+    fecha = fecha or _today()
 
     rows = (await db.execute(text("""
         SELECT tipo, numero, hora, total, cliente

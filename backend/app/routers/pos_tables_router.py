@@ -1,4 +1,8 @@
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
+
+_BOG = timezone(timedelta(hours=-5))
+def _today() -> str:
+    return datetime.now(_BOG).date().isoformat()
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,7 +61,7 @@ class TableIn(BaseModel):
 async def list_zones(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid = user.company_id
-    today = date.today().isoformat()
+    today = _today()
 
     # Zone metadata from pos_zones (may be empty for VB6-only companies)
     zone_rows = (await db.execute(text(
@@ -143,7 +147,7 @@ async def update_zone(zone_id: int, data: ZoneIn, authorization: str = Header(No
 async def delete_zone(zone_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid = user.company_id
-    today = date.today().isoformat()
+    today = _today()
 
     occupied = (await db.execute(text("""
         SELECT COUNT(*) FROM pos_orders o
@@ -167,7 +171,7 @@ async def delete_zone(zone_id: int, authorization: str = Header(None), db: Async
 async def list_tables(zone_id: Optional[int] = None, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid = user.company_id
-    today = date.today().isoformat()
+    today = _today()
 
     where = "t.company_id = :cid"
     params: dict = {"cid": cid, "today": today}
@@ -243,7 +247,7 @@ async def update_table(table_id: int, data: TableIn, authorization: str = Header
 async def delete_table(table_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid = user.company_id
-    today = date.today().isoformat()
+    today = _today()
 
     occupied = (await db.execute(text("""
         SELECT COUNT(*) FROM pos_orders

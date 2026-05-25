@@ -1,6 +1,10 @@
 import io
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
+
+_BOG = timezone(timedelta(hours=-5))
+def _today() -> str:
+    return datetime.now(_BOG).date().isoformat()
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
@@ -139,7 +143,7 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
 async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid  = user.company_id
-    today = date.today().isoformat()
+    today = _today()
 
     max_id = (await db.execute(text(
         "SELECT COALESCE(MAX(id), 0) FROM pos_dishes WHERE company_id=:cid"
@@ -207,7 +211,7 @@ async def actualizar(
         SET precio_producto=:precio, fecha=:fecha, updated_at=NOW()
         WHERE id_producto=:id AND id_lista=0 AND id_cliente=0 AND company_id=:cid
     """), {"id": item_id, "precio": data.price,
-           "fecha": date.today().isoformat(), "cid": cid})
+           "fecha": _today(), "cid": cid})
 
     await db.commit()
     return {"ok": True}

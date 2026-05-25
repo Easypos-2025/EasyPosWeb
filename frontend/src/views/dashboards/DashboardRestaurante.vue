@@ -227,8 +227,7 @@ import { useCompanyStore } from '@/stores/companyStore.js'
 const companyStore = useCompanyStore()
 
 // ── Estado ────────────────────────────────────────────────────────────────────
-const _d = new Date()
-const _hoy = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`
+const _hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
 const fechaKpi   = ref(_hoy)  // fecha única: KPIs + Facturadas
 const tabActivo  = ref('nueva')
 

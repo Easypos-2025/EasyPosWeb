@@ -221,10 +221,8 @@ const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 const fmt = v => fmtCOP.format(v || 0)
 
-// Use local date (not UTC) to avoid timezone shift
 function localDate() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
 }
 const hoy = localDate()
 
