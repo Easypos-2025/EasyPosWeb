@@ -834,24 +834,20 @@ async def pull_waiters(
 
 
 # ═════════════════════════════════════════
-# TABLES LAYOUT (mesas)
+# TABLES (mesas)
 # ═════════════════════════════════════════
-class TableLayoutIn(BaseModel):
+class TableIn(BaseModel):
     id: int
     company_id: int
-    branch_id: Optional[int] = 0
-    name: str
-    location: Optional[str] = ""
-    seats: Optional[int] = 0
-    customer_id: Optional[int] = 0
-    dynamic_zone: Optional[int] = 0
-    active: Optional[int] = 0
     zone_id: Optional[int] = 0
+    name: str
+    capacity: Optional[int] = 0
+    is_active: Optional[int] = 0
 
 
 @router.post("/sync/push/tables")
 async def push_tables(
-    tables: List[TableLayoutIn],
+    tables: List[TableIn],
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
@@ -860,20 +856,18 @@ async def push_tables(
         try:
             await db.execute(text("""
                 INSERT INTO pos_tables_layout (
-                    id, company_id, branch_id, name, location, seats,
-                    customer_id, dynamic_zone, active, zone_id, synced, updated_at
+                    id, company_id, zone_id, name, seats, active,
+                    branch_id, customer_id, dynamic_zone, synced, updated_at
                 ) VALUES (
-                    :id, :company_id, :branch_id, :name, :location, :seats,
-                    :customer_id, :dynamic_zone, :active, :zone_id, 1, NOW()
+                    :id, :company_id, :zone_id, :name, :capacity, :is_active,
+                    0, 0, 0, 1, NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    name         = VALUES(name),
-                    location     = VALUES(location),
-                    seats        = VALUES(seats),
-                    active       = VALUES(active),
-                    zone_id      = VALUES(zone_id),
-                    synced       = 1,
-                    updated_at   = NOW()
+                    name       = VALUES(name),
+                    seats      = VALUES(seats),
+                    zone_id    = VALUES(zone_id),
+                    synced     = 1,
+                    updated_at = NOW()
             """), t.dict())
             saved.append(t.id)
         except Exception as e:

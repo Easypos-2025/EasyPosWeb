@@ -1305,21 +1305,6 @@ async def _init_db_data():
                 created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_pz_company (company_id)
             )""",
-            """CREATE TABLE IF NOT EXISTS pos_tables (
-                id               INT AUTO_INCREMENT PRIMARY KEY,
-                company_id       INT         NOT NULL,
-                zone_id          INT         NOT NULL,
-                name             VARCHAR(50) NOT NULL,
-                capacity         INT         NOT NULL DEFAULT 4,
-                status           ENUM('free','occupied','bill_requested') NOT NULL DEFAULT 'free',
-                current_order_id INT         NULL,
-                is_active        TINYINT     NOT NULL DEFAULT 1,
-                order_index      INT         NOT NULL DEFAULT 0,
-                created_at       DATETIME    DEFAULT CURRENT_TIMESTAMP,
-                updated_at       DATETIME    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX idx_pt_company (company_id),
-                INDEX idx_pt_zone    (company_id, zone_id)
-            )""",
         ]
         for _sql in _pos_tables_sql:
             try:

@@ -196,7 +196,6 @@ async def get_venta_detalle(
             WHERE od.company_id    = :cid
               AND od.invoice_number = :numero
               AND od.date          = :fecha
-              AND od.depends_on    = 0
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
@@ -249,7 +248,6 @@ async def get_venta_detalle(
             WHERE od.company_id     = :cid
               AND od.receipt_number  = :numero
               AND od.date           = :fecha
-              AND od.depends_on     = 0
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 

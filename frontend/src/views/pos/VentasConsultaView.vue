@@ -221,7 +221,12 @@ const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 const fmt = v => fmtCOP.format(v || 0)
 
-const hoy = new Date().toISOString().slice(0, 10)
+// Use local date (not UTC) to avoid timezone shift
+function localDate() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+const hoy = localDate()
 
 const tipoOpts = [
   { value: 'ambos',   label: 'Ambos' },
@@ -317,7 +322,8 @@ async function verInsumos(item) {
 }
 
 function irHoy() {
-  const hoyStr = new Date().toISOString().slice(0, 10)
+  const hoyStr = localDate()
+  filtro.value.tipo  = 'ambos'
   filtro.value.desde = hoyStr
   filtro.value.hasta = hoyStr
   buscar()
@@ -327,11 +333,10 @@ let _refreshTimer = null
 
 function _startRefresh() {
   _stopRefresh()
-  const hoyStr = new Date().toISOString().slice(0, 10)
+  const hoyStr = localDate()
   if (filtro.value.hasta >= hoyStr) {
     _refreshTimer = setInterval(() => {
-      const nowHoy = new Date().toISOString().slice(0, 10)
-      if (filtro.value.hasta >= nowHoy) buscar()
+      if (filtro.value.hasta >= localDate()) buscar()
     }, 30000)
   }
 }

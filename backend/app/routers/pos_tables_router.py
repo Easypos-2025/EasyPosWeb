@@ -47,15 +47,11 @@ class TableIn(BaseModel):
     zone_id: int
     name: str
     capacity: Optional[int] = 4
-    is_active: Optional[int] = 1
-    order_index: Optional[int] = 0
-
-
-class TableStatusIn(BaseModel):
-    status: str  # free | occupied | bill_requested
 
 
 # ── Zones ─────────────────────────────────────────────────────────────────────
+# pos_zones stores zone metadata (name, color, icon).
+# Table counts and occupancy always come from pos_tables_layout + pos_orders.
 
 @router.get("/zonas")
 async def list_zones(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
@@ -63,36 +59,18 @@ async def list_zones(authorization: str = Header(None), db: AsyncSession = Depen
     cid = user.company_id
     today = date.today().isoformat()
 
-    rows = await db.execute(text("""
-        SELECT z.id, z.name, z.description, z.color, z.icon, z.is_active, z.order_index,
-               COUNT(t.id) AS table_count,
-               SUM(CASE WHEN t.is_active=1 AND t.status='occupied'       THEN 1 ELSE 0 END) AS occupied_count,
-               SUM(CASE WHEN t.is_active=1 AND t.status='bill_requested' THEN 1 ELSE 0 END) AS bill_count,
-               SUM(CASE WHEN t.is_active=1 AND t.status='free'           THEN 1 ELSE 0 END) AS free_count
-        FROM pos_zones z
-        LEFT JOIN pos_tables t ON t.zone_id=z.id AND t.company_id=z.company_id
-        WHERE z.company_id=:cid
-        GROUP BY z.id
-        ORDER BY z.order_index, z.name
-    """), {"cid": cid})
-    result = [dict(r._mapping) for r in rows.fetchall()]
-    if result:
-        return result
+    # Zone metadata from pos_zones (may be empty for VB6-only companies)
+    zone_rows = (await db.execute(text(
+        "SELECT id, name, description, color, icon, is_active, order_index FROM pos_zones WHERE company_id=:cid"
+    ), {"cid": cid})).mappings().all()
+    zone_map = {z["id"]: dict(z) for z in zone_rows}
 
-    # Fallback: derive zones from pos_tables_layout (VB6 synced)
-    rows = await db.execute(text("""
+    # Table counts + real-time occupancy from pos_tables_layout + pos_orders
+    counts = (await db.execute(text("""
         SELECT
-            t.zone_id                                                                    AS id,
-            CASE WHEN t.zone_id = 0 THEN 'General'
-                 ELSE CONCAT('Zona ', t.zone_id) END                                    AS name,
-            NULL                                                                         AS description,
-            '#1d4ed8'                                                                    AS color,
-            'bi-grid'                                                                    AS icon,
-            1                                                                            AS is_active,
-            t.zone_id                                                                    AS order_index,
+            t.zone_id,
             COUNT(t.id)                                                                  AS table_count,
             COALESCE(SUM(CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END), 0)   AS occupied_count,
-            0                                                                            AS bill_count,
             COALESCE(SUM(CASE WHEN o.order_number IS NULL     THEN 1 ELSE 0 END), 0)   AS free_count
         FROM pos_tables_layout t
         LEFT JOIN pos_orders o
@@ -105,8 +83,28 @@ async def list_zones(authorization: str = Header(None), db: AsyncSession = Depen
         WHERE t.company_id = :cid
         GROUP BY t.zone_id
         ORDER BY t.zone_id
-    """), {"cid": cid, "today": today})
-    return [dict(r._mapping) for r in rows.fetchall()]
+    """), {"cid": cid, "today": today})).mappings().all()
+
+    result = []
+    for r in counts:
+        zid = r["zone_id"]
+        meta = zone_map.get(zid) or {
+            "id": zid,
+            "name": "General" if zid == 0 else f"Zona {zid}",
+            "description": None,
+            "color": "#1d4ed8",
+            "icon": "bi-grid",
+            "is_active": 1,
+            "order_index": zid,
+        }
+        result.append({
+            **meta,
+            "table_count":    int(r["table_count"]),
+            "occupied_count": int(r["occupied_count"]),
+            "bill_count":     0,
+            "free_count":     int(r["free_count"]),
+        })
+    return result
 
 
 @router.post("/zonas")
@@ -144,19 +142,26 @@ async def update_zone(zone_id: int, data: ZoneIn, authorization: str = Header(No
 @router.delete("/zonas/{zone_id}")
 async def delete_zone(zone_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    active_tables = await db.execute(text("""
-        SELECT COUNT(*) FROM pos_tables WHERE zone_id=:zid AND company_id=:cid AND is_active=1
-    """), {"zid": zone_id, "cid": user.company_id})
-    if active_tables.scalar() > 0:
-        raise HTTPException(status_code=400, detail="La zona tiene mesas activas. Desactívalas primero.")
-    await db.execute(text("""
-        UPDATE pos_zones SET is_active=0 WHERE id=:id AND company_id=:cid
-    """), {"id": zone_id, "cid": user.company_id})
+    cid = user.company_id
+    today = date.today().isoformat()
+
+    occupied = (await db.execute(text("""
+        SELECT COUNT(*) FROM pos_orders o
+        JOIN pos_tables_layout t ON t.id = o.table_id AND t.company_id = o.company_id
+        WHERE t.zone_id = :zid AND o.company_id = :cid
+          AND o.date = :today AND o.invoice_number = '0' AND o.cancelled = 0
+    """), {"zid": zone_id, "cid": cid, "today": today})).scalar()
+    if occupied:
+        raise HTTPException(status_code=400, detail="La zona tiene mesas con comandas abiertas.")
+
+    await db.execute(text(
+        "UPDATE pos_zones SET is_active=0 WHERE id=:id AND company_id=:cid"
+    ), {"id": zone_id, "cid": cid})
     await db.commit()
     return {"ok": True}
 
 
-# ── Tables ────────────────────────────────────────────────────────────────────
+# ── Tables (pos_tables_layout is the single source of truth) ─────────────────
 
 @router.get("/mesas")
 async def list_tables(zone_id: Optional[int] = None, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
@@ -164,32 +169,13 @@ async def list_tables(zone_id: Optional[int] = None, authorization: str = Header
     cid = user.company_id
     today = date.today().isoformat()
 
-    where = "t.company_id=:cid"
-    params: dict = {"cid": cid}
+    where = "t.company_id = :cid"
+    params: dict = {"cid": cid, "today": today}
     if zone_id is not None:
-        where += " AND t.zone_id=:zid"
+        where += " AND t.zone_id = :zid"
         params["zid"] = zone_id
 
-    rows = await db.execute(text(f"""
-        SELECT t.id, t.zone_id, t.name, t.capacity, t.status, t.current_order_id,
-               t.is_active, t.order_index, z.name AS zone_name, z.color AS zone_color
-        FROM pos_tables t
-        LEFT JOIN pos_zones z ON z.id=t.zone_id AND z.company_id=t.company_id
-        WHERE {where}
-        ORDER BY z.order_index, z.name, t.order_index, t.name
-    """), params)
-    result = [dict(r._mapping) for r in rows.fetchall()]
-    if result:
-        return result
-
-    # Fallback: read from pos_tables_layout (VB6 synced data)
-    where2 = "t.company_id = :cid"
-    params2: dict = {"cid": cid, "today": today}
-    if zone_id is not None:
-        where2 += " AND t.zone_id = :zid"
-        params2["zid"] = zone_id
-
-    rows = await db.execute(text(f"""
+    rows = (await db.execute(text(f"""
         SELECT
             t.id,
             t.zone_id,
@@ -199,10 +185,11 @@ async def list_tables(zone_id: Optional[int] = None, authorization: str = Header
             o.order_number                                                               AS current_order_id,
             1                                                                            AS is_active,
             0                                                                            AS order_index,
-            CASE WHEN t.zone_id = 0 THEN 'General'
-                 ELSE CONCAT('Zona ', t.zone_id) END                                     AS zone_name,
-            '#1d4ed8'                                                                    AS zone_color
+            COALESCE(z.name, CASE WHEN t.zone_id = 0 THEN 'General'
+                                  ELSE CONCAT('Zona ', t.zone_id) END)                   AS zone_name,
+            COALESCE(z.color, '#1d4ed8')                                                 AS zone_color
         FROM pos_tables_layout t
+        LEFT JOIN pos_zones z   ON z.id = t.zone_id AND z.company_id = :cid
         LEFT JOIN pos_orders o
                ON o.table_id       = t.id
               AND o.company_id     = :cid
@@ -210,58 +197,42 @@ async def list_tables(zone_id: Optional[int] = None, authorization: str = Header
               AND o.invoice_number = '0'
               AND o.cancelled      = 0
               AND o.delivery       = 0
-        WHERE {where2}
+        WHERE {where}
         ORDER BY t.zone_id, t.name
-    """), params2)
-    return [dict(r._mapping) for r in rows.fetchall()]
+    """), params)).mappings().all()
+    return [dict(r) for r in rows]
 
 
 @router.post("/mesas")
 async def create_table(data: TableIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    zone = await db.execute(text(
-        "SELECT id FROM pos_zones WHERE id=:zid AND company_id=:cid AND is_active=1"
-    ), {"zid": data.zone_id, "cid": user.company_id})
-    if not zone.fetchone():
-        raise HTTPException(status_code=404, detail="Zona no encontrada")
+    cid = user.company_id
 
-    res = await db.execute(text("""
-        INSERT INTO pos_tables (company_id, zone_id, name, capacity, is_active, order_index)
-        VALUES (:cid, :zid, :name, :cap, :active, :order)
-    """), {
-        "cid": user.company_id, "zid": data.zone_id, "name": data.name.strip(),
-        "cap": data.capacity, "active": data.is_active, "order": data.order_index
-    })
+    max_id = (await db.execute(text(
+        "SELECT COALESCE(MAX(id), 0) FROM pos_tables_layout WHERE company_id=:cid"
+    ), {"cid": cid})).scalar() or 0
+    new_id = int(max_id) + 1
+
+    await db.execute(text("""
+        INSERT INTO pos_tables_layout
+            (id, company_id, zone_id, name, seats, location, active, branch_id, customer_id, dynamic_zone, synced)
+        VALUES
+            (:id, :cid, :zid, :name, :seats, '', 0, 0, 0, 0, 0)
+    """), {"id": new_id, "cid": cid, "zid": data.zone_id,
+           "name": data.name.strip(), "seats": data.capacity})
     await db.commit()
-    return {"ok": True, "id": res.lastrowid}
+    return {"ok": True, "id": new_id}
 
 
 @router.put("/mesas/{table_id}")
 async def update_table(table_id: int, data: TableIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     res = await db.execute(text("""
-        UPDATE pos_tables SET zone_id=:zid, name=:name, capacity=:cap,
-               is_active=:active, order_index=:order
+        UPDATE pos_tables_layout
+        SET zone_id=:zid, name=:name, seats=:seats, updated_at=NOW()
         WHERE id=:id AND company_id=:cid
-    """), {
-        "id": table_id, "cid": user.company_id, "zid": data.zone_id,
-        "name": data.name.strip(), "cap": data.capacity,
-        "active": data.is_active, "order": data.order_index
-    })
-    await db.commit()
-    if res.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Mesa no encontrada")
-    return {"ok": True}
-
-
-@router.patch("/mesas/{table_id}/estado")
-async def update_table_status(table_id: int, data: TableStatusIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    user = await _get_user(authorization, db)
-    if data.status not in ("free", "occupied", "bill_requested"):
-        raise HTTPException(status_code=400, detail="Estado inválido")
-    res = await db.execute(text("""
-        UPDATE pos_tables SET status=:status WHERE id=:id AND company_id=:cid
-    """), {"status": data.status, "id": table_id, "cid": user.company_id})
+    """), {"id": table_id, "cid": user.company_id,
+           "zid": data.zone_id, "name": data.name.strip(), "seats": data.capacity})
     await db.commit()
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
@@ -271,16 +242,21 @@ async def update_table_status(table_id: int, data: TableStatusIn, authorization:
 @router.delete("/mesas/{table_id}")
 async def delete_table(table_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    occupied = await db.execute(text("""
-        SELECT status FROM pos_tables WHERE id=:id AND company_id=:cid
-    """), {"id": table_id, "cid": user.company_id})
-    row = occupied.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Mesa no encontrada")
-    if row[0] in ("occupied", "bill_requested"):
-        raise HTTPException(status_code=400, detail="No se puede eliminar una mesa ocupada o con cuenta pendiente.")
-    await db.execute(text("""
-        UPDATE pos_tables SET is_active=0 WHERE id=:id AND company_id=:cid
-    """), {"id": table_id, "cid": user.company_id})
+    cid = user.company_id
+    today = date.today().isoformat()
+
+    occupied = (await db.execute(text("""
+        SELECT COUNT(*) FROM pos_orders
+        WHERE table_id=:id AND company_id=:cid
+          AND date=:today AND invoice_number='0' AND cancelled=0
+    """), {"id": table_id, "cid": cid, "today": today})).scalar()
+    if occupied:
+        raise HTTPException(status_code=400, detail="No se puede eliminar una mesa con comanda abierta.")
+
+    res = await db.execute(text(
+        "DELETE FROM pos_tables_layout WHERE id=:id AND company_id=:cid"
+    ), {"id": table_id, "cid": cid})
     await db.commit()
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
     return {"ok": True}
