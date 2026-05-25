@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -58,6 +60,9 @@ class TableStatusIn(BaseModel):
 @router.get("/zonas")
 async def list_zones(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    cid = user.company_id
+    today = date.today().isoformat()
+
     rows = await db.execute(text("""
         SELECT z.id, z.name, z.description, z.color, z.icon, z.is_active, z.order_index,
                COUNT(t.id) AS table_count,
@@ -69,7 +74,38 @@ async def list_zones(authorization: str = Header(None), db: AsyncSession = Depen
         WHERE z.company_id=:cid
         GROUP BY z.id
         ORDER BY z.order_index, z.name
-    """), {"cid": user.company_id})
+    """), {"cid": cid})
+    result = [dict(r._mapping) for r in rows.fetchall()]
+    if result:
+        return result
+
+    # Fallback: derive zones from pos_tables_layout (VB6 synced)
+    rows = await db.execute(text("""
+        SELECT
+            t.zone_id                                                                    AS id,
+            CASE WHEN t.zone_id = 0 THEN 'General'
+                 ELSE CONCAT('Zona ', t.zone_id) END                                    AS name,
+            NULL                                                                         AS description,
+            '#1d4ed8'                                                                    AS color,
+            'bi-grid'                                                                    AS icon,
+            1                                                                            AS is_active,
+            t.zone_id                                                                    AS order_index,
+            COUNT(t.id)                                                                  AS table_count,
+            COALESCE(SUM(CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END), 0)   AS occupied_count,
+            0                                                                            AS bill_count,
+            COALESCE(SUM(CASE WHEN o.order_number IS NULL     THEN 1 ELSE 0 END), 0)   AS free_count
+        FROM pos_tables_layout t
+        LEFT JOIN pos_orders o
+               ON o.table_id       = t.id
+              AND o.company_id     = :cid
+              AND o.date           = :today
+              AND o.invoice_number = '0'
+              AND o.cancelled      = 0
+              AND o.delivery       = 0
+        WHERE t.company_id = :cid
+        GROUP BY t.zone_id
+        ORDER BY t.zone_id
+    """), {"cid": cid, "today": today})
     return [dict(r._mapping) for r in rows.fetchall()]
 
 
@@ -125,9 +161,12 @@ async def delete_zone(zone_id: int, authorization: str = Header(None), db: Async
 @router.get("/mesas")
 async def list_tables(zone_id: Optional[int] = None, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    cid = user.company_id
+    today = date.today().isoformat()
+
     where = "t.company_id=:cid"
-    params: dict = {"cid": user.company_id}
-    if zone_id:
+    params: dict = {"cid": cid}
+    if zone_id is not None:
         where += " AND t.zone_id=:zid"
         params["zid"] = zone_id
 
@@ -139,6 +178,41 @@ async def list_tables(zone_id: Optional[int] = None, authorization: str = Header
         WHERE {where}
         ORDER BY z.order_index, z.name, t.order_index, t.name
     """), params)
+    result = [dict(r._mapping) for r in rows.fetchall()]
+    if result:
+        return result
+
+    # Fallback: read from pos_tables_layout (VB6 synced data)
+    where2 = "t.company_id = :cid"
+    params2: dict = {"cid": cid, "today": today}
+    if zone_id is not None:
+        where2 += " AND t.zone_id = :zid"
+        params2["zid"] = zone_id
+
+    rows = await db.execute(text(f"""
+        SELECT
+            t.id,
+            t.zone_id,
+            t.name,
+            COALESCE(t.seats, 0)                                                         AS capacity,
+            CASE WHEN o.order_number IS NOT NULL THEN 'occupied' ELSE 'free' END         AS status,
+            o.order_number                                                               AS current_order_id,
+            1                                                                            AS is_active,
+            0                                                                            AS order_index,
+            CASE WHEN t.zone_id = 0 THEN 'General'
+                 ELSE CONCAT('Zona ', t.zone_id) END                                     AS zone_name,
+            '#1d4ed8'                                                                    AS zone_color
+        FROM pos_tables_layout t
+        LEFT JOIN pos_orders o
+               ON o.table_id       = t.id
+              AND o.company_id     = :cid
+              AND o.date           = :today
+              AND o.invoice_number = '0'
+              AND o.cancelled      = 0
+              AND o.delivery       = 0
+        WHERE {where2}
+        ORDER BY t.zone_id, t.name
+    """), params2)
     return [dict(r._mapping) for r in rows.fetchall()]
 
 
