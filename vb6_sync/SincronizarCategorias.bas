@@ -35,7 +35,7 @@ Public Sub SincronizarCategorias(Var_Id_Company_Envio As Integer, Var_Limit_Regi
         json = json & """id"":"           & Nz(rs("cod_categoria"), 0)                    & ","
         json = json & """company_id"":"   & Var_Id_Company_Envio                          & ","
         json = json & """description"":"  & """" & EscapeJson(Nz(rs("descripcion"), "")) & ""","
-        json = json & """photo_name"":"   & """" & Nz(rs("Nombre_foto"), "")             & ""","
+        json = json & """photo_name"":"   & """" & EscapeJson(Nz(rs("Nombre_foto"), ""))  & ""","
         json = json & """is_active"":"    & Nz(rs("Activa"), 1)
         json = json & "}"
         sep = ","

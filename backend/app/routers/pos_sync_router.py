@@ -1914,6 +1914,8 @@ class CategoryIn(BaseModel):
     id: int
     company_id: int
     name: Optional[str] = None
+    description: Optional[str] = None
+    photo_name: Optional[str] = None
     is_active: Optional[int] = 1
     color: Optional[str] = "#1d4ed8"
 
@@ -1928,14 +1930,16 @@ async def push_categories(
     for c in categories:
         try:
             await db.execute(text("""
-                INSERT INTO pos_categories (id, company_id, name, is_active, color, synced, updated_at)
-                VALUES (:id, :company_id, :name, :is_active, :color, 1, NOW())
+                INSERT INTO pos_categories (id, company_id, name, description, photo_name, is_active, color, synced, updated_at)
+                VALUES (:id, :company_id, :name, :description, :photo_name, :is_active, :color, 1, NOW())
                 ON DUPLICATE KEY UPDATE
-                    name       = VALUES(name),
-                    is_active  = VALUES(is_active),
-                    color      = VALUES(color),
-                    synced     = 1,
-                    updated_at = NOW()
+                    name        = VALUES(name),
+                    description = VALUES(description),
+                    photo_name  = VALUES(photo_name),
+                    is_active   = VALUES(is_active),
+                    color       = VALUES(color),
+                    synced      = 1,
+                    updated_at  = NOW()
             """), c.dict())
             saved.append(c.id)
         except Exception as e:

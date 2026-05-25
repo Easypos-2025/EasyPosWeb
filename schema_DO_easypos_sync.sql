@@ -536,4 +536,9 @@ CREATE TABLE IF NOT EXISTS `pos_receipt_payment_methods` (
   PRIMARY KEY (`item`, `payment_method_id`, `card_id`, `invoice_number`, `company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ── pos_categories: agregar description y photo_name si no existen ───────────
+ALTER TABLE `pos_categories`
+    ADD COLUMN IF NOT EXISTS `description` VARCHAR(255) DEFAULT NULL AFTER `name`,
+    ADD COLUMN IF NOT EXISTS `photo_name`  VARCHAR(150) DEFAULT NULL AFTER `description`;
+
 SET FOREIGN_KEY_CHECKS=1;
