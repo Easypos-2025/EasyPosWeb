@@ -3,7 +3,7 @@
 ' Endpoint: POST /api/pos/sync/push/receipt-payments
 ' Tabla local VB6: formas_pago_recibo
 ' Tabla servidor: pos_receipt_payment_methods
-' PK servidor: (item, payment_method_id, card_id, receipt_number)
+' PK servidor: (item, payment_method_id, card_id, invoice_number)
 ' Nota: saved retorna claves compuestas; se marca por Nro_Recibo
 ' ============================================================
 Public Sub SincronizarFormasPagoRecibo(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
@@ -36,7 +36,7 @@ Public Sub SincronizarFormasPagoRecibo(Var_Id_Company_Envio As Integer, Var_Limi
         json = json & """item"":"              & Nz(rs("Item"), 0)                              & ","
         json = json & """payment_method_id"":"  & Nz(rs("Id_Forma_Pago"), 0)                   & ","
         json = json & """card_id"":"           & Nz(rs("Id_Tarjeta"), 0)                        & ","
-        json = json & """receipt_number"":"    & """" & nroRecibo                               & ""","
+        json = json & """invoice_number"":"    & """" & nroRecibo                               & ""","
         json = json & """company_id"":"        & Var_Id_Company_Envio                           & ","
         json = json & """amount"":"            & Nz(rs("Valor"), 0)                             & ","
         json = json & """date"":"              & """" & Format(rs("Fecha"), "YYYY-MM-DD")       & ""","

@@ -495,9 +495,9 @@ CREATE TABLE IF NOT EXISTS `pos_receipt_payment_methods` (
   `item` int(11) NOT NULL DEFAULT '0',
   `payment_method_id` int(11) NOT NULL DEFAULT '0',
   `card_id` int(11) NOT NULL DEFAULT '0',
-  `receipt_number` varchar(100) NOT NULL,
+  `invoice_number` varchar(100) NOT NULL,
   `amount` double DEFAULT '0',
-  `date` varchar(50) NOT NULL DEFAULT '',
+  `date` date NOT NULL,
   `authorization` double DEFAULT '0',
   `notes` varchar(255) DEFAULT NULL,
   `delivery_amount` double DEFAULT '0',
@@ -507,7 +507,7 @@ CREATE TABLE IF NOT EXISTS `pos_receipt_payment_methods` (
   `synced` tinyint(4) DEFAULT '0',
   `company_id` int(11) NOT NULL DEFAULT '0',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`item`, `payment_method_id`, `card_id`, `receipt_number`, `company_id`)
+  PRIMARY KEY (`item`, `payment_method_id`, `card_id`, `invoice_number`, `company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS=1;

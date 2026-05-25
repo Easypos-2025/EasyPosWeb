@@ -1356,7 +1356,7 @@ class ReceiptPaymentIn(BaseModel):
     item: int
     payment_method_id: int
     card_id: int
-    receipt_number: str
+    invoice_number: str
     company_id: int
     amount: Optional[float] = 0
     date: Optional[str] = None
@@ -1376,15 +1376,15 @@ async def push_receipt_payments(
 ):
     saved, failed = [], []
     for p in payments:
-        key = f"{p.item}|{p.payment_method_id}|{p.card_id}|{p.receipt_number}"
+        key = f"{p.item}|{p.payment_method_id}|{p.card_id}|{p.invoice_number}"
         try:
             await db.execute(text("""
                 INSERT INTO pos_receipt_payment_methods (
-                    item, payment_method_id, card_id, receipt_number, company_id,
+                    item, payment_method_id, card_id, invoice_number, company_id,
                     amount, date, authorization, notes, delivery_amount,
                     prefix, fac_pe, order_number, synced, updated_at
                 ) VALUES (
-                    :item, :payment_method_id, :card_id, :receipt_number, :company_id,
+                    :item, :payment_method_id, :card_id, :invoice_number, :company_id,
                     :amount, :date, :authorization, :notes, :delivery_amount,
                     :prefix, :fac_pe, :order_number, 1, NOW()
                 )
@@ -1821,8 +1821,8 @@ async def push_dish_printers(
             processed.add(key)
         try:
             await db.execute(text("""
-                INSERT INTO pos_item_printers (company_id, item_id, printer_id)
-                VALUES (:company_id, :item_id, :printer_id)
+                INSERT INTO pos_item_printers (company_id, item_id, printer_id, print_copies)
+                VALUES (:company_id, :item_id, :printer_id, :print_copies)
             """), r.dict())
             saved.append(r.item_id)
         except Exception as e:
@@ -1905,6 +1905,156 @@ async def pull_dish_assembly(
     sql += " ORDER BY updated_at ASC LIMIT 500"
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "since": since, "dish_assembly": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# CATEGORIES (categorias)
+# ═════════════════════════════════════════
+class CategoryIn(BaseModel):
+    id: int
+    company_id: int
+    name: Optional[str] = None
+    is_active: Optional[int] = 1
+    color: Optional[str] = "#1d4ed8"
+
+
+@router.post("/sync/push/categories")
+async def push_categories(
+    categories: List[CategoryIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for c in categories:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_categories (id, company_id, name, is_active, color, synced, updated_at)
+                VALUES (:id, :company_id, :name, :is_active, :color, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name       = VALUES(name),
+                    is_active  = VALUES(is_active),
+                    color      = VALUES(color),
+                    synced     = 1,
+                    updated_at = NOW()
+            """), c.dict())
+            saved.append(c.id)
+        except Exception as e:
+            failed.append({"id": c.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(categories), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/categories")
+async def pull_categories(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text(
+        "SELECT * FROM pos_categories WHERE company_id = :cid ORDER BY id"
+    ), {"cid": company_id})).mappings().all()
+    return {"total": len(rows), "categories": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# CASH REGISTERS (cajas)
+# ═════════════════════════════════════════
+class CashRegisterIn(BaseModel):
+    id: int
+    company_id: int
+    name: Optional[str] = None
+    is_active: Optional[int] = 1
+
+
+@router.post("/sync/push/cash-registers")
+async def push_cash_registers(
+    registers: List[CashRegisterIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for r in registers:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_registers (id, company_id, name, is_active, synced, updated_at)
+                VALUES (:id, :company_id, :name, :is_active, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name       = VALUES(name),
+                    is_active  = VALUES(is_active),
+                    synced     = 1,
+                    updated_at = NOW()
+            """), r.dict())
+            saved.append(r.id)
+        except Exception as e:
+            failed.append({"id": r.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(registers), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/cash-registers")
+async def pull_cash_registers(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text(
+        "SELECT * FROM pos_cash_registers WHERE company_id = :cid AND is_active = 1 ORDER BY id"
+    ), {"cid": company_id})).mappings().all()
+    return {"total": len(rows), "cash_registers": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# PRINTERS (impresoras)
+# ═════════════════════════════════════════
+class PrinterIn(BaseModel):
+    id: int
+    company_id: int
+    name: Optional[str] = None
+    ip: Optional[str] = None
+    port: Optional[int] = 9100
+    is_active: Optional[int] = 1
+
+
+@router.post("/sync/push/printers")
+async def push_printers(
+    printers: List[PrinterIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for p in printers:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_printers (id, company_id, name, ip, port, is_active, synced, updated_at)
+                VALUES (:id, :company_id, :name, :ip, :port, :is_active, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name       = VALUES(name),
+                    ip         = VALUES(ip),
+                    port       = VALUES(port),
+                    is_active  = VALUES(is_active),
+                    synced     = 1,
+                    updated_at = NOW()
+            """), p.dict())
+            saved.append(p.id)
+        except Exception as e:
+            failed.append({"id": p.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(printers), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/printers")
+async def pull_printers(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text(
+        "SELECT * FROM pos_printers WHERE company_id = :cid AND is_active = 1 ORDER BY id"
+    ), {"cid": company_id})).mappings().all()
+    return {"total": len(rows), "printers": [dict(r) for r in rows]}
 
 
 # ═════════════════════════════════════════
