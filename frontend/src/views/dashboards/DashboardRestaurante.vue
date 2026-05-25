@@ -279,26 +279,52 @@ const kpis = computed(() => {
 const zonas = computed(() => [...new Set(mesas.value.map(m => m.zone_id || ''))])
 const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zona)
 
-// ── Auto-refresh cada 30 s ────────────────────────────────────────────────────
+// ── Refresh silencioso (sin spinner, sin borrar datos) ────────────────────────
+async function _silentKpis() {
+  try {
+    const { data } = await api.get('/api/pos-dashboard/kpis', {
+      params: { fecha: fechaKpi.value, company_id: selectedCid.value, _t: Date.now() }
+    })
+    kpiData.value = data
+  } catch { /* silencioso */ }
+}
+async function _silentMesas() {
+  try {
+    const { data } = await api.get('/api/pos-dashboard/mesas', {
+      params: { company_id: selectedCid.value, _t: Date.now() }
+    })
+    mesas.value = data
+  } catch { /* silencioso */ }
+}
+function _tick() {
+  _silentKpis()
+  _silentMesas()
+  if (tabActivo.value === 'abiertas') cargarAbiertas()
+}
+
+// ── Auto-refresh cada 15 s + visibilitychange ─────────────────────────────────
 let _timer = null
 function _startRefresh() {
   _stopRefresh()
-  _timer = setInterval(() => {
-    cargarKpis()
-    cargarMesas()
-    if (tabActivo.value === 'abiertas') cargarAbiertas()
-  }, 30000)
+  _timer = setInterval(_tick, 15000)
 }
 function _stopRefresh() {
   if (_timer) { clearInterval(_timer); _timer = null }
+}
+function _onVisible() {
+  if (!document.hidden) _tick()
 }
 
 // ── Carga inicial ─────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()])
   _startRefresh()
+  document.addEventListener('visibilitychange', _onVisible)
 })
-onUnmounted(_stopRefresh)
+onUnmounted(() => {
+  _stopRefresh()
+  document.removeEventListener('visibilitychange', _onVisible)
+})
 
 watch(fechaKpi, () => {
   cargarKpis()
