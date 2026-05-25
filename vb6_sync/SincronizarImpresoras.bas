@@ -7,7 +7,7 @@
 '   Id_Impresora -> id
 '   Nombre       -> name
 '   IP           -> ip
-'   Puerto       -> port
+'   Puerto       -> port  (VARCHAR en servidor)
 '   Activa       -> is_active
 ' PK servidor: id (= Id_Impresora en VB6)
 ' ============================================================
@@ -37,7 +37,7 @@ Public Sub SincronizarImpresoras(Var_Id_Company_Envio As Integer, Var_Limit_Regi
         json = json & """company_id"":"  & Var_Id_Company_Envio                         & ","
         json = json & """name"":"       & """" & EscapeJson(Nz(rs("Nombre"), ""))      & ""","
         json = json & """ip"":"         & """" & Nz(rs("IP"), "")                      & ""","
-        json = json & """port"":"       & Nz(rs("Puerto"), 9100)                       & ","
+        json = json & """port"":"       & """" & Nz(rs("Puerto"), "9100")               & ""","
         json = json & """is_active"":"  & Nz(rs("Activa"), 1)
         json = json & "}"
         sep = ","

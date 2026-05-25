@@ -2036,7 +2036,7 @@ class PrinterIn(BaseModel):
     company_id: int
     name: Optional[str] = None
     ip: Optional[str] = None
-    port: Optional[int] = 9100
+    port: Optional[str] = "9100"
     is_active: Optional[int] = 1
 
 
