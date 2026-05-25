@@ -227,7 +227,9 @@ import { useCompanyStore } from '@/stores/companyStore.js'
 const companyStore = useCompanyStore()
 
 // ── Estado ────────────────────────────────────────────────────────────────────
-const fechaKpi   = ref(new Date().toISOString().slice(0, 10))  // fecha única: KPIs + Facturadas
+const _d = new Date()
+const _hoy = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`
+const fechaKpi   = ref(_hoy)  // fecha única: KPIs + Facturadas
 const tabActivo  = ref('nueva')
 
 const kpiLoading        = ref(true)

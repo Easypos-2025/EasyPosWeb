@@ -223,7 +223,8 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
-const hoy = new Date().toISOString().slice(0, 10)
+const _d = new Date()
+const hoy = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`
 const fecha = ref(hoy)
 const cargando = ref(false)
 const cargandoMesas = ref(false)
