@@ -1251,10 +1251,11 @@ async def _init_db_data():
                 INDEX idx_cpl_lista    (company_id, id_lista)
             )""",
             """CREATE TABLE IF NOT EXISTS pos_item_printers (
-                id          INT AUTO_INCREMENT PRIMARY KEY,
-                company_id  INT NOT NULL,
-                item_id     INT NOT NULL,
-                printer_id  INT NOT NULL,
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                company_id   INT NOT NULL,
+                item_id      INT NOT NULL,
+                printer_id   INT NOT NULL,
+                print_copies INT NOT NULL DEFAULT 1,
                 UNIQUE KEY uq_item_printer (company_id, item_id, printer_id),
                 INDEX idx_ip_company (company_id, item_id)
             )""",

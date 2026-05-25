@@ -20,14 +20,30 @@
       <div class="cat-tabs">
         <button
           :class="['cat-tab', { active: categoriaTab === null }]"
-          @click="categoriaTab = null"
+          @click="setCategoria(null)"
         >Todos</button>
         <button
           v-for="c in categorias" :key="c.id"
           :class="['cat-tab', { active: categoriaTab === c.id }]"
           :style="categoriaTab === c.id ? { background: c.color || '#1d4ed8', color: '#fff', borderColor: c.color || '#1d4ed8' } : {}"
-          @click="categoriaTab = c.id"
+          @click="setCategoria(c.id)"
         >{{ c.name }}</button>
+      </div>
+    </div>
+
+    <!-- FILTROS ESTADO / FOTO -->
+    <div class="filtros-wrap">
+      <div class="filtros-grupo">
+        <span class="filtros-label">Estado:</span>
+        <button :class="['filtro-btn', { active: filtroEstado === null }]" @click="setFiltroEstado(null)">Todos</button>
+        <button :class="['filtro-btn filtro-btn--activo', { active: filtroEstado === 1 }]" @click="setFiltroEstado(1)">Activos</button>
+        <button :class="['filtro-btn filtro-btn--inactivo', { active: filtroEstado === 0 }]" @click="setFiltroEstado(0)">Inactivos</button>
+      </div>
+      <div class="filtros-grupo">
+        <span class="filtros-label">Foto:</span>
+        <button :class="['filtro-btn', { active: filtroFoto === null }]" @click="setFiltroFoto(null)">Todos</button>
+        <button :class="['filtro-btn filtro-btn--confoto', { active: filtroFoto === 'con' }]" @click="setFiltroFoto('con')">Con foto</button>
+        <button :class="['filtro-btn filtro-btn--sinfoto', { active: filtroFoto === 'sin' }]" @click="setFiltroFoto('sin')">Sin foto</button>
       </div>
     </div>
 
@@ -52,7 +68,7 @@
       >
         <!-- Foto -->
         <div class="item-foto">
-          <img v-if="item.photo_path" :src="imgSrc(item.photo_path)" class="item-foto-img" alt="" />
+          <img v-if="item.photo_path" :src="imgSrc(item.photo_path)" class="item-foto-img" alt="" draggable="false" />
           <div v-else class="item-foto-placeholder"><i class="bi bi-image"></i></div>
           <span class="drag-handle" title="Arrastrar para reordenar"><i class="bi bi-grip-vertical"></i></span>
         </div>
@@ -232,14 +248,20 @@
             <div v-if="panel.loadingImpresoras" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
             <div v-else-if="!impresoras.length" class="mini-vacio"><i class="bi bi-printer"></i> Sin impresoras configuradas</div>
             <div v-else class="imp-lista">
-              <label v-for="imp in impresoras" :key="imp.id" class="imp-item" :class="{ 'imp-item--sel': imp.assigned }">
-                <input type="checkbox" v-model="imp.assigned" :true-value="1" :false-value="0" @change="guardarImpresoras" />
-                <i class="bi bi-printer"></i>
-                <div>
-                  <div class="imp-nombre">{{ imp.name }}</div>
-                  <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
+              <div v-for="imp in impresoras" :key="imp.id" class="imp-item" :class="{ 'imp-item--sel': imp.assigned }">
+                <label class="imp-check">
+                  <input type="checkbox" v-model="imp.assigned" :true-value="1" :false-value="0" @change="guardarImpresoras" />
+                  <i class="bi bi-printer"></i>
+                  <div>
+                    <div class="imp-nombre">{{ imp.name }}</div>
+                    <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
+                  </div>
+                </label>
+                <div v-if="imp.assigned" class="imp-copies">
+                  <label class="copies-label">Copias</label>
+                  <input type="number" v-model.number="imp.print_copies" min="1" max="9" class="copies-input" @change="guardarImpresoras" />
                 </div>
-              </label>
+              </div>
             </div>
           </div>
 
@@ -357,7 +379,9 @@ const unidades   = ref([])
 const loading    = ref(true)
 const guardando  = ref(false)
 const busqueda   = ref('')
-const categoriaTab = ref(null)
+const categoriaTab  = ref(null)
+const filtroEstado  = ref(null)
+const filtroFoto    = ref(null)
 
 // Estado de foto pendiente (no subida aún)
 const fotoPendiente  = ref(null)   // Blob
@@ -377,12 +401,18 @@ function imgSrc(path) {
 const filtrados = computed(() => {
   let r = items.value
   if (categoriaTab.value !== null) r = r.filter(i => i.category_id === categoriaTab.value)
+  if (filtroEstado.value !== null) r = r.filter(i => filtroEstado.value === 1 ? !!i.active : !i.active)
+  if (filtroFoto.value !== null)   r = r.filter(i => filtroFoto.value === 'con' ? !!i.photo_path : !i.photo_path)
   if (busqueda.value) {
     const q = busqueda.value.toLowerCase()
     r = r.filter(i => i.name.toLowerCase().includes(q) || (i.category_name||'').toLowerCase().includes(q))
   }
   return r
 })
+
+const setCategoria    = (id) => { categoriaTab.value = id }
+const setFiltroEstado = (v)  => { filtroEstado.value = v }
+const setFiltroFoto   = (v)  => { filtroFoto.value = v }
 
 // ── Panel y modales ───────────────────────────────────────────────────────────
 const modalItem = ref({
@@ -485,7 +515,7 @@ async function guardarItem() {
       price:         modalItem.value.price,
       compare_price: modalItem.value.compare_price || null,
       category_id:   modalItem.value.category_id,
-      description:   modalItem.value.description,
+      description:   modalItem.value.description || modalItem.value.name,
       tax:           modalItem.value.tax,
       active:        modalItem.value.active,
     }
@@ -589,8 +619,11 @@ async function cargarImpresoras() {
   finally { panel.value.loadingImpresoras = false }
 }
 async function guardarImpresoras() {
-  const ids = impresoras.value.filter(i => i.assigned).map(i => i.id)
-  try { await api.put(`${BASE}/${panel.value.item.id}/impresoras`, { printer_ids:ids }); showToast('Impresoras guardadas','success'); await cargarItems() }
+  const printers = impresoras.value.filter(i => i.assigned).map(i => ({
+    printer_id: i.id,
+    print_copies: i.print_copies || 1
+  }))
+  try { await api.put(`${BASE}/${panel.value.item.id}/impresoras`, { printers }); showToast('Impresoras guardadas','success'); await cargarItems() }
   catch { showToast('Error al guardar impresoras','error') }
 }
 
@@ -688,6 +721,22 @@ async function eliminarVariante(varId) {
 .cat-tab:hover { border-color:#1d4ed8;color:#1d4ed8; }
 .cat-tab.active { background:#1d4ed8;color:#fff;border-color:#1d4ed8; }
 
+/* ── Filtros estado / foto ──────────────────────────────────────────────────── */
+.filtros-wrap  { display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;align-items:center; }
+.filtros-grupo { display:flex;align-items:center;gap:6px; }
+.filtros-label { font-size:11px;font-weight:600;color:#64748b;white-space:nowrap; }
+.filtro-btn {
+  padding:4px 12px;border-radius:20px;border:1.5px solid #e2e8f0;
+  background:#f8fafc;font-size:12px;font-weight:600;color:#475569;
+  cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.filtro-btn:hover { border-color:#1d4ed8;color:#1d4ed8; }
+.filtro-btn.active { background:#1d4ed8;color:#fff;border-color:#1d4ed8; }
+.filtro-btn--activo.active   { background:#16a34a;border-color:#16a34a; }
+.filtro-btn--inactivo.active { background:#94a3b8;border-color:#94a3b8; }
+.filtro-btn--confoto.active  { background:#7c3aed;border-color:#7c3aed; }
+.filtro-btn--sinfoto.active  { background:#e11d48;border-color:#e11d48; }
+
 /* ── Grid de tarjetas ────────────────────────────────────────────────────────── */
 .estado-carga,.estado-vacio { display:flex;flex-direction:column;align-items:center;gap:10px;padding:60px 20px;color:#94a3b8;font-size:14px; }
 .estado-vacio i { font-size:40px; }
@@ -704,8 +753,8 @@ async function eliminarVariante(varId) {
 .item-card:active { cursor:grabbing; }
 
 /* Foto */
-.item-foto { position:relative;height:130px;background:#f1f5f9;overflow:hidden;flex-shrink:0; }
-.item-foto-img { width:100%;height:100%;object-fit:cover;display:block; }
+.item-foto { position:relative;height:160px;background:#f1f5f9;overflow:hidden;flex-shrink:0; }
+.item-foto-img { width:100%;height:100%;object-fit:cover;display:block;image-rendering:high-quality;image-rendering:-webkit-optimize-contrast; }
 .item-foto-placeholder { display:flex;align-items:center;justify-content:center;height:100%;color:#cbd5e1;font-size:36px; }
 .drag-handle {
   position:absolute;top:6px;right:6px;background:rgba(0,0,0,.4);
@@ -776,13 +825,18 @@ async function eliminarVariante(varId) {
 .receta-qty   { font-size:11px;color:#64748b; }
 
 /* Impresoras */
-.imp-lista  { display:flex;flex-direction:column;gap:8px; }
-.imp-item   { display:flex;align-items:center;gap:12px;border:2px solid #e2e8f0;border-radius:10px;padding:10px 14px;cursor:pointer;transition:.15s; }
-.imp-item--sel{ border-color:#1d4ed8;background:#f0f4ff; }
-.imp-item input{ display:none; }
-.imp-item i { font-size:18px;color:#1d4ed8; }
-.imp-nombre { font-weight:700;font-size:13px;color:#1e3a5f; }
-.imp-tipo   { font-size:11px;color:#64748b; }
+.imp-lista     { display:flex;flex-direction:column;gap:8px; }
+.imp-item      { display:flex;align-items:center;justify-content:space-between;border:2px solid #e2e8f0;border-radius:10px;padding:10px 14px;transition:.15s; }
+.imp-item--sel { border-color:#1d4ed8;background:#f0f4ff; }
+.imp-check     { display:flex;align-items:center;gap:12px;cursor:pointer;flex:1; }
+.imp-check input{ display:none; }
+.imp-check i   { font-size:18px;color:#1d4ed8; }
+.imp-nombre    { font-weight:700;font-size:13px;color:#1e3a5f; }
+.imp-tipo      { font-size:11px;color:#64748b; }
+.imp-copies    { display:flex;align-items:center;gap:6px;flex-shrink:0; }
+.copies-label  { font-size:11px;font-weight:600;color:#475569; }
+.copies-input  { width:48px;border:1.5px solid #cbd5e1;border-radius:6px;padding:3px 6px;font-size:13px;font-weight:700;color:#1e3a5f;text-align:center;outline:none; }
+.copies-input:focus { border-color:#1d4ed8; }
 
 /* Modificadores */
 .grupos-lista { display:flex;flex-direction:column;gap:10px;margin-bottom:12px; }
@@ -831,12 +885,14 @@ async function eliminarVariante(varId) {
   .inp-buscar { flex:1;min-width:120px; }
   .items-grid { grid-template-columns:1fr 1fr; }
   .panel-lateral { max-width:100%; }
-  .item-foto { height:110px; }
+  .item-foto { height:130px; }
+  .filtros-wrap { gap:8px; }
 }
 @media (max-width: 576px) {
   .items-grid { grid-template-columns:1fr; }
   .campo-row  { flex-direction:column; }
-  .item-foto  { height:140px; }
+  .item-foto  { height:160px; }
   .item-acciones { flex-wrap:wrap; }
+  .filtros-wrap { flex-direction:column;align-items:flex-start; }
 }
 </style>

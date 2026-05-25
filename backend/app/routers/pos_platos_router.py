@@ -77,8 +77,12 @@ class IngredientIn(BaseModel):
     unit_id: Optional[int] = None
     description: Optional[str] = None
 
+class PrinterAssignIn(BaseModel):
+    printer_id: int
+    print_copies: int = 1
+
 class PrintersIn(BaseModel):
-    printer_ids: List[int]
+    printers: List[PrinterAssignIn]
 
 class ModifierGroupIn(BaseModel):
     name: str
@@ -418,7 +422,8 @@ async def get_impresoras(item_id: int, authorization: str = Header(None), db: As
     user = await _get_user(authorization, db)
     rows = (await db.execute(text("""
         SELECT p.id, p.name, p.connection_type, p.ip,
-               CASE WHEN ip.id IS NOT NULL THEN 1 ELSE 0 END AS assigned
+               CASE WHEN ip.id IS NOT NULL THEN 1 ELSE 0 END AS assigned,
+               COALESCE(ip.print_copies, 1) AS print_copies
         FROM pos_printers p
         LEFT JOIN pos_item_printers ip
                ON ip.printer_id=p.id AND ip.item_id=:iid AND ip.company_id=:cid
@@ -438,10 +443,10 @@ async def set_impresoras(
     await db.execute(text(
         "DELETE FROM pos_item_printers WHERE item_id=:iid AND company_id=:cid"
     ), {"iid": item_id, "cid": cid})
-    for pid in data.printer_ids:
+    for p in data.printers:
         await db.execute(text(
-            "INSERT IGNORE INTO pos_item_printers (company_id, item_id, printer_id) VALUES (:cid,:iid,:pid)"
-        ), {"cid": cid, "iid": item_id, "pid": pid})
+            "INSERT IGNORE INTO pos_item_printers (company_id, item_id, printer_id, print_copies) VALUES (:cid,:iid,:pid,:copies)"
+        ), {"cid": cid, "iid": item_id, "pid": p.printer_id, "copies": p.print_copies})
     await db.commit()
     return {"ok": True}
 

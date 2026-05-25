@@ -1964,7 +1964,13 @@ class CashRegisterIn(BaseModel):
     id: int
     company_id: int
     name: Optional[str] = None
+    initial_amount: Optional[float] = 0
+    final_amount: Optional[float] = 0
     is_active: Optional[int] = 1
+    is_principal: Optional[int] = 0
+    is_open: Optional[int] = 0
+    employee_id: Optional[int] = 0
+    printer_id: Optional[int] = 0
 
 
 @router.post("/sync/push/cash-registers")
@@ -1977,13 +1983,26 @@ async def push_cash_registers(
     for r in registers:
         try:
             await db.execute(text("""
-                INSERT INTO pos_cash_registers (id, company_id, name, is_active, synced, updated_at)
-                VALUES (:id, :company_id, :name, :is_active, 1, NOW())
+                INSERT INTO pos_cash_registers (
+                    id, company_id, name, initial_amount, final_amount,
+                    is_active, is_principal, is_open, employee_id, printer_id,
+                    synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :name, :initial_amount, :final_amount,
+                    :is_active, :is_principal, :is_open, :employee_id, :printer_id,
+                    1, NOW()
+                )
                 ON DUPLICATE KEY UPDATE
-                    name       = VALUES(name),
-                    is_active  = VALUES(is_active),
-                    synced     = 1,
-                    updated_at = NOW()
+                    name           = VALUES(name),
+                    initial_amount = VALUES(initial_amount),
+                    final_amount   = VALUES(final_amount),
+                    is_active      = VALUES(is_active),
+                    is_principal   = VALUES(is_principal),
+                    is_open        = VALUES(is_open),
+                    employee_id    = VALUES(employee_id),
+                    printer_id     = VALUES(printer_id),
+                    synced         = 1,
+                    updated_at     = NOW()
             """), r.dict())
             saved.append(r.id)
         except Exception as e:

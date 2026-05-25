@@ -30,6 +30,32 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS=0;
 
 -- ---------------------------------------------------
+-- pos_cash_registers (cajas)
+-- PK compuesta (id, company_id), id = Nro_Caja VB6
+-- Mapeo VB6 → servidor:
+--   Nro_Caja     → id          | Nombre_Caja  → name
+--   Base_Inicial → initial_amount | Base_Final → final_amount
+--   Activa       → is_active   | Principal    → is_principal
+--   Abierta      → is_open     | Cod_Empleado → employee_id
+--   Id_Impresora → printer_id
+-- ---------------------------------------------------
+CREATE TABLE IF NOT EXISTS `pos_cash_registers` (
+  `id` int(11) NOT NULL DEFAULT '0',
+  `company_id` int(11) NOT NULL DEFAULT '0',
+  `name` varchar(100) DEFAULT NULL,
+  `initial_amount` double DEFAULT '0',
+  `final_amount` double DEFAULT '0',
+  `is_active` tinyint(4) DEFAULT '1',
+  `is_principal` tinyint(4) DEFAULT '0',
+  `is_open` tinyint(4) DEFAULT '0',
+  `employee_id` int(11) DEFAULT '0',
+  `printer_id` int(11) DEFAULT '0',
+  `synced` tinyint(4) DEFAULT '0',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`, `company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------
 -- pos_cash_register_closings (cajas_cierres)
 -- ---------------------------------------------------
 CREATE TABLE IF NOT EXISTS `pos_cash_register_closings` (
