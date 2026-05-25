@@ -107,3 +107,6 @@ Los productos no están limitados a una sola tiquetera. Al crearse o editarse un
 ### 7.6 Integración de Datos y Conectividad
 - **Estructura de Base de Datos**: No diseñar un esquema nuevo. El sistema debe acoplarse, leer y escribir respetando estrictamente la estructura de datos preexistente en el software de escritorio actual.
 - **Sincronización**: Toda transacción hecha en la web de meseros, caja o plataforma web debe actualizar el inventario, los estados de mesas y las colas de impresión de la base de datos unificada del software de escritorio.
+
+### 7.7 No hacer commit + deploy hasta que no se diga o acepte con un Ok
+presentar siempre una propuesta de diseño antes de hacer cualqueier cambio, no inventr ni suponer nada siempre preguntar. 

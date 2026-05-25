@@ -56,7 +56,24 @@
       "Bash(Remove-Item \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\\\\app\\\\routers\\\\insumos_router.py\" -Force)",
       "Bash(Remove-Item \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\backend\\\\app\\\\models\\\\insumo_model.py\" -Force)",
       "Bash(Remove-Item \"d:\\\\AAA Proyectos Claude-Code\\\\EasyPosWeb\\\\frontend\\\\src\\\\views\\\\InsumosCrudView.vue\" -Force)",
-      "Bash(Write-Output \"Archivos eliminados\")"
+      "Bash(Write-Output \"Archivos eliminados\")",
+      "Bash(mysql -u root -p\"\" donfrijolesar -e \"SHOW TABLES;\")",
+      "Bash(mysql -u root donfrijolesar -e \"SHOW TABLES;\")",
+      "Bash(mysql --version)",
+      "Bash(cd \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\")",
+      "Bash(mysql -u root -p123456 easyposweb -e \"SELECT section_key, cta_url, cta_text FROM landing_sections WHERE cta_url IS NOT NULL;\")",
+      "Bash(\"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql\" -u root -p123456 easyposweb -e \"SELECT section_key, cta_url, cta_text FROM landing_sections WHERE cta_url IS NOT NULL;\")",
+      "Bash(Get-ChildItem \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\")",
+      "Bash(Get-ChildItem \"C:\\\\Program Files\\\\MySQL\\\\MySQL Server 8.0\\\\bin\\\\mysql.exe\")",
+      "Bash(Get-ChildItem \"C:\\\\MySQL\\\\bin\\\\mysql.exe\")",
+      "Read(//c//**)",
+      "Read(//d//**)",
+      "Bash(python -c ' *)",
+      "Bash(ssh root@209.38.152.254 *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/app/routers/pos_sync_router.py'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/app/routers/pos_sync_router.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('backend/app/routers/pos_dashboard_router.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }

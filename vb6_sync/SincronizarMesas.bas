@@ -2,8 +2,13 @@
 ' SincronizarMesas
 ' Endpoint: POST /api/pos/sync/push/tables
 ' Tabla local VB6: mesas
-' Tabla servidor: pos_table_layout
-' PK servidor: id (= Id_Mesa en VB6)
+' Tabla servidor: pos_tables
+' Columnas locales:
+'   Id_Mesa, Id_Sede, Mesa, Ubicacion, Nro_Puestos,
+'   Id_Cliente, Zona_Dinamica, Activa, Id_Zona, Enviada_MySql
+' Columnas enviadas al servidor: id, company_id, zone_id,
+'   name, capacity, is_active
+' PK servidor: (id, company_id)
 ' ============================================================
 Public Sub SincronizarMesas(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -27,16 +32,12 @@ Public Sub SincronizarMesas(Var_Id_Company_Envio As Integer, Var_Limit_Registros
 
     Do While Not rs.EOF
         json = json & sep & "{"
-        json = json & """id"":"              & Nz(rs("Id_Mesa"), 0)                             & ","
-        json = json & """company_id"":"      & Var_Id_Company_Envio                             & ","
-        json = json & """branch_id"":"       & Nz(rs("Id_Sucursal"), 0)                         & ","
-        json = json & """name"":"            & """" & EscapeJson(Nz(rs("Nombre"), ""))         & ""","
-        json = json & """location"":"        & """" & EscapeJson(Nz(rs("Ubicacion"), ""))      & ""","
-        json = json & """seats"":"           & Nz(rs("Sillas"), 0)                              & ","
-        json = json & """customer_id"":"     & Nz(rs("Id_Cliente"), 0)                          & ","
-        json = json & """dynamic_zone"":"    & Nz(rs("Zona_Dinamica"), 0)                       & ","
-        json = json & """active"":"          & Nz(rs("Activo"), 0)                              & ","
-        json = json & """zone_id"":"         & Nz(rs("Id_Zona"), 0)
+        json = json & """id"":"           & Nz(rs("Id_Mesa"), 0)             & ","
+        json = json & """company_id"":"   & Var_Id_Company_Envio             & ","
+        json = json & """zone_id"":"      & Nz(rs("Id_Zona"), 0)             & ","
+        json = json & """name"":"         & """" & EscapeJson("" & rs("Mesa"))  & ""","
+        json = json & """capacity"":"     & Nz(rs("Nro_Puestos"), 0)         & ","
+        json = json & """is_active"":"    & Nz(rs("Activa"), 0)
         json = json & "}"
         sep = ","
         rs.MoveNext

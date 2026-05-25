@@ -219,7 +219,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
@@ -279,8 +279,26 @@ const kpis = computed(() => {
 const zonas = computed(() => [...new Set(mesas.value.map(m => m.zone_id || ''))])
 const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zona)
 
+// ── Auto-refresh cada 30 s ────────────────────────────────────────────────────
+let _timer = null
+function _startRefresh() {
+  _stopRefresh()
+  _timer = setInterval(() => {
+    cargarKpis()
+    cargarMesas()
+    if (tabActivo.value === 'abiertas') cargarAbiertas()
+  }, 30000)
+}
+function _stopRefresh() {
+  if (_timer) { clearInterval(_timer); _timer = null }
+}
+
 // ── Carga inicial ─────────────────────────────────────────────────────────────
-onMounted(() => Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()]))
+onMounted(async () => {
+  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()])
+  _startRefresh()
+})
+onUnmounted(_stopRefresh)
 
 watch(fechaKpi, () => {
   cargarKpis()

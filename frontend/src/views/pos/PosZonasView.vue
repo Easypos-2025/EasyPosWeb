@@ -1,5 +1,6 @@
 <template>
   <div class="zonas-container">
+
     <!-- Header -->
     <div class="page-header">
       <div class="header-left">
@@ -26,18 +27,30 @@
         class="zona-card"
         :class="{ 'zona-inactiva': !zona.is_active }"
       >
-        <div class="zona-color-bar" :style="{ background: zona.color }"></div>
+        <div class="zona-color-bar" :style="{ background: zona.color || '#1d4ed8' }"></div>
         <div class="zona-body">
-          <div class="zona-icon-wrap" :style="{ background: zona.color + '22', color: zona.color }">
-            <i :class="`bi ${zona.icon}`"></i>
+          <div class="zona-icon-wrap" :style="{ background: (zona.color || '#1d4ed8') + '22', color: zona.color || '#1d4ed8' }">
+            <i :class="`bi ${zona.icon || 'bi-grid'}`"></i>
           </div>
           <div class="zona-info">
             <div class="zona-name">{{ zona.name }}</div>
-            <div class="zona-desc" v-if="zona.description">{{ zona.description }}</div>
-            <div class="zona-stats">
+            <div class="zona-badges">
+              <span v-if="zona.branch_id" class="zbadge zbadge-sede">
+                <i class="bi bi-building me-1"></i>Sede {{ zona.branch_id }}
+              </span>
+              <span v-if="zona.seats_count" class="zbadge zbadge-seats">
+                <i class="bi bi-people me-1"></i>{{ zona.seats_count }} asientos
+              </span>
+              <span v-if="zona.dynamic_zone" class="zbadge zbadge-dyn">
+                <i class="bi bi-lightning me-1"></i>Dinámica
+              </span>
+              <span v-if="zona.height" class="zbadge zbadge-height">
+                <i class="bi bi-layers me-1"></i>Piso {{ zona.height }}
+              </span>
+            </div>
+            <div class="zona-stats mt-1">
               <span class="stat free"><i class="bi bi-circle-fill"></i> {{ zona.free_count ?? 0 }} libre</span>
               <span class="stat occupied"><i class="bi bi-circle-fill"></i> {{ zona.occupied_count ?? 0 }} ocup.</span>
-              <span class="stat bill"><i class="bi bi-circle-fill"></i> {{ zona.bill_count ?? 0 }} cuenta</span>
             </div>
           </div>
           <div class="zona-actions">
@@ -56,7 +69,10 @@
         </div>
         <div class="zona-footer">
           <small class="text-muted">
-            <i class="bi bi-table me-1"></i>{{ zona.table_count ?? 0 }} mesa(s) en total
+            <i class="bi bi-table me-1"></i>{{ zona.table_count ?? 0 }} mesa(s)
+          </small>
+          <small v-if="zona.synced" class="text-success ms-2">
+            <i class="bi bi-check2-circle me-1"></i>Sincronizada
           </small>
         </div>
       </div>
@@ -65,7 +81,9 @@
     <!-- Vacío -->
     <div v-else class="empty-state">
       <i class="bi bi-grid-3x3-gap display-4 text-muted"></i>
-      <p class="mt-3 text-muted">No hay zonas registradas</p>
+      <p class="mt-3 text-muted">No hay zonas registradas.<br>
+        <small>Ejecuta <strong>SincronizarZonasAsientos</strong> desde VB6 o crea una manualmente.</small>
+      </p>
       <button class="btn btn-primary" @click="abrirModal()">
         <i class="bi bi-plus-lg me-1"></i>Crear primera zona
       </button>
@@ -76,7 +94,7 @@
       <div class="modal-card">
         <div class="modal-card-header" :style="{ borderColor: modal.color }">
           <h6 class="mb-0">
-            <i :class="`bi ${modal.icon} me-2`" :style="{ color: modal.color }"></i>
+            <i class="bi bi-grid me-2" :style="{ color: modal.color }"></i>
             {{ modal.id ? 'Editar' : 'Nueva' }} {{ moduleName }}
           </h6>
           <button class="btn-close btn-close-sm" @click="cerrarModal"></button>
@@ -86,29 +104,21 @@
             <label class="form-label">Nombre <span class="text-danger">*</span></label>
             <input v-model="modal.name" class="form-control" :placeholder="`Nombre de la ${moduleName}`" maxlength="100" />
           </div>
-          <div class="mb-3">
-            <label class="form-label">Descripción</label>
-            <input v-model="modal.description" class="form-control" placeholder="Descripción opcional" maxlength="255" />
-          </div>
           <div class="row g-3 mb-3">
+            <div class="col-6">
+              <label class="form-label">Asientos (Nro_Asientos)</label>
+              <input type="number" v-model.number="modal.seats_count" class="form-control" min="0" placeholder="0" />
+            </div>
             <div class="col-6">
               <label class="form-label">Color</label>
               <div class="color-picker-row">
                 <input type="color" v-model="modal.color" class="form-control form-control-color" />
                 <div class="color-presets">
-                  <span v-for="c in colorPresets" :key="c" class="color-dot" :style="{ background: c }"
-                        :class="{ active: modal.color === c }" @click="modal.color = c"></span>
+                  <span v-for="c in colorPresets" :key="c" class="color-dot"
+                        :style="{ background: c }"
+                        :class="{ active: modal.color === c }"
+                        @click="modal.color = c"></span>
                 </div>
-              </div>
-            </div>
-            <div class="col-6">
-              <label class="form-label">Ícono</label>
-              <div class="icon-selector">
-                <span v-for="ic in iconOptions" :key="ic" class="icon-opt" :class="{ active: modal.icon === ic }"
-                      :style="modal.icon === ic ? { background: modal.color, color: '#fff' } : {}"
-                      @click="modal.icon = ic">
-                  <i :class="`bi ${ic}`"></i>
-                </span>
               </div>
             </div>
           </div>
@@ -126,6 +136,7 @@
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -138,19 +149,14 @@ import { useModuleName } from '@/composables/useModuleName'
 const { moduleName } = useModuleName()
 const BASE = '/api/pos/zonas'
 
-const items = ref([])
-const loading = ref(true)
+const items    = ref([])
+const loading  = ref(true)
 const guardando = ref(false)
 
 const colorPresets = ['#1d4ed8','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#db2777','#374151']
-const iconOptions = [
-  'bi-grid','bi-house','bi-cup-hot','bi-tree','bi-brightness-high',
-  'bi-wind','bi-stars','bi-geo-alt','bi-easel','bi-columns-gap'
-]
 
 const emptyModal = () => ({
-  visible: false, id: null, name: '', description: '',
-  color: '#1d4ed8', icon: 'bi-grid', is_active: 1
+  visible: false, id: null, name: '', seats_count: 0, color: '#1d4ed8', is_active: 1
 })
 const modal = ref(emptyModal())
 
@@ -168,27 +174,27 @@ async function cargar() {
 
 function abrirModal(zona = null) {
   if (zona) {
-    modal.value = { visible: true, id: zona.id, name: zona.name,
-      description: zona.description || '', color: zona.color,
-      icon: zona.icon, is_active: zona.is_active }
+    modal.value = {
+      visible: true, id: zona.id, name: zona.name,
+      seats_count: zona.seats_count || 0,
+      color: zona.color || '#1d4ed8', is_active: zona.is_active
+    }
   } else {
     modal.value = { ...emptyModal(), visible: true }
   }
 }
 
-function cerrarModal() {
-  modal.value = emptyModal()
-}
+function cerrarModal() { modal.value = emptyModal() }
 
 async function guardar() {
-  if (!modal.value.name.trim()) {
-    showToast('El nombre es requerido', 'warning'); return
-  }
+  if (!modal.value.name.trim()) { showToast('El nombre es requerido', 'warning'); return }
   guardando.value = true
   try {
     const payload = {
-      name: modal.value.name.trim(), description: modal.value.description || null,
-      color: modal.value.color, icon: modal.value.icon, is_active: modal.value.is_active
+      name: modal.value.name.trim(),
+      seats_count: modal.value.seats_count || 0,
+      color: modal.value.color,
+      is_active: modal.value.is_active,
     }
     if (modal.value.id) {
       await api.put(`${BASE}/${modal.value.id}`, payload)
@@ -209,7 +215,7 @@ async function guardar() {
 async function eliminar(zona) {
   const ok = await window.Swal.fire({
     title: `¿Desactivar "${zona.name}"?`,
-    text: 'La zona quedará inactiva. Las mesas activas deben desactivarse primero.',
+    text: 'La zona quedará inactiva.',
     icon: 'warning', showCancelButton: true,
     confirmButtonText: 'Sí, desactivar', cancelButtonText: 'Cancelar',
     confirmButtonColor: '#dc3545'
@@ -244,16 +250,12 @@ onMounted(cargar)
 }
 
 .zona-card {
-  background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  overflow: hidden;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  transition: box-shadow .2s;
+  background: #fff; border-radius: 10px;
+  border: 1px solid #e5e7eb; overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: box-shadow .2s;
 }
 .zona-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); }
 .zona-inactiva { opacity: .55; }
-
 .zona-color-bar { height: 5px; }
 
 .zona-body {
@@ -266,28 +268,33 @@ onMounted(cargar)
   font-size: 1.25rem; flex-shrink: 0;
 }
 .zona-info { flex: 1; min-width: 0; }
-.zona-name { font-weight: 600; font-size: .9rem; }
-.zona-desc { font-size: .78rem; color: #6b7280; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zona-name { font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
 
-.zona-stats { display: flex; gap: .5rem; margin-top: .4rem; flex-wrap: wrap; }
+.zona-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.zbadge {
+  font-size: .65rem; font-weight: 600; padding: 2px 6px;
+  border-radius: 10px; display: inline-flex; align-items: center;
+}
+.zbadge-sede    { background: #eff6ff; color: #1d4ed8; }
+.zbadge-seats   { background: #f0fdf4; color: #15803d; }
+.zbadge-dyn     { background: #fefce8; color: #a16207; }
+.zbadge-height  { background: #fdf4ff; color: #7e22ce; }
+
+.zona-stats { display: flex; gap: .5rem; flex-wrap: wrap; }
 .stat { font-size: .7rem; display: flex; align-items: center; gap: 3px; }
 .stat i { font-size: .45rem; }
 .stat.free i { color: #16a34a; }
 .stat.occupied i { color: #dc2626; }
-.stat.bill i { color: #d97706; }
 
 .zona-actions { display: flex; flex-direction: column; align-items: flex-end; }
 .zona-btn-group { display: flex; gap: .3rem; }
 
 .zona-footer {
-  border-top: 1px solid #f3f4f6;
-  padding: .4rem 1rem;
-  background: #fafafa;
+  border-top: 1px solid #f3f4f6; padding: .4rem 1rem;
+  background: #fafafa; display: flex; align-items: center;
 }
 
-.empty-state {
-  text-align: center; padding: 3rem 1rem;
-}
+.empty-state { text-align: center; padding: 3rem 1rem; }
 
 /* Modal */
 .modal-backdrop-custom {
@@ -297,20 +304,17 @@ onMounted(cargar)
 }
 .modal-card {
   background: #fff; border-radius: 12px;
-  width: 100%; max-width: 440px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.18);
-  overflow: hidden;
+  width: 100%; max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18); overflow: hidden;
 }
 .modal-card-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: .85rem 1rem; border-bottom: 2px solid #1d4ed8;
-  background: #fafafa;
+  padding: .85rem 1rem; border-bottom: 2px solid #1d4ed8; background: #fafafa;
 }
 .modal-card-body { padding: 1rem; }
 .modal-card-footer {
   padding: .75rem 1rem; border-top: 1px solid #e5e7eb;
-  display: flex; justify-content: flex-end; gap: .5rem;
-  background: #fafafa;
+  display: flex; justify-content: flex-end; gap: .5rem; background: #fafafa;
 }
 
 .color-picker-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
@@ -320,16 +324,6 @@ onMounted(cargar)
   border: 2px solid transparent; transition: transform .15s;
 }
 .color-dot.active, .color-dot:hover { transform: scale(1.25); border-color: #111; }
-
-.icon-selector { display: flex; flex-wrap: wrap; gap: .3rem; }
-.icon-opt {
-  width: 32px; height: 32px; border-radius: 6px; display: flex;
-  align-items: center; justify-content: center; cursor: pointer;
-  border: 1px solid #d1d5db; font-size: .95rem;
-  transition: all .15s;
-}
-.icon-opt:hover { background: #f3f4f6; }
-.icon-opt.active { border-color: transparent; }
 
 /* Responsive */
 @media (max-width: 768px) {

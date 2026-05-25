@@ -605,6 +605,7 @@ class DishIn(BaseModel):
     wholesale_price: Optional[float] = 0
     product_cost: Optional[float] = 0
     minimum_stock: Optional[float] = 0
+    procedure: Optional[str] = None
     ask_sale_price: Optional[int] = 0
     ask_product_description: Optional[int] = 0
 
@@ -621,30 +622,42 @@ async def push_dishes(
             await db.execute(text("""
                 INSERT INTO pos_dishes (
                     id, company_id, name, product_code, price, preparation_time,
-                    active, category_id, photo_path, description, printer, comment,
-                    extra_print, printer_2, pre_preparation, offer, offer_priority,
-                    tax, wholesale_price, product_cost, minimum_stock,
-                    ask_sale_price, ask_product_description, synced, updated_at
+                    active, category_id, photo_path, `procedure`, description,
+                    printer, comment, extra_print, printer_2, pre_preparation,
+                    offer, offer_priority, tax, wholesale_price, product_cost,
+                    minimum_stock, ask_sale_price, ask_product_description, synced, updated_at
                 ) VALUES (
                     :id, :company_id, :name, :product_code, :price, :preparation_time,
-                    :active, :category_id, :photo_path, :description, :printer, :comment,
-                    :extra_print, :printer_2, :pre_preparation, :offer, :offer_priority,
-                    :tax, :wholesale_price, :product_cost, :minimum_stock,
-                    :ask_sale_price, :ask_product_description, 1, NOW()
+                    :active, :category_id, :photo_path, :procedure, :description,
+                    :printer, :comment, :extra_print, :printer_2, :pre_preparation,
+                    :offer, :offer_priority, :tax, :wholesale_price, :product_cost,
+                    :minimum_stock, :ask_sale_price, :ask_product_description, 1, NOW()
                 )
                 ON DUPLICATE KEY UPDATE
-                    name                   = VALUES(name),
-                    product_code           = VALUES(product_code),
-                    price                  = VALUES(price),
-                    active                 = VALUES(active),
-                    category_id            = VALUES(category_id),
-                    description            = VALUES(description),
-                    tax                    = VALUES(tax),
-                    wholesale_price        = VALUES(wholesale_price),
-                    product_cost           = VALUES(product_cost),
-                    minimum_stock          = VALUES(minimum_stock),
-                    synced                 = 1,
-                    updated_at             = NOW()
+                    name                      = VALUES(name),
+                    product_code              = VALUES(product_code),
+                    price                     = VALUES(price),
+                    preparation_time          = VALUES(preparation_time),
+                    active                    = VALUES(active),
+                    category_id               = VALUES(category_id),
+                    photo_path                = VALUES(photo_path),
+                    `procedure`               = VALUES(`procedure`),
+                    description               = VALUES(description),
+                    printer                   = VALUES(printer),
+                    comment                   = VALUES(comment),
+                    extra_print               = VALUES(extra_print),
+                    printer_2                 = VALUES(printer_2),
+                    pre_preparation           = VALUES(pre_preparation),
+                    offer                     = VALUES(offer),
+                    offer_priority            = VALUES(offer_priority),
+                    tax                       = VALUES(tax),
+                    wholesale_price           = VALUES(wholesale_price),
+                    product_cost              = VALUES(product_cost),
+                    minimum_stock             = VALUES(minimum_stock),
+                    ask_sale_price            = VALUES(ask_sale_price),
+                    ask_product_description   = VALUES(ask_product_description),
+                    synced                    = 1,
+                    updated_at                = NOW()
             """), d.dict())
             saved.append(d.id)
         except Exception as e:
@@ -669,6 +682,69 @@ async def pull_dishes(
     sql += " ORDER BY updated_at ASC LIMIT 500"
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "since": since, "dishes": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# ZONES (zonas_asientos)
+# ═════════════════════════════════════════
+class ZoneIn(BaseModel):
+    id: int
+    company_id: int
+    branch_id: Optional[int] = 1       # Id_Sede en VB6
+    name: Optional[str] = None          # Ubicacion
+    seats_count: Optional[int] = 0      # Nro_Asientos
+    is_active: Optional[int] = 1        # Activa
+    dynamic_zone: Optional[int] = 0     # Zona_Dinamica
+    color: Optional[str] = "#1d4ed8"    # Color
+    height: Optional[int] = 0           # Altura
+
+
+@router.post("/sync/push/zones")
+async def push_zones(
+    zones: List[ZoneIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for z in zones:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_zones (
+                    id, company_id, branch_id, name, seats_count, is_active,
+                    dynamic_zone, color, height, synced, updated_at
+                ) VALUES (
+                    :id, :company_id, :branch_id, :name, :seats_count, :is_active,
+                    :dynamic_zone, :color, :height, 1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    branch_id    = VALUES(branch_id),
+                    name         = VALUES(name),
+                    seats_count  = VALUES(seats_count),
+                    is_active    = VALUES(is_active),
+                    dynamic_zone = VALUES(dynamic_zone),
+                    color        = VALUES(color),
+                    height       = VALUES(height),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), z.dict())
+            saved.append(z.id)
+        except Exception as e:
+            failed.append({"id": z.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(zones), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/zones")
+async def pull_zones(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text(
+        "SELECT * FROM pos_zones WHERE company_id = :cid ORDER BY id"
+    ), {"cid": company_id})).mappings().all()
+    return {"total": len(rows), "zones": [dict(r) for r in rows]}
 
 
 # ═════════════════════════════════════════

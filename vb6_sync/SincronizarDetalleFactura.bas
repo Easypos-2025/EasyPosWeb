@@ -3,6 +3,10 @@
 ' Endpoint: POST /api/pos/sync/push/invoice-details
 ' Tabla local VB6: detalle_factura
 ' Tabla servidor: pos_invoice_details
+' Columnas locales:
+'   Nro_Factura, Nro_Pedido, Fecha, Id_Plato, Item,
+'   Cantidad, Novedad, Valor_Plato, Cortesia,
+'   Porc_Descuento, Enviada_MySql, Depende
 ' PK servidor: (invoice_number, order_number, date, dish_id, item, depends_on)
 ' Nota: saved retorna claves compuestas; se marca por Nro_Factura
 ' ============================================================
@@ -36,15 +40,15 @@ Public Sub SincronizarDetalleFactura(Var_Id_Company_Envio As Integer, Var_Limit_
         json = json & """invoice_number"":"  & """" & nroFactura                               & ""","
         json = json & """company_id"":"      & Var_Id_Company_Envio                            & ","
         json = json & """date"":"            & """" & Format(rs("Fecha"), "YYYY-MM-DD")        & ""","
-        json = json & """order_number"":"    & """" & Nz(rs("Nro_Comanda"), "0")              & ""","
+        json = json & """order_number"":"    & """" & ("" & rs("Nro_Pedido"))                  & ""","
         json = json & """dish_id"":"         & Nz(rs("Id_Plato"), 0)                           & ","
         json = json & """item"":"            & Nz(rs("Item"), 0)                               & ","
-        json = json & """depends_on"":"      & Nz(rs("Depende_De"), 0)                         & ","
+        json = json & """depends_on"":"      & Nz(rs("Depende"), 0)                            & ","
         json = json & """quantity"":"        & Nz(rs("Cantidad"), 0)                           & ","
-        json = json & """notes"":"           & """" & EscapeJson(Nz(rs("Notas"), ""))          & ""","
+        json = json & """notes"":"           & """" & EscapeJson("" & rs("Novedad"))            & ""","
         json = json & """dish_amount"":"     & Nz(rs("Valor_Plato"), 0)                        & ","
         json = json & """complimentary"":"   & Nz(rs("Cortesia"), 0)                           & ","
-        json = json & """discount_pct"":"    & Nz(rs("Dcto_Pct"), 0)
+        json = json & """discount_pct"":"    & Nz(rs("Porc_Descuento"), 0)
         json = json & "}"
         sep = ","
 
@@ -66,7 +70,7 @@ Public Sub SincronizarDetalleFactura(Var_Id_Company_Envio As Integer, Var_Limit_
         conn.Close: Exit Sub
     End If
 
-    ' -- 4. Marcar sincronizadas (por factura) -------------
+    ' -- 4. Marcar sincronizadas (por Nro_Factura) ---------
     If facturas <> "" Then
         conn.Execute "UPDATE detalle_factura SET Enviada_MySql = 1 " & _
                      "WHERE Nro_Factura IN (" & facturas & ")"

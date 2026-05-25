@@ -3,8 +3,14 @@
 ' Endpoint: POST /api/pos/sync/push/receipt-invoice-details
 ' Tabla local VB6: recibos_detalle_factura
 ' Tabla servidor: pos_receipt_invoice_details
+' Columnas locales (identicas a detalle_factura):
+'   Nro_Factura(*), Nro_Pedido, Fecha, Id_Plato, Item,
+'   Cantidad, Novedad, Valor_Plato, Cortesia,
+'   Porc_Descuento, Enviada_MySql, Depende
+' (*) Nro_Factura contiene el numero de recibo en este contexto
+'     y se mapea a receipt_number en el servidor
 ' PK servidor: (receipt_number, order_number, date, dish_id, item, depends_on)
-' Nota: saved retorna claves compuestas; se marca por Nro_Recibo
+' Nota: saved retorna claves compuestas; se marca por Nro_Factura
 ' ============================================================
 Public Sub SincronizarDetalleRecibosFactura(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -24,33 +30,33 @@ Public Sub SincronizarDetalleRecibosFactura(Var_Id_Company_Envio As Integer, Var
 
     ' -- 2. Construir JSON ----------------------------------
     Dim json As String, sep As String
-    Dim recibos As String, sepR As String
+    Dim facturas As String, sepF As String
     json = "[": sep = ""
-    recibos = "": sepR = ""
+    facturas = "": sepF = ""
 
     Do While Not rs.EOF
-        Dim nroRecibo As String
-        nroRecibo = rs("Nro_Recibo")
+        Dim nroFactura As String
+        nroFactura = rs("Nro_Factura")
 
         json = json & sep & "{"
-        json = json & """receipt_number"":"  & """" & nroRecibo                                & ""","
+        json = json & """receipt_number"":"  & """" & nroFactura                               & ""","
         json = json & """company_id"":"      & Var_Id_Company_Envio                            & ","
         json = json & """date"":"            & """" & Format(rs("Fecha"), "YYYY-MM-DD")        & ""","
-        json = json & """order_number"":"    & """" & Nz(rs("Nro_Comanda"), "0")              & ""","
+        json = json & """order_number"":"    & """" & ("" & rs("Nro_Pedido"))                  & ""","
         json = json & """dish_id"":"         & Nz(rs("Id_Plato"), 0)                           & ","
         json = json & """item"":"            & Nz(rs("Item"), 0)                               & ","
-        json = json & """depends_on"":"      & Nz(rs("Depende_De"), 0)                         & ","
+        json = json & """depends_on"":"      & Nz(rs("Depende"), 0)                            & ","
         json = json & """quantity"":"        & Nz(rs("Cantidad"), 0)                           & ","
-        json = json & """notes"":"           & """" & EscapeJson(Nz(rs("Notas"), ""))          & ""","
+        json = json & """notes"":"           & """" & EscapeJson("" & rs("Novedad"))            & ""","
         json = json & """dish_amount"":"     & Nz(rs("Valor_Plato"), 0)                        & ","
         json = json & """complimentary"":"   & Nz(rs("Cortesia"), 0)                           & ","
-        json = json & """discount_pct"":"    & Nz(rs("Dcto_Pct"), 0)
+        json = json & """discount_pct"":"    & Nz(rs("Porc_Descuento"), 0)
         json = json & "}"
         sep = ","
 
-        If InStr("," & recibos & ",", "," & nroRecibo & ",") = 0 Then
-            recibos = recibos & sepR & """" & nroRecibo & """"
-            sepR = ","
+        If InStr("," & facturas & ",", "," & nroFactura & ",") = 0 Then
+            facturas = facturas & sepF & """" & nroFactura & """"
+            sepF = ","
         End If
 
         rs.MoveNext
@@ -66,10 +72,10 @@ Public Sub SincronizarDetalleRecibosFactura(Var_Id_Company_Envio As Integer, Var
         conn.Close: Exit Sub
     End If
 
-    ' -- 4. Marcar sincronizadas (por recibo) --------------
-    If recibos <> "" Then
+    ' -- 4. Marcar sincronizadas (por Nro_Factura) ---------
+    If facturas <> "" Then
         conn.Execute "UPDATE recibos_detalle_factura SET Enviada_MySql = 1 " & _
-                     "WHERE Nro_Recibo IN (" & recibos & ")"
+                     "WHERE Nro_Factura IN (" & facturas & ")"
     End If
 
     ' -- 5. Mostrar estado ---------------------------------

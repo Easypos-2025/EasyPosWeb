@@ -3,6 +3,12 @@
 ' Endpoint: POST /api/pos/sync/push/orders
 ' Tabla local VB6: comanda
 ' Tabla servidor: pos_orders
+' Columnas locales:
+'   Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora, Mesero,
+'   Cancelado, Valor, Novedad, Cortesia, Nro_Comenzales,
+'   Enviada_MySql, Domicilio, Id_Cliente, Id_Mesa
+' PK servidor: (order_number, date, invoice_number)
+' Nota: saved retorna clave compuesta; se marca por Nro_Pedido
 ' ============================================================
 Public Sub SincronizarComandas(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -22,27 +28,38 @@ Public Sub SincronizarComandas(Var_Id_Company_Envio As Integer, Var_Limit_Regist
 
     ' -- 2. Construir JSON ----------------------------------
     Dim json As String, sep As String
+    Dim pedidos As String, sepP As String
     json = "[": sep = ""
+    pedidos = "": sepP = ""
 
     Do While Not rs.EOF
+        Dim nroPedido As String
+        nroPedido = rs("Nro_Pedido")
+
         json = json & sep & "{"
-        json = json & """order_number"":"""   & rs("Nro_Comanda")   & ""","
-        json = json & """company_id"":"       & Var_Id_Company_Envio & ","
-        json = json & """date"":"             & """" & Format(rs("Fecha"), "YYYY-MM-DD") & ""","
-        json = json & """invoice_number"":""" & Nz(rs("Nro_Factura"), "0") & ""","
-        json = json & """table_name"":"       & """" & EscapeJson(Nz(rs("Nombre_Mesa"), "")) & ""","
-        json = json & """time"":"             & """" & Nz(rs("Hora"), "") & ""","
-        json = json & """waiter_id"":"        & Nz(rs("Id_Mesero"), 0) & ","
-        json = json & """cancelled"":"        & Nz(rs("Cancelada"), 0) & ","
-        json = json & """amount"":"           & Nz(rs("Valor"), 0) & ","
-        json = json & """notes"":"            & """" & EscapeJson(Nz(rs("Notas"), "")) & ""","
-        json = json & """complimentary"":"    & Nz(rs("Cortesia"), 0) & ","
-        json = json & """guests_count"":"     & Nz(rs("Num_Personas"), 0) & ","
-        json = json & """delivery"":"         & Nz(rs("Domicilio"), 0) & ","
-        json = json & """customer_id"":"      & Nz(rs("Id_Cliente"), 0) & ","
-        json = json & """table_id"":"         & Nz(rs("Id_Mesa"), 0)
+        json = json & """order_number"":"   & """" & nroPedido                               & ""","
+        json = json & """company_id"":"     & Var_Id_Company_Envio                            & ","
+        json = json & """date"":"           & """" & Format(rs("Fecha"), "YYYY-MM-DD")        & ""","
+        json = json & """invoice_number"":"  & """" & Nz(rs("Nro_Factura"), "0")             & ""","
+        json = json & """table_name"":"     & """" & EscapeJson(Nz(rs("Mesa"), ""))           & ""","
+        json = json & """time"":"           & """" & Nz(rs("Hora"), "")                       & ""","
+        json = json & """waiter_id"":"      & Nz(rs("Mesero"), 0)                             & ","
+        json = json & """cancelled"":"      & Nz(rs("Cancelado"), 0)                          & ","
+        json = json & """amount"":"         & Nz(rs("Valor"), 0)                              & ","
+        json = json & """notes"":"          & """" & EscapeJson(Nz(rs("Novedad"), ""))        & ""","
+        json = json & """complimentary"":"  & Nz(rs("Cortesia"), 0)                           & ","
+        json = json & """guests_count"":"   & Nz(rs("Nro_Comenzales"), 0)                     & ","
+        json = json & """delivery"":"       & Nz(rs("Domicilio"), 0)                          & ","
+        json = json & """customer_id"":"    & Nz(rs("Id_Cliente"), 0)                         & ","
+        json = json & """table_id"":"       & Nz(rs("Id_Mesa"), 0)
         json = json & "}"
         sep = ","
+
+        If InStr("," & pedidos & ",", "," & nroPedido & ",") = 0 Then
+            pedidos = pedidos & sepP & """" & nroPedido & """"
+            sepP = ","
+        End If
+
         rs.MoveNext
     Loop
     json = json & "]"
@@ -56,13 +73,10 @@ Public Sub SincronizarComandas(Var_Id_Company_Envio As Integer, Var_Limit_Regist
         conn.Close: Exit Sub
     End If
 
-    ' -- 4. Marcar solo las confirmadas --------------------
-    Dim savedList As String
-    savedList = ParseSaved(respuesta)
-
-    If savedList <> "" Then
+    ' -- 4. Marcar sincronizadas (por Nro_Pedido) ----------
+    If pedidos <> "" Then
         conn.Execute "UPDATE comanda SET Enviada_MySql = 1 " & _
-                     "WHERE Nro_Comanda IN (" & savedList & ")"
+                     "WHERE Nro_Pedido IN (" & pedidos & ")"
     End If
 
     ' -- 5. Mostrar estado ---------------------------------

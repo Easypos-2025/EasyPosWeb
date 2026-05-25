@@ -3,8 +3,17 @@
 ' Endpoint: POST /api/pos/sync/push/receipt-order-details
 ' Tabla local VB6: recibos_detalle_comanda
 ' Tabla servidor: pos_receipt_order_details
-' PK servidor: (order_number, date, receipt_number, dish_id, item, depends_on)
-' Nota: saved retorna claves compuestas; se marca por Nro_Comanda
+' Columnas locales (identicas a detalle_comanda):
+'   Nro_Pedido, Fecha, Nro_Factura(*), Id_Plato, Item,
+'   Cantidad, Valor, Novedad, Cortesia,
+'   Porc_Descuento_Plato, Porc_Descuento_General,
+'   Nro_Puesto, Cambios, Hora_Plato, Enviada_MySql,
+'   Paga_Impuesto, Impuesto, Impuesto_Original,
+'   Paga_Plato, Producto_Personalizado, Depende
+' (*) Nro_Factura contiene el numero de recibo en este contexto
+'     y se mapea a receipt_number en el servidor
+' PK servidor: (order_number, date, receipt_number, dish_id, item, depends_on, company_id)
+' Nota: saved retorna claves compuestas; se marca por Nro_Pedido
 ' ============================================================
 Public Sub SincronizarDetalleRecibosComanda(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -24,42 +33,42 @@ Public Sub SincronizarDetalleRecibosComanda(Var_Id_Company_Envio As Integer, Var
 
     ' -- 2. Construir JSON ----------------------------------
     Dim json As String, sep As String
-    Dim comandas As String, sepC As String
+    Dim pedidos As String, sepP As String
     json = "[": sep = ""
-    comandas = "": sepC = ""
+    pedidos = "": sepP = ""
 
     Do While Not rs.EOF
-        Dim nroComanda As String
-        nroComanda = rs("Nro_Comanda")
+        Dim nroPedido As String
+        nroPedido = rs("Nro_Pedido")
 
         json = json & sep & "{"
-        json = json & """order_number"":"    & """" & nroComanda                               & ""","
-        json = json & """company_id"":"      & Var_Id_Company_Envio                            & ","
-        json = json & """date"":"            & """" & Format(rs("Fecha"), "YYYY-MM-DD")        & ""","
-        json = json & """receipt_number"":"  & """" & Nz(rs("Nro_Recibo"), "0")              & ""","
-        json = json & """dish_id"":"         & Nz(rs("Id_Plato"), 0)                           & ","
-        json = json & """item"":"            & Nz(rs("Item"), 0)                               & ","
-        json = json & """depends_on"":"      & Nz(rs("Depende_De"), 0)                         & ","
-        json = json & """quantity"":"        & Nz(rs("Cantidad"), 0)                           & ","
-        json = json & """amount"":"          & Nz(rs("Valor"), 0)                              & ","
-        json = json & """notes"":"           & """" & EscapeJson(Nz(rs("Notas"), ""))          & ""","
-        json = json & """complimentary"":"   & Nz(rs("Cortesia"), 0)                           & ","
-        json = json & """dish_discount_pct"":" & Nz(rs("Dcto_Plato_Pct"), 0)                  & ","
-        json = json & """general_discount_pct"":" & Nz(rs("Dcto_Gral_Pct"), 0)               & ","
-        json = json & """seat_number"":"     & Nz(rs("Silla"), 0)                              & ","
-        json = json & """changes"":"         & """" & EscapeJson(Nz(rs("Cambios"), ""))        & ""","
-        json = json & """dish_time"":"       & """" & Nz(rs("Hora_Plato"), "")                & ""","
-        json = json & """pays_tax"":"        & Nz(rs("Cobra_Impuesto"), 0)                     & ","
-        json = json & """tax"":"             & Nz(rs("Impuesto"), 0)                           & ","
-        json = json & """original_tax"":"    & Nz(rs("Impuesto_Original"), 0)                  & ","
-        json = json & """pays_dish"":"       & Nz(rs("Cobra_Plato"), 0)                        & ","
-        json = json & """custom_product"":"  & """" & Nz(rs("Producto_Personalizado"), "")   & """"
+        json = json & """order_number"":"          & """" & nroPedido                                        & ""","
+        json = json & """company_id"":"            & Var_Id_Company_Envio                                    & ","
+        json = json & """date"":"                  & """" & Format(rs("Fecha"), "YYYY-MM-DD")                & ""","
+        json = json & """receipt_number"":"        & """" & Nz(rs("Nro_Factura"), "0")                      & ""","
+        json = json & """dish_id"":"               & Nz(rs("Id_Plato"), 0)                                   & ","
+        json = json & """item"":"                  & Nz(rs("Item"), 0)                                       & ","
+        json = json & """depends_on"":"            & Nz(rs("Depende"), 0)                                    & ","
+        json = json & """quantity"":"              & Nz(rs("Cantidad"), 0)                                   & ","
+        json = json & """amount"":"                & Nz(rs("Valor"), 0)                                      & ","
+        json = json & """notes"":"                 & """" & EscapeJson("" & rs("Novedad"))                & ""","
+        json = json & """complimentary"":"         & Nz(rs("Cortesia"), 0)                                   & ","
+        json = json & """dish_discount_pct"":"     & Nz(rs("Porc_Descuento_Plato"), 0)                      & ","
+        json = json & """general_discount_pct"":"  & Nz(rs("Porc_Descuento_General"), 0)                    & ","
+        json = json & """seat_number"":"           & Nz(rs("Nro_Puesto"), 0)                                 & ","
+        json = json & """changes"":"               & """" & EscapeJson("" & rs("Cambios"))                  & ""","
+        json = json & """dish_time"":"             & """" & ("" & rs("Hora_Plato"))                          & ""","
+        json = json & """pays_tax"":"              & Nz(rs("Paga_Impuesto"), 0)                              & ","
+        json = json & """tax"":"                   & Nz(rs("Impuesto"), 0)                                   & ","
+        json = json & """original_tax"":"          & Nz(rs("Impuesto_Original"), 0)                          & ","
+        json = json & """pays_dish"":"             & Nz(rs("Paga_Plato"), 0)                                 & ","
+        json = json & """custom_product"":"        & """" & EscapeJson("" & rs("Producto_Personalizado"))    & """"
         json = json & "}"
         sep = ","
 
-        If InStr("," & comandas & ",", "," & nroComanda & ",") = 0 Then
-            comandas = comandas & sepC & """" & nroComanda & """"
-            sepC = ","
+        If InStr("," & pedidos & ",", "," & nroPedido & ",") = 0 Then
+            pedidos = pedidos & sepP & """" & nroPedido & """"
+            sepP = ","
         End If
 
         rs.MoveNext
@@ -75,10 +84,10 @@ Public Sub SincronizarDetalleRecibosComanda(Var_Id_Company_Envio As Integer, Var
         conn.Close: Exit Sub
     End If
 
-    ' -- 4. Marcar sincronizadas (por comanda) -------------
-    If comandas <> "" Then
+    ' -- 4. Marcar sincronizadas (por Nro_Pedido) ----------
+    If pedidos <> "" Then
         conn.Execute "UPDATE recibos_detalle_comanda SET Enviada_MySql = 1 " & _
-                     "WHERE Nro_Comanda IN (" & comandas & ")"
+                     "WHERE Nro_Pedido IN (" & pedidos & ")"
     End If
 
     ' -- 5. Mostrar estado ---------------------------------

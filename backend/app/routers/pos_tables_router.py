@@ -40,10 +40,11 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
 
 class ZoneIn(BaseModel):
     name: str
-    description: Optional[str] = None
+    seats_count: Optional[int] = 0
     color: Optional[str] = "#1d4ed8"
-    icon: Optional[str] = "bi-grid"
     is_active: Optional[int] = 1
+    description: Optional[str] = None
+    icon: Optional[str] = "bi-grid"
     order_index: Optional[int] = 0
 
 
@@ -94,7 +95,7 @@ async def list_zones(authorization: str = Header(None), db: AsyncSession = Depen
         zid = r["zone_id"]
         meta = zone_map.get(zid) or {
             "id": zid,
-            "name": "General" if zid == 0 else f"Zona {zid}",
+            "name": f"Zona {zid}",
             "description": None,
             "color": "#1d4ed8",
             "icon": "bi-grid",
@@ -114,28 +115,34 @@ async def list_zones(authorization: str = Header(None), db: AsyncSession = Depen
 @router.post("/zonas")
 async def create_zone(data: ZoneIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    res = await db.execute(text("""
-        INSERT INTO pos_zones (company_id, name, description, color, icon, is_active, order_index)
-        VALUES (:cid, :name, :desc, :color, :icon, :active, :order)
+    cid = user.company_id
+    max_id = (await db.execute(
+        text("SELECT COALESCE(MAX(id), 0) FROM pos_zones WHERE company_id=:cid"), {"cid": cid}
+    )).scalar() or 0
+    new_id = int(max_id) + 1
+    await db.execute(text("""
+        INSERT INTO pos_zones (id, company_id, name, seats_count, color, is_active, description, icon, order_index)
+        VALUES (:id, :cid, :name, :seats, :color, :active, :desc, :icon, :order)
     """), {
-        "cid": user.company_id, "name": data.name.strip(), "desc": data.description,
-        "color": data.color, "icon": data.icon, "active": data.is_active, "order": data.order_index
+        "id": new_id, "cid": cid, "name": data.name.strip(), "seats": data.seats_count,
+        "color": data.color, "active": data.is_active,
+        "desc": data.description, "icon": data.icon or "bi-grid", "order": data.order_index
     })
     await db.commit()
-    return {"ok": True, "id": res.lastrowid}
+    return {"ok": True, "id": new_id}
 
 
 @router.put("/zonas/{zone_id}")
 async def update_zone(zone_id: int, data: ZoneIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     res = await db.execute(text("""
-        UPDATE pos_zones SET name=:name, description=:desc, color=:color, icon=:icon,
-               is_active=:active, order_index=:order
+        UPDATE pos_zones SET name=:name, seats_count=:seats, color=:color,
+               is_active=:active, description=:desc, icon=:icon, order_index=:order
         WHERE id=:id AND company_id=:cid
     """), {
         "id": zone_id, "cid": user.company_id, "name": data.name.strip(),
-        "desc": data.description, "color": data.color, "icon": data.icon,
-        "active": data.is_active, "order": data.order_index
+        "seats": data.seats_count, "color": data.color, "active": data.is_active,
+        "desc": data.description, "icon": data.icon or "bi-grid", "order": data.order_index
     })
     await db.commit()
     if res.rowcount == 0:
@@ -189,8 +196,7 @@ async def list_tables(zone_id: Optional[int] = None, authorization: str = Header
             o.order_number                                                               AS current_order_id,
             1                                                                            AS is_active,
             0                                                                            AS order_index,
-            COALESCE(z.name, CASE WHEN t.zone_id = 0 THEN 'General'
-                                  ELSE CONCAT('Zona ', t.zone_id) END)                   AS zone_name,
+            COALESCE(z.name, CONCAT('Zona ', t.zone_id))                                 AS zone_name,
             COALESCE(z.color, '#1d4ed8')                                                 AS zone_color
         FROM pos_tables_layout t
         LEFT JOIN pos_zones z   ON z.id = t.zone_id AND z.company_id = :cid

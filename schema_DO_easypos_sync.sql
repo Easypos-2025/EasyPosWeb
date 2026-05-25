@@ -3,6 +3,27 @@
 -- Translated from local MariaDB (Spanish) schema
 -- Fields added to all tables: company_id, updated_at, synced
 -- Import into: easyposweb database
+
+-- ---------------------------------------------------
+-- pos_zones (zonas_asientos) — ALTER aplicado 2026-05-24
+-- PK compuesta (company_id, id), id = Id_Zona VB6
+-- ---------------------------------------------------
+-- ALTER TABLE pos_zones
+--   MODIFY COLUMN id INT(11) NOT NULL DEFAULT 0,
+--   DROP PRIMARY KEY,
+--   ADD PRIMARY KEY (company_id, id),
+--   ADD COLUMN seats_count INT(11) NOT NULL DEFAULT 0,
+--   ADD COLUMN dynamic_zone TINYINT(4) NOT NULL DEFAULT 0,
+--   ADD COLUMN height INT(11) NOT NULL DEFAULT 0,
+--   ADD COLUMN synced TINYINT(4) NOT NULL DEFAULT 0,
+--   ADD COLUMN updated_at DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+-- ALTER TABLE pos_zones ADD COLUMN branch_id INT NOT NULL DEFAULT 1 AFTER company_id;
+-- Mapeo VB6 → servidor:
+--   Id_Sede → branch_id (sede VB6, DIFERENTE de company_id web)
+--   Id_Zona → id | Ubicacion → name | Nro_Asientos → seats_count
+--   Activa → is_active | Zona_Dinamica → dynamic_zone
+--   Color → color | Altura → height
+-- PK: (company_id, id)  donde company_id=web, id=Id_Zona VB6
 -- =====================================================
 
 SET NAMES utf8mb4;
@@ -270,25 +291,6 @@ CREATE TABLE IF NOT EXISTS `pos_invoice_payment_methods` (
   `company_id` int(11) NOT NULL DEFAULT '0',
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`item`, `payment_method_id`, `card_id`, `invoice_number`, `company_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ---------------------------------------------------
--- pos_tables_layout (mesas)
--- ---------------------------------------------------
-CREATE TABLE IF NOT EXISTS `pos_tables_layout` (
-  `id` int(11) NOT NULL DEFAULT '0',
-  `branch_id` int(11) NOT NULL DEFAULT '0',
-  `name` varchar(50) NOT NULL,
-  `location` varchar(50) NOT NULL,
-  `seats` int(11) DEFAULT '0',
-  `customer_id` bigint(20) NOT NULL DEFAULT '0',
-  `dynamic_zone` tinyint(4) NOT NULL DEFAULT '0',
-  `active` tinyint(4) NOT NULL DEFAULT '0',
-  `zone_id` int(11) DEFAULT '0',
-  `synced` tinyint(4) DEFAULT '0',
-  `company_id` int(11) NOT NULL DEFAULT '0',
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`, `company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------
