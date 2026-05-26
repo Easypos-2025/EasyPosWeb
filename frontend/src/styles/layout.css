@@ -68,7 +68,7 @@ CONTENT
 SIDEBAR DERECHO
 ========================================= */
 .sidebar-right {
-  width: 180px;
+  width: 220px;
   flex-shrink: 0;
   box-sizing: border-box;
   align-self: stretch;

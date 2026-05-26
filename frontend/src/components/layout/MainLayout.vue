@@ -172,7 +172,7 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
 
 <style>
 .layout { display: flex; }
-.layout .sidebar-left { width: 220px; transition: width 0.25s ease; }
+.layout .sidebar-left { width: 260px; transition: width 0.25s ease; }
 .layout.collapsed .sidebar-left { width: 70px; }
 .content {
   flex: 1; overflow-y: auto; padding-bottom: 40px; transition: all 0.25s ease;

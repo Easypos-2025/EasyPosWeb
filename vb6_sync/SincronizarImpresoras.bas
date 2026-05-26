@@ -38,7 +38,7 @@ Public Sub SincronizarImpresoras(Var_Id_Company_Envio As Integer, Var_Limit_Regi
         json = json & """name"":"       & """" & EscapeJson(Nz(rs("Nombre"), ""))      & ""","
         json = json & """ip"":"         & """" & Nz(rs("IP"), "")                      & ""","
         json = json & """port"":"       & Nz(rs("Puerto"), 9100)                        & ","
-        json = json & """is_active"":"  & Nz(rs("Activa"), 1)
+        json = json & """is_active"":"  & CInt(Nz(rs("Activa"), 1))
         json = json & "}"
         sep = ","
         rs.MoveNext
@@ -64,6 +64,10 @@ Public Sub SincronizarImpresoras(Var_Id_Company_Envio As Integer, Var_Limit_Regi
     End If
 
     ' -- 5. Mostrar estado ---------------------------------
+    If InStr(respuesta, "total_saved") = 0 Then
+        Var_Caption_Error = "Error servidor: " & Left(respuesta, 200)
+        conn.Close: Exit Sub
+    End If
     Dim sc As Object
     Set sc = CreateObject("ScriptControl")
     sc.language = "JScript"
