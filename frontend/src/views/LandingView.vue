@@ -391,7 +391,7 @@
       </div>
 
       <!-- Tabla comparativa web -->
-      <div class="features-table-wrap" v-if="planData.feature_groups?.length">
+      <div class="features-table-wrap" v-if="planData.limit_rows?.length || planData.feature_groups?.length">
         <table class="features-table">
           <thead>
             <tr>
@@ -402,6 +402,22 @@
             </tr>
           </thead>
           <tbody>
+            <!-- Límites automáticos desde tabla plans (sin datos quemados) -->
+            <template v-if="planData.limit_rows?.length">
+              <tr class="feat-group-header">
+                <td :colspan="(planData.plans?.length || 0) + 1">
+                  <i class="bi bi-sliders me-2"></i>Límites del Plan
+                </td>
+              </tr>
+              <tr v-for="row in planData.limit_rows" :key="row.field" class="feat-row">
+                <td class="feat-name">{{ row.label }}</td>
+                <td v-for="(val, i) in row.values" :key="i" class="feat-val">
+                  {{ renderLimitVal(val) }}
+                </td>
+              </tr>
+            </template>
+
+            <!-- Características adicionales gestionadas por SYSADMIN -->
             <template v-for="group in planData.feature_groups" :key="group.category">
               <tr class="feat-group-header">
                 <td :colspan="(planData.plans?.length || 0) + 1">
@@ -674,7 +690,7 @@ export default {
   setup() {
     const sections          = reactive({})
     const profiles          = ref([])
-    const planData          = reactive({ plans: [], feature_groups: [] })
+    const planData          = reactive({ plans: [], limit_rows: [], feature_groups: [] })
     const activeSlide       = ref(1)
     const disableTransition = ref(false)
     const sliderTimer       = ref(null)
@@ -810,29 +826,18 @@ export default {
       return String(val)
     }
 
-    // Mapeo feature_name → campo del Plan para mostrar límites reales desde BD
-    const FEAT_FIELD_MAP = {
-      "usuarios":    "max_users",
-      "productos":   "max_products",
-      "categorías":  "max_categories",
-      "trabajadores":"max_workers",
-      "clientes":    "max_clients",
-      "activos":     "max_assets",
-      "meseros":     "max_waiters",
-      "tareas":      "max_tasks",
-      "facturas x mes": "max_daily_invoices",
-      "recibos x mes":  "max_daily_receipts",
+    // Renderiza un valor de límite directo desde la tabla plans
+    function renderLimitVal(val) {
+      if (val === null || val === undefined) return "—"
+      if (val === -1) return "Ilimitado"
+      if (val === 0)  return "No incluido"
+      return String(val)
     }
+
     const STATIC_COLS = ["val_free", "val_basic", "val_standard", "val_premium"]
 
     function renderFeatVal(feat, plan, planIndex) {
-      // Busca si el feature_name coincide con un campo de límite del Plan
-      const key = feat.feature_name?.toLowerCase().trim()
-      const field = Object.entries(FEAT_FIELD_MAP).find(([k]) => key?.includes(k))?.[1]
-      if (field && plan[field] !== undefined) {
-        return renderVal(plan[field])
-      }
-      // Fallback: usar val_free/basic/standard/premium por posición
+      // Usar val_free/basic/standard/premium por posición (features booleanas/custom)
       const staticVal = feat[STATIC_COLS[planIndex]]
       return renderVal(staticVal ?? feat[STATIC_COLS[Math.min(planIndex, 3)]])
     }
@@ -913,6 +918,7 @@ export default {
         const [secData, pData] = await Promise.all([secRes.json(), planRes.json()])
         secData.forEach(s => { sections[s.section_key] = s })
         planData.plans          = pData.plans          || []
+        planData.limit_rows     = pData.limit_rows     || []
         planData.feature_groups = pData.feature_groups || []
       } catch (e) {
         console.error("Error cargando secciones/planes:", e)

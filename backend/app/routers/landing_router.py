@@ -20,6 +20,7 @@ from app.models.plan_feature_model import PlanFeature
 from app.models.landing_contact_model import LandingContact
 from app.models.business_profile_model import BusinessProfile
 from app.models.plan_model import Plan
+from app.services.plan_limits_service import LIMIT_FIELDS as SVC_LIMIT_FIELDS, LIMIT_LABELS
 from app.models.user_model import User
 from app.models.role_model import Role
 from app.models.user_session_model import UserSession
@@ -92,25 +93,33 @@ async def get_profiles(db: AsyncSession = Depends(get_db)):
 async def get_plans_with_features(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Plan).where(Plan.is_active == True).order_by(Plan.id))
     plans = result.scalars().all()
+
+    # Features manuales (solo características booleanas/custom gestionadas por SYSADMIN)
     result = await db.execute(select(PlanFeature).where(PlanFeature.is_active == True).order_by(PlanFeature.category, PlanFeature.order_index))
     features = result.scalars().all()
     categories = {}
     for f in features:
         categories.setdefault(f.category, []).append(_ser_feature(f))
-    LIMIT_FIELDS = [
-        "max_users", "max_products", "max_categories", "max_workers",
-        "max_clients", "max_bodega_items", "max_assets", "max_waiters",
-        "max_tasks", "max_daily_invoices", "max_daily_receipts", "max_daily_tasks",
-    ]
 
     def _plan_ser(p):
         base = {"id": p.id, "name": p.name, "price": p.price}
-        for f in LIMIT_FIELDS:
+        for f in SVC_LIMIT_FIELDS:
             base[f] = getattr(p, f, -1)
         return base
 
+    # Filas de límites auto-generadas desde la tabla plans (siempre sincronizadas)
+    limit_rows = [
+        {
+            "field":  field,
+            "label":  LIMIT_LABELS.get(field, field).capitalize(),
+            "values": [getattr(p, field, -1) for p in plans],
+        }
+        for field in SVC_LIMIT_FIELDS
+    ]
+
     return JSONResponse(content={
-        "plans": [_plan_ser(p) for p in plans],
+        "plans":          [_plan_ser(p) for p in plans],
+        "limit_rows":     limit_rows,
         "feature_groups": [{"category": cat, "features": feats} for cat, feats in categories.items()],
     }, headers=_NO_CACHE)
 
