@@ -15,20 +15,27 @@
       </div>
     </div>
 
-    <!-- TABS DE CATEGORÍAS -->
-    <div class="cat-tabs-wrap">
-      <div class="cat-tabs">
-        <button
-          :class="['cat-tab', { active: categoriaTab === null }]"
-          @click="setCategoria(null)"
-        >Todos</button>
+    <!-- SLIDE DE CATEGORÍAS -->
+    <div class="cat-slider-wrap">
+      <button class="cat-arrow cat-arrow--left" :class="{ visible: canScrollLeft }" @click="scrollCats(-1)">
+        <i class="bi bi-chevron-left"></i>
+      </button>
+      <div class="cat-track" ref="catTrackRef" @scroll="updateArrows">
+        <button :class="['cat-pill', { active: categoriaTab === null }]" @click="setCategoria(null)">
+          <i class="bi bi-grid-3x3-gap"></i><span>Todos</span>
+        </button>
         <button
           v-for="c in categorias" :key="c.id"
-          :class="['cat-tab', { active: categoriaTab === c.id }]"
-          :style="categoriaTab === c.id ? { background: c.color || '#1d4ed8', color: '#fff', borderColor: c.color || '#1d4ed8' } : {}"
+          :class="['cat-pill', { active: categoriaTab === c.id }]"
           @click="setCategoria(c.id)"
-        >{{ c.name }}</button>
+        >
+          <span class="cat-dot"></span>
+          <span>{{ c.name }}</span>
+        </button>
       </div>
+      <button class="cat-arrow cat-arrow--right" :class="{ visible: canScrollRight }" @click="scrollCats(1)">
+        <i class="bi bi-chevron-right"></i>
+      </button>
     </div>
 
     <!-- FILTROS ESTADO / FOTO -->
@@ -373,7 +380,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
 import ImageUploader from '@/components/ImageUploader.vue'
@@ -438,6 +445,25 @@ const itemsAgrupados = computed(() => {
   if (map.has('__none__')) arr.push(map.get('__none__'))
   return arr
 })
+
+// ── Slider de categorías ──────────────────────────────────────────────────────
+const catTrackRef    = ref(null)
+const canScrollLeft  = ref(false)
+const canScrollRight = ref(false)
+
+function updateArrows() {
+  const el = catTrackRef.value
+  if (!el) return
+  canScrollLeft.value  = el.scrollLeft > 4
+  canScrollRight.value = el.scrollLeft < el.scrollWidth - el.clientWidth - 4
+}
+function scrollCats(dir) {
+  const el = catTrackRef.value
+  if (!el) return
+  el.scrollBy({ left: dir * 220, behavior: 'smooth' })
+  setTimeout(updateArrows, 320)
+}
+watch(categorias, async () => { await nextTick(); updateArrows() })
 
 const setCategoria    = (id) => { categoriaTab.value = id }
 const setFiltroEstado = (v)  => { filtroEstado.value = v }
@@ -739,16 +765,57 @@ async function eliminarVariante(varId) {
 .inp-buscar:focus { border-color:#1d4ed8; }
 .btn-nuevo   { display:flex;align-items:center;gap:6px;background:linear-gradient(90deg,#1e3a5f,#1d4ed8);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap; }
 
-/* ── Tabs de categorías ──────────────────────────────────────────────────────── */
-.cat-tabs-wrap { overflow-x:auto;margin-bottom:16px;-webkit-overflow-scrolling:touch; }
-.cat-tabs { display:flex;gap:8px;min-width:max-content;padding-bottom:4px; }
-.cat-tab {
-  padding:6px 14px;border-radius:20px;border:1.5px solid #e2e8f0;
-  background:#f8fafc;font-size:12px;font-weight:600;color:#475569;
-  cursor:pointer;transition:.15s;white-space:nowrap;
+/* ── Slider de categorías ────────────────────────────────────────────────────── */
+.cat-slider-wrap {
+  position:relative;display:flex;align-items:center;
+  background:linear-gradient(135deg,#1e3a5f 0%,#1d4ed8 100%);
+  border-radius:14px;padding:10px 46px;margin-bottom:16px;
+  box-shadow:0 4px 16px rgba(29,78,216,.25);
 }
-.cat-tab:hover { border-color:#1d4ed8;color:#1d4ed8; }
-.cat-tab.active { background:#1d4ed8;color:#fff;border-color:#1d4ed8; }
+.cat-track {
+  display:flex;gap:8px;flex:1;
+  overflow-x:auto;scroll-behavior:smooth;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;-ms-overflow-style:none;
+  padding:2px 0;
+}
+.cat-track::-webkit-scrollbar { display:none; }
+
+.cat-pill {
+  display:flex;align-items:center;gap:6px;
+  padding:9px 18px;border-radius:22px;flex-shrink:0;
+  border:2px solid rgba(255,255,255,.28);
+  background:rgba(255,255,255,.13);
+  color:rgba(255,255,255,.88);
+  font-size:12px;font-weight:700;cursor:pointer;
+  white-space:nowrap;transition:all .18s;
+  min-width:max-content;
+}
+.cat-pill:hover { background:rgba(255,255,255,.25);color:#fff;border-color:rgba(255,255,255,.55); }
+.cat-pill.active {
+  background:#fff;color:#1e3a5f;border-color:#fff;
+  box-shadow:0 4px 14px rgba(0,0,0,.22);
+}
+.cat-pill i { font-size:13px; }
+.cat-dot {
+  width:7px;height:7px;border-radius:50%;flex-shrink:0;
+  background:rgba(255,255,255,.6);
+}
+.cat-pill.active .cat-dot { background:#1d4ed8; }
+
+.cat-arrow {
+  position:absolute;top:50%;transform:translateY(-50%);z-index:5;
+  width:34px;height:34px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.45);
+  background:rgba(15,30,60,.55);backdrop-filter:blur(4px);
+  color:#fff;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:13px;transition:all .18s;
+  opacity:0;pointer-events:none;
+}
+.cat-arrow.visible { opacity:1;pointer-events:auto; }
+.cat-arrow:hover { background:rgba(15,30,60,.85);border-color:#fff; }
+.cat-arrow--left  { left:7px; }
+.cat-arrow--right { right:7px; }
 
 /* ── Filtros estado / foto ──────────────────────────────────────────────────── */
 .filtros-wrap  { display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;align-items:center; }
@@ -933,6 +1000,11 @@ async function eliminarVariante(varId) {
   .panel-lateral { max-width:100%; }
   .item-foto { height:130px; }
   .filtros-wrap { gap:8px; }
+  .cat-slider-wrap { padding:8px 40px;border-radius:10px; }
+  .cat-pill { padding:8px 14px;font-size:11px; }
+  .cat-arrow { width:30px;height:30px;font-size:12px; }
+  .cat-arrow--left  { left:5px; }
+  .cat-arrow--right { right:5px; }
 }
 @media (max-width: 576px) {
   .items-grid { grid-template-columns:1fr; }
@@ -940,5 +1012,7 @@ async function eliminarVariante(varId) {
   .item-foto  { height:160px; }
   .item-acciones { flex-wrap:wrap; }
   .filtros-wrap { flex-direction:column;align-items:flex-start; }
+  .cat-slider-wrap { padding:8px 36px;border-radius:8px;margin-bottom:12px; }
+  .cat-pill { padding:7px 12px;font-size:11px; }
 }
 </style>

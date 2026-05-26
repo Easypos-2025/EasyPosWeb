@@ -138,7 +138,7 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
                ON cpl.id_producto=d.id AND cpl.company_id=d.company_id
               AND cpl.id_lista=0 AND cpl.id_cliente=0
         WHERE d.company_id=:cid
-        ORDER BY COALESCE(c.order_index,0), c.name, COALESCE(d.order_index,0), d.name
+        ORDER BY c.name, COALESCE(d.order_index,0), d.name
     """), {"cid": user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 
