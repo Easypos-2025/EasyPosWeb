@@ -78,19 +78,29 @@
 
 <script setup>
 import { ref, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
+const router  = useRouter()
 const info    = ref({ plan_name: "", expiration_date: null, items: [] })
 const loading = ref(true)
 
 async function load() {
+  // SYSADMIN no tiene empresa — redirigir a la vista de planes por asociado
+  const currentUser = JSON.parse(localStorage.getItem("user") || "{}")
+  if (currentUser.is_system) {
+    router.replace("/sysadmin/plan-asociado")
+    return
+  }
+
   loading.value = true
   try {
     const r = await api.get("/company-plan/my-plan-info")
     info.value = r.data
   } catch (e) {
-    showToast(e.response?.data?.detail || "Error cargando plan", "error")
+    const detail = e.response?.data?.detail
+    showToast(typeof detail === "string" ? detail : "Error cargando plan", "error")
   } finally {
     loading.value = false
   }

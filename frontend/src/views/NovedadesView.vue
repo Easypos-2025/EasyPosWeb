@@ -591,10 +591,10 @@ async function openDetail(n) {
 function closeDetail() {
   showDetail.value      = false
   activeNovelty.value   = null
-  selectedNoveltyId.value = null
   evidences.value       = []
   replies.value         = []
   replyText.value       = ""
+  // selectedNoveltyId se mantiene para que la tarjeta siga resaltada
 }
 
 // ── Cambiar estado ───────────────────────────────────

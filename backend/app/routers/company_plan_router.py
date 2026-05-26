@@ -24,33 +24,7 @@ async def _is_system(current_user, db: AsyncSession) -> bool:
     return role.is_system if role else False
 
 
-@router.get("/{company_id}")
-async def get_company_plan(
-    company_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    result = await db.execute(
-        select(CompanyPlan)
-        .where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)
-        .order_by(CompanyPlan.id.desc())
-    )
-    cp = result.scalar_one_or_none()
-    if not cp:
-        return {"plan_name": "Sin plan", "expiration_date": None, "is_free": False}
-
-    plan = await db.get(Plan, cp.plan_id)
-    exp = cp.expiration_date
-    is_free = (plan.price == 0) if plan else False
-    return {
-        "plan_name":       plan.name if plan else "Desconocido",
-        "plan_id":         cp.plan_id,
-        "start_date":      cp.start_date.isoformat() if cp.start_date else None,
-        "expiration_date": exp.isoformat() if exp else None,
-        "is_free":         is_free,
-        "is_active":       cp.is_active,
-    }
-
+# ── Rutas estáticas PRIMERO (deben ir antes de /{company_id}) ──────────────
 
 @router.get("/my-plan-info")
 async def my_plan_info(
@@ -78,7 +52,6 @@ async def my_plan_info(
 
     limits = await get_limits(cid, db)
 
-    # Contar uso actual de los recursos principales
     async def _count(model, *filters):
         stmt = select(func.count()).select_from(model).where(model.company_id == cid, *filters)
         return (await db.execute(stmt)).scalar() or 0
@@ -89,7 +62,6 @@ async def my_plan_info(
         "max_categories": await _count(ProductCategory, ProductCategory.is_active == 1),
         "max_clients":    await _count(Client),
     }
-    # Roles (no tienen company_id en el modelo base, usar query directa)
     role_count = (await db.execute(
         select(func.count()).select_from(Role)
         .where(Role.company_id == cid, Role.is_system == False)
@@ -137,6 +109,36 @@ async def my_downgrade_preview(
     }
 
 
+# ── Rutas dinámicas ────────────────────────────────────────────────────────
+
+@router.get("/{company_id}")
+async def get_company_plan(
+    company_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(CompanyPlan)
+        .where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)
+        .order_by(CompanyPlan.id.desc())
+    )
+    cp = result.scalar_one_or_none()
+    if not cp:
+        return {"plan_name": "Sin plan", "expiration_date": None, "is_free": False}
+
+    plan = await db.get(Plan, cp.plan_id)
+    exp = cp.expiration_date
+    is_free = (plan.price == 0) if plan else False
+    return {
+        "plan_name":       plan.name if plan else "Desconocido",
+        "plan_id":         cp.plan_id,
+        "start_date":      cp.start_date.isoformat() if cp.start_date else None,
+        "expiration_date": exp.isoformat() if exp else None,
+        "is_free":         is_free,
+        "is_active":       cp.is_active,
+    }
+
+
 @router.get("/{company_id}/downgrade-preview")
 async def downgrade_preview(
     company_id: int,
@@ -181,7 +183,6 @@ async def assign_plan(
     if not await _is_system(current_user, db):
         raise HTTPException(status_code=403, detail="Solo SYSADMIN puede asignar planes")
 
-    # Guardar límites actuales antes del cambio para detectar downgrade
     old_limits = await get_limits(company_id, db)
 
     await db.execute(
@@ -200,13 +201,11 @@ async def assign_plan(
         is_active=True,
     )
     db.add(cp)
-    await db.flush()  # necesitamos el nuevo plan_id antes del snapshot
+    await db.flush()
 
-    # Actualizar snapshot de límites con el nuevo plan
     await snapshot_plan_limits(company_id, data["plan_id"], db)
     await db.commit()
 
-    # Detectar si es downgrade en algún campo de conteo y aplicar bloqueos
     new_plan = await db.get(Plan, data["plan_id"])
     new_limits = {f: getattr(new_plan, f, -1) for f in LIMIT_FIELDS}
 
