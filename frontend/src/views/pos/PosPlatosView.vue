@@ -55,55 +55,64 @@
       <i class="bi bi-box-seam"></i>
       <p>No hay artículos. Crea el primero para comenzar.</p>
     </div>
-    <div v-else class="items-grid">
-      <div
-        v-for="(item, idx) in filtrados" :key="item.id"
-        class="item-card"
-        :class="{ 'item-card--inactivo': !item.active, 'item-card--dragging': dragId === item.id }"
-        draggable="true"
-        @dragstart="onDragStart($event, item)"
-        @dragover.prevent="onDragOver($event, item)"
-        @drop.prevent="onDrop"
-        @dragend="onDragEnd"
-      >
-        <!-- Foto -->
-        <div class="item-foto">
-          <img v-if="item.photo_path" :src="imgSrc(item.photo_path)" class="item-foto-img" alt="" draggable="false" />
-          <div v-else class="item-foto-placeholder"><i class="bi bi-image"></i></div>
-          <span class="drag-handle" title="Arrastrar para reordenar"><i class="bi bi-grip-vertical"></i></span>
+    <div v-else class="grupos-wrap">
+      <template v-for="grupo in itemsAgrupados" :key="grupo.id ?? 'none'">
+        <div v-if="categoriaTab === null" class="seccion-hdr" :style="{ '--cat-color': grupo.color }">
+          <span class="seccion-dot" :style="{ background: grupo.color }"></span>
+          <span class="seccion-nombre">{{ grupo.name }}</span>
+          <span class="seccion-count">{{ grupo.items.length }}</span>
         </div>
+        <div class="items-grid seccion-grid">
+          <div
+            v-for="item in grupo.items" :key="item.id"
+            class="item-card"
+            :class="{ 'item-card--inactivo': !item.active, 'item-card--dragging': dragId === item.id }"
+            draggable="true"
+            @dragstart="onDragStart($event, item)"
+            @dragover.prevent="onDragOver($event, item)"
+            @drop.prevent="onDrop"
+            @dragend="onDragEnd"
+          >
+            <!-- Foto -->
+            <div class="item-foto">
+              <img v-if="item.photo_path" :src="imgSrc(item.photo_path)" class="item-foto-img" alt="" draggable="false" />
+              <div v-else class="item-foto-placeholder"><i class="bi bi-image"></i></div>
+              <span class="drag-handle" title="Arrastrar para reordenar"><i class="bi bi-grip-vertical"></i></span>
+            </div>
 
-        <div class="item-body">
-          <div class="item-top">
-            <span class="item-cat" :style="{ background: (item.category_color||'#1d4ed8')+'22', color: item.category_color||'#1d4ed8' }">
-              {{ item.category_name || 'Sin categoría' }}
-            </span>
-            <span :class="item.active ? 'badge-activo' : 'badge-inactivo'">
-              {{ item.active ? 'Activo' : 'Inactivo' }}
-            </span>
-          </div>
-          <div class="item-nombre">{{ item.name }}</div>
-          <div class="item-precios">
-            <span v-if="item.compare_price" class="precio-tachado">{{ fmt(item.compare_price) }}</span>
-            <span class="item-precio">{{ fmt(item.price) }}</span>
-          </div>
-          <div class="item-meta">
-            <span title="Ingredientes"><i class="bi bi-list-ul"></i> {{ item.ingredient_count }}</span>
-            <span title="Impresoras"><i class="bi bi-printer"></i> {{ item.printer_count }}</span>
-            <span v-if="item.modifier_count" title="Modificadores/Armado"><i class="bi bi-sliders"></i> {{ item.modifier_count }}</span>
-            <span v-if="item.variant_count" title="Variantes de precio" class="badge-variants"><i class="bi bi-tags"></i> {{ item.variant_count }}</span>
-            <span v-if="item.tax" title="IVA"><i class="bi bi-percent"></i> {{ item.tax }}%</span>
-          </div>
-          <div class="item-acciones">
-            <button class="btn-accion" @click="abrirModalItem(item)" title="Editar"><i class="bi bi-pencil"></i></button>
-            <button class="btn-accion" title="Receta" @click="abrirPanel(item, 'ingredientes')"><i class="bi bi-list-ul"></i></button>
-            <button class="btn-accion" title="Impresoras" @click="abrirPanel(item, 'impresoras')"><i class="bi bi-printer"></i></button>
-            <button class="btn-accion" title="Armado" @click="abrirPanel(item, 'modificadores')"><i class="bi bi-sliders"></i></button>
-            <button class="btn-accion" title="Variantes" @click="abrirPanel(item, 'variantes')"><i class="bi bi-tags"></i></button>
-            <button class="btn-accion btn-accion--danger" @click="eliminar(item.id)"><i class="bi bi-trash"></i></button>
+            <div class="item-body">
+              <div class="item-top">
+                <span class="item-cat" :style="{ background: (item.category_color||'#1d4ed8')+'22', color: item.category_color||'#1d4ed8' }">
+                  {{ item.category_name || 'Sin categoría' }}
+                </span>
+                <span :class="item.active ? 'badge-activo' : 'badge-inactivo'">
+                  {{ item.active ? 'Activo' : 'Inactivo' }}
+                </span>
+              </div>
+              <div class="item-nombre">{{ item.name }}</div>
+              <div class="item-precios">
+                <span v-if="item.compare_price" class="precio-tachado">{{ fmt(item.compare_price) }}</span>
+                <span class="item-precio">{{ fmt(item.price) }}</span>
+              </div>
+              <div class="item-meta">
+                <span title="Ingredientes"><i class="bi bi-list-ul"></i> {{ item.ingredient_count }}</span>
+                <span title="Impresoras"><i class="bi bi-printer"></i> {{ item.printer_count }}</span>
+                <span v-if="item.modifier_count" title="Modificadores/Armado"><i class="bi bi-sliders"></i> {{ item.modifier_count }}</span>
+                <span v-if="item.variant_count" title="Variantes de precio" class="badge-variants"><i class="bi bi-tags"></i> {{ item.variant_count }}</span>
+                <span v-if="item.tax" title="IVA"><i class="bi bi-percent"></i> {{ item.tax }}%</span>
+              </div>
+              <div class="item-acciones">
+                <button class="btn-accion" @click="abrirModalItem(item)" title="Editar"><i class="bi bi-pencil"></i></button>
+                <button class="btn-accion" title="Receta" @click="abrirPanel(item, 'ingredientes')"><i class="bi bi-list-ul"></i></button>
+                <button class="btn-accion" title="Impresoras" @click="abrirPanel(item, 'impresoras')"><i class="bi bi-printer"></i></button>
+                <button class="btn-accion" title="Armado" @click="abrirPanel(item, 'modificadores')"><i class="bi bi-sliders"></i></button>
+                <button class="btn-accion" title="Variantes" @click="abrirPanel(item, 'variantes')"><i class="bi bi-tags"></i></button>
+                <button class="btn-accion btn-accion--danger" @click="eliminar(item.id)"><i class="bi bi-trash"></i></button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- ─── MODAL CREAR/EDITAR ──────────────────────────────────────────────── -->
@@ -401,13 +410,33 @@ function imgSrc(path) {
 const filtrados = computed(() => {
   let r = items.value
   if (categoriaTab.value !== null) r = r.filter(i => i.category_id === categoriaTab.value)
-  if (filtroEstado.value !== null) r = r.filter(i => filtroEstado.value === 1 ? !!i.active : !i.active)
+  if (filtroEstado.value !== null) r = r.filter(i => filtroEstado.value === 1 ? i.active == 1 : i.active != 1)
   if (filtroFoto.value !== null)   r = r.filter(i => filtroFoto.value === 'con' ? !!i.photo_path : !i.photo_path)
   if (busqueda.value) {
     const q = busqueda.value.toLowerCase()
     r = r.filter(i => i.name.toLowerCase().includes(q) || (i.category_name||'').toLowerCase().includes(q))
   }
   return r
+})
+
+const itemsAgrupados = computed(() => {
+  const map = new Map()
+  for (const item of filtrados.value) {
+    const key = item.category_id ?? '__none__'
+    if (!map.has(key)) {
+      map.set(key, {
+        id:    item.category_id,
+        name:  item.category_name || 'Sin categoría',
+        color: item.category_color || '#94a3b8',
+        items: []
+      })
+    }
+    map.get(key).items.push(item)
+  }
+  const arr = []
+  for (const [key, g] of map) { if (key !== '__none__') arr.push(g) }
+  if (map.has('__none__')) arr.push(map.get('__none__'))
+  return arr
 })
 
 const setCategoria    = (id) => { categoriaTab.value = id }
@@ -741,6 +770,23 @@ async function eliminarVariante(varId) {
 .estado-carga,.estado-vacio { display:flex;flex-direction:column;align-items:center;gap:10px;padding:60px 20px;color:#94a3b8;font-size:14px; }
 .estado-vacio i { font-size:40px; }
 .items-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px; }
+
+/* ── Grupos con cabecera de categoría (OlaClick style) ───────────────────────── */
+.grupos-wrap { display:flex;flex-direction:column; }
+.seccion-hdr {
+  position:sticky;top:0;z-index:5;
+  background:var(--color-bg,#f8fafc);
+  display:flex;align-items:center;gap:8px;
+  padding:9px 8px 9px 12px;
+  margin:16px 0 10px;
+  border-left:4px solid var(--cat-color,#1d4ed8);
+  border-radius:0 6px 6px 0;
+}
+.seccion-hdr:first-child { margin-top:0; }
+.seccion-dot   { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
+.seccion-nombre{ font-weight:700;font-size:12px;color:#1e3a5f;flex:1;text-transform:uppercase;letter-spacing:.06em; }
+.seccion-count { font-size:11px;color:#94a3b8;background:#e2e8f0;border-radius:20px;padding:1px 8px;font-weight:600; }
+.seccion-grid  { margin-bottom:4px; }
 
 .item-card {
   background:#fff;border:2px solid #e2e8f0;border-radius:14px;
