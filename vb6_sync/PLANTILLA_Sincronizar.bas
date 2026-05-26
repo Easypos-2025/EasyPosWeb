@@ -25,6 +25,14 @@
 '   TEXTO:      & """" & EscapeJson(Nz(rs("[Col]"), "")) & """"
 '   FECHA:      & """" & Format(rs("[Col]"), "YYYY-MM-DD") & """"
 '   DATETIME:   & """" & ("" & rs("[Col]")) & """"
+'
+'   ATENCION — campo numerico guardado como VARCHAR en VB6 (ej: Puerto):
+'   Nz() solo reemplaza NULL, NO strings vacios. Si el campo puede ser "",
+'   usar este patron para evitar "port":, (JSON invalido):
+'     Dim strVal As String
+'     strVal = CStr(Nz(rs("[Col]"), ""))
+'     If strVal = "" Then strVal = "[default]"
+'     json = json & """[campo]"":"  & strVal  & ","
 ' ============================================================
 
 ' ── VARIANTE A — PATRON ESTANDAR (usar siempre) ──────────────────────────────

@@ -37,7 +37,10 @@ Public Sub SincronizarImpresoras(Var_Id_Company_Envio As Integer, Var_Limit_Regi
         json = json & """company_id"":"  & Var_Id_Company_Envio                         & ","
         json = json & """name"":"       & """" & EscapeJson(Nz(rs("Nombre"), ""))      & ""","
         json = json & """ip"":"         & """" & Nz(rs("IP"), "")                      & ""","
-        json = json & """port"":"       & Nz(rs("Puerto"), 9100)                        & ","
+        Dim strPort As String
+        strPort = CStr(Nz(rs("Puerto"), ""))
+        If strPort = "" Then strPort = "9100"
+        json = json & """port"":"       & strPort                                          & ","
         json = json & """is_active"":"  & CInt(Nz(rs("Activa"), 1))
         json = json & "}"
         sep = ","
