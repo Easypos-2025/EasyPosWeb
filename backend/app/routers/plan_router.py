@@ -6,6 +6,7 @@ from app.auth.dependencies import get_current_user
 from app.models.plan_model import Plan
 from app.models.plan_price_model import PlanPrice
 from app.models.role_model import Role
+from app.services.plan_limits_service import LIMIT_FIELDS
 
 router = APIRouter(prefix="/plans", tags=["Plans"])
 
@@ -22,21 +23,26 @@ def _validate(data):
 
 
 def _fields(data):
-    return {
-        "name":           data.get("name", "").strip(),
-        "description":    data.get("description", ""),
-        "max_users":      int(data.get("max_users", 1)),
-        "max_products":   int(data.get("max_products", -1)),
-        "max_categories": int(data.get("max_categories", -1)),
-        "price":          float(data.get("price", 0)),
-        "is_active":      bool(data.get("is_active", True)),
+    result = {
+        "name":        data.get("name", "").strip(),
+        "description": data.get("description", ""),
+        "price":       float(data.get("price", 0)),
+        "is_active":   bool(data.get("is_active", True)),
     }
+    defaults = {"max_users": 1}
+    for f in LIMIT_FIELDS:
+        result[f] = int(data.get(f, defaults.get(f, -1)))
+    return result
 
 
 def _serialize(p):
-    return {"id": p.id, "name": p.name, "description": p.description,
-            "max_users": p.max_users, "max_products": p.max_products,
-            "max_categories": p.max_categories, "price": p.price, "is_active": p.is_active}
+    base = {
+        "id": p.id, "name": p.name, "description": p.description,
+        "price": p.price, "is_active": p.is_active,
+    }
+    for f in LIMIT_FIELDS:
+        base[f] = getattr(p, f, -1)
+    return base
 
 
 @router.get("/")
