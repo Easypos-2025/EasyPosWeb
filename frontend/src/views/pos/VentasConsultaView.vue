@@ -3,7 +3,6 @@
     <!-- ── Filtros ──────────────────────────────────────────────── -->
     <div class="vc-filters card mb-3">
       <div class="vc-filter-row">
-        <!-- Tipo -->
         <div class="vc-filter-group">
           <label class="vc-label">Tipo</label>
           <div class="vc-radios">
@@ -14,7 +13,6 @@
           </div>
         </div>
 
-        <!-- Desde + Hasta en la misma línea -->
         <div class="vc-filter-group">
           <label class="vc-label">Desde / Hasta</label>
           <div class="vc-fechas-row">
@@ -33,9 +31,12 @@
           <i class="bi bi-search"></i>
           <span>Buscar</span>
         </button>
+
+        <button class="btn btn-outline-primary vc-btn-refresh" @click="refrescarLista" :disabled="cargandoLista" title="Actualizar lista">
+          <i class="bi bi-arrow-clockwise" :class="{ 'spin': cargandoLista }"></i>
+        </button>
       </div>
 
-      <!-- Totales: venta real + propinas + domicilios -->
       <div v-if="!cargandoLista && lista.length" class="vc-totales">
         <span class="vc-total-chip">
           <span class="vc-total-lbl">{{ lista.length }} registros</span>
@@ -55,8 +56,8 @@
       </div>
     </div>
 
-    <!-- ── Cuerpo dos columnas ───────────────────────────────────── -->
-    <div class="vc-body">
+    <!-- ── Cuerpo ────────────────────────────────────────────────── -->
+    <div class="vc-body" :class="{ 'vc-has-selection': !!seleccionado }">
 
       <!-- Panel izquierdo: lista -->
       <div class="vc-panel-left card">
@@ -86,10 +87,8 @@
             </div>
             <div class="vc-row-bot">
               <span class="vc-mesa"><i class="bi bi-table"></i> {{ item.mesa || '—' }}</span>
-              <span v-if="item.propina > 0" class="vc-chip-propina" title="Propina">
-                +{{ fmt(item.propina) }}
-              </span>
-              <span v-if="item.domicilio > 0" class="vc-chip-domicilio" title="Domicilio">
+              <span v-if="item.propina > 0" class="vc-chip-propina">+{{ fmt(item.propina) }}</span>
+              <span v-if="item.domicilio > 0" class="vc-chip-domicilio">
                 <i class="bi bi-bicycle"></i>{{ fmt(item.domicilio) }}
               </span>
               <span class="vc-hora text-muted ms-auto">{{ item.hora }}</span>
@@ -100,6 +99,20 @@
 
       <!-- Panel derecho: detalle -->
       <div class="vc-panel-right card">
+
+        <!-- Barra de regreso (solo móvil) -->
+        <div class="vc-back-bar" v-if="seleccionado">
+          <button class="vc-btn-back" @click="volverLista">
+            <i class="bi bi-arrow-left"></i> Lista
+          </button>
+          <span class="vc-back-title">
+            <span class="badge" :class="seleccionado.tipo === 'factura' ? 'bg-primary' : 'bg-secondary'">
+              {{ seleccionado.tipo === 'factura' ? 'FAC' : 'REC' }}
+            </span>
+            {{ seleccionado.numero }}
+          </span>
+        </div>
+
         <div v-if="!seleccionado" class="vc-placeholder text-muted">
           <i class="bi bi-arrow-left-circle fs-2"></i>
           <p class="mt-2 mb-0">Selecciona un registro</p>
@@ -111,98 +124,93 @@
           </div>
 
           <template v-else-if="detalle">
-            <!-- Header -->
-            <div class="vc-det-header">
-              <div class="vc-det-title">
-                <span class="badge" :class="seleccionado.tipo === 'factura' ? 'bg-primary' : 'bg-secondary'">
-                  {{ seleccionado.tipo === 'factura' ? 'Factura' : 'Recibo' }}
-                </span>
-                <strong class="ms-2">{{ detalle.header.numero }}</strong>
+            <!-- Área scrollable única en móvil: header + items juntos -->
+            <div class="vc-det-scroll">
+              <!-- Header -->
+              <div class="vc-det-header">
+                <div class="vc-det-title">
+                  <span class="badge" :class="seleccionado.tipo === 'factura' ? 'bg-primary' : 'bg-secondary'">
+                    {{ seleccionado.tipo === 'factura' ? 'Factura' : 'Recibo' }}
+                  </span>
+                  <strong class="ms-2">{{ detalle.header.numero }}</strong>
+                </div>
+                <div class="vc-det-meta">
+                  <span><i class="bi bi-calendar3"></i> {{ detalle.header.date }}</span>
+                  <span><i class="bi bi-clock"></i> {{ detalle.header.hora }}</span>
+                  <span v-if="detalle.header.mesa"><i class="bi bi-table"></i> {{ detalle.header.mesa }}</span>
+                  <span v-if="detalle.header.mesero"><i class="bi bi-person"></i> {{ detalle.header.mesero }}</span>
+                  <span v-if="detalle.header.comensales"><i class="bi bi-people"></i> {{ detalle.header.comensales }}</span>
+                </div>
+                <div class="vc-det-pagos">
+                  <div v-if="detalle.header.efectivo > 0" class="vc-pago-row">
+                    <span>Efectivo</span><span>{{ fmt(detalle.header.efectivo) }}</span>
+                  </div>
+                  <div v-if="detalle.header.tarjeta_credito > 0" class="vc-pago-row">
+                    <span>T. Crédito</span><span>{{ fmt(detalle.header.tarjeta_credito) }}</span>
+                  </div>
+                  <div v-if="detalle.header.tarjeta_debito > 0" class="vc-pago-row">
+                    <span>T. Débito</span><span>{{ fmt(detalle.header.tarjeta_debito) }}</span>
+                  </div>
+                  <div v-if="detalle.header.ajuste != 0" class="vc-pago-row">
+                    <span>Ajuste</span><span>{{ fmt(detalle.header.ajuste) }}</span>
+                  </div>
+                  <div v-if="detalle.header.descuento > 0" class="vc-pago-row text-danger">
+                    <span>Descuento</span><span>-{{ fmt(detalle.header.descuento) }}</span>
+                  </div>
+                  <div class="vc-pago-row vc-pago-total">
+                    <span>Total</span><span>{{ fmt(detalle.header.total) }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="vc-det-meta">
-                <span><i class="bi bi-calendar3"></i> {{ detalle.header.date }}</span>
-                <span><i class="bi bi-clock"></i> {{ detalle.header.hora }}</span>
-                <span v-if="detalle.header.mesa"><i class="bi bi-table"></i> {{ detalle.header.mesa }}</span>
-                <span v-if="detalle.header.mesero"><i class="bi bi-person"></i> {{ detalle.header.mesero }}</span>
-                <span v-if="detalle.header.comensales"><i class="bi bi-people"></i> {{ detalle.header.comensales }}</span>
-              </div>
-              <!-- Pagos -->
-              <div class="vc-det-pagos">
-                <div v-if="detalle.header.efectivo > 0" class="vc-pago-row">
-                  <span>Efectivo</span><span>{{ fmt(detalle.header.efectivo) }}</span>
-                </div>
-                <div v-if="detalle.header.tarjeta_credito > 0" class="vc-pago-row">
-                  <span>T. Crédito</span><span>{{ fmt(detalle.header.tarjeta_credito) }}</span>
-                </div>
-                <div v-if="detalle.header.tarjeta_debito > 0" class="vc-pago-row">
-                  <span>T. Débito</span><span>{{ fmt(detalle.header.tarjeta_debito) }}</span>
-                </div>
-                <div v-if="detalle.header.ajuste != 0" class="vc-pago-row">
-                  <span>Ajuste</span><span>{{ fmt(detalle.header.ajuste) }}</span>
-                </div>
-                <div v-if="detalle.header.descuento > 0" class="vc-pago-row text-danger">
-                  <span>Descuento</span><span>-{{ fmt(detalle.header.descuento) }}</span>
-                </div>
-                <div class="vc-pago-row vc-pago-total">
-                  <span>Total</span><span>{{ fmt(detalle.header.total) }}</span>
-                </div>
-              </div>
-            </div>
 
-            <!-- Tabla de ítems -->
-            <div class="vc-det-items">
-              <table class="vc-table">
-                <thead>
-                  <tr>
-                    <th>Plato</th>
-                    <th class="text-center">Cant</th>
-                    <th class="text-end">Precio</th>
-                    <th class="text-end">Subtotal</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template v-for="item in detalle.items" :key="`${item.dish_id}-${item.item}`">
-                    <tr class="vc-item-row">
-                      <td>{{ item.plato }}</td>
-                      <td class="text-center">{{ item.quantity }}</td>
-                      <td class="text-end">{{ fmt(item.price) }}</td>
-                      <td class="text-end">{{ fmt(item.subtotal) }}</td>
-                      <td class="text-center">
-                        <button
-                          class="btn btn-sm btn-success vc-btn-ver"
-                          @click="verInsumos(item)"
-                          title="Ver insumos consumidos"
-                        >
-                          VER
-                        </button>
-                      </td>
+              <!-- Tabla de ítems -->
+              <div class="vc-det-items">
+                <table class="vc-table">
+                  <thead>
+                    <tr>
+                      <th>Plato</th>
+                      <th class="text-center">Cant</th>
+                      <th class="text-end">Precio</th>
+                      <th class="text-end">Subtotal</th>
+                      <th></th>
                     </tr>
-                    <!-- Fila expandida de insumos -->
-                    <tr v-if="itemExpandido === `${item.dish_id}-${item.item}`" class="vc-insumos-row">
-                      <td colspan="5">
-                        <div v-if="cargandoInsumos" class="text-center py-2">
-                          <div class="spinner-border spinner-border-sm text-success"></div>
-                        </div>
-                        <div v-else-if="!insumos.length" class="text-muted small ps-2">Sin insumos registrados</div>
-                        <table v-else class="vc-table-insumos">
-                          <thead>
-                            <tr><th>Insumo</th><th class="text-end">Cantidad</th><th>Unidad</th></tr>
-                          </thead>
-                          <tbody>
-                            <tr v-for="ins in insumos" :key="ins.item_id">
-                              <td>{{ ins.insumo }}</td>
-                              <td class="text-end">{{ ins.quantity }}</td>
-                              <td>{{ ins.unidad }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    <template v-for="item in detalle.items" :key="`${item.dish_id}-${item.item}`">
+                      <tr class="vc-item-row">
+                        <td>{{ item.plato }}</td>
+                        <td class="text-center">{{ item.quantity }}</td>
+                        <td class="text-end">{{ fmt(item.price) }}</td>
+                        <td class="text-end">{{ fmt(item.subtotal) }}</td>
+                        <td class="text-center">
+                          <button class="btn btn-sm btn-success vc-btn-ver" @click="verInsumos(item)">VER</button>
+                        </td>
+                      </tr>
+                      <tr v-if="itemExpandido === `${item.dish_id}-${item.item}`" class="vc-insumos-row">
+                        <td colspan="5">
+                          <div v-if="cargandoInsumos" class="text-center py-2">
+                            <div class="spinner-border spinner-border-sm text-success"></div>
+                          </div>
+                          <div v-else-if="!insumos.length" class="text-muted small ps-2">Sin insumos registrados</div>
+                          <table v-else class="vc-table-insumos">
+                            <thead>
+                              <tr><th>Insumo</th><th class="text-end">Cantidad</th><th>Unidad</th></tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="ins in insumos" :key="ins.item_id">
+                                <td>{{ ins.insumo }}</td>
+                                <td class="text-end">{{ ins.quantity }}</td>
+                                <td>{{ ins.unidad }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div><!-- /vc-det-scroll -->
           </template>
         </template>
       </div>
@@ -211,12 +219,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
 
 const companyStore = useCompanyStore()
-const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined)
+const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
 
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 const fmt = v => fmtCOP.format(v || 0)
@@ -232,35 +240,30 @@ const tipoOpts = [
   { value: 'recibo',  label: 'Recibos' },
 ]
 
-const filtro = ref({ tipo: 'ambos', desde: hoy, hasta: hoy })
+const filtro          = ref({ tipo: 'ambos', desde: hoy, hasta: hoy })
+const lista           = ref([])
+const cargandoLista   = ref(false)
+const seleccionado    = ref(null)
+const detalle         = ref(null)
+const cargandoDetalle = ref(false)
+const itemExpandido   = ref(null)
+const insumos         = ref([])
+const cargandoInsumos = ref(false)
 
-const lista          = ref([])
-const cargandoLista  = ref(false)
-const seleccionado   = ref(null)
-const detalle        = ref(null)
-const cargandoDetalle= ref(false)
-const itemExpandido  = ref(null)
-const insumos        = ref([])
-const cargandoInsumos= ref(false)
-
-const ventaReal      = (r) => (r.valor || 0) - (r.propina || 0) - (r.domicilio || 0)
+const ventaReal       = (r) => (r.valor || 0) - (r.propina || 0) - (r.domicilio || 0)
 const totalVentaReal  = computed(() => lista.value.reduce((s, r) => s + ventaReal(r), 0))
 const totalPropinas   = computed(() => lista.value.reduce((s, r) => s + (r.propina   || 0), 0))
 const totalDomicilios = computed(() => lista.value.reduce((s, r) => s + (r.domicilio || 0), 0))
 
+// Buscar: limpia selección (cambio de filtros)
 async function buscar() {
-  cargandoLista.value = true
-  seleccionado.value  = null
-  detalle.value       = null
-  itemExpandido.value = null
+  cargandoLista.value  = true
+  seleccionado.value   = null
+  detalle.value        = null
+  itemExpandido.value  = null
   try {
     const { data } = await api.get('/api/pos-consultas/ventas', {
-      params: {
-        desde:      filtro.value.desde,
-        hasta:      filtro.value.hasta,
-        tipo:       filtro.value.tipo,
-        company_id: selectedCid.value,
-      }
+      params: { desde: filtro.value.desde, hasta: filtro.value.hasta, tipo: filtro.value.tipo, company_id: selectedCid.value }
     })
     lista.value = data
   } catch (e) {
@@ -268,16 +271,31 @@ async function buscar() {
     lista.value = []
   } finally {
     cargandoLista.value = false
-    _startRefresh()
+  }
+}
+
+// Refrescar: actualiza lista sin perder la selección actual
+async function refrescarLista() {
+  if (cargandoLista.value) return
+  cargandoLista.value = true
+  try {
+    const { data } = await api.get('/api/pos-consultas/ventas', {
+      params: { desde: filtro.value.desde, hasta: filtro.value.hasta, tipo: filtro.value.tipo, company_id: selectedCid.value }
+    })
+    lista.value = data
+  } catch (e) {
+    console.error(e)
+  } finally {
+    cargandoLista.value = false
   }
 }
 
 async function seleccionar(item) {
   if (seleccionado.value?.numero === item.numero && seleccionado.value?.tipo === item.tipo) return
-  seleccionado.value   = item
-  detalle.value        = null
-  itemExpandido.value  = null
-  cargandoDetalle.value= true
+  seleccionado.value    = item
+  detalle.value         = null
+  itemExpandido.value   = null
+  cargandoDetalle.value = true
   try {
     const { data } = await api.get(`/api/pos-consultas/venta-detalle/${item.tipo}/${item.numero}`, {
       params: { company_id: selectedCid.value }
@@ -290,15 +308,18 @@ async function seleccionar(item) {
   }
 }
 
+function volverLista() {
+  seleccionado.value  = null
+  detalle.value       = null
+  itemExpandido.value = null
+}
+
 async function verInsumos(item) {
   const key = `${item.dish_id}-${item.item}`
-  if (itemExpandido.value === key) {
-    itemExpandido.value = null
-    return
-  }
-  itemExpandido.value  = key
-  insumos.value        = []
-  cargandoInsumos.value= true
+  if (itemExpandido.value === key) { itemExpandido.value = null; return }
+  itemExpandido.value   = key
+  insumos.value         = []
+  cargandoInsumos.value = true
   try {
     const { data } = await api.get('/api/pos-consultas/detalle-productos', {
       params: {
@@ -327,24 +348,7 @@ function irHoy() {
   buscar()
 }
 
-let _refreshTimer = null
-
-function _startRefresh() {
-  _stopRefresh()
-  const hoyStr = localDate()
-  if (filtro.value.hasta >= hoyStr) {
-    _refreshTimer = setInterval(() => {
-      if (filtro.value.hasta >= localDate()) buscar()
-    }, 30000)
-  }
-}
-
-function _stopRefresh() {
-  if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null }
-}
-
-onMounted(() => { buscar(); _startRefresh() })
-onUnmounted(_stopRefresh)
+onMounted(() => buscar())
 </script>
 
 <style scoped>
@@ -369,22 +373,16 @@ onUnmounted(_stopRefresh)
 }
 
 /* ── Filtros ────────────────────────────────────────────── */
-.vc-filters {
-  padding: 12px 16px;
-}
+.vc-filters { padding: 12px 16px; }
 
 .vc-filter-row {
   display: flex;
   align-items: flex-end;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.vc-filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.vc-filter-group { display: flex; flex-direction: column; gap: 4px; }
 
 .vc-label {
   font-size: 11px;
@@ -394,10 +392,7 @@ onUnmounted(_stopRefresh)
   letter-spacing: 0.4px;
 }
 
-.vc-radios {
-  display: flex;
-  gap: 12px;
-}
+.vc-radios { display: flex; gap: 12px; }
 
 .vc-radio {
   display: flex;
@@ -418,34 +413,18 @@ onUnmounted(_stopRefresh)
 }
 .vc-input:focus { border-color: #3b82f6; background: #fff; }
 
-.vc-btn-hoy {
+.vc-btn-hoy, .vc-btn-buscar, .vc-btn-refresh {
   height: 34px;
-  padding: 0 14px;
   display: flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
 }
+.vc-btn-hoy, .vc-btn-buscar { padding: 0 14px; }
+.vc-btn-refresh { padding: 0 10px; }
 
-.vc-btn-buscar {
-  height: 34px;
-  padding: 0 18px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.vc-fechas-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.vc-fecha-sep {
-  color: #94a3b8;
-  font-size: 13px;
-  flex-shrink: 0;
-}
+.vc-fechas-row { display: flex; align-items: center; gap: 6px; }
+.vc-fecha-sep  { color: #94a3b8; font-size: 13px; flex-shrink: 0; }
 
 .vc-totales {
   margin-top: 8px;
@@ -457,38 +436,21 @@ onUnmounted(_stopRefresh)
 }
 
 .vc-total-chip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: #f1f5f9;
-  border-radius: 8px;
-  padding: 4px 12px;
-  font-size: 13px;
+  display: flex; align-items: center; gap: 5px;
+  background: #f1f5f9; border-radius: 8px;
+  padding: 4px 12px; font-size: 13px;
   border-left: 3px solid #cbd5e1;
 }
-.vc-total-chip--green  {
-  background: #f0fdf4;
-  color: #15803d;
-  border-left-color: #22c55e;
-}
-.vc-total-chip--orange {
-  background: #fff7ed;
-  color: #c2410c;
-  border-left-color: #f97316;
-}
-.vc-total-chip--blue   {
-  background: #eff6ff;
-  color: #1e40af;
-  border-left-color: #3b82f6;
-}
+.vc-total-chip--green  { background: #f0fdf4; color: #15803d; border-left-color: #22c55e; }
+.vc-total-chip--orange { background: #fff7ed; color: #c2410c; border-left-color: #f97316; }
+.vc-total-chip--blue   { background: #eff6ff; color: #1e40af; border-left-color: #3b82f6; }
 .vc-total-lbl {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  opacity: 0.7;
-  margin-right: 3px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.3px; opacity: 0.7; margin-right: 3px;
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin .7s linear infinite; }
 
 /* ── Paneles ────────────────────────────────────────────── */
 .vc-panel-left {
@@ -518,10 +480,7 @@ onUnmounted(_stopRefresh)
 }
 
 /* ── Lista ──────────────────────────────────────────────── */
-.vc-list {
-  flex: 1;
-  overflow-y: auto;
-}
+.vc-list { flex: 1; overflow-y: auto; }
 
 .vc-row {
   padding: 10px 14px;
@@ -529,8 +488,8 @@ onUnmounted(_stopRefresh)
   cursor: pointer;
   transition: background 0.12s;
 }
-.vc-row:hover        { background: #f8fafc; }
-.vc-row--active      { background: #eff6ff; border-left: 3px solid #3b82f6; }
+.vc-row:hover   { background: #f8fafc; }
+.vc-row--active { background: #eff6ff; border-left: 3px solid #3b82f6; }
 
 .vc-row-top {
   display: flex;
@@ -538,83 +497,77 @@ onUnmounted(_stopRefresh)
   align-items: center;
   margin-bottom: 4px;
 }
-.vc-folio {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.vc-valor {
-  font-size: 14px;
-  font-weight: 700;
-  color: #16a34a;
-}
+.vc-folio  { font-size: 13px; font-weight: 600; color: #1e293b; display: flex; align-items: center; gap: 5px; }
+.vc-valor  { font-size: 14px; font-weight: 700; color: #16a34a; }
 .vc-row-bot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #64748b;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: #64748b;
 }
 .vc-hora { font-size: 11px; }
-
 .vc-chip-propina, .vc-chip-domicilio {
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 4px;
-  padding: 1px 5px;
-  white-space: nowrap;
+  font-size: 10px; font-weight: 700;
+  border-radius: 4px; padding: 1px 5px; white-space: nowrap;
 }
-.vc-chip-propina  { background: #fff7ed; color: #c2410c; }
-.vc-chip-domicilio{ background: #eff6ff; color: #1d4ed8; display: flex; align-items: center; gap: 3px; }
+.vc-chip-propina   { background: #fff7ed; color: #c2410c; }
+.vc-chip-domicilio { background: #eff6ff; color: #1d4ed8; display: flex; align-items: center; gap: 3px; }
 
-/* ── Detalle header ─────────────────────────────────────── */
-.vc-det-header {
-  padding: 16px;
-  border-bottom: 1px solid #f1f5f9;
-}
-.vc-det-title {
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-.vc-det-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12px;
-  color: #475569;
-  margin-bottom: 10px;
-}
-.vc-det-meta span {
-  display: flex;
+/* ── Barra de regreso (solo móvil) ──────────────────────── */
+.vc-back-bar {
+  display: none;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+.vc-btn-back {
+  display: flex; align-items: center; gap: 5px;
+  background: none; border: 1.5px solid #1d4ed8;
+  border-radius: 6px; padding: 5px 12px;
+  font-size: 13px; font-weight: 600; color: #1d4ed8; cursor: pointer;
+}
+.vc-btn-back:hover { background: #eff6ff; }
+.vc-back-title {
+  font-size: 14px; font-weight: 700; color: #1e293b;
+  display: flex; align-items: center; gap: 6px;
 }
 
-.vc-det-pagos {
-  max-width: 280px;
-}
-.vc-pago-row {
+/* ── Detalle: scroll único ──────────────────────────────── */
+.vc-det-scroll {
+  flex: 1;
+  overflow-y: auto;
   display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  padding: 2px 0;
+  flex-direction: column;
+}
+
+.vc-det-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+.vc-det-title  { font-size: 16px; margin-bottom: 8px; }
+.vc-det-meta {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  font-size: 12px; color: #475569; margin-bottom: 10px;
+}
+.vc-det-meta span { display: flex; align-items: center; gap: 4px; }
+
+.vc-det-pagos { max-width: 280px; }
+.vc-pago-row {
+  display: flex; justify-content: space-between;
+  font-size: 13px; padding: 2px 0;
 }
 .vc-pago-total {
   border-top: 1px solid #e2e8f0;
-  margin-top: 4px;
-  padding-top: 4px;
-  font-weight: 700;
-  font-size: 14px;
+  margin-top: 4px; padding-top: 4px;
+  font-weight: 700; font-size: 14px;
 }
 
 /* ── Tabla ítems ────────────────────────────────────────── */
 .vc-det-items {
   flex: 1;
-  overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 0 8px 16px;
 }
 
 .vc-table {
@@ -623,17 +576,13 @@ onUnmounted(_stopRefresh)
   font-size: 13px;
 }
 .vc-table th {
-  position: sticky;
-  top: 0;
+  position: sticky; top: 0;
   background: #f8fafc;
   padding: 8px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: #64748b;
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; color: #64748b;
   border-bottom: 1px solid #e2e8f0;
-  letter-spacing: 0.3px;
-  z-index: 1;
+  letter-spacing: 0.3px; z-index: 1;
 }
 .vc-table td {
   padding: 8px 10px;
@@ -643,28 +592,18 @@ onUnmounted(_stopRefresh)
 .vc-item-row:hover td { background: #f8fafc; }
 
 .vc-btn-ver {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 10px;
-  letter-spacing: 0.5px;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 10px; letter-spacing: 0.5px;
 }
 
-/* ── Tabla insumos expandida ────────────────────────────── */
-.vc-insumos-row td {
-  background: #f0fdf4;
-  padding: 6px 10px;
-}
+/* ── Tabla insumos ──────────────────────────────────────── */
+.vc-insumos-row td { background: #f0fdf4; padding: 6px 10px; }
 .vc-table-insumos {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
+  width: 100%; border-collapse: collapse; font-size: 12px;
 }
 .vc-table-insumos th {
-  padding: 4px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: #166534;
+  padding: 4px 8px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; color: #166534;
   border-bottom: 1px solid #bbf7d0;
 }
 .vc-table-insumos td {
@@ -673,35 +612,47 @@ onUnmounted(_stopRefresh)
   color: #15803d;
 }
 
-/* ── RESPONSIVE ─────────────────────────────────────────── */
+/* ── RESPONSIVE TABLET/MÓVIL ────────────────────────────── */
 @media (max-width: 768px) {
   .vc-body {
     flex-direction: column;
+    gap: 0;
   }
+
+  /* Lista: visible solo cuando NO hay selección */
   .vc-panel-left {
     width: 100%;
-    max-height: 280px;
+    flex: 1;
   }
+  .vc-body.vc-has-selection .vc-panel-left {
+    display: none;
+  }
+
+  /* Detalle: visible solo cuando HAY selección */
   .vc-panel-right {
-    min-height: 300px;
+    flex: 1;
+    min-height: 0;
   }
-  .vc-filter-row {
-    gap: 10px;
+  .vc-body:not(.vc-has-selection) .vc-panel-right {
+    display: none;
   }
+
+  /* Mostrar barra de regreso en móvil */
+  .vc-back-bar { display: flex; }
+
+  /* Filtros */
+  .vc-filter-row { gap: 8px; }
   .vc-btn-buscar span, .vc-btn-hoy span { display: none; }
-  .vc-btn-buscar, .vc-btn-hoy { padding: 0 12px; }
+  .vc-btn-buscar, .vc-btn-hoy { padding: 0 10px; }
 }
 
 @media (max-width: 576px) {
-  .vc-filter-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .vc-btn-buscar {
-    width: 100%;
-    justify-content: center;
+  .vc-filter-row { flex-direction: column; align-items: stretch; }
+  .vc-btn-buscar, .vc-btn-hoy, .vc-btn-refresh {
+    width: 100%; justify-content: center;
   }
   .vc-btn-buscar span, .vc-btn-hoy span { display: inline; }
+  .vc-btn-refresh::after { content: ' Actualizar'; }
   .vc-radios { flex-wrap: wrap; }
   .vc-det-meta { gap: 6px; }
   .vc-table th:nth-child(3),
