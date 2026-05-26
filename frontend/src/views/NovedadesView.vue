@@ -437,7 +437,7 @@ const filtered = computed(() => {
   return novelties.value.filter(n => {
     const matchSearch = !search.value ||
       n.title.toLowerCase().includes(search.value.toLowerCase()) ||
-      n.description.toLowerCase().includes(search.value.toLowerCase())
+      (n.description || "").toLowerCase().includes(search.value.toLowerCase())
     const matchStatus = filterStatus.value === "all" || n.status === filterStatus.value
     return matchSearch && matchStatus
   })
@@ -938,8 +938,10 @@ onMounted(async () => {
 .card-resuelta  { border-left-color: #22c55e; }
 
 .card-selected {
-  box-shadow: 0 0 0 2px var(--primary, #3b82f6), 0 6px 20px rgba(59,130,246,0.18);
-  background: var(--selected-bg, rgba(59,130,246,0.06));
+  box-shadow: 0 0 0 3px #3b82f6, 0 8px 24px rgba(59,130,246,0.28) !important;
+  background: rgba(59,130,246,0.10) !important;
+  border-left-color: #3b82f6 !important;
+  transform: translateY(-2px);
 }
 
 .card-top {
