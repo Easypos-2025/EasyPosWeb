@@ -1962,6 +1962,140 @@ async def pull_categories(
 
 
 # ═════════════════════════════════════════
+# DISH CATEGORIES (categoria_platos)
+# ═════════════════════════════════════════
+class DishCategoryIn(BaseModel):
+    id: int
+    company_id: int
+    parent_category_id: Optional[int] = 0
+    name: Optional[str] = None
+    photo_name: Optional[str] = None
+    percentage: Optional[float] = 0
+    shift: Optional[int] = 0
+    monday: Optional[int] = 1
+    tuesday: Optional[int] = 1
+    wednesday: Optional[int] = 1
+    thursday: Optional[int] = 1
+    friday: Optional[int] = 1
+    saturday: Optional[int] = 1
+    sunday: Optional[int] = 1
+    is_active: Optional[int] = 1
+
+
+@router.post("/sync/push/dish-categories")
+async def push_dish_categories(
+    categories: List[DishCategoryIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for c in categories:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_dish_categories
+                    (id, company_id, parent_category_id, name, photo_name, percentage,
+                     shift, monday, tuesday, wednesday, thursday, friday, saturday, sunday,
+                     is_active, synced, updated_at)
+                VALUES
+                    (:id, :company_id, :parent_category_id, :name, :photo_name, :percentage,
+                     :shift, :monday, :tuesday, :wednesday, :thursday, :friday, :saturday, :sunday,
+                     :is_active, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    parent_category_id = VALUES(parent_category_id),
+                    name               = VALUES(name),
+                    photo_name         = VALUES(photo_name),
+                    percentage         = VALUES(percentage),
+                    shift              = VALUES(shift),
+                    monday             = VALUES(monday),
+                    tuesday            = VALUES(tuesday),
+                    wednesday          = VALUES(wednesday),
+                    thursday           = VALUES(thursday),
+                    friday             = VALUES(friday),
+                    saturday           = VALUES(saturday),
+                    sunday             = VALUES(sunday),
+                    is_active          = VALUES(is_active),
+                    synced             = 1,
+                    updated_at         = NOW()
+            """), c.dict())
+            saved.append(c.id)
+        except Exception as e:
+            failed.append({"id": c.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(categories), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/dish-categories")
+async def pull_dish_categories(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text(
+        "SELECT * FROM pos_dish_categories WHERE company_id = :cid ORDER BY id"
+    ), {"cid": company_id})).mappings().all()
+    return {"total": len(rows), "dish_categories": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
+# PRODUCT CATEGORIES (categoria_productos)
+# ═════════════════════════════════════════
+class ProductCategoryIn(BaseModel):
+    id: int
+    company_id: int
+    name: Optional[str] = None
+    percentage: Optional[float] = 0
+    is_active: Optional[int] = 1
+    require_selection: Optional[int] = 0
+    print_assembly_changes_only: Optional[int] = 0
+
+
+@router.post("/sync/push/product-categories")
+async def push_product_categories(
+    categories: List[ProductCategoryIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for c in categories:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_product_categories
+                    (id, company_id, name, percentage, is_active,
+                     require_selection, print_assembly_changes_only, synced, updated_at)
+                VALUES
+                    (:id, :company_id, :name, :percentage, :is_active,
+                     :require_selection, :print_assembly_changes_only, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name                        = VALUES(name),
+                    percentage                  = VALUES(percentage),
+                    is_active                   = VALUES(is_active),
+                    require_selection           = VALUES(require_selection),
+                    print_assembly_changes_only = VALUES(print_assembly_changes_only),
+                    synced                      = 1,
+                    updated_at                  = NOW()
+            """), c.dict())
+            saved.append(c.id)
+        except Exception as e:
+            failed.append({"id": c.id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(categories), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/product-categories")
+async def pull_product_categories(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text(
+        "SELECT * FROM pos_product_categories WHERE company_id = :cid ORDER BY id"
+    ), {"cid": company_id})).mappings().all()
+    return {"total": len(rows), "product_categories": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════
 # CASH REGISTERS (cajas)
 # ═════════════════════════════════════════
 class CashRegisterIn(BaseModel):
@@ -2036,7 +2170,7 @@ class PrinterIn(BaseModel):
     company_id: int
     name: Optional[str] = None
     ip: Optional[str] = None
-    port: Optional[str] = "9100"
+    port: Optional[int] = 9100
     is_active: Optional[int] = 1
 
 

@@ -38,10 +38,10 @@ Public Sub SincronizarCategoriaProductos(Var_Id_Company_Envio As Integer, Var_Li
         json = json & """id"":"                         & Nz(rs("Cod_Categoria"), 0)                              & ","
         json = json & """company_id"":"                 & Var_Id_Company_Envio                                    & ","
         json = json & """name"":"                       & """" & EscapeJson(Nz(rs("Nombre"), ""))               & ""","
-        json = json & """percentage"":"                 & Nz(rs("Porcentaje"), 0)                                 & ","
-        json = json & """is_active"":"                  & Nz(rs("Activa"), 1)                                    & ","
-        json = json & """require_selection"":"          & Nz(rs("Exgir_Seleccion"), 0)                           & ","
-        json = json & """print_assembly_changes_only"":"  & Nz(rs("Imprimir_Armar_Solo_Cambios"), 0)
+        json = json & """percentage"":"                 & Replace(CStr(Nz(rs("Porcentaje"), 0)), ",", ".") & ","
+        json = json & """is_active"":"                  & CInt(Nz(rs("Activa"), 1))                              & ","
+        json = json & """require_selection"":"          & CInt(Nz(rs("Exgir_Seleccion"), 0))                     & ","
+        json = json & """print_assembly_changes_only"":"  & CInt(Nz(rs("Imprimir_Armar_Solo_Cambios"), 0))
         json = json & "}"
         sep = ","
         rs.MoveNext
@@ -67,6 +67,10 @@ Public Sub SincronizarCategoriaProductos(Var_Id_Company_Envio As Integer, Var_Li
     End If
 
     ' -- 5. Mostrar estado ---------------------------------
+    If InStr(respuesta, "total_saved") = 0 Then
+        Var_Caption_Error = "Error servidor: " & Left(respuesta, 200)
+        conn.Close: Exit Sub
+    End If
     Dim sc As Object
     Set sc = CreateObject("ScriptControl")
     sc.language = "JScript"

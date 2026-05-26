@@ -536,6 +536,44 @@ CREATE TABLE IF NOT EXISTS `pos_receipt_payment_methods` (
   PRIMARY KEY (`item`, `payment_method_id`, `card_id`, `invoice_number`, `company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `pos_dish_categories` (
+  `id`                 INT NOT NULL DEFAULT 0,
+  `company_id`         INT NOT NULL DEFAULT 0,
+  `parent_category_id` INT DEFAULT 0,
+  `name`               VARCHAR(100) DEFAULT NULL,
+  `photo_name`         VARCHAR(150) DEFAULT NULL,
+  `percentage`         DECIMAL(5,2) DEFAULT 0,
+  `shift`              INT DEFAULT 0,
+  `monday`             TINYINT DEFAULT 1,
+  `tuesday`            TINYINT DEFAULT 1,
+  `wednesday`          TINYINT DEFAULT 1,
+  `thursday`           TINYINT DEFAULT 1,
+  `friday`             TINYINT DEFAULT 1,
+  `saturday`           TINYINT DEFAULT 1,
+  `sunday`             TINYINT DEFAULT 1,
+  `is_active`          TINYINT NOT NULL DEFAULT 1,
+  `synced`             TINYINT NOT NULL DEFAULT 0,
+  `updated_at`         DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`, `company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `pos_product_categories` (
+  `id`                          INT NOT NULL DEFAULT 0,
+  `company_id`                  INT NOT NULL DEFAULT 0,
+  `name`                        VARCHAR(100) DEFAULT NULL,
+  `percentage`                  DECIMAL(5,2) DEFAULT 0,
+  `is_active`                   TINYINT NOT NULL DEFAULT 1,
+  `require_selection`           TINYINT DEFAULT 0,
+  `print_assembly_changes_only` TINYINT DEFAULT 0,
+  `synced`                      TINYINT NOT NULL DEFAULT 0,
+  `updated_at`                  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`, `company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── pos_printers: connection_type no obligatorio (campo solo web) ────────────
+ALTER TABLE `pos_printers`
+    MODIFY COLUMN `connection_type` VARCHAR(20) DEFAULT NULL;
+
 -- ── pos_categories: agregar description y photo_name si no existen ───────────
 ALTER TABLE `pos_categories`
     ADD COLUMN IF NOT EXISTS `description` VARCHAR(255) DEFAULT NULL AFTER `name`,

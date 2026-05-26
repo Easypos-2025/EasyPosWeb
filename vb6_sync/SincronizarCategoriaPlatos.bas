@@ -47,16 +47,16 @@ Public Sub SincronizarCategoriaPlatos(Var_Id_Company_Envio As Integer, Var_Limit
         json = json & """parent_category_id"":"  & Nz(rs("Categoria"), 0)                       & ","
         json = json & """name"":"                & """" & EscapeJson(Nz(rs("Nombre"), ""))     & ""","
         json = json & """photo_name"":"          & """" & Nz(rs("Nombre_foto"), "")            & ""","
-        json = json & """percentage"":"          & Nz(rs("Porcentaje"), 0)                      & ","
-        json = json & """shift"":"               & Nz(rs("Turno"), 0)                           & ","
-        json = json & """monday"":"              & Nz(rs("Lunes"), 0)                           & ","
-        json = json & """tuesday"":"             & Nz(rs("Martes"), 0)                          & ","
-        json = json & """wednesday"":"           & Nz(rs("Miercoles"), 0)                       & ","
-        json = json & """thursday"":"            & Nz(rs("Jueves"), 0)                          & ","
-        json = json & """friday"":"              & Nz(rs("Viernes"), 0)                         & ","
-        json = json & """saturday"":"            & Nz(rs("Sabado"), 0)                          & ","
-        json = json & """sunday"":"              & Nz(rs("Domingo"), 0)                         & ","
-        json = json & """is_active"":"           & Nz(rs("Activa"), 1)
+        json = json & """percentage"":"          & Replace(CStr(Nz(rs("Porcentaje"), 0)), ",", ".") & ","
+        json = json & """shift"":"               & CInt(Nz(rs("Turno"), 0))                     & ","
+        json = json & """monday"":"              & CInt(Nz(rs("Lunes"), 0))                     & ","
+        json = json & """tuesday"":"             & CInt(Nz(rs("Martes"), 0))                    & ","
+        json = json & """wednesday"":"           & CInt(Nz(rs("Miercoles"), 0))                 & ","
+        json = json & """thursday"":"            & CInt(Nz(rs("Jueves"), 0))                    & ","
+        json = json & """friday"":"              & CInt(Nz(rs("Viernes"), 0))                   & ","
+        json = json & """saturday"":"            & CInt(Nz(rs("Sabado"), 0))                    & ","
+        json = json & """sunday"":"              & CInt(Nz(rs("Domingo"), 0))                   & ","
+        json = json & """is_active"":"           & CInt(Nz(rs("Activa"), 1))
         json = json & "}"
         sep = ","
         rs.MoveNext
@@ -82,6 +82,10 @@ Public Sub SincronizarCategoriaPlatos(Var_Id_Company_Envio As Integer, Var_Limit
     End If
 
     ' -- 5. Mostrar estado ---------------------------------
+    If InStr(respuesta, "total_saved") = 0 Then
+        Var_Caption_Error = "Error servidor: " & Left(respuesta, 200)
+        conn.Close: Exit Sub
+    End If
     Dim sc As Object
     Set sc = CreateObject("ScriptControl")
     sc.language = "JScript"
