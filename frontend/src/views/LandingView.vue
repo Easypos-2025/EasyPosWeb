@@ -957,7 +957,7 @@ export default {
       submitting, contactSuccess, contactError, currentYear,
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
-      formatPrice, renderVal, renderFeatVal, submitContact,
+      formatPrice, renderVal, renderFeatVal, renderLimitVal, submitContact,
       sidebarDismissed,
     }
   },
