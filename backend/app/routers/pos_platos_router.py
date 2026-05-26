@@ -120,8 +120,8 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
             d.description, d.tax, d.photo_path, d.product_code,
             COALESCE(d.order_index, 0) AS order_index,
             c.name  AS category_name,
-            c.color AS category_color,
-            COALESCE(c.order_index, 0) AS category_order,
+            NULL    AS category_color,
+            0       AS category_order,
             (SELECT COUNT(*) FROM pos_dish_products dp
              WHERE dp.dish_id=d.id AND dp.company_id=d.company_id AND dp.active=1)   AS ingredient_count,
             (SELECT COUNT(*) FROM pos_item_printers ip
@@ -132,7 +132,7 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
              WHERE v.dish_id=d.id AND v.company_id=d.company_id AND v.is_active=1)   AS variant_count,
             cpl.precio_producto AS list_price
         FROM pos_dishes d
-        LEFT JOIN pos_item_categories c
+        LEFT JOIN pos_dish_categories c
                ON c.id=d.category_id AND c.company_id=d.company_id
         LEFT JOIN pos_customer_price_list cpl
                ON cpl.id_producto=d.id AND cpl.company_id=d.company_id

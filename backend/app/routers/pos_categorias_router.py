@@ -33,9 +33,6 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
 
 class CategoryIn(BaseModel):
     name: str
-    description: Optional[str] = None
-    color: Optional[str] = "#1d4ed8"
-    icon: Optional[str] = "bi-tag"
     is_active: Optional[int] = 1
 
 
@@ -43,7 +40,7 @@ class CategoryIn(BaseModel):
 async def listar(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     rows = (await db.execute(text(
-        "SELECT * FROM pos_item_categories WHERE company_id=:cid ORDER BY name"
+        "SELECT id, company_id, name, is_active FROM pos_dish_categories WHERE company_id=:cid ORDER BY name"
     ), {"cid": user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 
@@ -52,13 +49,12 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
 async def crear(data: CategoryIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     await db.execute(text("""
-        INSERT INTO pos_item_categories (company_id, name, description, color, icon, is_active)
-        VALUES (:cid, :name, :desc, :color, :icon, :active)
-    """), {"cid": user.company_id, "name": data.name, "desc": data.description,
-           "color": data.color, "icon": data.icon, "active": data.is_active})
+        INSERT INTO pos_dish_categories (company_id, name, is_active)
+        VALUES (:cid, :name, :active)
+    """), {"cid": user.company_id, "name": data.name, "active": data.is_active})
     await db.commit()
     row = (await db.execute(text(
-        "SELECT * FROM pos_item_categories WHERE company_id=:cid ORDER BY id DESC LIMIT 1"
+        "SELECT id, company_id, name, is_active FROM pos_dish_categories WHERE company_id=:cid ORDER BY id DESC LIMIT 1"
     ), {"cid": user.company_id})).mappings().one()
     return dict(row)
 
@@ -67,11 +63,9 @@ async def crear(data: CategoryIn, authorization: str = Header(None), db: AsyncSe
 async def actualizar(cat_id: int, data: CategoryIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     await db.execute(text("""
-        UPDATE pos_item_categories
-        SET name=:name, description=:desc, color=:color, icon=:icon, is_active=:active
+        UPDATE pos_dish_categories SET name=:name, is_active=:active
         WHERE id=:id AND company_id=:cid
-    """), {"id": cat_id, "cid": user.company_id, "name": data.name, "desc": data.description,
-           "color": data.color, "icon": data.icon, "active": data.is_active})
+    """), {"id": cat_id, "cid": user.company_id, "name": data.name, "active": data.is_active})
     await db.commit()
     return {"ok": True}
 
@@ -80,7 +74,7 @@ async def actualizar(cat_id: int, data: CategoryIn, authorization: str = Header(
 async def eliminar(cat_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     await db.execute(text(
-        "UPDATE pos_item_categories SET is_active=0 WHERE id=:id AND company_id=:cid"
+        "UPDATE pos_dish_categories SET is_active=0 WHERE id=:id AND company_id=:cid"
     ), {"id": cat_id, "cid": user.company_id})
     await db.commit()
     return {"ok": True}
