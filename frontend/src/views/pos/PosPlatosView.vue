@@ -109,12 +109,24 @@
                 <span v-if="item.tax" title="IVA"><i class="bi bi-percent"></i> {{ item.tax }}%</span>
               </div>
               <div class="item-acciones">
-                <button class="btn-accion" @click="abrirModalItem(item)" title="Editar"><i class="bi bi-pencil"></i></button>
-                <button class="btn-accion" title="Receta" @click="abrirPanel(item, 'ingredientes')"><i class="bi bi-list-ul"></i></button>
-                <button class="btn-accion" title="Impresoras" @click="abrirPanel(item, 'impresoras')"><i class="bi bi-printer"></i></button>
-                <button class="btn-accion" title="Armado" @click="abrirPanel(item, 'modificadores')"><i class="bi bi-sliders"></i></button>
-                <button class="btn-accion" title="Variantes" @click="abrirPanel(item, 'variantes')"><i class="bi bi-tags"></i></button>
-                <button class="btn-accion btn-accion--danger" @click="eliminar(item.id)"><i class="bi bi-trash"></i></button>
+                <button class="btn-accion btn-accion--edit"   @click="abrirModalItem(item)">
+                  <i class="bi bi-pencil-fill"></i><span>Editar</span>
+                </button>
+                <button class="btn-accion btn-accion--recipe" @click="abrirPanel(item,'ingredientes')">
+                  <i class="bi bi-list-ul"></i><span>Receta</span>
+                </button>
+                <button class="btn-accion btn-accion--print"  @click="abrirPanel(item,'impresoras')">
+                  <i class="bi bi-printer-fill"></i><span>Imprimir</span>
+                </button>
+                <button class="btn-accion btn-accion--build"  @click="abrirPanel(item,'modificadores')">
+                  <i class="bi bi-sliders"></i><span>Armado</span>
+                </button>
+                <button class="btn-accion btn-accion--variants" @click="abrirPanel(item,'variantes')">
+                  <i class="bi bi-tags-fill"></i><span>Variantes</span>
+                </button>
+                <button class="btn-accion btn-accion--danger" @click="eliminar(item.id)">
+                  <i class="bi bi-trash-fill"></i><span>Desact.</span>
+                </button>
               </div>
             </div>
           </div>
@@ -767,7 +779,8 @@ async function eliminarVariante(varId) {
 
 /* ── Slider de categorías ────────────────────────────────────────────────────── */
 .cat-slider-wrap {
-  position:relative;display:flex;align-items:center;
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;
   background:linear-gradient(135deg,#1e3a5f 0%,#1d4ed8 100%);
   border-radius:14px;padding:10px 46px;margin-bottom:16px;
   box-shadow:0 4px 16px rgba(29,78,216,.25);
@@ -841,7 +854,7 @@ async function eliminarVariante(varId) {
 /* ── Grupos con cabecera de categoría (OlaClick style) ───────────────────────── */
 .grupos-wrap { display:flex;flex-direction:column; }
 .seccion-hdr {
-  position:sticky;top:0;z-index:5;
+  position:sticky;top:62px;z-index:5;
   background:var(--color-bg,#f8fafc);
   display:flex;align-items:center;gap:8px;
   padding:9px 8px 9px 12px;
@@ -888,10 +901,28 @@ async function eliminarVariante(varId) {
 .item-meta   { display:flex;gap:10px;font-size:11px;color:#94a3b8;flex-wrap:wrap; }
 .item-meta span { display:flex;align-items:center;gap:3px; }
 .badge-variants { color:#7c3aed;font-weight:700; }
-.item-acciones { display:flex;gap:4px;margin-top:4px; }
-.btn-accion  { flex:1;background:none;border:1px solid #e2e8f0;border-radius:6px;padding:5px 0;cursor:pointer;color:#475569;font-size:12px;transition:.15s; }
-.btn-accion:hover { background:#f0f4ff;color:#1d4ed8;border-color:#1d4ed8; }
-.btn-accion--danger:hover { background:#fff1f2;color:#e11d48;border-color:#e11d48; }
+.item-acciones {
+  display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:6px;
+}
+.btn-accion {
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;border-radius:8px;padding:7px 4px 6px;cursor:pointer;
+  border:1.5px solid #e2e8f0;background:#f8fafc;
+  font-size:15px;transition:all .15s;line-height:1;
+}
+.btn-accion span { font-size:9px;font-weight:700;letter-spacing:.01em;line-height:1; }
+.btn-accion--edit     { color:#1d4ed8; }
+.btn-accion--edit:hover     { background:#eff6ff;border-color:#1d4ed8; }
+.btn-accion--recipe   { color:#16a34a; }
+.btn-accion--recipe:hover   { background:#f0fdf4;border-color:#16a34a; }
+.btn-accion--print    { color:#ea580c; }
+.btn-accion--print:hover    { background:#fff7ed;border-color:#ea580c; }
+.btn-accion--build    { color:#7c3aed; }
+.btn-accion--build:hover    { background:#f5f3ff;border-color:#7c3aed; }
+.btn-accion--variants { color:#0891b2; }
+.btn-accion--variants:hover { background:#ecfeff;border-color:#0891b2; }
+.btn-accion--danger   { color:#e11d48; }
+.btn-accion--danger:hover   { background:#fff1f2;border-color:#e11d48; }
 
 /* ── Modal ───────────────────────────────────────────────────────────────────── */
 .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1050;padding:16px; }
@@ -1005,14 +1036,15 @@ async function eliminarVariante(varId) {
   .cat-arrow { width:30px;height:30px;font-size:12px; }
   .cat-arrow--left  { left:5px; }
   .cat-arrow--right { right:5px; }
+  .seccion-hdr { top:54px; }
 }
 @media (max-width: 576px) {
   .items-grid { grid-template-columns:1fr; }
   .campo-row  { flex-direction:column; }
   .item-foto  { height:160px; }
-  .item-acciones { flex-wrap:wrap; }
   .filtros-wrap { flex-direction:column;align-items:flex-start; }
   .cat-slider-wrap { padding:8px 36px;border-radius:8px;margin-bottom:12px; }
   .cat-pill { padding:7px 12px;font-size:11px; }
+  .seccion-hdr { top:50px; }
 }
 </style>
