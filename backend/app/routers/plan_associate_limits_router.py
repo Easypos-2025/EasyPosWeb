@@ -24,32 +24,21 @@ router = APIRouter(prefix="/plan-associate-limits", tags=["PlanAssociateLimits"]
 
 
 def _ser(cpl: CompanyPlanLimits, company: Company = None, plan: Plan = None) -> dict:
-    return {
-        "id":                  cpl.id,
-        "company_id":              cpl.company_id,
-        "company_name":            company.name if company else "—",
-        "identification_number":   company.identification_number if company else "",
-        "plan_id":                 cpl.plan_id,
-        "plan_name":               plan.name if plan else "—",
-        # Límites de conteo
-        "max_users":           cpl.max_users,
-        "max_products":        cpl.max_products,
-        "max_categories":      cpl.max_categories,
-        "max_workers":         cpl.max_workers,
-        "max_clients":         cpl.max_clients,
-        "max_bodega_items":    cpl.max_bodega_items,
-        "max_assets":          cpl.max_assets,
-        "max_waiters":         cpl.max_waiters,
-        # Límites diarios
-        "max_tasks":           cpl.max_tasks,
-        "max_daily_invoices":  cpl.max_daily_invoices,
-        "max_daily_receipts":  cpl.max_daily_receipts,
-        "max_daily_tasks":     cpl.max_daily_tasks,
-        # Meta
-        "is_custom":           cpl.is_custom,
-        "notes":               cpl.notes,
-        "updated_at":          cpl.updated_at.isoformat() if cpl.updated_at else None,
+    row = {
+        "id":                    cpl.id,
+        "company_id":            cpl.company_id,
+        "company_name":          company.name if company else "—",
+        "identification_number": company.identification_number if company else "",
+        "plan_id":               cpl.plan_id,
+        "plan_name":             plan.name if plan else "—",
+        "is_custom":             cpl.is_custom,
+        "notes":                 cpl.notes,
+        "updated_at":            cpl.updated_at.isoformat() if cpl.updated_at else None,
     }
+    for f in LIMIT_FIELDS:
+        row[f] = getattr(cpl, f, -1)
+    row["plan_base"] = {f: getattr(plan, f, -1) for f in LIMIT_FIELDS} if plan else {f: -1 for f in LIMIT_FIELDS}
+    return row
 
 
 @router.get("/")

@@ -25,69 +25,71 @@
     <!-- Tabla -->
     <div class="table-card">
       <div v-if="loading" class="table-loading"><i class="bi bi-arrow-repeat spin"></i> Cargando...</div>
-      <table v-else class="data-table">
-        <thead>
-          <tr>
-            <th>Empresa</th>
-            <th>Plan base</th>
-            <th class="th-c" title="Usuarios">Usuarios</th>
-            <th class="th-c" title="Meseros POS">Meseros</th>
-            <th class="th-c" title="Productos">Productos</th>
-            <th class="th-c" title="Categorías">Categ.</th>
-            <th class="th-c" title="Trabajadores">Trabaj.</th>
-            <th class="th-c" title="Clientes">Clientes</th>
-            <th class="th-c" title="Bodega">Bodega</th>
-            <th class="th-c" title="Activos">Activos</th>
-            <th class="th-c" title="Tareas activas">Tareas</th>
-            <th class="th-c" title="Facturas/día">Fact./día</th>
-            <th class="th-c" title="Recibos/día">Recib./día</th>
-            <th class="th-c" title="Tareas/día">Tar./día</th>
-            <th class="th-c">Estado</th>
-            <th class="th-c">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in filtered" :key="row.company_id" :class="{ 'row-custom': row.is_custom }">
-            <td>
-              <strong>{{ row.company_name }}</strong>
-            </td>
-            <td><span class="plan-badge">{{ row.plan_name }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_users) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_waiters) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_products) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_categories) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_workers) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_clients) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_bodega_items) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_assets) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_tasks) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_invoices) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_receipts) }}</span></td>
-            <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_tasks) }}</span></td>
-            <td class="th-c">
-              <span class="status-badge" :class="row.is_custom ? 'st-custom' : 'st-plan'">
-                {{ row.is_custom ? 'Personalizado' : 'Plan base' }}
-              </span>
-            </td>
-            <td class="th-c">
-              <div class="action-row">
-                <button class="btn btn-sm btn-outline-primary" @click="openEdit(row)" title="Editar límites">
-                  <i class="bi bi-pencil"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" @click="openBlocked(row)" title="Ver registros bloqueados">
-                  <i class="bi bi-lock-fill"></i>
-                </button>
-                <button v-if="row.is_custom" class="btn btn-sm btn-outline-secondary" @click="resetRow(row)" title="Restaurar a plan base">
-                  <i class="bi bi-arrow-counterclockwise"></i>
-                </button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="!loading && filtered.length === 0">
-            <td colspan="16" class="text-center text-muted py-4">No hay registros con estos filtros</td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-else class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Empresa</th>
+              <th>Plan base</th>
+              <th class="th-c" title="Usuarios">Usrs</th>
+              <th class="th-c" title="Roles">Roles</th>
+              <th class="th-c" title="Meseros POS">Mes.</th>
+              <th class="th-c" title="Trabajadores">Trab.</th>
+              <th class="th-c" title="Clientes">Clts</th>
+              <th class="th-c" title="Productos">Prods</th>
+              <th class="th-c" title="Categorías">Cats</th>
+              <th class="th-c" title="Artículos bodega">Bodg</th>
+              <th class="th-c" title="Activos">Actvs</th>
+              <th class="th-c" title="Tareas activas">Tarea</th>
+              <th class="th-c" title="Facturas/día">F/día</th>
+              <th class="th-c" title="Recibos/día">R/día</th>
+              <th class="th-c" title="Tareas/día">T/día</th>
+              <th class="th-c">Estado</th>
+              <th class="th-c">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in filtered" :key="row.company_id" :class="{ 'row-custom': row.is_custom }">
+              <td><strong>{{ row.company_name }}</strong></td>
+              <td><span class="plan-badge">{{ row.plan_name }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_users) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_roles) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_waiters) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_workers) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_clients) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_products) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_categories) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_bodega_items) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_assets) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_tasks) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_invoices) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_receipts) }}</span></td>
+              <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_tasks) }}</span></td>
+              <td class="th-c">
+                <span class="status-badge" :class="row.is_custom ? 'st-custom' : 'st-plan'">
+                  {{ row.is_custom ? 'Personalizado' : 'Plan base' }}
+                </span>
+              </td>
+              <td class="th-c">
+                <div class="action-row">
+                  <button class="btn btn-sm btn-outline-primary" @click="openEdit(row)" title="Editar límites">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger" @click="openBlocked(row)" title="Ver registros bloqueados">
+                    <i class="bi bi-lock-fill"></i>
+                  </button>
+                  <button v-if="row.is_custom" class="btn btn-sm btn-outline-secondary" @click="resetRow(row)" title="Restaurar a plan base">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!loading && filtered.length === 0">
+              <td colspan="17" class="text-center text-muted py-4">No hay registros con estos filtros</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- MODAL EDITAR LÍMITES -->
@@ -98,6 +100,7 @@
           <button class="btn-x" @click="showEdit = false"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="mb-area">
+
           <div class="edit-plan-info">
             <i class="bi bi-award me-1" style="color:#f59e0b"></i>
             Plan base: <strong>{{ editRow?.plan_name }}</strong>
@@ -105,19 +108,33 @@
           </div>
           <p class="edit-hint">Usa <strong>-1</strong> para ilimitado. Los cambios solo aplican a esta empresa.</p>
 
-          <div class="limits-section-title">Límites por cantidad total</div>
+          <!-- Acceso y roles -->
+          <div class="ls-title"><i class="bi bi-people me-1"></i>Acceso y roles</div>
           <div class="limits-grid">
-            <div class="limit-field" v-for="f in countLimitFields" :key="f.key">
+            <div class="limit-field" v-for="f in accessFields" :key="f.key">
               <label>{{ f.label }}</label>
               <input v-model.number="editForm[f.key]" type="number" min="-1" class="form-control form-control-sm" />
+              <span class="plan-ref">Plan base: {{ fmt(editRow?.plan_base?.[f.key]) }}</span>
             </div>
           </div>
 
-          <div class="limits-section-title mt-2">Límites diarios (transacciones)</div>
+          <!-- Catálogo e inventario -->
+          <div class="ls-title"><i class="bi bi-grid me-1"></i>Catálogo e inventario</div>
           <div class="limits-grid">
-            <div class="limit-field" v-for="f in dailyLimitFields" :key="f.key">
+            <div class="limit-field" v-for="f in catalogFields" :key="f.key">
               <label>{{ f.label }}</label>
               <input v-model.number="editForm[f.key]" type="number" min="-1" class="form-control form-control-sm" />
+              <span class="plan-ref">Plan base: {{ fmt(editRow?.plan_base?.[f.key]) }}</span>
+            </div>
+          </div>
+
+          <!-- Límites diarios -->
+          <div class="ls-title"><i class="bi bi-calendar-day me-1"></i>Límites diarios</div>
+          <div class="limits-grid">
+            <div class="limit-field" v-for="f in dailyFields" :key="f.key">
+              <label>{{ f.label }}</label>
+              <input v-model.number="editForm[f.key]" type="number" min="-1" class="form-control form-control-sm" />
+              <span class="plan-ref">Plan base: {{ fmt(editRow?.plan_base?.[f.key]) }}</span>
             </div>
           </div>
 
@@ -169,7 +186,6 @@
               </span>
             </div>
 
-            <!-- Sección por recurso -->
             <div v-for="(items, resource) in blockedData.resources" :key="resource" class="blocked-resource-section">
               <div class="blocked-resource-header">
                 <i :class="RESOURCE_ICONS[resource] || 'bi bi-question-circle'" class="me-2"></i>
@@ -202,19 +218,10 @@
 
         <div class="mf" v-if="!blockedLoading && blockedTotal > 0">
           <button class="btn btn-secondary btn-sm" @click="closeBlocked">Cerrar</button>
-          <button
-            class="btn btn-outline-warning btn-sm"
-            @click="forceDowngrade"
-            :disabled="unblocking"
-            title="Recalcular bloqueos según límites actuales"
-          >
+          <button class="btn btn-outline-warning btn-sm" @click="forceDowngrade" :disabled="unblocking" title="Recalcular bloqueos según límites actuales">
             <i class="bi bi-arrow-repeat me-1"></i>Recalcular bloqueos
           </button>
-          <button
-            class="btn btn-success btn-sm"
-            :disabled="selectedToUnblock.length === 0 || unblocking"
-            @click="unblockSelected"
-          >
+          <button class="btn btn-success btn-sm" :disabled="selectedToUnblock.length === 0 || unblocking" @click="unblockSelected">
             <i v-if="unblocking" class="bi bi-arrow-repeat spin me-1"></i>
             <i v-else class="bi bi-unlock-fill me-1"></i>
             {{ unblocking ? 'Desbloqueando...' : `Desbloquear ${selectedToUnblock.length > 0 ? '(' + selectedToUnblock.length + ')' : ''}` }}
@@ -239,13 +246,12 @@ const editRow  = ref(null)
 const editForm = ref({})
 const saving   = ref(false)
 
-// Estado modal bloqueados
 const showBlocked    = ref(false)
 const blockedRow     = ref(null)
 const blockedData    = ref({ resources: {} })
 const blockedLoading = ref(false)
 const unblocking     = ref(false)
-const selectedToUnblock = ref([])  // [{ resource, id }]
+const selectedToUnblock = ref([])
 
 const RESOURCE_LABELS = {
   users:        "Usuarios",
@@ -269,19 +275,23 @@ const RESOURCE_ICONS = {
   assets:       "bi bi-buildings-fill",
 }
 
-const countLimitFields = [
-  { key: "max_users",        label: "Usuarios" },
-  { key: "max_waiters",      label: "Meseros POS" },
-  { key: "max_products",     label: "Productos" },
-  { key: "max_categories",   label: "Categorías" },
-  { key: "max_workers",      label: "Trabajadores" },
-  { key: "max_clients",      label: "Clientes" },
-  { key: "max_bodega_items", label: "Artículos bodega" },
-  { key: "max_assets",       label: "Activos" },
+const accessFields = [
+  { key: "max_users",    label: "Usuarios" },
+  { key: "max_roles",    label: "Roles" },
+  { key: "max_waiters",  label: "Meseros POS" },
+  { key: "max_workers",  label: "Trabajadores" },
+  { key: "max_clients",  label: "Clientes" },
 ]
 
-const dailyLimitFields = [
-  { key: "max_tasks",          label: "Tareas activas (total)" },
+const catalogFields = [
+  { key: "max_products",     label: "Productos" },
+  { key: "max_categories",   label: "Categorías" },
+  { key: "max_bodega_items", label: "Artículos bodega" },
+  { key: "max_assets",       label: "Activos" },
+  { key: "max_tasks",        label: "Tareas activas (total)" },
+]
+
+const dailyFields = [
   { key: "max_daily_invoices", label: "Facturas por día" },
   { key: "max_daily_receipts", label: "Recibos por día" },
   { key: "max_daily_tasks",    label: "Tareas por día" },
@@ -291,7 +301,7 @@ const blockedTotal = computed(() =>
   Object.values(blockedData.value.resources || {}).reduce((s, arr) => s + arr.length, 0)
 )
 
-function fmt(v) { return v === -1 ? "∞" : v }
+function fmt(v) { return (v === -1 || v === undefined || v === null) ? "∞" : v }
 
 const filtered = computed(() => {
   const q = search.value.toLowerCase()
@@ -365,7 +375,6 @@ async function resetRow(row) {
   } catch (e) { showToast(e.response?.data?.detail || "Error", "error") }
 }
 
-// ─── BLOQUEADOS ───────────────────────────────────────────
 async function openBlocked(row) {
   blockedRow.value        = row
   blockedData.value       = { resources: {} }
@@ -387,24 +396,20 @@ function closeBlocked() {
 function isSelected(resource, id) {
   return selectedToUnblock.value.some(s => s.resource === resource && s.id === id)
 }
-
 function toggleItem(resource, id) {
   const idx = selectedToUnblock.value.findIndex(s => s.resource === resource && s.id === id)
   if (idx !== -1) selectedToUnblock.value.splice(idx, 1)
   else selectedToUnblock.value.push({ resource, id })
 }
-
 function isAllSelected(resource, items) {
   return items.every(item => isSelected(resource, item.id))
 }
-
 function toggleSelectAll(resource, items) {
   if (isAllSelected(resource, items)) {
     selectedToUnblock.value = selectedToUnblock.value.filter(s => s.resource !== resource)
   } else {
     items.forEach(item => {
-      if (!isSelected(resource, item.id))
-        selectedToUnblock.value.push({ resource, id: item.id })
+      if (!isSelected(resource, item.id)) selectedToUnblock.value.push({ resource, id: item.id })
     })
   }
 }
@@ -412,32 +417,23 @@ function toggleSelectAll(resource, items) {
 async function unblockSelected() {
   if (!selectedToUnblock.value.length) return
   unblocking.value = true
-
-  // Agrupar por recurso
   const byResource = {}
   selectedToUnblock.value.forEach(({ resource, id }) => {
     if (!byResource[resource]) byResource[resource] = []
     byResource[resource].push(id)
   })
-
   let totalUnblocked = 0
   let errors = 0
   for (const [resource, ids] of Object.entries(byResource)) {
     try {
       const res = await api.post(`/plan-associate-limits/${blockedRow.value.company_id}/unblock`, { resource, ids })
       totalUnblocked += res.data.unblocked?.length || 0
-      // Quitar del mapa local
-      blockedData.value.resources[resource] = blockedData.value.resources[resource].filter(
-        item => !ids.includes(item.id)
-      )
-      if (!blockedData.value.resources[resource].length)
-        delete blockedData.value.resources[resource]
+      blockedData.value.resources[resource] = blockedData.value.resources[resource].filter(item => !ids.includes(item.id))
+      if (!blockedData.value.resources[resource].length) delete blockedData.value.resources[resource]
     } catch { errors++ }
   }
-
   selectedToUnblock.value = []
   unblocking.value = false
-
   if (errors) showToast(`${totalUnblocked} desbloqueados, ${errors} error(es)`, "warning")
   else showToast(`${totalUnblocked} registro(s) desbloqueados correctamente`, "success")
 }
@@ -447,7 +443,6 @@ async function forceDowngrade() {
   try {
     const res = await api.post(`/plan-associate-limits/${blockedRow.value.company_id}/apply-downgrade`)
     showToast(res.data.message || "Bloqueos recalculados", "info")
-    // Recargar datos
     const res2 = await api.get(`/plan-associate-limits/${blockedRow.value.company_id}/blocked`)
     blockedData.value = res2.data
     selectedToUnblock.value = []
@@ -460,7 +455,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-container { padding: 24px; max-width: 1500px; }
+.page-container { padding: 24px; max-width: 1600px; }
 .page-header    { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .page-title     { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
 .page-subtitle  { font-size: 13px; color: #64748b; margin: 0; }
@@ -472,9 +467,10 @@ onMounted(load)
 .dot-plan   { background: #e2e8f0; }
 .dot-custom { background: #fde68a; }
 
-.table-card    { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow-x: auto; }
+.table-card    { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow: hidden; }
+.table-scroll  { overflow-x: auto; }
 .table-loading { padding: 40px; text-align: center; color: #94a3b8; }
-.data-table    { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table    { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1100px; }
 .data-table th { background: #f8fafc; color: #475569; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; padding: 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
 .data-table td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
 .data-table tr:last-child td { border-bottom: none; }
@@ -486,15 +482,42 @@ onMounted(load)
 .text-muted  { color: #94a3b8; font-size: 12px; }
 .py-4        { padding: 32px 0; }
 
-.plan-badge { background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+.plan-badge { background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
 .lim-val    { font-size: 13px; font-weight: 600; color: #1e293b; }
 
 .status-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
 .st-plan      { background: #f1f5f9; color: #475569; }
 .st-custom    { background: #fef3c7; color: #92400e; }
 
-.action-row   { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
-.btn          { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; border: 1.5px solid transparent; }
+.action-row { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+
+/* MODALES */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
+.modal-box     { background: #fff; border-radius: 16px; width: 100%; max-width: 640px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+.modal-box-lg  { max-width: 720px; }
+.mh  { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0; gap: 8px; }
+.mh h3 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0 0 3px; }
+.mh-sub { font-size: 12px; color: #64748b; margin: 0; }
+.btn-x { background: none; border: none; font-size: 16px; cursor: pointer; color: #94a3b8; flex-shrink: 0; }
+.mb-area { padding: 18px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.mf { padding: 12px 20px 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; flex-shrink: 0; flex-wrap: wrap; }
+
+.edit-plan-info { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #475569; background: #f8fafc; border-radius: 8px; padding: 8px 12px; flex-wrap: wrap; }
+.edit-hint { font-size: 12px; color: #64748b; margin: 0; }
+.custom-badge { background: #fef3c7; color: #92400e; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; }
+
+.ls-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center; gap: 5px; padding: 4px 0 2px; border-bottom: 1px solid #e2e8f0; }
+
+.limits-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.limit-field { display: flex; flex-direction: column; gap: 3px; }
+.limit-field label { font-size: 12px; font-weight: 600; color: #374151; }
+.plan-ref { font-size: 10px; color: #94a3b8; font-weight: 500; }
+
+.fg { display: flex; flex-direction: column; gap: 4px; }
+.fg label { font-size: 13px; font-weight: 600; color: #374151; }
+
+/* BUTTONS */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; border: 1.5px solid transparent; }
 .btn-primary  { background: #3b82f6; color: #fff; border-color: #3b82f6; }
 .btn-primary:hover:not(:disabled) { background: #2563eb; }
 .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
@@ -509,56 +532,22 @@ onMounted(load)
 .btn-outline-warning   { background: #fffbeb; color: #b45309; border-color: #fde68a; }
 .btn-sm { padding: 5px 10px; font-size: 11px; }
 
-/* MODALES */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
-.modal-box     { background: #fff; border-radius: 16px; width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal-box-lg  { max-width: 720px; }
-.mh  { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0; gap: 8px; }
-.mh h3 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0 0 3px; }
-.mh-sub { font-size: 12px; color: #64748b; margin: 0; }
-.btn-x { background: none; border: none; font-size: 16px; cursor: pointer; color: #94a3b8; flex-shrink: 0; }
-.mb-area { padding: 18px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; flex: 1; }
-.mf { padding: 12px 20px 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; flex-shrink: 0; flex-wrap: wrap; }
-
-.edit-plan-info { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #475569; background: #f8fafc; border-radius: 8px; padding: 8px 12px; flex-wrap: wrap; }
-.edit-hint { font-size: 12px; color: #64748b; margin: 0; }
-.custom-badge { background: #fef3c7; color: #92400e; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; }
-.limits-section-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
-.mt-2 { margin-top: 4px; }
-.limits-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-.limit-field { display: flex; flex-direction: column; gap: 4px; }
-.limit-field label { font-size: 12px; font-weight: 600; color: #374151; }
-.fg { display: flex; flex-direction: column; gap: 4px; }
-.fg label { font-size: 13px; font-weight: 600; color: #374151; }
+.form-control { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box; color: #1e293b; background: #fff; }
+.form-control:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.12); }
+.form-control-sm { padding: 5px 8px; font-size: 12px; }
 
 /* BLOQUEADOS */
 .blocked-empty { text-align: center; padding: 24px; color: #64748b; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .blocked-summary-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .blocked-total-badge { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
 .blocked-select-hint { font-size: 12px; color: #64748b; }
-
 .blocked-resource-section { display: flex; flex-direction: column; gap: 8px; }
-.blocked-resource-header {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; color: #1e293b;
-}
-.blocked-count-chip {
-  background: #ef4444; color: #fff; font-size: 10px; font-weight: 800;
-  padding: 1px 7px; border-radius: 20px;
-}
-.btn-select-all {
-  margin-left: auto; background: none; border: none; font-size: 11px;
-  color: #3b82f6; cursor: pointer; font-weight: 600; padding: 2px 6px;
-  border-radius: 4px;
-}
+.blocked-resource-header { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #1e293b; }
+.blocked-count-chip { background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 20px; }
+.btn-select-all { margin-left: auto; background: none; border: none; font-size: 11px; color: #3b82f6; cursor: pointer; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
 .btn-select-all:hover { background: #eff6ff; }
-
 .blocked-items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
-.blocked-item-card {
-  display: flex; align-items: flex-start; gap: 8px;
-  border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 10px;
-  cursor: pointer; transition: all .15s; background: #fff;
-}
+.blocked-item-card { display: flex; align-items: flex-start; gap: 8px; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: all .15s; background: #fff; }
 .blocked-item-card:hover  { border-color: #3b82f6; background: #eff6ff; }
 .blocked-item-card.selected { border-color: #10b981; background: #f0fdf4; }
 .blocked-cb { flex-shrink: 0; margin-top: 2px; cursor: pointer; }
@@ -569,15 +558,21 @@ onMounted(load)
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
+.me-1 { margin-right: 4px; }
+.me-2 { margin-right: 8px; }
+.mt-2 { margin-top: 4px; }
+
 @media (max-width: 768px) {
   .page-container { padding: 16px; }
   .limits-grid { grid-template-columns: 1fr 1fr; }
   .table-card { border-radius: 10px; }
   .blocked-items-grid { grid-template-columns: 1fr 1fr; }
+  .modal-box { max-width: 98vw; }
 }
 @media (max-width: 576px) {
   .limits-grid { grid-template-columns: 1fr; }
   .page-title  { font-size: 18px; }
   .blocked-items-grid { grid-template-columns: 1fr; }
+  .mb-area { padding: 14px 16px; }
 }
 </style>
