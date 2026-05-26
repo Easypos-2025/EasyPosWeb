@@ -17,13 +17,13 @@ from app.models.plan_model import Plan
 LIMIT_FIELDS = [
     "max_users", "max_products", "max_categories", "max_workers",
     "max_clients", "max_bodega_items", "max_tasks", "max_daily_invoices", "max_assets",
-    "max_waiters", "max_daily_receipts", "max_daily_tasks",
+    "max_waiters", "max_daily_receipts", "max_daily_tasks", "max_roles",
 ]
 
 # Campos de límite por cantidad total (bloqueo permanente al hacer downgrade)
 COUNT_LIMIT_FIELDS = [
     "max_users", "max_products", "max_categories", "max_workers",
-    "max_clients", "max_bodega_items", "max_assets", "max_waiters",
+    "max_clients", "max_bodega_items", "max_assets", "max_waiters", "max_roles",
 ]
 
 # Campos de límite diario (se verifican en el momento de creación/sincronización)
@@ -44,6 +44,7 @@ LIMIT_LABELS = {
     "max_waiters":         "meseros/cajeros POS",
     "max_daily_receipts":  "recibos diarios",
     "max_daily_tasks":     "tareas diarias",
+    "max_roles":           "roles",
 }
 
 

@@ -70,7 +70,7 @@
         v-for="n in filtered"
         :key="n.id"
         class="novelty-card"
-        :class="`card-${n.status}`"
+        :class="[`card-${n.status}`, { 'card-selected': selectedNoveltyId === n.id }]"
         @click="openDetail(n)"
       >
         <div class="card-top">
@@ -121,10 +121,9 @@
               <span v-if="errors.title" class="error-msg">{{ errors.title }}</span>
             </div>
 
-            <div class="form-group" :class="{ 'has-error': errors.description }">
-              <label>Descripción detallada <span class="req">*</span></label>
+            <div class="form-group">
+              <label>Descripción detallada <span class="optional">(opcional)</span></label>
               <textarea v-model="form.description" rows="4" placeholder="Explica con detalle la situación encontrada..."></textarea>
-              <span v-if="errors.description" class="error-msg">{{ errors.description }}</span>
             </div>
 
             <!-- Sección de fotos — solo al crear -->
@@ -406,7 +405,8 @@ const formCropperRef   = ref(null)
 const formFileInput    = ref(null)
 const formCropRatio    = ref(0)
 
-const errors = ref({ title: "", description: "" })
+const errors = ref({ title: "" })
+const selectedNoveltyId = ref(null)
 
 const emptyForm = () => ({ id: null, title: "", description: "" })
 const form      = ref(emptyForm())
@@ -540,14 +540,10 @@ function removePendingPhoto(index) {
 }
 
 function validate() {
-  errors.value = { title: "", description: "" }
+  errors.value = { title: "" }
   let ok = true
   if (!form.value.title.trim()) {
     errors.value.title = "El título es obligatorio"
-    ok = false
-  }
-  if (!form.value.description.trim()) {
-    errors.value.description = "La descripción es obligatoria"
     ok = false
   }
   return ok
@@ -583,20 +579,22 @@ async function save() {
 
 // ── Detalle ──────────────────────────────────────────
 async function openDetail(n) {
-  activeNovelty.value = { ...n }
-  evidences.value     = []
-  replies.value       = []
-  replyText.value     = ""
-  showDetail.value    = true
+  activeNovelty.value  = { ...n }
+  selectedNoveltyId.value = n.id
+  evidences.value      = []
+  replies.value        = []
+  replyText.value      = ""
+  showDetail.value     = true
   await Promise.all([loadEvidences(n.id), loadReplies(n.id)])
 }
 
 function closeDetail() {
-  showDetail.value    = false
-  activeNovelty.value = null
-  evidences.value     = []
-  replies.value       = []
-  replyText.value     = ""
+  showDetail.value      = false
+  activeNovelty.value   = null
+  selectedNoveltyId.value = null
+  evidences.value       = []
+  replies.value         = []
+  replyText.value       = ""
 }
 
 // ── Cambiar estado ───────────────────────────────────
@@ -939,6 +937,11 @@ onMounted(async () => {
 .card-revisada  { border-left-color: #3b82f6; }
 .card-resuelta  { border-left-color: #22c55e; }
 
+.card-selected {
+  box-shadow: 0 0 0 2px var(--primary, #3b82f6), 0 6px 20px rgba(59,130,246,0.18);
+  background: var(--selected-bg, rgba(59,130,246,0.06));
+}
+
 .card-top {
   display: flex;
   align-items: center;
@@ -1161,7 +1164,8 @@ onMounted(async () => {
 /* Formulario */
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group label { font-size: 13px; font-weight: 600; color: var(--text-main, #374151); }
-.req { color: #ef4444; }
+.req      { color: #ef4444; }
+.optional { font-size: 11px; font-weight: 400; color: var(--text-muted, #94a3b8); margin-left: 4px; }
 
 .form-group input,
 .form-group textarea {

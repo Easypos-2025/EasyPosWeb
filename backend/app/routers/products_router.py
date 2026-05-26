@@ -38,7 +38,8 @@ async def list_products(current_user: User = Depends(get_current_user), db: Asyn
 
 @router.post("/")
 async def create_product(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await check_limit(current_user.company_id, "max_products", Product, db)
+    await check_limit(current_user.company_id, "max_products", Product, db,
+                      extra_filters=[Product.is_active == 1])
     if not (data.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
     behavior = data.get("inventory_behavior", "direct")

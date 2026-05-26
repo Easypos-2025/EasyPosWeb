@@ -30,6 +30,7 @@ class CompanyPlanLimits(Base):
     max_waiters:         Mapped[int]           = mapped_column(Integer, default=-1)
     max_daily_receipts:  Mapped[int]           = mapped_column(Integer, default=-1)
     max_daily_tasks:     Mapped[int]           = mapped_column(Integer, default=-1)
+    max_roles:           Mapped[int]           = mapped_column(Integer, default=-1)
 
     is_custom:          Mapped[bool]          = mapped_column(Boolean, default=False)
     notes:              Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

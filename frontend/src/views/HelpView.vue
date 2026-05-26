@@ -184,12 +184,12 @@ loadArticles()
 .help-title {
   font-size: 22px;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--text-main, #1e293b);
   margin-bottom: 4px;
 }
 .help-subtitle {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-muted, #64748b);
   margin-bottom: 18px;
 }
 
@@ -201,16 +201,16 @@ loadArticles()
 .help-search-icon {
   position: absolute;
   left: 13px; top: 50%; transform: translateY(-50%);
-  color: #64748b; font-size: 15px; pointer-events: none;
+  color: var(--text-muted, #64748b); font-size: 15px; pointer-events: none;
 }
 .help-search {
   width: 100%; padding: 10px 40px 10px 38px;
-  background: #1e293b; border: 1px solid #334155;
-  border-radius: 10px; color: #e2e8f0; font-size: 14px;
+  background: var(--card-bg, #fff); border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px; color: var(--text-main, #1e293b); font-size: 14px;
   outline: none; transition: border-color .2s;
 }
 .help-search:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
-.help-search::placeholder { color: #475569; }
+.help-search::placeholder { color: var(--text-muted, #94a3b8); }
 .help-search-clear {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   background: none; border: none; color: #64748b; cursor: pointer;
@@ -221,7 +221,7 @@ loadArticles()
 /* ── Loading / empty ── */
 .help-loading, .help-empty {
   display: flex; flex-direction: column; align-items: center;
-  gap: 12px; padding: 60px 0; color: #64748b; font-size: 14px;
+  gap: 12px; padding: 60px 0; color: var(--text-muted, #64748b); font-size: 14px;
 }
 .help-empty .bi { font-size: 36px; }
 
@@ -230,13 +230,13 @@ loadArticles()
 
 .help-category-title {
   font-size: 14px; font-weight: 700;
-  color: #94a3b8; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-muted, #64748b); text-transform: uppercase; letter-spacing: .6px;
   display: flex; align-items: center; gap: 6px;
   margin-bottom: 12px; padding-bottom: 8px;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--border, #e2e8f0);
 }
 .help-count {
-  background: #334155; color: #94a3b8;
+  background: var(--input-bg, #f1f5f9); color: var(--text-muted, #64748b);
   font-size: 11px; font-weight: 700;
   border-radius: 20px; padding: 1px 8px;
   letter-spacing: 0;
@@ -246,7 +246,7 @@ loadArticles()
 .help-cards { display: flex; flex-direction: column; gap: 8px; }
 
 .help-card {
-  background: #1e293b; border: 1px solid #334155;
+  background: var(--card-bg, #fff); border: 1px solid var(--border, #e2e8f0);
   border-radius: 10px; overflow: hidden;
   transition: border-color .2s;
 }
@@ -257,25 +257,25 @@ loadArticles()
   padding: 14px 16px; cursor: pointer; user-select: none;
   transition: background .15s;
 }
-.help-card-header:hover { background: rgba(59,130,246,.05); }
+.help-card-header:hover { background: var(--input-bg, rgba(59,130,246,.04)); }
 
 .help-card-title {
-  font-size: 14px; font-weight: 600; color: #e2e8f0;
+  font-size: 14px; font-weight: 600; color: var(--text-main, #1e293b);
   display: flex; align-items: center;
 }
-.help-chevron { color: #64748b; font-size: 13px; flex-shrink: 0; }
+.help-chevron { color: var(--text-muted, #64748b); font-size: 13px; flex-shrink: 0; }
 
 /* ── Body ── */
 .help-card-body { padding: 0 16px 18px; }
 
 .help-description {
-  font-size: 13px; line-height: 1.7; color: #94a3b8;
+  font-size: 13px; line-height: 1.7; color: var(--text-main, #374151);
   margin-bottom: 14px; margin-top: 4px;
 }
 
 .help-gif-wrap {
   border-radius: 8px; overflow: hidden;
-  border: 1px solid #334155; background: #0f172a;
+  border: 1px solid var(--border, #e2e8f0); background: var(--input-bg, #f1f5f9);
   max-width: 100%; cursor: zoom-in; position: relative;
 }
 .help-gif-wrap:hover .help-gif-zoom-hint { opacity: 1; }

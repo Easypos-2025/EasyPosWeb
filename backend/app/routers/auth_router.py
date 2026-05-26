@@ -85,10 +85,11 @@ async def _resolve_payment_status(company, db: AsyncSession) -> str:
 @router.post("/login/")
 async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalar_one_or_none()
-    if not user:
+    candidates = result.scalars().all()
+    if not candidates:
         raise HTTPException(status_code=400, detail="Usuario no encontrado")
-    if not verify_password(data.password, user.password_hash):
+    user = next((u for u in candidates if verify_password(data.password, u.password_hash)), None)
+    if not user:
         raise HTTPException(status_code=400, detail="Contraseña incorrecta")
     if user.is_active != True:
         raise HTTPException(status_code=403, detail="Usuario inactivo. Contacta al administrador")
@@ -136,7 +137,7 @@ async def forgot_password(
     response_message = {"message": "Si el correo existe, recibirás un enlace de recuperación"}
 
     result = await db.execute(select(User).where(User.email == data.email))
-    user = result.scalar_one_or_none()
+    user = result.scalars().first()
     if not user or user.is_active != True:
         return response_message
 
@@ -252,12 +253,16 @@ async def get_me(authorization: str = Header(None), db: AsyncSession = Depends(g
     if payload is None:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
-    email = payload.get("sub")
-    if not email:
+    user_id = payload.get("user_id")
+    if not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
+    if user_id:
+        user = await db.get(User, int(user_id))
+    else:
+        email = payload.get("sub")
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 

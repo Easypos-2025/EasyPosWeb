@@ -64,7 +64,8 @@ async def register_associate(data: AssociateRegisterRequest, request: Request,
         raise HTTPException(status_code=400, detail="La contraseña debe tener mín. 8 caracteres, una mayúscula, una minúscula, un número y un símbolo (@$!%*?&)")
 
     result = await db.execute(select(User).where(User.email == data.admin_email))
-    if result.scalar_one_or_none():
+    existing_user = result.scalars().first()
+    if existing_user and not existing_user.is_test_account:
         raise HTTPException(status_code=400, detail="El correo ya está registrado")
     result = await db.execute(select(Company).where(Company.identification_number == data.identification_number))
     if result.scalar_one_or_none():

@@ -25,12 +25,15 @@ async def get_current_user(
         if payload is None:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        email = payload.get("sub")
-        if not email:
+        if not payload.get("sub"):
             raise HTTPException(status_code=401, detail="Token inválido")
 
-        result = await db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
+        user_id = payload.get("user_id")
+        if user_id:
+            user = await db.get(User, int(user_id))
+        else:
+            result = await db.execute(select(User).where(User.email == payload.get("sub")))
+            user = result.scalars().first()
 
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")

@@ -129,11 +129,9 @@ async def list_novelties(
 async def create_novelty(data: dict, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     title = data.get("title", "").strip()
-    desc = data.get("description", "").strip()
+    desc = (data.get("description") or "").strip() or None
     if not title:
         raise HTTPException(status_code=400, detail="El título es obligatorio")
-    if not desc:
-        raise HTTPException(status_code=400, detail="La descripción es obligatoria")
     n = Novelty(company_id=user.company_id, user_id=user.id, title=title, description=desc, status="pendiente")
     db.add(n)
     await db.commit()

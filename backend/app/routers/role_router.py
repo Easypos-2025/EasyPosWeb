@@ -9,6 +9,7 @@ from app.models.role_module_model import RoleModule
 from app.models.system_module_model import SystemModule
 from app.models.user_model import User
 from app.auth.dependencies import get_current_user
+from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
@@ -54,6 +55,7 @@ async def create_role(
             raise HTTPException(status_code=400, detail="company_id requerido")
     else:
         cid = current_user.company_id
+        await check_limit(cid, "max_roles", Role, db)
 
     name = (data.get("name") or "").strip()
     if not name:

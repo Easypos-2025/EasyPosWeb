@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, Text, Enum, ForeignKey, TIMESTAMP, func
 from app.database import Base
@@ -10,7 +11,7 @@ class Novelty(Base):
     company_id: Mapped[int] = mapped_column(Integer, ForeignKey("companies.id_company"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         Enum("pendiente", "revisada", "resuelta"), default="pendiente"
     )

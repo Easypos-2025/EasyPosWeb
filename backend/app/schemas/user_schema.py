@@ -45,6 +45,7 @@ class UserUpdate(BaseModel):
     role_id: Optional[int] = None
     company_id: Optional[int] = None
     is_active: Optional[bool] = None
+    is_test_account: Optional[bool] = None
 
     
 
@@ -58,6 +59,7 @@ class UserResponse(BaseModel):
     role_id: int
     company_id: int
     is_active: bool
+    is_test_account: bool = False
     class Config:
         from_attributes = True
 

@@ -107,10 +107,15 @@
           <div class="form-row2">
             <div class="fg">
               <label>Unidad de medida</label>
-              <select v-model="form.unit_id" class="form-select">
-                <option :value="null">— Sin unidad —</option>
-                <option v-for="u in units" :key="u.id" :value="u.id">{{ u.name }} ({{ u.abreviatura }})</option>
-              </select>
+              <div class="unit-row">
+                <select v-model="form.unit_id" class="form-select">
+                  <option :value="null">— Sin unidad —</option>
+                  <option v-for="u in units" :key="u.id" :value="u.id">{{ u.name }} ({{ u.abreviatura }})</option>
+                </select>
+                <button type="button" class="btn-add-unit" title="Nueva unidad de medida" @click="openUnitModal">
+                  <i class="bi bi-plus-lg"></i>
+                </button>
+              </div>
             </div>
             <div class="fg">
               <label>Costo unitario</label>
@@ -147,6 +152,33 @@
           <button class="btn btn-primary btn-sm" @click="submit" :disabled="saving">
             <i v-if="saving" class="bi bi-arrow-repeat spin"></i>
             {{ saving ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL NUEVA UNIDAD DE MEDIDA (acceso rápido) -->
+    <div v-if="showUnitModal" class="modal-overlay" @click.self="showUnitModal = false">
+      <div class="modal-box modal-sm">
+        <div class="mh">
+          <h3><i class="bi bi-rulers me-2"></i>Nueva Unidad de Medida</h3>
+          <button class="btn-x" @click="showUnitModal = false"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="mb-area">
+          <div class="fg">
+            <label>Nombre *</label>
+            <input v-model="unitForm.name" class="form-control" placeholder="Ej: Kilogramo, Litro, Unidad..." @keydown.enter="submitUnit" />
+          </div>
+          <div class="fg">
+            <label>Abreviatura</label>
+            <input v-model="unitForm.abreviatura" class="form-control" placeholder="Ej: kg, L, un..." @keydown.enter="submitUnit" />
+          </div>
+        </div>
+        <div class="mf">
+          <button class="btn btn-secondary btn-sm" @click="showUnitModal = false">Cancelar</button>
+          <button class="btn btn-primary btn-sm" @click="submitUnit" :disabled="savingUnit">
+            <i v-if="savingUnit" class="bi bi-arrow-repeat spin"></i>
+            {{ savingUnit ? 'Guardando...' : 'Crear unidad' }}
           </button>
         </div>
       </div>
@@ -202,6 +234,10 @@ const form       = ref({})
 const showAdjust  = ref(false)
 const adjustItem  = ref(null)
 const adjustForm  = ref({})
+
+const showUnitModal = ref(false)
+const savingUnit    = ref(false)
+const unitForm      = ref({ name: "", abreviatura: "" })
 
 const lowStock = computed(() => items.value.filter(i => isLowStock(i)))
 
@@ -283,6 +319,25 @@ async function submitAdjust() {
   finally { saving.value = false }
 }
 
+function openUnitModal() {
+  unitForm.value = { name: "", abreviatura: "" }
+  showUnitModal.value = true
+}
+
+async function submitUnit() {
+  if (!unitForm.value.name.trim()) { showToast("El nombre es requerido", "warning"); return }
+  savingUnit.value = true
+  try {
+    const r = await api.post("/unidades-medida/", unitForm.value)
+    units.value.push(r.data)
+    units.value.sort((a, b) => a.name.localeCompare(b.name))
+    form.value.unit_id = r.data.id
+    showUnitModal.value = false
+    showToast(`Unidad "${r.data.name}" creada`, "success")
+  } catch (e) { showToast(e.response?.data?.detail || "Error al crear unidad", "error") }
+  finally { savingUnit.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -340,5 +395,15 @@ onMounted(load)
 .btn-outline-secondary { background: #f8fafc; color: #475569; border: 1.5px solid #e2e8f0; }
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+.unit-row { display: flex; gap: 6px; align-items: center; }
+.unit-row .form-select { flex: 1; }
+.btn-add-unit {
+  flex-shrink: 0; width: 36px; height: 36px;
+  background: #eff6ff; border: 1.5px solid #bfdbfe;
+  color: #1d4ed8; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; transition: background .15s;
+}
+.btn-add-unit:hover { background: #dbeafe; }
 @media (max-width: 640px) { .form-row2 { grid-template-columns: 1fr; } }
 </style>

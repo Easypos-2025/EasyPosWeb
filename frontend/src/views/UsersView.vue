@@ -214,7 +214,10 @@
 
         <tbody>
           <tr v-for="user in filteredUsers" :key="user.id">
-            <td>{{ user.nombre }}</td>
+            <td>
+              {{ user.nombre }}
+              <span v-if="isSysAdmin && user.is_test_account" class="badge-test">TEST</span>
+            </td>
             <td class="d-none d-md-table-cell">{{ user.email }}</td>
             <td>{{ getRoleName(user.role_id) }}</td>
             <td v-if="can('Users', 'can_edit') || can('Users', 'can_delete')" class="d-flex gap-2">
@@ -245,6 +248,13 @@
           <label class="d-flex align-items-center gap-2">
             <input type="checkbox" v-model="editForm.is_active" />
             <span>Usuario activo</span>
+          </label>
+        </div>
+
+        <div v-if="isSysAdmin" class="mb-2">
+          <label class="d-flex align-items-center gap-2">
+            <input type="checkbox" v-model="editForm.is_test_account" />
+            <span>Cuenta de prueba <small class="text-muted">(permite registrar misma empresa múltiples veces)</small></span>
           </label>
         </div>
 
@@ -391,7 +401,8 @@ const editForm = ref({
   nombre: "",
   email: "",
   role_id: null,
-  is_active: true
+  is_active: true,
+  is_test_account: false
 })
 
 
@@ -559,7 +570,8 @@ const openEdit = (u) => {
     nombre: u.nombre,
     email: u.email,
     role_id: u.role_id,
-    is_active: u.is_active
+    is_active: u.is_active,
+    is_test_account: u.is_test_account || false
   }
 
   showModal.value = true
@@ -719,6 +731,20 @@ onMounted(async () => {
   margin-top: 1px;
 }
 .delete-error-box p { margin: 0; }
+
+/* ── TEST ACCOUNT BADGE ── */
+.badge-test {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: #f59e0b;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
 
 /* ── PLAN LIMIT BANNER ── */
 .plan-limit-banner {

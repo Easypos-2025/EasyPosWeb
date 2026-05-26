@@ -1,14 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
-from datetime import date
+from sqlalchemy import select, update, func
+from datetime import date, datetime
 
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.models.company_plan_model import CompanyPlan
 from app.models.plan_model import Plan
 from app.models.role_model import Role
-from app.services.plan_limits_service import LIMIT_FIELDS, snapshot_plan_limits, get_limits
+from app.models.user_model import User as UserModel
+from app.models.product_model import Product
+from app.models.product_category_model import ProductCategory
+from app.models.supply_item_model import SupplyItem
+from app.models.client_model import Client
+from app.services.plan_limits_service import LIMIT_FIELDS, LIMIT_LABELS, snapshot_plan_limits, get_limits
 from app.services.downgrade_service import apply_downgrade_blocks, preview_downgrade_blocks
 
 router = APIRouter(prefix="/company-plan", tags=["CompanyPlan"])
@@ -44,6 +49,68 @@ async def get_company_plan(
         "expiration_date": exp.isoformat() if exp else None,
         "is_free":         is_free,
         "is_active":       cp.is_active,
+    }
+
+
+@router.get("/my-plan-info")
+async def my_plan_info(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Retorna plan activo + límites + uso actual para el asociado autenticado."""
+    cid = current_user.company_id
+    if not cid:
+        raise HTTPException(status_code=400, detail="Usuario sin empresa asignada")
+
+    # Plan activo
+    cp_res = await db.execute(
+        select(CompanyPlan)
+        .where(CompanyPlan.company_id == cid, CompanyPlan.is_active == True)
+        .order_by(CompanyPlan.id.desc())
+    )
+    cp = cp_res.scalar_one_or_none()
+    plan_name = "Sin plan"
+    expiration_date = None
+    if cp:
+        plan = await db.get(Plan, cp.plan_id)
+        plan_name = plan.name if plan else "Desconocido"
+        expiration_date = cp.expiration_date.isoformat() if cp.expiration_date else None
+
+    limits = await get_limits(cid, db)
+
+    # Contar uso actual de los recursos principales
+    async def _count(model, *filters):
+        stmt = select(func.count()).select_from(model).where(model.company_id == cid, *filters)
+        return (await db.execute(stmt)).scalar() or 0
+
+    counts = {
+        "max_users":      await _count(UserModel),
+        "max_products":   await _count(Product,  Product.is_active == 1),
+        "max_categories": await _count(ProductCategory, ProductCategory.is_active == 1),
+        "max_clients":    await _count(Client),
+    }
+    # Roles (no tienen company_id en el modelo base, usar query directa)
+    role_count = (await db.execute(
+        select(func.count()).select_from(Role)
+        .where(Role.company_id == cid, Role.is_system == False)
+    )).scalar() or 0
+    counts["max_roles"] = role_count
+
+    items = []
+    for field in LIMIT_FIELDS:
+        max_val = limits.get(field, -1)
+        current = counts.get(field)
+        items.append({
+            "field":   field,
+            "label":   LIMIT_LABELS.get(field, field),
+            "max":     max_val,
+            "current": current,
+        })
+
+    return {
+        "plan_name":       plan_name,
+        "expiration_date": expiration_date,
+        "items":           items,
     }
 
 

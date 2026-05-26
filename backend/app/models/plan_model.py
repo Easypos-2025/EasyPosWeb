@@ -23,6 +23,7 @@ class Plan(Base):
     max_waiters:         Mapped[int] = mapped_column(Integer, default=-1)
     max_daily_receipts:  Mapped[int] = mapped_column(Integer, default=-1)
     max_daily_tasks:     Mapped[int] = mapped_column(Integer, default=-1)
+    max_roles:           Mapped[int] = mapped_column(Integer, default=-1)
 
     price: Mapped[float] = mapped_column(Float, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

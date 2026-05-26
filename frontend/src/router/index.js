@@ -410,6 +410,13 @@ const routes = [
       },
 
       {
+        path: "/soporte/mi-plan",
+        name: "MiPlanView",
+        component: () => import("@/views/MiPlanView.vue"),
+        meta: { title: "Mi Plan" }
+      },
+
+      {
         path: "/bienvenida",
         name: "BienvenidaView",
         component: () => import("@/views/BienvenidaView.vue"),
