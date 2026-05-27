@@ -13,12 +13,14 @@ FastAPI usa estos modelos para:
 """
 
 from pydantic import BaseModel
+from typing import Optional
 
 
 class LoginRequest(BaseModel):
 
     email: str
     password: str
+    company_id: Optional[int] = None
 
 
 class ResetPasswordRequest(BaseModel):

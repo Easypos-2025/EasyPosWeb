@@ -4,84 +4,84 @@
 
   <div class="login-card">
 
-    <h2>Iniciar Sesión</h2>
-
-    <!-- ERROR -->
-
-    <div v-if="errorMsg" class="alert-box">
-
-      <div class="alert-icon">
-        ❌
+    <!-- ── SELECTOR DE EMPRESA (cuentas de prueba) ── -->
+    <div v-if="companyList.length">
+      <div class="company-select-header">
+        <button class="btn-back" @click="backToLogin">
+          <span>←</span> Volver
+        </button>
+        <h2>Selecciona una empresa</h2>
+        <p class="company-select-sub">Cuenta de prueba · elige con cuál empresa ingresar</p>
       </div>
 
-      <div class="alert-text">
-        {{ errorMsg }}
+      <div class="company-list">
+        <button
+          v-for="c in companyList"
+          :key="c.company_id"
+          class="company-option"
+          :disabled="loadingCompany === c.company_id"
+          @click="loginWithCompany(c.company_id)"
+        >
+          <span class="company-icon">🏢</span>
+          <span class="company-name">{{ c.company_name }}</span>
+          <span v-if="loadingCompany === c.company_id" class="company-loading">...</span>
+          <span v-else class="company-arrow">→</span>
+        </button>
       </div>
-
     </div>
 
-    <!-- FORM -->
+    <!-- ── FORMULARIO NORMAL ── -->
+    <template v-else>
 
-    <form @submit.prevent="login">
+      <h2>Iniciar Sesión</h2>
 
-      <!-- EMAIL -->
-
-      <div class="form-group">
-
-        <label for="email">Usuario / Email</label>
-
-        <input
-          id="email"
-          v-model="email"
-          type="text"
-          placeholder="Ingrese su usuario o email"
-          required
-        />
-
+      <!-- ERROR -->
+      <div v-if="errorMsg" class="alert-box">
+        <div class="alert-icon">❌</div>
+        <div class="alert-text">{{ errorMsg }}</div>
       </div>
 
-      <!-- PASSWORD -->
+      <!-- FORM -->
+      <form @submit.prevent="login">
 
-      <div class="form-group">
-
-        <label for="password">Contraseña</label>
-
-        <div class="password-container">
-
+        <div class="form-group">
+          <label for="email">Usuario / Email</label>
           <input
-            id="password"
-            v-model="password"
-            :type="showPassword ? 'text' : 'password'"
-            placeholder="Ingrese su contraseña"
+            id="email"
+            v-model="email"
+            type="text"
+            placeholder="Ingrese su usuario o email"
             required
           />
-
-          <span
-            class="toggle-password"
-            @click="togglePassword"
-          >
-            {{ showPassword ? "🙈" : "👁" }}
-          </span>
-
         </div>
 
-      </div>
+        <div class="form-group">
+          <label for="password">Contraseña</label>
+          <div class="password-container">
+            <input
+              id="password"
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="Ingrese su contraseña"
+              required
+            />
+            <span class="toggle-password" @click="togglePassword">
+              {{ showPassword ? "🙈" : "👁" }}
+            </span>
+          </div>
+        </div>
 
-      <!-- BUTTON -->
+        <button type="submit" :disabled="loading">
+          {{ loading ? "Ingresando..." : "Ingresar" }}
+        </button>
 
-      <button type="submit">
+        <div class="forgot-password">
+          <span @click="goToForgotPassword">¿Olvidaste tu contraseña?</span>
+        </div>
 
-        Ingresar
+      </form>
 
-      </button>
-      <!-- RECUPERAR CONTRASEÑA -->
-      <div class="forgot-password">
-        <span @click="goToForgotPassword">
-          ¿Olvidaste tu contraseña?
-        </span>
-      </div>
-
-    </form>
+    </template>
 
   </div>
 
@@ -91,20 +91,19 @@
 
 <script setup>
 
-/* =================================================
-IMPORTS
-================================================= */
-
 import { ref, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "../services/apis"
 
-/* =================================================
-VARIABLES
-================================================= */
+const email        = ref(localStorage.getItem("lastUser") || "")
+const password     = ref("")
+const errorMsg     = ref("")
+const showPassword = ref(false)
+const loading      = ref(false)
+const companyList  = ref([])   // empresas para selección (cuentas de prueba)
+const loadingCompany = ref(null)
 
-const email = ref(localStorage.getItem("lastUser") || "")
-const password = ref("")
+const router = useRouter()
 
 onMounted(() => {
   const regEmail = sessionStorage.getItem("reg_email")
@@ -116,75 +115,61 @@ onMounted(() => {
     sessionStorage.removeItem("reg_password")
   }
 })
-const errorMsg = ref("")
-const showPassword = ref(false)
 
-const router = useRouter()
+const togglePassword = () => { showPassword.value = !showPassword.value }
+const goToForgotPassword = () => { router.push("/forgot-password") }
+const backToLogin = () => { companyList.value = []; errorMsg.value = "" }
 
-/* =================================================
-TOGGLE PASSWORD
-================================================= */
-
-const togglePassword = () => {
-  showPassword.value = !showPassword.value
-}
-
-/* =================================================
-LOGIN
-================================================= */
-const goToForgotPassword = () => {
-  router.push("/forgot-password")
+async function _completeLogin(token) {
+  localStorage.setItem("token", token)
+  localStorage.setItem("lastUser", email.value)
+  const userResponse = await api.get("/auth/me/", {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  localStorage.setItem("user", JSON.stringify(userResponse.data))
+  router.push("/dashboard")
 }
 
 const login = async () => {
-
   errorMsg.value = ""
-
-  try{
-
-    const response = await api.post("/auth/login/",{
-      email: email.value,
-      password: password.value
-    })
-    
-    const token = response.data.access_token
-
-    localStorage.setItem("token", token)
-    localStorage.setItem("lastUser", email.value)
-
-    // ✅ FIX CORRECTO (con header)
-    const userResponse = await api.get("/auth/me/", {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+  loading.value  = true
+  try {
+    const response = await api.post("/auth/login/", {
+      email:    email.value,
+      password: password.value,
     })
 
-    localStorage.setItem(
-      "user",
-      JSON.stringify(userResponse.data)
-    )
-
-    router.push("/dashboard")
-
-  }
-
-  catch(error){
-
-    console.error("ERROR LOGIN:", error)
-
-    if(error.response){
-      errorMsg.value = error.response.data.detail || "Error de autenticación"
-    }
-    else{
-      errorMsg.value = "No se pudo conectar con el servidor"
+    // Cuenta de prueba con múltiples empresas
+    if (response.data.requires_company_selection) {
+      companyList.value = response.data.companies
+      return
     }
 
-    setTimeout(()=>{
-      errorMsg.value = ""
-    },3000)
-
+    await _completeLogin(response.data.access_token)
+  } catch (error) {
+    errorMsg.value = error.response?.data?.detail || "No se pudo conectar con el servidor"
+    setTimeout(() => { errorMsg.value = "" }, 3500)
+  } finally {
+    loading.value = false
   }
+}
 
+const loginWithCompany = async (companyId) => {
+  errorMsg.value     = ""
+  loadingCompany.value = companyId
+  try {
+    const response = await api.post("/auth/login/", {
+      email:      email.value,
+      password:   password.value,
+      company_id: companyId,
+    })
+    await _completeLogin(response.data.access_token)
+  } catch (error) {
+    errorMsg.value = error.response?.data?.detail || "Error al ingresar a la empresa"
+    setTimeout(() => { errorMsg.value = "" }, 3500)
+  } finally {
+    loadingCompany.value = null
+  }
 }
 
 </script>
@@ -354,5 +339,96 @@ FORGOT PASSWORD
   text-decoration: underline;
 }
 
+/* =================================================
+SELECTOR DE EMPRESA
+================================================= */
+
+.company-select-header {
+  margin-bottom: 20px;
+}
+
+.btn-back {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+}
+
+.btn-back:hover { color: #93c5fd; background: none; }
+
+.company-select-header h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  text-align: left;
+}
+
+.company-select-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.company-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.company-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+  width: 100%;
+}
+
+.company-option:hover:not(:disabled) {
+  border-color: #2563eb;
+  background: #1e3a5f;
+}
+
+.company-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.company-icon { font-size: 20px; flex-shrink: 0; }
+
+.company-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.company-arrow {
+  color: #60a5fa;
+  font-size: 16px;
+}
+
+.company-loading {
+  color: #94a3b8;
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+
+/* Spinner en botón submit */
+button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
 
 </style>

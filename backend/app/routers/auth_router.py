@@ -88,9 +88,35 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     candidates = result.scalars().all()
     if not candidates:
         raise HTTPException(status_code=400, detail="Usuario no encontrado")
-    user = next((u for u in candidates if verify_password(data.password, u.password_hash)), None)
-    if not user:
+
+    matching = [u for u in candidates if verify_password(data.password, u.password_hash)]
+    if not matching:
         raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+
+    # Cuentas de prueba con múltiples empresas → selección requerida
+    if len(matching) > 1 and all(u.is_test_account for u in matching):
+        if not data.company_id:
+            company_options = []
+            for u in matching:
+                if not u.is_active:
+                    continue
+                comp = await db.get(Company, u.company_id)
+                if comp and comp.state:
+                    company_options.append({
+                        "company_id": comp.id_company,
+                        "company_name": comp.name,
+                    })
+            if not company_options:
+                raise HTTPException(status_code=403, detail="No hay empresas activas disponibles para este usuario")
+            return {"requires_company_selection": True, "companies": company_options}
+
+        # Segunda llamada: ya eligió empresa
+        user = next((u for u in matching if u.company_id == data.company_id), None)
+        if not user:
+            raise HTTPException(status_code=400, detail="Empresa no válida para este usuario de prueba")
+    else:
+        user = matching[0]
+
     if user.is_active != True:
         raise HTTPException(status_code=403, detail="Usuario inactivo. Contacta al administrador")
 
