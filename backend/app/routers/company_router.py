@@ -15,6 +15,7 @@ from app.models.role_module_model import RoleModule
 
 async def _cascade_delete_company(company_id: int, db: AsyncSession):
     """Elimina en cascada TODOS los datos de una empresa (solo SYSADMIN)."""
+    from sqlalchemy import text
     from app.models.user_session_model import UserSession
     from app.models.invitation_model import InvitationToken
     from app.models.user_notification_model import UserNotification
@@ -31,6 +32,9 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     from app.models.asset_model import Asset
     from app.models.asset_media_model import AssetMedia
     from app.models.asset_inquiry_model import AssetInquiry
+    from app.models.asset_category_model import AssetCategory
+    from app.models.asset_sector_model import AssetSector
+    from app.models.company_asset_content_model import CompanyAssetContent
     from app.models.bodega_item_model import BodegaItem
     from app.models.external_collaborator_model import ExternalCollaborator
     from app.models.client_model import Client
@@ -50,10 +54,17 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     from app.models.company_plan_model import CompanyPlan
     from app.models.company_plan_limits_model import CompanyPlanLimits
     from app.models.password_reset_token import PasswordResetToken
+    from app.models.advertisement_model import Advertisement, AdPiece, AdPayment
+    from app.models.concepto_compra_model import ConceptoCompra
+    from app.models.concepto_gasto_model import ConceptoGasto
+    from app.models.unidad_medida_model import UnidadMedida
+    from app.models.profession_model import Profession
+
+    cid = company_id
 
     # 1. Sesiones y tokens de usuarios de la empresa
     user_ids = [r[0] for r in (await db.execute(
-        select(User.id).where(User.company_id == company_id)
+        select(User.id).where(User.company_id == cid)
     )).all()]
     if user_ids:
         await db.execute(delete(UserSession).where(UserSession.user_id.in_(user_ids)))
@@ -64,90 +75,135 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
 
     # 2. Tareas y sus hijos
     task_ids = [r[0] for r in (await db.execute(
-        select(Task.id).where(Task.company_id == company_id)
+        select(Task.id).where(Task.company_id == cid)
     )).all()]
     if task_ids:
         for child in (TaskComment, TaskEvidence, TaskMaterial, TaskExpense, TaskPurchase, TaskProgressReport):
             await db.execute(delete(child).where(child.task_id.in_(task_ids)))
-        await db.execute(delete(Task).where(Task.company_id == company_id))
+        await db.execute(delete(Task).where(Task.company_id == cid))
 
-    # 3. Novedades (evidence y replies con CASCADE en BD)
+    # 3. Novedades
     novelty_ids = [r[0] for r in (await db.execute(
-        select(Novelty.id).where(Novelty.company_id == company_id)
+        select(Novelty.id).where(Novelty.company_id == cid)
     )).all()]
     if novelty_ids:
         await db.execute(delete(NoveltyEvidence).where(NoveltyEvidence.novelty_id.in_(novelty_ids)))
         await db.execute(delete(NoveltyReply).where(NoveltyReply.novelty_id.in_(novelty_ids)))
-    await db.execute(delete(Novelty).where(Novelty.company_id == company_id))
+    await db.execute(delete(Novelty).where(Novelty.company_id == cid))
 
-    # 4. Tickets de soporte (ticket_evidence con CASCADE en BD)
+    # 4. Tickets de soporte
     ticket_ids = [r[0] for r in (await db.execute(
-        select(SupportTicket.id).where(SupportTicket.company_id == company_id)
+        select(SupportTicket.id).where(SupportTicket.company_id == cid)
     )).all()]
     if ticket_ids:
         await db.execute(delete(TicketEvidence).where(TicketEvidence.ticket_id.in_(ticket_ids)))
-    await db.execute(delete(SupportTicket).where(SupportTicket.company_id == company_id))
+    await db.execute(delete(SupportTicket).where(SupportTicket.company_id == cid))
 
     # 5. Préstamos y bodega
-    await db.execute(delete(Loan).where(Loan.company_id == company_id))
-    await db.execute(delete(BodegaItem).where(BodegaItem.company_id == company_id))
+    await db.execute(delete(Loan).where(Loan.company_id == cid))
+    await db.execute(delete(BodegaItem).where(BodegaItem.company_id == cid))
 
-    # 6. Activos (asset_media y asset_inquiries con CASCADE en BD)
+    # 6. Activos
     asset_ids = [r[0] for r in (await db.execute(
-        select(Asset.id).where(Asset.company_id == company_id)
+        select(Asset.id).where(Asset.company_id == cid)
     )).all()]
     if asset_ids:
         await db.execute(delete(AssetMedia).where(AssetMedia.asset_id.in_(asset_ids)))
         await db.execute(delete(AssetInquiry).where(AssetInquiry.asset_id.in_(asset_ids)))
-    await db.execute(delete(Asset).where(Asset.company_id == company_id))
+    await db.execute(delete(Asset).where(Asset.company_id == cid))
+    await db.execute(delete(AssetCategory).where(AssetCategory.company_id == cid))
+    await db.execute(delete(AssetSector).where(AssetSector.company_id == cid))
+    await db.execute(delete(CompanyAssetContent).where(CompanyAssetContent.company_id == cid))
 
     # 7. Inventario
     po_ids = [r[0] for r in (await db.execute(
-        select(PurchaseOrder.id).where(PurchaseOrder.company_id == company_id)
+        select(PurchaseOrder.id).where(PurchaseOrder.company_id == cid)
     )).all()]
     if po_ids:
         await db.execute(delete(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id.in_(po_ids)))
-    await db.execute(delete(PurchaseOrder).where(PurchaseOrder.company_id == company_id))
-    await db.execute(delete(StockMovement).where(StockMovement.company_id == company_id))
+    await db.execute(delete(PurchaseOrder).where(PurchaseOrder.company_id == cid))
+    await db.execute(delete(StockMovement).where(StockMovement.company_id == cid))
 
     pl_ids = [r[0] for r in (await db.execute(
-        select(PriceList.id).where(PriceList.company_id == company_id)
+        select(PriceList.id).where(PriceList.company_id == cid)
     )).all()]
     if pl_ids:
         await db.execute(delete(PriceListItem).where(PriceListItem.price_list_id.in_(pl_ids)))
-    await db.execute(delete(PriceList).where(PriceList.company_id == company_id))
+    await db.execute(delete(PriceList).where(PriceList.company_id == cid))
 
     prod_ids = [r[0] for r in (await db.execute(
-        select(Product.id).where(Product.company_id == company_id)
+        select(Product.id).where(Product.company_id == cid)
     )).all()]
     if prod_ids:
         await db.execute(delete(ProductPresentation).where(ProductPresentation.product_id.in_(prod_ids)))
-    await db.execute(delete(Product).where(Product.company_id == company_id))
-    await db.execute(delete(ProductCategory).where(ProductCategory.company_id == company_id))
-    await db.execute(delete(ProductReference).where(ProductReference.company_id == company_id))
-    await db.execute(delete(Supplier).where(Supplier.company_id == company_id))
-    await db.execute(delete(SupplyItem).where(SupplyItem.company_id == company_id))
-    await db.execute(delete(Client).where(Client.company_id == company_id))
-    await db.execute(delete(Worker).where(Worker.company_id == company_id))
-    await db.execute(delete(ExternalCollaborator).where(ExternalCollaborator.company_id == company_id))
+    await db.execute(delete(Product).where(Product.company_id == cid))
+    await db.execute(delete(ProductCategory).where(ProductCategory.company_id == cid))
+    await db.execute(delete(ProductReference).where(ProductReference.company_id == cid))
+    await db.execute(delete(Supplier).where(Supplier.company_id == cid))
+    await db.execute(delete(SupplyItem).where(SupplyItem.company_id == cid))
+    await db.execute(delete(Client).where(Client.company_id == cid))
+    await db.execute(delete(Worker).where(Worker.company_id == cid))
+    await db.execute(delete(ExternalCollaborator).where(ExternalCollaborator.company_id == cid))
 
-    # 8. Pagos y planes
-    await db.execute(delete(CompanyPayment).where(CompanyPayment.company_id == company_id))
-    await db.execute(delete(CompanyPlan).where(CompanyPlan.company_id == company_id))
-    await db.execute(delete(CompanyPlanLimits).where(CompanyPlanLimits.company_id == company_id))
+    # 8. Conceptos, unidades y profesiones
+    await db.execute(delete(ConceptoCompra).where(ConceptoCompra.company_id == cid))
+    await db.execute(delete(ConceptoGasto).where(ConceptoGasto.company_id == cid))
+    await db.execute(delete(UnidadMedida).where(UnidadMedida.company_id == cid))
+    await db.execute(delete(Profession).where(Profession.company_id == cid))
 
-    # 9. Roles (primero role_modules, luego roles)
+    # 9. Anuncios publicitarios
+    ad_ids = [r[0] for r in (await db.execute(
+        select(Advertisement.id).where(Advertisement.company_id == cid)
+    )).all()]
+    if ad_ids:
+        await db.execute(delete(AdPiece).where(AdPiece.advertisement_id.in_(ad_ids)))
+    await db.execute(delete(AdPayment).where(AdPayment.company_id == cid))
+    await db.execute(delete(Advertisement).where(Advertisement.company_id == cid))
+
+    # 10. Tablas POS (sin modelos Python — raw SQL con FK checks deshabilitado)
+    await db.execute(text("SET foreign_key_checks = 0"))
+    _pos_tables = [
+        # Nivel más profundo primero
+        "pos_dish_assembly_detail", "pos_dish_assembly",
+        "pos_dish_products", "pos_dish_variants",
+        "pos_item_modifier_options", "pos_item_modifiers",
+        "pos_item_printers", "pos_item_categories",
+        "invoice_delivery_fees", "receipt_delivery_fees",
+        "pos_invoice_details", "pos_invoice_payment_methods",
+        "pos_cash_register_invoices", "pos_cash_register_receipts", "pos_cash_register_closings",
+        "pos_receipt_invoice_details", "pos_receipt_payment_methods",
+        "pos_receipt_order_detail_products", "pos_receipt_order_details", "pos_receipt_orders",
+        "pos_order_detail_products", "pos_order_details",
+        "pos_invoices", "pos_receipts", "pos_cash_registers",
+        "pos_orders", "pos_tables_layout", "pos_tables",
+        "pos_daily_menu", "pos_customer_price_list",
+        "pos_dish_categories", "pos_dishes",
+        "pos_product_categories", "pos_categories",
+        "pos_zones", "pos_printers",
+        "pos_waiters", "pos_employees",
+        "supplies_quitar",
+    ]
+    for tbl in _pos_tables:
+        await db.execute(text(f"DELETE FROM `{tbl}` WHERE company_id = :cid"), {"cid": cid})
+    await db.execute(text("SET foreign_key_checks = 1"))
+
+    # 11. Pagos y planes
+    await db.execute(delete(CompanyPayment).where(CompanyPayment.company_id == cid))
+    await db.execute(delete(CompanyPlan).where(CompanyPlan.company_id == cid))
+    await db.execute(delete(CompanyPlanLimits).where(CompanyPlanLimits.company_id == cid))
+
+    # 12. Roles
     role_ids = [r[0] for r in (await db.execute(
-        select(Role.id).where(Role.company_id == company_id)
+        select(Role.id).where(Role.company_id == cid)
     )).all()]
     if role_ids:
         await db.execute(delete(RoleModule).where(RoleModule.role_id.in_(role_ids)))
-    await db.execute(delete(Role).where(Role.company_id == company_id))
+    await db.execute(delete(Role).where(Role.company_id == cid))
 
-    # 10. Usuarios y tema
+    # 13. Usuarios
     if user_ids:
         await db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(user_ids)))
-    await db.execute(delete(User).where(User.company_id == company_id))
+    await db.execute(delete(User).where(User.company_id == cid))
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
