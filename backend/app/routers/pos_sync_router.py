@@ -1409,6 +1409,7 @@ async def push_receipt_payments(
 # ═════════════════════════════════════════
 
 class DeliveryFeeIn(BaseModel):
+    id_registro:    int
     invoice_number: str
     company_id:     int
     amount:         Optional[float] = 0
@@ -1427,19 +1428,22 @@ async def push_invoice_delivery_fees(
 ):
     saved, failed = [], []
     for item in items:
-        key = f"{item.invoice_number}|{item.company_id}"
+        key = f"{item.id_registro}|{item.company_id}"
         try:
             await db.execute(text("""
                 INSERT INTO invoice_delivery_fees
-                    (invoice_number, company_id, amount, date, order_number,
+                    (id_registro, invoice_number, company_id, amount, date, order_number,
                      employee_id, customer_id, synced, updated_at)
                 VALUES
-                    (:invoice_number, :company_id, :amount, :date, :order_number,
+                    (:id_registro, :invoice_number, :company_id, :amount, :date, :order_number,
                      :employee_id, :customer_id, 1, NOW())
                 ON DUPLICATE KEY UPDATE
+                    invoice_number = VALUES(invoice_number),
                     amount         = VALUES(amount),
                     date           = VALUES(date),
                     order_number   = VALUES(order_number),
+                    employee_id    = VALUES(employee_id),
+                    customer_id    = VALUES(customer_id),
                     synced         = 1,
                     updated_at     = NOW()
             """), item.dict())
@@ -1459,19 +1463,22 @@ async def push_receipt_delivery_fees(
 ):
     saved, failed = [], []
     for item in items:
-        key = f"{item.invoice_number}|{item.company_id}"
+        key = f"{item.id_registro}|{item.company_id}"
         try:
             await db.execute(text("""
                 INSERT INTO receipt_delivery_fees
-                    (invoice_number, company_id, amount, date, order_number,
+                    (id_registro, invoice_number, company_id, amount, date, order_number,
                      employee_id, customer_id, synced, updated_at)
                 VALUES
-                    (:invoice_number, :company_id, :amount, :date, :order_number,
+                    (:id_registro, :invoice_number, :company_id, :amount, :date, :order_number,
                      :employee_id, :customer_id, 1, NOW())
                 ON DUPLICATE KEY UPDATE
+                    invoice_number = VALUES(invoice_number),
                     amount         = VALUES(amount),
                     date           = VALUES(date),
                     order_number   = VALUES(order_number),
+                    employee_id    = VALUES(employee_id),
+                    customer_id    = VALUES(customer_id),
                     synced         = 1,
                     updated_at     = NOW()
             """), item.dict())
@@ -1481,6 +1488,40 @@ async def push_receipt_delivery_fees(
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.get("/sync/pull/invoice-delivery-fees")
+async def pull_invoice_delivery_fees(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM invoice_delivery_fees WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "invoice_delivery_fees": [dict(r) for r in rows]}
+
+
+@router.get("/sync/pull/receipt-delivery-fees")
+async def pull_receipt_delivery_fees(
+    company_id: int = Query(...),
+    since: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    sql = "SELECT * FROM receipt_delivery_fees WHERE company_id = :company_id"
+    params = {"company_id": company_id}
+    if since:
+        sql += " AND updated_at >= :since"
+        params["since"] = since
+    sql += " ORDER BY updated_at ASC LIMIT 1000"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return {"total": len(rows), "since": since, "receipt_delivery_fees": [dict(r) for r in rows]}
 
 
 @router.get("/sync/pull/receipt-payments")
