@@ -91,6 +91,27 @@
             <i class="bi bi-images"></i> {{ n.evidence_count }}
           </span>
         </div>
+
+        <!-- Thread de mensajes inline -->
+        <div v-if="n.replies && n.replies.length" class="card-thread" @click.stop="openDetail(n)">
+          <div class="card-thread-header">
+            <i class="bi bi-chat-left-text"></i>
+            <span>Mensajes</span>
+            <span class="card-thread-count">{{ n.replies.length }}</span>
+          </div>
+          <div class="card-thread-list">
+            <div
+              v-for="r in n.replies"
+              :key="r.id"
+              class="card-thread-msg"
+              :class="r.user_id === n.user_id ? 'msg-reporter' : 'msg-admin'"
+            >
+              <span class="msg-author">{{ r.user_name }}</span>
+              <span class="msg-text">{{ r.message }}</span>
+              <span class="msg-time">{{ fmtDate(r.created_at) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -652,6 +673,12 @@ async function sendReply() {
     const res = await api.post(`/novelties/${activeNovelty.value.id}/replies`, { message: msg })
     replies.value.push(res.data)
     replyText.value = ""
+    // Sincronizar thread en la tarjeta
+    const idx = novelties.value.findIndex(n => n.id === activeNovelty.value.id)
+    if (idx !== -1) {
+      if (!novelties.value[idx].replies) novelties.value[idx].replies = []
+      novelties.value[idx].replies.push(res.data)
+    }
   } catch (e) {
     showToast(e.response?.data?.detail || "Error al enviar respuesta", "error")
   } finally {
@@ -672,6 +699,13 @@ async function deleteReply(r) {
   try {
     await api.delete(`/novelties/replies/${r.id}`)
     replies.value = replies.value.filter(x => x.id !== r.id)
+    // Sincronizar thread en la tarjeta
+    if (activeNovelty.value) {
+      const idx = novelties.value.findIndex(n => n.id === activeNovelty.value.id)
+      if (idx !== -1 && novelties.value[idx].replies) {
+        novelties.value[idx].replies = novelties.value[idx].replies.filter(x => x.id !== r.id)
+      }
+    }
     showToast("Respuesta eliminada", "success")
   } catch (e) {
     showToast(e.response?.data?.detail || "Error al eliminar", "error")
@@ -1597,6 +1631,89 @@ onMounted(async () => {
 .btn-send-reply:hover:not(:disabled) { background: #2563eb; }
 .btn-send-reply:disabled { background: #94a3b8; cursor: default; }
 
+/* ── THREAD DE MENSAJES EN TARJETA ── */
+.card-thread {
+  border-top: 1px solid var(--border, #f1f5f9);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.card-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.card-thread-count {
+  background: var(--primary, #3b82f6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 2px;
+}
+
+.card-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.card-thread-msg {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.msg-reporter {
+  background: rgba(100, 116, 139, 0.07);
+  border-left: 2px solid #94a3b8;
+}
+
+.msg-admin {
+  background: rgba(59, 130, 246, 0.07);
+  border-left: 2px solid #3b82f6;
+}
+
+.msg-author {
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-main, #374151);
+}
+
+.msg-reporter .msg-author { color: #64748b; }
+.msg-admin    .msg-author { color: #2563eb; }
+
+.msg-text {
+  color: var(--text-main, #374151);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.msg-time {
+  font-size: 10px;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+}
+
 /* ── RESPONSIVE ── */
 @media (max-width: 768px) {
   .page-wrap   { padding: 14px; gap: 14px; }
@@ -1604,5 +1721,15 @@ onMounted(async () => {
   .cards-grid  { grid-template-columns: 1fr; }
   .filters-row { flex-direction: column; align-items: stretch; }
   .modal-box   { max-height: 95vh; }
+}
+
+@media (max-width: 576px) {
+  .page-wrap  { padding: 10px; gap: 10px; }
+  .page-title { font-size: 15px; }
+  .card-thread-msg {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .msg-time { display: none; }
 }
 </style>

@@ -116,12 +116,45 @@ async def list_novelties(
 
     result = await db.execute(select(Novelty).where(*conds).order_by(Novelty.created_at.desc()))
     novelties = result.scalars().all()
+    if not novelties:
+        return []
+
+    novelty_ids = [n.id for n in novelties]
+    user_ids = {n.user_id for n in novelties}
+
+    # Batch: todas las respuestas de estas novedades
+    replies_r = await db.execute(
+        select(NoveltyReply)
+        .where(NoveltyReply.novelty_id.in_(novelty_ids))
+        .order_by(NoveltyReply.created_at.asc())
+    )
+    all_replies = replies_r.scalars().all()
+    user_ids.update(r.user_id for r in all_replies)
+
+    # Batch: conteo de evidencias
+    ev_rows = await db.execute(
+        select(NoveltyEvidence.novelty_id, func.count().label("cnt"))
+        .where(NoveltyEvidence.novelty_id.in_(novelty_ids))
+        .group_by(NoveltyEvidence.novelty_id)
+    )
+    ev_counts = {r.novelty_id: r.cnt for r in ev_rows.all()}
+
+    # Batch: todos los usuarios necesarios
+    users_r = await db.execute(select(User).where(User.id.in_(list(user_ids))))
+    users_map = {u.id: u.nombre for u in users_r.scalars().all()}
+
+    # Agrupar respuestas por novedad
+    replies_by_novelty: dict[int, list] = {}
+    for r in all_replies:
+        replies_by_novelty.setdefault(r.novelty_id, []).append(
+            _ser_reply(r, users_map.get(r.user_id, "Desconocido"))
+        )
+
     items = []
     for n in novelties:
-        author_r = await db.execute(select(User).where(User.id == n.user_id))
-        author = author_r.scalar_one_or_none()
-        ev_count = (await db.execute(select(func.count()).select_from(NoveltyEvidence).where(NoveltyEvidence.novelty_id == n.id))).scalar()
-        items.append(_ser(n, author.nombre if author else "Desconocido", ev_count))
+        item = _ser(n, users_map.get(n.user_id, "Desconocido"), ev_counts.get(n.id, 0))
+        item["replies"] = replies_by_novelty.get(n.id, [])
+        items.append(item)
     return items
 
 

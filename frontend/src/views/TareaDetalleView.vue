@@ -283,10 +283,10 @@
           <h3 class="sub-title">Registrar material / herramienta</h3>
           <div class="form-row4">
             <div class="fg col2">
-              <label>Material / Insumo *</label>
+              <label>Material / Producto *</label>
               <select v-model="matForm.name" class="form-select">
-                <option value="">— Seleccionar insumo —</option>
-                <option v-for="ins in insumos" :key="ins.id" :value="ins.name">{{ ins.name }}</option>
+                <option value="">— Seleccionar producto —</option>
+                <option v-for="p in productos" :key="p.id" :value="p.name">{{ p.name }}</option>
               </select>
             </div>
             <div class="fg">
@@ -686,7 +686,7 @@ const purchases      = ref([])
 const savingMat      = ref(false)
 const savingExp      = ref(false)
 const savingPurch    = ref(false)
-const insumos        = ref([])
+const productos      = ref([])
 const unidadesMedida = ref([])
 const conceptosGastos   = ref([])
 const conceptosCompras  = ref([])
@@ -760,7 +760,7 @@ async function load() {
   loading.value = true
   try {
     const [taskRes, assetsRes, workersRes, usersRes, statusRes, evRes, matRes, expRes, commRes, collabRes,
-           purchRes, insumoRes, unidadRes, cgastoRes, ccompraRes] =
+           purchRes, productosRes, unidadRes, cgastoRes, ccompraRes] =
       await Promise.all([
         api.get(`/tasks/${id}`),
         api.get("/tasks/assets-list"),
@@ -773,7 +773,7 @@ async function load() {
         api.get(`/task-comments/${id}`),
         api.get(`/task-collaborators/${id}`),
         api.get(`/task-purchases/${id}`),
-        api.get("/insumos/"),
+        api.get("/products/"),
         api.get("/unidades-medida/"),
         api.get("/conceptos-gastos/"),
         api.get("/conceptos-compras/"),
@@ -789,7 +789,7 @@ async function load() {
     comments.value       = commRes.data
     collaborators.value  = collabRes.data
     purchases.value      = purchRes.data
-    insumos.value        = insumoRes.data
+    productos.value      = productosRes.data.filter(p => p.name?.trim())
     unidadesMedida.value = unidadRes.data
     conceptosGastos.value  = cgastoRes.data
     conceptosCompras.value = ccompraRes.data
