@@ -22,8 +22,11 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     r = await db.execute(select(UserSession).where(UserSession.token == token, UserSession.is_active == True))
     if not r.scalar_one_or_none():
         raise HTTPException(status_code=401, detail="Sesión inválida")
-    r = await db.execute(select(User).where(User.email == payload.get("sub")))
-    user = r.scalar_one_or_none()
+    uid = payload.get("user_id")
+    user = await db.get(User, int(uid)) if uid else None
+    if not user:
+        r = await db.execute(select(User).where(User.email == payload.get("sub")))
+        user = r.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if not user.company_id:

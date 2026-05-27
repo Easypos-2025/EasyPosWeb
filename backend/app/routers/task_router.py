@@ -52,8 +52,11 @@ async def _get_user(authorization: str, db: AsyncSession):
     result = await db.execute(select(UserSession).where(UserSession.token == token, UserSession.is_active == True))
     if not result.scalar_one_or_none() or payload is None:
         raise HTTPException(status_code=401, detail="Sesión inválida")
-    result = await db.execute(select(User).where(User.email == payload.get("sub")))
-    user = result.scalar_one_or_none()
+    uid = payload.get("user_id")
+    user = await db.get(User, int(uid)) if uid else None
+    if not user:
+        result = await db.execute(select(User).where(User.email == payload.get("sub")))
+        user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
