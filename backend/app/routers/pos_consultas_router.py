@@ -285,7 +285,7 @@ async def get_detalle_productos(
         col   = "invoice_number"
     elif tipo == "recibo":
         tabla = "pos_receipt_order_detail_products"
-        col   = "receipt_number"
+        col   = "invoice_number"
     else:
         raise HTTPException(status_code=400, detail="tipo debe ser 'factura' o 'recibo'")
 

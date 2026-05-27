@@ -1675,7 +1675,7 @@ async def pull_order_detail_products(
 class ReceiptOrderDetailProductIn(BaseModel):
     order_number: str
     date: str
-    receipt_number: str
+    invoice_number: str
     dish_id: int
     item: int
     group_id: int
@@ -1695,10 +1695,10 @@ async def push_receipt_order_detail_products(
         try:
             await db.execute(text("""
                 INSERT INTO pos_receipt_order_detail_products
-                    (order_number, date, receipt_number, dish_id, item, group_id, item_id,
+                    (order_number, date, invoice_number, dish_id, item, group_id, item_id,
                      quantity, synced, company_id, updated_at)
                 VALUES
-                    (:order_number, :date, :receipt_number, :dish_id, :item, :group_id, :item_id,
+                    (:order_number, :date, :invoice_number, :dish_id, :item, :group_id, :item_id,
                      :quantity, 1, :company_id, NOW())
                 ON DUPLICATE KEY UPDATE
                     quantity   = VALUES(quantity),
