@@ -93,8 +93,8 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     if not matching:
         raise HTTPException(status_code=400, detail="Contraseña incorrecta")
 
-    # Cuentas de prueba con múltiples empresas → selección requerida
-    if len(matching) > 1 and all(u.is_test_account for u in matching):
+    # Múltiples usuarios con el mismo email → selección de empresa requerida
+    if len(matching) > 1:
         if not data.company_id:
             company_options = []
             for u in matching:
@@ -113,7 +113,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         # Segunda llamada: ya eligió empresa
         user = next((u for u in matching if u.company_id == data.company_id), None)
         if not user:
-            raise HTTPException(status_code=400, detail="Empresa no válida para este usuario de prueba")
+            raise HTTPException(status_code=400, detail="Empresa no válida para este usuario")
     else:
         user = matching[0]
 
