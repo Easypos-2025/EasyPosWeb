@@ -9,7 +9,7 @@
           <i class="bi bi-funnel-fill me-1"></i>
           <span>Filtros</span>
           <span v-if="!filtrosVisible && lista.length" class="vc-filters-hint">
-            {{ filtro.desde }} — {{ filtro.hasta }}
+            {{ fmtFecha(filtro.desde) }} — {{ fmtFecha(filtro.hasta) }}
           </span>
         </span>
         <i :class="filtrosVisible ? 'bi bi-chevron-up' : 'bi bi-chevron-down'" class="vc-chevron"></i>
@@ -232,6 +232,12 @@ function localDate() {
   return new Intl.DateTimeFormat('en-CA', { timeZone:'America/Bogota' }).format(new Date())
 }
 const hoy = localDate()
+
+function fmtFecha(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
 
 const tipoOpts = [
   { value:'ambos',   label:'Ambos' },
