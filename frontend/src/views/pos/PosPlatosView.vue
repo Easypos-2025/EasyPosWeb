@@ -21,9 +21,6 @@
         <i class="bi bi-chevron-left"></i>
       </button>
       <div class="cat-track" ref="catTrackRef" @scroll="updateArrows">
-        <button :class="['cat-pill', { active: categoriaTab === null }]" @click="setCategoria(null)">
-          <i class="bi bi-grid-3x3-gap"></i><span>Todos</span>
-        </button>
         <button
           v-for="c in categorias" :key="c.id"
           :class="['cat-pill', { active: categoriaTab === c.id }]"
@@ -31,6 +28,9 @@
         >
           <span class="cat-dot"></span>
           <span>{{ c.name }}</span>
+        </button>
+        <button :class="['cat-pill cat-pill--todos', { active: categoriaTab === null }]" @click="setCategoria(null)">
+          <i class="bi bi-grid-3x3-gap"></i><span>Todos</span>
         </button>
       </div>
       <button class="cat-arrow cat-arrow--right" :class="{ visible: canScrollRight }" @click="scrollCats(1)">
@@ -44,13 +44,13 @@
         <span class="filtros-label">Estado:</span>
         <button :class="['filtro-btn filtro-btn--activo', { active: filtroEstado === 1 }]" @click="setFiltroEstado(1)">Activos</button>
         <button :class="['filtro-btn filtro-btn--inactivo', { active: filtroEstado === 0 }]" @click="setFiltroEstado(0)">Inactivos</button>
-        <button :class="['filtro-btn', { active: filtroEstado === null }]" @click="setFiltroEstado(null)">Todos</button>
+        <button v-if="categoriaTab === null" :class="['filtro-btn', { active: filtroEstado === null }]" @click="setFiltroEstado(null)">Todos</button>
       </div>
       <div class="filtros-grupo">
         <span class="filtros-label">Foto:</span>
         <button :class="['filtro-btn filtro-btn--confoto', { active: filtroFoto === 'con' }]" @click="setFiltroFoto('con')">Con foto</button>
         <button :class="['filtro-btn filtro-btn--sinfoto', { active: filtroFoto === 'sin' }]" @click="setFiltroFoto('sin')">Sin foto</button>
-        <button :class="['filtro-btn', { active: filtroFoto === null }]" @click="setFiltroFoto(null)">Todos</button>
+        <button v-if="categoriaTab === null" :class="['filtro-btn', { active: filtroFoto === null }]" @click="setFiltroFoto(null)">Todos</button>
       </div>
     </div>
 
@@ -477,9 +477,15 @@ function scrollCats(dir) {
 }
 watch(categorias, async () => { await nextTick(); updateArrows() })
 
-const setCategoria    = (id) => { categoriaTab.value = id }
-const setFiltroEstado = (v)  => { filtroEstado.value = v }
-const setFiltroFoto   = (v)  => { filtroFoto.value = v }
+const setCategoria = (id) => {
+  categoriaTab.value = id
+  if (id !== null) {
+    if (filtroEstado.value === null) filtroEstado.value = 1
+    if (filtroFoto.value   === null) filtroFoto.value   = 'con'
+  }
+}
+const setFiltroEstado = (v) => { filtroEstado.value = v }
+const setFiltroFoto   = (v) => { filtroFoto.value = v }
 
 // ── Panel y modales ───────────────────────────────────────────────────────────
 const modalItem = ref({
@@ -540,8 +546,12 @@ async function cargarItems() {
   finally { loading.value = false }
 }
 async function cargarCategorias() {
-  try { const{data} = await api.get('/api/pos-catalogo/categorias'); categorias.value = data.filter(c => c.is_active) }
-  catch { categorias.value = [] }
+  try {
+    const { data } = await api.get('/api/pos-catalogo/categorias')
+    const activas = data.filter(c => c.is_active).sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    categorias.value = activas
+    if (activas.length > 0) categoriaTab.value = activas[0].id
+  } catch { categorias.value = [] }
 }
 async function cargarInsumos() {
   try {
