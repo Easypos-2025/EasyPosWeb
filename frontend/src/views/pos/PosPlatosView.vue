@@ -17,24 +17,26 @@
 
     <!-- SLIDE DE CATEGORÍAS -->
     <div class="cat-slider-wrap">
-      <button class="cat-arrow cat-arrow--left" :class="{ visible: canScrollLeft }" @click="scrollCats(-1)">
-        <i class="bi bi-chevron-left"></i>
-      </button>
-      <div class="cat-track" ref="catTrackRef" @scroll="updateArrows">
-        <button
-          v-for="c in categorias" :key="c.id"
-          :class="['cat-pill', { active: categoriaTab === c.id }]"
-          @click="setCategoria(c.id)"
-        >
-          <span class="cat-dot"></span>
-          <span>{{ c.name }}</span>
+      <div class="cat-slider-inner">
+        <button class="cat-arrow cat-arrow--left" :class="{ visible: canScrollLeft }" @click="scrollCats(-1)">
+          <i class="bi bi-chevron-left"></i>
         </button>
-        <button :class="['cat-pill cat-pill--todos', { active: categoriaTab === null }]" @click="setCategoria(null)">
-          <i class="bi bi-grid-3x3-gap"></i><span>Todos</span>
+        <div class="cat-track" ref="catTrackRef" @scroll="updateArrows">
+          <button
+            v-for="c in categorias" :key="c.id"
+            :class="['cat-pill', { active: categoriaTab === c.id }]"
+            @click="setCategoria(c.id)"
+          >
+            <span class="cat-dot"></span>
+            <span>{{ c.name }}</span>
+          </button>
+        </div>
+        <button class="cat-arrow cat-arrow--right" :class="{ visible: canScrollRight }" @click="scrollCats(1)">
+          <i class="bi bi-chevron-right"></i>
         </button>
       </div>
-      <button class="cat-arrow cat-arrow--right" :class="{ visible: canScrollRight }" @click="scrollCats(1)">
-        <i class="bi bi-chevron-right"></i>
+      <button :class="['cat-pill cat-pill--todos', { active: categoriaTab === null }]" @click="setCategoria(null)">
+        <i class="bi bi-grid-3x3-gap"></i><span>Todos</span>
       </button>
     </div>
 
@@ -790,10 +792,26 @@ async function eliminarVariante(varId) {
 /* ── Slider de categorías ────────────────────────────────────────────────────── */
 .cat-slider-wrap {
   position:sticky;top:0;z-index:20;
-  display:flex;align-items:center;
+  display:flex;align-items:center;gap:10px;
   background:linear-gradient(135deg,#1e3a5f 0%,#1d4ed8 100%);
-  border-radius:14px;padding:10px 46px;margin-bottom:16px;
+  border-radius:14px;padding:10px 10px 10px 14px;margin-bottom:16px;
   box-shadow:0 4px 16px rgba(29,78,216,.25);
+}
+.cat-slider-inner {
+  position:relative;flex:1;min-width:0;
+  display:flex;align-items:center;
+  padding:0 40px;
+}
+.cat-pill--todos {
+  flex-shrink:0;
+  position:relative;
+  margin-right:4px;
+}
+.cat-pill--todos::before {
+  content:'';
+  position:absolute;left:-7px;top:15%;height:70%;
+  width:1px;background:rgba(255,255,255,.28);
+  pointer-events:none;
 }
 .cat-track {
   display:flex;gap:8px;flex:1;
@@ -1041,7 +1059,8 @@ async function eliminarVariante(varId) {
   .panel-lateral { max-width:100%; }
   .item-foto { height:130px; }
   .filtros-wrap { gap:8px; }
-  .cat-slider-wrap { padding:8px 40px;border-radius:10px; }
+  .cat-slider-wrap { padding:8px 8px 8px 10px;border-radius:10px; }
+  .cat-slider-inner { padding:0 34px; }
   .cat-pill { padding:8px 14px;font-size:11px; }
   .cat-arrow { width:30px;height:30px;font-size:12px; }
   .cat-arrow--left  { left:5px; }
@@ -1053,7 +1072,8 @@ async function eliminarVariante(varId) {
   .campo-row  { flex-direction:column; }
   .item-foto  { height:160px; }
   .filtros-wrap { flex-direction:column;align-items:flex-start; }
-  .cat-slider-wrap { padding:8px 36px;border-radius:8px;margin-bottom:12px; }
+  .cat-slider-wrap { padding:8px 6px 8px 8px;border-radius:8px;margin-bottom:12px; }
+  .cat-slider-inner { padding:0 30px; }
   .cat-pill { padding:7px 12px;font-size:11px; }
   .seccion-hdr { top:50px; }
 }
