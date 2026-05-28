@@ -60,14 +60,34 @@ Private Sub SyncTransaccional()
     SyncRecibosDetalleFactura lblEstado
     SyncRecibosFormaPago lblEstado
     SyncCajasCierres lblEstado
+    SyncCajaFacturas lblEstado
+    SyncCajaRecibos lblEstado
+    SyncGastos lblEstado
+    SyncCompras lblEstado
+    SyncDescuentos lblEstado
+    SyncRecibosDescuentos lblEstado
+    SyncDetalleComandaProducto lblEstado
+    SyncRecibosDetalleComandaProducto lblEstado
     lblEstado.Caption = "Ultima sync: " & Now()
 End Sub
 
 ' ── Solo catalogos (lento, cada hora) ────────────────────────
 Private Sub SyncCatalogos()
     SyncPlatos lblEstado
+    SyncPlatoProducto lblEstado
+    SyncPlatoImpresoras lblEstado
+    SyncPlatoArmar lblEstado
+    SyncPlatoArmarDetalle lblEstado
     SyncEmpleados lblEstado
     SyncMeseros lblEstado
     SyncMesas lblEstado
+    SyncMenuDiario lblEstado
+    SyncFormaPago lblEstado
+    SyncFormaMedida lblEstado
+    SyncListaPreciosCliente lblEstado
+    SyncNovedadesCategorias lblEstado
+    SyncNovedadesComentarios lblEstado
+    SyncNovedadesProductos lblEstado
+    SyncInventarioPorciones lblEstado
     lblEstado.Caption = "Catalogos sync: " & Now()
 End Sub

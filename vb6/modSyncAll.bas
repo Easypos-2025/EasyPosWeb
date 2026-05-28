@@ -30,6 +30,12 @@ Public Sub SincronizarTodo(lblEstado As Label)
     SyncRecibosDetalleFactura lblEstado
     SyncRecibosFormaPago lblEstado
     SyncCajasCierres lblEstado
+    SyncCajaFacturas lblEstado
+    SyncCajaRecibos lblEstado
+    SyncGastos lblEstado
+    SyncCompras lblEstado
+    SyncDescuentos lblEstado
+    SyncRecibosDescuentos lblEstado
 
     ' Tablas transaccionales de productos en comandas
     SyncDetalleComandaProducto lblEstado
@@ -45,6 +51,13 @@ Public Sub SincronizarTodo(lblEstado As Label)
     SyncMeseros lblEstado
     SyncMesas lblEstado
     SyncMenuDiario lblEstado
+    SyncFormaPago lblEstado
+    SyncFormaMedida lblEstado
+    SyncListaPreciosCliente lblEstado
+    SyncNovedadesCategorias lblEstado
+    SyncNovedadesComentarios lblEstado
+    SyncNovedadesProductos lblEstado
+    SyncInventarioPorciones lblEstado
 
     lblEstado.Caption = "Sync completo: " & Now()
 End Sub
@@ -706,11 +719,12 @@ Private Sub SyncCajasCierres(lblEstado As Label)
 
     If rs.EOF Then GoTo Salir
 
-    Dim json As String, sep As String
-    json = "[": sep = ""
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
     Do While Not rs.EOF
+        Dim idCaja As Long: idCaja = Nz(rs("Id_Caja"), 0)
         json = json & sep & "{"
-        json = json & """id"":" & rs("Id_Caja") & ","
+        json = json & """id_registro"":" & idCaja & ","
         json = json & """company_id"":" & COMPANY_ID & ","
         json = json & """register_number"":" & Nz(rs("Nro_Caja"), 0) & ","
         json = json & """shift"":" & Nz(rs("Turno"), 0) & ","
@@ -720,26 +734,41 @@ Private Sub SyncCajasCierres(lblEstado As Label)
         json = json & """cash_sales"":" & Nz(rs("Venta_Efectivo"), 0) & ","
         json = json & """voucher_sales"":" & Nz(rs("Venta_Baucher"), 0) & ","
         json = json & """tips"":" & Nz(rs("Propinas"), 0) & ","
+        json = json & """extra_tips"":" & Nz(rs("Propinas_Extra"), 0) & ","
         json = json & """expenses"":" & Nz(rs("Gastos"), 0) & ","
+        json = json & """vouchers"":" & Nz(rs("Vales"), 0) & ","
+        json = json & """manager_consumption"":" & Nz(rs("Consumo_Jefes"), 0) & ","
         json = json & """final_base"":" & Nz(rs("Base_Final"), 0) & ","
         json = json & """total_invoices"":" & Nz(rs("F_Totales"), 0) & ","
+        json = json & """voucher_invoices"":" & Nz(rs("F_Baucher"), 0) & ","
+        json = json & """copy_invoices"":" & Nz(rs("F_Copias"), 0) & ","
         json = json & """voided_invoices"":" & Nz(rs("F_Anuladas"), 0) & ","
+        json = json & """bills"":" & Nz(rs("Billetes"), 0) & ","
+        json = json & """coins"":" & Nz(rs("Monedas"), 0) & ","
+        json = json & """purchases"":" & Nz(rs("Compras"), 0) & ","
+        json = json & """customer_sales"":" & Nz(rs("Venta_Clientes"), 0) & ","
         json = json & """closed"":" & Nz(rs("Cierre"), 0) & ","
         json = json & """invoice_start"":""" & EscJson(Nz(rs("Factura_Inicio"), "")) & ""","
         json = json & """invoice_end"":""" & EscJson(Nz(rs("Factura_Fin"), "")) & ""","
+        json = json & """invoice_start_manual"":""" & EscJson(Nz(rs("Factura_Inicio_Manual"), "")) & ""","
+        json = json & """invoice_end_manual"":""" & EscJson(Nz(rs("Factura_Fin_Manual"), "")) & ""","
+        json = json & """delivery_income"":" & Nz(rs("Ingreso_Domicilio"), 0) & ","
+        json = json & """delivery_expense"":" & Nz(rs("Egreso_Domicilio"), 0) & ","
+        json = json & """opened_pc"":""" & EscJson(Nz(rs("Pc_Abierta"), "")) & ""","
+        json = json & """closing_notes"":""" & EscJson(Nz(rs("Observaciones_Cierre"), "")) & ""","
         json = json & """opening_datetime"":""" & EscJson(Nz(rs("Fecha_Hora_Apertura"), "")) & ""","
         json = json & """closing_datetime"":""" & EscJson(Nz(rs("Fecha_Hora_Cierre"), "")) & """"
         json = json & "}": sep = ","
+        idList = idList & idSep & idCaja: idSep = ","
         rs.MoveNext
     Loop
     json = json & "]": rs.Close
 
-    Dim resp As String: resp = ApiPost("/sync/push/cash-closings", json)
+    Dim resp As String: resp = ApiPost("/sync/push/cash-closings-v2", json)
     If resp = "" Then GoTo Salir
 
-    Dim saved As String: saved = ParseSaved(resp)
-    If saved <> "" Then
-        conn.Execute "UPDATE cajas_cierres SET Enviada_MySql=1 WHERE Id_Caja IN (" & saved & ")"
+    If idList <> "" Then
+        conn.Execute "UPDATE cajas_cierres SET Enviada_MySql=1 WHERE Id_Caja IN (" & idList & ")"
     End If
 
 Salir:
@@ -1190,6 +1219,571 @@ Private Sub SyncMesas(lblEstado As Label)
     json = json & "]": rs.Close
 
     ApiPost "/sync/push/tables", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 23. CAJA FACTURAS — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncCajaFacturas(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando caja facturas..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM caja_facturas WHERE Enviada_MySql = 0 AND year(Fecha) >= 2025 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
+    Do While Not rs.EOF
+        Dim nroFac As String: nroFac = EscJson(rs("Nro_Factura"))
+        json = json & sep & "{"
+        json = json & """register_number"":" & Nz(rs("Nro_Caja"), 0) & ","
+        json = json & """closing_id"":" & Nz(rs("Id_Caja"), 0) & ","
+        json = json & """invoice_number"":""" & nroFac & ""","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """date"":""" & FechaSQL(rs("Fecha")) & ""","
+        json = json & """order_number"":""" & EscJson(Nz(rs("Nro_Pedido"), "")) & ""","
+        json = json & """amount"":" & Nz(rs("Valor"), 0) & ","
+        json = json & """base_amount"":" & Nz(rs("Base"), 0) & ","
+        json = json & """tax_vat"":" & Nz(rs("Impuesto_Iva"), 0) & ","
+        json = json & """tax_consumption"":" & Nz(rs("Impuesto_Impoconsumo"), 0) & ","
+        json = json & """employee_id"":" & Nz(rs("Empleado"), 0) & ","
+        json = json & """shift"":" & Nz(rs("Turno"), 0) & ","
+        json = json & """source_pc"":""" & EscJson(Nz(rs("Pc_Desde"), "")) & ""","
+        json = json & """delivery_person_id"":" & Nz(rs("Cod_Domiciliario"), 0) & ","
+        json = json & """invoice_notes"":""" & EscJson(Nz(rs("Observacion_Factura"), "")) & ""","
+        json = json & """prefix"":""" & EscJson(Nz(rs("prefix"), "")) & ""","
+        json = json & """fac_pe"":""" & EscJson(Nz(rs("fac_pe"), "")) & """"
+        json = json & "}": sep = ","
+        idList = idList & idSep & "'" & nroFac & "'": idSep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/cash-register-invoices", json)
+    If resp = "" Then GoTo Salir
+
+    If idList <> "" Then
+        conn.Execute "UPDATE caja_facturas SET Enviada_MySql=1 WHERE Nro_Factura IN (" & idList & ")"
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 24. CAJA RECIBOS — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncCajaRecibos(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando caja recibos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM caja_recibos WHERE Enviada_MySql = 0 AND year(Fecha) >= 2025 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
+    Do While Not rs.EOF
+        Dim nroRec As String: nroRec = EscJson(rs("Nro_Factura"))
+        json = json & sep & "{"
+        json = json & """register_number"":" & Nz(rs("Nro_Caja"), 0) & ","
+        json = json & """closing_id"":" & Nz(rs("Id_Caja"), 0) & ","
+        json = json & """receipt_number"":""" & nroRec & ""","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """date"":""" & FechaSQL(rs("Fecha")) & ""","
+        json = json & """order_number"":""" & EscJson(Nz(rs("Nro_Pedido"), "")) & ""","
+        json = json & """amount"":" & Nz(rs("Valor"), 0) & ","
+        json = json & """base_amount"":" & Nz(rs("Base"), 0) & ","
+        json = json & """tax_vat"":" & Nz(rs("Impuesto_Iva"), 0) & ","
+        json = json & """tax_consumption"":" & Nz(rs("Impuesto_Impoconsumo"), 0) & ","
+        json = json & """employee_id"":" & Nz(rs("Empleado"), 0) & ","
+        json = json & """shift"":" & Nz(rs("Turno"), 0) & ","
+        json = json & """source_pc"":""" & EscJson(Nz(rs("Pc_Desde"), "")) & ""","
+        json = json & """delivery_person_id"":" & Nz(rs("Cod_Domiciliario"), 0) & ","
+        json = json & """notes"":""" & EscJson(Nz(rs("Observacion_Factura"), "")) & ""","
+        json = json & """prefix"":""" & EscJson(Nz(rs("Prefix"), "")) & ""","
+        json = json & """fac_pe"":""" & EscJson(Nz(rs("Fac_PE"), "")) & """"
+        json = json & "}": sep = ","
+        idList = idList & idSep & "'" & nroRec & "'": idSep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/cash-register-receipts", json)
+    If resp = "" Then GoTo Salir
+
+    If idList <> "" Then
+        conn.Execute "UPDATE caja_recibos SET Enviada_MySql=1 WHERE Nro_Factura IN (" & idList & ")"
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 25. GASTOS — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncGastos(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando gastos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM gastos WHERE Enviada_MySql = 0 AND year(Fecha_Gasto) >= 2025 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
+    Do While Not rs.EOF
+        Dim idReg As Long: idReg = Nz(rs("Nro_Gasto"), 0)
+        json = json & sep & "{"
+        json = json & """id_registro"":" & idReg & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """register_id"":" & Nz(rs("Id_Caja"), 0) & ","
+        json = json & """date"":""" & FechaSQL(rs("Fecha_Gasto")) & ""","
+        json = json & """amount"":" & Nz(rs("Valor_Gasto"), 0) & ","
+        json = json & """employee_code"":""" & EscJson(Nz(rs("Cod_Empleado"), "")) & ""","
+        json = json & """concept_id"":" & Nz(rs("Cod_Concepto"), 0) & ","
+        json = json & """sub_concept_id"":" & Nz(rs("Cod_Sub_Concepto"), 0) & ","
+        json = json & """shift"":" & Nz(rs("Turno"), 0) & ","
+        json = json & """movement_number"":" & Nz(rs("Nro_Movimiento"), 0) & ","
+        json = json & """detail"":""" & EscJson(Nz(rs("Detalle"), "")) & """"
+        json = json & "}": sep = ","
+        idList = idList & idSep & idReg: idSep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/expenses", json)
+    If resp = "" Then GoTo Salir
+
+    If idList <> "" Then
+        conn.Execute "UPDATE gastos SET Enviada_MySql=1 WHERE Nro_Gasto IN (" & idList & ")"
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 26. COMPRAS — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncCompras(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando compras..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM compras WHERE Enviada_MySql = 0 AND year(Fecha_Gasto) >= 2025 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
+    Do While Not rs.EOF
+        Dim idReg As Long: idReg = Nz(rs("Nro_Gasto"), 0)
+        json = json & sep & "{"
+        json = json & """id_registro"":" & idReg & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """register_id"":" & Nz(rs("Id_Caja"), 0) & ","
+        json = json & """date"":""" & FechaSQL(rs("Fecha_Gasto")) & ""","
+        json = json & """amount"":" & Nz(rs("Valor_Gasto"), 0) & ","
+        json = json & """employee_code"":""" & EscJson(Nz(rs("Cod_Empleado"), "")) & ""","
+        json = json & """concept_id"":" & Nz(rs("Cod_Concepto"), 0) & ","
+        json = json & """sub_concept_id"":" & Nz(rs("Cod_Sub_Concepto"), 0) & ","
+        json = json & """shift"":" & Nz(rs("Turno"), 0) & ","
+        json = json & """movement_number"":" & Nz(rs("Nro_Movimiento"), 0) & ","
+        json = json & """detail"":""" & EscJson(Nz(rs("Detalle"), "")) & """"
+        json = json & "}": sep = ","
+        idList = idList & idSep & idReg: idSep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/purchases", json)
+    If resp = "" Then GoTo Salir
+
+    If idList <> "" Then
+        conn.Execute "UPDATE compras SET Enviada_MySql=1 WHERE Nro_Gasto IN (" & idList & ")"
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 27. DESCUENTOS — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncDescuentos(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando descuentos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM descuentos WHERE Enviada_MySql = 0 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
+    Do While Not rs.EOF
+        Dim idReg As Long: idReg = Nz(rs("Id_Descuento"), 0)
+        json = json & sep & "{"
+        json = json & """id_registro"":" & idReg & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """date"":""" & EscJson(Nz(rs("Fecha"), "")) & ""","
+        json = json & """prefix"":""" & EscJson(Nz(rs("Prefix"), "")) & ""","
+        json = json & """invoice_number"":""" & EscJson(Nz(rs("Factura"), "")) & ""","
+        json = json & """dish_id"":" & Nz(rs("Id_Plato"), 0) & ","
+        json = json & """item"":" & Nz(rs("Item"), 0) & ","
+        json = json & """typification_id"":" & Nz(rs("Id_Tipificacion"), 0) & ","
+        json = json & """original_price"":" & Nz(rs("Valor_Original_Producto"), 0) & ","
+        json = json & """sale_price"":" & Nz(rs("Valor_Venta_Producto"), 0) & ","
+        json = json & """base_value"":" & Nz(rs("Valor_Base"), 0) & ","
+        json = json & """tax_value"":" & Nz(rs("Valor_Impuesto"), 0) & ","
+        json = json & """discount_amount"":" & Nz(rs("Valor_Descuento_Pesos"), 0) & ","
+        json = json & """percentage"":" & Nz(rs("Porcentaje"), 0) & ","
+        json = json & """reason"":""" & EscJson(Nz(rs("Motivo"), "")) & ""","
+        json = json & """order_number"":""" & EscJson(Nz(rs("Nro_Pedido"), "")) & """"
+        json = json & "}": sep = ","
+        idList = idList & idSep & idReg: idSep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/discounts", json)
+    If resp = "" Then GoTo Salir
+
+    If idList <> "" Then
+        conn.Execute "UPDATE descuentos SET Enviada_MySql=1 WHERE Id_Descuento IN (" & idList & ")"
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 28. RECIBOS DESCUENTOS — transaccional (Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncRecibosDescuentos(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando recibos descuentos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM recibos_descuentos WHERE Enviada_MySql = 0 LIMIT " & BATCH_SIZE, conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
+    Do While Not rs.EOF
+        Dim idReg As Long: idReg = Nz(rs("Id_Descuento"), 0)
+        json = json & sep & "{"
+        json = json & """id_registro"":" & idReg & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """date"":""" & EscJson(Nz(rs("Fecha"), "")) & ""","
+        json = json & """prefix"":""" & EscJson(Nz(rs("Prefix"), "")) & ""","
+        json = json & """receipt_number"":""" & EscJson(Nz(rs("Factura"), "")) & ""","
+        json = json & """dish_id"":" & Nz(rs("Id_Plato"), 0) & ","
+        json = json & """item"":" & Nz(rs("Item"), 0) & ","
+        json = json & """typification_id"":" & Nz(rs("Id_Tipificacion"), 0) & ","
+        json = json & """original_price"":" & Nz(rs("Valor_Original_Producto"), 0) & ","
+        json = json & """sale_price"":" & Nz(rs("Valor_Venta_Producto"), 0) & ","
+        json = json & """base_value"":" & Nz(rs("Valor_Base"), 0) & ","
+        json = json & """tax_value"":" & Nz(rs("Valor_Impuesto"), 0) & ","
+        json = json & """discount_amount"":" & Nz(rs("Valor_Descuento_Pesos"), 0) & ","
+        json = json & """percentage"":" & Nz(rs("Porcentaje"), 0) & ","
+        json = json & """reason"":""" & EscJson(Nz(rs("Motivo"), "")) & ""","
+        json = json & """order_number"":""" & EscJson(Nz(rs("Nro_Pedido"), "")) & """"
+        json = json & "}": sep = ","
+        idList = idList & idSep & idReg: idSep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    Dim resp As String: resp = ApiPost("/sync/push/receipt-discounts", json)
+    If resp = "" Then GoTo Salir
+
+    If idList <> "" Then
+        conn.Execute "UPDATE recibos_descuentos SET Enviada_MySql=1 WHERE Id_Descuento IN (" & idList & ")"
+    End If
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 29. FORMA PAGO — catálogo completo (sin Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncFormaPago(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando forma pago..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM forma_pago", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id"":" & Nz(rs("Id_Forma_Pago"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """name"":""" & EscJson(Nz(rs("Descripcion_Forma_Pago"), "")) & ""","
+        json = json & """validate_amount"":" & Nz(rs("Validar"), 0) & ","
+        json = json & """is_active"":" & Nz(rs("Activo"), 0) & ","
+        json = json & """select_card"":" & Nz(rs("Seleccionar_Tarjeta"), 0) & ","
+        json = json & """value"":" & Nz(rs("Valor"), 0) & ","
+        json = json & """ask_notes"":" & Nz(rs("Pedir_Observacion"), 0) & ","
+        json = json & """ask_customer"":" & Nz(rs("Pedir_Cliente"), 0) & ","
+        json = json & """adds_to_cash"":" & Nz(rs("Suma_Efectivo"), 0) & ","
+        json = json & """validate_number"":" & Nz(rs("Validar_Numero"), 0) & ","
+        json = json & """is_default"":" & Nz(rs("Forma_Pago_Default"), 0)
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/payment-types", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 30. FORMA MEDIDA — catálogo completo (sin Enviada_MySql)
+' ════════════════════════════════════════════════════════════
+Private Sub SyncFormaMedida(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando forma medida..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM forma_medida", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id"":" & Nz(rs("Id_Forma_Medida"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """name"":""" & EscJson(Nz(rs("Descripcion"), "")) & ""","
+        json = json & """is_active"":" & Nz(rs("Activa"), 1)
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/measure-forms", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 31. LISTA PRECIOS CLIENTE — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncListaPreciosCliente(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando lista precios cliente..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM lista_precios_cliente", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id_lista"":" & Nz(rs("id_lista"), 0) & ","
+        json = json & """id_cliente"":" & Nz(rs("Id_Cliente"), 0) & ","
+        json = json & """id_producto"":" & Nz(rs("Id_Producto"), 0) & ","
+        json = json & """id_presentacion"":" & Nz(rs("Id_Presentacion"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """precio_producto"":" & Nz(rs("Precio_Producto"), 0) & ","
+        json = json & """fecha"":""" & EscJson(Nz(rs("Fecha"), "")) & ""","
+        json = json & """activa"":" & Nz(rs("Activa"), 0)
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/customer-price-list", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 32. NOVEDADES CATEGORIAS — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncNovedadesCategorias(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando novedades categorias..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM novedades_categorias", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id_consecutivo"":" & Nz(rs("Id_Consecutivo"), 0) & ","
+        json = json & """cod_categoria"":" & Nz(rs("Cod_Categoria"), 0) & ","
+        json = json & """id_novedad"":" & Nz(rs("Id_Novedad"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """name"":""" & EscJson(Nz(rs("Novedad"), "")) & """"
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/dish-note-categories", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 33. NOVEDADES COMENTARIOS — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncNovedadesComentarios(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando novedades comentarios..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM novedades_comentarios", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id"":" & Nz(rs("Id_Novedad"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """name"":""" & EscJson(Nz(rs("Novedad"), "")) & """"
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/order-notes", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 34. NOVEDADES PRODUCTOS — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncNovedadesProductos(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando novedades productos..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM novedades_productos", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id"":" & Nz(rs("Id_Novedad"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """name"":""" & EscJson(Nz(rs("Novedad"), "")) & """"
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/product-notes", json
+
+Salir:
+    On Error Resume Next: conn.Close: Exit Sub
+ErrHandler:
+    On Error Resume Next: conn.Close
+End Sub
+
+
+' ════════════════════════════════════════════════════════════
+' 35. INVENTARIO PORCIONES (insumos) — catálogo completo
+' ════════════════════════════════════════════════════════════
+Private Sub SyncInventarioPorciones(lblEstado As Label)
+    On Error GoTo ErrHandler
+    lblEstado.Caption = "Sincronizando inventario porciones..."
+    Dim conn As Object: Set conn = GetConn()
+    Dim rs As Object:   Set rs = CreateObject("ADODB.Recordset")
+    rs.Open "SELECT * FROM inventario_porciones", conn
+
+    If rs.EOF Then GoTo Salir
+
+    Dim json As String, sep As String
+    json = "[": sep = ""
+    Do While Not rs.EOF
+        json = json & sep & "{"
+        json = json & """id_grupo"":" & Nz(rs("Id_Grupo"), 0) & ","
+        json = json & """id_item"":" & Nz(rs("Id_Item"), 0) & ","
+        json = json & """company_id"":" & COMPANY_ID & ","
+        json = json & """code"":""" & EscJson(Nz(rs("Codigo_Insumo"), "")) & ""","
+        json = json & """name"":""" & EscJson(Nz(rs("Descripcion"), "")) & ""","
+        json = json & """cost_price"":" & Nz(rs("Costo"), 0) & ","
+        json = json & """unit_id"":" & Nz(rs("Und_Compra"), 0) & ","
+        json = json & """min_stock"":" & Nz(rs("Stock_MInimo"), 0) & ","
+        json = json & """waste_pct"":" & Nz(rs("Porcentaje_Merma"), 0) & ","
+        json = json & """control_stock"":" & Nz(rs("Controlar"), 0)
+        json = json & "}": sep = ","
+        rs.MoveNext
+    Loop
+    json = json & "]": rs.Close
+
+    ApiPost "/sync/push/supply-items", json
 
 Salir:
     On Error Resume Next: conn.Close: Exit Sub

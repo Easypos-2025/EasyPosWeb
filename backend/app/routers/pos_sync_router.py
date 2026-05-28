@@ -2379,3 +2379,799 @@ async def pull_daily_menu(
     sql += " ORDER BY updated_at ASC LIMIT 500"
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "since": since, "daily_menu": [dict(r) for r in rows]}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIX: pos_cash_register_closings — ahora usa id_registro (multitenant safe)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CashClosingFixIn(BaseModel):
+    id_registro:          int
+    company_id:           int
+    register_number:      Optional[int]   = 0
+    shift:                Optional[int]   = 0
+    date:                 Optional[str]   = None
+    base_amount:          Optional[float] = 0
+    total_sales:          Optional[float] = 0
+    cash_sales:           Optional[float] = 0
+    voucher_sales:        Optional[float] = 0
+    tips:                 Optional[float] = 0
+    extra_tips:           Optional[float] = 0
+    expenses:             Optional[float] = 0
+    vouchers:             Optional[float] = 0
+    manager_consumption:  Optional[float] = 0
+    final_base:           Optional[float] = 0
+    total_invoices:       Optional[int]   = 0
+    voucher_invoices:     Optional[int]   = 0
+    copy_invoices:        Optional[int]   = 0
+    voided_invoices:      Optional[int]   = 0
+    invoice_start:        Optional[str]   = "0"
+    invoice_end:          Optional[str]   = "0"
+    bills:                Optional[float] = 0
+    coins:                Optional[float] = 0
+    purchases:            Optional[float] = 0
+    customer_sales:       Optional[float] = 0
+    closed:               Optional[int]   = 0
+    invoice_start_manual: Optional[str]   = None
+    invoice_end_manual:   Optional[str]   = None
+    delivery_income:      Optional[float] = 0
+    delivery_expense:     Optional[float] = 0
+    opened_pc:            Optional[str]   = None
+    closing_notes:        Optional[str]   = None
+    opening_datetime:     Optional[str]   = None
+    closing_datetime:     Optional[str]   = None
+
+
+@router.post("/sync/push/cash-closings-v2")
+async def push_cash_closings_v2(
+    closings: List[CashClosingFixIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for c in closings:
+        key = f"{c.id_registro}|{c.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_register_closings (
+                    id_registro, company_id, register_number, shift, date,
+                    base_amount, total_sales, cash_sales, voucher_sales,
+                    tips, extra_tips, expenses, vouchers, manager_consumption,
+                    final_base, total_invoices, voucher_invoices, copy_invoices,
+                    voided_invoices, invoice_start, invoice_end, bills, coins,
+                    purchases, customer_sales, closed, invoice_start_manual,
+                    invoice_end_manual, delivery_income, delivery_expense,
+                    opened_pc, closing_notes, opening_datetime, closing_datetime,
+                    synced, updated_at
+                ) VALUES (
+                    :id_registro, :company_id, :register_number, :shift, :date,
+                    :base_amount, :total_sales, :cash_sales, :voucher_sales,
+                    :tips, :extra_tips, :expenses, :vouchers, :manager_consumption,
+                    :final_base, :total_invoices, :voucher_invoices, :copy_invoices,
+                    :voided_invoices, :invoice_start, :invoice_end, :bills, :coins,
+                    :purchases, :customer_sales, :closed, :invoice_start_manual,
+                    :invoice_end_manual, :delivery_income, :delivery_expense,
+                    :opened_pc, :closing_notes, :opening_datetime, :closing_datetime,
+                    1, NOW()
+                )
+                ON DUPLICATE KEY UPDATE
+                    total_sales      = VALUES(total_sales),
+                    cash_sales       = VALUES(cash_sales),
+                    total_invoices   = VALUES(total_invoices),
+                    voided_invoices  = VALUES(voided_invoices),
+                    final_base       = VALUES(final_base),
+                    closed           = VALUES(closed),
+                    closing_notes    = VALUES(closing_notes),
+                    closing_datetime = VALUES(closing_datetime),
+                    synced           = 1,
+                    updated_at       = NOW()
+            """), c.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(closings), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# caja_facturas → pos_cash_register_invoices
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CashRegisterInvoiceIn(BaseModel):
+    register_number:    int
+    closing_id:         int
+    invoice_number:     str
+    company_id:         int
+    date:               Optional[str]   = None
+    order_number:       Optional[str]   = None
+    amount:             Optional[float] = 0
+    base_amount:        Optional[float] = 0
+    tax_vat:            Optional[float] = 0
+    tax_consumption:    Optional[float] = 0
+    employee_id:        Optional[int]   = 0
+    shift:              Optional[int]   = 0
+    source_pc:          Optional[str]   = None
+    delivery_person_id: Optional[int]   = 0
+    invoice_notes:      Optional[str]   = None
+    prefix:             Optional[str]   = None
+    fac_pe:             Optional[str]   = None
+
+
+@router.post("/sync/push/cash-register-invoices")
+async def push_cash_register_invoices(
+    items: List[CashRegisterInvoiceIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.invoice_number}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_register_invoices
+                    (register_number, closing_id, invoice_number, company_id, date,
+                     order_number, amount, base_amount, tax_vat, tax_consumption,
+                     employee_id, shift, source_pc, delivery_person_id,
+                     invoice_notes, prefix, fac_pe, synced, updated_at)
+                VALUES
+                    (:register_number, :closing_id, :invoice_number, :company_id, :date,
+                     :order_number, :amount, :base_amount, :tax_vat, :tax_consumption,
+                     :employee_id, :shift, :source_pc, :delivery_person_id,
+                     :invoice_notes, :prefix, :fac_pe, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    closing_id         = VALUES(closing_id),
+                    amount             = VALUES(amount),
+                    base_amount        = VALUES(base_amount),
+                    tax_vat            = VALUES(tax_vat),
+                    tax_consumption    = VALUES(tax_consumption),
+                    invoice_notes      = VALUES(invoice_notes),
+                    synced             = 1,
+                    updated_at         = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# caja_recibos → pos_cash_register_receipts
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CashRegisterReceiptIn(BaseModel):
+    register_number:    int
+    closing_id:         int
+    receipt_number:     str
+    company_id:         int
+    date:               Optional[str]   = None
+    order_number:       Optional[str]   = None
+    amount:             Optional[float] = 0
+    base_amount:        Optional[float] = 0
+    tax_vat:            Optional[float] = 0
+    tax_consumption:    Optional[float] = 0
+    employee_id:        Optional[int]   = 0
+    shift:              Optional[int]   = 0
+    source_pc:          Optional[str]   = None
+    delivery_person_id: Optional[int]   = 0
+    notes:              Optional[str]   = None
+    prefix:             Optional[str]   = None
+    fac_pe:             Optional[str]   = None
+
+
+@router.post("/sync/push/cash-register-receipts")
+async def push_cash_register_receipts(
+    items: List[CashRegisterReceiptIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.receipt_number}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_register_receipts
+                    (register_number, closing_id, receipt_number, company_id, date,
+                     order_number, amount, base_amount, tax_vat, tax_consumption,
+                     employee_id, shift, source_pc, delivery_person_id,
+                     notes, prefix, fac_pe, synced, updated_at)
+                VALUES
+                    (:register_number, :closing_id, :receipt_number, :company_id, :date,
+                     :order_number, :amount, :base_amount, :tax_vat, :tax_consumption,
+                     :employee_id, :shift, :source_pc, :delivery_person_id,
+                     :notes, :prefix, :fac_pe, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    closing_id      = VALUES(closing_id),
+                    amount          = VALUES(amount),
+                    base_amount     = VALUES(base_amount),
+                    tax_vat         = VALUES(tax_vat),
+                    tax_consumption = VALUES(tax_consumption),
+                    notes           = VALUES(notes),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# gastos → pos_expenses
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ExpenseIn(BaseModel):
+    id_registro:    int
+    company_id:     int
+    register_id:    Optional[int]   = 0
+    date:           Optional[str]   = None
+    amount:         Optional[float] = 0
+    employee_code:  Optional[str]   = None
+    concept_id:     Optional[int]   = 0
+    sub_concept_id: Optional[int]   = 0
+    shift:          Optional[int]   = 0
+    movement_number: Optional[int]  = 0
+    detail:         Optional[str]   = None
+
+
+@router.post("/sync/push/expenses")
+async def push_expenses(
+    items: List[ExpenseIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_registro}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_expenses
+                    (id_registro, company_id, register_id, date, amount,
+                     employee_code, concept_id, sub_concept_id, shift,
+                     movement_number, detail, synced, updated_at)
+                VALUES
+                    (:id_registro, :company_id, :register_id, :date, :amount,
+                     :employee_code, :concept_id, :sub_concept_id, :shift,
+                     :movement_number, :detail, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    amount          = VALUES(amount),
+                    detail          = VALUES(detail),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# compras → pos_purchases
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PurchaseIn(BaseModel):
+    id_registro:    int
+    company_id:     int
+    register_id:    Optional[int]   = 0
+    date:           Optional[str]   = None
+    amount:         Optional[float] = 0
+    employee_code:  Optional[str]   = None
+    concept_id:     Optional[int]   = 0
+    sub_concept_id: Optional[int]   = 0
+    shift:          Optional[int]   = 0
+    movement_number: Optional[int]  = 0
+    detail:         Optional[str]   = None
+
+
+@router.post("/sync/push/purchases")
+async def push_purchases(
+    items: List[PurchaseIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_registro}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_purchases
+                    (id_registro, company_id, register_id, date, amount,
+                     employee_code, concept_id, sub_concept_id, shift,
+                     movement_number, detail, synced, updated_at)
+                VALUES
+                    (:id_registro, :company_id, :register_id, :date, :amount,
+                     :employee_code, :concept_id, :sub_concept_id, :shift,
+                     :movement_number, :detail, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    amount          = VALUES(amount),
+                    detail          = VALUES(detail),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# descuentos → pos_discounts
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DiscountIn(BaseModel):
+    id_registro:     int
+    company_id:      int
+    date:            Optional[str]   = None
+    prefix:          Optional[str]   = None
+    invoice_number:  Optional[str]   = None
+    dish_id:         Optional[int]   = 0
+    item:            Optional[int]   = 0
+    typification_id: Optional[int]   = 0
+    original_price:  Optional[float] = 0
+    sale_price:      Optional[float] = 0
+    base_value:      Optional[float] = 0
+    tax_value:       Optional[float] = 0
+    discount_amount: Optional[float] = 0
+    percentage:      Optional[float] = 0
+    reason:          Optional[str]   = None
+    order_number:    Optional[str]   = None
+
+
+@router.post("/sync/push/discounts")
+async def push_discounts(
+    items: List[DiscountIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_registro}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_discounts
+                    (id_registro, company_id, date, prefix, invoice_number,
+                     dish_id, item, typification_id, original_price, sale_price,
+                     base_value, tax_value, discount_amount, percentage,
+                     reason, order_number, synced, updated_at)
+                VALUES
+                    (:id_registro, :company_id, :date, :prefix, :invoice_number,
+                     :dish_id, :item, :typification_id, :original_price, :sale_price,
+                     :base_value, :tax_value, :discount_amount, :percentage,
+                     :reason, :order_number, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    discount_amount = VALUES(discount_amount),
+                    percentage      = VALUES(percentage),
+                    reason          = VALUES(reason),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# recibos_descuentos → pos_receipt_discounts
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ReceiptDiscountIn(BaseModel):
+    id_registro:     int
+    company_id:      int
+    date:            Optional[str]   = None
+    prefix:          Optional[str]   = None
+    receipt_number:  Optional[str]   = None
+    dish_id:         Optional[int]   = 0
+    item:            Optional[int]   = 0
+    typification_id: Optional[int]   = 0
+    original_price:  Optional[float] = 0
+    sale_price:      Optional[float] = 0
+    base_value:      Optional[float] = 0
+    tax_value:       Optional[float] = 0
+    discount_amount: Optional[float] = 0
+    percentage:      Optional[float] = 0
+    reason:          Optional[str]   = None
+    order_number:    Optional[str]   = None
+
+
+@router.post("/sync/push/receipt-discounts")
+async def push_receipt_discounts(
+    items: List[ReceiptDiscountIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_registro}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_receipt_discounts
+                    (id_registro, company_id, date, prefix, receipt_number,
+                     dish_id, item, typification_id, original_price, sale_price,
+                     base_value, tax_value, discount_amount, percentage,
+                     reason, order_number, synced, updated_at)
+                VALUES
+                    (:id_registro, :company_id, :date, :prefix, :receipt_number,
+                     :dish_id, :item, :typification_id, :original_price, :sale_price,
+                     :base_value, :tax_value, :discount_amount, :percentage,
+                     :reason, :order_number, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    discount_amount = VALUES(discount_amount),
+                    percentage      = VALUES(percentage),
+                    reason          = VALUES(reason),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# forma_pago → pos_payment_types  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PaymentTypeIn(BaseModel):
+    id:              int
+    company_id:      int
+    name:            str
+    validate_amount: Optional[int] = 0
+    is_active:       Optional[int] = 0
+    select_card:     Optional[int] = 0
+    value:           Optional[float] = 0
+    ask_notes:       Optional[int] = 0
+    ask_customer:    Optional[int] = 0
+    adds_to_cash:    Optional[int] = 0
+    validate_number: Optional[int] = 0
+    is_default:      Optional[int] = 0
+
+
+@router.post("/sync/push/payment-types")
+async def push_payment_types(
+    items: List[PaymentTypeIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_payment_types
+                    (id, company_id, name, validate_amount, is_active, select_card,
+                     value, ask_notes, ask_customer, adds_to_cash, validate_number,
+                     is_default, synced, updated_at)
+                VALUES
+                    (:id, :company_id, :name, :validate_amount, :is_active, :select_card,
+                     :value, :ask_notes, :ask_customer, :adds_to_cash, :validate_number,
+                     :is_default, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name            = VALUES(name),
+                    validate_amount = VALUES(validate_amount),
+                    is_active       = VALUES(is_active),
+                    value           = VALUES(value),
+                    is_default      = VALUES(is_default),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# forma_medida → pos_measure_forms  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MeasureFormIn(BaseModel):
+    id:        int
+    company_id: int
+    name:      str
+    is_active: Optional[int] = 1
+
+
+@router.post("/sync/push/measure-forms")
+async def push_measure_forms(
+    items: List[MeasureFormIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_measure_forms
+                    (id, company_id, name, is_active, synced, updated_at)
+                VALUES
+                    (:id, :company_id, :name, :is_active, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name      = VALUES(name),
+                    is_active = VALUES(is_active),
+                    synced    = 1,
+                    updated_at = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# lista_precios_cliente → pos_customer_price_list  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CustomerPriceListIn(BaseModel):
+    id_lista:        int
+    id_cliente:      int
+    id_producto:     int
+    id_presentacion: Optional[int] = 0
+    company_id:      int
+    precio_producto: Optional[float] = 0
+    fecha:           Optional[str]   = None
+    activa:          Optional[int]   = 0
+
+
+@router.post("/sync/push/customer-price-list")
+async def push_customer_price_list(
+    items: List[CustomerPriceListIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_lista}|{item.id_cliente}|{item.id_producto}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_customer_price_list
+                    (id_lista, id_cliente, id_producto, id_presentacion,
+                     company_id, precio_producto, fecha, activa, synced, updated_at)
+                VALUES
+                    (:id_lista, :id_cliente, :id_producto, :id_presentacion,
+                     :company_id, :precio_producto, :fecha, :activa, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    precio_producto = VALUES(precio_producto),
+                    activa          = VALUES(activa),
+                    synced          = 1,
+                    updated_at      = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# novedades_categorias → pos_dish_note_categories  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DishNoteCategoryIn(BaseModel):
+    id_consecutivo: int
+    cod_categoria:  int
+    id_novedad:     int
+    company_id:     int
+    name:           Optional[str] = None
+
+
+@router.post("/sync/push/dish-note-categories")
+async def push_dish_note_categories(
+    items: List[DishNoteCategoryIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_consecutivo}|{item.cod_categoria}|{item.id_novedad}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_dish_note_categories
+                    (id_consecutivo, cod_categoria, id_novedad, company_id, name, synced, updated_at)
+                VALUES
+                    (:id_consecutivo, :cod_categoria, :id_novedad, :company_id, :name, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name       = VALUES(name),
+                    synced     = 1,
+                    updated_at = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# novedades_comentarios → pos_order_notes  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class OrderNoteIn(BaseModel):
+    id:         int
+    company_id: int
+    name:       Optional[str] = None
+
+
+@router.post("/sync/push/order-notes")
+async def push_order_notes(
+    items: List[OrderNoteIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_order_notes (id, company_id, name, synced, updated_at)
+                VALUES (:id, :company_id, :name, 1, NOW())
+                ON DUPLICATE KEY UPDATE name=VALUES(name), synced=1, updated_at=NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# novedades_productos → pos_product_notes  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ProductNoteIn(BaseModel):
+    id:         int
+    company_id: int
+    name:       Optional[str] = None
+
+
+@router.post("/sync/push/product-notes")
+async def push_product_notes(
+    items: List[ProductNoteIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_product_notes (id, company_id, name, synced, updated_at)
+                VALUES (:id, :company_id, :name, 1, NOW())
+                ON DUPLICATE KEY UPDATE name=VALUES(name), synced=1, updated_at=NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# inventario_porciones → supply_items  (catálogo, Variante B)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SupplyItemSyncIn(BaseModel):
+    id_grupo:       int
+    id_item:        int
+    company_id:     int
+    code:           Optional[str]   = None
+    name:           Optional[str]   = None
+    cost_price:     Optional[float] = 0
+    unit_id:        Optional[int]   = None
+    stock_qty:      Optional[float] = 0
+    min_stock:      Optional[float] = 0
+    waste_pct:      Optional[float] = 0
+    control_stock:  Optional[int]   = 0
+    is_active:      Optional[int]   = 1
+
+
+@router.post("/sync/push/supply-items")
+async def push_supply_items(
+    items: List[SupplyItemSyncIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for item in items:
+        key = f"{item.id_grupo}|{item.id_item}|{item.company_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO supply_items
+                    (company_id, id_grupo, id_item, code, name, cost_price,
+                     unit_id, stock_qty, min_stock, waste_pct, control_stock,
+                     is_active, synced, updated_at)
+                VALUES
+                    (:company_id, :id_grupo, :id_item, :code, :name, :cost_price,
+                     :unit_id, :stock_qty, :min_stock, :waste_pct, :control_stock,
+                     :is_active, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    code          = VALUES(code),
+                    name          = VALUES(name),
+                    cost_price    = VALUES(cost_price),
+                    unit_id       = VALUES(unit_id),
+                    min_stock     = VALUES(min_stock),
+                    waste_pct     = VALUES(waste_pct),
+                    control_stock = VALUES(control_stock),
+                    is_active     = VALUES(is_active),
+                    synced        = 1,
+                    updated_at    = NOW()
+            """), item.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PULL endpoints para todas las tablas nuevas
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pull(table: str, key: str):
+    async def _handler(
+        company_id: int = Query(...),
+        since: Optional[str] = Query(None),
+        db: AsyncSession = Depends(get_db),
+        _: str = Depends(verify_api_key),
+    ):
+        sql = f"SELECT * FROM {table} WHERE company_id = :company_id"
+        params: dict = {"company_id": company_id}
+        if since:
+            sql += " AND updated_at >= :since"
+            params["since"] = since
+        sql += " ORDER BY updated_at ASC LIMIT 1000"
+        rows = (await db.execute(text(sql), params)).mappings().all()
+        return {"total": len(rows), "since": since, key: [dict(r) for r in rows]}
+    return _handler
+
+
+router.get("/sync/pull/cash-closings-v2")(
+    _pull("pos_cash_register_closings", "cash_closings"))
+router.get("/sync/pull/cash-register-invoices")(
+    _pull("pos_cash_register_invoices", "cash_register_invoices"))
+router.get("/sync/pull/cash-register-receipts")(
+    _pull("pos_cash_register_receipts", "cash_register_receipts"))
+router.get("/sync/pull/expenses")(
+    _pull("pos_expenses", "expenses"))
+router.get("/sync/pull/purchases")(
+    _pull("pos_purchases", "purchases"))
+router.get("/sync/pull/discounts")(
+    _pull("pos_discounts", "discounts"))
+router.get("/sync/pull/receipt-discounts")(
+    _pull("pos_receipt_discounts", "receipt_discounts"))
+router.get("/sync/pull/payment-types")(
+    _pull("pos_payment_types", "payment_types"))
+router.get("/sync/pull/measure-forms")(
+    _pull("pos_measure_forms", "measure_forms"))
+router.get("/sync/pull/customer-price-list")(
+    _pull("pos_customer_price_list", "customer_price_list"))
+router.get("/sync/pull/dish-note-categories")(
+    _pull("pos_dish_note_categories", "dish_note_categories"))
+router.get("/sync/pull/order-notes")(
+    _pull("pos_order_notes", "order_notes"))
+router.get("/sync/pull/product-notes")(
+    _pull("pos_product_notes", "product_notes"))
+router.get("/sync/pull/supply-items")(
+    _pull("supply_items", "supply_items"))

@@ -1,6 +1,6 @@
 ' ============================================================
 ' SincronizarCierresCaja
-' Endpoint: POST /api/pos/sync/push/cash-closings
+' Endpoint: POST /api/pos/sync/push/cash-closings-v2
 ' Tabla local VB6: cajas_cierres
 ' Tabla servidor: pos_cash_register_closings
 ' Columnas locales:
@@ -13,7 +13,7 @@
 '   Factura_Inicio_Manual, Factura_Fin_Manual, Enviada_MySql,
 '   Ingreso_Domicilio, Egreso_Domicilio, Pc_Abierta,
 '   Observaciones_Cierre, Fecha_Hora_Apertura, Fecha_Hora_Cierre
-' PK servidor: id (= Id_Caja en VB6)
+' PK servidor: UNIQUE(id_registro, company_id) — id_registro = Id_Caja en VB6
 ' ============================================================
 Public Sub SincronizarCierresCaja(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -31,13 +31,16 @@ Public Sub SincronizarCierresCaja(Var_Id_Company_Envio As Integer, Var_Limit_Reg
         Exit Sub
     End If
 
-    ' -- 2. Construir JSON ----------------------------------
-    Dim json As String, sep As String
-    json = "[": sep = ""
+    ' -- 2. Construir JSON + acumular Id_Caja enviados -----
+    Dim json As String, sep As String, idList As String, idSep As String
+    json = "[": sep = "": idList = "": idSep = ""
 
     Do While Not rs.EOF
+        Dim idCaja As Long
+        idCaja = Nz(rs("Id_Caja"), 0)
+
         json = json & sep & "{"
-        json = json & """id"":"                   & Nz(rs("Id_Caja"), 0)                              & ","
+        json = json & """id_registro"":"              & idCaja                                          & ","
         json = json & """company_id"":"            & Var_Id_Company_Envio                              & ","
         json = json & """register_number"":"       & Nz(rs("Nro_Caja"), 0)                            & ","
         json = json & """shift"":"                 & Nz(rs("Turno"), 0)                                & ","
@@ -72,7 +75,9 @@ Public Sub SincronizarCierresCaja(Var_Id_Company_Envio As Integer, Var_Limit_Reg
         json = json & """opening_datetime"":"      & """" & ("" & rs("Fecha_Hora_Apertura"))           & ""","
         json = json & """closing_datetime"":"      & """" & ("" & rs("Fecha_Hora_Cierre"))             & """"
         json = json & "}"
-        sep = ","
+
+        idList = idList & idSep & idCaja
+        sep = ",": idSep = ","
         rs.MoveNext
     Loop
     json = json & "]"
@@ -80,19 +85,16 @@ Public Sub SincronizarCierresCaja(Var_Id_Company_Envio As Integer, Var_Limit_Reg
 
     ' -- 3. Enviar al servidor ------------------------------
     Dim respuesta As String
-    respuesta = ApiPost("/sync/push/cash-closings", json)
+    respuesta = ApiPost("/sync/push/cash-closings-v2", json)
 
     If respuesta = "" Then
         conn.Close: Exit Sub
     End If
 
-    ' -- 4. Marcar solo las confirmadas --------------------
-    Dim savedList As String
-    savedList = ParseSaved(respuesta)
-
-    If savedList <> "" Then
+    ' -- 4. Marcar como enviados por Id_Caja ---------------
+    If idList <> "" Then
         conn.Execute "UPDATE cajas_cierres SET Enviada_MySql = 1 " & _
-                     "WHERE Id_Caja IN (" & savedList & ")"
+                     "WHERE Id_Caja IN (" & idList & ")"
     End If
 
     ' -- 5. Mostrar estado ---------------------------------
