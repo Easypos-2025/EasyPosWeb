@@ -44,11 +44,19 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
-def _resolve_cid(user: User, override: Optional[int]) -> int:
-    """SYSADMIN (role.is_system) puede consultar cualquier empresa via override."""
-    if override and user.role and user.role.is_system:
+async def _resolve_cid(user: User, override: Optional[int], db: AsyncSession) -> int:
+    """SYSADMIN puede ver cualquier empresa; usuario normal puede ver empresas con el mismo NIT."""
+    if not override:
+        return user.company_id
+    if user.role and user.role.is_system:
         return override
-    return user.company_id
+    row = (await db.execute(
+        text("""SELECT 1 FROM companies c1
+                JOIN companies c2 ON c1.identification_number = c2.identification_number
+                WHERE c1.id = :uid AND c2.id = :oid AND c1.identification_number IS NOT NULL LIMIT 1"""),
+        {"uid": user.company_id, "oid": override}
+    )).fetchone()
+    return override if row else user.company_id
 
 
 # ─── KPIs ─────────────────────────────────────────────────────────────────────
@@ -61,7 +69,7 @@ async def get_kpis(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     fecha = fecha or _today()
     today = _today()
 
@@ -162,7 +170,7 @@ async def get_mesas(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     today = _today()
 
     rows = (await db.execute(text("""
@@ -196,7 +204,7 @@ async def get_meseros(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
 
     rows = (await db.execute(text("""
         SELECT id, name FROM pos_waiters
@@ -216,7 +224,7 @@ async def get_abiertas(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     today = _today()
 
     rows = (await db.execute(text("""
@@ -257,7 +265,7 @@ async def get_facturadas(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     fecha = fecha or _today()
 
     rows = (await db.execute(text("""
@@ -298,7 +306,7 @@ async def abrir_mesa(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     today = _today()
     now_time = datetime.now().strftime("%H:%M:%S")
 
@@ -355,7 +363,7 @@ async def ultimas_transacciones(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     fecha = fecha or _today()
 
     rows = (await db.execute(text("""
@@ -393,7 +401,7 @@ async def stock_alertas(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
 
     rows = (await db.execute(text("""
         SELECT s.id, s.name, s.stock_qty, s.min_stock, u.name AS unit_name

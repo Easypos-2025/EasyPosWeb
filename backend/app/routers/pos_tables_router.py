@@ -39,6 +39,20 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
+async def _resolve_cid(user: User, override: Optional[int], db: AsyncSession) -> int:
+    if not override:
+        return user.company_id
+    if user.role and user.role.is_system:
+        return override
+    row = (await db.execute(
+        text("""SELECT 1 FROM companies c1
+                JOIN companies c2 ON c1.identification_number = c2.identification_number
+                WHERE c1.id = :uid AND c2.id = :oid AND c1.identification_number IS NOT NULL LIMIT 1"""),
+        {"uid": user.company_id, "oid": override}
+    )).fetchone()
+    return override if row else user.company_id
+
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class ZoneIn(BaseModel):
@@ -62,9 +76,9 @@ class TableIn(BaseModel):
 # Table counts and occupancy always come from pos_tables_layout + pos_orders.
 
 @router.get("/zonas")
-async def list_zones(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+async def list_zones(company_id: Optional[int] = None, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = await _resolve_cid(user, company_id, db)
     today = _today()
 
     # Zone metadata from pos_zones (may be empty for VB6-only companies)
@@ -178,9 +192,9 @@ async def delete_zone(zone_id: int, authorization: str = Header(None), db: Async
 # ── Tables (pos_tables_layout is the single source of truth) ─────────────────
 
 @router.get("/mesas")
-async def list_tables(zone_id: Optional[int] = None, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+async def list_tables(zone_id: Optional[int] = None, company_id: Optional[int] = None, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    cid = user.company_id
+    cid = await _resolve_cid(user, company_id, db)
     today = _today()
 
     where = "t.company_id = :cid"

@@ -222,6 +222,10 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
+import { useCompanyStore } from '@/stores/companyStore'
+
+const companyStore = useCompanyStore()
+const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
 
 const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
 const fecha = ref(hoy)
@@ -262,7 +266,7 @@ function scrollTo(id) {
 async function cargarKpis() {
   cargando.value = true
   try {
-    const res = await api.get(`/api/pos-dashboard/kpis?fecha=${fecha.value}`)
+    const res = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fecha.value, company_id: selectedCid.value } })
     kpis.value = res.data
   } catch { showToast('Error cargando KPIs', 'error') }
   finally { cargando.value = false }
@@ -272,8 +276,8 @@ async function cargarMesas() {
   cargandoMesas.value = true
   try {
     const [rz, rm] = await Promise.all([
-      api.get('/api/pos/zonas'),
-      api.get('/api/pos/mesas'),
+      api.get('/api/pos/zonas', { params: { company_id: selectedCid.value } }),
+      api.get('/api/pos/mesas', { params: { company_id: selectedCid.value } }),
     ])
     zonas.value = rz.data.filter(z => z.is_active)
     mesas.value = rm.data
@@ -284,7 +288,7 @@ async function cargarMesas() {
 async function cargarTransacciones() {
   cargandoTx.value = true
   try {
-    const res = await api.get(`/api/pos-dashboard/ultimas-transacciones?fecha=${fecha.value}`)
+    const res = await api.get('/api/pos-dashboard/ultimas-transacciones', { params: { fecha: fecha.value, company_id: selectedCid.value } })
     transacciones.value = res.data
   } catch { /* silencioso */ }
   finally { cargandoTx.value = false }
@@ -293,7 +297,7 @@ async function cargarTransacciones() {
 async function cargarStock() {
   cargandoStock.value = true
   try {
-    const res = await api.get('/api/pos-dashboard/stock-alertas')
+    const res = await api.get('/api/pos-dashboard/stock-alertas', { params: { company_id: selectedCid.value } })
     stockAlertas.value = res.data
   } catch { /* silencioso */ }
   finally { cargandoStock.value = false }
@@ -302,7 +306,7 @@ async function cargarStock() {
 async function cargarComandas() {
   cargandoCmd.value = true
   try {
-    const res = await api.get('/api/pos-dashboard/abiertas')
+    const res = await api.get('/api/pos-dashboard/abiertas', { params: { company_id: selectedCid.value } })
     comandasAbiertas.value = res.data
   } catch { /* silencioso */ }
   finally { cargandoCmd.value = false }

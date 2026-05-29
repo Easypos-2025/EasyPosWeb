@@ -43,10 +43,19 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
-def _resolve_cid(user: User, override: Optional[int]) -> int:
-    if override and user.role and user.role.is_system:
+async def _resolve_cid(user: User, override: Optional[int], db: AsyncSession) -> int:
+    """SYSADMIN puede ver cualquier empresa; usuario normal puede ver empresas con el mismo NIT."""
+    if not override:
+        return user.company_id
+    if user.role and user.role.is_system:
         return override
-    return user.company_id
+    row = (await db.execute(
+        text("""SELECT 1 FROM companies c1
+                JOIN companies c2 ON c1.identification_number = c2.identification_number
+                WHERE c1.id = :uid AND c2.id = :oid AND c1.identification_number IS NOT NULL LIMIT 1"""),
+        {"uid": user.company_id, "oid": override}
+    )).fetchone()
+    return override if row else user.company_id
 
 
 # ─── 1. Lista de ventas ────────────────────────────────────────────────────────
@@ -61,7 +70,7 @@ async def get_ventas(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
     hoy = _today()
     desde = desde or hoy
     hasta = hasta or hoy
@@ -150,7 +159,7 @@ async def get_venta_detalle(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
 
     if tipo == "factura":
         # Header
@@ -281,7 +290,7 @@ async def get_detalle_productos(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await _resolve_cid(user, company_id, db)
 
     if tipo == "factura":
         tabla = "pos_order_detail_products"
