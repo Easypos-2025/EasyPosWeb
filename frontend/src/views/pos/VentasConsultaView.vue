@@ -31,9 +31,9 @@
           <div class="vc-filter-group">
             <label class="vc-label">Desde / Hasta</label>
             <div class="vc-fechas-row">
-              <CustomDatePicker v-model="filtro.desde" style="width:140px" />
+              <CustomDatePicker v-model="filtro.desde" @update:modelValue="buscar" style="width:140px" />
               <span class="vc-fecha-sep">—</span>
-              <CustomDatePicker v-model="filtro.hasta" style="width:140px" />
+              <CustomDatePicker v-model="filtro.hasta" @update:modelValue="buscar" style="width:140px" />
             </div>
           </div>
 
