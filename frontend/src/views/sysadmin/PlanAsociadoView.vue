@@ -146,6 +146,9 @@
         </div>
         <div class="mf">
           <button class="btn btn-secondary btn-sm" @click="showEdit = false">Cancelar</button>
+          <button class="btn btn-outline-info btn-sm" @click="setAllUnlimited" title="Poner todos los límites en ilimitado (-1)">
+            <i class="bi bi-infinity me-1"></i>Todo ilimitado
+          </button>
           <button v-if="editRow?.is_custom" class="btn btn-outline-secondary btn-sm" @click="resetEdit">
             <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar plan base
           </button>
@@ -326,6 +329,11 @@ function openEdit(row) {
   editRow.value  = row
   editForm.value = { ...row }
   showEdit.value = true
+}
+
+function setAllUnlimited() {
+  const allFields = [...accessFields, ...catalogFields, ...dailyFields]
+  allFields.forEach(f => { editForm.value[f.key] = -1 })
 }
 
 async function saveEdit() {

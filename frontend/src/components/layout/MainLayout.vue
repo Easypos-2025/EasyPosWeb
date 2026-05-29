@@ -44,7 +44,7 @@
       />
 
       <main class="content">
-        <router-view />
+        <router-view :key="companyStore.selectedCompany?.id" />
       </main>
 
       <RightSidebar
@@ -80,6 +80,9 @@ import Footer from "@/components/layout/FooterBar.vue"
 import PlanUpgradeModal from "@/components/plans/PlanUpgradeModal.vue"
 import HelpButton from "@/components/common/HelpButton.vue"
 import api from "@/services/apis"
+import { useCompanyStore } from "@/stores/companyStore"
+
+const companyStore = useCompanyStore()
 
 const router    = useRouter()
 const route     = useRoute()
