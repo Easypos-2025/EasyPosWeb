@@ -47,7 +47,7 @@ async def _resolve_cid(user: User, override: Optional[int], db: AsyncSession) ->
     row = (await db.execute(
         text("""SELECT 1 FROM companies c1
                 JOIN companies c2 ON c1.identification_number = c2.identification_number
-                WHERE c1.id = :uid AND c2.id = :oid AND c1.identification_number IS NOT NULL LIMIT 1"""),
+                WHERE c1.id_company = :uid AND c2.id_company = :oid AND c1.identification_number IS NOT NULL LIMIT 1"""),
         {"uid": user.company_id, "oid": override}
     )).fetchone()
     return override if row else user.company_id
