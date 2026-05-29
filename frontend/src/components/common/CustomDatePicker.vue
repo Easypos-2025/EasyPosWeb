@@ -1,6 +1,7 @@
 <template>
   <div class="cdp-wrap" ref="wrapRef">
-    <div class="cdp-trigger" @click="toggle" :class="{ 'cdp-open': open }">
+    <div class="cdp-trigger" @click="toggle"
+      :class="{ 'cdp-open': open, 'cdp-dark': variant === 'dark' }">
       <i class="bi bi-calendar3 cdp-ico"></i>
       <span class="cdp-val">{{ displayValue }}</span>
       <i class="bi bi-chevron-down cdp-arr"></i>
@@ -87,8 +88,9 @@
 import { ref, computed, nextTick, onUnmounted } from 'vue'
 
 const props = defineProps({
-  modelValue: { type: String, default: '' },
+  modelValue:  { type: String, default: '' },
   placeholder: { type: String, default: 'DD/MM/AAAA' },
+  variant:     { type: String, default: 'light' }, // 'light' | 'dark'
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -337,5 +339,22 @@ onUnmounted(() => { open.value = false })
 @media (max-width: 576px) {
   .cdp-panel { width: 290px; }
   .cdp-cell  { font-size: .78rem; padding: .28rem 0; }
+}
+
+/* ── Variante dark (KpiStrip) ────────────────────────── */
+.cdp-dark {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.4);
+  border-radius: 0;
+  padding: .1rem .2rem;
+  min-width: 110px;
+}
+.cdp-dark .cdp-ico  { color: rgba(255,255,255,0.8); }
+.cdp-dark .cdp-val  { color: #fff; font-weight: 700; font-size: .85rem; }
+.cdp-dark .cdp-arr  { color: rgba(255,255,255,0.6); }
+.cdp-dark:hover, .cdp-dark.cdp-open {
+  border-bottom-color: #fff;
+  background: rgba(255,255,255,0.08);
 }
 </style>

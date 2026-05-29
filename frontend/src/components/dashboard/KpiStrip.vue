@@ -21,23 +21,13 @@
 
     <!-- Selector de fecha (solo Facturas / Recibos) -->
     <div v-if="modelValue !== null" class="kpi-item kpi-item--fecha">
-      <div class="kpi-icon-wrap">
-        <i class="bi bi-calendar3"></i>
-      </div>
       <div class="kpi-text">
         <div class="kpi-date-row">
-          <input
-            type="date"
-            class="kpi-date-input"
-            :value="modelValue"
-            @change="$emit('update:modelValue', $event.target.value)"
+          <CustomDatePicker
+            :modelValue="modelValue"
+            @update:modelValue="$emit('update:modelValue', $event)"
+            variant="dark"
           />
-          <button
-            class="kpi-hoy-btn"
-            :class="{ 'kpi-hoy-btn--active': modelValue === today }"
-            @click="$emit('update:modelValue', today)"
-            title="Ir a hoy"
-          >Hoy</button>
         </div>
         <span class="kpi-label">Fact / Recibos / Facturadas</span>
       </div>
@@ -46,6 +36,8 @@
 </template>
 
 <script setup>
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+
 defineProps({
   kpis:        { type: Array,   default: () => [] },
   loading:     { type: Boolean, default: false },
