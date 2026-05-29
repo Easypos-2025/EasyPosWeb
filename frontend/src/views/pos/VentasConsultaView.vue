@@ -31,9 +31,9 @@
           <div class="vc-filter-group">
             <label class="vc-label">Desde / Hasta</label>
             <div class="vc-fechas-row">
-              <input type="date" v-model="filtro.desde" class="vc-input" @change="buscar" />
+              <CustomDatePicker v-model="filtro.desde" style="width:140px" />
               <span class="vc-fecha-sep">—</span>
-              <input type="date" v-model="filtro.hasta" class="vc-input" @change="buscar" />
+              <CustomDatePicker v-model="filtro.hasta" style="width:140px" />
             </div>
           </div>
 
@@ -221,6 +221,7 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const companyStore = useCompanyStore()
 const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)

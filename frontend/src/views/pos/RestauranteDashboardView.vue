@@ -10,7 +10,7 @@
         <small class="text-muted">{{ fechaLabel }}</small>
       </div>
       <div class="rdash-header-right">
-        <input type="date" v-model="fecha" class="form-control form-control-sm date-pick" @change="cargarTodo" />
+        <CustomDatePicker v-model="fecha" @update:modelValue="cargarTodo" style="width:150px" />
         <button class="btn btn-sm btn-outline-secondary" @click="cargarTodo" :disabled="cargando">
           <i class="bi" :class="cargando ? 'bi-arrow-repeat spin' : 'bi-arrow-clockwise'"></i>
         </button>
@@ -223,6 +223,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const companyStore = useCompanyStore()
 const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
