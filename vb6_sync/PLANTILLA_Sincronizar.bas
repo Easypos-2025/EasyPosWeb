@@ -3,6 +3,8 @@
 ' Endpoint: POST /api/pos/sync/push/[endpoint-slug]
 ' Tabla local VB6: [tabla_vb6]
 ' Tabla servidor:  [tabla_servidor]
+' Grupo sync:      [GRUPO X] — [descripcion posicion]
+' Depende de:      [tabla_web_dep1], [tabla_web_dep2]  |  ninguna si es Grupo A
 ' Columnas locales:
 '   [Col1] -> [campo_api]
 '   [Col2] -> [campo_api]
@@ -42,6 +44,7 @@ Public Sub [NombreFuncion](Var_Id_Company_Envio As Integer, Var_Limit_Registros 
 
     Dim conn As Object
     Set conn = GetConn(Var_Sql_Base_Datos_Principal_Sede)
+    Var_Tabla_Error = [NombreFuncion]
 
     ' -- 1. Leer pendientes (lotes) -------------------------
     Dim rs As Object

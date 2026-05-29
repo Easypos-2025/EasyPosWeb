@@ -73,6 +73,7 @@ from app.routers.loans_router import router as loans_router
 from app.routers.qr_public_router import router as qr_public_router
 from app.routers.suppliers_router import router as suppliers_router
 from app.routers.supply_items_router import router as supply_items_router
+from app.routers.inventory_router import router as inventory_router
 from app.routers.product_categories_router import router as product_categories_router
 from app.routers.products_router import router as products_router
 from app.routers.price_lists_router import router as price_lists_router
@@ -1523,6 +1524,7 @@ routers = [
     qr_public_router,
     suppliers_router,
     supply_items_router,
+    inventory_router,
     product_categories_router,
     products_router,
     price_lists_router,

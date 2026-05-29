@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarInventarioPorciones
 ' Endpoint: POST /api/pos/sync/push/supply-items
 ' Tabla local VB6: inventario_porciones
 ' Tabla servidor: supply_items
+' Grupo sync:     B — después de SincronizarFormaMedida (Grupo A)
+' Depende de:     pos_measure_forms (unit_id, unit_uso_id, tipo_und_minima)
 ' Columnas locales:
 '   Codigo_Insumo, Id_Grupo, Id_Item, Descripcion, Costo,
 '   Und_Compra, Valor_Und_Compra, Und_Min_Utilizadas, Posicion,

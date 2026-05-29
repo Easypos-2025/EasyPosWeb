@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, String, Text, ForeignKey, TIMESTAMP, DECIMAL, func
+from sqlalchemy import Integer, String, Text, ForeignKey, TIMESTAMP, DECIMAL, Date, func
 from app.database import Base
 
 
@@ -16,6 +16,7 @@ class StockMovement(Base):
     qty_after:      Mapped[object]        = mapped_column(DECIMAL(14, 4), nullable=False, default=0)
     reference_type: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     reference_id:   Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    movement_date:  Mapped[Optional[object]] = mapped_column(Date, nullable=True, index=True)
     notes:          Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by:     Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at:     Mapped[object]        = mapped_column(TIMESTAMP, server_default=func.now())

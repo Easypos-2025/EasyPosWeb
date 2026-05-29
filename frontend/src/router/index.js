@@ -647,6 +647,27 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Entradas de Mercancía" }
       },
+      {
+        path: "/inventory/physical",
+        name: "InventoryPhysicalView",
+        component: () => import("@/views/inventory/InventoryPhysicalView.vue"),
+        requiresAuth: true,
+        meta: { title: "Inventarios Físicos" }
+      },
+      {
+        path: "/inventory/entries",
+        name: "InventoryEntriesView",
+        component: () => import("@/views/inventory/InventoryEntriesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Entradas de Inventario" }
+      },
+      {
+        path: "/inventory/exits",
+        name: "InventoryExitsView",
+        component: () => import("@/views/inventory/InventoryExitsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Salidas de Inventario" }
+      },
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",

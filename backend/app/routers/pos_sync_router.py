@@ -1673,18 +1673,40 @@ async def push_order_detail_products(
     saved, failed = [], []
     for r in records:
         try:
+            existing = (await db.execute(text("""
+                SELECT stock_deducted FROM pos_order_detail_products
+                WHERE company_id=:company_id AND order_number=:order_number AND date=:date
+                  AND invoice_number=:invoice_number AND dish_id=:dish_id
+                  AND item=:item AND group_id=:group_id AND item_id=:item_id LIMIT 1
+            """), r.dict())).mappings().first()
+
             await db.execute(text("""
                 INSERT INTO pos_order_detail_products
                     (order_number, date, invoice_number, dish_id, item, group_id, item_id,
-                     quantity, synced, company_id, updated_at)
+                     quantity, synced, stock_deducted, company_id, updated_at)
                 VALUES
                     (:order_number, :date, :invoice_number, :dish_id, :item, :group_id, :item_id,
-                     :quantity, 1, :company_id, NOW())
+                     :quantity, 1, 0, :company_id, NOW())
                 ON DUPLICATE KEY UPDATE
                     quantity   = VALUES(quantity),
                     synced     = 1,
                     updated_at = NOW()
             """), r.dict())
+
+            if existing is None and (r.quantity or 0) > 0:
+                await _stock_move(
+                    db, r.company_id, r.item_id,
+                    -(r.quantity), "sale",
+                    "sale", None, r.date,
+                    f"Venta {r.invoice_number} — plato {r.dish_id} item {r.item}",
+                )
+                await db.execute(text("""
+                    UPDATE pos_order_detail_products SET stock_deducted=1
+                    WHERE company_id=:company_id AND order_number=:order_number AND date=:date
+                      AND invoice_number=:invoice_number AND dish_id=:dish_id
+                      AND item=:item AND group_id=:group_id AND item_id=:item_id
+                """), r.dict())
+
             saved.append(r.order_number)
         except Exception as e:
             failed.append({"order_number": r.order_number, "error": str(e)})
@@ -1734,18 +1756,40 @@ async def push_receipt_order_detail_products(
     saved, failed = [], []
     for r in records:
         try:
+            existing = (await db.execute(text("""
+                SELECT stock_deducted FROM pos_receipt_order_detail_products
+                WHERE company_id=:company_id AND order_number=:order_number AND date=:date
+                  AND invoice_number=:invoice_number AND dish_id=:dish_id
+                  AND item=:item AND group_id=:group_id AND item_id=:item_id LIMIT 1
+            """), r.dict())).mappings().first()
+
             await db.execute(text("""
                 INSERT INTO pos_receipt_order_detail_products
                     (order_number, date, invoice_number, dish_id, item, group_id, item_id,
-                     quantity, synced, company_id, updated_at)
+                     quantity, synced, stock_deducted, company_id, updated_at)
                 VALUES
                     (:order_number, :date, :invoice_number, :dish_id, :item, :group_id, :item_id,
-                     :quantity, 1, :company_id, NOW())
+                     :quantity, 1, 0, :company_id, NOW())
                 ON DUPLICATE KEY UPDATE
                     quantity   = VALUES(quantity),
                     synced     = 1,
                     updated_at = NOW()
             """), r.dict())
+
+            if existing is None and (r.quantity or 0) > 0:
+                await _stock_move(
+                    db, r.company_id, r.item_id,
+                    -(r.quantity), "sale",
+                    "sale", None, r.date,
+                    f"Recibo {r.invoice_number} — plato {r.dish_id} item {r.item}",
+                )
+                await db.execute(text("""
+                    UPDATE pos_receipt_order_detail_products SET stock_deducted=1
+                    WHERE company_id=:company_id AND order_number=:order_number AND date=:date
+                      AND invoice_number=:invoice_number AND dish_id=:dish_id
+                      AND item=:item AND group_id=:group_id AND item_id=:item_id
+                """), r.dict())
+
             saved.append(r.order_number)
         except Exception as e:
             failed.append({"order_number": r.order_number, "error": str(e)})
@@ -3228,3 +3272,248 @@ router.get("/sync/pull/product-notes")(
     _pull("pos_product_notes", "product_notes"))
 router.get("/sync/pull/supply-items")(
     _pull("supply_items", "supply_items"))
+router.get("/sync/pull/inventory-physical")(
+    _pull("inventory_physical", "inventory_physical"))
+router.get("/sync/pull/inventory-entries")(
+    _pull("inventory_entries", "inventory_entries"))
+router.get("/sync/pull/inventory-exits")(
+    _pull("inventory_exits", "inventory_exits"))
+
+
+# ═════════════════════════════════════════
+# STOCK MOVEMENT HELPER
+# ═════════════════════════════════════════
+async def _stock_move(
+    db: AsyncSession,
+    company_id: int,
+    id_item: int,
+    qty: float,
+    mtype: str,
+    ref_type: str,
+    ref_id: Optional[int],
+    mdate: Optional[str],
+    notes: Optional[str] = None,
+):
+    si = (await db.execute(text("""
+        SELECT id, stock_qty, control_stock
+        FROM supply_items WHERE company_id = :cid AND id_item = :item LIMIT 1
+    """), {"cid": company_id, "item": id_item})).mappings().first()
+
+    if not si or not si["control_stock"]:
+        return
+
+    old_qty = float(si["stock_qty"] or 0)
+    new_qty = qty if mtype == "physical" else old_qty + qty
+
+    await db.execute(text("""
+        INSERT INTO stock_movements
+            (company_id, supply_item_id, movement_type, qty, qty_before, qty_after,
+             reference_type, reference_id, movement_date, notes)
+        VALUES
+            (:cid, :sid, :mtype, :dq, :qb, :qa, :rtype, :rid, :mdate, :notes)
+    """), {
+        "cid": company_id, "sid": si["id"], "mtype": mtype,
+        "dq": (new_qty - old_qty) if mtype == "physical" else qty,
+        "qb": old_qty, "qa": new_qty,
+        "rtype": ref_type, "rid": ref_id, "mdate": mdate, "notes": notes,
+    })
+    await db.execute(text(
+        "UPDATE supply_items SET stock_qty = :q WHERE id = :id"
+    ), {"q": new_qty, "id": si["id"]})
+
+
+# ═════════════════════════════════════════
+# INVENTORY PHYSICAL (inventarios_fisicos)
+# ═════════════════════════════════════════
+class InventoryPhysicalIn(BaseModel):
+    id_fisico:   int
+    id_item:     int
+    company_id:  int
+    fecha:       str
+    cantidad:    Optional[float] = 0
+    cod_usuario: Optional[str]  = None
+    hora:        Optional[str]  = None
+    observacion: Optional[str]  = None
+    autorizada:  Optional[int]  = 0
+    revisada:    Optional[int]  = 0
+    cobrar:      Optional[int]  = 0
+    agrupar:     Optional[int]  = 0
+
+
+@router.post("/sync/push/inventory-physical")
+async def push_inventory_physical(
+    items: List[InventoryPhysicalIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.company_id}|{it.id_fisico}"
+        try:
+            await db.execute(text("""
+                INSERT INTO inventory_physical
+                    (id_fisico, id_item, company_id, fecha, cantidad,
+                     cod_usuario, hora, observacion, autorizada, revisada,
+                     cobrar, agrupar, synced, updated_at)
+                VALUES
+                    (:id_fisico, :id_item, :company_id, :fecha, :cantidad,
+                     :cod_usuario, :hora, :observacion, :autorizada, :revisada,
+                     :cobrar, :agrupar, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    cantidad    = VALUES(cantidad),
+                    autorizada  = VALUES(autorizada),
+                    revisada    = VALUES(revisada),
+                    observacion = VALUES(observacion),
+                    synced      = 1,
+                    updated_at  = NOW()
+            """), it.dict())
+
+            if it.autorizada:
+                already = (await db.execute(text("""
+                    SELECT 1 FROM stock_movements
+                    WHERE company_id=:cid AND reference_type='physical' AND reference_id=:rid LIMIT 1
+                """), {"cid": it.company_id, "rid": it.id_fisico})).fetchone()
+                if not already:
+                    await _stock_move(
+                        db, it.company_id, it.id_item,
+                        it.cantidad or 0, "physical",
+                        "physical", it.id_fisico, it.fecha,
+                        f"Inventario físico #{it.id_fisico}",
+                    )
+
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ═════════════════════════════════════════
+# INVENTORY ENTRIES (inventarios_entradas)
+# ═════════════════════════════════════════
+class InventoryEntryIn(BaseModel):
+    id_entrada:   int
+    id_item:      int
+    id_proveedor: Optional[int] = 0
+    company_id:   int
+    fecha:        str
+    cantidad:     Optional[float] = 0
+    cod_empleado: Optional[str]  = None
+    observacion:  Optional[str]  = None
+    autorizada:   Optional[int]  = 0
+    revisada:     Optional[int]  = 0
+    cobrar:       Optional[int]  = 0
+    agrupar:      Optional[int]  = 0
+
+
+@router.post("/sync/push/inventory-entries")
+async def push_inventory_entries(
+    items: List[InventoryEntryIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.company_id}|{it.id_entrada}"
+        try:
+            await db.execute(text("""
+                INSERT INTO inventory_entries
+                    (id_entrada, id_item, id_proveedor, company_id, fecha, cantidad,
+                     cod_empleado, observacion, autorizada, revisada,
+                     cobrar, agrupar, synced, updated_at)
+                VALUES
+                    (:id_entrada, :id_item, :id_proveedor, :company_id, :fecha, :cantidad,
+                     :cod_empleado, :observacion, :autorizada, :revisada,
+                     :cobrar, :agrupar, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    cantidad     = VALUES(cantidad),
+                    autorizada   = VALUES(autorizada),
+                    observacion  = VALUES(observacion),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), it.dict())
+
+            already = (await db.execute(text("""
+                SELECT 1 FROM stock_movements
+                WHERE company_id=:cid AND reference_type='entry' AND reference_id=:rid LIMIT 1
+            """), {"cid": it.company_id, "rid": it.id_entrada})).fetchone()
+            if not already and (it.cantidad or 0) > 0:
+                await _stock_move(
+                    db, it.company_id, it.id_item,
+                    it.cantidad, "entry",
+                    "entry", it.id_entrada, it.fecha,
+                    f"Entrada #{it.id_entrada}" + (f" — {it.observacion}" if it.observacion else ""),
+                )
+
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ═════════════════════════════════════════
+# INVENTORY EXITS (inventarios_salidas)
+# ═════════════════════════════════════════
+class InventoryExitIn(BaseModel):
+    id_salida:    int
+    id_item:      int
+    id_proveedor: Optional[int] = 0
+    company_id:   int
+    fecha:        str
+    cantidad:     Optional[float] = 0
+    cod_empleado: Optional[str]  = None
+    observacion:  Optional[str]  = None
+    autorizada:   Optional[int]  = 0
+    revisada:     Optional[int]  = 0
+    cobrar:       Optional[int]  = 0
+    agrupar:      Optional[int]  = 0
+
+
+@router.post("/sync/push/inventory-exits")
+async def push_inventory_exits(
+    items: List[InventoryExitIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.company_id}|{it.id_salida}"
+        try:
+            await db.execute(text("""
+                INSERT INTO inventory_exits
+                    (id_salida, id_item, id_proveedor, company_id, fecha, cantidad,
+                     cod_empleado, observacion, autorizada, revisada,
+                     cobrar, agrupar, synced, updated_at)
+                VALUES
+                    (:id_salida, :id_item, :id_proveedor, :company_id, :fecha, :cantidad,
+                     :cod_empleado, :observacion, :autorizada, :revisada,
+                     :cobrar, :agrupar, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    cantidad     = VALUES(cantidad),
+                    autorizada   = VALUES(autorizada),
+                    observacion  = VALUES(observacion),
+                    synced       = 1,
+                    updated_at   = NOW()
+            """), it.dict())
+
+            already = (await db.execute(text("""
+                SELECT 1 FROM stock_movements
+                WHERE company_id=:cid AND reference_type='exit' AND reference_id=:rid LIMIT 1
+            """), {"cid": it.company_id, "rid": it.id_salida})).fetchone()
+            if not already and (it.cantidad or 0) > 0:
+                await _stock_move(
+                    db, it.company_id, it.id_item,
+                    -(it.cantidad), "exit",
+                    "exit", it.id_salida, it.fecha,
+                    f"Salida #{it.id_salida}" + (f" — {it.observacion}" if it.observacion else ""),
+                )
+
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
