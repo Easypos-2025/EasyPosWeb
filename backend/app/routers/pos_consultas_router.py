@@ -295,14 +295,14 @@ async def get_detalle_productos(
     rows = (await db.execute(text(f"""
         SELECT
             dp.item_id,
-            COALESCE(si.name, dp.item_id)     AS insumo,
+            COALESCE(si.description, dp.item_id)          AS insumo,
             dp.quantity,
             COALESCE(mu.name, '')             AS unidad
         FROM {tabla} dp
         LEFT JOIN supply_items si
-               ON si.id = dp.item_id AND si.company_id = :cid
-        LEFT JOIN measurement_units mu
-               ON mu.id = si.unit_id
+               ON si.id_item = dp.item_id AND si.company_id = :cid
+        LEFT JOIN pos_measure_forms mu
+               ON mu.id = si.unit_id AND mu.company_id = :cid
         WHERE dp.company_id  = :cid
           AND dp.{col}       = :numero
           AND dp.date        = :fecha

@@ -108,7 +108,7 @@ async def get_recipe(pid: int, current_user: User = Depends(get_current_user), d
     for r in result.scalars().all():
         si = await db.get(SupplyItem, r.supply_item_id)
         items.append({"id": r.id, "supply_item_id": r.supply_item_id,
-                      "supply_item_name": si.name if si else "—",
+                      "supply_item_name": si.description if si else "—",
                       "qty_required": float(r.qty_required), "unit_id": r.unit_id})
     return items
 

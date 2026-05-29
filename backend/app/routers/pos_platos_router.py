@@ -362,7 +362,7 @@ async def get_ingredientes(item_id: int, authorization: str = Header(None), db: 
             dp.measure_id   AS unit_id,
             dp.description,
             dp.active,
-            s.name          AS insumo_nombre,
+            s.description   AS insumo_nombre,
             s.code          AS insumo_code,
             mu.name         AS unit_nombre,
             mu.abreviatura  AS unit_abrev

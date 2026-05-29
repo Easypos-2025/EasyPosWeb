@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.database import get_db
 from app.models.supply_item_model import SupplyItem
 from app.models.stock_movement_model import StockMovement
@@ -13,13 +13,15 @@ router = APIRouter(prefix="/supply-items", tags=["SupplyItems"])
 async def _resolve_unit(item: SupplyItem, db: AsyncSession) -> str:
     if not item.unit_id:
         return None
-    from app.models.unidad_medida_model import UnidadMedida
-    u = await db.get(UnidadMedida, item.unit_id)
-    return f"{u.name} ({u.abreviatura})" if u else None
+    row = (await db.execute(
+        text("SELECT name FROM pos_measure_forms WHERE id = :id AND company_id = :cid"),
+        {"id": item.unit_id, "cid": item.company_id}
+    )).mappings().first()
+    return row["name"] if row else None
 
 
 def _ser(item: SupplyItem, unit_name=None) -> dict:
-    return {"id": item.id, "company_id": item.company_id, "code": item.code, "name": item.name,
+    return {"id": item.id, "company_id": item.company_id, "code": item.code,
             "description": item.description, "unit_id": item.unit_id, "unit_name": unit_name,
             "cost_price": float(item.cost_price), "stock_qty": float(item.stock_qty),
             "min_stock": float(item.min_stock), "waste_pct": float(item.waste_pct),
@@ -37,16 +39,16 @@ async def _record_movement(db: AsyncSession, item: SupplyItem, mtype: str, qty: 
 
 @router.get("/")
 async def list_supply_items(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(SupplyItem).where(SupplyItem.company_id == current_user.company_id).order_by(SupplyItem.name))
+    result = await db.execute(select(SupplyItem).where(SupplyItem.company_id == current_user.company_id).order_by(SupplyItem.description))
     return [_ser(i, await _resolve_unit(i, db)) for i in result.scalars().all()]
 
 
 @router.post("/")
 async def create_supply_item(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if not (data.get("name") or "").strip():
+    if not (data.get("description") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
     item = SupplyItem(company_id=current_user.company_id, code=(data.get("code") or "").strip() or None,
-                      name=data["name"].strip(), description=(data.get("description") or "").strip() or None,
+                      description=data["description"].strip(),
                       unit_id=data.get("unit_id"), cost_price=float(data.get("cost_price") or 0),
                       stock_qty=float(data.get("stock_qty") or 0), min_stock=float(data.get("min_stock") or 0),
                       waste_pct=float(data.get("waste_pct") or 0), control_stock=int(data.get("control_stock", 1)))
@@ -66,7 +68,6 @@ async def update_supply_item(iid: int, data: dict = Body(...), current_user: Use
     if not item:
         raise HTTPException(status_code=404, detail="Insumo no encontrado")
     if "code"          in data: item.code          = (data["code"] or "").strip() or None
-    if "name"          in data: item.name          = data["name"].strip()
     if "description"   in data: item.description   = (data["description"] or "").strip() or None
     if "unit_id"       in data: item.unit_id       = data["unit_id"]
     if "cost_price"    in data: item.cost_price    = float(data["cost_price"] or 0)

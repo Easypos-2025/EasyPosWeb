@@ -54,8 +54,7 @@
             <td class="text-muted">{{ i.id }}</td>
             <td class="text-muted">{{ i.code || '—' }}</td>
             <td>
-              <strong>{{ i.name }}</strong>
-              <div v-if="i.description" class="sub-text">{{ i.description }}</div>
+              <strong>{{ i.description }}</strong>
             </td>
             <td class="text-muted">{{ i.unit_name || '—' }}</td>
             <td class="text-right">{{ fmtNum(i.cost_price) }}</td>
@@ -97,12 +96,8 @@
             </div>
             <div class="fg">
               <label>Nombre *</label>
-              <input v-model="form.name" class="form-control" placeholder="Nombre del insumo" />
+              <input v-model="form.description" class="form-control" placeholder="Nombre del insumo" />
             </div>
-          </div>
-          <div class="fg">
-            <label>Descripción</label>
-            <input v-model="form.description" class="form-control" placeholder="Descripción breve..." />
           </div>
           <div class="form-row2">
             <div class="fg">
@@ -193,7 +188,7 @@
         </div>
         <div class="mb-area">
           <div class="info-block">
-            <strong>{{ adjustItem?.name }}</strong>
+            <strong>{{ adjustItem?.description }}</strong>
             <span class="text-muted">Stock actual: {{ fmtNum(adjustItem?.stock_qty, 4) }}</span>
           </div>
           <div class="fg">
@@ -248,7 +243,7 @@ function isLowStock(i) {
 const filtered = computed(() => {
   return items.value.filter(i => {
     const q = search.value.toLowerCase()
-    const matchQ = !q || i.name.toLowerCase().includes(q) || (i.code || "").toLowerCase().includes(q)
+    const matchQ = !q || (i.description || "").toLowerCase().includes(q) || (i.code || "").toLowerCase().includes(q)
     const matchStock = !filterStock.value ||
       (filterStock.value === "low" && isLowStock(i)) ||
       (filterStock.value === "ok"  && !isLowStock(i))
@@ -272,7 +267,7 @@ async function load() {
 
 function openCreate() {
   editing.value = null
-  form.value = { code: "", name: "", description: "", unit_id: null, cost_price: 0, stock_qty: 0, min_stock: 0, waste_pct: 0, control_stock: 1 }
+  form.value = { code: "", description: "", unit_id: null, cost_price: 0, stock_qty: 0, min_stock: 0, waste_pct: 0, control_stock: 1 }
   showModal.value = true
 }
 
@@ -289,7 +284,7 @@ function openAdjust(i) {
 }
 
 async function submit() {
-  if (!form.value.name?.trim()) { showToast("El nombre es requerido", "warning"); return }
+  if (!form.value.description?.trim()) { showToast("El nombre es requerido", "warning"); return }
   saving.value = true
   try {
     if (editing.value) {

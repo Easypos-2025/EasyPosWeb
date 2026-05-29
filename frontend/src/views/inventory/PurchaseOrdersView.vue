@@ -106,7 +106,7 @@
                 <select v-model="item.supply_item_id" class="form-select">
                   <option :value="null">— Seleccionar insumo —</option>
                   <option v-for="si in supplyItems" :key="si.id" :value="si.id">
-                    {{ si.name }}{{ si.code ? ' [' + si.code + ']' : '' }}
+                    {{ si.description }}{{ si.code ? ' [' + si.code + ']' : '' }}
                   </option>
                 </select>
               </div>

@@ -26,7 +26,7 @@ async def _ser_order(o: PurchaseOrder, db: AsyncSession) -> dict:
 async def _ser_item(i: PurchaseOrderItem, db: AsyncSession) -> dict:
     si = await db.get(SupplyItem, i.supply_item_id)
     return {"id": i.id, "purchase_order_id": i.purchase_order_id, "supply_item_id": i.supply_item_id,
-            "supply_item_name": si.name if si else "—", "qty": float(i.qty),
+            "supply_item_name": si.description if si else "—", "qty": float(i.qty),
             "unit_price": float(i.unit_price), "subtotal": float(i.subtotal),
             "presentation_name": i.presentation_name}
 

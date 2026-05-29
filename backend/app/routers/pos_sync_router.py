@@ -3072,18 +3072,39 @@ async def push_product_notes(
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SupplyItemSyncIn(BaseModel):
-    id_grupo:       int
-    id_item:        int
-    company_id:     int
-    code:           Optional[str]   = None
-    name:           Optional[str]   = None
-    cost_price:     Optional[float] = 0
-    unit_id:        Optional[int]   = None
-    stock_qty:      Optional[float] = 0
-    min_stock:      Optional[float] = 0
-    waste_pct:      Optional[float] = 0
-    control_stock:  Optional[int]   = 0
-    is_active:      Optional[int]   = 1
+    id_grupo:           int
+    id_item:            int
+    company_id:         int
+    id_insumo:          Optional[int]   = None
+    code:               Optional[str]   = None
+    description:        Optional[str]   = None
+    marca_referencia:   Optional[str]   = None
+    cost_price:         Optional[float] = 0
+    unit_id:            Optional[int]   = None
+    unit_uso_id:        Optional[int]   = None
+    valor_und_compra:   Optional[float] = 0
+    und_min_utilizadas: Optional[float] = 0
+    stock_qty:          Optional[float] = 0
+    min_stock:          Optional[float] = 0
+    waste_pct:          Optional[float] = 0
+    fecha_vence:        Optional[str]   = None
+    posicion:           Optional[int]   = 0
+    agrupar:            Optional[int]   = 0
+    control_stock:      Optional[int]   = 0
+    compras:            Optional[int]   = 0
+    opcion_cambios:     Optional[int]   = 0
+    centro_produccion:  Optional[int]   = 0
+    tipo_und_minima:    Optional[int]   = 0
+    cant_und_minimas:   Optional[int]   = 0
+    bodega:             Optional[int]   = 0
+    producto_preparado: Optional[int]   = 0
+    id_preparacion:     Optional[int]   = 0
+    preparado_en_sede:  Optional[int]   = 0
+    descargar_en_venta: Optional[int]   = 1
+    armar_plato:        Optional[int]   = 0
+    cantidad_armar:     Optional[float] = 0
+    insumo_cp:          Optional[int]   = 0
+    is_active:          Optional[int]   = 1
 
 
 @router.post("/sync/push/supply-items")
@@ -3098,24 +3119,56 @@ async def push_supply_items(
         try:
             await db.execute(text("""
                 INSERT INTO supply_items
-                    (company_id, id_grupo, id_item, code, name, cost_price,
-                     unit_id, stock_qty, min_stock, waste_pct, control_stock,
-                     is_active, synced, updated_at)
+                    (company_id, id_grupo, id_item, id_insumo, code, description,
+                     marca_referencia, cost_price, unit_id, unit_uso_id,
+                     valor_und_compra, und_min_utilizadas, stock_qty, min_stock,
+                     waste_pct, fecha_vence, posicion, agrupar, control_stock,
+                     compras, opcion_cambios, centro_produccion, tipo_und_minima,
+                     cant_und_minimas, bodega, producto_preparado, id_preparacion,
+                     preparado_en_sede, descargar_en_venta, armar_plato, cantidad_armar,
+                     insumo_cp, is_active, synced, updated_at)
                 VALUES
-                    (:company_id, :id_grupo, :id_item, :code, :name, :cost_price,
-                     :unit_id, :stock_qty, :min_stock, :waste_pct, :control_stock,
-                     :is_active, 1, NOW())
+                    (:company_id, :id_grupo, :id_item, :id_insumo, :code, :description,
+                     :marca_referencia, :cost_price, :unit_id, :unit_uso_id,
+                     :valor_und_compra, :und_min_utilizadas, :stock_qty, :min_stock,
+                     :waste_pct, :fecha_vence, :posicion, :agrupar, :control_stock,
+                     :compras, :opcion_cambios, :centro_produccion, :tipo_und_minima,
+                     :cant_und_minimas, :bodega, :producto_preparado, :id_preparacion,
+                     :preparado_en_sede, :descargar_en_venta, :armar_plato, :cantidad_armar,
+                     :insumo_cp, :is_active, 1, NOW())
                 ON DUPLICATE KEY UPDATE
-                    code          = VALUES(code),
-                    name          = VALUES(name),
-                    cost_price    = VALUES(cost_price),
-                    unit_id       = VALUES(unit_id),
-                    min_stock     = VALUES(min_stock),
-                    waste_pct     = VALUES(waste_pct),
-                    control_stock = VALUES(control_stock),
-                    is_active     = VALUES(is_active),
-                    synced        = 1,
-                    updated_at    = NOW()
+                    id_insumo          = VALUES(id_insumo),
+                    code               = VALUES(code),
+                    description        = VALUES(description),
+                    marca_referencia   = VALUES(marca_referencia),
+                    cost_price         = VALUES(cost_price),
+                    unit_id            = VALUES(unit_id),
+                    unit_uso_id        = VALUES(unit_uso_id),
+                    valor_und_compra   = VALUES(valor_und_compra),
+                    und_min_utilizadas = VALUES(und_min_utilizadas),
+                    stock_qty          = VALUES(stock_qty),
+                    min_stock          = VALUES(min_stock),
+                    waste_pct          = VALUES(waste_pct),
+                    fecha_vence        = VALUES(fecha_vence),
+                    posicion           = VALUES(posicion),
+                    agrupar            = VALUES(agrupar),
+                    control_stock      = VALUES(control_stock),
+                    compras            = VALUES(compras),
+                    opcion_cambios     = VALUES(opcion_cambios),
+                    centro_produccion  = VALUES(centro_produccion),
+                    tipo_und_minima    = VALUES(tipo_und_minima),
+                    cant_und_minimas   = VALUES(cant_und_minimas),
+                    bodega             = VALUES(bodega),
+                    producto_preparado = VALUES(producto_preparado),
+                    id_preparacion     = VALUES(id_preparacion),
+                    preparado_en_sede  = VALUES(preparado_en_sede),
+                    descargar_en_venta = VALUES(descargar_en_venta),
+                    armar_plato        = VALUES(armar_plato),
+                    cantidad_armar     = VALUES(cantidad_armar),
+                    insumo_cp          = VALUES(insumo_cp),
+                    is_active          = VALUES(is_active),
+                    synced             = 1,
+                    updated_at         = NOW()
             """), item.dict())
             saved.append(key)
         except Exception as e:
