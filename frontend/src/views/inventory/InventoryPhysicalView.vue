@@ -4,7 +4,7 @@
     <!-- ══ VISTA PRINCIPAL: HISTORIAL CON SELECT ════════════════════════════════ -->
     <div v-if="tab==='history'" class="tab-content">
 
-      <!-- Header row: select + botón Tomar Inventario -->
+      <!-- Header row: select + acciones + botón Tomar Inventario -->
       <div class="hist-header-row">
         <div class="hist-sel-row">
           <label class="hist-sel-lbl"><i class="bi bi-calendar3"></i> Corte:</label>
@@ -21,6 +21,9 @@
               </option>
             </select>
             <span class="hist-badge">{{ reportData.length }} ítems</span>
+            <button class="btn-del-date" @click="confirmDeleteDate" title="Eliminar corte completo">
+              <i class="bi bi-trash3"></i>
+            </button>
           </template>
         </div>
         <button class="btn-take-inv" @click="switchToTake">
@@ -32,30 +35,57 @@
       <div v-if="loadingReport" class="state-c sm">
         <i class="bi bi-arrow-repeat spin"></i> Cargando reporte...
       </div>
-      <div v-else-if="reportData.length" class="report-wrap">
-        <table class="rep-tbl">
-          <thead>
-            <tr>
-              <th>Insumo</th>
-              <th class="tr">Sistema previo</th>
-              <th class="tr">Contado</th>
-              <th class="tr">Diferencia</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in reportData" :key="r.id_item" :class="diffCls(r.diferencia)">
-              <td>
-                <strong>{{ r.item_name }}</strong>
-                <small class="td-muted ml">{{ r.unit_name }}</small>
-              </td>
-              <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
-              <td class="tr fw-b">{{ fmtQty(r.contado) }}</td>
-              <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
-                {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <template v-else-if="reportData.length">
+        <div class="report-wrap">
+          <table class="rep-tbl">
+            <thead>
+              <tr>
+                <th>Insumo</th>
+                <th class="tr">Sistema previo</th>
+                <th class="tr">Contado</th>
+                <th class="tr">Diferencia</th>
+                <th class="tc">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in reportData" :key="r.id" :class="diffCls(r.diferencia)">
+                <td>
+                  <strong>{{ r.item_name }}</strong>
+                  <small class="td-muted ml">{{ r.unit_name }}</small>
+                </td>
+                <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
+                <td class="tr fw-b">{{ fmtQty(r.contado) }}</td>
+                <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
+                  {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
+                </td>
+                <td class="tc">
+                  <div class="row-actions">
+                    <button class="btn-row-edit" @click="openEditItem(r)" title="Editar cantidad">
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn-row-del" @click="deleteItem(r)" title="Eliminar ítem">
+                      <i class="bi bi-x-lg"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Agregar ítem al corte actual -->
+        <div class="add-item-bar">
+          <button class="btn-add-item" @click="openAddItem">
+            <i class="bi bi-plus-lg"></i> Agregar ítem a este corte
+          </button>
+        </div>
+      </template>
+      <div v-else-if="!loadingHistory && !loadingReport && selectedDate" class="state-c">
+        Sin registros para este corte
+        <div class="mt-sm">
+          <button class="btn-add-item" @click="openAddItem">
+            <i class="bi bi-plus-lg"></i> Agregar ítem
+          </button>
+        </div>
       </div>
       <div v-else-if="!loadingHistory && !loadingReport" class="state-c">
         Seleccione un corte para ver el reporte
@@ -216,6 +246,84 @@
           </div>
         </div>
       </div>
+      <!-- ── Modal: confirmar eliminar corte completo ── -->
+      <div v-if="showDeleteDate" class="modal-bg" @click.self="showDeleteDate=false">
+        <div class="conf-panel">
+          <h6 class="conf-title c-red"><i class="bi bi-trash3 me-1"></i> Eliminar corte completo</h6>
+          <p class="conf-body">
+            Se eliminarán <strong>todos los registros</strong> del corte
+            <strong>{{ fmtDate(selectedDate) }}</strong> ({{ reportData.length }} ítems).<br/>
+            Esta acción no se puede deshacer.
+          </p>
+          <div class="conf-actions">
+            <button class="btn-cancel" @click="showDeleteDate=false">Cancelar</button>
+            <button class="btn-danger" :disabled="saving" @click="executeDeleteDate">
+              <i class="bi bi-trash3"></i> {{ saving ? 'Eliminando...' : 'Eliminar corte' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Modal: editar ítem ── -->
+      <div v-if="editRow" class="modal-bg" @click.self="editRow=null">
+        <div class="conf-panel">
+          <h6 class="conf-title"><i class="bi bi-pencil me-1"></i> Editar ítem</h6>
+          <p class="conf-body">
+            <strong>{{ editRow.item_name }}</strong> — {{ editRow.unit_name }}
+          </p>
+          <div class="form-field">
+            <label class="ctrl-lbl">Cantidad contada</label>
+            <input type="number" inputmode="decimal" step="0.001" min="0"
+                   v-model="editQty" class="ctrl-inp" />
+          </div>
+          <div class="form-field mt-sm">
+            <label class="ctrl-lbl">Observación</label>
+            <input type="text" v-model="editObs" class="ctrl-inp" placeholder="Opcional..." />
+          </div>
+          <div class="conf-actions">
+            <button class="btn-cancel" @click="editRow=null">Cancelar</button>
+            <button class="btn-confirm" :disabled="saving" @click="saveEditItem">
+              <i class="bi bi-check2"></i> {{ saving ? 'Guardando...' : 'Guardar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Modal: agregar ítem al corte ── -->
+      <div v-if="showAddItem" class="modal-bg" @click.self="showAddItem=false">
+        <div class="conf-panel wide">
+          <h6 class="conf-title"><i class="bi bi-plus-lg me-1"></i> Agregar ítem al corte {{ fmtDate(selectedDate) }}</h6>
+          <div class="form-field">
+            <label class="ctrl-lbl">Buscar insumo</label>
+            <input type="text" v-model="addSearch" class="ctrl-inp"
+                   placeholder="Nombre o código..." @input="filterAddItems" />
+          </div>
+          <div class="add-item-list">
+            <div v-if="loadingAddItems" class="state-c sm"><i class="bi bi-arrow-repeat spin"></i> Cargando...</div>
+            <template v-else>
+              <div v-for="it in filteredAddItems" :key="it.id_item"
+                   class="add-item-opt" :class="{ selected: addSelItem?.id_item === it.id_item }"
+                   @click="addSelItem = it">
+                <span class="add-item-name">{{ it.description }}</span>
+                <span class="add-item-unit td-muted">{{ it.unit_name }}</span>
+              </div>
+              <div v-if="!filteredAddItems.length" class="state-c sm">Sin resultados</div>
+            </template>
+          </div>
+          <div v-if="addSelItem" class="form-field mt-sm">
+            <label class="ctrl-lbl">Cantidad — <strong>{{ addSelItem.description }}</strong> ({{ addSelItem.unit_name }})</label>
+            <input type="number" inputmode="decimal" step="0.001" min="0"
+                   v-model="addQty" class="ctrl-inp" />
+          </div>
+          <div class="conf-actions">
+            <button class="btn-cancel" @click="showAddItem=false">Cancelar</button>
+            <button class="btn-confirm" :disabled="saving || !addSelItem" @click="saveAddItem">
+              <i class="bi bi-plus-lg"></i> {{ saving ? 'Guardando...' : 'Agregar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
     </teleport>
 
   </div>
@@ -236,6 +344,101 @@ const selectedDate   = ref(null)
 const reportData     = ref([])
 const loadingHistory = ref(false)
 const loadingReport  = ref(false)
+
+// CRUD — eliminar corte completo
+const showDeleteDate = ref(false)
+function confirmDeleteDate() { showDeleteDate.value = true }
+async function executeDeleteDate() {
+  saving.value = true
+  try {
+    await api.delete(`/api/inventory/physical/date/${selectedDate.value}`)
+    showToast('Corte eliminado correctamente', 'success')
+    showDeleteDate.value = false
+    selectedDate.value = null
+    reportData.value = []
+    await loadHistory()
+  } catch { showToast('Error al eliminar el corte', 'error') }
+  finally { saving.value = false }
+}
+
+// CRUD — editar ítem individual
+const editRow = ref(null)
+const editQty = ref(0)
+const editObs = ref('')
+function openEditItem(r) {
+  editRow.value = r
+  editQty.value = r.contado
+  editObs.value = r.observacion || ''
+}
+async function saveEditItem() {
+  saving.value = true
+  try {
+    await api.patch(`/api/inventory/physical/${editRow.value.id}`, {
+      cantidad: editQty.value,
+      observacion: editObs.value,
+    })
+    showToast('Ítem actualizado', 'success')
+    editRow.value = null
+    await loadReportFor(selectedDate.value)
+  } catch { showToast('Error al guardar', 'error') }
+  finally { saving.value = false }
+}
+
+// CRUD — eliminar ítem individual
+async function deleteItem(r) {
+  if (!confirm(`¿Eliminar "${r.item_name}" de este corte?`)) return
+  saving.value = true
+  try {
+    await api.delete(`/api/inventory/physical/${r.id}`)
+    showToast('Ítem eliminado', 'success')
+    await loadReportFor(selectedDate.value)
+    await loadHistory()
+  } catch { showToast('Error al eliminar', 'error') }
+  finally { saving.value = false }
+}
+
+// CRUD — agregar ítem al corte
+const showAddItem   = ref(false)
+const addSearch     = ref('')
+const addSelItem    = ref(null)
+const addQty        = ref(0)
+const allAddItems   = ref([])
+const loadingAddItems = ref(false)
+const filteredAddItems = computed(() => {
+  const q = addSearch.value.toLowerCase()
+  return allAddItems.value.filter(i =>
+    !q || i.description.toLowerCase().includes(q) || (i.code || '').toLowerCase().includes(q)
+  ).slice(0, 40)
+})
+async function openAddItem() {
+  showAddItem.value = true
+  addSearch.value = ''
+  addSelItem.value = null
+  addQty.value = 0
+  if (!allAddItems.value.length) {
+    loadingAddItems.value = true
+    try {
+      allAddItems.value = (await api.get('/api/inventory/stock', { params: { active: '1' } })).data
+    } catch { allAddItems.value = [] }
+    finally { loadingAddItems.value = false }
+  }
+}
+async function saveAddItem() {
+  saving.value = true
+  try {
+    await api.post('/api/inventory/physical', {
+      id_item: addSelItem.value.id_item,
+      cantidad: addQty.value,
+      fecha: selectedDate.value,
+    })
+    showToast('Ítem agregado al corte', 'success')
+    showAddItem.value = false
+    await loadReportFor(selectedDate.value)
+    await loadHistory()
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error al agregar', 'error')
+  } finally { saving.value = false }
+}
 
 async function switchToHistory() {
   tab.value = 'history'
@@ -419,6 +622,63 @@ onMounted(loadHistory)
   display: inline-flex; align-items: center; gap: 6px;
 }
 .btn-back:hover { border-color: #6b7280; }
+
+/* ── Eliminar corte ── */
+.btn-del-date {
+  background: none; border: 1px solid #fca5a5; color: #dc2626;
+  border-radius: 7px; padding: 5px 9px; cursor: pointer; font-size: 0.85rem; flex-shrink: 0;
+}
+.btn-del-date:hover { background: #fef2f2; }
+
+/* ── Acciones por fila ── */
+.tc { text-align: center; }
+.row-actions { display: flex; gap: 4px; justify-content: center; }
+.btn-row-edit {
+  background: none; border: 1px solid #bfdbfe; color: #2563eb;
+  border-radius: 6px; padding: 4px 7px; cursor: pointer; font-size: 0.8rem; line-height: 1;
+}
+.btn-row-edit:hover { background: #eff6ff; }
+.btn-row-del {
+  background: none; border: 1px solid #fca5a5; color: #dc2626;
+  border-radius: 6px; padding: 4px 7px; cursor: pointer; font-size: 0.8rem; line-height: 1;
+}
+.btn-row-del:hover { background: #fef2f2; }
+
+/* ── Agregar ítem al corte ── */
+.add-item-bar { padding: 10px 0; }
+.btn-add-item {
+  background: none; border: 1px dashed #6b7280; border-radius: 8px;
+  padding: 8px 16px; cursor: pointer; font-size: 0.85rem; color: #374151;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-add-item:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+.mt-sm { margin-top: 10px; }
+
+/* ── Modal agregar ítem ── */
+.conf-panel.wide { max-width: 520px; }
+.form-field { display: flex; flex-direction: column; gap: 4px; }
+.add-item-list {
+  border: 1px solid #e9ecef; border-radius: 8px; max-height: 180px; overflow-y: auto;
+  margin-top: 6px;
+}
+.add-item-opt {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px; cursor: pointer; font-size: 0.86rem; border-bottom: 1px solid #f3f4f6;
+}
+.add-item-opt:hover { background: #f0f9ff; }
+.add-item-opt.selected { background: #dbeafe; }
+.add-item-opt:last-child { border-bottom: none; }
+.add-item-name { font-weight: 500; }
+.add-item-unit { font-size: 0.78rem; }
+
+/* ── Botón peligroso ── */
+.btn-danger {
+  background: #dc2626; color: #fff; border: none; border-radius: 8px;
+  padding: 10px 18px; cursor: pointer; font-size: 0.87rem; font-weight: 700;
+  display: flex; align-items: center; gap: 7px;
+}
+.btn-danger:disabled { opacity: .6; cursor: not-allowed; }
+.btn-danger:not(:disabled):hover { background: #b91c1c; }
 .hist-sel-lbl { font-size: 0.82rem; font-weight: 600; color: #0369a1; white-space: nowrap; }
 .hist-sel {
   flex: 1; min-width: 200px;

@@ -322,10 +322,12 @@ async def physical_report(
     cid = current_user.company_id
     rows = (await db.execute(text("""
         SELECT
+            ip.id,
             ip.id_item,
             COALESCE(si.description, CONCAT('Item #', ip.id_item)) AS item_name,
             COALESCE(si.code, '')                                   AS code,
             COALESCE(mu.name, '')                                   AS unit_name,
+            ip.observacion,
             ip.cantidad                                             AS contado,
             COALESCE(sm.qty_before,
                 (SELECT prev.cantidad
@@ -369,31 +371,35 @@ async def create_physical(
     if not id_item:
         raise HTTPException(400, "id_item es requerido")
 
+    # Reusar el id_fisico existente para esa fecha, o crear uno nuevo
+    existing = (await db.execute(text("""
+        SELECT id_fisico FROM inventory_physical
+        WHERE company_id=:cid AND fecha=:fecha LIMIT 1
+    """), {"cid": current_user.company_id, "fecha": fecha})).mappings().first()
+    id_fisico = existing["id_fisico"] if existing else (
+        (await db.execute(text(
+            "SELECT COALESCE(MAX(id_fisico),0)+1 FROM inventory_physical WHERE company_id=:cid"
+        ), {"cid": current_user.company_id})).scalar() or 1
+    )
+
     res = await db.execute(text("""
         INSERT INTO inventory_physical
             (id_fisico, id_item, company_id, fecha, cantidad, cod_usuario,
              observacion, autorizada, synced, updated_at)
         VALUES
-            ((SELECT COALESCE(MAX(id_fisico),0)+1 FROM inventory_physical ip2 WHERE ip2.company_id=:cid),
-             :id_item, :cid, :fecha, :cantidad, :cod_usuario,
-             :observacion, 1, 0, NOW())
+            (:id_fisico, :id_item, :cid, :fecha, :cantidad, :cod_usuario,
+             :observacion, 0, 0, NOW())
+        ON DUPLICATE KEY UPDATE
+            cantidad    = VALUES(cantidad),
+            observacion = VALUES(observacion),
+            updated_at  = NOW()
     """), {
-        "cid": current_user.company_id, "id_item": id_item,
-        "fecha": fecha, "cantidad": cantidad,
+        "cid": current_user.company_id, "id_fisico": id_fisico,
+        "id_item": id_item, "fecha": fecha, "cantidad": cantidad,
         "cod_usuario": current_user.email,
         "observacion": observacion,
     })
     new_id = res.lastrowid
-    await db.flush()
-
-    await _stock_move(
-        db, current_user.company_id, id_item,
-        cantidad, "physical",
-        "physical", new_id, fecha,
-        f"Inventario físico web — {observacion or 'sin observación'}",
-        current_user.id,
-    )
-
     await db.commit()
     return {"ok": True, "id": new_id}
 
@@ -511,6 +517,71 @@ async def create_physical_bulk(
 
     await db.commit()
     return {"ok": True, "saved": saved, "fecha": fecha}
+
+
+@router.patch("/physical/{pid}")
+async def update_physical(
+    pid: int,
+    data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Editar cantidad y/u observación de un registro de inventario físico."""
+    row = (await db.execute(text(
+        "SELECT id FROM inventory_physical WHERE id=:pid AND company_id=:cid LIMIT 1"
+    ), {"pid": pid, "cid": current_user.company_id})).mappings().first()
+    if not row:
+        raise HTTPException(404, "Registro no encontrado")
+
+    cantidad    = data.get("cantidad")
+    observacion = data.get("observacion")
+    sets = []
+    params: dict = {"pid": pid}
+    if cantidad is not None:
+        sets.append("cantidad = :cantidad")
+        params["cantidad"] = float(cantidad)
+    if observacion is not None:
+        sets.append("observacion = :observacion")
+        params["observacion"] = str(observacion)
+    if not sets:
+        raise HTTPException(400, "Nada que actualizar")
+
+    sets.append("updated_at = NOW()")
+    await db.execute(text(
+        f"UPDATE inventory_physical SET {', '.join(sets)} WHERE id=:pid"
+    ), params)
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/physical/date/{fecha}")
+async def delete_physical_by_date(
+    fecha: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Eliminar todos los registros de un corte de inventario por fecha."""
+    res = await db.execute(text(
+        "DELETE FROM inventory_physical WHERE company_id=:cid AND fecha=:fecha"
+    ), {"cid": current_user.company_id, "fecha": fecha})
+    await db.commit()
+    return {"ok": True, "deleted": res.rowcount}
+
+
+@router.delete("/physical/{pid}")
+async def delete_physical(
+    pid: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Eliminar un registro individual de inventario físico."""
+    res = await db.execute(text(
+        "DELETE FROM inventory_physical WHERE id=:pid AND company_id=:cid"
+    ), {"pid": pid, "cid": current_user.company_id})
+    await db.commit()
+    if res.rowcount == 0:
+        raise HTTPException(404, "Registro no encontrado")
+    return {"ok": True}
 
 
 @router.patch("/physical/{pid}/authorize")
