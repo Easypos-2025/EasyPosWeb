@@ -1,17 +1,75 @@
 <template>
   <div class="ip-wrap">
 
-    <!-- Tabs -->
+    <!-- Tabs: Historial primero (default), Tomar Inventario segundo -->
     <div class="tab-bar">
-      <button :class="tab==='take' ? 'tab-on' : 'tab'" @click="tab='take'">
-        <i class="bi bi-clipboard-check"></i> Tomar Inventario
-      </button>
-      <button :class="tab==='history' ? 'tab-on' : 'tab'" @click="tab='history'; loadHistory()">
+      <button :class="tab==='history' ? 'tab-on' : 'tab'" @click="switchToHistory">
         <i class="bi bi-calendar3"></i> Historial de Cortes
+      </button>
+      <button :class="tab==='take' ? 'tab-on' : 'tab'" @click="switchToTake">
+        <i class="bi bi-clipboard-check"></i> Tomar Inventario
       </button>
     </div>
 
-    <!-- ══ TAB A: TOMAR INVENTARIO ═══════════════════════════════════════════ -->
+    <!-- ══ TAB A: HISTORIAL ═══════════════════════════════════════════════════ -->
+    <div v-if="tab==='history'" class="tab-content">
+
+      <div v-if="loadingHistory" class="state-c">
+        <i class="bi bi-arrow-repeat spin"></i> Cargando historial...
+      </div>
+
+      <template v-else-if="!historyDates.length">
+        <div class="state-c">Sin inventarios físicos registrados</div>
+      </template>
+
+      <template v-else>
+        <!-- Selector de fecha -->
+        <div class="hist-sel-row">
+          <label class="hist-sel-lbl"><i class="bi bi-calendar3"></i> Corte:</label>
+          <select v-model="selectedDate" @change="loadReportFor(selectedDate)" class="hist-sel">
+            <option v-for="h in historyDates" :key="h.fecha" :value="h.fecha">
+              {{ fmtDate(h.fecha) }} — {{ h.items_contados }} insumos · {{ h.usuario }}
+            </option>
+          </select>
+          <span class="hist-badge">{{ reportData.length }} ítems</span>
+        </div>
+
+        <!-- Tabla del corte seleccionado -->
+        <div v-if="loadingReport" class="state-c sm">
+          <i class="bi bi-arrow-repeat spin"></i> Cargando reporte...
+        </div>
+        <div v-else class="report-wrap">
+          <table class="rep-tbl">
+            <thead>
+              <tr>
+                <th>Insumo</th>
+                <th class="tr">Sistema previo</th>
+                <th class="tr">Contado</th>
+                <th class="tr">Diferencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in reportData" :key="r.id_item" :class="diffCls(r.diferencia)">
+                <td>
+                  <strong>{{ r.item_name }}</strong>
+                  <small class="td-muted ml">{{ r.unit_name }}</small>
+                </td>
+                <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
+                <td class="tr fw-b">{{ fmtQty(r.contado) }}</td>
+                <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
+                  {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
+                </td>
+              </tr>
+              <tr v-if="!reportData.length">
+                <td colspan="4" class="state-c">Sin datos para esta fecha</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </div>
+
+    <!-- ══ TAB B: TOMAR INVENTARIO ══════════════════════════════════════════════ -->
     <div v-if="tab==='take'" class="tab-content">
 
       <!-- Controls top -->
@@ -40,7 +98,7 @@
         </div>
       </div>
 
-      <!-- Loading -->
+      <!-- Loading items -->
       <div v-if="loadingItems" class="state-c">
         <i class="bi bi-arrow-repeat spin"></i> Cargando insumos...
       </div>
@@ -97,60 +155,7 @@
       </template>
     </div>
 
-    <!-- ══ TAB B: HISTORIAL ══════════════════════════════════════════════════ -->
-    <div v-if="tab==='history'" class="tab-content">
-      <div v-if="loadingHistory" class="state-c">
-        <i class="bi bi-arrow-repeat spin"></i> Cargando historial...
-      </div>
-      <template v-else>
-        <div v-if="!historyDates.length" class="state-c">Sin inventarios físicos registrados</div>
-        <div v-for="h in historyDates" :key="h.fecha" class="hist-card">
-          <div class="hist-top" @click="toggleReport(h.fecha)">
-            <div class="hist-info">
-              <span class="hist-fecha">{{ fmtDate(h.fecha) }}</span>
-              <span class="hist-sub">
-                {{ h.items_contados }} insumos &nbsp;·&nbsp; {{ h.usuario }} &nbsp;·&nbsp; {{ fmtTime(h.hora_inicio) }}
-              </span>
-            </div>
-            <i :class="reportVisible===h.fecha ? 'bi bi-chevron-up' : 'bi bi-chevron-down'" class="chevron"></i>
-          </div>
-
-          <!-- Report panel -->
-          <div v-if="reportVisible===h.fecha" class="report-panel">
-            <div v-if="loadingReport" class="state-c sm">Cargando reporte...</div>
-            <table v-else class="rep-tbl">
-              <thead>
-                <tr>
-                  <th>Insumo</th>
-                  <th class="tr">Sistema</th>
-                  <th class="tr">Contado</th>
-                  <th class="tr">Diferencia</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in reportData" :key="r.id_item"
-                    :class="diffCls(r.diferencia)">
-                  <td>
-                    <strong>{{ r.item_name }}</strong>
-                    <small class="td-muted ml"> {{ r.unit_name }}</small>
-                  </td>
-                  <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
-                  <td class="tr">{{ fmtQty(r.contado) }}</td>
-                  <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
-                    {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
-                  </td>
-                </tr>
-                <tr v-if="!reportData.length">
-                  <td colspan="4" class="state-c">Sin datos</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- ══ MODAL: CONFIRM CUT ═══════════════════════════════════════════════ -->
+    <!-- ══ MODAL: CONFIRM CUT ═════════════════════════════════════════════════ -->
     <teleport to="body">
       <div v-if="showConfirm" class="modal-bg" @click.self="showConfirm=false">
         <div class="conf-panel">
@@ -170,7 +175,7 @@
         </div>
       </div>
 
-      <!-- Report after cut -->
+      <!-- Reporte tras generar corte -->
       <div v-if="showReport" class="modal-bg" @click.self="showReport=false">
         <div class="rep-panel">
           <div class="rep-hdr">
@@ -205,7 +210,7 @@
             </table>
           </div>
           <div class="rep-footer">
-            <button class="btn-cancel" @click="showReport=false; tab='history'; loadHistory()">
+            <button class="btn-cancel" @click="afterCutClose">
               <i class="bi bi-check2"></i> Cerrar y ver historial
             </button>
           </div>
@@ -222,7 +227,43 @@ import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
-const tab = ref('take')
+// ── Default: mostrar historial al entrar ──────────────────────────────────────
+const tab = ref('history')
+
+// ── HISTORY ───────────────────────────────────────────────────────────────────
+const historyDates   = ref([])
+const selectedDate   = ref(null)
+const reportData     = ref([])
+const loadingHistory = ref(false)
+const loadingReport  = ref(false)
+
+async function switchToHistory() {
+  tab.value = 'history'
+  if (!historyDates.value.length) await loadHistory()
+}
+
+async function loadHistory() {
+  loadingHistory.value = true
+  try {
+    historyDates.value = (await api.get('/api/inventory/physical/dates')).data
+    if (historyDates.value.length && !selectedDate.value) {
+      selectedDate.value = historyDates.value[0].fecha
+      await loadReportFor(selectedDate.value)
+    } else if (selectedDate.value) {
+      await loadReportFor(selectedDate.value)
+    }
+  } catch { historyDates.value = [] }
+  finally { loadingHistory.value = false }
+}
+
+async function loadReportFor(fecha) {
+  if (!fecha) return
+  loadingReport.value = true
+  try {
+    reportData.value = (await api.get(`/api/inventory/physical/report/${fecha}`)).data
+  } catch { reportData.value = [] }
+  finally { loadingReport.value = false }
+}
 
 // ── TAKE INVENTORY ────────────────────────────────────────────────────────────
 const today     = () => new Date().toISOString().slice(0, 10)
@@ -233,18 +274,24 @@ const listFilter  = ref('')
 const barcodeRef  = ref(null)
 
 const allItems   = ref([])
-const quantities  = ref({})   // { id_item: number }
+const quantities  = ref({})
 const inputRefs   = {}
 
-const loadingItems = ref(true)
+const loadingItems = ref(false)
 const saving       = ref(false)
 const showConfirm  = ref(false)
 const showReport   = ref(false)
 const reportAfterCut = ref([])
 
+async function switchToTake() {
+  tab.value = 'take'
+  if (!allItems.value.length && !loadingItems.value) {
+    await loadItems()
+  }
+}
+
 const fmtQty  = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 })
 const fmtDate = v => v ? String(v).slice(0, 10) : '—'
-const fmtTime = v => v ? String(v).slice(11, 16) : ''
 
 const filteredItems = computed(() => {
   const q = listFilter.value.toLowerCase()
@@ -303,7 +350,7 @@ async function executeCut() {
   showConfirm.value = false
   try {
     const items = allItems.value.map(i => ({
-      id_item: i.id_item,
+      id_item:  i.id_item,
       cantidad: quantities.value[i.id_item] || 0,
     }))
     const res = await api.post('/api/inventory/physical/bulk', {
@@ -312,41 +359,22 @@ async function executeCut() {
       items,
     })
     showToast(`Corte generado — ${res.data.saved} items procesados`, 'success')
-    // Load differences report
     try {
       reportAfterCut.value = (await api.get(`/api/inventory/physical/report/${fecha.value}`)).data
     } catch { reportAfterCut.value = [] }
     showReport.value = true
     resetAll()
-  } catch (e) {
+  } catch {
     showToast('Error al generar el corte', 'error')
   } finally { saving.value = false }
 }
 
-// ── HISTORY ───────────────────────────────────────────────────────────────────
-const historyDates  = ref([])
-const loadingHistory = ref(false)
-const reportVisible  = ref(null)
-const reportData     = ref([])
-const loadingReport  = ref(false)
-
-async function loadHistory() {
-  loadingHistory.value = true
-  reportVisible.value = null
-  try {
-    historyDates.value = (await api.get('/api/inventory/physical/dates')).data
-  } catch { historyDates.value = [] }
-  finally { loadingHistory.value = false }
-}
-
-async function toggleReport(fecha) {
-  if (reportVisible.value === fecha) { reportVisible.value = null; return }
-  reportVisible.value = fecha
-  loadingReport.value = true
-  try {
-    reportData.value = (await api.get(`/api/inventory/physical/report/${fecha}`)).data
-  } catch { reportData.value = [] }
-  finally { loadingReport.value = false }
+async function afterCutClose() {
+  showReport.value = false
+  // refrescar historial y mostrar el nuevo corte
+  selectedDate.value = null
+  await loadHistory()
+  tab.value = 'history'
 }
 
 function diffCls(d) {
@@ -355,7 +383,8 @@ function diffCls(d) {
   return ''
 }
 
-onMounted(loadItems)
+// Al entrar: cargar historial y mostrar el último corte
+onMounted(loadHistory)
 </script>
 
 <style scoped>
@@ -368,7 +397,29 @@ onMounted(loadItems)
 .tab-content { animation: fadeIn .15s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } }
 
-/* Controls */
+/* ── Historial: selector de fecha ── */
+.hist-sel-row {
+  display: flex; align-items: center; gap: 10px;
+  background: #f0f9ff; border: 1px solid #bae6fd;
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.hist-sel-lbl { font-size: 0.82rem; font-weight: 600; color: #0369a1; white-space: nowrap; }
+.hist-sel {
+  flex: 1; min-width: 200px;
+  padding: 8px 10px; border: 1px solid #bae6fd; border-radius: 8px;
+  font-size: 0.86rem; background: #fff; color: #0f172a; cursor: pointer; outline: none;
+}
+.hist-sel:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+.hist-badge {
+  font-size: 0.76rem; font-weight: 700;
+  background: #dbeafe; color: #1d4ed8;
+  padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+}
+
+/* ── Historial: tabla del corte ── */
+.report-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e9ecef; }
+
+/* Controls (tomar inv.) */
 .take-controls { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
 .ctrl-row { display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .ctrl-row:last-child { margin-bottom: 0; }
@@ -405,18 +456,9 @@ onMounted(loadItems)
 .btn-cut:hover:not(:disabled) { background: #15803d; }
 .btn-cut:disabled { opacity: .6; cursor: not-allowed; }
 
-/* History */
-.hist-card { background: #fff; border: 1px solid #e9ecef; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
-.hist-top { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; cursor: pointer; user-select: none; }
-.hist-top:hover { background: #f8f9fa; }
-.hist-fecha { font-weight: 700; font-size: 0.95rem; display: block; }
-.hist-sub   { font-size: 0.78rem; color: #6b7280; }
-.chevron { color: #9ca3af; font-size: 0.9rem; }
-.report-panel { border-top: 1px solid #e9ecef; overflow-x: auto; }
-
-/* Report table */
+/* Report table (historial + modal) */
 .rep-tbl { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
-.rep-tbl th { background: #f8f9fa; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; white-space: nowrap; }
+.rep-tbl th { background: #f8f9fa; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; white-space: nowrap; position: sticky; top: 0; }
 .rep-tbl td { padding: 7px 12px; border-bottom: 1px solid #f0f0f0; }
 .diff-low  { background: #fff5f5 !important; }
 .diff-high { background: #f0fdf4 !important; }
@@ -453,17 +495,21 @@ onMounted(loadItems)
 .c-red   { color: #dc2626; }
 .c-green { color: #16a34a; }
 
+/* Responsive */
 @media (max-width: 768px) {
   .ctrl-row { gap: 8px; }
   .qty-inp { width: 72px; padding: 10px 6px; }
   .take-footer { padding: 10px 14px; }
   .btn-cut { padding: 10px 18px; font-size: 0.88rem; }
   .rep-panel { max-height: 92vh; border-radius: 14px 14px 0 0; align-self: flex-end; }
+  .hist-sel { min-width: 0; }
 }
 @media (max-width: 576px) {
   .ip-wrap { padding: 10px; }
   .tab-bar { margin-bottom: 12px; }
   .item-row { padding: 10px 12px; }
   .qty-inp { width: 68px; font-size: 0.95rem; }
+  .hist-sel-row { flex-direction: column; align-items: stretch; }
+  .hist-sel { width: 100%; }
 }
 </style>

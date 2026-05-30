@@ -76,11 +76,18 @@ async def list_categories(
 async def get_stock(
     search:      Optional[str] = Query(None),
     active:      Optional[str] = Query("1"),   # "1"=activos "0"=inactivos "all"=todos
-    critical:    Optional[int] = Query(0),     # 1 = solo los críticos (stock ≤ min)
+    critical:    Optional[int] = Query(0),     # 1 = solo los críticos (stock calculado ≤ min)
     category_id: Optional[int] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Stock calculado dinámicamente:
+      stock = último inventario físico (inventory_physical)
+            + entradas desde esa fecha (inventory_entries)
+            − salidas desde esa fecha (inventory_exits)
+    Funciona con datos sincronizados desde VB6 (no depende de supply_items.stock_qty).
+    """
     cid = current_user.company_id
     where_parts = ["si.company_id = :cid"]
     params: dict = {"cid": cid}
@@ -89,9 +96,6 @@ async def get_stock(
         where_parts.append("si.is_active = 1")
     elif active == "0":
         where_parts.append("si.is_active = 0")
-
-    if critical:
-        where_parts.append("si.control_stock = 1 AND si.min_stock > 0 AND si.stock_qty <= si.min_stock")
 
     if search and search.strip():
         where_parts.append("(si.description LIKE :search OR si.code LIKE :search)")
@@ -103,16 +107,56 @@ async def get_stock(
 
     where_sql = " AND ".join(where_parts)
 
+    # critical se aplica sobre el stock calculado, no sobre si.stock_qty
+    critical_clause = ""
+    if critical:
+        critical_clause = """
+            AND si.control_stock = 1 AND si.min_stock > 0
+            AND (COALESCE(lp.cantidad, 0) + COALESCE(ea.total, 0) - COALESCE(xa.total, 0)) <= si.min_stock
+        """
+
     rows = (await db.execute(text(f"""
+        WITH ranked_phys AS (
+            SELECT id_item, cantidad, fecha,
+                   ROW_NUMBER() OVER (PARTITION BY id_item ORDER BY fecha DESC, created_at DESC) AS rn
+            FROM inventory_physical
+            WHERE company_id = :cid AND autorizada = 1
+        ),
+        last_phys AS (
+            SELECT id_item, cantidad, fecha FROM ranked_phys WHERE rn = 1
+        ),
+        entries_adj AS (
+            SELECT ie.id_item, SUM(ie.cantidad) AS total
+            FROM inventory_entries ie
+            LEFT JOIN last_phys lp ON lp.id_item = ie.id_item
+            WHERE ie.company_id = :cid AND ie.autorizada = 1
+              AND (lp.fecha IS NULL OR ie.fecha >= lp.fecha)
+            GROUP BY ie.id_item
+        ),
+        exits_adj AS (
+            SELECT ix.id_item, SUM(ix.cantidad) AS total
+            FROM inventory_exits ix
+            LEFT JOIN last_phys lp ON lp.id_item = ix.id_item
+            WHERE ix.company_id = :cid AND ix.autorizada = 1
+              AND (lp.fecha IS NULL OR ix.fecha >= lp.fecha)
+            GROUP BY ix.id_item
+        )
         SELECT si.id, si.id_item, si.code, si.description,
-               si.stock_qty, si.min_stock, si.control_stock,
-               si.is_active, si.agrupar AS category_id,
-               COALESCE(mu.name, '')   AS unit_name,
-               COALESCE(cat.name, '')  AS category_name
+               COALESCE(lp.cantidad, 0) + COALESCE(ea.total, 0) - COALESCE(xa.total, 0) AS stock_qty,
+               si.min_stock, si.control_stock, si.is_active, si.agrupar AS category_id,
+               COALESCE(mu.name,  '') AS unit_name,
+               COALESCE(cat.name, '') AS category_name,
+               lp.fecha               AS last_inventory_date
         FROM supply_items si
-        LEFT JOIN pos_measure_forms mu     ON mu.id = si.unit_id AND mu.company_id = si.company_id
-        LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = si.company_id
+        LEFT JOIN pos_measure_forms mu
+               ON mu.id = si.unit_id AND mu.company_id = si.company_id
+        LEFT JOIN pos_product_categories cat
+               ON cat.id = si.agrupar AND cat.company_id = si.company_id
+        LEFT JOIN last_phys lp  ON lp.id_item  = si.id_item
+        LEFT JOIN entries_adj ea ON ea.id_item = si.id_item
+        LEFT JOIN exits_adj xa   ON xa.id_item = si.id_item
         WHERE {where_sql}
+        {critical_clause}
         ORDER BY si.description
     """), params)).mappings().all()
     return [dict(r) for r in rows]
@@ -282,8 +326,20 @@ async def physical_report(
             COALESCE(si.code, '')                                   AS code,
             COALESCE(mu.name, '')                                   AS unit_name,
             ip.cantidad                                             AS contado,
-            sm.qty_before                                           AS sistema,
-            (ip.cantidad - sm.qty_before)                          AS diferencia
+            COALESCE(sm.qty_before,
+                (SELECT prev.cantidad
+                 FROM inventory_physical prev
+                 WHERE prev.id_item = ip.id_item AND prev.company_id = ip.company_id
+                   AND prev.fecha < ip.fecha AND prev.autorizada = 1
+                 ORDER BY prev.fecha DESC LIMIT 1),
+                0)                                                  AS sistema,
+            ip.cantidad - COALESCE(sm.qty_before,
+                (SELECT prev.cantidad
+                 FROM inventory_physical prev
+                 WHERE prev.id_item = ip.id_item AND prev.company_id = ip.company_id
+                   AND prev.fecha < ip.fecha AND prev.autorizada = 1
+                 ORDER BY prev.fecha DESC LIMIT 1),
+                0)                                                  AS diferencia
         FROM inventory_physical ip
         LEFT JOIN supply_items si  ON si.id_item = ip.id_item AND si.company_id = ip.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ip.company_id
