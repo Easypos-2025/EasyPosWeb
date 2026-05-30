@@ -328,6 +328,7 @@ async def physical_report(
             COALESCE(si.description, CONCAT('Item #', ip.id_item)) AS item_name,
             COALESCE(si.code, '')                                   AS code,
             COALESCE(mu.name, '')                                   AS unit_name,
+            COALESCE(cat.name, '')                                  AS category_name,
             ip.observacion,
             ip.cantidad                                             AS contado,
             COALESCE(sm.qty_before,
@@ -347,13 +348,14 @@ async def physical_report(
         FROM inventory_physical ip
         LEFT JOIN supply_items si  ON si.id_item = ip.id_item AND si.company_id = ip.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ip.company_id
+        LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = ip.company_id
         LEFT JOIN stock_movements sm
                ON sm.supply_item_id = si.id
               AND sm.movement_type   = 'physical'
               AND sm.movement_date   = ip.fecha
               AND sm.reference_type  = 'physical_bulk'
         WHERE ip.company_id = :cid AND ip.fecha = :fecha
-        ORDER BY ABS(ip.cantidad - COALESCE(sm.qty_before, 0)) DESC
+        ORDER BY COALESCE(cat.name, 'zzz'), si.description
     """), {"cid": cid, "fecha": fecha})).mappings().all()
     return [dict(r) for r in rows]
 
@@ -925,12 +927,15 @@ async def list_entries(
                ie.fecha, ie.cantidad, ie.observacion, ie.cod_empleado,
                ie.autorizada, ie.created_at,
                COALESCE(si.description, CONCAT('Item #', ie.id_item)) AS item_name,
-               COALESCE(mu.name, '') AS unit_name
+               COALESCE(si.code, '') AS code,
+               COALESCE(mu.name, '') AS unit_name,
+               COALESCE(cat.name, '') AS category_name
         FROM inventory_entries ie
         LEFT JOIN supply_items si ON si.id_item = ie.id_item AND si.company_id = ie.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ie.company_id
+        LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = ie.company_id
         WHERE ie.company_id = :cid
-        ORDER BY ie.fecha DESC, ie.created_at DESC
+        ORDER BY COALESCE(cat.name, 'zzz'), si.description, ie.fecha DESC
         LIMIT 500
     """), {"cid": current_user.company_id})).mappings().all()
     return [dict(r) for r in rows]
@@ -1019,12 +1024,15 @@ async def list_exits(
                ix.fecha, ix.cantidad, ix.observacion, ix.cod_empleado,
                ix.autorizada, ix.created_at,
                COALESCE(si.description, CONCAT('Item #', ix.id_item)) AS item_name,
-               COALESCE(mu.name, '') AS unit_name
+               COALESCE(si.code, '') AS code,
+               COALESCE(mu.name, '') AS unit_name,
+               COALESCE(cat.name, '') AS category_name
         FROM inventory_exits ix
         LEFT JOIN supply_items si ON si.id_item = ix.id_item AND si.company_id = ix.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ix.company_id
+        LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = ix.company_id
         WHERE ix.company_id = :cid
-        ORDER BY ix.fecha DESC, ix.created_at DESC
+        ORDER BY COALESCE(cat.name, 'zzz'), si.description, ix.fecha DESC
         LIMIT 500
     """), {"cid": current_user.company_id})).mappings().all()
     return [dict(r) for r in rows]

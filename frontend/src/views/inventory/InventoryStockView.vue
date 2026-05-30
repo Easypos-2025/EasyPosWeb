@@ -76,12 +76,13 @@
       <!-- Lista agrupada por categoría (cuando catFilter = '') -->
       <template v-if="catFilter === '' && groupedByCategory.length">
         <div v-for="group in groupedByCategory" :key="group.name" class="cat-group">
-          <div class="cat-hdr">
+          <div class="cat-hdr" :class="{ 'cat-hdr-open': openCat === group.name }" @click="toggleCat(group.name)">
             <i class="bi bi-tag-fill cat-ico"></i>
             <span class="cat-hdr-name">{{ group.name }}</span>
             <span class="cat-hdr-cnt">{{ group.items.length }} ítem{{ group.items.length !== 1 ? 's' : '' }}</span>
+            <i class="bi bi-chevron-down cat-chevron" :class="{ 'cat-chevron-open': openCat === group.name }"></i>
           </div>
-          <div class="cards-list">
+          <div v-show="openCat === group.name" class="cards-list">
             <div v-for="r in group.items" :key="r.id_item" class="sc" :class="scCls(r)">
               <div class="sc-status">
                 <span :class="statusBadge(r)" class="sb">{{ statusLbl(r) }}</span>
@@ -198,7 +199,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
@@ -234,9 +235,11 @@ const groupedByCategory = computed(() => {
     if (!map[key]) map[key] = { name: key, items: [] }
     map[key].items.push(r)
   }
-  return Object.values(map).sort((a, b) =>
+  const groups = Object.values(map).sort((a, b) =>
     a.name === nocat ? 1 : b.name === nocat ? -1 : a.name.localeCompare(b.name, 'es')
   )
+  groups.forEach(g => g.items.sort((a, b) => a.description.localeCompare(b.description, 'es')))
+  return groups
 })
 
 // ── Export: datos con filas de cabecera de categoría cuando está en "todas" ──
@@ -264,6 +267,12 @@ const exportCols = computed(() => {
   }
   return base
 })
+
+// ── Acordeón de categorías ────────────────────────────────────────────────────
+const openCat = ref(null)
+function toggleCat(name) { openCat.value = openCat.value === name ? null : name }
+
+watch(catFilter, () => { openCat.value = null })
 
 const ctrlCount = computed(() => rows.value.filter(r => r.control_stock).length)
 const critCount = computed(() => rows.value.filter(r => itemStatus(r) === 'critical').length)
@@ -326,6 +335,10 @@ async function load() {
     if (search.value)    p.search = search.value
     if (catFilter.value) p.category_id = catFilter.value
     rows.value = (await api.get('/api/inventory/stock', { params: p })).data
+    if (catFilter.value === '') {
+      await nextTick()
+      if (groupedByCategory.value.length) openCat.value = groupedByCategory.value[0].name
+    }
   } catch (e) { console.error(e) }
   finally { loading.value = false }
 }
@@ -388,18 +401,23 @@ onMounted(async () => {
 .inv-ico { color: #16a34a; font-size: .88rem; flex-shrink: 0; }
 
 /* Agrupamiento por categoría */
-.cat-group { margin-bottom: 18px; }
+.cat-group { margin-bottom: 10px; }
 .cat-hdr {
   display: flex; align-items: center; gap: 8px;
   background: #1d4ed8; color: #fff;
-  border-radius: 8px 8px 0 0; padding: 7px 14px; margin-bottom: 0;
+  border-radius: 8px; padding: 9px 14px; cursor: pointer;
+  user-select: none; transition: border-radius .15s;
 }
+.cat-hdr-open { border-radius: 8px 8px 0 0; }
+.cat-hdr:hover { background: #1e40af; }
 .cat-ico { font-size: .8rem; flex-shrink: 0; }
 .cat-hdr-name { font-weight: 700; font-size: .85rem; flex: 1; }
 .cat-hdr-cnt {
   font-size: .74rem; background: rgba(255,255,255,.2);
   padding: 2px 8px; border-radius: 10px; white-space: nowrap;
 }
+.cat-chevron { font-size: .7rem; flex-shrink: 0; transition: transform .2s; margin-left: 4px; }
+.cat-chevron-open { transform: rotate(180deg); }
 /* cards dentro de grupo: bordes redondeados solo abajo */
 .cat-group .cards-list { border: 1px solid #dbeafe; border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
 .cat-group .cards-list .sc { border-radius: 0; border-left: none; border-right: none; border-top: none; }

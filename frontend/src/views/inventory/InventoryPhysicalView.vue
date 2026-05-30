@@ -31,54 +31,118 @@
         </button>
       </div>
 
-      <!-- Tabla del corte seleccionado -->
+      <!-- KPI Bar -->
+      <div v-if="reportData.length && !loadingReport" class="kpi-bar">
+        <div class="kpi-card">
+          <span class="kpi-n">{{ reportData.length }}</span>
+          <span class="kpi-l">Insumos contados</span>
+        </div>
+        <div class="kpi-card kpi-red">
+          <span class="kpi-n">{{ phyFaltantes }}</span>
+          <span class="kpi-l">Faltantes</span>
+        </div>
+        <div class="kpi-card kpi-orange">
+          <span class="kpi-n">{{ phySobrantes }}</span>
+          <span class="kpi-l">Sobrantes</span>
+        </div>
+        <div class="kpi-card kpi-green">
+          <span class="kpi-n">{{ phyExactos }}</span>
+          <span class="kpi-l">Exactos</span>
+        </div>
+      </div>
+
+      <!-- Filters + Export -->
+      <div v-if="reportData.length && !loadingReport" class="filters-bar">
+        <div class="f-search-wrap">
+          <i class="bi bi-search f-ico"></i>
+          <input v-model.trim="phySearch" class="f-inp" placeholder="Buscar insumo o código..." />
+        </div>
+        <div class="toggle-grp">
+          <button @click="phyFilter='all'"      :class="phyFilter==='all'      ? 'tog-on' : 'tog'">Todos</button>
+          <button @click="phyFilter='faltante'" :class="phyFilter==='faltante' ? 'tog-on' : 'tog'">Faltantes</button>
+          <button @click="phyFilter='sobrante'" :class="phyFilter==='sobrante' ? 'tog-on' : 'tog'">Sobrantes</button>
+          <button @click="phyFilter='exacto'"   :class="phyFilter==='exacto'   ? 'tog-on' : 'tog'">Exactos</button>
+        </div>
+        <ExportToolbar
+          :data="phyExportData"
+          :columns="phyExportCols"
+          filename="inventario-fisico"
+          title="Inventario Físico"
+        />
+      </div>
+
+      <!-- Loading reporte -->
       <div v-if="loadingReport" class="state-c sm">
         <i class="bi bi-arrow-repeat spin"></i> Cargando reporte...
       </div>
-      <template v-else-if="reportData.length">
-        <div class="report-wrap">
-          <table class="rep-tbl">
-            <thead>
-              <tr>
-                <th>Insumo</th>
-                <th class="tr">Sistema previo</th>
-                <th class="tr">Contado</th>
-                <th class="tr">Diferencia</th>
-                <th class="tc">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in reportData" :key="r.id" :class="diffCls(r.diferencia)">
-                <td>
-                  <strong>{{ r.item_name }}</strong>
-                  <small class="td-muted ml">{{ r.unit_name }}</small>
-                </td>
-                <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
-                <td class="tr fw-b">{{ fmtQty(r.contado) }}</td>
-                <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
-                  {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
-                </td>
-                <td class="tc">
-                  <div class="row-actions">
-                    <button class="btn-row-edit" @click="openEditItem(r)" title="Editar cantidad">
-                      <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn-row-del" @click="deleteItem(r)" title="Eliminar ítem">
-                      <i class="bi bi-x-lg"></i>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+
+      <template v-else-if="phyGrouped.length">
+        <!-- Column headers desktop -->
+        <div class="list-hdr">
+          <span></span>
+          <span class="hdr-main">Insumo</span>
+          <span class="hdr-r tr">Sistema prev.</span>
+          <span class="hdr-r tr">Contado</span>
+          <span class="hdr-r tr">Diferencia</span>
+          <span class="hdr-act tc">Acciones</span>
         </div>
-        <!-- Agregar ítem al corte actual -->
+
+        <!-- Accordion por categoría -->
+        <div v-for="group in phyGrouped" :key="group.name" class="cat-group">
+          <div class="cat-hdr" :class="{ 'cat-hdr-open': openPhyCat === group.name }" @click="togglePhyCat(group.name)">
+            <i class="bi bi-tag-fill cat-ico"></i>
+            <span class="cat-hdr-name">{{ group.name }}</span>
+            <span class="cat-hdr-cnt">{{ group.items.length }} ítem{{ group.items.length !== 1 ? 's' : '' }}</span>
+            <i class="bi bi-chevron-down cat-chevron" :class="{ 'cat-chevron-open': openPhyCat === group.name }"></i>
+          </div>
+          <div v-show="openPhyCat === group.name" class="cards-list">
+            <div v-for="r in group.items" :key="r.id" class="sc" :class="phyScCls(r)">
+              <div class="sc-status">
+                <span :class="phyBadge(r)" class="sb">{{ phyLbl(r) }}</span>
+              </div>
+              <div class="sc-main">
+                <div class="sc-name">
+                  {{ r.item_name }}
+                  <span v-if="r.code" class="sc-code">{{ r.code }}</span>
+                </div>
+                <div class="sc-cat">{{ r.unit_name }}</div>
+              </div>
+              <div class="sc-prev">
+                <span class="min-lbl">Sistema:</span>
+                <span class="fw-b td-muted">{{ fmtQty(r.sistema) }}</span>
+              </div>
+              <div class="sc-contado">
+                <span class="min-lbl">Contado:</span>
+                <span class="fw-b">{{ fmtQty(r.contado) }}</span>
+              </div>
+              <div class="sc-diff">
+                <span class="min-lbl">Dif:</span>
+                <span class="fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-orange' : 'td-muted'">
+                  {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
+                </span>
+              </div>
+              <div class="sc-act">
+                <div class="row-actions">
+                  <button class="btn-row-edit" @click.stop="openEditItem(r)" title="Editar cantidad">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button class="btn-row-del" @click.stop="deleteItem(r)" title="Eliminar ítem">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agregar ítem al corte -->
         <div class="add-item-bar">
           <button class="btn-add-item" @click="openAddItem">
             <i class="bi bi-plus-lg"></i> Agregar ítem a este corte
           </button>
         </div>
       </template>
+
       <div v-else-if="!loadingHistory && !loadingReport && selectedDate" class="state-c">
         Sin registros para este corte
         <div class="mt-sm">
@@ -246,7 +310,8 @@
           </div>
         </div>
       </div>
-      <!-- ── Modal: confirmar eliminar corte completo ── -->
+
+      <!-- Modal: confirmar eliminar corte completo -->
       <div v-if="showDeleteDate" class="modal-bg" @click.self="showDeleteDate=false">
         <div class="conf-panel">
           <h6 class="conf-title c-red"><i class="bi bi-trash3 me-1"></i> Eliminar corte completo</h6>
@@ -264,7 +329,7 @@
         </div>
       </div>
 
-      <!-- ── Modal: editar ítem ── -->
+      <!-- Modal: editar ítem -->
       <div v-if="editRow" class="modal-bg" @click.self="editRow=null">
         <div class="conf-panel">
           <h6 class="conf-title"><i class="bi bi-pencil me-1"></i> Editar ítem</h6>
@@ -289,7 +354,7 @@
         </div>
       </div>
 
-      <!-- ── Modal: agregar ítem al corte ── -->
+      <!-- Modal: agregar ítem al corte -->
       <div v-if="showAddItem" class="modal-bg" @click.self="showAddItem=false">
         <div class="conf-panel wide">
           <h6 class="conf-title"><i class="bi bi-plus-lg me-1"></i> Agregar ítem al corte {{ fmtDate(selectedDate) }}</h6>
@@ -330,12 +395,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
-// ── Default: mostrar historial al entrar ──────────────────────────────────────
 const tab = ref('history')
 
 // ── HISTORY ───────────────────────────────────────────────────────────────────
@@ -345,7 +410,82 @@ const reportData     = ref([])
 const loadingHistory = ref(false)
 const loadingReport  = ref(false)
 
-// CRUD — eliminar corte completo
+// ── Filtros del reporte ───────────────────────────────────────────────────────
+const phySearch = ref('')
+const phyFilter = ref('all')
+const openPhyCat = ref(null)
+
+function togglePhyCat(name) { openPhyCat.value = openPhyCat.value === name ? null : name }
+
+// ── KPI computados ────────────────────────────────────────────────────────────
+const phyFaltantes = computed(() => reportData.value.filter(r => r.diferencia < 0).length)
+const phySobrantes = computed(() => reportData.value.filter(r => r.diferencia > 0).length)
+const phyExactos   = computed(() => reportData.value.filter(r => r.diferencia === 0).length)
+
+// ── Reporte filtrado + agrupado ───────────────────────────────────────────────
+const filteredReport = computed(() => {
+  let data = reportData.value
+  const q = phySearch.value.toLowerCase()
+  if (q) data = data.filter(r =>
+    r.item_name.toLowerCase().includes(q) || (r.code || '').toLowerCase().includes(q)
+  )
+  if (phyFilter.value === 'faltante') data = data.filter(r => r.diferencia < 0)
+  if (phyFilter.value === 'sobrante') data = data.filter(r => r.diferencia > 0)
+  if (phyFilter.value === 'exacto')   data = data.filter(r => r.diferencia === 0)
+  return data
+})
+
+const phyGrouped = computed(() => {
+  const nocat = 'Sin categoría'
+  const map = {}
+  for (const r of filteredReport.value) {
+    const key = r.category_name || nocat
+    if (!map[key]) map[key] = { name: key, items: [] }
+    map[key].items.push(r)
+  }
+  const groups = Object.values(map).sort((a, b) =>
+    a.name === nocat ? 1 : b.name === nocat ? -1 : a.name.localeCompare(b.name, 'es')
+  )
+  groups.forEach(g => g.items.sort((a, b) => a.item_name.localeCompare(b.item_name, 'es')))
+  return groups
+})
+
+// ── Export ────────────────────────────────────────────────────────────────────
+const phyExportData = computed(() => {
+  const result = []
+  for (const g of phyGrouped.value) {
+    result.push({ _sectionHeader: true, _title: g.name })
+    result.push(...g.items)
+  }
+  return result
+})
+const phyExportCols = [
+  { key: 'item_name',  label: 'Insumo' },
+  { key: 'code',       label: 'Código' },
+  { key: 'unit_name',  label: 'Unidad' },
+  { key: 'sistema',    label: 'Sistema prev.', fmt: v => Number(v||0).toFixed(4) },
+  { key: 'contado',    label: 'Contado',       fmt: v => Number(v||0).toFixed(4) },
+  { key: 'diferencia', label: 'Diferencia',    fmt: v => Number(v||0).toFixed(4) },
+]
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+function phyLbl(r) {
+  if (r.diferencia < 0) return '⬇ Faltante'
+  if (r.diferencia > 0) return '⬆ Sobrante'
+  return '✅ Exacto'
+}
+function phyBadge(r) {
+  if (r.diferencia < 0) return 'b-out'
+  if (r.diferencia > 0) return 'b-crit'
+  return 'b-ok'
+}
+function phyScCls(r) {
+  if (r.diferencia < 0) return 'sc-out'
+  if (r.diferencia > 0) return 'sc-crit'
+  return ''
+}
+
+// ── CRUD eliminar corte ────────────────────────────────────────────────────────
 const showDeleteDate = ref(false)
 function confirmDeleteDate() { showDeleteDate.value = true }
 async function executeDeleteDate() {
@@ -361,7 +501,7 @@ async function executeDeleteDate() {
   finally { saving.value = false }
 }
 
-// CRUD — editar ítem individual
+// ── CRUD editar ítem ──────────────────────────────────────────────────────────
 const editRow = ref(null)
 const editQty = ref(0)
 const editObs = ref('')
@@ -384,7 +524,7 @@ async function saveEditItem() {
   finally { saving.value = false }
 }
 
-// CRUD — eliminar ítem individual
+// ── CRUD eliminar ítem ────────────────────────────────────────────────────────
 async function deleteItem(r) {
   if (!confirm(`¿Eliminar "${r.item_name}" de este corte?`)) return
   saving.value = true
@@ -397,7 +537,7 @@ async function deleteItem(r) {
   finally { saving.value = false }
 }
 
-// CRUD — agregar ítem al corte
+// ── CRUD agregar ítem al corte ────────────────────────────────────────────────
 const showAddItem   = ref(false)
 const addSearch     = ref('')
 const addSelItem    = ref(null)
@@ -440,11 +580,6 @@ async function saveAddItem() {
   } finally { saving.value = false }
 }
 
-async function switchToHistory() {
-  tab.value = 'history'
-  if (!historyDates.value.length) await loadHistory()
-}
-
 async function loadHistory() {
   loadingHistory.value = true
   try {
@@ -461,25 +596,28 @@ async function loadHistory() {
 
 async function loadReportFor(fecha) {
   if (!fecha) return
+  openPhyCat.value = null
+  phySearch.value = ''
+  phyFilter.value = 'all'
   loadingReport.value = true
   try {
     reportData.value = (await api.get(`/api/inventory/physical/report/${fecha}`)).data
+    await nextTick()
+    if (phyGrouped.value.length) openPhyCat.value = phyGrouped.value[0].name
   } catch { reportData.value = [] }
   finally { loadingReport.value = false }
 }
 
 // ── TAKE INVENTORY ────────────────────────────────────────────────────────────
-const today     = () => new Date().toISOString().slice(0, 10)
+const today      = () => new Date().toISOString().slice(0, 10)
 const fecha      = ref(today())
 const observacion = ref('')
 const barcodeQ   = ref('')
 const listFilter  = ref('')
 const barcodeRef  = ref(null)
-
 const allItems   = ref([])
 const quantities  = ref({})
 const inputRefs   = {}
-
 const loadingItems = ref(false)
 const saving       = ref(false)
 const showConfirm  = ref(false)
@@ -488,13 +626,16 @@ const reportAfterCut = ref([])
 
 async function switchToTake() {
   tab.value = 'take'
-  if (!allItems.value.length && !loadingItems.value) {
-    await loadItems()
-  }
+  if (!allItems.value.length && !loadingItems.value) await loadItems()
 }
 
 const fmtQty  = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 })
-const fmtDate = v => v ? String(v).slice(0, 10) : '—'
+const fmtDate = v => {
+  if (!v) return '—'
+  const s = String(v).slice(0, 10)
+  const [y, m, d] = s.split('-')
+  return `${d}-${m}-${y}`
+}
 
 const filteredItems = computed(() => {
   const q = listFilter.value.toLowerCase()
@@ -507,13 +648,8 @@ const countedItems = computed(() =>
   filteredItems.value.filter(i => (quantities.value[i.id_item] || 0) > 0).length
 )
 
-function setQty(id_item, val) {
-  quantities.value[id_item] = parseFloat(val) || 0
-}
-
-function resetAll() {
-  Object.keys(quantities.value).forEach(k => { quantities.value[k] = 0 })
-}
+function setQty(id_item, val) { quantities.value[id_item] = parseFloat(val) || 0 }
+function resetAll() { Object.keys(quantities.value).forEach(k => { quantities.value[k] = 0 }) }
 
 function handleBarcode() {
   const q = barcodeQ.value.trim()
@@ -524,10 +660,7 @@ function handleBarcode() {
   )
   if (found) {
     const el = inputRefs[found.id_item]
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setTimeout(() => el.focus(), 200)
-    }
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => el.focus(), 200) }
   } else {
     showToast('Insumo no encontrado', 'warning')
   }
@@ -552,15 +685,8 @@ async function executeCut() {
   saving.value = true
   showConfirm.value = false
   try {
-    const items = allItems.value.map(i => ({
-      id_item:  i.id_item,
-      cantidad: quantities.value[i.id_item] || 0,
-    }))
-    const res = await api.post('/api/inventory/physical/bulk', {
-      fecha: fecha.value,
-      observacion: observacion.value,
-      items,
-    })
+    const items = allItems.value.map(i => ({ id_item: i.id_item, cantidad: quantities.value[i.id_item] || 0 }))
+    const res = await api.post('/api/inventory/physical/bulk', { fecha: fecha.value, observacion: observacion.value, items })
     showToast(`Corte generado — ${res.data.saved} items procesados`, 'success')
     try {
       reportAfterCut.value = (await api.get(`/api/inventory/physical/report/${fecha.value}`)).data
@@ -574,7 +700,6 @@ async function executeCut() {
 
 async function afterCutClose() {
   showReport.value = false
-  // refrescar historial y mostrar el nuevo corte
   selectedDate.value = null
   await loadHistory()
   tab.value = 'history'
@@ -586,15 +711,102 @@ function diffCls(d) {
   return ''
 }
 
-// Al entrar: cargar historial y mostrar el último corte
 onMounted(loadHistory)
 </script>
 
 <style scoped>
 .ip-wrap { padding: 16px; }
-
 .tab-content { animation: fadeIn .15s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } }
+
+/* ── KPI Bar ── */
+.kpi-bar { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.kpi-card { flex: 1; min-width: 100px; background: #f8f9fa; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; border: 1px solid #e9ecef; }
+.kpi-green  { background: #f0fdf4; border-color: #bbf7d0; }
+.kpi-red    { background: #fff1f2; border-color: #fecdd3; }
+.kpi-orange { background: #fff7ed; border-color: #fed7aa; }
+.kpi-n { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.kpi-l { font-size: .74rem; color: #6b7280; font-weight: 500; }
+.kpi-green .kpi-n  { color: #16a34a; }
+.kpi-red .kpi-n    { color: #dc2626; }
+.kpi-orange .kpi-n { color: #ea580c; }
+
+/* ── Filters bar ── */
+.filters-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.f-search-wrap { position: relative; flex: 1; min-width: 190px; }
+.f-ico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: .83rem; }
+.f-inp { width: 100%; padding: 8px 10px 8px 28px; border: 1px solid #d1d5db; border-radius: 8px; font-size: .86rem; box-sizing: border-box; }
+.toggle-grp { display: flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.tog    { padding: 7px 11px; background: #fff; border: none; cursor: pointer; font-size: .80rem; color: #374151; }
+.tog-on { padding: 7px 11px; background: #2563eb; color: #fff; border: none; cursor: pointer; font-size: .80rem; font-weight: 600; }
+
+/* ── Column headers desktop ── */
+.list-hdr {
+  display: none;
+  padding: 4px 14px;
+  font-size: .72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: 2px;
+}
+.hdr-main { flex: 1; }
+.hdr-r    { width: 110px; }
+.hdr-act  { width: 80px; }
+
+/* ── Accordion ── */
+.cat-group { margin-bottom: 10px; }
+.cat-hdr {
+  display: flex; align-items: center; gap: 8px;
+  background: #1d4ed8; color: #fff;
+  border-radius: 8px; padding: 9px 14px; cursor: pointer;
+  user-select: none; transition: border-radius .15s;
+}
+.cat-hdr-open { border-radius: 8px 8px 0 0; }
+.cat-hdr:hover { background: #1e40af; }
+.cat-ico { font-size: .8rem; flex-shrink: 0; }
+.cat-hdr-name { font-weight: 700; font-size: .85rem; flex: 1; }
+.cat-hdr-cnt { font-size: .74rem; background: rgba(255,255,255,.2); padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.cat-chevron { font-size: .7rem; flex-shrink: 0; transition: transform .2s; margin-left: 4px; }
+.cat-chevron-open { transform: rotate(180deg); }
+
+/* ── Cards list ── */
+.cards-list { display: flex; flex-direction: column; gap: 0; border: 1px solid #dbeafe; border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
+
+.sc {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+}
+.sc:last-child { border-bottom: none; }
+.sc:hover { background: #fafbff; }
+.sc-out  { border-left: 4px solid #dc2626; background: #fff5f5 !important; }
+.sc-crit { border-left: 4px solid #ea580c; background: #fffbf0 !important; }
+
+/* Status */
+.sc-status { flex-shrink: 0; }
+.sb { padding: 3px 8px; border-radius: 20px; font-size: .73rem; font-weight: 600; white-space: nowrap; }
+.b-out  { background: #fee2e2; color: #dc2626; }
+.b-crit { background: #ffedd5; color: #ea580c; }
+.b-ok   { background: #dcfce7; color: #16a34a; }
+
+/* Main */
+.sc-main { flex: 1; min-width: 0; }
+.sc-name { font-weight: 700; font-size: .88rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sc-code { font-size: .72rem; color: #9ca3af; font-weight: 400; }
+.sc-cat  { font-size: .77rem; color: #6b7280; margin-top: 1px; }
+
+/* Data cols */
+.sc-prev    { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; width: 100px; }
+.sc-contado { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; width: 100px; }
+.sc-diff    { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; width: 90px; }
+.min-lbl { font-size: .73rem; color: #9ca3af; }
+.fw-b { font-weight: 700; }
+
+/* Actions */
+.sc-act { flex-shrink: 0; }
+.row-actions { display: flex; gap: 4px; }
+.btn-row-edit { background: none; border: 1px solid #bfdbfe; color: #2563eb; border-radius: 6px; padding: 5px 8px; cursor: pointer; font-size: .82rem; }
+.btn-row-edit:hover { background: #eff6ff; }
+.btn-row-del  { background: none; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 5px 8px; cursor: pointer; font-size: .82rem; }
+.btn-row-del:hover { background: #fef2f2; }
 
 /* ── Historial: header con select + botón ── */
 .hist-header-row {
@@ -613,8 +825,25 @@ onMounted(loadHistory)
   display: flex; align-items: center; gap: 7px; white-space: nowrap; flex-shrink: 0;
 }
 .btn-take-inv:hover { background: #15803d; }
+.hist-sel-lbl { font-size: 0.82rem; font-weight: 600; color: #0369a1; white-space: nowrap; }
+.hist-sel {
+  flex: 1; min-width: 200px;
+  padding: 8px 10px; border: 1px solid #bae6fd; border-radius: 8px;
+  font-size: 0.86rem; background: #fff; color: #0f172a; cursor: pointer; outline: none;
+}
+.hist-sel:focus { border-color: #2563eb; }
+.hist-badge {
+  font-size: 0.76rem; font-weight: 700;
+  background: #dbeafe; color: #1d4ed8;
+  padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+}
+.btn-del-date {
+  background: none; border: 1px solid #fca5a5; color: #dc2626;
+  border-radius: 7px; padding: 5px 9px; cursor: pointer; font-size: 0.85rem; flex-shrink: 0;
+}
+.btn-del-date:hover { background: #fef2f2; }
 
-/* ── Volver al historial ── */
+/* ── Tomar inventario ── */
 .take-top-bar { margin-bottom: 12px; }
 .btn-back {
   background: none; border: 1px solid #d1d5db; border-radius: 8px;
@@ -622,80 +851,6 @@ onMounted(loadHistory)
   display: inline-flex; align-items: center; gap: 6px;
 }
 .btn-back:hover { border-color: #6b7280; }
-
-/* ── Eliminar corte ── */
-.btn-del-date {
-  background: none; border: 1px solid #fca5a5; color: #dc2626;
-  border-radius: 7px; padding: 5px 9px; cursor: pointer; font-size: 0.85rem; flex-shrink: 0;
-}
-.btn-del-date:hover { background: #fef2f2; }
-
-/* ── Acciones por fila ── */
-.tc { text-align: center; }
-.row-actions { display: flex; gap: 4px; justify-content: center; }
-.btn-row-edit {
-  background: none; border: 1px solid #bfdbfe; color: #2563eb;
-  border-radius: 6px; padding: 4px 7px; cursor: pointer; font-size: 0.8rem; line-height: 1;
-}
-.btn-row-edit:hover { background: #eff6ff; }
-.btn-row-del {
-  background: none; border: 1px solid #fca5a5; color: #dc2626;
-  border-radius: 6px; padding: 4px 7px; cursor: pointer; font-size: 0.8rem; line-height: 1;
-}
-.btn-row-del:hover { background: #fef2f2; }
-
-/* ── Agregar ítem al corte ── */
-.add-item-bar { padding: 10px 0; }
-.btn-add-item {
-  background: none; border: 1px dashed #6b7280; border-radius: 8px;
-  padding: 8px 16px; cursor: pointer; font-size: 0.85rem; color: #374151;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.btn-add-item:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
-.mt-sm { margin-top: 10px; }
-
-/* ── Modal agregar ítem ── */
-.conf-panel.wide { max-width: 520px; }
-.form-field { display: flex; flex-direction: column; gap: 4px; }
-.add-item-list {
-  border: 1px solid #e9ecef; border-radius: 8px; max-height: 180px; overflow-y: auto;
-  margin-top: 6px;
-}
-.add-item-opt {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 9px 12px; cursor: pointer; font-size: 0.86rem; border-bottom: 1px solid #f3f4f6;
-}
-.add-item-opt:hover { background: #f0f9ff; }
-.add-item-opt.selected { background: #dbeafe; }
-.add-item-opt:last-child { border-bottom: none; }
-.add-item-name { font-weight: 500; }
-.add-item-unit { font-size: 0.78rem; }
-
-/* ── Botón peligroso ── */
-.btn-danger {
-  background: #dc2626; color: #fff; border: none; border-radius: 8px;
-  padding: 10px 18px; cursor: pointer; font-size: 0.87rem; font-weight: 700;
-  display: flex; align-items: center; gap: 7px;
-}
-.btn-danger:disabled { opacity: .6; cursor: not-allowed; }
-.btn-danger:not(:disabled):hover { background: #b91c1c; }
-.hist-sel-lbl { font-size: 0.82rem; font-weight: 600; color: #0369a1; white-space: nowrap; }
-.hist-sel {
-  flex: 1; min-width: 200px;
-  padding: 8px 10px; border: 1px solid #bae6fd; border-radius: 8px;
-  font-size: 0.86rem; background: #fff; color: #0f172a; cursor: pointer; outline: none;
-}
-.hist-sel:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
-.hist-badge {
-  font-size: 0.76rem; font-weight: 700;
-  background: #dbeafe; color: #1d4ed8;
-  padding: 3px 10px; border-radius: 20px; white-space: nowrap;
-}
-
-/* ── Historial: tabla del corte ── */
-.report-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e9ecef; }
-
-/* Controls (tomar inv.) */
 .take-controls { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
 .ctrl-row { display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .ctrl-row:last-child { margin-bottom: 0; }
@@ -703,15 +858,13 @@ onMounted(loadHistory)
 .flex-1 { flex: 1; min-width: 140px; }
 .ctrl-lbl { font-size: 0.78rem; font-weight: 600; color: #374151; }
 .ctrl-inp { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 7px; font-size: 0.87rem; background: #fff; width: 100%; box-sizing: border-box; }
-.ctrl-inp:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+.ctrl-inp:focus { outline: none; border-color: #2563eb; }
 
-/* Counter bar */
 .counter-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; margin-bottom: 10px; }
 .cnt-info { font-size: 0.85rem; color: #374151; }
 .btn-reset { background: none; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.8rem; color: #6b7280; }
 .btn-reset:hover { border-color: #9ca3af; color: #374151; }
 
-/* Item list */
 .items-list { display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 320px); overflow-y: auto; padding-bottom: 80px; }
 .item-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #fff; border: 1px solid #e9ecef; border-radius: 10px; gap: 12px; }
 .item-counted { border-color: #bbf7d0; background: #f0fdf4; }
@@ -725,21 +878,39 @@ onMounted(loadHistory)
 .qty-filled { border-color: #16a34a !important; background: #fff !important; color: #15803d; }
 .unit-lbl { font-size: 0.78rem; color: #9ca3af; min-width: 28px; }
 
-/* Sticky footer */
 .take-footer { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #fff; border-top: 1px solid #e9ecef; box-shadow: 0 -4px 12px rgba(0,0,0,.08); z-index: 100; }
 .footer-info { font-size: 0.85rem; color: #6b7280; }
 .btn-cut { background: #16a34a; color: #fff; border: none; border-radius: 10px; padding: 12px 24px; font-size: 0.92rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; }
 .btn-cut:hover:not(:disabled) { background: #15803d; }
 .btn-cut:disabled { opacity: .6; cursor: not-allowed; }
 
-/* Report table (historial + modal) */
+/* ── Agregar ítem ── */
+.add-item-bar { padding: 10px 0; }
+.btn-add-item {
+  background: none; border: 1px dashed #6b7280; border-radius: 8px;
+  padding: 8px 16px; cursor: pointer; font-size: 0.85rem; color: #374151;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-add-item:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+.mt-sm { margin-top: 10px; }
+.conf-panel.wide { max-width: 520px; }
+.form-field { display: flex; flex-direction: column; gap: 4px; }
+.add-item-list { border: 1px solid #e9ecef; border-radius: 8px; max-height: 180px; overflow-y: auto; margin-top: 6px; }
+.add-item-opt { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; cursor: pointer; font-size: 0.86rem; border-bottom: 1px solid #f3f4f6; }
+.add-item-opt:hover { background: #f0f9ff; }
+.add-item-opt.selected { background: #dbeafe; }
+.add-item-opt:last-child { border-bottom: none; }
+.add-item-name { font-weight: 500; }
+.add-item-unit { font-size: 0.78rem; }
+
+/* ── Report table (modal after cut) ── */
 .rep-tbl { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
 .rep-tbl th { background: #f8f9fa; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; white-space: nowrap; position: sticky; top: 0; }
 .rep-tbl td { padding: 7px 12px; border-bottom: 1px solid #f0f0f0; }
 .diff-low  { background: #fff5f5 !important; }
 .diff-high { background: #f0fdf4 !important; }
 
-/* Confirm modal */
+/* ── Confirm modals ── */
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1100; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .conf-panel { background: #fff; border-radius: 14px; padding: 24px; max-width: 440px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
 .conf-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 14px; }
@@ -749,8 +920,9 @@ onMounted(loadHistory)
 .btn-cancel  { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 18px; cursor: pointer; font-size: 0.87rem; }
 .btn-confirm { background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 0.87rem; font-weight: 700; display: flex; align-items: center; gap: 7px; }
 .btn-confirm:disabled { opacity: .6; cursor: not-allowed; }
-
-/* Report modal after cut */
+.btn-danger { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; font-size: 0.87rem; font-weight: 700; display: flex; align-items: center; gap: 7px; }
+.btn-danger:disabled { opacity: .6; cursor: not-allowed; }
+.btn-danger:not(:disabled):hover { background: #b91c1c; }
 .rep-panel { background: #fff; border-radius: 14px; width: 100%; max-width: 760px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
 .rep-hdr { display: flex; justify-content: space-between; align-items: flex-start; padding: 18px 20px 14px; border-bottom: 1px solid #e9ecef; }
 .rep-title { font-weight: 700; font-size: 1rem; margin-bottom: 3px; }
@@ -758,34 +930,51 @@ onMounted(loadHistory)
 .rep-footer { padding: 14px 20px; border-top: 1px solid #e9ecef; display: flex; justify-content: flex-end; }
 .btn-close-x { background: none; border: none; padding: 4px; cursor: pointer; color: #6b7280; font-size: 1.1rem; }
 
-/* Utilities */
+/* ── Utilities ── */
 .state-c { text-align: center; padding: 30px; color: #9ca3af; }
 .state-c.sm { padding: 16px; font-size: 0.85rem; }
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .tr { text-align: right; }
+.tc { text-align: center; }
 .td-muted { color: #6b7280; }
 .sm { font-size: 0.8rem; }
-.fw-b { font-weight: 700; }
-.ml { margin-left: 4px; }
-.c-red   { color: #dc2626; }
-.c-green { color: #16a34a; }
+.c-red    { color: #dc2626; }
+.c-orange { color: #ea580c; }
+.c-green  { color: #16a34a; }
 
-/* Responsive */
-@media (max-width: 768px) {
+/* ── Desktop ── */
+@media (min-width: 768px) {
+  .list-hdr { display: flex; align-items: center; }
+  .sc-prev, .sc-contado { width: 120px; }
+  .sc-diff { width: 100px; }
+}
+
+/* ── Tablet ── */
+@media (max-width: 767px) and (min-width: 577px) {
+  .sc-prev, .sc-contado { width: 90px; }
+  .sc-diff { width: 80px; }
   .ctrl-row { gap: 8px; }
-  .qty-inp { width: 72px; padding: 10px 6px; }
+}
+
+/* ── Mobile ── */
+@media (max-width: 576px) {
+  .ip-wrap { padding: 10px; }
+  .kpi-bar { gap: 6px; }
+  .kpi-card { padding: 9px 10px; min-width: 70px; }
+  .kpi-n { font-size: 1.2rem; }
+  .filters-bar { flex-direction: column; align-items: stretch; }
+  .toggle-grp .tog, .toggle-grp .tog-on { padding: 6px 7px; font-size: .76rem; }
+  .sc { flex-wrap: wrap; gap: 8px; }
+  .sc-status { width: 100%; order: -1; }
+  .sc-main   { width: 100%; order: 0; }
+  .sc-prev, .sc-contado, .sc-diff { width: auto; order: 1; flex-direction: row; align-items: center; gap: 4px; }
+  .sc-act    { order: 2; margin-left: auto; }
+  .hist-sel-row { flex-direction: column; align-items: stretch; }
+  .hist-sel { min-width: 0; width: 100%; }
+  .qty-inp { width: 72px; font-size: 0.95rem; }
   .take-footer { padding: 10px 14px; }
   .btn-cut { padding: 10px 18px; font-size: 0.88rem; }
   .rep-panel { max-height: 92vh; border-radius: 14px 14px 0 0; align-self: flex-end; }
-  .hist-sel { min-width: 0; }
-}
-@media (max-width: 576px) {
-  .ip-wrap { padding: 10px; }
-  .tab-bar { margin-bottom: 12px; }
-  .item-row { padding: 10px 12px; }
-  .qty-inp { width: 68px; font-size: 0.95rem; }
-  .hist-sel-row { flex-direction: column; align-items: stretch; }
-  .hist-sel { width: 100%; }
 }
 </style>
