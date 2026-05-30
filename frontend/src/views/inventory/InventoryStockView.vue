@@ -199,7 +199,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, nextTick, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
@@ -371,6 +371,10 @@ async function openMov(r) {
   finally { mov.value.loading = false }
 }
 
+onActivated(() => {
+  editingId.value = null
+})
+
 onMounted(async () => {
   await loadCategories()
   load()
@@ -378,7 +382,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.sv-wrap { padding: 16px; }
+.sv-wrap { padding: 16px; max-width: 100%; overflow-x: hidden; box-sizing: border-box; }
 
 /* KPI */
 .kpi-bar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -538,8 +542,16 @@ onMounted(async () => {
 
 /* Tablet */
 @media (max-width: 767px) and (min-width: 577px) {
-  .sc-stock { width: 80px; }
-  .sc-min   { width: 90px; }
+  .sv-wrap { padding: 12px; }
+  .filters-bar { flex-wrap: wrap; }
+  .f-search-wrap { min-width: 160px; }
+  .sc { flex-wrap: wrap; gap: 8px; padding: 9px 12px; }
+  .sc-status { width: 100%; order: -1; }
+  .sc-main   { width: 100%; order: 0; min-width: 0; }
+  .sc-stock  { width: auto; order: 1; }
+  .sc-min    { width: auto; order: 2; }
+  .sc-act    { order: 3; margin-left: auto; }
+  .kpi-card  { min-width: 80px; }
 }
 
 /* Mobile */
