@@ -2,6 +2,7 @@ from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, Text, SmallInteger, ForeignKey, TIMESTAMP, DECIMAL, Date, DateTime, func
 # unit_id, unit_uso_id, tipo_und_minima → FK lógica a pos_measure_forms (PK compuesta, no se declara como FK de SQLAlchemy)
+# agrupar → FK lógica a pos_product_categories.id (categoría de insumo; sincronizado desde VB6 tabla categoria_productos)
 from app.database import Base
 
 

@@ -648,6 +648,20 @@ const routes = [
         meta: { title: "Entradas de Mercancía" }
       },
       {
+        path: "/inventory/stock",
+        name: "InventoryStockView",
+        component: () => import("@/views/inventory/InventoryStockView.vue"),
+        requiresAuth: true,
+        meta: { title: "Stocks Actuales" }
+      },
+      {
+        path: "/inventory/movements",
+        name: "InventoryMovementsView",
+        component: () => import("@/views/inventory/InventoryMovementsView.vue"),
+        requiresAuth: true,
+        meta: { title: "Movimientos de Stock" }
+      },
+      {
         path: "/inventory/physical",
         name: "InventoryPhysicalView",
         component: () => import("@/views/inventory/InventoryPhysicalView.vue"),

@@ -1,9 +1,13 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCategoriaProductos
 ' Endpoint: POST /api/pos/sync/push/product-categories
 ' Tabla local VB6: categoria_productos
 ' Tabla servidor: pos_product_categories
-' Nota: esta tabla es la categoria de INSUMOS/suministros
+' Grupo sync:     B — después de SincronizarCategorias (Grupo A)
+' Depende de:     pos_categories
+' Nota: esta tabla es la CATEGORÍA DE INSUMOS/suministros
+'       supply_items.agrupar = pos_product_categories.id
+'       (GET /api/inventory/categories lee de pos_product_categories)
 ' Columnas locales:
 '   Cod_Categoria              -> id
 '   Nombre                     -> name
@@ -11,7 +15,7 @@
 '   Activa                     -> is_active
 '   Exgir_Seleccion            -> require_selection
 '   Imprimir_Armar_Solo_Cambios -> print_assembly_changes_only
-' PK servidor: id (= Cod_Categoria en VB6)
+' PK servidor: id (= Cod_Categoria en VB6 = supply_items.agrupar)
 ' ============================================================
 Public Sub SincronizarCategoriaProductos(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler

@@ -22,7 +22,7 @@ Public Sub SincronizarInventariosEntradas(Var_Id_Company_Envio As Integer, Var_L
     ' -- 1. Leer pendientes (lotes) -------------------------
     Dim rs As Object
     Set rs = CreateObject("ADODB.Recordset")
-    rs.Open "SELECT * FROM inventarios_entradas WHERE Enviada_MySql = 0 LIMIT " & Var_Limit_Registros, conn
+    rs.Open "SELECT * FROM inventarios_entradas_manuales WHERE Enviada_MySql = 0 LIMIT " & Var_Limit_Registros, conn
 
     If rs.EOF Then
         rs.Close: conn.Close
