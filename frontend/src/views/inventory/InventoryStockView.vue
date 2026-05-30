@@ -21,6 +21,12 @@
       </div>
     </div>
 
+    <!-- Último inventario -->
+    <div v-if="lastInventoryDate" class="inv-date-bar">
+      <i class="bi bi-calendar-check-fill inv-ico"></i>
+      <span>Último inventario físico registrado: <strong>{{ lastInventoryDate }}</strong></span>
+    </div>
+
     <!-- Filters + Export -->
     <div class="filters-bar">
       <div class="f-search-wrap">
@@ -28,7 +34,7 @@
         <input v-model.trim="search" @input="debouncedLoad" class="f-inp" placeholder="Buscar insumo o código..." />
       </div>
 
-      <select v-if="categories.length" v-model="catFilter" @change="load" class="f-sel">
+      <select v-model="catFilter" @change="load" class="f-sel">
         <option value="">Todas las categorías</option>
         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
@@ -45,7 +51,7 @@
       </label>
 
       <ExportToolbar
-        :data="rows"
+        :data="exportData"
         :columns="exportCols"
         filename="stocks-actuales"
         title="Stocks Actuales"
@@ -61,64 +67,93 @@
       <!-- Column headers (desktop only) -->
       <div class="list-hdr">
         <span></span>
-        <span class="hdr-main">Insumo / Categoría</span>
+        <span class="hdr-main">Insumo</span>
         <span class="hdr-r tr">Stock actual</span>
         <span class="hdr-r tr">Stock mínimo</span>
         <span class="hdr-act tc">Historial</span>
       </div>
 
-      <!-- Cards -->
-      <div class="cards-list">
-        <div v-for="r in rows" :key="r.id_item" class="sc" :class="scCls(r)">
-
-          <!-- Status badge (left) -->
-          <div class="sc-status">
-            <span :class="statusBadge(r)" class="sb">{{ statusLbl(r) }}</span>
+      <!-- Lista agrupada por categoría (cuando catFilter = '') -->
+      <template v-if="catFilter === '' && groupedByCategory.length">
+        <div v-for="group in groupedByCategory" :key="group.name" class="cat-group">
+          <div class="cat-hdr">
+            <i class="bi bi-tag-fill cat-ico"></i>
+            <span class="cat-hdr-name">{{ group.name }}</span>
+            <span class="cat-hdr-cnt">{{ group.items.length }} ítem{{ group.items.length !== 1 ? 's' : '' }}</span>
           </div>
-
-          <!-- Name + category (center, grows) -->
-          <div class="sc-main">
-            <div class="sc-name">
-              {{ r.description }}
-              <span v-if="!r.is_active" class="badge-off">Inactivo</span>
-              <span v-if="r.code" class="sc-code">{{ r.code }}</span>
+          <div class="cards-list">
+            <div v-for="r in group.items" :key="r.id_item" class="sc" :class="scCls(r)">
+              <div class="sc-status">
+                <span :class="statusBadge(r)" class="sb">{{ statusLbl(r) }}</span>
+              </div>
+              <div class="sc-main">
+                <div class="sc-name">
+                  {{ r.description }}
+                  <span v-if="!r.is_active" class="badge-off">Inactivo</span>
+                  <span v-if="r.code" class="sc-code">{{ r.code }}</span>
+                </div>
+              </div>
+              <div class="sc-stock">
+                <span :class="stockCls(r)" class="fw-b">{{ fmt(r.stock_qty) }}</span>
+                <span class="sc-unit">{{ r.unit_name }}</span>
+              </div>
+              <div class="sc-min" @click.stop="startEdit(r)">
+                <template v-if="editingId !== r.id_item">
+                  <span class="min-lbl">Mín:</span>
+                  <span class="min-val">{{ fmt(r.min_stock) }}<i class="bi bi-pencil-fill ei"></i></span>
+                </template>
+                <input v-else v-focus v-model.number="editVal" type="number" min="0" step="0.001"
+                       class="inp-inline" @keyup.enter="saveMin(r)" @keyup.escape="editingId=null"
+                       @blur="saveMin(r)" @click.stop />
+              </div>
+              <div class="sc-act">
+                <button class="btn-mov" @click.stop="openMov(r)" title="Ver movimientos">
+                  <i class="bi bi-clock-history"></i>
+                </button>
+              </div>
             </div>
-            <div class="sc-cat">{{ r.category_name || '—' }}</div>
-          </div>
-
-          <!-- Stock qty -->
-          <div class="sc-stock">
-            <span :class="stockCls(r)" class="fw-b">{{ fmt(r.stock_qty) }}</span>
-            <span class="sc-unit">{{ r.unit_name }}</span>
-          </div>
-
-          <!-- Min stock (editable inline) -->
-          <div class="sc-min" @click.stop="startEdit(r)">
-            <template v-if="editingId !== r.id_item">
-              <span class="min-lbl">Mín:</span>
-              <span class="min-val">{{ fmt(r.min_stock) }}<i class="bi bi-pencil-fill ei"></i></span>
-            </template>
-            <input v-else
-                   v-focus
-                   v-model.number="editVal"
-                   type="number" min="0" step="0.001"
-                   class="inp-inline"
-                   @keyup.enter="saveMin(r)"
-                   @keyup.escape="editingId=null"
-                   @blur="saveMin(r)"
-                   @click.stop />
-          </div>
-
-          <!-- Movements button -->
-          <div class="sc-act">
-            <button class="btn-mov" @click.stop="openMov(r)" title="Ver movimientos">
-              <i class="bi bi-clock-history"></i>
-            </button>
           </div>
         </div>
-
         <div v-if="!rows.length" class="empty-c">Sin insumos encontrados</div>
-      </div>
+      </template>
+
+      <!-- Lista plana (cuando se filtra por categoría específica) -->
+      <template v-else>
+        <div class="cards-list">
+          <div v-for="r in rows" :key="r.id_item" class="sc" :class="scCls(r)">
+            <div class="sc-status">
+              <span :class="statusBadge(r)" class="sb">{{ statusLbl(r) }}</span>
+            </div>
+            <div class="sc-main">
+              <div class="sc-name">
+                {{ r.description }}
+                <span v-if="!r.is_active" class="badge-off">Inactivo</span>
+                <span v-if="r.code" class="sc-code">{{ r.code }}</span>
+              </div>
+              <div class="sc-cat">{{ r.category_name || '—' }}</div>
+            </div>
+            <div class="sc-stock">
+              <span :class="stockCls(r)" class="fw-b">{{ fmt(r.stock_qty) }}</span>
+              <span class="sc-unit">{{ r.unit_name }}</span>
+            </div>
+            <div class="sc-min" @click.stop="startEdit(r)">
+              <template v-if="editingId !== r.id_item">
+                <span class="min-lbl">Mín:</span>
+                <span class="min-val">{{ fmt(r.min_stock) }}<i class="bi bi-pencil-fill ei"></i></span>
+              </template>
+              <input v-else v-focus v-model.number="editVal" type="number" min="0" step="0.001"
+                     class="inp-inline" @keyup.enter="saveMin(r)" @keyup.escape="editingId=null"
+                     @blur="saveMin(r)" @click.stop />
+            </div>
+            <div class="sc-act">
+              <button class="btn-mov" @click.stop="openMov(r)" title="Ver movimientos">
+                <i class="bi bi-clock-history"></i>
+              </button>
+            </div>
+          </div>
+          <div v-if="!rows.length" class="empty-c">Sin insumos encontrados</div>
+        </div>
+      </template>
     </template>
 
     <!-- Movements Modal -->
@@ -175,21 +210,60 @@ const categories = ref([])
 const loading    = ref(true)
 
 const search       = ref('')
-const catFilter    = ref('')
+const catFilter    = ref('')   // '' = todas
 const activeFilter = ref('1')
 const critFilter   = ref(false)
 const editingId    = ref(null)
 const editVal      = ref(0)
 const mov          = ref({ show: false, item: null, loading: false, data: [] })
 
-const exportCols = [
-  { key: 'code',          label: 'Código' },
-  { key: 'description',   label: 'Insumo' },
-  { key: 'category_name', label: 'Categoría' },
-  { key: 'stock_qty',     label: 'Stock actual', fmt: v => Number(v||0).toFixed(4) },
-  { key: 'unit_name',     label: 'Unidad' },
-  { key: 'min_stock',     label: 'Stock mínimo', fmt: v => Number(v||0).toFixed(4) },
-]
+// ── Último inventario físico ─────────────────────────────────────────────────
+const lastInventoryDate = computed(() => {
+  const dates = rows.value
+    .filter(r => r.last_inventory_date)
+    .map(r => String(r.last_inventory_date).slice(0, 10))
+  return dates.length ? dates.sort().at(-1) : null
+})
+
+// ── Agrupamiento por categoría (solo cuando catFilter = '') ──────────────────
+const groupedByCategory = computed(() => {
+  const nocat = 'Sin categoría'
+  const map = {}
+  for (const r of rows.value) {
+    const key = r.category_name || nocat
+    if (!map[key]) map[key] = { name: key, items: [] }
+    map[key].items.push(r)
+  }
+  return Object.values(map).sort((a, b) =>
+    a.name === nocat ? 1 : b.name === nocat ? -1 : a.name.localeCompare(b.name, 'es')
+  )
+})
+
+// ── Export: datos con filas de cabecera de categoría cuando está en "todas" ──
+const exportData = computed(() => {
+  if (catFilter.value !== '') return rows.value
+  const result = []
+  for (const g of groupedByCategory.value) {
+    result.push({ _sectionHeader: true, _title: g.name })
+    result.push(...g.items)
+  }
+  return result
+})
+
+// ── Columnas de export: sin categoría cuando está agrupado ───────────────────
+const exportCols = computed(() => {
+  const base = [
+    { key: 'code',        label: 'Código' },
+    { key: 'description', label: 'Insumo' },
+    { key: 'stock_qty',   label: 'Stock actual', fmt: v => Number(v||0).toFixed(4) },
+    { key: 'unit_name',   label: 'Unidad' },
+    { key: 'min_stock',   label: 'Stock mínimo', fmt: v => Number(v||0).toFixed(4) },
+  ]
+  if (catFilter.value !== '') {
+    base.splice(2, 0, { key: 'category_name', label: 'Categoría' })
+  }
+  return base
+})
 
 const ctrlCount = computed(() => rows.value.filter(r => r.control_stock).length)
 const critCount = computed(() => rows.value.filter(r => itemStatus(r) === 'critical').length)
@@ -259,7 +333,7 @@ async function load() {
 async function loadCategories() {
   try {
     categories.value = (await api.get('/api/inventory/categories')).data
-    if (categories.value.length) catFilter.value = categories.value[0].id
+    // catFilter empieza vacío → muestra todas agrupadas
   } catch { categories.value = [] }
 }
 
@@ -304,6 +378,32 @@ onMounted(async () => {
 .kpi-blue .kpi-n   { color: #2563eb; }
 .kpi-orange .kpi-n { color: #ea580c; }
 .kpi-red .kpi-n    { color: #dc2626; }
+
+/* Último inventario */
+.inv-date-bar {
+  display: flex; align-items: center; gap: 7px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+  padding: 7px 12px; margin-bottom: 10px; font-size: .83rem; color: #166534;
+}
+.inv-ico { color: #16a34a; font-size: .88rem; flex-shrink: 0; }
+
+/* Agrupamiento por categoría */
+.cat-group { margin-bottom: 18px; }
+.cat-hdr {
+  display: flex; align-items: center; gap: 8px;
+  background: #1d4ed8; color: #fff;
+  border-radius: 8px 8px 0 0; padding: 7px 14px; margin-bottom: 0;
+}
+.cat-ico { font-size: .8rem; flex-shrink: 0; }
+.cat-hdr-name { font-weight: 700; font-size: .85rem; flex: 1; }
+.cat-hdr-cnt {
+  font-size: .74rem; background: rgba(255,255,255,.2);
+  padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+}
+/* cards dentro de grupo: bordes redondeados solo abajo */
+.cat-group .cards-list { border: 1px solid #dbeafe; border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
+.cat-group .cards-list .sc { border-radius: 0; border-left: none; border-right: none; border-top: none; }
+.cat-group .cards-list .sc:last-child { border-bottom: none; }
 
 /* Filters */
 .filters-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }

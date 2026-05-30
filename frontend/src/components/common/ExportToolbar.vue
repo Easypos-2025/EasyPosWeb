@@ -45,10 +45,32 @@ function cellVal(row, col) {
 }
 
 function exportExcel() {
-  const header = props.columns.map(c => c.label)
-  const rows   = props.data.map(row => props.columns.map(c => cellVal(row, c)))
-  const ws     = XLSX.utils.aoa_to_sheet([header, ...rows])
-  const wb     = XLSX.utils.book_new()
+  const header  = props.columns.map(c => c.label)
+  const colCount = props.columns.length
+  const dataRows = props.data.flatMap(row => {
+    if (row._sectionHeader) {
+      // category header row: first cell = title, rest empty
+      return [[row._title, ...Array(colCount - 1).fill('')]]
+    }
+    return [props.columns.map(c => cellVal(row, c))]
+  })
+  const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows])
+
+  // Bold + gray fill for section header rows
+  const range = XLSX.utils.decode_range(ws['!ref'])
+  let excelRow = 1 // 0 = header
+  props.data.forEach(row => {
+    if (row._sectionHeader) {
+      for (let c = 0; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r: excelRow, c })
+        if (!ws[addr]) ws[addr] = { t: 's', v: '' }
+        ws[addr].s = { font: { bold: true }, fill: { fgColor: { rgb: 'E8F4FD' } } }
+      }
+    }
+    excelRow++
+  })
+
+  const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Reporte')
   XLSX.writeFile(wb, `${props.filename}.xlsx`)
 }
@@ -58,11 +80,15 @@ function buildHTML(mode) {
   const width     = mode === 'a4' ? '210mm' : `${mode}mm`
   const fs        = mode === 'a4' ? '11px' : mode === 80 ? '9px' : '8px'
   const pad       = mode === 'a4' ? '12mm' : '2mm'
+  const colCount  = props.columns.length
 
   const hdr = props.columns.map(c => `<th>${c.label}</th>`).join('')
-  const body = props.data.map(row =>
-    `<tr>${props.columns.map(c => `<td>${cellVal(row, c)}</td>`).join('')}</tr>`
-  ).join('')
+  const body = props.data.map(row => {
+    if (row._sectionHeader) {
+      return `<tr class="sec-hdr"><td colspan="${colCount}">${row._title}</td></tr>`
+    }
+    return `<tr>${props.columns.map(c => `<td>${cellVal(row, c)}</td>`).join('')}</tr>`
+  }).join('')
 
   const now = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
 
@@ -75,6 +101,7 @@ h3{text-align:center;margin-bottom:4px;font-size:${mode === 'a4' ? '14px' : '11p
 table{width:100%;border-collapse:collapse;}
 th{border-bottom:${isTirilla ? '1px solid #000' : '2px solid #333'};padding:2px 4px;text-align:left;font-size:${mode === 'a4' ? '10px' : fs};}
 td{padding:2px 4px;border-bottom:1px ${isTirilla ? 'dashed' : 'solid'} #ddd;font-size:${fs};}
+.sec-hdr td{background:${isTirilla ? '#000' : '#1d4ed8'};color:#fff;font-weight:bold;padding:3px 4px;border-bottom:none;font-size:${mode === 'a4' ? '10px' : fs};}
 @media print{@page{margin:0;size:${width} auto;}}
 </style></head><body>
 <h3>${props.title}</h3><p class="dt">${now}</p>
