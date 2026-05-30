@@ -744,44 +744,23 @@ async def get_kardex(
         ORDER BY ix.fecha, ix.id
     """), base_p)).mappings().all()
 
-    # ── Ventas desde facturas VB6 (pos_invoice_details × receta, por plato) ──
-    inv_sales = (await db.execute(text("""
-        SELECT pid.date AS fecha,
-               pid.invoice_number AS numero,
-               COALESCE(d.name, CONCAT('Plato #', pid.dish_id)) AS dish_name,
-               (pid.quantity * pdp.minimum_units) AS cantidad
-        FROM pos_invoice_details pid
-        JOIN pos_invoices pi  ON pi.invoice_number = pid.invoice_number
-                              AND pi.company_id    = pid.company_id
-        JOIN pos_dish_products pdp ON pdp.dish_id    = pid.dish_id
-                                   AND pdp.company_id = pid.company_id
-        LEFT JOIN pos_dishes d ON d.id = pid.dish_id AND d.company_id = pid.company_id
-        WHERE pid.company_id = :cid
-          AND pdp.supplier_id = :item
-          AND pid.date BETWEEN :desde AND :hasta
-          AND (pi.voided  IS NULL OR pi.voided  = 0)
-          AND (pid.complimentary IS NULL OR pid.complimentary = 0)
-        ORDER BY pid.date, pid.invoice_number, pid.dish_id
-    """), base_p)).mappings().all()
-
-    # ── Ventas desde recibos VB6 (pos_receipt_invoice_details × receta, por plato) ──
-    rec_sales = (await db.execute(text("""
+    # ── Ventas VB6: pos_receipt_order_detail_products (insumo directo por item_id) ──
+    # Esta es la tabla correcta: enlaza directamente recibos con insumos via item_id
+    vb6_sales = (await db.execute(text("""
         SELECT prd.date AS fecha,
-               prd.receipt_number AS numero,
+               prd.invoice_number AS numero,
                COALESCE(d.name, CONCAT('Plato #', prd.dish_id)) AS dish_name,
-               (prd.quantity * pdp.minimum_units) AS cantidad
-        FROM pos_receipt_invoice_details prd
-        JOIN pos_receipts pr  ON pr.receipt_number = prd.receipt_number
-                              AND pr.company_id    = prd.company_id
-        JOIN pos_dish_products pdp ON pdp.dish_id    = prd.dish_id
-                                   AND pdp.company_id = prd.company_id
-        LEFT JOIN pos_dishes d ON d.id = prd.dish_id AND d.company_id = prd.company_id
+               SUM(prd.quantity) AS cantidad
+        FROM pos_receipt_order_detail_products prd
+        LEFT JOIN pos_receipts pr ON pr.receipt_number = prd.invoice_number
+                                  AND pr.company_id    = prd.company_id
+        LEFT JOIN pos_dishes d   ON d.id = prd.dish_id AND d.company_id = prd.company_id
         WHERE prd.company_id = :cid
-          AND pdp.supplier_id = :item
+          AND prd.item_id = :item
           AND prd.date BETWEEN :desde AND :hasta
-          AND (pr.voided  IS NULL OR pr.voided  = 0)
-          AND (prd.complimentary IS NULL OR prd.complimentary = 0)
-        ORDER BY prd.date, prd.receipt_number, prd.dish_id
+          AND (pr.voided IS NULL OR pr.voided = 0)
+        GROUP BY prd.date, prd.invoice_number, prd.dish_id
+        ORDER BY prd.date, prd.invoice_number
     """), base_p)).mappings().all()
 
     # ── Ventas web (stock_movements — canal web/online) ────────────────────────
@@ -826,7 +805,7 @@ async def get_kardex(
             "usuario":  r["usuario"],
             "tipo":     "salida",
         })
-    for r in inv_sales:
+    for r in vb6_sales:
         qty = float(r["cantidad"] or 0)
         if qty > 0:
             movements.append({
@@ -834,19 +813,7 @@ async def get_kardex(
                 "concepto": r["dish_name"],
                 "numero":   r["numero"],
                 "cantidad": qty,
-                "obs":      "Factura",
-                "usuario":  "",
-                "tipo":     "venta",
-            })
-    for r in rec_sales:
-        qty = float(r["cantidad"] or 0)
-        if qty > 0:
-            movements.append({
-                "fecha":    str(r["fecha"]).split(" ")[0],
-                "concepto": r["dish_name"],
-                "numero":   r["numero"],
-                "cantidad": qty,
-                "obs":      "Recibo",
+                "obs":      "",
                 "usuario":  "",
                 "tipo":     "venta",
             })
