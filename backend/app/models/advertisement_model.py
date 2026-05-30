@@ -7,7 +7,7 @@ class Advertisement(Base):
     __tablename__ = "advertisements"
 
     id:                    Mapped[int]    = mapped_column(Integer, primary_key=True)
-    company_id:            Mapped[int]    = mapped_column(Integer, nullable=False, index=True)
+    company_id:            Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     title:                 Mapped[str]    = mapped_column(String(200), nullable=False)
     description:           Mapped[str]    = mapped_column(Text, nullable=True)
     cta_url:               Mapped[str]    = mapped_column(String(500), nullable=True)

@@ -43,7 +43,7 @@
           </template>
           <!-- Placeholder → contacto -->
           <template v-else>
-            <a href="#contacto" class="slot-placeholder-inner">
+            <a href="#pauta" class="slot-placeholder-inner">
               <div class="ph-bg"></div>
               <div class="ph-content">
                 <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
@@ -96,7 +96,7 @@
                 </div>
               </template>
               <template v-else>
-                <a href="#contacto" class="slot-placeholder-inner">
+                <a href="#pauta" class="slot-placeholder-inner">
                   <div class="ph-bg"></div>
                   <div class="ph-content">
                     <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
