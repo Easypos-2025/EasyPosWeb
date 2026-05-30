@@ -39,7 +39,7 @@
         </label>
         <CustomDatePicker v-if="isSysAdmin" v-model="desde" @update:modelValue="reloadKardex" />
         <div v-else class="kx-inp kx-date-ro">
-          {{ desde || '—' }}
+          {{ desde ? fmtDate(desde) : '—' }}
         </div>
       </div>
       <div class="kx-field">
@@ -64,11 +64,11 @@
             <i class="bi bi-hash"></i>{{ kardex.item.id }}
             <i class="bi bi-clipboard kx-clip-ico"></i>
           </span>
-          <span v-if="kardex.item.code" class="kx-code-chip"
+          <span class="kx-code-chip" :class="{ 'kx-code-empty': !kardex.item.code }"
                 @click="copyText(kardex.item.code, 'Código de barras')"
-                title="Código de barras — clic para copiar">
-            <i class="bi bi-upc-scan"></i>{{ kardex.item.code }}
-            <i class="bi bi-clipboard kx-clip-ico"></i>
+                :title="kardex.item.code ? 'Cód. barras — clic para copiar' : 'Sin código de barras'">
+            <i class="bi bi-upc-scan"></i>{{ kardex.item.code || '—' }}
+            <i v-if="kardex.item.code" class="bi bi-clipboard kx-clip-ico"></i>
           </span>
         </div>
       </div>
@@ -266,15 +266,10 @@ const filteredItems = computed(() => {
 
 function onCatChange()  { searchQ.value = ''; selItem.value = ''; kardex.value = null }
 function filterItems()  { selItem.value = ''; kardex.value = null }
-function onItemSelect() {
-  if (selItem.value) {
-    desde.value = ''  // resetear para que backend calcule la fecha del último inventario
-    loadKardex()
-  }
-}
+function onItemSelect() { if (selItem.value) loadKardex() }
 
 // ── Fechas ────────────────────────────────────────────────────────────────────
-const desde = ref('')
+const desde = ref('')   // se carga en onMounted con la fecha global del último inventario
 const hasta  = ref(new Date().toISOString().slice(0, 10))
 
 function reloadKardex() { if (selItem.value) loadKardex() }
@@ -295,8 +290,13 @@ function toggleDate(d) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const fmtQ    = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 })
-const fmtDate = v => v ? String(v).slice(0, 10) : '—'
+const fmtQ = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 })
+function fmtDate(v) {
+  if (!v) return '—'
+  const s = String(v).slice(0, 10)
+  const [y, m, d] = s.split('-')
+  return `${d}-${m}-${y}`
+}
 
 function movRowCls(m) {
   if (m.tipo === 'entrada') return 'kx-row-ent'
@@ -348,12 +348,17 @@ function copyText(val, label) {
 // ── Carga de datos ────────────────────────────────────────────────────────────
 async function loadItems() {
   try {
-    const data = (await api.get('/api/inventory/kardex/items')).data
-    allItems.value = data
+    // Cargar fecha global del último inventario físico y lista de insumos en paralelo
+    const [dateRes, itemsRes] = await Promise.all([
+      api.get('/api/inventory/kardex/last-date'),
+      api.get('/api/inventory/kardex/items'),
+    ])
+    if (dateRes.data.fecha) desde.value = dateRes.data.fecha
+    allItems.value = itemsRes.data
     // Extraer categorías únicas
     const seen = new Set()
     categories.value = []
-    for (const it of data) {
+    for (const it of itemsRes.data) {
       if (it.category_id && !seen.has(it.category_id)) {
         seen.add(it.category_id)
         categories.value.push({ id: it.category_id, name: it.category_name })
@@ -372,8 +377,6 @@ async function loadKardex() {
     if (desde.value) params.desde = desde.value
     const res = (await api.get(`/api/inventory/kardex/${selItem.value}`, { params })).data
     kardex.value = res
-    // Siempre sincronizar 'desde' con la fecha del último inventario del insumo
-    if (!desde.value || !params.desde) desde.value = res.desde
   } catch (e) {
     showToast('Error al cargar el Kardex', 'error')
     kardex.value = null
@@ -429,6 +432,8 @@ onMounted(loadItems)
   cursor: pointer; transition: background .15s; user-select: none;
 }
 .kx-code-chip:hover { background: rgba(255,255,255,.28); }
+.kx-code-empty { opacity: .55; cursor: default; }
+.kx-code-empty:hover { background: rgba(255,255,255,.15); }
 .kx-clip-ico { font-size: .68rem; opacity: .75; margin-left: 2px; }
 
 /* ── Layout principal ── */

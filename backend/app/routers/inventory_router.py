@@ -625,6 +625,19 @@ async def authorize_physical(
 # KARDEX — trazabilidad completa de un insumo desde el último inventario físico
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@router.get("/kardex/last-date")
+async def kardex_last_date(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fecha del último inventario físico registrado (global, aplica a todos los insumos)."""
+    row = (await db.execute(text("""
+        SELECT MAX(fecha) AS fecha FROM inventory_physical WHERE company_id = :cid
+    """), {"cid": current_user.company_id})).mappings().first()
+    fecha = str(row["fecha"]).split(" ")[0] if row and row["fecha"] else None
+    return {"fecha": fecha}
+
+
 @router.get("/kardex/items")
 async def kardex_items(
     current_user: User = Depends(get_current_user),
@@ -680,25 +693,32 @@ async def get_kardex(
 
     si_id = item_row["id"]
 
-    # ── Último inventario físico (antes o en 'desde') ──────────────────────────
-    phys_base = """
-        SELECT fecha, SUM(cantidad) AS cantidad
-        FROM inventory_physical
-        WHERE company_id = :cid AND id_item = :item {cond}
-        GROUP BY fecha ORDER BY fecha DESC LIMIT 1
-    """
-    p: dict = {"cid": cid, "item": id_item}
+    # ── Fecha de inicio: fecha global del último inventario físico ────────────
+    # Si se pasa 'desde' (= fecha global del último inv.), buscar el item en ESA fecha exacta.
+    # Si no existe en esa fecha → inv. inicial = 0 (no se busca en fechas anteriores).
+    # Si no se pasa 'desde', calcular la fecha global máxima.
     if desde:
-        p["desde"] = desde
-        last_phys = (await db.execute(text(phys_base.format(cond="AND fecha <= :desde")), p)).mappings().first()
-        if not last_phys:
-            last_phys = (await db.execute(text(phys_base.format(cond="")), {"cid": cid, "item": id_item})).mappings().first()
+        start_fecha = desde
+        phys_exact = (await db.execute(text("""
+            SELECT SUM(cantidad) AS cantidad
+            FROM inventory_physical
+            WHERE company_id = :cid AND id_item = :item AND fecha = :fecha
+        """), {"cid": cid, "item": id_item, "fecha": desde})).mappings().first()
+        start_qty = float(phys_exact["cantidad"]) if phys_exact and phys_exact["cantidad"] else 0.0
     else:
-        last_phys = (await db.execute(text(phys_base.format(cond="")), p)).mappings().first()
+        # Fecha global máxima del inventario físico de la empresa
+        global_date = (await db.execute(text("""
+            SELECT MAX(fecha) AS fecha FROM inventory_physical WHERE company_id = :cid
+        """), {"cid": cid})).mappings().first()
+        start_fecha = str(global_date["fecha"]).split(" ")[0] if global_date and global_date["fecha"] else today
+        phys_exact = (await db.execute(text("""
+            SELECT SUM(cantidad) AS cantidad
+            FROM inventory_physical
+            WHERE company_id = :cid AND id_item = :item AND fecha = :fecha
+        """), {"cid": cid, "item": id_item, "fecha": start_fecha})).mappings().first()
+        start_qty = float(phys_exact["cantidad"]) if phys_exact and phys_exact["cantidad"] else 0.0
 
-    start_fecha = str(last_phys["fecha"]).split(" ")[0] if last_phys else (desde or today)
-    start_qty   = float(last_phys["cantidad"]) if last_phys else 0.0
-    desde_d     = desde or start_fecha
+    desde_d = start_fecha
 
     base_p = {"cid": cid, "item": id_item, "desde": desde_d, "hasta": hasta_d}
 
