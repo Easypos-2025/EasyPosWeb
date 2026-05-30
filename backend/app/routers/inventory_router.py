@@ -108,20 +108,24 @@ async def get_stock(
 
     where_sql = " AND ".join(where_parts)
 
-    # critical se aplica sobre el stock calculado, no sobre si.stock_qty
+    # ── fórmula completa: físico + entradas - salidas - ventas_VB6 ──────────────
+    STOCK_EXPR = (
+        "COALESCE(lp.cantidad,0) + COALESCE(ea.total,0) - COALESCE(xa.total,0)"
+        " - COALESCE(rs.total,0) - COALESCE(inv.total,0)"
+    )
+
     critical_clause = ""
     if critical:
-        critical_clause = """
+        critical_clause = f"""
             AND si.control_stock = 1 AND si.min_stock > 0
-            AND (COALESCE(lp.cantidad, 0) + COALESCE(ea.total, 0) - COALESCE(xa.total, 0)) <= si.min_stock
+            AND ({STOCK_EXPR}) <= si.min_stock
         """
 
     rows = (await db.execute(text(f"""
         WITH ranked_phys AS (
             SELECT id_item, cantidad, fecha,
                    ROW_NUMBER() OVER (PARTITION BY id_item ORDER BY fecha DESC, created_at DESC) AS rn
-            FROM inventory_physical
-            WHERE company_id = :cid
+            FROM inventory_physical WHERE company_id = :cid
         ),
         last_phys AS (
             SELECT id_item, cantidad, fecha FROM ranked_phys WHERE rn = 1
@@ -141,9 +145,31 @@ async def get_stock(
             WHERE ix.company_id = :cid
               AND (lp.fecha IS NULL OR ix.fecha >= lp.fecha)
             GROUP BY ix.id_item
+        ),
+        receipt_sales AS (
+            SELECT prd.item_id, SUM(prd.quantity) AS total
+            FROM pos_receipt_order_detail_products prd
+            LEFT JOIN last_phys lp ON lp.id_item = prd.item_id
+            LEFT JOIN pos_receipts pr
+                   ON pr.receipt_number = prd.invoice_number AND pr.company_id = prd.company_id
+            WHERE prd.company_id = :cid
+              AND (lp.fecha IS NULL OR prd.date >= lp.fecha)
+              AND (pr.voided IS NULL OR pr.voided = 0)
+            GROUP BY prd.item_id
+        ),
+        invoice_sales AS (
+            SELECT pod.item_id, SUM(pod.quantity) AS total
+            FROM pos_order_detail_products pod
+            LEFT JOIN last_phys lp ON lp.id_item = pod.item_id
+            LEFT JOIN pos_invoices pi
+                   ON pi.invoice_number = pod.invoice_number AND pi.company_id = pod.company_id
+            WHERE pod.company_id = :cid
+              AND (lp.fecha IS NULL OR pod.date >= lp.fecha)
+              AND (pi.voided IS NULL OR pi.voided = 0)
+            GROUP BY pod.item_id
         )
         SELECT si.id, si.id_item, si.code, si.description,
-               COALESCE(lp.cantidad, 0) + COALESCE(ea.total, 0) - COALESCE(xa.total, 0) AS stock_qty,
+               {STOCK_EXPR} AS stock_qty,
                si.min_stock, si.control_stock, si.is_active, si.agrupar AS category_id,
                COALESCE(mu.name,  '') AS unit_name,
                COALESCE(cat.name, '') AS category_name,
@@ -153,9 +179,11 @@ async def get_stock(
                ON mu.id = si.unit_id AND mu.company_id = si.company_id
         LEFT JOIN pos_product_categories cat
                ON cat.id = si.agrupar AND cat.company_id = si.company_id
-        LEFT JOIN last_phys lp  ON lp.id_item  = si.id_item
-        LEFT JOIN entries_adj ea ON ea.id_item = si.id_item
-        LEFT JOIN exits_adj xa   ON xa.id_item = si.id_item
+        LEFT JOIN last_phys lp      ON lp.id_item  = si.id_item
+        LEFT JOIN entries_adj ea    ON ea.id_item   = si.id_item
+        LEFT JOIN exits_adj xa      ON xa.id_item   = si.id_item
+        LEFT JOIN receipt_sales rs  ON rs.item_id   = si.id_item
+        LEFT JOIN invoice_sales inv ON inv.item_id  = si.id_item
         WHERE {where_sql}
         {critical_clause}
         ORDER BY si.description
@@ -183,6 +211,102 @@ async def update_min_stock(
     if res.rowcount == 0:
         raise HTTPException(404, "Insumo no encontrado")
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECALCULAR STOCK — sincroniza supply_items.stock_qty con la fórmula real
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/stock/recalculate")
+async def recalculate_stock(
+    data: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recalcula supply_items.stock_qty usando la fórmula completa:
+      físico + entradas - salidas - ventas_recibos_VB6 - ventas_facturas_VB6
+    scope: "all" | "category" | "item"
+    """
+    scope       = data.get("scope", "all")
+    category_id = data.get("category_id")
+    id_item     = data.get("id_item")
+    cid         = current_user.company_id
+
+    where_parts = ["si.company_id = :cid"]
+    params: dict = {"cid": cid}
+    if scope == "category" and category_id:
+        where_parts.append("si.agrupar = :cat_id")
+        params["cat_id"] = int(category_id)
+    elif scope == "item" and id_item:
+        where_parts.append("si.id_item = :item")
+        params["item"] = int(id_item)
+    where_sql = " AND ".join(where_parts)
+
+    # 1. Calcular el stock real para cada ítem del scope
+    calc_rows = (await db.execute(text(f"""
+        WITH ranked_phys AS (
+            SELECT id_item, cantidad, fecha,
+                   ROW_NUMBER() OVER (PARTITION BY id_item ORDER BY fecha DESC, created_at DESC) AS rn
+            FROM inventory_physical WHERE company_id = :cid
+        ),
+        last_phys AS (SELECT id_item, cantidad, fecha FROM ranked_phys WHERE rn = 1),
+        entries_adj AS (
+            SELECT ie.id_item, SUM(ie.cantidad) AS total
+            FROM inventory_entries ie
+            LEFT JOIN last_phys lp ON lp.id_item = ie.id_item
+            WHERE ie.company_id = :cid AND (lp.fecha IS NULL OR ie.fecha >= lp.fecha)
+            GROUP BY ie.id_item
+        ),
+        exits_adj AS (
+            SELECT ix.id_item, SUM(ix.cantidad) AS total
+            FROM inventory_exits ix
+            LEFT JOIN last_phys lp ON lp.id_item = ix.id_item
+            WHERE ix.company_id = :cid AND (lp.fecha IS NULL OR ix.fecha >= lp.fecha)
+            GROUP BY ix.id_item
+        ),
+        receipt_sales AS (
+            SELECT prd.item_id, SUM(prd.quantity) AS total
+            FROM pos_receipt_order_detail_products prd
+            LEFT JOIN last_phys lp ON lp.id_item = prd.item_id
+            LEFT JOIN pos_receipts pr
+                   ON pr.receipt_number = prd.invoice_number AND pr.company_id = prd.company_id
+            WHERE prd.company_id = :cid
+              AND (lp.fecha IS NULL OR prd.date >= lp.fecha)
+              AND (pr.voided IS NULL OR pr.voided = 0)
+            GROUP BY prd.item_id
+        ),
+        invoice_sales AS (
+            SELECT pod.item_id, SUM(pod.quantity) AS total
+            FROM pos_order_detail_products pod
+            LEFT JOIN last_phys lp ON lp.id_item = pod.item_id
+            LEFT JOIN pos_invoices pi
+                   ON pi.invoice_number = pod.invoice_number AND pi.company_id = pod.company_id
+            WHERE pod.company_id = :cid
+              AND (lp.fecha IS NULL OR pod.date >= lp.fecha)
+              AND (pi.voided IS NULL OR pi.voided = 0)
+            GROUP BY pod.item_id
+        )
+        SELECT si.id,
+               COALESCE(lp.cantidad,0) + COALESCE(ea.total,0) - COALESCE(xa.total,0)
+               - COALESCE(rs.total,0) - COALESCE(inv.total,0) AS new_stock
+        FROM supply_items si
+        LEFT JOIN last_phys lp      ON lp.id_item  = si.id_item
+        LEFT JOIN entries_adj ea    ON ea.id_item   = si.id_item
+        LEFT JOIN exits_adj xa      ON xa.id_item   = si.id_item
+        LEFT JOIN receipt_sales rs  ON rs.item_id   = si.id_item
+        LEFT JOIN invoice_sales inv ON inv.item_id  = si.id_item
+        WHERE {where_sql}
+    """), params)).mappings().all()
+
+    # 2. Bulk UPDATE
+    for row in calc_rows:
+        await db.execute(text("""
+            UPDATE supply_items SET stock_qty = :q, updated_at = NOW() WHERE id = :id
+        """), {"q": float(row["new_stock"]), "id": row["id"]})
+
+    await db.commit()
+    return {"ok": True, "updated": len(calc_rows)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

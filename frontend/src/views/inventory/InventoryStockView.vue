@@ -56,6 +56,25 @@
         filename="stocks-actuales"
         title="Stocks Actuales"
       />
+
+      <!-- Recalcular dropdown -->
+      <div class="rc-wrap" ref="rcWrap">
+        <button class="btn-rc" @click="rcOpen = !rcOpen" :disabled="recalculating">
+          <i class="bi" :class="recalculating ? 'bi-arrow-repeat rc-spin' : 'bi-arrow-clockwise'"></i>
+          Recalcular
+          <i class="bi bi-chevron-down rc-chv" :class="{ 'rc-chv-open': rcOpen }"></i>
+        </button>
+        <div v-if="rcOpen" class="rc-menu">
+          <button class="rc-opt" @click="runRecalc('all')">
+            <i class="bi bi-boxes"></i> Todos los insumos
+          </button>
+          <button class="rc-opt" :disabled="!catFilter" @click="runRecalc('category')"
+                  :title="!catFilter ? 'Selecciona una categoría primero' : ''">
+            <i class="bi bi-tag-fill"></i>
+            {{ catFilter ? 'Categoría: ' + activeCatName : 'Categoría (selecciona filtro)' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -111,6 +130,10 @@
                 <button class="btn-mov" @click.stop="openMov(r)" title="Ver movimientos">
                   <i class="bi bi-clock-history"></i>
                 </button>
+                <button class="btn-rc-item" @click.stop="runRecalc('item', r)"
+                        :disabled="recalcItemId === r.id_item" title="Recalcular este insumo">
+                  <i class="bi" :class="recalcItemId === r.id_item ? 'bi-arrow-repeat rc-spin' : 'bi-arrow-clockwise'"></i>
+                </button>
               </div>
             </div>
           </div>
@@ -149,6 +172,10 @@
             <div class="sc-act">
               <button class="btn-mov" @click.stop="openMov(r)" title="Ver movimientos">
                 <i class="bi bi-clock-history"></i>
+              </button>
+              <button class="btn-rc-item" @click.stop="runRecalc('item', r)"
+                      :disabled="recalcItemId === r.id_item" title="Recalcular este insumo">
+                <i class="bi" :class="recalcItemId === r.id_item ? 'bi-arrow-repeat rc-spin' : 'bi-arrow-clockwise'"></i>
               </button>
             </div>
           </div>
@@ -199,7 +226,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, onUnmounted, nextTick, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
@@ -209,6 +236,12 @@ const vFocus = { mounted: el => el.focus() }
 const rows       = ref([])
 const categories = ref([])
 const loading    = ref(true)
+
+// ── Recalcular ───────────────────────────────────────────────────────────────
+const rcOpen       = ref(false)
+const rcWrap       = ref(null)
+const recalculating = ref(false)
+const recalcItemId  = ref(null)
 
 const search       = ref('')
 const catFilter    = ref('')   // '' = todas
@@ -225,6 +258,18 @@ const lastInventoryDate = computed(() => {
     .map(r => String(r.last_inventory_date).slice(0, 10))
   return dates.length ? dates.sort().at(-1) : null
 })
+
+// Nombre de la categoría activa para mostrar en el dropdown
+const activeCatName = computed(() => {
+  if (!catFilter.value) return ''
+  const c = categories.value.find(x => x.id === catFilter.value)
+  return c ? c.name : ''
+})
+
+// Cierra el dropdown al hacer click fuera
+function onDocClick(e) {
+  if (rcWrap.value && !rcWrap.value.contains(e.target)) rcOpen.value = false
+}
 
 // ── Agrupamiento por categoría (solo cuando catFilter = '') ──────────────────
 const groupedByCategory = computed(() => {
@@ -371,13 +416,36 @@ async function openMov(r) {
   finally { mov.value.loading = false }
 }
 
+async function runRecalc(scope, row = null) {
+  rcOpen.value = false
+  const body = { scope }
+  if (scope === 'category' && catFilter.value) body.category_id = catFilter.value
+  if (scope === 'item' && row)               { body.id_item = row.id_item; recalcItemId.value = row.id_item }
+  if (scope !== 'item') recalculating.value = true
+  try {
+    const res = await api.post('/api/inventory/stock/recalculate', body)
+    showToast(`${res.data.updated} insumo${res.data.updated !== 1 ? 's' : ''} actualizados`, 'success')
+    await load()
+  } catch {
+    showToast('Error al recalcular', 'error')
+  } finally {
+    recalculating.value = false
+    recalcItemId.value = null
+  }
+}
+
 onActivated(() => {
   editingId.value = null
 })
 
 onMounted(async () => {
+  document.addEventListener('click', onDocClick)
   await loadCategories()
   load()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
 })
 </script>
 
@@ -438,6 +506,42 @@ onMounted(async () => {
 .tog-on { padding: 7px 12px; background: #2563eb; color: #fff; border: none; cursor: pointer; font-size: .81rem; font-weight: 600; }
 .crit-lbl { display: flex; align-items: center; gap: 5px; font-size: .82rem; cursor: pointer; white-space: nowrap; }
 .crit-chk { cursor: pointer; }
+
+/* Recalcular dropdown */
+.rc-wrap { position: relative; flex-shrink: 0; }
+.btn-rc {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 8px; border: 1px solid #d1d5db;
+  background: #fff; cursor: pointer; font-size: .82rem; color: #374151;
+  white-space: nowrap; font-weight: 600;
+}
+.btn-rc:hover:not(:disabled) { background: #f9fafb; border-color: #9ca3af; }
+.btn-rc:disabled { opacity: .6; cursor: not-allowed; }
+.rc-chv { font-size: .68rem; transition: transform .2s; }
+.rc-chv-open { transform: rotate(180deg); }
+.rc-spin { animation: spin 1s linear infinite; display: inline-block; }
+.rc-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 200;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12); min-width: 240px; overflow: hidden;
+}
+.rc-opt {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 10px 14px; border: none; background: none;
+  cursor: pointer; font-size: .84rem; color: #374151; text-align: left;
+}
+.rc-opt:hover:not(:disabled) { background: #f3f4f6; }
+.rc-opt:disabled { color: #d1d5db; cursor: not-allowed; }
+.rc-opt:not(:last-child) { border-bottom: 1px solid #f3f4f6; }
+
+/* Botón recalcular por ítem */
+.btn-rc-item {
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 7px;
+  padding: 5px 8px; cursor: pointer; color: #16a34a; font-size: .82rem;
+  margin-left: 2px;
+}
+.btn-rc-item:hover:not(:disabled) { background: #dcfce7; }
+.btn-rc-item:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Loading / empty */
 .state-c { text-align: center; padding: 40px; color: #6b7280; }
