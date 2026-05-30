@@ -44,15 +44,39 @@
 
     <!-- Info del insumo seleccionado -->
     <div v-if="kardex" class="kx-item-hdr">
-      <div class="kx-item-title">
-        <i class="bi bi-box-seam"></i>
-        <strong>{{ kardex.item.description }}</strong>
-        <span class="kx-badge kx-cat">{{ kardex.item.category_name || 'Sin categoría' }}</span>
-        <span class="kx-badge kx-unit">{{ kardex.item.unit_name }}</span>
+      <div class="kx-item-left">
+        <div class="kx-item-title">
+          <i class="bi bi-box-seam"></i>
+          <strong>{{ kardex.item.description }}</strong>
+          <span class="kx-badge kx-cat">{{ kardex.item.category_name || 'Sin categoría' }}</span>
+          <span class="kx-badge kx-unit">{{ kardex.item.unit_name }}</span>
+        </div>
+        <div class="kx-item-codes">
+          <span v-if="kardex.item.id" class="kx-code-chip"
+                @click="copyText(kardex.item.id, 'Código')"
+                title="Código interno — clic para copiar">
+            <i class="bi bi-hash"></i>{{ kardex.item.id }}
+            <i class="bi bi-clipboard kx-clip-ico"></i>
+          </span>
+          <span v-if="kardex.item.code" class="kx-code-chip"
+                @click="copyText(kardex.item.code, 'Código de barras')"
+                title="Código de barras — clic para copiar">
+            <i class="bi bi-upc-scan"></i>{{ kardex.item.code }}
+            <i class="bi bi-clipboard kx-clip-ico"></i>
+          </span>
+        </div>
       </div>
-      <div class="kx-range-lbl">
-        <i class="bi bi-calendar-range"></i>
-        {{ fmtDate(kardex.desde) }} → {{ fmtDate(kardex.hasta) }}
+      <div class="kx-item-right">
+        <div class="kx-range-lbl">
+          <i class="bi bi-calendar-range"></i>
+          {{ fmtDate(kardex.desde) }} → {{ fmtDate(kardex.hasta) }}
+        </div>
+        <ExportToolbar
+          :data="exportData"
+          :columns="exportCols"
+          :filename="exportFilename"
+          :title="exportTitle"
+        />
       </div>
     </div>
 
@@ -209,6 +233,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
@@ -270,6 +295,42 @@ function movBadgeCls(m) {
   return 'kx-mb-orange'
 }
 
+// ── Export ────────────────────────────────────────────────────────────────────
+const exportCols = computed(() => [
+  { key: 'fecha',       label: 'Fecha' },
+  { key: 'concepto',    label: 'Concepto' },
+  { key: 'numero',      label: 'N°',      fmt: v => v ? '#' + v : '—' },
+  { key: 'cantidad',    label: 'Cantidad', fmt: (v, row) => (row.tipo === 'entrada' ? '+' : '-') + fmtQ(v) },
+  { key: 'obs_usuario', label: 'Obs/Usuario' },
+])
+const exportData = computed(() => {
+  if (!kardex.value) return []
+  return kardex.value.movements.map(m => ({
+    fecha:       m.fecha,
+    concepto:    m.concepto,
+    numero:      m.numero,
+    tipo:        m.tipo,
+    cantidad:    m.cantidad,
+    obs_usuario: m.obs || m.usuario || '',
+  }))
+})
+const exportFilename = computed(() =>
+  kardex.value ? `kardex-${kardex.value.item.description.replace(/\s+/g, '_')}` : 'kardex'
+)
+const exportTitle = computed(() =>
+  kardex.value
+    ? `Kardex: ${kardex.value.item.description} | ${kardex.value.desde} → ${kardex.value.hasta}`
+    : 'Kardex'
+)
+
+// ── Copiar al portapapeles ────────────────────────────────────────────────────
+function copyText(val, label) {
+  if (!val) return
+  navigator.clipboard.writeText(String(val))
+    .then(() => showToast(`${label} copiado`, 'success'))
+    .catch(() => showToast('No se pudo copiar', 'error'))
+}
+
 // ── Carga de datos ────────────────────────────────────────────────────────────
 async function loadItems() {
   try {
@@ -328,15 +389,28 @@ onMounted(loadItems)
 
 /* ── Info del insumo ── */
 .kx-item-hdr {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: space-between; align-items: flex-start;
   background: #1d4ed8; color: #fff; border-radius: 10px;
-  padding: 10px 16px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+  padding: 10px 16px; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;
 }
+.kx-item-left  { display: flex; flex-direction: column; gap: 6px; }
+.kx-item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .kx-item-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .9rem; }
 .kx-badge { padding: 2px 8px; border-radius: 10px; font-size: .74rem; font-weight: 600; }
 .kx-cat  { background: rgba(255,255,255,.2); }
 .kx-unit { background: rgba(255,255,255,.15); }
 .kx-range-lbl { font-size: .8rem; opacity: .85; display: flex; align-items: center; gap: 5px; }
+
+/* Chips copiables de código/barcode */
+.kx-item-codes { display: flex; gap: 8px; flex-wrap: wrap; }
+.kx-code-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(255,255,255,.15); color: #fff;
+  padding: 3px 9px; border-radius: 20px; font-size: .75rem; font-weight: 600;
+  cursor: pointer; transition: background .15s; user-select: none;
+}
+.kx-code-chip:hover { background: rgba(255,255,255,.28); }
+.kx-clip-ico { font-size: .68rem; opacity: .75; margin-left: 2px; }
 
 /* ── Layout principal ── */
 .kx-main {
@@ -459,6 +533,8 @@ onMounted(loadItems)
   .kx-sel-bar { padding: 10px; gap: 8px; }
   .kx-field-grow { min-width: 140px; }
   .kx-summary { grid-template-columns: repeat(2, 1fr); }
+  .kx-item-hdr { flex-direction: column; }
+  .kx-item-right { align-items: flex-start; }
 }
 @media (max-width: 576px) {
   .kx-wrap    { padding: 8px; }
@@ -469,5 +545,7 @@ onMounted(loadItems)
   .kx-sum-n   { font-size: 1.1rem; }
   .kx-tbl-scroll  { max-height: 260px; }
   .kx-det-scroll  { max-height: 220px; }
+  .kx-item-codes { gap: 6px; }
+  .kx-code-chip   { font-size: .72rem; padding: 2px 7px; }
 }
 </style>

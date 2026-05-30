@@ -724,14 +724,52 @@ async def get_kardex(
         ORDER BY ix.fecha, ix.id
     """), base_p)).mappings().all()
 
-    # ── Ventas (desde stock_movements si VB6 las sincronizó) ──────────────────
-    sales = (await db.execute(text("""
+    # ── Ventas desde facturas VB6 (pos_invoice_details × receta) ─────────────
+    inv_sales = (await db.execute(text("""
+        SELECT pid.date AS fecha,
+               pid.invoice_number AS numero,
+               SUM(pid.quantity * pdp.minimum_units) AS cantidad
+        FROM pos_invoice_details pid
+        JOIN pos_invoices pi  ON pi.invoice_number = pid.invoice_number
+                              AND pi.company_id    = pid.company_id
+        JOIN pos_dish_products pdp ON pdp.dish_id    = pid.dish_id
+                                   AND pdp.company_id = pid.company_id
+        WHERE pid.company_id = :cid
+          AND pdp.supplier_id = :item
+          AND pid.date BETWEEN :desde AND :hasta
+          AND (pi.voided  IS NULL OR pi.voided  = 0)
+          AND (pid.complimentary IS NULL OR pid.complimentary = 0)
+        GROUP BY pid.date, pid.invoice_number
+        ORDER BY pid.date, pid.invoice_number
+    """), base_p)).mappings().all()
+
+    # ── Ventas desde recibos VB6 (pos_receipt_invoice_details × receta) ───────
+    rec_sales = (await db.execute(text("""
+        SELECT prd.date AS fecha,
+               prd.receipt_number AS numero,
+               SUM(prd.quantity * pdp.minimum_units) AS cantidad
+        FROM pos_receipt_invoice_details prd
+        JOIN pos_receipts pr  ON pr.receipt_number = prd.receipt_number
+                              AND pr.company_id    = prd.company_id
+        JOIN pos_dish_products pdp ON pdp.dish_id    = prd.dish_id
+                                   AND pdp.company_id = prd.company_id
+        WHERE prd.company_id = :cid
+          AND pdp.supplier_id = :item
+          AND prd.date BETWEEN :desde AND :hasta
+          AND (pr.voided  IS NULL OR pr.voided  = 0)
+          AND (prd.complimentary IS NULL OR prd.complimentary = 0)
+        GROUP BY prd.date, prd.receipt_number
+        ORDER BY prd.date, prd.receipt_number
+    """), base_p)).mappings().all()
+
+    # ── Ventas web (stock_movements — canal web/online) ────────────────────────
+    web_sales = (await db.execute(text("""
         SELECT DATE(sm.movement_date) AS fecha,
                CASE sm.movement_type
                  WHEN 'sale_vb6'    THEN 'VENTA'
                  WHEN 'sale_web'    THEN 'VENTA WEB'
                  WHEN 'sale_online' THEN 'VENTA ONLINE'
-                 ELSE sm.movement_type END AS concepto,
+                 ELSE 'VENTA' END AS concepto,
                sm.reference_id AS numero,
                ABS(sm.qty)     AS cantidad,
                COALESCE(sm.notes, '') AS obs,
@@ -766,7 +804,29 @@ async def get_kardex(
             "usuario":  r["usuario"],
             "tipo":     "salida",
         })
-    for r in sales:
+    for r in inv_sales:
+        if r["cantidad"] and float(r["cantidad"]) > 0:
+            movements.append({
+                "fecha":    str(r["fecha"]).split(" ")[0],
+                "concepto": "VENTA FACT.",
+                "numero":   r["numero"],
+                "cantidad": float(r["cantidad"]),
+                "obs":      "",
+                "usuario":  "",
+                "tipo":     "venta",
+            })
+    for r in rec_sales:
+        if r["cantidad"] and float(r["cantidad"]) > 0:
+            movements.append({
+                "fecha":    str(r["fecha"]).split(" ")[0],
+                "concepto": "VENTA REC.",
+                "numero":   r["numero"],
+                "cantidad": float(r["cantidad"]),
+                "obs":      "",
+                "usuario":  "",
+                "tipo":     "venta",
+            })
+    for r in web_sales:
         movements.append({
             "fecha":    str(r["fecha"]).split(" ")[0],
             "concepto": r["concepto"],
