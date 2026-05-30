@@ -31,10 +31,16 @@
         </select>
       </div>
 
-      <!-- Fechas -->
+      <!-- Fecha desde: bloqueada para no-SYSADMIN -->
       <div class="kx-field">
-        <label class="kx-lbl">Desde</label>
-        <CustomDatePicker v-model="desde" @update:modelValue="reloadKardex" />
+        <label class="kx-lbl">
+          Desde (últ. inventario)
+          <i v-if="!isSysAdmin" class="bi bi-lock-fill kx-lock-ico" title="Solo SYSADMIN puede cambiar esta fecha"></i>
+        </label>
+        <CustomDatePicker v-if="isSysAdmin" v-model="desde" @update:modelValue="reloadKardex" />
+        <div v-else class="kx-inp kx-date-ro">
+          {{ desde || '—' }}
+        </div>
       </div>
       <div class="kx-field">
         <label class="kx-lbl">Hasta</label>
@@ -103,7 +109,7 @@
                 <th class="tr">Inv.Ini</th>
                 <th class="tr kx-col-ent">Entradas</th>
                 <th class="tr kx-col-sal">Salidas</th>
-                <th v-if="kardex.has_ventas" class="tr kx-col-ven">Ventas</th>
+                <th class="tr kx-col-ven">Ventas</th>
                 <th class="tr">Total</th>
               </tr>
             </thead>
@@ -127,8 +133,7 @@
                 <td class="tr kx-num" :class="d.salidas > 0 ? 'c-orange' : 'td-muted'">
                   {{ d.salidas > 0 ? fmtQ(d.salidas) : '—' }}
                 </td>
-                <td v-if="kardex.has_ventas" class="tr kx-num"
-                    :class="d.ventas > 0 ? 'c-red' : 'td-muted'">
+                <td class="tr kx-num" :class="d.ventas > 0 ? 'c-red' : 'td-muted'">
                   {{ d.ventas > 0 ? fmtQ(d.ventas) : '—' }}
                 </td>
                 <td class="tr kx-total"
@@ -137,7 +142,7 @@
                 </td>
               </tr>
               <tr v-if="!kardex.daily.length">
-                <td :colspan="kardex.has_ventas ? 6 : 5" class="kx-empty">
+                <td colspan="6" class="kx-empty">
                   Sin movimientos en este rango
                 </td>
               </tr>
@@ -164,7 +169,7 @@
             <span class="kx-sum-n">{{ fmtQ(kardex.totals.salidas) }}</span>
             <span class="kx-sum-l">Total salidas</span>
           </div>
-          <div v-if="kardex.has_ventas" class="kx-sum-card kx-sum-red">
+          <div class="kx-sum-card kx-sum-red">
             <span class="kx-sum-n">{{ fmtQ(kardex.totals.ventas) }}</span>
             <span class="kx-sum-l">Total ventas</span>
           </div>
@@ -237,6 +242,10 @@ import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
+// ── Rol del usuario ───────────────────────────────────────────────────────────
+const _u = JSON.parse(localStorage.getItem('user') || '{}')
+const isSysAdmin = _u.role === 'SYSADMIN'
+
 // ── Selección ─────────────────────────────────────────────────────────────────
 const allItems     = ref([])   // todos los insumos (activos)
 const categories   = ref([])
@@ -255,9 +264,14 @@ const filteredItems = computed(() => {
   })
 })
 
-function onCatChange()   { searchQ.value = ''; selItem.value = '' }
-function filterItems()   { selItem.value = '' }
-function onItemSelect()  { if (selItem.value) loadKardex() }
+function onCatChange()  { searchQ.value = ''; selItem.value = ''; kardex.value = null }
+function filterItems()  { selItem.value = ''; kardex.value = null }
+function onItemSelect() {
+  if (selItem.value) {
+    desde.value = ''  // resetear para que backend calcule la fecha del último inventario
+    loadKardex()
+  }
+}
 
 // ── Fechas ────────────────────────────────────────────────────────────────────
 const desde = ref('')
@@ -358,8 +372,8 @@ async function loadKardex() {
     if (desde.value) params.desde = desde.value
     const res = (await api.get(`/api/inventory/kardex/${selItem.value}`, { params })).data
     kardex.value = res
-    // Setear el 'desde' al inicio del inventario si no estaba definido
-    if (!desde.value) desde.value = res.desde
+    // Siempre sincronizar 'desde' con la fecha del último inventario del insumo
+    if (!desde.value || !params.desde) desde.value = res.desde
   } catch (e) {
     showToast('Error al cargar el Kardex', 'error')
     kardex.value = null
@@ -386,6 +400,11 @@ onMounted(loadItems)
   font-size: .86rem; background: #fff; width: 100%; box-sizing: border-box;
 }
 .kx-inp:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+.kx-date-ro {
+  background: #f3f4f6; color: #374151; cursor: not-allowed;
+  display: flex; align-items: center; gap: 5px; min-height: 36px;
+}
+.kx-lock-ico { color: #9ca3af; font-size: .72rem; margin-left: 3px; }
 
 /* ── Info del insumo ── */
 .kx-item-hdr {
