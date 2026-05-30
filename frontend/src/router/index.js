@@ -682,6 +682,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Salidas de Inventario" }
       },
+      {
+        path: "/inventory/kardex",
+        name: "InventoryKardexView",
+        component: () => import("@/views/inventory/InventoryKardexView.vue"),
+        requiresAuth: true,
+        meta: { title: "Kardex de Insumos" }
+      },
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",

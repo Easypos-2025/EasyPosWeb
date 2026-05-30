@@ -1,4 +1,5 @@
-from datetime import date as date_type
+from datetime import date as date_type, datetime, timedelta
+from collections import defaultdict
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -618,6 +619,216 @@ async def authorize_physical(
 
     await db.commit()
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KARDEX — trazabilidad completa de un insumo desde el último inventario físico
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/kardex/items")
+async def kardex_items(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista de insumos disponibles para el Kardex (solo los que tienen movimientos)."""
+    rows = (await db.execute(text("""
+        SELECT si.id_item, si.description, si.code,
+               COALESCE(mu.name,  '') AS unit_name,
+               COALESCE(cat.name, '') AS category_name,
+               si.agrupar AS category_id
+        FROM supply_items si
+        LEFT JOIN pos_measure_forms mu  ON mu.id  = si.unit_id AND mu.company_id  = si.company_id
+        LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = si.company_id
+        WHERE si.company_id = :cid AND si.is_active = 1
+        ORDER BY cat.name, si.description
+    """), {"cid": current_user.company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/kardex/{id_item}")
+async def get_kardex(
+    id_item: int,
+    desde: Optional[str] = Query(None),
+    hasta:  Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Kardex de un insumo: balance diario desde el último inventario físico.
+    - desde: si no se pasa, usa la fecha del último inventario físico del ítem.
+    - hasta: si no se pasa, usa hoy.
+    Columnas diarias: fecha | ini | entradas | salidas | total
+    Detalle:          fecha | concepto | numero | cantidad | obs
+    """
+    cid = current_user.company_id
+    today = date_type.today().isoformat()
+    hasta_d = hasta or today
+
+    # ── Info del insumo ────────────────────────────────────────────────────────
+    item_row = (await db.execute(text("""
+        SELECT si.id, si.id_item, si.description, si.code,
+               COALESCE(mu.name,  '') AS unit_name,
+               COALESCE(cat.name, '') AS category_name
+        FROM supply_items si
+        LEFT JOIN pos_measure_forms mu  ON mu.id  = si.unit_id AND mu.company_id  = si.company_id
+        LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = si.company_id
+        WHERE si.company_id = :cid AND si.id_item = :item LIMIT 1
+    """), {"cid": cid, "item": id_item})).mappings().first()
+
+    if not item_row:
+        raise HTTPException(404, "Insumo no encontrado")
+
+    si_id = item_row["id"]
+
+    # ── Último inventario físico (antes o en 'desde') ──────────────────────────
+    phys_base = """
+        SELECT fecha, SUM(cantidad) AS cantidad
+        FROM inventory_physical
+        WHERE company_id = :cid AND id_item = :item {cond}
+        GROUP BY fecha ORDER BY fecha DESC LIMIT 1
+    """
+    p: dict = {"cid": cid, "item": id_item}
+    if desde:
+        p["desde"] = desde
+        last_phys = (await db.execute(text(phys_base.format(cond="AND fecha <= :desde")), p)).mappings().first()
+        if not last_phys:
+            last_phys = (await db.execute(text(phys_base.format(cond="")), {"cid": cid, "item": id_item})).mappings().first()
+    else:
+        last_phys = (await db.execute(text(phys_base.format(cond="")), p)).mappings().first()
+
+    start_fecha = str(last_phys["fecha"]).split(" ")[0] if last_phys else (desde or today)
+    start_qty   = float(last_phys["cantidad"]) if last_phys else 0.0
+    desde_d     = desde or start_fecha
+
+    base_p = {"cid": cid, "item": id_item, "desde": desde_d, "hasta": hasta_d}
+
+    # ── Entradas ───────────────────────────────────────────────────────────────
+    entries = (await db.execute(text("""
+        SELECT ie.fecha, ie.id_entrada AS numero, ie.cantidad,
+               COALESCE(ie.observacion, '') AS obs,
+               COALESCE(ie.cod_empleado, '') AS usuario
+        FROM inventory_entries ie
+        WHERE ie.company_id = :cid AND ie.id_item = :item
+          AND ie.fecha BETWEEN :desde AND :hasta
+        ORDER BY ie.fecha, ie.id
+    """), base_p)).mappings().all()
+
+    # ── Salidas ────────────────────────────────────────────────────────────────
+    exits = (await db.execute(text("""
+        SELECT ix.fecha, ix.id_salida AS numero, ix.cantidad,
+               COALESCE(ix.observacion, '') AS obs,
+               COALESCE(ix.cod_empleado, '') AS usuario
+        FROM inventory_exits ix
+        WHERE ix.company_id = :cid AND ix.id_item = :item
+          AND ix.fecha BETWEEN :desde AND :hasta
+        ORDER BY ix.fecha, ix.id
+    """), base_p)).mappings().all()
+
+    # ── Ventas (desde stock_movements si VB6 las sincronizó) ──────────────────
+    sales = (await db.execute(text("""
+        SELECT DATE(sm.movement_date) AS fecha,
+               CASE sm.movement_type
+                 WHEN 'sale_vb6'    THEN 'VENTA'
+                 WHEN 'sale_web'    THEN 'VENTA WEB'
+                 WHEN 'sale_online' THEN 'VENTA ONLINE'
+                 ELSE sm.movement_type END AS concepto,
+               sm.reference_id AS numero,
+               ABS(sm.qty)     AS cantidad,
+               COALESCE(sm.notes, '') AS obs,
+               COALESCE(u.nombre, u.email, '') AS usuario
+        FROM stock_movements sm
+        LEFT JOIN users u ON u.id = sm.created_by
+        WHERE sm.supply_item_id = :sid
+          AND sm.movement_type IN ('sale_vb6','sale_web','sale_online')
+          AND sm.movement_date BETWEEN :desde AND :hasta
+        ORDER BY sm.movement_date, sm.id
+    """), {"sid": si_id, "desde": desde_d, "hasta": hasta_d})).mappings().all()
+
+    # ── Construir lista de movimientos ─────────────────────────────────────────
+    movements = []
+    for r in entries:
+        movements.append({
+            "fecha":    str(r["fecha"]).split(" ")[0],
+            "concepto": "ENTRADA",
+            "numero":   r["numero"],
+            "cantidad": float(r["cantidad"]),
+            "obs":      r["obs"],
+            "usuario":  r["usuario"],
+            "tipo":     "entrada",
+        })
+    for r in exits:
+        movements.append({
+            "fecha":    str(r["fecha"]).split(" ")[0],
+            "concepto": "SALIDA",
+            "numero":   r["numero"],
+            "cantidad": float(r["cantidad"]),
+            "obs":      r["obs"],
+            "usuario":  r["usuario"],
+            "tipo":     "salida",
+        })
+    for r in sales:
+        movements.append({
+            "fecha":    str(r["fecha"]).split(" ")[0],
+            "concepto": r["concepto"],
+            "numero":   r["numero"],
+            "cantidad": float(r["cantidad"]),
+            "obs":      r["obs"],
+            "usuario":  r["usuario"],
+            "tipo":     "venta",
+        })
+    movements.sort(key=lambda x: (x["fecha"], x["concepto"], x["numero"] or 0))
+
+    # ── Totales por día ────────────────────────────────────────────────────────
+    d_ent = defaultdict(float)
+    d_sal = defaultdict(float)
+    d_ven = defaultdict(float)
+    for m in movements:
+        if   m["tipo"] == "entrada": d_ent[m["fecha"]] += m["cantidad"]
+        elif m["tipo"] == "salida":  d_sal[m["fecha"]] += m["cantidad"]
+        elif m["tipo"] == "venta":   d_ven[m["fecha"]] += m["cantidad"]
+
+    # ── Serie diaria (solo días con movimiento + día inicial) ──────────────────
+    d1 = datetime.strptime(desde_d, "%Y-%m-%d").date()
+    d2 = datetime.strptime(hasta_d, "%Y-%m-%d").date()
+    daily   = []
+    balance = start_qty
+    cur     = d1
+    while cur <= d2:
+        ds  = cur.isoformat()
+        ini = balance
+        ent = d_ent.get(ds, 0.0)
+        sal = d_sal.get(ds, 0.0)
+        ven = d_ven.get(ds, 0.0)
+        balance = ini + ent - sal - ven
+        if ds == start_fecha or ent or sal or ven:
+            daily.append({
+                "fecha":    ds,
+                "ini":      ini,
+                "entradas": ent,
+                "salidas":  sal,
+                "ventas":   ven,
+                "total":    balance,
+                "is_start": ds == start_fecha,
+            })
+        cur += timedelta(days=1)
+
+    has_ventas = any(d["ventas"] for d in daily)
+
+    return {
+        "item": dict(item_row),
+        "start":    {"fecha": start_fecha, "cantidad": start_qty},
+        "desde":    desde_d,
+        "hasta":    hasta_d,
+        "has_ventas": has_ventas,
+        "movements": movements,
+        "daily":     daily,
+        "totals": {
+            "entradas":        sum(d_ent.values()),
+            "salidas":         sum(d_sal.values()),
+            "ventas":          sum(d_ven.values()),
+            "stock_calculado": balance,
+        },
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
