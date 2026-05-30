@@ -65,7 +65,10 @@
           <tbody>
             <tr v-for="ad in ads" :key="ad.id" :class="{ 'row-pending': ad.status==='pending' }">
               <td class="td-id">{{ ad.id }}</td>
-              <td class="td-company">{{ ad.company_name || '—' }}</td>
+              <td class="td-company">
+                <span v-if="ad.company_id === null" class="badge-externo">Externo</span>
+                {{ ad.company_name || (ad.company_id === null ? '' : '—') }}
+              </td>
               <td class="td-title">{{ ad.title }}</td>
               <td><span class="status-badge" :class="ad.status">{{ statusLabel(ad.status) }}</span></td>
               <td>{{ ad.target_profile_name || 'Todos' }}</td>
@@ -684,6 +687,10 @@ onMounted(() => {
 .td-amount  { font-weight: 600; white-space: nowrap; }
 .td-actions-pay { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 
+.badge-externo {
+  display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 700;
+  background: rgba(245,158,11,.18); color: #d97706; margin-right: 4px; vertical-align: middle;
+}
 .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
 .status-badge.pending  { background: rgba(245,158,11,.15); color: #d97706; }
 .status-badge.approved { background: rgba(59,130,246,.15); color: #2563eb; }

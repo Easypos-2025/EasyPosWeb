@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 
@@ -206,6 +206,88 @@ async def get_active_slots(db: AsyncSession = Depends(get_db)):
         else:
             slots.append({"slot": pos, "active": False, "pieces": []})
     return slots
+
+
+@router.post("/public-request")
+async def public_ad_request(
+    title:                  str        = Form(...),
+    contact_name:           str        = Form(...),
+    contact_email:          str        = Form(...),
+    contact_phone:          str        = Form(default=""),
+    description:            str        = Form(default=""),
+    cta_url:                str        = Form(default=""),
+    start_date:             str        = Form(default=""),
+    end_date:               str        = Form(default=""),
+    target_profile_id:      int | None = Form(default=None),
+    social_instagram:       str        = Form(default=""),
+    social_tiktok:          str        = Form(default=""),
+    social_facebook:        str        = Form(default=""),
+    social_youtube_channel: str        = Form(default=""),
+    social_website:         str        = Form(default=""),
+    notes:                  str        = Form(default=""),
+    file:                   UploadFile = File(default=None),
+    db:                     AsyncSession = Depends(get_db),
+):
+    """Public endpoint — no auth. Stores advertising request from landing page."""
+    title = title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="El título es requerido")
+    contact_name  = contact_name.strip()
+    contact_email = contact_email.strip()
+    if not contact_name:
+        raise HTTPException(status_code=400, detail="El nombre de contacto es requerido")
+    if not contact_email or "@" not in contact_email:
+        raise HTTPException(status_code=400, detail="El email de contacto es requerido y debe ser válido")
+
+    notes_parts = [f"Contacto: {contact_name} | Email: {contact_email}"]
+    if contact_phone.strip():
+        notes_parts[0] += f" | Tel: {contact_phone.strip()}"
+    if notes.strip():
+        notes_parts.append(notes.strip())
+    notes_to_admin = "\n".join(notes_parts)
+
+    ad = Advertisement(
+        company_id=None,
+        title=title,
+        description=description.strip() or None,
+        cta_url=_validate_url(cta_url) if cta_url.strip() else None,
+        notes_to_admin=notes_to_admin,
+        target_profile_id=target_profile_id or None,
+        start_date=_parse_date(start_date),
+        end_date=_parse_date(end_date),
+        social_instagram=_validate_url(social_instagram) if social_instagram.strip() else None,
+        social_tiktok=_validate_url(social_tiktok) if social_tiktok.strip() else None,
+        social_facebook=_validate_url(social_facebook) if social_facebook.strip() else None,
+        social_youtube_channel=_validate_url(social_youtube_channel) if social_youtube_channel.strip() else None,
+        social_website=_validate_url(social_website) if social_website.strip() else None,
+        status="pending",
+    )
+    db.add(ad)
+    await db.commit()
+    await db.refresh(ad)
+
+    if file and file.filename:
+        ext = Path(file.filename).suffix.lower()
+        if ext in ALLOWED_IMAGE:
+            piece_type = "image"
+        elif ext in ALLOWED_VIDEO:
+            piece_type = "video"
+        else:
+            raise HTTPException(status_code=400, detail="Formato no permitido. Imágenes: JPG, PNG, WEBP. Video: MP4, MOV, WEBM")
+
+        content = await file.read()
+        if len(content) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="El archivo supera el límite de 8 MB")
+
+        safe_name    = f"ad_{ad.id}_{uuid.uuid4().hex[:10]}{ext}"
+        storage_path = f"ads/{safe_name}"
+        url          = await upload_file(content, storage_path)
+
+        piece = AdPiece(advertisement_id=ad.id, piece_type=piece_type, media_url=url, order_index=0)
+        db.add(piece)
+        await db.commit()
+
+    return {"ok": True, "id": ad.id}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

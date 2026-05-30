@@ -14,6 +14,9 @@
           <a href="#modulos"    class="nav-link-item">Módulos</a>
           <a href="#planes"     class="nav-link-item">Planes</a>
           <a href="#contacto"   class="nav-link-item">Contacto</a>
+          <a href="#pauta"      class="nav-link-item nav-link-paute">
+            <i class="bi bi-megaphone-fill me-1"></i>Paute
+          </a>
         </div>
         <div class="nav-actions">
           <a href="/login"    class="btn-nav-outline">Iniciar Sesión</a>
@@ -28,6 +31,9 @@
         <a href="#modulos"   @click="mobileOpen=false">Módulos</a>
         <a href="#planes"    @click="mobileOpen=false">Planes</a>
         <a href="#contacto"  @click="mobileOpen=false">Contacto</a>
+        <a href="#pauta"     @click="mobileOpen=false" class="mobile-paute-link">
+          <i class="bi bi-megaphone-fill me-1"></i>Paute Aquí
+        </a>
         <hr>
         <a href="/login"    class="btn-nav-outline w-100 text-center mb-2">Iniciar Sesión</a>
         <a href="/register" class="btn-nav-solid  w-100 text-center">Empezar Gratis</a>
@@ -609,6 +615,176 @@
     </section>
 
     <!-- ══════════════════════════════════════════════
+         SECCIÓN PAUTE AQUÍ
+    ══════════════════════════════════════════════ -->
+    <section id="pauta" class="section-pauta">
+      <div class="pauta-inner">
+        <div class="pauta-header text-center">
+          <span class="section-badge orange"><i class="bi bi-megaphone-fill me-1"></i>Publicidad</span>
+          <h2 class="section-title">Paute con Nosotros</h2>
+          <p class="section-subtitle">Llega a miles de emprendedores y empresarios. Completa el formulario y te contactamos.</p>
+        </div>
+
+        <div class="pauta-grid">
+          <!-- Info columna izquierda -->
+          <div class="pauta-info">
+            <div class="pauta-benefit">
+              <i class="bi bi-people-fill"></i>
+              <div>
+                <strong>Audiencia objetivo</strong>
+                <span>Dueños de negocios, restaurantes y emprendedores buscando soluciones POS.</span>
+              </div>
+            </div>
+            <div class="pauta-benefit">
+              <i class="bi bi-eye-fill"></i>
+              <div>
+                <strong>Alta visibilidad</strong>
+                <span>Tu marca en el banner y la barra lateral visible en toda la plataforma.</span>
+              </div>
+            </div>
+            <div class="pauta-benefit">
+              <i class="bi bi-graph-up-arrow"></i>
+              <div>
+                <strong>Resultados medibles</strong>
+                <span>Reportes de impresiones y clics en tiempo real desde tu panel.</span>
+              </div>
+            </div>
+            <div class="pauta-benefit">
+              <i class="bi bi-chat-dots-fill"></i>
+              <div>
+                <strong>Formatos flexibles</strong>
+                <span>Imagen, video, texto, redes sociales o YouTube. Hasta 3 piezas por pauta.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Formulario columna derecha -->
+          <div class="pauta-form-wrap">
+            <div v-if="pauteSuccess" class="pauta-success">
+              <i class="bi bi-check-circle-fill me-2"></i>
+              ¡Solicitud enviada! Te contactaremos pronto para gestionar tu pauta.
+            </div>
+            <form v-else class="pauta-form" @submit.prevent="submitPaute">
+
+              <!-- Datos de contacto -->
+              <div class="pf-section-lbl">Datos de Contacto</div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Nombre completo *</label>
+                  <input v-model="pauteForm.contact_name" type="text" class="form-ctrl"
+                    :class="{ invalid: pauteErrors.contact_name }" placeholder="Tu nombre" />
+                  <span v-if="pauteErrors.contact_name" class="form-error">{{ pauteErrors.contact_name }}</span>
+                </div>
+                <div class="form-group">
+                  <label>Email *</label>
+                  <input v-model="pauteForm.contact_email" type="email" class="form-ctrl"
+                    :class="{ invalid: pauteErrors.contact_email }" placeholder="correo@empresa.com" />
+                  <span v-if="pauteErrors.contact_email" class="form-error">{{ pauteErrors.contact_email }}</span>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Teléfono / WhatsApp</label>
+                  <input v-model="pauteForm.contact_phone" type="tel" class="form-ctrl" placeholder="+57 300 000 0000" />
+                </div>
+                <div class="form-group">
+                  <label>Perfil de negocio objetivo</label>
+                  <select v-model="pauteForm.target_profile_id" class="form-ctrl">
+                    <option :value="null">Todos los perfiles</option>
+                    <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Datos de la pauta -->
+              <div class="pf-section-lbl">Datos de la Pauta</div>
+              <div class="form-group">
+                <label>Título de la pauta *</label>
+                <input v-model="pauteForm.title" type="text" class="form-ctrl"
+                  :class="{ invalid: pauteErrors.title }" placeholder="Ej: Promoción especial de verano" />
+                <span v-if="pauteErrors.title" class="form-error">{{ pauteErrors.title }}</span>
+              </div>
+              <div class="form-group">
+                <label>Descripción</label>
+                <textarea v-model="pauteForm.description" class="form-ctrl form-textarea" rows="3"
+                  placeholder="Describe tu producto, servicio o promoción..."></textarea>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label>Fecha inicio deseada</label>
+                  <input v-model="pauteForm.start_date" type="date" class="form-ctrl" />
+                </div>
+                <div class="form-group">
+                  <label>Fecha fin deseada</label>
+                  <input v-model="pauteForm.end_date" type="date" class="form-ctrl" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>URL de destino (clic)</label>
+                <input v-model="pauteForm.cta_url" type="url" class="form-ctrl" placeholder="https://miempresa.com" />
+              </div>
+
+              <!-- Redes sociales -->
+              <div class="pf-section-lbl">Redes Sociales <span class="pf-optional">(opcional)</span></div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label><i class="bi bi-instagram me-1"></i>Instagram</label>
+                  <input v-model="pauteForm.social_instagram" type="url" class="form-ctrl" placeholder="https://instagram.com/..." />
+                </div>
+                <div class="form-group">
+                  <label><i class="bi bi-tiktok me-1"></i>TikTok</label>
+                  <input v-model="pauteForm.social_tiktok" type="url" class="form-ctrl" placeholder="https://tiktok.com/..." />
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label><i class="bi bi-facebook me-1"></i>Facebook</label>
+                  <input v-model="pauteForm.social_facebook" type="url" class="form-ctrl" placeholder="https://facebook.com/..." />
+                </div>
+                <div class="form-group">
+                  <label><i class="bi bi-youtube me-1"></i>YouTube</label>
+                  <input v-model="pauteForm.social_youtube_channel" type="url" class="form-ctrl" placeholder="https://youtube.com/..." />
+                </div>
+              </div>
+              <div class="form-group">
+                <label><i class="bi bi-globe me-1"></i>Sitio web</label>
+                <input v-model="pauteForm.social_website" type="url" class="form-ctrl" placeholder="https://miempresa.com" />
+              </div>
+
+              <!-- Pieza / Archivo -->
+              <div class="pf-section-lbl">Pieza publicitaria <span class="pf-optional">(imagen o video, máx. 8MB)</span></div>
+              <div class="form-group">
+                <label class="file-label-btn" for="pauta-file-input">
+                  <i class="bi bi-cloud-upload-fill me-2"></i>
+                  {{ pauteForm.pieceFile ? pauteForm.pieceFile.name : 'Seleccionar archivo' }}
+                </label>
+                <input id="pauta-file-input" type="file" accept="image/*,video/*" class="d-none"
+                  @change="e => pauteForm.pieceFile = e.target.files[0]" />
+                <small class="form-hint">JPG, PNG, WEBP, MP4, MOV, WEBM</small>
+              </div>
+
+              <!-- Notas -->
+              <div class="form-group">
+                <label>Notas adicionales para el administrador</label>
+                <textarea v-model="pauteForm.notes" class="form-ctrl form-textarea" rows="2"
+                  placeholder="Presupuesto estimado, horarios preferidos, etc."></textarea>
+              </div>
+
+              <div v-if="pauteError" class="pauta-error">
+                <i class="bi bi-exclamation-circle-fill me-2"></i>{{ pauteError }}
+              </div>
+
+              <button type="submit" class="btn-paute-submit" :disabled="pauteSubmitting">
+                <span v-if="pauteSubmitting"><i class="bi bi-hourglass-split me-2"></i>Enviando...</span>
+                <span v-else><i class="bi bi-send-fill me-2"></i>Enviar Solicitud de Pauta</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════
          FOOTER
     ══════════════════════════════════════════════ -->
     <footer class="landing-footer">
@@ -629,6 +805,7 @@
             <h5>Empresa</h5>
             <a href="#contacto">Contacto</a>
             <a href="#contacto">Soporte</a>
+            <a href="#pauta" class="footer-paute-link"><i class="bi bi-megaphone-fill me-1"></i>Paute Aquí</a>
           </div>
           <div class="footer-col">
             <h5>Legal</h5>
@@ -704,6 +881,21 @@ export default {
 
     const form       = reactive({ name: "", email: "", phone: "", company: "", message: "" })
     const formErrors = reactive({ name: "", email: "", message: "" })
+
+    const pauteForm = reactive({
+      contact_name: "", contact_email: "", contact_phone: "",
+      title: "", description: "", cta_url: "",
+      start_date: "", end_date: "",
+      target_profile_id: null,
+      social_instagram: "", social_tiktok: "", social_facebook: "",
+      social_youtube_channel: "", social_website: "",
+      notes: "",
+      pieceFile: null,
+    })
+    const pauteErrors    = reactive({ contact_name: "", contact_email: "", title: "" })
+    const pauteSubmitting = ref(false)
+    const pauteSuccess   = ref(false)
+    const pauteError     = ref("")
 
     const currentYear = new Date().getFullYear()
 
@@ -876,6 +1068,50 @@ export default {
       }
     }
 
+    async function submitPaute() {
+      pauteErrors.contact_name = pauteErrors.contact_email = pauteErrors.title = ""
+      pauteError.value = ""
+      let ok = true
+      if (!pauteForm.contact_name.trim()) { pauteErrors.contact_name = "Nombre requerido"; ok = false }
+      if (!pauteForm.contact_email.trim() || !/\S+@\S+\.\S+/.test(pauteForm.contact_email)) {
+        pauteErrors.contact_email = "Email válido requerido"; ok = false
+      }
+      if (!pauteForm.title.trim()) { pauteErrors.title = "Título requerido"; ok = false }
+      if (!ok) return
+
+      pauteSubmitting.value = true
+      try {
+        const fd = new FormData()
+        fd.append("title",                  pauteForm.title.trim())
+        fd.append("contact_name",           pauteForm.contact_name.trim())
+        fd.append("contact_email",          pauteForm.contact_email.trim())
+        fd.append("contact_phone",          pauteForm.contact_phone.trim())
+        fd.append("description",            pauteForm.description.trim())
+        fd.append("cta_url",               pauteForm.cta_url.trim())
+        fd.append("start_date",            pauteForm.start_date)
+        fd.append("end_date",              pauteForm.end_date)
+        if (pauteForm.target_profile_id)   fd.append("target_profile_id", pauteForm.target_profile_id)
+        fd.append("social_instagram",       pauteForm.social_instagram.trim())
+        fd.append("social_tiktok",          pauteForm.social_tiktok.trim())
+        fd.append("social_facebook",        pauteForm.social_facebook.trim())
+        fd.append("social_youtube_channel", pauteForm.social_youtube_channel.trim())
+        fd.append("social_website",         pauteForm.social_website.trim())
+        fd.append("notes",                  pauteForm.notes.trim())
+        if (pauteForm.pieceFile)           fd.append("file", pauteForm.pieceFile)
+
+        const res = await fetch(`${API}/ads/public-request`, { method: "POST", body: fd })
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.detail || "Error al enviar la solicitud")
+        }
+        pauteSuccess.value = true
+      } catch (e) {
+        pauteError.value = e.message
+      } finally {
+        pauteSubmitting.value = false
+      }
+    }
+
     // ── Scroll reveal ─────────────────────────────────────────
     function initReveal() {
       const cards = document.querySelectorAll(".reveal")
@@ -958,6 +1194,7 @@ export default {
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
       formatPrice, renderVal, renderFeatVal, renderLimitVal, submitContact,
+      pauteForm, pauteErrors, pauteSubmitting, pauteSuccess, pauteError, submitPaute,
       sidebarDismissed,
     }
   },
@@ -1824,6 +2061,115 @@ export default {
 }
 
 /* ════════════════════════════════════════════════════
+   NAVBAR PAUTE LINK
+════════════════════════════════════════════════════ */
+.nav-link-paute {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #fff !important;
+  padding: 6px 14px !important;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: .85rem;
+  transition: opacity .2s, transform .2s;
+}
+.nav-link-paute:hover { opacity: .88; transform: translateY(-1px); }
+.mobile-paute-link {
+  color: #f59e0b !important;
+  font-weight: 600;
+}
+.footer-paute-link { color: #f59e0b !important; font-weight: 600; }
+.footer-paute-link:hover { color: #fbbf24 !important; }
+
+/* ════════════════════════════════════════════════════
+   SECCIÓN PAUTE AQUÍ
+════════════════════════════════════════════════════ */
+.section-pauta {
+  background: linear-gradient(135deg, #1c1917 0%, #292524 100%);
+  padding: 80px 24px;
+}
+.pauta-inner { max-width: 1100px; margin: 0 auto; }
+.pauta-header { margin-bottom: 52px; }
+.pauta-header .section-title { color: #fff; }
+.pauta-header .section-subtitle { color: #a8a29e; }
+.pauta-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+/* columna info */
+.pauta-info { display: flex; flex-direction: column; gap: 28px; }
+.pauta-benefit {
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.pauta-benefit > i {
+  font-size: 1.5rem; color: #f59e0b; flex-shrink: 0; margin-top: 2px;
+}
+.pauta-benefit strong { display: block; color: #fafaf9; font-size: .95rem; margin-bottom: 4px; }
+.pauta-benefit span { color: #a8a29e; font-size: .88rem; line-height: 1.5; }
+
+/* formulario */
+.pauta-form-wrap {
+  background: #28231e;
+  border: 1px solid #3d3530;
+  border-radius: 16px;
+  padding: 32px;
+}
+.pauta-form { display: flex; flex-direction: column; gap: 14px; }
+.pf-section-lbl {
+  font-size: .78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: #f59e0b;
+  padding-bottom: 6px; border-bottom: 1px solid #3d3530;
+  margin-top: 6px;
+}
+.pf-optional { font-size: .72rem; color: #78716c; text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+.pauta-form .form-ctrl {
+  background: #1c1917; border: 1px solid #44403c; color: #fafaf9;
+  padding: 9px 12px; border-radius: 8px; font-size: .88rem; width: 100%;
+  transition: border-color .2s;
+}
+.pauta-form .form-ctrl:focus { outline: none; border-color: #f59e0b; }
+.pauta-form .form-ctrl.invalid { border-color: #ef4444; }
+.pauta-form .form-ctrl option { background: #1c1917; }
+.pauta-form .form-textarea { resize: vertical; min-height: 80px; }
+.pauta-form label { font-size: .82rem; color: #a8a29e; margin-bottom: 2px; display: block; }
+.pauta-form .form-group { display: flex; flex-direction: column; gap: 4px; }
+.pauta-form .form-error { color: #f87171; font-size: .78rem; }
+.pauta-form .form-hint { color: #78716c; font-size: .75rem; margin-top: 3px; }
+
+.file-label-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: #1c1917; border: 1px dashed #44403c;
+  color: #a8a29e; border-radius: 8px; padding: 9px 12px;
+  font-size: .85rem; cursor: pointer; transition: border-color .2s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.file-label-btn:hover { border-color: #f59e0b; color: #f59e0b; }
+
+.btn-paute-submit {
+  width: 100%; padding: 13px; border: none; border-radius: 10px;
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #fff; font-size: .95rem; font-weight: 700;
+  cursor: pointer; transition: opacity .2s, transform .2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 6px;
+}
+.btn-paute-submit:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+.btn-paute-submit:disabled { opacity: .6; cursor: not-allowed; }
+
+.pauta-success {
+  background: rgba(16,185,129,.15); border: 1px solid rgba(16,185,129,.35);
+  color: #6ee7b7; padding: 20px; border-radius: 12px; font-size: .95rem;
+  text-align: center; line-height: 1.6;
+}
+.pauta-error {
+  background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.3);
+  color: #fca5a5; padding: 12px 16px; border-radius: 8px; font-size: .88rem;
+}
+
+/* ════════════════════════════════════════════════════
    FOOTER
 ════════════════════════════════════════════════════ */
 .landing-footer { background: var(--dark); color: #fff; padding: 60px 24px 24px; }
@@ -1890,6 +2236,16 @@ export default {
   .devices-row { display: none; }
   .desktop-plan-cards { grid-template-columns: 1fr; }
   .desktop-plans-wrap { padding: 28px 20px 32px; }
+  .pauta-grid { grid-template-columns: 1fr; gap: 32px; }
+  .pauta-info { display: none; }
+  .pauta-form-wrap { padding: 24px 18px; }
+  .section-pauta { padding: 56px 16px; }
+}
+
+@media (max-width: 576px) {
+  .pauta-form-wrap { padding: 18px 14px; border-radius: 12px; }
+  .pf-section-lbl { font-size: .74rem; }
+  .btn-paute-submit { font-size: .88rem; padding: 12px; }
 }
 
 @media (max-width: 480px) {
