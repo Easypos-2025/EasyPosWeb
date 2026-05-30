@@ -1,76 +1,76 @@
 <template>
   <div class="ip-wrap">
 
-    <!-- Tabs: Historial primero (default), Tomar Inventario segundo -->
-    <div class="tab-bar">
-      <button :class="tab==='history' ? 'tab-on' : 'tab'" @click="switchToHistory">
-        <i class="bi bi-calendar3"></i> Historial de Cortes
-      </button>
-      <button :class="tab==='take' ? 'tab-on' : 'tab'" @click="switchToTake">
-        <i class="bi bi-clipboard-check"></i> Tomar Inventario
-      </button>
-    </div>
-
-    <!-- ══ TAB A: HISTORIAL ═══════════════════════════════════════════════════ -->
+    <!-- ══ VISTA PRINCIPAL: HISTORIAL CON SELECT ════════════════════════════════ -->
     <div v-if="tab==='history'" class="tab-content">
 
-      <div v-if="loadingHistory" class="state-c">
-        <i class="bi bi-arrow-repeat spin"></i> Cargando historial...
-      </div>
-
-      <template v-else-if="!historyDates.length">
-        <div class="state-c">Sin inventarios físicos registrados</div>
-      </template>
-
-      <template v-else>
-        <!-- Selector de fecha -->
+      <!-- Header row: select + botón Tomar Inventario -->
+      <div class="hist-header-row">
         <div class="hist-sel-row">
           <label class="hist-sel-lbl"><i class="bi bi-calendar3"></i> Corte:</label>
-          <select v-model="selectedDate" @change="loadReportFor(selectedDate)" class="hist-sel">
-            <option v-for="h in historyDates" :key="h.fecha" :value="h.fecha">
-              {{ fmtDate(h.fecha) }} — {{ h.items_contados }} insumos · {{ h.usuario }}
-            </option>
-          </select>
-          <span class="hist-badge">{{ reportData.length }} ítems</span>
+          <div v-if="loadingHistory" class="td-muted sm">
+            <i class="bi bi-arrow-repeat spin"></i> Cargando...
+          </div>
+          <template v-else-if="!historyDates.length">
+            <span class="td-muted sm">Sin inventarios registrados</span>
+          </template>
+          <template v-else>
+            <select v-model="selectedDate" @change="loadReportFor(selectedDate)" class="hist-sel">
+              <option v-for="h in historyDates" :key="h.fecha" :value="h.fecha">
+                {{ fmtDate(h.fecha) }} — {{ h.items_contados }} insumos · {{ h.usuario }}
+              </option>
+            </select>
+            <span class="hist-badge">{{ reportData.length }} ítems</span>
+          </template>
         </div>
+        <button class="btn-take-inv" @click="switchToTake">
+          <i class="bi bi-clipboard-check"></i> Tomar Inventario
+        </button>
+      </div>
 
-        <!-- Tabla del corte seleccionado -->
-        <div v-if="loadingReport" class="state-c sm">
-          <i class="bi bi-arrow-repeat spin"></i> Cargando reporte...
-        </div>
-        <div v-else class="report-wrap">
-          <table class="rep-tbl">
-            <thead>
-              <tr>
-                <th>Insumo</th>
-                <th class="tr">Sistema previo</th>
-                <th class="tr">Contado</th>
-                <th class="tr">Diferencia</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in reportData" :key="r.id_item" :class="diffCls(r.diferencia)">
-                <td>
-                  <strong>{{ r.item_name }}</strong>
-                  <small class="td-muted ml">{{ r.unit_name }}</small>
-                </td>
-                <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
-                <td class="tr fw-b">{{ fmtQty(r.contado) }}</td>
-                <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
-                  {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
-                </td>
-              </tr>
-              <tr v-if="!reportData.length">
-                <td colspan="4" class="state-c">Sin datos para esta fecha</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
+      <!-- Tabla del corte seleccionado -->
+      <div v-if="loadingReport" class="state-c sm">
+        <i class="bi bi-arrow-repeat spin"></i> Cargando reporte...
+      </div>
+      <div v-else-if="reportData.length" class="report-wrap">
+        <table class="rep-tbl">
+          <thead>
+            <tr>
+              <th>Insumo</th>
+              <th class="tr">Sistema previo</th>
+              <th class="tr">Contado</th>
+              <th class="tr">Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in reportData" :key="r.id_item" :class="diffCls(r.diferencia)">
+              <td>
+                <strong>{{ r.item_name }}</strong>
+                <small class="td-muted ml">{{ r.unit_name }}</small>
+              </td>
+              <td class="tr td-muted">{{ fmtQty(r.sistema) }}</td>
+              <td class="tr fw-b">{{ fmtQty(r.contado) }}</td>
+              <td class="tr fw-b" :class="r.diferencia < 0 ? 'c-red' : r.diferencia > 0 ? 'c-green' : 'td-muted'">
+                {{ r.diferencia > 0 ? '+' : '' }}{{ fmtQty(r.diferencia) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else-if="!loadingHistory && !loadingReport" class="state-c">
+        Seleccione un corte para ver el reporte
+      </div>
     </div>
 
-    <!-- ══ TAB B: TOMAR INVENTARIO ══════════════════════════════════════════════ -->
+    <!-- ══ TOMAR INVENTARIO ══════════════════════════════════════════════════════ -->
     <div v-if="tab==='take'" class="tab-content">
+
+      <!-- Back to history -->
+      <div class="take-top-bar">
+        <button class="btn-back" @click="tab = 'history'">
+          <i class="bi bi-arrow-left"></i> Volver al historial
+        </button>
+      </div>
 
       <!-- Controls top -->
       <div class="take-controls">
@@ -390,19 +390,35 @@ onMounted(loadHistory)
 <style scoped>
 .ip-wrap { padding: 16px; }
 
-/* Tabs */
-.tab-bar { display: flex; gap: 4px; margin-bottom: 18px; background: #f3f4f6; padding: 4px; border-radius: 10px; }
-.tab    { flex: 1; padding: 9px 14px; border: none; background: transparent; cursor: pointer; border-radius: 8px; font-size: 0.85rem; color: #6b7280; font-weight: 500; }
-.tab-on { flex: 1; padding: 9px 14px; border: none; background: #fff; cursor: pointer; border-radius: 8px; font-size: 0.85rem; color: #1d4ed8; font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
 .tab-content { animation: fadeIn .15s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } }
 
-/* ── Historial: selector de fecha ── */
+/* ── Historial: header con select + botón ── */
+.hist-header-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
 .hist-sel-row {
+  flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 10px;
   background: #f0f9ff; border: 1px solid #bae6fd;
-  border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; flex-wrap: wrap;
+  border-radius: 10px; padding: 10px 14px; flex-wrap: wrap;
 }
+.btn-take-inv {
+  background: #16a34a; color: #fff; border: none; border-radius: 10px;
+  padding: 10px 18px; font-size: 0.88rem; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; gap: 7px; white-space: nowrap; flex-shrink: 0;
+}
+.btn-take-inv:hover { background: #15803d; }
+
+/* ── Volver al historial ── */
+.take-top-bar { margin-bottom: 12px; }
+.btn-back {
+  background: none; border: 1px solid #d1d5db; border-radius: 8px;
+  padding: 7px 14px; cursor: pointer; font-size: 0.85rem; color: #374151;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-back:hover { border-color: #6b7280; }
 .hist-sel-lbl { font-size: 0.82rem; font-weight: 600; color: #0369a1; white-space: nowrap; }
 .hist-sel {
   flex: 1; min-width: 200px;

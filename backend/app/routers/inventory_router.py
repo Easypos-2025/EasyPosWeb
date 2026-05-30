@@ -120,7 +120,7 @@ async def get_stock(
             SELECT id_item, cantidad, fecha,
                    ROW_NUMBER() OVER (PARTITION BY id_item ORDER BY fecha DESC, created_at DESC) AS rn
             FROM inventory_physical
-            WHERE company_id = :cid AND autorizada = 1
+            WHERE company_id = :cid
         ),
         last_phys AS (
             SELECT id_item, cantidad, fecha FROM ranked_phys WHERE rn = 1
@@ -129,7 +129,7 @@ async def get_stock(
             SELECT ie.id_item, SUM(ie.cantidad) AS total
             FROM inventory_entries ie
             LEFT JOIN last_phys lp ON lp.id_item = ie.id_item
-            WHERE ie.company_id = :cid AND ie.autorizada = 1
+            WHERE ie.company_id = :cid
               AND (lp.fecha IS NULL OR ie.fecha >= lp.fecha)
             GROUP BY ie.id_item
         ),
@@ -137,7 +137,7 @@ async def get_stock(
             SELECT ix.id_item, SUM(ix.cantidad) AS total
             FROM inventory_exits ix
             LEFT JOIN last_phys lp ON lp.id_item = ix.id_item
-            WHERE ix.company_id = :cid AND ix.autorizada = 1
+            WHERE ix.company_id = :cid
               AND (lp.fecha IS NULL OR ix.fecha >= lp.fecha)
             GROUP BY ix.id_item
         )
@@ -285,7 +285,7 @@ async def list_physical(
         FROM inventory_physical ip
         LEFT JOIN supply_items si ON si.id_item = ip.id_item AND si.company_id = ip.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ip.company_id
-        WHERE ip.company_id = :cid AND ip.autorizada = 1
+        WHERE ip.company_id = :cid
         ORDER BY ip.fecha DESC, ip.created_at DESC
         LIMIT 500
     """), {"cid": current_user.company_id})).mappings().all()
@@ -297,13 +297,14 @@ async def list_physical_dates(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lista de fechas de cortes de inventario físico (para el historial)."""
+    """Lista de fechas de cortes de inventario físico (para el historial).
+    No filtra por autorizada porque VB6 sincroniza con autorizada=0."""
     rows = (await db.execute(text("""
         SELECT fecha, COUNT(*) AS items_contados,
                MIN(created_at) AS hora_inicio, MAX(created_at) AS hora_fin,
                MAX(cod_usuario) AS usuario
         FROM inventory_physical
-        WHERE company_id = :cid AND autorizada = 1
+        WHERE company_id = :cid
         GROUP BY fecha
         ORDER BY fecha DESC
         LIMIT 100
@@ -330,14 +331,14 @@ async def physical_report(
                 (SELECT prev.cantidad
                  FROM inventory_physical prev
                  WHERE prev.id_item = ip.id_item AND prev.company_id = ip.company_id
-                   AND prev.fecha < ip.fecha AND prev.autorizada = 1
+                   AND prev.fecha < ip.fecha
                  ORDER BY prev.fecha DESC LIMIT 1),
                 0)                                                  AS sistema,
             ip.cantidad - COALESCE(sm.qty_before,
                 (SELECT prev.cantidad
                  FROM inventory_physical prev
                  WHERE prev.id_item = ip.id_item AND prev.company_id = ip.company_id
-                   AND prev.fecha < ip.fecha AND prev.autorizada = 1
+                   AND prev.fecha < ip.fecha
                  ORDER BY prev.fecha DESC LIMIT 1),
                 0)                                                  AS diferencia
         FROM inventory_physical ip
@@ -348,7 +349,7 @@ async def physical_report(
               AND sm.movement_type   = 'physical'
               AND sm.movement_date   = ip.fecha
               AND sm.reference_type  = 'physical_bulk'
-        WHERE ip.company_id = :cid AND ip.fecha = :fecha AND ip.autorizada = 1
+        WHERE ip.company_id = :cid AND ip.fecha = :fecha
         ORDER BY ABS(ip.cantidad - COALESCE(sm.qty_before, 0)) DESC
     """), {"cid": cid, "fecha": fecha})).mappings().all()
     return [dict(r) for r in rows]
