@@ -744,9 +744,8 @@ async def get_kardex(
         ORDER BY ix.fecha, ix.id
     """), base_p)).mappings().all()
 
-    # ── Ventas VB6: pos_receipt_order_detail_products (insumo directo por item_id) ──
-    # Esta es la tabla correcta: enlaza directamente recibos con insumos via item_id
-    vb6_sales = (await db.execute(text("""
+    # ── Ventas VB6 — Recibos (pos_receipt_order_detail_products) ─────────────
+    rec_sales = (await db.execute(text("""
         SELECT prd.date AS fecha,
                prd.invoice_number AS numero,
                COALESCE(d.name, CONCAT('Plato #', prd.dish_id)) AS dish_name,
@@ -761,6 +760,24 @@ async def get_kardex(
           AND (pr.voided IS NULL OR pr.voided = 0)
         GROUP BY prd.date, prd.invoice_number, prd.dish_id
         ORDER BY prd.date, prd.invoice_number
+    """), base_p)).mappings().all()
+
+    # ── Ventas VB6 — Facturas (pos_order_detail_products) ────────────────────
+    inv_sales = (await db.execute(text("""
+        SELECT pod.date AS fecha,
+               pod.invoice_number AS numero,
+               COALESCE(d.name, CONCAT('Plato #', pod.dish_id)) AS dish_name,
+               SUM(pod.quantity) AS cantidad
+        FROM pos_order_detail_products pod
+        LEFT JOIN pos_invoices pi ON pi.invoice_number = pod.invoice_number
+                                  AND pi.company_id    = pod.company_id
+        LEFT JOIN pos_dishes d   ON d.id = pod.dish_id AND d.company_id = pod.company_id
+        WHERE pod.company_id = :cid
+          AND pod.item_id = :item
+          AND pod.date BETWEEN :desde AND :hasta
+          AND (pi.voided IS NULL OR pi.voided = 0)
+        GROUP BY pod.date, pod.invoice_number, pod.dish_id
+        ORDER BY pod.date, pod.invoice_number
     """), base_p)).mappings().all()
 
     # ── Ventas web (stock_movements — canal web/online) ────────────────────────
@@ -805,7 +822,7 @@ async def get_kardex(
             "usuario":  r["usuario"],
             "tipo":     "salida",
         })
-    for r in vb6_sales:
+    for r in rec_sales:
         qty = float(r["cantidad"] or 0)
         if qty > 0:
             movements.append({
@@ -813,7 +830,19 @@ async def get_kardex(
                 "concepto": r["dish_name"],
                 "numero":   r["numero"],
                 "cantidad": qty,
-                "obs":      "",
+                "obs":      "Recibo",
+                "usuario":  "",
+                "tipo":     "venta",
+            })
+    for r in inv_sales:
+        qty = float(r["cantidad"] or 0)
+        if qty > 0:
+            movements.append({
+                "fecha":    str(r["fecha"]).split(" ")[0],
+                "concepto": r["dish_name"],
+                "numero":   r["numero"],
+                "cantidad": qty,
+                "obs":      "Factura",
                 "usuario":  "",
                 "tipo":     "venta",
             })
