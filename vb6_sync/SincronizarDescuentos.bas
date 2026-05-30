@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDescuentos
 ' Endpoint: POST /api/pos/sync/push/discounts
 ' Tabla local VB6: descuentos
 ' Tabla servidor: pos_discounts
+' Grupo sync:     J — después de SincronizarComandas (Grupo F1)
+' Depende de:     pos_orders
 ' Columnas locales:
 '   Id_Descuento, Fecha, Prefix, Factura, Id_Plato, Item,
 '   Id_Tipificacion, Valor_Original_Producto, Valor_Venta_Producto,

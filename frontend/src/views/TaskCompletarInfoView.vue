@@ -141,13 +141,13 @@
             <!-- Fecha inicio -->
             <div class="fg">
               <label>Fecha inicio</label>
-              <input v-model="completeForm.start_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="completeForm.start_date" />
             </div>
 
             <!-- Fecha límite -->
             <div class="fg">
               <label>Fecha límite *</label>
-              <input v-model="completeForm.due_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="completeForm.due_date" />
             </div>
           </div>
 
@@ -203,6 +203,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { usePermissionsStore } from "@/stores/permissionsStore"

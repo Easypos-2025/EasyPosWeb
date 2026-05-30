@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarPlatosImpresoras
 ' Endpoint: POST /api/pos/sync/push/dish-printers
 ' Tabla local VB6: plato_impresoras
 ' Tabla servidor: pos_item_printers
+' Grupo sync:     D — después de SincronizarPlatos + SincronizarImpresoras (Grupos A y C)
+' Depende de:     pos_dishes, pos_printers
 ' Nota: el servidor hace DELETE+INSERT por (company_id, item_id)
 '        saved retorna item_id; se marca por Id_Item
 ' ============================================================

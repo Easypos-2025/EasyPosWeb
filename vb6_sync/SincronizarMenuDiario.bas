@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarMenuDiario
 ' Endpoint: POST /api/pos/sync/push/daily-menu
 ' Tabla local VB6: menu_diario
 ' Tabla servidor: pos_daily_menu
+' Grupo sync:     D — después de SincronizarPlatos (Grupo C)
+' Depende de:     pos_dishes
 ' PK servidor: (company_id, menu_id, item_id)
 ' Nota: saved retorna menu_id; se marca por Id_Menu
 ' ============================================================

@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDetalleComandaProductos
 ' Endpoint: POST /api/pos/sync/push/order-detail-products
 ' Tabla local VB6: detalle_comanda_producto
 ' Tabla servidor: pos_order_detail_products
+' Grupo sync:     H — después de SincronizarDetalleComanda (Grupo G) + SincronizarInventarioPorciones (Grupo B)
+' Depende de:     pos_order_details, supply_items
 ' PK servidor: (order_number, date, invoice_number, dish_id, item, group_id, item_id)
 ' Nota: saved retorna order_number; se marca por Nro_Comanda
 ' ============================================================
@@ -30,7 +32,7 @@ Public Sub SincronizarDetalleComandaProductos(Var_Id_Company_Envio As Integer, V
 
     Do While Not rs.EOF
         Dim nroComanda As String
-        nroComanda = rs("Nro_Comanda")
+        nroComanda = rs("Nro_Pedido")
 
         json = json & sep & "{"
         json = json & """order_number"":"    & """" & nroComanda                               & ""","

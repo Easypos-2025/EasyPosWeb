@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCategorias
 ' Endpoint: POST /api/pos/sync/push/categories
 ' Tabla local VB6: categorias
 ' Tabla servidor: pos_categories
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Columnas locales:
 '   cod_categoria -> id
 '   descripcion   -> description

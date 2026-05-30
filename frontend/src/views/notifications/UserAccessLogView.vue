@@ -35,8 +35,8 @@
         <option value="entry">Solo entradas</option>
         <option value="exit">Solo salidas</option>
       </select>
-      <input v-model="filterFrom" type="date" class="form-control" style="max-width:160px" title="Desde" />
-      <input v-model="filterTo"   type="date" class="form-control" style="max-width:160px" title="Hasta" />
+      <CustomDatePicker v-model="filterFrom" />
+      <CustomDatePicker v-model="filterTo" />
       <button v-if="search || filterType || filterFrom || filterTo" class="btn btn-outline-secondary btn-sm" @click="clearFilters">
         <i class="bi bi-x"></i> Limpiar
       </button>
@@ -83,6 +83,7 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 const items     = ref([])
 const loading   = ref(true)

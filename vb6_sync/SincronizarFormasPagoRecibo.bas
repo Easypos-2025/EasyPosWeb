@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarFormasPagoRecibo
 ' Endpoint: POST /api/pos/sync/push/receipt-payments
 ' Tabla local VB6: formas_pago_recibo
 ' Tabla servidor: pos_receipt_payment_methods
+' Grupo sync:     I — después de SincronizarFormaPago (Grupo A)
+' Depende de:     pos_payment_types, pos_receipts
 ' PK servidor: (item, payment_method_id, card_id, invoice_number)
 ' Nota: saved retorna claves compuestas; se marca por Nro_Recibo
 ' ============================================================

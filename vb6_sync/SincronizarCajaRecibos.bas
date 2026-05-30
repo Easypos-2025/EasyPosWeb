@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCajaRecibos
 ' Endpoint: POST /api/pos/sync/push/cash-register-receipts
 ' Tabla local VB6: caja_recibos
 ' Tabla servidor: pos_cash_register_receipts
+' Grupo sync:     I — después de SincronizarCajas (Grupo A)
+' Depende de:     pos_cash_registers, pos_receipts
 ' Columnas locales:
 '   Nro_Caja, Id_Caja, Nro_Factura (=Nro_Recibo), Fecha,
 '   Nro_Pedido, Valor, Base, Impuesto_Iva, Impuesto_Impoconsumo,

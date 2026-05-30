@@ -63,7 +63,7 @@
         <div class="form-row-2">
           <div class="form-group">
             <label>Fecha</label>
-            <input type="date" v-model="form.fecha" class="form-control" />
+            <CustomDatePicker v-model="form.fecha" />
           </div>
           <div class="form-group">
             <label>Cantidad a ingresar</label>
@@ -88,6 +88,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const rows = ref([])
 const supplyItems = ref([])

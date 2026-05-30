@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarPlatosArmar
 ' Endpoint: POST /api/pos/sync/push/dish-assembly
 ' Tabla local VB6: plato_armar
 ' Tabla servidor: pos_dish_assembly
+' Grupo sync:     D — después de SincronizarPlatos (Grupo C)
+' Depende de:     pos_dishes
 ' PK servidor: (company_id, dish_id, category_code)
 ' Nota: saved retorna dish_id; se marca por Id_Plato
 ' ============================================================

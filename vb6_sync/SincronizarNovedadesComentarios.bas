@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarNovedadesComentarios
 ' Endpoint: POST /api/pos/sync/push/order-notes
 ' Tabla local VB6: novedades_comentarios
 ' Tabla servidor: pos_order_notes
+' Grupo sync:     D — después de SincronizarNovedadesCategorias (Grupo A)
+' Depende de:     pos_dish_note_categories
 ' Columnas locales:
 '   Id_Novedad, Novedad
 ' Nota: tabla sin Enviada_MySql — se envian todos los registros

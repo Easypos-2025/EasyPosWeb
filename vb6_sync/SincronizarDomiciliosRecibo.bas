@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDomiciliosRecibo
 ' Endpoint: POST /api/pos/sync/push/receipt-delivery-fees
 ' Tabla local VB6: recibos_domicilio
 ' Tabla servidor: receipt_delivery_fees
+' Grupo sync:     J — después de SincronizarRecibos (Grupo F2)
+' Depende de:     pos_receipts
 ' Columnas locales (misma estructura que factura_domicilio):
 '   Id_Registro, Nro_Factura, Valor, Fecha, Nro_Pedido, Vendedor, Id_Cliente, Enviada_MySql
 ' Nota: VB6 llama Nro_Factura al numero de recibo (mismo campo, distinta tabla)

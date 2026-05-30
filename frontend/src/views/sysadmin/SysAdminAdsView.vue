@@ -328,10 +328,10 @@
                     <input v-model.number="activateForm.priority" type="number" min="0" max="10" class="form-ctrl-sm" />
                   </div>
                   <div><label class="form-lbl">Inicio</label>
-                    <input v-model="activateForm.start_date" type="date" class="form-ctrl-sm" />
+                    <CustomDatePicker v-model="activateForm.start_date" />
                   </div>
                   <div><label class="form-lbl">Fin</label>
-                    <input v-model="activateForm.end_date" type="date" class="form-ctrl-sm" />
+                    <CustomDatePicker v-model="activateForm.end_date" />
                   </div>
                 </div>
                 <button class="btn-action btn-activate" @click="activateAd">
@@ -360,6 +360,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 

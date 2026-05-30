@@ -166,8 +166,11 @@ async def get_movements_all(
             params["sid"] = si["id"]
 
     if mtype:
-        where_parts.append("sm.movement_type = :mtype")
-        params["mtype"] = mtype
+        if mtype == 'sale':
+            where_parts.append("sm.movement_type IN ('sale_vb6','sale_web','sale_online')")
+        else:
+            where_parts.append("sm.movement_type = :mtype")
+            params["mtype"] = mtype
 
     if desde:
         where_parts.append("sm.movement_date >= :desde")

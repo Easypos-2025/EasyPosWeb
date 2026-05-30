@@ -274,7 +274,7 @@
           <div class="ev-row">
             <div class="field-group" :class="{ error: approveErr.payment_date }">
               <label>Fecha del pago <span class="req">*</span></label>
-              <input v-model="approveForm.payment_date" type="date" />
+              <CustomDatePicker v-model="approveForm.payment_date" />
               <span v-if="approveErr.payment_date" class="field-error">{{ approveErr.payment_date }}</span>
             </div>
             <div class="field-group">
@@ -401,6 +401,7 @@
 <script>
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -413,6 +414,7 @@ const BANKS_CO = [
 
 export default {
   name: "PaymentReviewView",
+  components: { CustomDatePicker },
 
   setup() {
     const loading       = ref(true)

@@ -250,11 +250,11 @@
           <div class="form-row2">
             <div class="fg">
               <label>Fecha inicio</label>
-              <input v-model="form.start_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="form.start_date" />
             </div>
             <div class="fg">
               <label>Fecha límite</label>
-              <input v-model="form.due_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="form.due_date" />
             </div>
           </div>
 
@@ -319,6 +319,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"

@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarZonasAsientos
 ' Endpoint: POST /api/pos/sync/push/zones
 ' Tabla local VB6: zonas_asientos
 ' Tabla servidor: pos_zones
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Mapeo:
 '   Id_Sede   -> branch_id  (sede/sucursal en VB6)
 '   Id_Zona   -> id         (ID de la zona)

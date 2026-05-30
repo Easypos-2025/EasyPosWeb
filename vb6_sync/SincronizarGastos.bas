@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarGastos
 ' Endpoint: POST /api/pos/sync/push/expenses
 ' Tabla local VB6: gastos
 ' Tabla servidor: pos_expenses
+' Grupo sync:     J — financiero independiente, sin orden crítico entre pares
+' Depende de:     ninguna
 ' Columnas locales:
 '   Nro_Gasto, Id_Caja, Fecha_Gasto, Valor_Gasto,
 '   Cod_Empleado, Cod_Concepto, Cod_Sub_Concepto,

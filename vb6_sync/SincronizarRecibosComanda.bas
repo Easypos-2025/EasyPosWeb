@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarRecibosComanda
 ' Endpoint: POST /api/pos/sync/push/receipt-orders
 ' Tabla local VB6: recibos_comanda
 ' Tabla servidor: pos_receipt_orders
+' Grupo sync:     F1 — después de SincronizarMesas + SincronizarMeseros (Grupos A y B)
+' Depende de:     pos_zones, pos_tables, pos_waiters
 ' Columnas locales:
 '   Nro_Pedido, Fecha, Nro_Recibo, Mesa, Hora, Mesero,
 '   Cancelado, Valor, Novedad, Cortesia, Nro_Comenzales,

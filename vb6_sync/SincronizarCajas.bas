@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCajas
 ' Endpoint: POST /api/pos/sync/push/cash-registers
 ' Tabla local VB6: cajas
 ' Tabla servidor: pos_cash_registers
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Columnas locales:
 '   Nro_Caja     -> id
 '   Nombre_Caja  -> name

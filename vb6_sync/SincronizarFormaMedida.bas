@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarFormaMedida
 ' Endpoint: POST /api/pos/sync/push/measure-forms
 ' Tabla local VB6: forma_medida
 ' Tabla servidor: pos_measure_forms
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Columnas locales:
 '   Id_Forma_Medida, Descripcion, Activa
 ' Nota: tabla sin Enviada_MySql — se envian todos los registros

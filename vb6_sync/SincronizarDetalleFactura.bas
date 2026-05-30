@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDetalleFactura
 ' Endpoint: POST /api/pos/sync/push/invoice-details
 ' Tabla local VB6: detalle_factura
 ' Tabla servidor: pos_invoice_details
+' Grupo sync:     G — después de SincronizarFacturas (Grupo F2)
+' Depende de:     pos_invoices
 ' Columnas locales:
 '   Nro_Factura, Nro_Pedido, Fecha, Id_Plato, Item,
 '   Cantidad, Novedad, Valor_Plato, Cortesia,

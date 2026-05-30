@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDetalleRecibosComandaProductos
 ' Endpoint: POST /api/pos/sync/push/receipt-order-detail-products
 ' Tabla local VB6: recibos_detalle_comanda_producto
 ' Tabla servidor: pos_receipt_order_detail_products
+' Grupo sync:     H — después de SincronizarDetalleRecibosComanda (Grupo G) + SincronizarInventarioPorciones (Grupo B)
+' Depende de:     pos_receipt_order_details, supply_items
 ' PK servidor: (order_number, date, receipt_number, dish_id, item, group_id, item_id)
 ' Nota: saved retorna order_number; se marca por Nro_Comanda
 ' ============================================================
@@ -30,13 +32,13 @@ Public Sub SincronizarDetalleRecibosComandaProductos(Var_Id_Company_Envio As Int
 
     Do While Not rs.EOF
         Dim nroComanda As String
-        nroComanda = rs("Nro_Comanda")
+        nroComanda = rs("Nro_Pedido")
 
         json = json & sep & "{"
         json = json & """order_number"":"    & """" & nroComanda                               & ""","
         json = json & """company_id"":"      & Var_Id_Company_Envio                            & ","
         json = json & """date"":"            & """" & Format(rs("Fecha"), "YYYY-MM-DD")        & ""","
-        json = json & """receipt_number"":"  & """" & Nz(rs("Nro_Recibo"), "0")              & ""","
+        json = json & """invoice_number"":"  & """" & Nz(rs("Nro_Recibo"), "0")               & ""","
         json = json & """dish_id"":"         & Nz(rs("Id_Plato"), 0)                           & ","
         json = json & """item"":"            & Nz(rs("Item"), 0)                               & ","
         json = json & """group_id"":"        & Nz(rs("Id_Grupo"), 0)                           & ","

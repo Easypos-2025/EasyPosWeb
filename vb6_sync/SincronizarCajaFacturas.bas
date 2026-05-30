@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCajaFacturas
 ' Endpoint: POST /api/pos/sync/push/cash-register-invoices
 ' Tabla local VB6: caja_facturas
 ' Tabla servidor: pos_cash_register_invoices
+' Grupo sync:     I — después de SincronizarCajas (Grupo A)
+' Depende de:     pos_cash_registers, pos_invoices
 ' Columnas locales:
 '   Nro_Caja, Id_Caja, Nro_Factura, Fecha, Nro_Pedido,
 '   Valor, Base, Impuesto_Iva, Impuesto_Impoconsumo,

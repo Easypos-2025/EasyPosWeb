@@ -52,19 +52,13 @@
         </select>
 
         <template v-if="activeYear === null">
-          <input
+          <CustomDatePicker
             v-model="filterDateFrom"
-            type="date"
-            class="filter-select"
-            title="Desde"
-            @change="page = 1; load()"
+            @update:modelValue="page = 1; load()"
           />
-          <input
+          <CustomDatePicker
             v-model="filterDateTo"
-            type="date"
-            class="filter-select"
-            title="Hasta"
-            @change="page = 1; load()"
+            @update:modelValue="page = 1; load()"
           />
         </template>
 
@@ -223,9 +217,11 @@
 <script>
 import { ref, onMounted } from "vue"
 import api from "@/services/apis"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 export default {
   name: "PaymentHistoryView",
+  components: { CustomDatePicker },
   setup() {
     const apiBase       = import.meta.env.VITE_API_URL || ""
     const loading       = ref(false)

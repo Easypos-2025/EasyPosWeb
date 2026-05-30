@@ -22,11 +22,11 @@
       <div class="filters-grid">
         <div class="fg">
           <label>Desde</label>
-          <input v-model="filterFrom" type="date" class="form-control" />
+          <CustomDatePicker v-model="filterFrom" />
         </div>
         <div class="fg">
           <label>Hasta</label>
-          <input v-model="filterTo" type="date" class="form-control" />
+          <CustomDatePicker v-model="filterTo" />
         </div>
         <div class="fg">
           <label>Estado</label>
@@ -150,6 +150,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 

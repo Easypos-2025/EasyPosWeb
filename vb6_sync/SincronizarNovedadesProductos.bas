@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarNovedadesProductos
 ' Endpoint: POST /api/pos/sync/push/product-notes
 ' Tabla local VB6: novedades_productos
 ' Tabla servidor: pos_product_notes
+' Grupo sync:     D — después de SincronizarPlatos (Grupo C)
+' Depende de:     pos_dishes
 ' Columnas locales:
 '   Id_Novedad, Novedad
 ' Nota: tabla sin Enviada_MySql — se envian todos los registros

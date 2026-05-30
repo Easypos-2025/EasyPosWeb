@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarFormaPago
 ' Endpoint: POST /api/pos/sync/push/payment-types
 ' Tabla local VB6: forma_pago
 ' Tabla servidor: pos_payment_types
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Columnas locales:
 '   Id_Forma_Pago, Descripcion_Forma_Pago, Validar, Activo,
 '   Seleccionar_Tarjeta, Valor, Pedir_Observacion, Pedir_Cliente,

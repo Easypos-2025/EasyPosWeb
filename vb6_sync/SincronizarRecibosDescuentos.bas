@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarRecibosDescuentos
 ' Endpoint: POST /api/pos/sync/push/receipt-discounts
 ' Tabla local VB6: recibos_descuentos
 ' Tabla servidor: pos_receipt_discounts
+' Grupo sync:     J — después de SincronizarRecibosComanda (Grupo F1)
+' Depende de:     pos_receipt_orders
 ' Columnas locales:
 '   Id_Descuento, Fecha, Prefix, Factura (=Nro_Recibo), Id_Plato, Item,
 '   Id_Tipificacion, Valor_Original_Producto, Valor_Venta_Producto,

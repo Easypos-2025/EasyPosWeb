@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCategoriaPlatos
 ' Endpoint: POST /api/pos/sync/push/dish-categories
 ' Tabla local VB6: categoria_platos
 ' Tabla servidor: pos_dish_categories
+' Grupo sync:     B — después de SincronizarCategorias (Grupo A)
+' Depende de:     pos_categories
 ' Columnas locales:
 '   Cod_Categoria -> id
 '   Categoria     -> parent_category_id

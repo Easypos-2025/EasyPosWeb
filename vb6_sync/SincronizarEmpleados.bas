@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarEmpleados
 ' Endpoint: POST /api/pos/sync/push/employees
 ' Tabla local VB6: empleados
 ' Tabla servidor: pos_employees
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' PK servidor: id (= Id_Empleado en VB6)
 ' ============================================================
 Public Sub SincronizarEmpleados(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)

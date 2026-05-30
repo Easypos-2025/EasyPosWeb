@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarListaPreciosCliente
 ' Endpoint: POST /api/pos/sync/push/customer-price-list
 ' Tabla local VB6: lista_precios_cliente
 ' Tabla servidor: pos_customer_price_list
+' Grupo sync:     C — después de SincronizarPlatos (Grupo C)
+' Depende de:     pos_dishes
 ' Columnas locales:
 '   id_lista, Id_Cliente, Id_Producto, Id_Presentacion,
 '   Precio_Producto, Fecha, Activa

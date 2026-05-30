@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDetalleRecibosFactura
 ' Endpoint: POST /api/pos/sync/push/receipt-invoice-details
 ' Tabla local VB6: recibos_detalle_factura
 ' Tabla servidor: pos_receipt_invoice_details
+' Grupo sync:     G — después de SincronizarRecibos (Grupo F2)
+' Depende de:     pos_receipts
 ' Columnas locales (identicas a detalle_factura):
 '   Nro_Factura(*), Nro_Pedido, Fecha, Id_Plato, Item,
 '   Cantidad, Novedad, Valor_Plato, Cortesia,

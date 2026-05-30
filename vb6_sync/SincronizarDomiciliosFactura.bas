@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDomiciliosFactura
 ' Endpoint: POST /api/pos/sync/push/invoice-delivery-fees
 ' Tabla local VB6: factura_domicilio
 ' Tabla servidor: invoice_delivery_fees
+' Grupo sync:     J — después de SincronizarFacturas (Grupo F2)
+' Depende de:     pos_invoices
 ' Columnas locales:
 '   Id_Registro, Nro_Factura, Valor, Fecha, Nro_Pedido, Vendedor, Id_Cliente, Enviada_MySql
 ' ============================================================

@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarMeseros
 ' Endpoint: POST /api/pos/sync/push/waiters
 ' Tabla local VB6: meseros
 ' Tabla servidor: pos_waiters
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' PK servidor: id (= Id_Mesero en VB6)
 ' ============================================================
 Public Sub SincronizarMeseros(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)

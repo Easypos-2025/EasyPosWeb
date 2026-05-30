@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCierresCaja
 ' Endpoint: POST /api/pos/sync/push/cash-closings-v2
 ' Tabla local VB6: cajas_cierres
 ' Tabla servidor: pos_cash_register_closings
+' Grupo sync:     J — después de SincronizarCajas (Grupo A)
+' Depende de:     pos_cash_registers
 ' Columnas locales:
 '   Id_Caja, Nro_Caja, Turno, Fecha, Base,
 '   Venta_Total, Venta_Efectivo, Venta_Baucher,

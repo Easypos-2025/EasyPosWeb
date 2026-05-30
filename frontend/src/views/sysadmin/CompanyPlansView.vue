@@ -116,7 +116,7 @@
 
           <div class="fg">
             <label>Fecha de vencimiento <small class="text-muted">(dejar vacío = indefinido / plan Free)</small></label>
-            <input v-model="form.expiration_date" type="date" class="form-control" />
+            <CustomDatePicker v-model="form.expiration_date" />
           </div>
 
         </div>
@@ -136,6 +136,7 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 const loading = ref(true)
 const saving  = ref(false)

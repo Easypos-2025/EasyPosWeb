@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarPlatos
 ' Endpoint: POST /api/pos/sync/push/dishes
 ' Tabla local VB6: platos
 ' Tabla servidor: pos_dishes
+' Grupo sync:     C — después de SincronizarCategoriaPlatos (Grupo B)
+' Depende de:     pos_dish_categories
 ' PK servidor: id (= Id_Plato en VB6)
 ' ============================================================
 Public Sub SincronizarPlatos(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)

@@ -30,9 +30,9 @@
 
       <!-- Filtros de fecha (todos los roles) -->
       <div class="date-filters">
-        <input v-model="filterDateFrom" type="date" class="filter-date" title="Desde" @change="applyFilters" />
+        <CustomDatePicker v-model="filterDateFrom" @update:modelValue="applyFilters" placeholder="Desde" />
         <span class="date-sep">–</span>
-        <input v-model="filterDateTo" type="date" class="filter-date" title="Hasta" @change="applyFilters" />
+        <CustomDatePicker v-model="filterDateTo" @update:modelValue="applyFilters" placeholder="Hasta" />
         <button
           v-if="filterDateFrom || filterDateTo || filterUserId"
           class="btn-clear-filter"
@@ -372,6 +372,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import { Cropper } from "vue-advanced-cropper"
 import "vue-advanced-cropper/dist/style.css"
 import api from "@/services/apis"

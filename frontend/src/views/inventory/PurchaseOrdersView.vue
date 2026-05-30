@@ -89,7 +89,7 @@
             </div>
             <div class="fg">
               <label>Fecha *</label>
-              <input v-model="createForm.order_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="createForm.order_date" />
             </div>
           </div>
           <div class="fg">
@@ -202,6 +202,7 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 const orders     = ref([])
 const suppliers  = ref([])

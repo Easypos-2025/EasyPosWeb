@@ -31,12 +31,12 @@
 
       <div>
         <label>Fecha inicio:</label>
-        <input type="date" v-model="fechaInicio" required />
+        <CustomDatePicker v-model="fechaInicio" />
       </div>
 
       <div>
         <label>Fecha entrega:</label>
-        <input type="date" v-model="fechaEntrega" required />
+        <CustomDatePicker v-model="fechaEntrega" />
       </div>
 
       <button type="submit">Crear Tarea</button>
@@ -49,6 +49,7 @@
 <script setup>
 import { ref } from "vue"
 import axios from "axios"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 const props = defineProps({
   usuarios: Array

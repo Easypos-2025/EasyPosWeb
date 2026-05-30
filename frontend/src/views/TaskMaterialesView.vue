@@ -166,7 +166,7 @@
           </div>
           <div class="fg">
             <label>Fecha de pago</label>
-            <input v-model="expForm.payment_date" type="date" class="form-control" />
+            <CustomDatePicker v-model="expForm.payment_date" />
           </div>
           <div class="fg">
             <label>N° Recibo / Factura</label>
@@ -225,6 +225,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import { useRoute } from "vue-router"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"

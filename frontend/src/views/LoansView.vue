@@ -179,7 +179,7 @@
             </div>
             <div class="fg">
               <label>Fecha retorno esperada</label>
-              <input v-model="createForm.fecha_retorno_esperada" type="date" class="form-control" />
+              <CustomDatePicker v-model="createForm.fecha_retorno_esperada" />
             </div>
           </div>
           <div class="fg">
@@ -366,6 +366,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { usePermissionsStore } from "@/stores/permissionsStore"

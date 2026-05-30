@@ -19,7 +19,7 @@
         <div class="ctrl-row">
           <div class="ctrl-group">
             <label class="ctrl-lbl">Fecha del corte</label>
-            <input type="date" v-model="fecha" class="ctrl-inp" />
+            <CustomDatePicker v-model="fecha" />
           </div>
           <div class="ctrl-group flex-1">
             <label class="ctrl-lbl">Observación</label>
@@ -218,6 +218,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 

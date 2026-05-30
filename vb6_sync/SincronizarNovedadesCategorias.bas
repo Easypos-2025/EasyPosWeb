@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarNovedadesCategorias
 ' Endpoint: POST /api/pos/sync/push/dish-note-categories
 ' Tabla local VB6: novedades_categorias
 ' Tabla servidor: pos_dish_note_categories
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Columnas locales:
 '   Id_Consecutivo, Cod_Categoria, Id_Novedad, Novedad
 ' Nota: tabla sin Enviada_MySql — se envian todos los registros

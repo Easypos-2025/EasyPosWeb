@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDetalleRecibosComanda
 ' Endpoint: POST /api/pos/sync/push/receipt-order-details
 ' Tabla local VB6: recibos_detalle_comanda
 ' Tabla servidor: pos_receipt_order_details
+' Grupo sync:     G — después de SincronizarRecibosComanda F1 + SincronizarRecibos F2
+' Depende de:     pos_receipt_orders, pos_receipts
 ' Columnas locales (identicas a detalle_comanda):
 '   Nro_Pedido, Fecha, Nro_Factura(*), Id_Plato, Item,
 '   Cantidad, Valor, Novedad, Cortesia,

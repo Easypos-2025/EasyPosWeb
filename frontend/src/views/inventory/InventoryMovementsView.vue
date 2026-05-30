@@ -1,32 +1,38 @@
 <template>
   <div class="mv-wrap">
 
-    <!-- Filters -->
+    <!-- Type pills -->
+    <div class="type-pills">
+      <button v-for="t in TYPES" :key="t.val"
+        :class="['pill', { 'pill-on': typeFilter === t.val }, `pill-${t.color}`]"
+        @click="setType(t.val)">
+        {{ t.label }}
+      </button>
+    </div>
+
+    <!-- Filters bar -->
     <div class="filters-bar">
-      <div class="f-search">
+      <div class="f-search-wrap">
         <i class="bi bi-search f-ico"></i>
         <input v-model.trim="searchItem" @input="filterClient" class="f-inp" placeholder="Buscar insumo..." />
       </div>
 
-      <select v-model="mtypeFilter" @change="load" class="f-sel">
-        <option value="">Todos los tipos</option>
-        <option value="physical">Inventario Físico</option>
-        <option value="entry">Entrada</option>
-        <option value="exit">Salida</option>
-        <option value="sale_vb6">Venta VB6</option>
-        <option value="sale_web">Venta Web</option>
-        <option value="sale_online">Venta Online</option>
-      </select>
-
       <div class="date-row">
-        <input type="date" v-model="desde" @change="load" class="f-date" />
+        <CustomDatePicker v-model="desde" @update:modelValue="load" placeholder="Desde" />
         <span class="date-sep">→</span>
-        <input type="date" v-model="hasta" @change="load" class="f-date" />
+        <CustomDatePicker v-model="hasta" @update:modelValue="load" placeholder="Hasta" />
       </div>
 
       <button class="btn-clear" @click="clearFilters" title="Limpiar filtros">
         <i class="bi bi-x-circle"></i>
       </button>
+
+      <ExportToolbar
+        :data="displayed"
+        :columns="exportCols"
+        filename="movimientos-stock"
+        title="Movimientos de Stock"
+      />
     </div>
 
     <!-- Info bar -->
@@ -46,133 +52,133 @@
     </div>
 
     <template v-else>
-      <!-- Desktop Table -->
-      <div class="tbl-wrap d-desk">
-        <table class="data-tbl">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Insumo</th>
-              <th>Tipo</th>
-              <th class="tr">Δ Cantidad</th>
-              <th class="tr">Antes</th>
-              <th class="tr">Después</th>
-              <th>Referencia</th>
-              <th>Usuario</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="m in displayed" :key="m.id" :class="rowCls(m)">
-              <td class="sm">{{ fmtDate(m.movement_date || m.created_at) }}</td>
-              <td>
-                <strong>{{ m.item_name }}</strong>
-                <small v-if="m.unit_name" class="td-muted ml">{{ m.unit_name }}</small>
-              </td>
-              <td><span :class="typeBadge(m)">{{ typeLbl(m.movement_type) }}</span></td>
-              <td class="tr fw-b" :class="m.qty >= 0 ? 'c-green' : 'c-red'">
-                {{ m.qty >= 0 ? '+' : '' }}{{ fmt(m.qty) }}
-              </td>
-              <td class="tr td-muted sm">{{ fmt(m.qty_before) }}</td>
-              <td class="tr fw-b sm">{{ fmt(m.qty_after) }}</td>
-              <td class="sm td-muted">{{ m.reference_type }}{{ m.reference_id ? ' #' + m.reference_id : '' }}</td>
-              <td class="sm td-muted">{{ m.usuario || '—' }}</td>
-            </tr>
-            <tr v-if="!displayed.length">
-              <td colspan="8" class="empty-cell">Sin movimientos encontrados</td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Column headers (desktop) -->
+      <div class="list-hdr">
+        <span class="hdr-date">Fecha</span>
+        <span class="hdr-item">Insumo</span>
+        <span class="hdr-type">Tipo</span>
+        <span class="hdr-qty tr">Δ Cantidad</span>
+        <span class="hdr-qty tr">Antes</span>
+        <span class="hdr-qty tr">Después</span>
+        <span class="hdr-ref">Referencia</span>
+        <span class="hdr-usr">Usuario</span>
       </div>
 
-      <!-- Mobile Cards -->
-      <div class="cards-wrap d-mob">
-        <div v-for="m in displayed" :key="m.id" class="mv-card" :class="rowCls(m)">
-          <div class="mcard-top">
-            <div class="mcard-main">
-              <span class="mcard-name">{{ m.item_name }}</span>
-              <span class="mcard-date">{{ fmtDate(m.movement_date || m.created_at) }}</span>
-            </div>
-            <span :class="typeBadge(m)">{{ typeLbl(m.movement_type) }}</span>
+      <!-- Cards -->
+      <div class="cards-list">
+        <div v-for="m in displayed" :key="m.id" class="mc" :class="mcCls(m)">
+
+          <!-- Left: date + user (narrow col on desktop) -->
+          <div class="mc-meta">
+            <span class="mc-date">{{ fmtDate(m.movement_date || m.created_at) }}</span>
+            <span class="mc-usr td-muted">{{ m.usuario || '—' }}</span>
           </div>
-          <div class="mcard-body">
-            <div class="mcs">
-              <span class="mcl">Delta</span>
-              <span class="mcv fw-b" :class="m.qty >= 0 ? 'c-green' : 'c-red'">
-                {{ m.qty >= 0 ? '+' : '' }}{{ fmt(m.qty) }} {{ m.unit_name }}
-              </span>
-            </div>
-            <div class="mcs">
-              <span class="mcl">Antes</span>
-              <span class="mcv td-muted">{{ fmt(m.qty_before) }}</span>
-            </div>
-            <div class="mcs">
-              <span class="mcl">Después</span>
-              <span class="mcv">{{ fmt(m.qty_after) }}</span>
+
+          <!-- Center: item + type -->
+          <div class="mc-main">
+            <div class="mc-name">{{ m.item_name }}</div>
+            <div class="mc-sub">
+              <span :class="typeBadge(m)">{{ typeLbl(m.movement_type) }}</span>
+              <span v-if="m.unit_name" class="td-muted">{{ m.unit_name }}</span>
             </div>
           </div>
-          <div v-if="m.usuario || m.reference_type" class="mcard-footer">
-            <span class="mcs-ref td-muted">{{ m.reference_type }}{{ m.reference_id ? ' #' + m.reference_id : '' }}</span>
-            <span class="mcs-user td-muted">{{ m.usuario }}</span>
+
+          <!-- Right: qty deltas -->
+          <div class="mc-nums">
+            <div class="mc-delta fw-b" :class="m.qty >= 0 ? 'c-green' : 'c-red'">
+              {{ m.qty >= 0 ? '+' : '' }}{{ fmt(m.qty) }}
+            </div>
+            <div class="mc-flow td-muted">
+              {{ fmt(m.qty_before) }} → {{ fmt(m.qty_after) }}
+            </div>
+            <div v-if="m.reference_type" class="mc-ref td-muted">
+              {{ m.reference_type }}{{ m.reference_id ? ' #'+m.reference_id : '' }}
+            </div>
           </div>
+
         </div>
-        <div v-if="!displayed.length" class="empty-cell">Sin movimientos encontrados</div>
+        <div v-if="!displayed.length" class="empty-c">Sin movimientos encontrados</div>
       </div>
-
     </template>
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import api from '@/services/apis'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import ExportToolbar    from '@/components/common/ExportToolbar.vue'
 
 const allMovements = ref([])
 const displayed    = ref([])
 const loading      = ref(true)
 
 const searchItem  = ref('')
-const mtypeFilter = ref('')
+const typeFilter  = ref('sale')
 const desde       = ref('')
 const hasta       = ref('')
+
+const TYPES = [
+  { val: '',         label: 'Todos',     color: 'gray'   },
+  { val: 'physical', label: 'Físico',    color: 'blue'   },
+  { val: 'entry',    label: 'Entrada',   color: 'green'  },
+  { val: 'exit',     label: 'Salida',    color: 'orange' },
+  { val: 'sale',     label: 'Ventas',    color: 'red'    },
+]
+
+const exportCols = [
+  { key: 'movement_date', label: 'Fecha',    fmt: v => v ? String(v).slice(0,10) : '' },
+  { key: 'item_name',     label: 'Insumo' },
+  { key: 'movement_type', label: 'Tipo' },
+  { key: 'qty',           label: 'Δ Cant.',  fmt: v => Number(v||0).toFixed(4) },
+  { key: 'qty_before',    label: 'Antes',    fmt: v => Number(v||0).toFixed(4) },
+  { key: 'qty_after',     label: 'Después',  fmt: v => Number(v||0).toFixed(4) },
+  { key: 'unit_name',     label: 'Unidad' },
+  { key: 'reference_type',label: 'Ref. tipo' },
+  { key: 'usuario',       label: 'Usuario' },
+]
 
 const fmt     = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 })
 const fmtDate = v => v ? String(v).slice(0, 10) : '—'
 
 const TYPE_LBL = {
-  physical: 'Inv. Físico',
-  entry: 'Entrada',
-  exit: 'Salida',
-  sale_vb6: 'Venta VB6',
-  sale_web: 'Venta Web',
-  sale_online: 'Venta Online',
+  physical: 'Inv. Físico', entry: 'Entrada', exit: 'Salida',
+  sale_vb6: 'Venta VB6', sale_web: 'Venta Web', sale_online: 'Venta Online',
 }
 function typeLbl(t) { return TYPE_LBL[t] || t }
 
 function typeBadge(m) {
   const t = m.movement_type
-  if (t === 'physical')       return 'tb tb-blue'
-  if (t === 'entry')          return 'tb tb-green'
-  if (t === 'exit')           return 'tb tb-orange'
-  if (t?.startsWith('sale'))  return 'tb tb-red'
+  if (t === 'physical')      return 'tb tb-blue'
+  if (t === 'entry')         return 'tb tb-green'
+  if (t === 'exit')          return 'tb tb-orange'
+  if (t?.startsWith('sale')) return 'tb tb-red'
   return 'tb tb-gray'
 }
 
-function rowCls(m) {
+function mcCls(m) {
   const t = m.movement_type
-  if (t === 'entry')         return 'mr-entry'
-  if (t === 'physical')      return 'mr-phys'
-  if (t === 'exit')          return 'mr-exit'
-  if (t?.startsWith('sale')) return 'mr-sale'
+  if (t === 'entry')         return 'mc-entry'
+  if (t === 'physical')      return 'mc-phys'
+  if (t === 'exit')          return 'mc-exit'
+  if (t?.startsWith('sale')) return 'mc-sale'
   return ''
 }
+
+function todayISO() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
+}
+
+function setType(val) { typeFilter.value = val; load() }
 
 async function load() {
   loading.value = true
   try {
     const p = {}
-    if (mtypeFilter.value) p.mtype = mtypeFilter.value
-    if (desde.value)       p.desde = desde.value
-    if (hasta.value)       p.hasta = hasta.value
+    if (typeFilter.value) p.mtype = typeFilter.value
+    if (desde.value)      p.desde = desde.value
+    if (hasta.value)      p.hasta = hasta.value
     allMovements.value = (await api.get('/api/inventory/movements', { params: p })).data
     filterClient()
   } catch (e) { console.error(e) }
@@ -180,117 +186,156 @@ async function load() {
 }
 
 function filterClient() {
-  const q = searchItem.value.toLowerCase().trim()
+  const q = searchItem.value.toLowerCase()
   displayed.value = q
     ? allMovements.value.filter(m => (m.item_name || '').toLowerCase().includes(q))
     : [...allMovements.value]
 }
 
 function clearFilters() {
-  searchItem.value  = ''
-  mtypeFilter.value = ''
-  desde.value       = ''
-  hasta.value       = ''
+  searchItem.value = ''
+  typeFilter.value = 'sale'
+  desde.value      = todayISO()
+  hasta.value      = todayISO()
   load()
 }
 
-onMounted(load)
+onMounted(() => {
+  desde.value = todayISO()
+  hasta.value = todayISO()
+  load()
+})
 </script>
 
 <style scoped>
 .mv-wrap { padding: 16px; }
 
-/* Filters */
-.filters-bar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
-.f-search { position: relative; flex: 1; min-width: 180px; }
-.f-ico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: 0.83rem; }
-.f-inp { width: 100%; padding: 8px 10px 8px 28px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.87rem; box-sizing: border-box; }
-.f-sel { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.87rem; background: #fff; }
+/* Type pills */
+.type-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.pill {
+  padding: 5px 14px; border-radius: 20px; border: 1.5px solid transparent;
+  font-size: .82rem; font-weight: 600; cursor: pointer; background: #f3f4f6; color: #374151;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.pill:hover { filter: brightness(.95); }
+.pill-on.pill-gray   { background: #6b7280; color: #fff; border-color: #6b7280; }
+.pill-on.pill-blue   { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+.pill-on.pill-green  { background: #16a34a; color: #fff; border-color: #16a34a; }
+.pill-on.pill-orange { background: #ea580c; color: #fff; border-color: #ea580c; }
+.pill-on.pill-red    { background: #dc2626; color: #fff; border-color: #dc2626; }
+
+/* Filters bar */
+.filters-bar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+.f-search-wrap { position: relative; flex: 1; min-width: 170px; }
+.f-ico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: .83rem; }
+.f-inp { width: 100%; padding: 8px 10px 8px 28px; border: 1px solid #d1d5db; border-radius: 8px; font-size: .86rem; box-sizing: border-box; }
 .date-row { display: flex; align-items: center; gap: 6px; }
-.f-date { padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.84rem; }
-.date-sep { color: #9ca3af; font-size: 0.85rem; }
-.btn-clear { background: none; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 11px; cursor: pointer; color: #9ca3af; font-size: 0.9rem; }
+.date-sep { color: #9ca3af; font-size: .85rem; }
+.btn-clear { background: none; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 10px; cursor: pointer; color: #9ca3af; font-size: .88rem; }
 .btn-clear:hover { border-color: #dc2626; color: #dc2626; }
 
 /* Info bar */
-.info-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-.info-cnt { font-size: 0.83rem; color: #6b7280; }
+.info-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+.info-cnt { font-size: .82rem; color: #6b7280; }
 .legend { display: flex; gap: 8px; flex-wrap: wrap; }
-.lg { padding: 2px 8px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; }
+.lg { padding: 2px 8px; border-radius: 20px; font-size: .71rem; font-weight: 600; }
 .lg-phys  { background: #dbeafe; color: #1d4ed8; }
 .lg-entry { background: #dcfce7; color: #16a34a; }
 .lg-exit  { background: #ffedd5; color: #ea580c; }
 .lg-sale  { background: #fee2e2; color: #dc2626; }
 
-/* Table */
-.tbl-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e9ecef; }
-.data-tbl { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.data-tbl th { background: #f8f9fa; padding: 9px 11px; text-align: left; font-weight: 600; border-bottom: 2px solid #dee2e6; white-space: nowrap; color: #374151; }
-.data-tbl td { padding: 7px 11px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-.data-tbl tr:last-child td { border-bottom: none; }
-.data-tbl tr:hover td { filter: brightness(.97); }
-.tr { text-align: right; }
-.td-muted { color: #6b7280; }
-.sm { font-size: 0.79rem; }
-.fw-b { font-weight: 700; }
-.ml { margin-left: 4px; }
-.c-red   { color: #dc2626; }
-.c-green { color: #16a34a; }
+/* Loading / empty */
+.state-c { text-align: center; padding: 40px; color: #6b7280; }
+.spin { animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty-c { text-align: center; padding: 30px; color: #9ca3af; font-size: .87rem; }
 
-/* Row colors */
-.mr-entry { background: #f0fdf4; }
-.mr-phys  { background: #eff6ff; }
-.mr-exit  { background: #fff7ed; }
-.mr-sale  { background: #fff5f5; }
+/* Column headers (desktop) */
+.list-hdr {
+  display: none;
+  padding: 4px 14px;
+  font-size: .71rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: 2px;
+}
+.hdr-date { width: 80px; flex-shrink: 0; }
+.hdr-item { flex: 1; }
+.hdr-type { width: 100px; flex-shrink: 0; }
+.hdr-qty  { width: 80px; flex-shrink: 0; }
+.hdr-ref  { width: 100px; flex-shrink: 0; }
+.hdr-usr  { width: 80px; flex-shrink: 0; }
 
-/* Type badges */
-.tb { padding: 2px 7px; border-radius: 20px; font-size: 0.73rem; font-weight: 600; white-space: nowrap; }
+/* Cards list */
+.cards-list { display: flex; flex-direction: column; gap: 5px; }
+
+.mc {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px;
+  background: #fff; border: 1px solid #e9ecef; border-radius: 9px;
+  transition: box-shadow .15s;
+}
+.mc:hover { box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+.mc-entry { border-left: 4px solid #16a34a; background: #f0fdf4; }
+.mc-phys  { border-left: 4px solid #1d4ed8; background: #eff6ff; }
+.mc-exit  { border-left: 4px solid #ea580c; background: #fff7ed; }
+.mc-sale  { border-left: 4px solid #dc2626; background: #fff5f5; }
+
+/* Meta col (date + user) */
+.mc-meta { flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; width: 70px; }
+.mc-date { font-size: .78rem; font-weight: 600; color: #374151; }
+.mc-usr  { font-size: .72rem; }
+
+/* Main col (item + badge) */
+.mc-main { flex: 1; min-width: 0; }
+.mc-name { font-weight: 700; font-size: .87rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-sub  { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+
+/* Nums col (delta + flow + ref) */
+.mc-nums { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.mc-delta { font-size: .9rem; }
+.mc-flow  { font-size: .75rem; }
+.mc-ref   { font-size: .72rem; }
+
+/* Badges */
+.tb { padding: 2px 7px; border-radius: 20px; font-size: .71rem; font-weight: 600; white-space: nowrap; }
 .tb-blue   { background: #dbeafe; color: #1d4ed8; }
 .tb-green  { background: #dcfce7; color: #16a34a; }
 .tb-orange { background: #ffedd5; color: #ea580c; }
 .tb-red    { background: #fee2e2; color: #dc2626; }
 .tb-gray   { background: #f3f4f6; color: #6b7280; }
 
-/* Empty */
-.empty-cell { text-align: center; padding: 28px; color: #9ca3af; font-size: 0.87rem; }
+/* Shared */
+.tr { text-align: right; }
+.fw-b { font-weight: 700; }
+.td-muted { color: #6b7280; }
+.c-green { color: #16a34a; }
+.c-red   { color: #dc2626; }
 
-/* Loading */
-.state-c { text-align: center; padding: 40px; color: #6b7280; }
-.spin { animation: spin 1s linear infinite; display: inline-block; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* Responsive */
-.d-desk { display: block; }
-.d-mob  { display: none; }
-
-/* Mobile Cards */
-.cards-wrap { display: flex; flex-direction: column; gap: 10px; }
-.mv-card { border-radius: 10px; padding: 12px 14px; border: 1px solid #e9ecef; }
-.mr-entry.mv-card { border-left: 4px solid #16a34a; }
-.mr-phys.mv-card  { border-left: 4px solid #1d4ed8; }
-.mr-exit.mv-card  { border-left: 4px solid #ea580c; }
-.mr-sale.mv-card  { border-left: 4px solid #dc2626; }
-.mcard-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 8px; }
-.mcard-main { min-width: 0; }
-.mcard-name { font-weight: 700; font-size: 0.9rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mcard-date { font-size: 0.76rem; color: #9ca3af; display: block; margin-top: 2px; }
-.mcard-body { display: flex; gap: 14px; margin-bottom: 6px; flex-wrap: wrap; }
-.mcs { display: flex; flex-direction: column; gap: 1px; }
-.mcl { font-size: 0.7rem; color: #9ca3af; font-weight: 500; }
-.mcv { font-size: 0.87rem; font-weight: 600; }
-.mcard-footer { display: flex; justify-content: space-between; padding-top: 6px; border-top: 1px solid #f0f0f0; }
-.mcs-ref, .mcs-user { font-size: 0.76rem; }
-
-@media (max-width: 768px) {
-  .d-desk { display: none; }
-  .d-mob  { display: flex; flex-direction: column; }
-  .filters-bar { flex-direction: column; align-items: stretch; }
-  .f-sel { width: 100%; }
-  .date-row { justify-content: space-between; }
-  .f-date { flex: 1; }
+/* Desktop: row layout + header */
+@media (min-width: 768px) {
+  .list-hdr { display: flex; align-items: center; }
+  .mc { gap: 14px; }
+  .mc-meta { width: 82px; }
+  .mc-nums { align-items: flex-end; min-width: 280px; flex-direction: row; align-items: center; gap: 16px; }
+  .mc-delta { min-width: 80px; text-align: right; }
+  .mc-flow  { min-width: 110px; text-align: right; }
+  .mc-ref   { min-width: 90px; text-align: right; }
 }
+
+/* Tablet */
+@media (max-width: 767px) and (min-width: 577px) {
+  .mc-meta { width: 75px; }
+}
+
+/* Mobile */
 @media (max-width: 576px) {
   .mv-wrap { padding: 10px; }
-  .date-row { flex-wrap: wrap; }
+  .filters-bar { flex-direction: column; align-items: stretch; }
+  .date-row { justify-content: space-between; }
+  .mc { flex-wrap: wrap; gap: 6px; }
+  .mc-meta { width: 100%; flex-direction: row; justify-content: space-between; order: 0; }
+  .mc-main { width: 100%; order: 1; }
+  .mc-nums { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 10px; order: 2; }
+  .mc-delta { min-width: unset; font-size: .88rem; }
+  .mc-flow  { min-width: unset; font-size: .74rem; }
 }
 </style>

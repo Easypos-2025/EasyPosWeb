@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarPlatosProductos
 ' Endpoint: POST /api/pos/sync/push/dish-products
 ' Tabla local VB6: plato_producto
 ' Tabla servidor: pos_dish_products
+' Grupo sync:     D — después de SincronizarPlatos + SincronizarInventarioPorciones (Grupos B y C)
+' Depende de:     pos_dishes, supply_items
 ' PK servidor: (dish_id, supplier_id, measure_id)
 ' Nota: saved retorna dish_id; se marca por Id_Plato
 ' ============================================================

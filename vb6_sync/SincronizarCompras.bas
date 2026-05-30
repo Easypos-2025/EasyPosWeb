@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarCompras
 ' Endpoint: POST /api/pos/sync/push/purchases
 ' Tabla local VB6: compras
 ' Tabla servidor: pos_purchases
+' Grupo sync:     J — financiero independiente, sin orden crítico entre pares
+' Depende de:     ninguna
 ' Columnas locales:
 '   Nro_Gasto, Id_Caja, Fecha_Gasto, Valor_Gasto,
 '   Cod_Empleado, Cod_Concepto, Cod_Sub_Concepto,

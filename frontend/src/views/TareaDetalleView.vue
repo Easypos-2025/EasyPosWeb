@@ -132,16 +132,14 @@
           <!-- FECHA INICIO -->
           <div class="fg">
             <label>Fecha inicio</label>
-            <input v-if="!isWorkerRole" v-model="form.start_date" type="date"
-              class="form-control" />
+            <CustomDatePicker v-if="!isWorkerRole" v-model="form.start_date" />
             <div v-else class="read-field">{{ fmtDate(task.start_date) || '—' }}</div>
           </div>
 
           <!-- FECHA LÍMITE -->
           <div class="fg">
             <label>Fecha límite</label>
-            <input v-if="!isWorkerRole" v-model="form.due_date" type="date"
-              class="form-control" :class="{ 'border-danger': isOverdue }" />
+            <CustomDatePicker v-if="!isWorkerRole" v-model="form.due_date" />
             <div v-else class="read-field" :class="{ 'text-danger': isOverdue }">
               {{ fmtDate(task.due_date) || '—' }}
             </div>
@@ -384,7 +382,7 @@
             </div>
             <div class="fg">
               <label>Fecha de pago</label>
-              <input v-model="expForm.payment_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="expForm.payment_date" />
             </div>
             <div class="fg">
               <label>N° Recibo</label>
@@ -457,7 +455,7 @@
             </div>
             <div class="fg">
               <label>Fecha de compra</label>
-              <input v-model="purchForm.purchase_date" type="date" class="form-control" />
+              <CustomDatePicker v-model="purchForm.purchase_date" />
             </div>
             <div class="fg">
               <label>Proveedor</label>
@@ -643,6 +641,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"

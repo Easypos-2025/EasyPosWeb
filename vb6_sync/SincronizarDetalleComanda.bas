@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarDetalleComanda
 ' Endpoint: POST /api/pos/sync/push/order-details
 ' Tabla local VB6: detalle_comanda
 ' Tabla servidor: pos_order_details
+' Grupo sync:     G — después de SincronizarComandas F1 + SincronizarFacturas F2
+' Depende de:     pos_orders, pos_invoices, pos_dishes
 ' Columnas locales:
 '   Nro_Pedido, Fecha, Nro_Factura, Id_Plato, Item,
 '   Cantidad, Valor, Novedad, Cortesia,

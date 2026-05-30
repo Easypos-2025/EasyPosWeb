@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarFormasPagoFactura
 ' Endpoint: POST /api/pos/sync/push/invoice-payments
 ' Tabla local VB6: formas_pago_factura
 ' Tabla servidor: pos_invoice_payment_methods
+' Grupo sync:     I — después de SincronizarFormaPago (Grupo A)
+' Depende de:     pos_payment_types, pos_invoices
 ' PK servidor: (item, payment_method_id, card_id, invoice_number)
 ' Nota: saved retorna claves compuestas; se marca por Nro_Factura
 ' ============================================================

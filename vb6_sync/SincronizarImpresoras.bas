@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarImpresoras
 ' Endpoint: POST /api/pos/sync/push/printers
 ' Tabla local VB6: impresoras
 ' Tabla servidor: pos_printers
+' Grupo sync:     A — sin dependencias, tabla maestra base
+' Depende de:     ninguna
 ' Columnas locales:
 '   Id_Impresora -> id
 '   Nombre       -> name

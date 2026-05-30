@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarComandas
 ' Endpoint: POST /api/pos/sync/push/orders
 ' Tabla local VB6: comanda
 ' Tabla servidor: pos_orders
+' Grupo sync:     F1 — después de SincronizarMesas + SincronizarMeseros (Grupos A y B)
+' Depende de:     pos_zones, pos_tables, pos_waiters
 ' Columnas locales:
 '   Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora, Mesero,
 '   Cancelado, Valor, Novedad, Cortesia, Nro_Comenzales,

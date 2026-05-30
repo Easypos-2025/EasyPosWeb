@@ -153,11 +153,11 @@
           <div class="form-row-2">
             <div>
               <label class="form-lbl">Fecha inicio *</label>
-              <input v-model="form.start_date" type="date" class="form-ctrl" />
+              <CustomDatePicker v-model="form.start_date" />
             </div>
             <div>
               <label class="form-lbl">Fecha fin *</label>
-              <input v-model="form.end_date" type="date" class="form-ctrl" />
+              <CustomDatePicker v-model="form.end_date" />
             </div>
           </div>
 
@@ -310,11 +310,11 @@
           <div class="form-row-2">
             <div>
               <label class="form-lbl">Nueva fecha inicio *</label>
-              <input v-model="renewForm.start_date" type="date" class="form-ctrl" />
+              <CustomDatePicker v-model="renewForm.start_date" />
             </div>
             <div>
               <label class="form-lbl">Nueva fecha fin *</label>
-              <input v-model="renewForm.end_date" type="date" class="form-ctrl" />
+              <CustomDatePicker v-model="renewForm.end_date" />
             </div>
           </div>
           <div class="form-row mt-2">
@@ -337,6 +337,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from "vue"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"

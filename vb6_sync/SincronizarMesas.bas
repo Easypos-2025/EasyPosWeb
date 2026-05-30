@@ -1,8 +1,10 @@
-' ============================================================
+﻿' ============================================================
 ' SincronizarMesas
 ' Endpoint: POST /api/pos/sync/push/tables
 ' Tabla local VB6: mesas
 ' Tabla servidor: pos_tables
+' Grupo sync:     B — después de SincronizarZonasAsientos (Grupo A)
+' Depende de:     pos_zones
 ' Columnas locales:
 '   Id_Mesa, Id_Sede, Mesa, Ubicacion, Nro_Puestos,
 '   Id_Cliente, Zona_Dinamica, Activa, Id_Zona, Enviada_MySql
