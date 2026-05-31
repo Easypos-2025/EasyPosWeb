@@ -460,7 +460,7 @@ async def stock_alertas(
     cid = await _resolve_cid(user, company_id, db)
 
     rows = (await db.execute(text("""
-        SELECT s.id, s.name, s.stock_qty, s.min_stock, u.name AS unit_name
+        SELECT s.id, s.description AS name, s.stock_qty, s.min_stock, u.name AS unit_name
         FROM supply_items s
         LEFT JOIN measurement_units u ON u.id = s.unit_id
         WHERE s.company_id=:cid AND s.is_active=1
