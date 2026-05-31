@@ -761,7 +761,9 @@ async function irAComanda(tableId, tableName, waiterId) {
     cerrarWizard()
     router.push(`/pos/comanda/pedido/${tableId}`)
   } catch (e) {
-    alert(e?.response?.data?.detail || 'Error al abrir la mesa')
+    const status  = e?.response?.status ?? 'sin respuesta'
+    const detail  = JSON.stringify(e?.response?.data ?? e?.message ?? e)
+    alert(`abrir_mesa falló\nHTTP: ${status}\nRespuesta: ${detail}`)
   } finally {
     wizard.value.abriendo = false
   }
