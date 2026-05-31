@@ -482,10 +482,10 @@ async def get_menu_diario(
 
     assembly_cats = None
     for sql_cats in [
-        # Nivel 1: con nombre de pos_product_categories
+        # Nivel 1: con nombre de pos_product_categories filtrado por company
         """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
                   (SELECT pc2.name FROM pos_product_categories pc2
-                   WHERE pc2.id = da.category_code LIMIT 1) AS category_name
+                   WHERE pc2.id = da.category_code AND pc2.company_id = :cid LIMIT 1) AS category_name
            FROM pos_dish_assembly da
            WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
            ORDER BY da.category_code""",
