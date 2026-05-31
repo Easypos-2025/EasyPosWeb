@@ -430,8 +430,8 @@ async def get_impresoras(item_id: int, authorization: str = Header(None), db: As
         FROM pos_printers p
         LEFT JOIN pos_item_printers ip
                ON ip.printer_id=p.id AND ip.item_id=:iid AND ip.company_id=:cid
-        WHERE p.company_id=:cid AND p.is_active=1
-        ORDER BY p.name
+        WHERE p.company_id=:cid
+        ORDER BY p.is_active DESC, p.name
     """), {"iid": item_id, "cid": user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 
@@ -545,3 +545,61 @@ async def eliminar_opcion(
     ), {"id": opt_id, "mid": mod_id, "cid": user.company_id})
     await db.commit()
     return {"ok": True}
+
+
+# ─── Armado VB6 (pos_dish_assembly) ──────────────────────────────────────────
+
+@router.get("/{item_id}/armado")
+async def get_armado(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+
+    cats = None
+    for sql_cats in [
+        # Nivel 1: con nombre desde pos_product_categories
+        """SELECT da.category_code, da.max_choices, da.is_required, da.is_active,
+                  (SELECT pc.name FROM pos_product_categories pc
+                   WHERE pc.id = da.category_code AND pc.company_id = :cid LIMIT 1) AS category_name
+           FROM pos_dish_assembly da
+           WHERE da.dish_id = :did AND da.company_id = :cid
+           ORDER BY da.category_code""",
+        # Nivel 2: sin nombre (fallback)
+        """SELECT da.category_code, da.max_choices, da.is_required, da.is_active,
+                  NULL AS category_name
+           FROM pos_dish_assembly da
+           WHERE da.dish_id = :did AND da.company_id = :cid
+           ORDER BY da.category_code""",
+    ]:
+        try:
+            rows = (await db.execute(text(sql_cats), {"did": item_id, "cid": cid})).mappings().all()
+            cats = rows
+            break
+        except Exception:
+            continue
+
+    if not cats:
+        return []
+
+    result = []
+    for cat in cats:
+        cc = int(cat["category_code"])
+        options = (await db.execute(text("""
+            SELECT dad.item AS item_id, dad.discount_qty, dad.position, dad.is_default,
+                   COALESCE(si.description, CONCAT('Opción ', dad.position)) AS item_name
+            FROM pos_dish_assembly_detail dad
+            LEFT JOIN supply_items si
+                   ON si.id_item = dad.position AND si.company_id = :cid
+            WHERE dad.dish_id = :did AND dad.company_id = :cid AND dad.category_code = :cc
+            ORDER BY dad.position
+        """), {"did": item_id, "cid": cid, "cc": cc})).mappings().all()
+
+        result.append({
+            "category_code": cc,
+            "category_name": cat["category_name"] or f"Categoría {cc}",
+            "max_choices":   int(cat["max_choices"] or 1),
+            "is_required":   bool(cat["is_required"]),
+            "is_active":     bool(cat["is_active"]),
+            "options":       [dict(o) for o in options],
+        })
+
+    return result

@@ -101,6 +101,22 @@ async def actualizar(
     return {"ok": True}
 
 
+@router.patch("/{printer_id}/toggle")
+async def toggle_activa(
+    printer_id: int,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    await db.execute(text(
+        "UPDATE pos_printers SET is_active = 1 - is_active WHERE id=:id AND company_id=:cid"
+    ), {"id": printer_id, "cid": user.company_id})
+    await db.commit()
+    row = (await db.execute(text(
+        "SELECT id, is_active FROM pos_printers WHERE id=:id AND company_id=:cid"
+    ), {"id": printer_id, "cid": user.company_id})).mappings().first()
+    return {"id": int(row["id"]), "is_active": int(row["is_active"])}
+
+
 @router.delete("/{printer_id}")
 async def eliminar(
     printer_id: int,

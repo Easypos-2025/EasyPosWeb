@@ -28,7 +28,15 @@
           <span v-else-if="imp.usb_device_id" class="printer-detail">{{ imp.usb_device_id }}</span>
         </div>
         <div class="printer-badge-wrap">
-          <span :class="imp.is_active ? 'badge-on' : 'badge-off'">{{ imp.is_active ? 'Activa' : 'Inactiva' }}</span>
+          <button
+            class="toggle-btn"
+            :class="imp.is_active ? 'toggle-btn--on' : 'toggle-btn--off'"
+            @click="toggleActiva(imp)"
+            :title="imp.is_active ? 'Desactivar impresora' : 'Activar impresora'"
+          >
+            <span class="toggle-dot"></span>
+            <span class="toggle-label">{{ imp.is_active ? 'Activa' : 'Inactiva' }}</span>
+          </button>
         </div>
         <div class="printer-acciones">
           <button class="btn-icono" @click="abrirModal(imp)"><i class="bi bi-pencil"></i></button>
@@ -284,6 +292,14 @@ async function guardar() {
   finally { guardando.value=false }
 }
 
+async function toggleActiva(imp) {
+  try {
+    const { data } = await api.patch(`${BASE}/${imp.id}/toggle`)
+    imp.is_active = data.is_active
+    showToast(data.is_active ? 'Impresora activada' : 'Impresora desactivada', 'success')
+  } catch { showToast('Error al cambiar estado', 'error') }
+}
+
 async function eliminar(imp) {
   const { isConfirmed } = await window.Swal.fire({
     title: `¿Eliminar "${imp.name}"?`,
@@ -523,6 +539,32 @@ async function imprimirPrueba() {
 .printer-badge-wrap { display:flex;flex-direction:column;align-items:flex-end; }
 .badge-on  { font-size:10px;background:#dcfce7;color:#16a34a;border-radius:10px;padding:2px 8px;font-weight:700; }
 .badge-off { font-size:10px;background:#f1f5f9;color:#94a3b8;border-radius:10px;padding:2px 8px; }
+
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1.5px solid;
+  cursor: pointer;
+  font-size: .75rem;
+  font-weight: 700;
+  transition: all .2s;
+  background: none;
+}
+.toggle-btn--on  { border-color: #16a34a; color: #16a34a; background: #dcfce7; }
+.toggle-btn--off { border-color: #cbd5e1; color: #94a3b8; background: #f8fafc; }
+.toggle-btn--on:hover  { background: #bbf7d0; }
+.toggle-btn--off:hover { background: #e2e8f0; }
+
+.toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
 .printer-acciones { display:flex;gap:5px;flex-direction:column; }
 .btn-icono { background:none;border:1px solid #e2e8f0;border-radius:6px;padding:5px 8px;cursor:pointer;color:#475569;font-size:13px; }
 .btn-icono:hover { background:#f0f4ff;color:#1d4ed8;border-color:#1d4ed8; }

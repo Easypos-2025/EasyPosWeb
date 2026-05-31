@@ -295,56 +295,31 @@
             </div>
           </div>
 
-          <!-- TAB MODIFICADORES (Armado) -->
+          <!-- TAB ARMADO (VB6 pos_dish_assembly — solo lectura) -->
           <div v-if="panel.tab==='modificadores'">
             <div class="sub-header">
-              <span>Grupos de opciones al comandar</span>
-              <button class="btn-mini" @click="formModificador.visible=true"><i class="bi bi-plus"></i> Grupo</button>
+              <span>Opciones de armado al comandar</span>
+              <span class="badge-vb6" title="Configurado en VB6"><i class="bi bi-pc-display me-1"></i>VB6</span>
             </div>
             <div v-if="panel.loadingModificadores" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
-            <div v-else-if="!modificadores.length" class="mini-vacio"><i class="bi bi-sliders"></i> Sin opciones de armado</div>
+            <div v-else-if="!modificadores.length" class="mini-vacio"><i class="bi bi-sliders"></i> Sin opciones de armado configuradas</div>
             <div v-else class="grupos-lista">
-              <div v-for="g in modificadores" :key="g.id" class="grupo-card">
+              <div v-for="g in modificadores" :key="g.category_code" class="grupo-card" :class="{ 'grupo-card--off': !g.is_active }">
                 <div class="grupo-hdr">
-                  <span class="grupo-nombre">{{ g.name }}</span>
+                  <span class="grupo-nombre">{{ g.category_name }}</span>
                   <div class="grupo-badges">
                     <span v-if="g.is_required" class="badge-req">Requerido</span>
-                    <span v-if="g.is_multiple" class="badge-mul">Múltiple</span>
-                  </div>
-                  <div class="grupo-acc">
-                    <button class="btn-mini btn-mini--sm" @click="abrirFormOpcion(g)"><i class="bi bi-plus"></i></button>
-                    <button class="btn-x-sm" @click="eliminarModificador(g.id)"><i class="bi bi-trash"></i></button>
+                    <span v-if="g.max_choices > 1" class="badge-mul">Máx {{ g.max_choices }}</span>
+                    <span v-if="!g.is_active" class="badge-off-sm">Inactivo</span>
                   </div>
                 </div>
                 <div class="detalles-lista">
-                  <div v-for="o in g.options" :key="o.id" class="detalle-item">
-                    <span class="det-nombre">{{ o.name }}</span>
-                    <span class="det-precio" :class="o.extra_price > 0 ? 'precio-pos' : o.extra_price < 0 ? 'precio-neg' : ''">
-                      {{ o.extra_price !== 0 ? (o.extra_price > 0 ? '+' : '') + fmt(o.extra_price) : 'Incluido' }}
-                    </span>
-                    <button class="btn-x-sm" @click="eliminarOpcion(g.id, o.id)"><i class="bi bi-x"></i></button>
+                  <div v-for="o in g.options" :key="o.item_id" class="detalle-item">
+                    <span class="det-nombre">{{ o.item_name }}</span>
+                    <span v-if="o.is_default" class="badge-def">Por defecto</span>
+                    <span class="det-precio det-qty" v-if="o.discount_qty">-{{ o.discount_qty }}</span>
                   </div>
                 </div>
-              </div>
-            </div>
-            <div v-if="formModificador.visible" class="mini-modal">
-              <input v-model="formModificador.name" class="inp-sm" placeholder="Nombre del grupo (Tamaño, Adiciones…)" />
-              <div class="mini-checks">
-                <label><input type="checkbox" v-model="formModificador.is_required" :true-value="1" :false-value="0" /> Requerido</label>
-                <label><input type="checkbox" v-model="formModificador.is_multiple" :true-value="1" :false-value="0" /> Múltiple</label>
-              </div>
-              <div class="mini-modal-btns">
-                <button class="btn-mini btn-mini--cancel" @click="formModificador.visible=false">Cancelar</button>
-                <button class="btn-mini" @click="crearModificador">Crear</button>
-              </div>
-            </div>
-            <div v-if="formOpcion.visible" class="mini-modal">
-              <p class="mini-label">Opción para: <b>{{ formOpcion.groupName }}</b></p>
-              <input v-model="formOpcion.name" class="inp-sm" placeholder="Nombre (Pequeña, Extra queso…)" />
-              <input type="number" v-model.number="formOpcion.extra_price" class="inp-sm" placeholder="Precio adicional (puede ser negativo)" />
-              <div class="mini-modal-btns">
-                <button class="btn-mini btn-mini--cancel" @click="formOpcion.visible=false">Cancelar</button>
-                <button class="btn-mini" @click="crearOpcion">Agregar</button>
               </div>
             </div>
           </div>
@@ -502,8 +477,6 @@ const modificadores = ref([])
 const variantes     = ref([])
 
 const formIngrediente = ref({ visible:false, supply_item_id:null, quantity:1, unit_id:null })
-const formModificador = ref({ visible:false, name:'', is_required:0, is_multiple:0 })
-const formOpcion      = ref({ visible:false, groupId:null, groupName:'', name:'', extra_price:0 })
 const formVariante    = ref({ visible:false, id:null, name:'', price:0, compare_price:null })
 
 // ── Drag-and-drop ─────────────────────────────────────────────────────────────
@@ -705,43 +678,9 @@ async function guardarImpresoras() {
 // ── Modificadores ─────────────────────────────────────────────────────────────
 async function cargarModificadores() {
   panel.value.loadingModificadores = true
-  try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/modificadores`); modificadores.value = data }
+  try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/armado`); modificadores.value = data }
   catch { modificadores.value = [] }
   finally { panel.value.loadingModificadores = false }
-}
-async function crearModificador() {
-  if (!formModificador.value.name) return
-  try {
-    await api.post(`${BASE}/${panel.value.item.id}/modificadores`, {
-      name:formModificador.value.name, is_required:formModificador.value.is_required, is_multiple:formModificador.value.is_multiple,
-    })
-    formModificador.value.visible = false; await cargarModificadores()
-  } catch { showToast('Error','error') }
-}
-async function eliminarModificador(gId) {
-  const { isConfirmed } = await window.Swal.fire({
-    title:'¿Eliminar grupo y sus opciones?', icon:'warning', showCancelButton:true,
-    confirmButtonColor:'#e11d48', confirmButtonText:'Eliminar', cancelButtonText:'Cancelar',
-  })
-  if (!isConfirmed) return
-  try { await api.delete(`${BASE}/${panel.value.item.id}/modificadores/${gId}`); await cargarModificadores() }
-  catch { showToast('Error','error') }
-}
-function abrirFormOpcion(g) {
-  formOpcion.value = { visible:true, groupId:g.id, groupName:g.name, name:'', extra_price:0 }
-}
-async function crearOpcion() {
-  if (!formOpcion.value.name) return
-  try {
-    await api.post(`${BASE}/${panel.value.item.id}/modificadores/${formOpcion.value.groupId}/opciones`, {
-      name:formOpcion.value.name, extra_price:formOpcion.value.extra_price,
-    })
-    formOpcion.value.visible = false; await cargarModificadores()
-  } catch { showToast('Error','error') }
-}
-async function eliminarOpcion(gId, oId) {
-  try { await api.delete(`${BASE}/${panel.value.item.id}/modificadores/${gId}/opciones/${oId}`); await cargarModificadores() }
-  catch { showToast('Error','error') }
 }
 
 // ── Variantes ─────────────────────────────────────────────────────────────────
@@ -1006,21 +945,26 @@ async function eliminarVariante(varId) {
 .copies-input  { width:48px;border:1.5px solid #cbd5e1;border-radius:6px;padding:3px 6px;font-size:13px;font-weight:700;color:#1e3a5f;text-align:center;outline:none; }
 .copies-input:focus { border-color:#1d4ed8; }
 
-/* Modificadores */
-.grupos-lista { display:flex;flex-direction:column;gap:10px;margin-bottom:12px; }
-.grupo-card  { border:2px solid #e2e8f0;border-radius:10px;overflow:hidden; }
-.grupo-hdr   { display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f8fafc; }
-.grupo-nombre{ font-weight:700;font-size:13px;color:#1e3a5f;flex:1; }
-.grupo-badges{ display:flex;gap:4px; }
-.badge-req   { font-size:10px;background:#fef3c7;color:#d97706;border-radius:6px;padding:1px 6px;font-weight:700; }
-.badge-mul   { font-size:10px;background:#ede9fe;color:#7c3aed;border-radius:6px;padding:1px 6px;font-weight:700; }
-.grupo-acc   { display:flex;gap:4px; }
-.detalles-lista{ padding:8px 12px;display:flex;flex-direction:column;gap:4px; }
-.detalle-item  { display:flex;align-items:center;gap:8px;font-size:13px; }
-.det-nombre    { flex:1;color:#1e3a5f; }
-.det-precio    { font-weight:700;font-size:12px;color:#64748b; }
-.precio-pos    { color:#16a34a; }
-.precio-neg    { color:#e11d48; }
+/* Modificadores / Armado */
+.grupos-lista     { display:flex;flex-direction:column;gap:10px;margin-bottom:12px; }
+.grupo-card       { border:2px solid #e2e8f0;border-radius:10px;overflow:hidden; }
+.grupo-card--off  { opacity:.55; }
+.grupo-hdr        { display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f8fafc; }
+.grupo-nombre     { font-weight:700;font-size:13px;color:#1e3a5f;flex:1; }
+.grupo-badges     { display:flex;gap:4px;flex-wrap:wrap; }
+.badge-req        { font-size:10px;background:#fef3c7;color:#d97706;border-radius:6px;padding:1px 6px;font-weight:700; }
+.badge-mul        { font-size:10px;background:#ede9fe;color:#7c3aed;border-radius:6px;padding:1px 6px;font-weight:700; }
+.badge-off-sm     { font-size:10px;background:#f1f5f9;color:#94a3b8;border-radius:6px;padding:1px 6px; }
+.badge-def        { font-size:10px;background:#dbeafe;color:#2563eb;border-radius:6px;padding:1px 6px;font-weight:700; }
+.badge-vb6        { font-size:10px;background:#f0fdf4;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700;border:1px solid #bbf7d0;cursor:default; }
+.grupo-acc        { display:flex;gap:4px; }
+.detalles-lista   { padding:8px 12px;display:flex;flex-direction:column;gap:4px; }
+.detalle-item     { display:flex;align-items:center;gap:8px;font-size:13px; }
+.det-nombre       { flex:1;color:#1e3a5f; }
+.det-precio       { font-weight:700;font-size:12px;color:#64748b; }
+.det-qty          { color:#0891b2; }
+.precio-pos       { color:#16a34a; }
+.precio-neg       { color:#e11d48; }
 
 /* Variantes */
 .variantes-lista  { display:flex;flex-direction:column;gap:8px;margin-bottom:12px; }

@@ -963,15 +963,15 @@ async def get_cocina(
         LEFT JOIN pos_waiters w ON w.id = r.waiter_id AND w.company_id = :cid
         JOIN pos_item_printers ip ON ip.item_id = od.dish_id AND ip.company_id = :cid
         JOIN pos_printers p
-             ON p.id = ip.printer_id AND p.company_id = :cid
+             ON p.id = ip.printer_id AND p.company_id = :cid AND p.is_active = 1
         WHERE od.dish_time IS NOT NULL AND od.dish_time != ''
           AND d.preparation_time = 0
         ORDER BY ip.printer_id, r.daily_seq
     """), {"cid": cid, "today": today})).mappings().all()
 
-    # All configured printers appear as columns regardless of is_active
+    # Solo impresoras activas como columnas
     all_printers = (await db.execute(text(
-        "SELECT id, name FROM pos_printers WHERE company_id=:cid ORDER BY id"
+        "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
     ), {"cid": cid})).mappings().all()
 
     printer_map: dict = {
