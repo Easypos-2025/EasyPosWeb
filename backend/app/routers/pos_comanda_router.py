@@ -380,13 +380,10 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
     # Intenta con columnas extendidas; si fallan, usa fallbacks progresivos.
     dishes = None
     for sql in [
-        # Nivel 1: columnas completas + has_assembly real via EXISTS
+        # Nivel 1: columnas completas (tax + offer_priority + preparation_time)
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
-                COALESCE(d.tax, 0) AS tax,
-                EXISTS(
-                    SELECT 1 FROM pos_dish_assembly da
-                    WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
-                ) AS has_assembly,
+                COALESCE(d.tax, 0)            AS tax,
+                COALESCE(d.offer_priority, 0) AS has_assembly,
                 COALESCE(d.preparation_time, 0) AS no_print,
                 c.name AS category_name
            FROM pos_dishes d
@@ -394,14 +391,20 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
                    ON c.id = d.category_id AND c.company_id = d.company_id
            WHERE d.company_id = :cid AND c.is_active = 1
            ORDER BY c.name, d.name""",
-        # Nivel 2: sin columnas opcionales (fallback)
+        # Nivel 2: solo offer_priority (sin tax ni preparation_time)
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 0 AS tax,
-                EXISTS(
-                    SELECT 1 FROM pos_dish_assembly da
-                    WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
-                ) AS has_assembly,
+                COALESCE(d.offer_priority, 0) AS has_assembly,
                 0 AS no_print,
+                c.name AS category_name
+           FROM pos_dishes d
+           INNER JOIN pos_dish_categories c
+                   ON c.id = d.category_id AND c.company_id = d.company_id
+           WHERE d.company_id = :cid AND c.is_active = 1
+           ORDER BY c.name, d.name""",
+        # Nivel 3: último recurso sin ninguna columna opcional
+        """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
+                0 AS tax, 0 AS has_assembly, 0 AS no_print,
                 c.name AS category_name
            FROM pos_dishes d
            INNER JOIN pos_dish_categories c
