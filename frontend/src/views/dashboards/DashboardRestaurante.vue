@@ -747,7 +747,7 @@ async function irAComanda(tableId, tableName, waiterId) {
     })
 
     // Guardar contexto del wizard para que PosComandaPedidoView lo muestre
-    const waiterName = meseros.find(m => m.id === waiterId)?.name || 'Sin asignar'
+    const waiterName = meseros.value.find(m => m.id === waiterId)?.name || 'Sin asignar'
     localStorage.setItem('pedido_ctx', JSON.stringify({
       table_id:    tableId,
       table_name:  tableName,
@@ -761,9 +761,7 @@ async function irAComanda(tableId, tableName, waiterId) {
     cerrarWizard()
     router.push(`/pos/comanda/pedido/${tableId}`)
   } catch (e) {
-    const status  = e?.response?.status ?? 'sin respuesta'
-    const detail  = JSON.stringify(e?.response?.data ?? e?.message ?? e)
-    alert(`abrir_mesa falló\nHTTP: ${status}\nRespuesta: ${detail}`)
+    alert(e?.response?.data?.detail || 'Error al abrir la mesa')
   } finally {
     wizard.value.abriendo = false
   }
