@@ -390,7 +390,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
            FROM pos_dishes d
            INNER JOIN pos_dish_categories c
                    ON c.id = d.category_id AND c.company_id = d.company_id
-           WHERE d.company_id = :cid AND c.is_active = 1
+           WHERE d.company_id = :cid AND d.active = 1 AND c.is_active = 1
            ORDER BY c.name, d.name""",
         # Nivel 2: sin columnas opcionales en pos_dishes (fallback)
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
@@ -399,7 +399,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
            FROM pos_dishes d
            INNER JOIN pos_dish_categories c
                    ON c.id = d.category_id AND c.company_id = d.company_id
-           WHERE d.company_id = :cid AND c.is_active = 1
+           WHERE d.company_id = :cid AND d.active = 1 AND c.is_active = 1
            ORDER BY c.name, d.name""",
     ]:
         try:
