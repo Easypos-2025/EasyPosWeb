@@ -287,39 +287,96 @@
                     <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
                   </div>
                 </label>
-                <div v-if="imp.assigned" class="imp-copies">
-                  <label class="copies-label">Copias</label>
-                  <input type="number" v-model.number="imp.print_copies" min="1" max="9" class="copies-input" @change="guardarImpresoras" />
-                </div>
               </div>
             </div>
           </div>
 
-          <!-- TAB ARMADO (VB6 pos_dish_assembly — solo lectura) -->
+          <!-- TAB ARMADO (CRUD sobre pos_dish_assembly) -->
           <div v-if="panel.tab==='modificadores'">
             <div class="sub-header">
               <span>Opciones de armado al comandar</span>
-              <span class="badge-vb6" title="Configurado en VB6"><i class="bi bi-pc-display me-1"></i>VB6</span>
+              <button class="btn-mini" @click="formCat.visible=true"><i class="bi bi-plus"></i> Categoría</button>
             </div>
+
             <div v-if="panel.loadingModificadores" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
             <div v-else-if="!modificadores.length" class="mini-vacio"><i class="bi bi-sliders"></i> Sin opciones de armado configuradas</div>
+
             <div v-else class="grupos-lista">
-              <div v-for="g in modificadores" :key="g.category_code" class="grupo-card" :class="{ 'grupo-card--off': !g.is_active }">
+              <div v-for="g in modificadores" :key="g.category_code" class="grupo-card">
+                <!-- Header categoría -->
                 <div class="grupo-hdr">
                   <span class="grupo-nombre">{{ g.category_name }}</span>
                   <div class="grupo-badges">
                     <span v-if="g.is_required" class="badge-req">Requerido</span>
-                    <span v-if="g.max_choices > 1" class="badge-mul">Máx {{ g.max_choices }}</span>
-                    <span v-if="!g.is_active" class="badge-off-sm">Inactivo</span>
+                    <span class="badge-mul">Máx {{ g.max_choices }}</span>
+                  </div>
+                  <div class="grupo-acc">
+                    <button class="btn-mini btn-mini--sm" @click="abrirFormOpcionArmado(g)" title="Agregar insumo"><i class="bi bi-plus"></i></button>
+                    <button class="btn-x-sm" @click="eliminarCat(g)" title="Quitar categoría"><i class="bi bi-trash"></i></button>
                   </div>
                 </div>
+
+                <!-- Opciones de la categoría -->
                 <div class="detalles-lista">
-                  <div v-for="o in g.options" :key="o.item_id" class="detalle-item">
+                  <div v-for="o in g.options" :key="o.position" class="detalle-item detalle-item--armado">
                     <span class="det-nombre">{{ o.item_name }}</span>
-                    <span v-if="o.is_default" class="badge-def">Por defecto</span>
-                    <span class="det-precio det-qty" v-if="o.discount_qty">-{{ o.discount_qty }}</span>
+                    <label class="det-default" :title="'Por defecto'">
+                      <input type="checkbox" :checked="!!o.is_default"
+                        @change="toggleDefault(g, o, $event.target.checked)" />
+                      <span class="default-label">Def.</span>
+                    </label>
+                    <input type="number" class="inp-qty-sm" :value="o.discount_qty" min="0" step="0.1"
+                      @change="actualizarQty(g, o, $event.target.value)" title="Cant. descuento" />
+                    <button class="btn-x-sm" @click="eliminarOpcionArmado(g, o)"><i class="bi bi-x"></i></button>
                   </div>
+                  <div v-if="!g.options.length" class="text-muted small ps-1 pb-1">Sin insumos — agrega con el botón +</div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Form nueva categoría -->
+            <div v-if="formCat.visible" class="mini-modal">
+              <label class="mini-label-b">Nueva categoría de armado</label>
+              <select v-model="formCat.category_code" class="inp-sm">
+                <option :value="null">— Selecciona categoría —</option>
+                <option v-for="c in categoriasArmado" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+              <div class="mini-row">
+                <div class="mini-field">
+                  <label class="mini-label-s">Máx. opciones</label>
+                  <input type="number" v-model.number="formCat.max_choices" class="inp-sm" min="1" max="20" />
+                </div>
+                <label class="mini-check-inline">
+                  <input type="checkbox" v-model="formCat.is_required" :true-value="1" :false-value="0" />
+                  Requerido
+                </label>
+              </div>
+              <div class="mini-modal-btns">
+                <button class="btn-mini btn-mini--cancel" @click="formCat.visible=false">Cancelar</button>
+                <button class="btn-mini" :disabled="!formCat.category_code" @click="crearCat">Agregar</button>
+              </div>
+            </div>
+
+            <!-- Form nueva opción (insumo) -->
+            <div v-if="formOpArmado.visible" class="mini-modal">
+              <label class="mini-label-b">Agregar insumo a <b>{{ formOpArmado.groupName }}</b></label>
+              <select v-model="formOpArmado.position" class="inp-sm">
+                <option :value="null">— Selecciona insumo —</option>
+                <option v-for="s in insumos" :key="s.id_item ?? s.id" :value="s.id_item ?? s.id">{{ s.name ?? s.description }}</option>
+              </select>
+              <div class="mini-row">
+                <div class="mini-field">
+                  <label class="mini-label-s">Cant. descuento</label>
+                  <input type="number" v-model.number="formOpArmado.discount_qty" class="inp-sm" min="0" step="0.1" />
+                </div>
+                <label class="mini-check-inline">
+                  <input type="checkbox" v-model="formOpArmado.is_default" :true-value="1" :false-value="0" />
+                  Por defecto
+                </label>
+              </div>
+              <div class="mini-modal-btns">
+                <button class="btn-mini btn-mini--cancel" @click="formOpArmado.visible=false">Cancelar</button>
+                <button class="btn-mini" :disabled="!formOpArmado.position" @click="crearOpcionArmado">Agregar</button>
               </div>
             </div>
           </div>
@@ -476,8 +533,11 @@ const impresoras    = ref([])
 const modificadores = ref([])
 const variantes     = ref([])
 
-const formIngrediente = ref({ visible:false, supply_item_id:null, quantity:1, unit_id:null })
-const formVariante    = ref({ visible:false, id:null, name:'', price:0, compare_price:null })
+const formIngrediente  = ref({ visible:false, supply_item_id:null, quantity:1, unit_id:null })
+const formVariante     = ref({ visible:false, id:null, name:'', price:0, compare_price:null })
+const formCat          = ref({ visible:false, category_code:null, max_choices:1, is_required:0 })
+const formOpArmado     = ref({ visible:false, groupCode:null, groupName:'', position:null, discount_qty:1, is_default:0 })
+const categoriasArmado = ref([])
 
 // ── Drag-and-drop ─────────────────────────────────────────────────────────────
 let dragFromItem = null
@@ -508,7 +568,7 @@ async function onDrop() {
 function onDragEnd() { dragId.value = null; dragFromItem = null }
 
 // ── Carga inicial ─────────────────────────────────────────────────────────────
-onMounted(() => Promise.all([cargarItems(), cargarCategorias(), cargarInsumos(), cargarUnidades()]))
+onMounted(() => Promise.all([cargarItems(), cargarCategorias(), cargarInsumos(), cargarUnidades(), cargarCategoriasArmado()]))
 
 async function cargarItems() {
   loading.value = true
@@ -534,6 +594,10 @@ async function cargarInsumos() {
 async function cargarUnidades() {
   try { const{data} = await api.get('/unidades-medida/'); unidades.value = data }
   catch { unidades.value = [] }
+}
+async function cargarCategoriasArmado() {
+  try { const{data} = await api.get(`${BASE}/armado/categorias-disponibles`); categoriasArmado.value = data }
+  catch { categoriasArmado.value = [] }
 }
 
 // ── Foto ──────────────────────────────────────────────────────────────────────
@@ -567,6 +631,7 @@ async function guardarItem() {
       tax:           modalItem.value.tax,
       active:        modalItem.value.active,
     }
+    const isNew = !modalItem.value.id
     let itemId = modalItem.value.id
     if (itemId) {
       await api.put(`${BASE}/${itemId}`, p)
@@ -575,7 +640,6 @@ async function guardarItem() {
       itemId = data.id
     }
 
-    // Subir foto si hay una pendiente
     if (fotoPendiente.value) {
       const fd = new FormData()
       fd.append('file', fotoPendiente.value, 'photo.webp')
@@ -589,6 +653,12 @@ async function guardarItem() {
     showToast('Artículo guardado', 'success')
     cerrarModalItem()
     await cargarItems()
+
+    // Al crear nuevo, abrir panel automáticamente para configurar impresoras/armado/receta
+    if (isNew) {
+      const newItem = items.value.find(i => i.id === itemId)
+      if (newItem) await abrirPanel(newItem, 'impresoras')
+    }
   } catch(e) {
     showToast(e?.response?.data?.detail || 'Error al guardar', 'error')
   } finally { guardando.value = false }
@@ -681,6 +751,79 @@ async function cargarModificadores() {
   try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/armado`); modificadores.value = data }
   catch { modificadores.value = [] }
   finally { panel.value.loadingModificadores = false }
+}
+
+// ── CRUD Categorías de armado ─────────────────────────────────────────────────
+async function crearCat() {
+  if (!formCat.value.category_code) return
+  try {
+    await api.post(`${BASE}/${panel.value.item.id}/armado/categoria`, {
+      category_code: formCat.value.category_code,
+      max_choices:   formCat.value.max_choices,
+      is_required:   formCat.value.is_required,
+    })
+    formCat.value = { visible:false, category_code:null, max_choices:1, is_required:0 }
+    await cargarModificadores()
+  } catch(e) { showToast(e?.response?.data?.detail || 'Error al agregar categoría', 'error') }
+}
+
+async function eliminarCat(g) {
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Quitar categoría "${g.category_name}"?`,
+    text: 'Se eliminarán todos sus insumos configurados.',
+    icon: 'warning', showCancelButton: true,
+    confirmButtonColor: '#e11d48', confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  try {
+    await api.delete(`${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}`)
+    await cargarModificadores()
+  } catch { showToast('Error al quitar categoría', 'error') }
+}
+
+// ── CRUD Opciones de armado ───────────────────────────────────────────────────
+function abrirFormOpcionArmado(g) {
+  formOpArmado.value = { visible:true, groupCode:g.category_code, groupName:g.category_name, position:null, discount_qty:1, is_default:0 }
+}
+
+async function crearOpcionArmado() {
+  if (!formOpArmado.value.position) return
+  try {
+    await api.post(
+      `${BASE}/${panel.value.item.id}/armado/categoria/${formOpArmado.value.groupCode}/opcion`,
+      { position: formOpArmado.value.position, discount_qty: formOpArmado.value.discount_qty, is_default: formOpArmado.value.is_default }
+    )
+    formOpArmado.value.visible = false
+    await cargarModificadores()
+  } catch(e) { showToast(e?.response?.data?.detail || 'Error al agregar insumo', 'error') }
+}
+
+async function eliminarOpcionArmado(g, o) {
+  try {
+    await api.delete(`${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}/opcion/${o.position}`)
+    await cargarModificadores()
+  } catch { showToast('Error al quitar insumo', 'error') }
+}
+
+async function toggleDefault(g, o, checked) {
+  try {
+    await api.put(
+      `${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}/opcion/${o.position}`,
+      { position: o.position, discount_qty: o.discount_qty, is_default: checked ? 1 : 0 }
+    )
+    o.is_default = checked ? 1 : 0
+  } catch { showToast('Error', 'error') }
+}
+
+async function actualizarQty(g, o, val) {
+  const qty = parseFloat(val) || 0
+  try {
+    await api.put(
+      `${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}/opcion/${o.position}`,
+      { position: o.position, discount_qty: qty, is_default: o.is_default }
+    )
+    o.discount_qty = qty
+  } catch { showToast('Error', 'error') }
 }
 
 // ── Variantes ─────────────────────────────────────────────────────────────────
@@ -965,6 +1108,25 @@ async function eliminarVariante(varId) {
 .det-qty          { color:#0891b2; }
 .precio-pos       { color:#16a34a; }
 .precio-neg       { color:#e11d48; }
+
+/* Armado CRUD extras */
+.detalle-item--armado { gap:6px; }
+.inp-qty-sm {
+  width: 60px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  text-align: center;
+  color: #1e3a5f;
+}
+.inp-qty-sm:focus { border-color: #1d4ed8; outline: none; }
+.det-default { display:flex;align-items:center;gap:3px;font-size:11px;color:#64748b;cursor:pointer; }
+.default-label { font-size:11px; }
+.mini-label-b { font-weight:700;font-size:12px;color:#1e3a5f;display:block;margin-bottom:4px; }
+.mini-label-s { font-size:11px;color:#64748b;display:block;margin-bottom:2px; }
+.mini-field   { display:flex;flex-direction:column; }
+.mini-check-inline { display:flex;align-items:center;gap:5px;font-size:12px;color:#475569;margin-top:14px;cursor:pointer; }
 
 /* Variantes */
 .variantes-lista  { display:flex;flex-direction:column;gap:8px;margin-bottom:12px; }

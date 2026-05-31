@@ -603,3 +603,116 @@ async def get_armado(item_id: int, authorization: str = Header(None), db: AsyncS
         })
 
     return result
+
+
+# Lista de categorías disponibles para armado (pos_product_categories)
+@router.get("/armado/categorias-disponibles")
+async def get_categorias_armado(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    rows = (await db.execute(text(
+        "SELECT id, name FROM pos_product_categories WHERE company_id=:cid ORDER BY name"
+    ), {"cid": user.company_id})).mappings().all()
+    return [{"id": int(r["id"]), "name": r["name"]} for r in rows]
+
+
+class ArmadoCategoriaIn(BaseModel):
+    category_code: int
+    max_choices: Optional[int] = 1
+    is_required: Optional[int] = 0
+
+
+class ArmadoOpcionIn(BaseModel):
+    position: int        # supply_items.id_item
+    discount_qty: Optional[float] = 1
+    is_default: Optional[int] = 0
+
+
+@router.post("/{item_id}/armado/categoria", status_code=201)
+async def add_armado_categoria(
+    item_id: int, data: ArmadoCategoriaIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await db.execute(text("""
+        INSERT INTO pos_dish_assembly
+            (dish_id, company_id, category_code, max_choices, is_required, is_active, print_on_change_only)
+        VALUES (:did, :cid, :cc, :mc, :req, 1, 0)
+        ON DUPLICATE KEY UPDATE
+            max_choices=VALUES(max_choices), is_required=VALUES(is_required), is_active=1
+    """), {"did": item_id, "cid": cid, "cc": data.category_code,
+           "mc": data.max_choices, "req": data.is_required})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{item_id}/armado/categoria/{category_code}")
+async def del_armado_categoria(
+    item_id: int, category_code: int,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await db.execute(text(
+        "DELETE FROM pos_dish_assembly_detail WHERE dish_id=:did AND company_id=:cid AND category_code=:cc"
+    ), {"did": item_id, "cid": cid, "cc": category_code})
+    await db.execute(text(
+        "DELETE FROM pos_dish_assembly WHERE dish_id=:did AND company_id=:cid AND category_code=:cc"
+    ), {"did": item_id, "cid": cid, "cc": category_code})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/{item_id}/armado/categoria/{category_code}/opcion", status_code=201)
+async def add_armado_opcion(
+    item_id: int, category_code: int, data: ArmadoOpcionIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    max_item = (await db.execute(text(
+        "SELECT COALESCE(MAX(item),0) FROM pos_dish_assembly_detail "
+        "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc"
+    ), {"did": item_id, "cid": cid, "cc": category_code})).scalar() or 0
+    new_item = int(max_item) + 1
+    await db.execute(text("""
+        INSERT INTO pos_dish_assembly_detail
+            (dish_id, company_id, category_code, item, position, discount_qty, is_default, is_active)
+        VALUES (:did, :cid, :cc, :itm, :pos, :dq, :def, 1)
+    """), {"did": item_id, "cid": cid, "cc": category_code,
+           "itm": new_item, "pos": data.position,
+           "dq": data.discount_qty, "def": data.is_default})
+    await db.commit()
+    return {"ok": True, "item": new_item}
+
+
+@router.delete("/{item_id}/armado/categoria/{category_code}/opcion/{position}")
+async def del_armado_opcion(
+    item_id: int, category_code: int, position: int,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await db.execute(text(
+        "DELETE FROM pos_dish_assembly_detail "
+        "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos"
+    ), {"did": item_id, "cid": cid, "cc": category_code, "pos": position})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/{item_id}/armado/categoria/{category_code}/opcion/{position}")
+async def update_armado_opcion(
+    item_id: int, category_code: int, position: int, data: ArmadoOpcionIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await db.execute(text("""
+        UPDATE pos_dish_assembly_detail
+        SET discount_qty=:dq, is_default=:def
+        WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos
+    """), {"did": item_id, "cid": cid, "cc": category_code,
+           "pos": position, "dq": data.discount_qty, "def": data.is_default})
+    await db.commit()
+    return {"ok": True}
