@@ -48,8 +48,9 @@ async def _auth_comanda(
     if not payload:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
     payload = dict(payload)
-    # Para usuarios regulares: company_id viene del header X-Company-Id
-    if not payload.get("company_id") and x_company_id:
+    # X-Company-Id siempre tiene prioridad: el admin puede gestionar
+    # la comanda de cualquier empresa asignada sin importar su JWT.
+    if x_company_id:
         payload["company_id"] = x_company_id
     if not payload.get("company_id"):
         raise HTTPException(status_code=400, detail="company_id requerido")
@@ -169,7 +170,7 @@ async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = D
 
     rows = (await db.execute(text("""
         WITH seq AS (
-            SELECT order_number, table_id, amount, time, waiter_id, bill_requested
+            SELECT order_number, table_id, amount, time, waiter_id
             FROM pos_orders
             WHERE company_id = :cid AND date = :today
               AND invoice_number = '0' AND cancelled = 0
@@ -184,7 +185,6 @@ async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = D
             s.amount,
             s.time          AS order_time,
             s.waiter_id,
-            s.bill_requested,
             w.name          AS waiter_name
         FROM pos_tables_layout tl
         LEFT JOIN pos_zones z ON z.id = tl.zone_id AND z.company_id = :cid
@@ -218,7 +218,7 @@ async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = D
             }
         status = "free"
         if r["order_number"]:
-            status = "bill_requested" if r["bill_requested"] else "occupied"
+            status = "occupied"
 
         zones[zid]["tables"].append({
             "id": r["id"],
@@ -268,11 +268,11 @@ async def abrir_mesa(
         INSERT INTO pos_orders
           (order_number, date, invoice_number, table_id, table_name,
            waiter_id, guests_count, amount, cancelled, delivery,
-           bill_requested, company_id, time)
+           company_id, time)
         VALUES
           (:on, :date, '0', :tid, :tname,
            :wid, :guests, 0, 0, 0,
-           0, :cid, :time)
+           :cid, :time)
     """), {
         "on": order_number, "date": today, "tid": data.table_id,
         "tname": mesa["name"], "wid": waiter_id,
@@ -296,7 +296,7 @@ async def get_orden_mesa(
 
     order = (await db.execute(text("""
         SELECT o.order_number, o.date, o.amount, o.time, o.guests_count,
-               o.waiter_id, o.bill_requested, o.notes, o.table_name,
+               o.waiter_id, o.notes, o.table_name,
                w.name AS waiter_name
         FROM pos_orders o
         LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = o.company_id
@@ -363,7 +363,6 @@ async def get_orden_mesa(
             "guests_count": order["guests_count"],
             "waiter_id": order["waiter_id"],
             "waiter_name": order["waiter_name"],
-            "bill_requested": bool(order["bill_requested"]),
             "table_name": order["table_name"],
             "daily_seq": int(seq) if seq else 1,
         },
@@ -380,7 +379,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
     # Intenta con columnas extendidas; si no existen en la BD VB6, cae al fallback
     try:
         dishes = (await db.execute(text("""
-            SELECT
+            SELECT DISTINCT
                 d.id, d.name, d.price, d.category_id,
                 COALESCE(d.tax, 0)              AS tax,
                 COALESCE(d.offer_priority, 0)   AS has_assembly,
@@ -393,7 +392,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
         """), {"cid": cid})).mappings().all()
     except Exception:
         dishes = (await db.execute(text("""
-            SELECT d.id, d.name, d.price, d.category_id,
+            SELECT DISTINCT d.id, d.name, d.price, d.category_id,
                    0 AS tax, 0 AS has_assembly, 0 AS no_print,
                    c.name AS category_name
             FROM pos_dishes d
@@ -750,15 +749,6 @@ async def solicitar_cuenta(
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    cid = payload["company_id"]
-    today = _today()
-
-    await db.execute(text("""
-        UPDATE pos_orders SET bill_requested = 1
-        WHERE table_id = :tid AND company_id = :cid
-          AND date = :today AND invoice_number = '0' AND cancelled = 0
-    """), {"tid": data.table_id, "cid": cid, "today": today})
-    await db.commit()
     return {"ok": True}
 
 
@@ -790,6 +780,72 @@ async def cancelar_orden(
     return {"ok": True}
 
 
+# ── 14b. DESPACHAR PEDIDO (marcar como entregado, sale de TV) ────────────────
+
+class DespacharIn(BaseModel):
+    order_number: str
+    date: str
+
+
+@router.post("/orden/despachar")
+async def despachar_orden(data: DespacharIn, payload: dict = Depends(_auth_comanda)):
+    return {"ok": True}
+
+
+# ── 14c. PEDIDOS EN TV (dashboard admin) ──────────────────────────────────────
+
+@router.get("/cocina-pedidos")
+async def get_cocina_pedidos(
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista órdenes actualmente visibles en la pantalla de cocina TV."""
+    cid = payload["company_id"]
+    today = _today()
+
+    rows = (await db.execute(text("""
+        SELECT
+            o.order_number, o.date, o.table_name, o.amount, o.time AS order_time,
+            w.name AS waiter_name,
+            (SELECT COUNT(*) FROM pos_order_details od2
+             WHERE od2.order_number = o.order_number AND od2.date = o.date
+               AND od2.invoice_number = '0' AND od2.company_id = :cid
+               AND od2.dish_time IS NOT NULL AND od2.dish_time != '') AS item_count,
+            (SELECT GROUP_CONCAT(d2.name ORDER BY d2.name SEPARATOR ', ')
+             FROM pos_order_details od3
+             JOIN pos_dishes d2 ON d2.id = od3.dish_id
+             WHERE od3.order_number = o.order_number AND od3.date = o.date
+               AND od3.invoice_number = '0' AND od3.company_id = :cid
+               AND od3.dish_time IS NOT NULL AND od3.dish_time != ''
+             LIMIT 5) AS items_preview
+        FROM pos_orders o
+        LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = :cid
+        WHERE o.company_id = :cid AND o.date = :today
+          AND o.invoice_number = '0' AND o.cancelled = 0
+          AND EXISTS (
+              SELECT 1 FROM pos_order_details od
+              WHERE od.order_number = o.order_number AND od.date = o.date
+                AND od.invoice_number = '0' AND od.company_id = :cid
+                AND od.dish_time IS NOT NULL AND od.dish_time != ''
+          )
+        ORDER BY o.time
+    """), {"cid": cid, "today": today})).mappings().all()
+
+    return [
+        {
+            "order_number": r["order_number"],
+            "date": r["date"],
+            "table_name": r["table_name"],
+            "waiter_name": r["waiter_name"],
+            "order_time": str(r["order_time"] or "")[:5],
+            "amount": float(r["amount"] or 0),
+            "item_count": int(r["item_count"] or 0),
+            "items_preview": r["items_preview"] or "",
+        }
+        for r in rows
+    ]
+
+
 # ── 14. COCINA TV ─────────────────────────────────────────────────────────────
 
 @router.get("/cocina")
@@ -802,7 +858,7 @@ async def get_cocina(
 
     rows = (await db.execute(text("""
         WITH ranked AS (
-            SELECT order_number, date, table_name, waiter_id, time, bill_requested,
+            SELECT order_number, date, table_name, waiter_id, time,
                    ROW_NUMBER() OVER (
                        PARTITION BY company_id, date ORDER BY time ASC
                    ) AS daily_seq
@@ -814,7 +870,6 @@ async def get_cocina(
             r.daily_seq,
             r.table_name,
             r.time          AS order_time,
-            r.bill_requested,
             w.name          AS waiter_name,
             od.order_number,
             od.dish_id,
@@ -870,7 +925,6 @@ async def get_cocina(
                 "table_name": row["table_name"],
                 "waiter_name": row["waiter_name"],
                 "order_time": row["order_time"],
-                "bill_requested": bool(row["bill_requested"]),
                 "latest_dish_time": row["dish_time"] or "",
                 "items": [],
             }

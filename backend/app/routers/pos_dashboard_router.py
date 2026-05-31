@@ -178,7 +178,6 @@ async def get_mesas(
             t.id, t.name, t.location, t.seats, t.zone_id,
             z.name AS zone_name,
             CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END AS ocupada,
-            COALESCE(o.bill_requested, 0) AS bill_requested,
             o.order_number, o.amount, o.time AS hora_apertura,
             o.guests_count, w.name AS waiter_name,
             o.order_number AS daily_seq
