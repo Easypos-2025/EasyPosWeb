@@ -142,12 +142,23 @@ async function loadMesas() {
   }
 }
 
+function _setCtx(tableId, tableName, waiterName) {
+  const cid = localStorage.getItem('waiter_company_id')
+  localStorage.setItem('pedido_ctx', JSON.stringify({
+    table_id:    tableId,
+    table_name:  tableName,
+    waiter_name: waiterName || '',
+    waiter_id:   0,
+    company_id:  cid ? parseInt(cid) : 0,
+  }))
+}
+
 function onTableClick(table) {
   if (table.status === 'free') {
     openingTable.value = table
     guests.value = 2
   } else {
-    // Navigate to active order
+    _setCtx(table.id, table.name, table.waiter_name)
     router.push(`/pos/comanda/pedido/${table.id}`)
   }
 }
@@ -156,11 +167,13 @@ async function openTable() {
   if (opening.value) return
   opening.value = true
   try {
-    await apiComanda.post('/api/pos/comanda/mesa/abrir', {
+    const res = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
       table_id:     openingTable.value.id,
       guests_count: guests.value,
     })
-    const tid = openingTable.value.id
+    const tid  = openingTable.value.id
+    const name = openingTable.value.name
+    _setCtx(tid, name, '')
     openingTable.value = null
     router.push(`/pos/comanda/pedido/${tid}`)
   } catch (e) {
