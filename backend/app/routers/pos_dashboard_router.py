@@ -133,7 +133,7 @@ async def get_kpis(
               AND o.invoice_number = '0'
               AND o.cancelled   = 0
               AND o.delivery    = 0
-        WHERE t.company_id = :cid AND t.active = 1
+        WHERE t.company_id = :cid
     """), {"cid": cid, "today": today})).mappings().one()
 
     # Alertas de stock crítico
@@ -192,7 +192,7 @@ async def get_mesas(
               AND o.cancelled   = 0
               AND o.delivery    = 0
         LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = :cid
-        WHERE t.company_id = :cid AND t.active = 1
+        WHERE t.company_id = :cid
         ORDER BY z.order_index, z.name, t.name
     """), {"cid": cid, "today": today})).mappings().all()
 
