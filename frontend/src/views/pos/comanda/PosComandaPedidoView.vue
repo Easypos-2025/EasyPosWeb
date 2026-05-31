@@ -1,6 +1,11 @@
 <template>
   <div class="pedido-view">
 
+    <!-- DEBUG TEMPORAL — borrar cuando funcione -->
+    <div class="dbg-bar">
+      <span>tableId={{ tableId }} | order={{ order ? 'OK' : 'NULL' }} | cats={{ menuCategories.length }} | err={{ dbgError || 'ninguno' }}</span>
+    </div>
+
     <!-- Header -->
     <div class="pedido-header">
       <button class="pedido-header__back" @click="$router.push('/pos/comanda/mesas')">
@@ -224,6 +229,7 @@ const cartOpen        = ref(false)
 const assemblyDish    = ref(null)
 const notasItem       = ref(null)
 const sending         = ref(false)
+const dbgError        = ref('')
 
 const currentCategoryDishes = computed(() => {
   const cat = menuCategories.value.find(c => c.category_id === activeCategory.value)
@@ -247,13 +253,13 @@ async function loadOrder() {
       order.value = res.data.order
       items.value = res.data.items
     } else {
-      // Try to open the table
       const openRes = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
         table_id: tableId.value, guests_count: 1,
       })
       order.value = { order_number: openRes.data.order_number, date: openRes.data.date, amount: 0, items: [] }
     }
   } catch (e) {
+    dbgError.value = `orden:${e.response?.status || e.message}`
     if (e.response?.status === 401) router.push('/pos/comanda/login')
   }
 }
@@ -265,7 +271,9 @@ async function loadMenu() {
     if (res.data.categories.length && !activeCategory.value) {
       activeCategory.value = res.data.categories[0].category_id
     }
-  } catch { /* silencioso */ }
+  } catch (e) {
+    dbgError.value = (dbgError.value ? dbgError.value + ' | ' : '') + `menu:${e.response?.status || e.message}`
+  }
 }
 
 async function loadNotes() {
@@ -712,6 +720,21 @@ async function requestBill() {
   flex-direction: column;
   margin-right: auto;
   line-height: 1.2;
+}
+
+/* DEBUG BAR — temporal */
+.dbg-bar {
+  position: fixed;
+  top: 52px;
+  left: 0; right: 0;
+  background: #7c3aed;
+  color: #fff;
+  font-size: .7rem;
+  font-family: monospace;
+  padding: 3px 10px;
+  z-index: 9999;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
 /* Responsive */
