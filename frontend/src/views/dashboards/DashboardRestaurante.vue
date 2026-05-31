@@ -4,180 +4,262 @@
     <!-- KPI BAR -->
     <KpiStrip :kpis="kpis" :loading="kpiLoading" :showLabels="true" v-model="fechaKpi" />
 
-    <!-- CABECERA: título -->
+    <!-- CABECERA -->
     <div class="dash-header">
       <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Panel de Operaciones' }}</h6>
+      <div class="dash-header-right">
+        <a
+          :href="`/pos/cocina?cid=${selectedCid}`"
+          target="_blank"
+          class="btn-tv"
+          title="Abrir Vista Cocina en nueva pestaña"
+        >
+          <i class="bi bi-display me-1"></i>
+          <span class="btn-tv-label">Ver Cocina TV</span>
+        </a>
+        <button class="btn-refresh" @click="cargarTodo" :disabled="cargandoTodo" title="Actualizar todo">
+          <i class="bi" :class="cargandoTodo ? 'bi-arrow-repeat spin' : 'bi-arrow-clockwise'"></i>
+        </button>
+      </div>
     </div>
 
-    <!-- TABS -->
-    <ul class="nav nav-tabs dash-tabs" role="tablist">
-      <li class="nav-item">
-        <button
-          class="nav-link"
-          :class="{ active: tabActivo === 'nueva' }"
-          @click="tabActivo = 'nueva'"
-        >
-          <i class="bi bi-plus-circle me-1"></i>Nueva Mesa / Pedido
-        </button>
-      </li>
-      <li class="nav-item">
-        <button
-          class="nav-link"
-          :class="{ active: tabActivo === 'abiertas' }"
-          @click="tabActivo = 'abiertas'; cargarAbiertas()"
-        >
-          <i class="bi bi-table me-1"></i>Abiertas
-          <span v-if="abiertas.length" class="badge badge-abierta ms-1">{{ abiertas.length }}</span>
-        </button>
-      </li>
-      <li class="nav-item">
-        <button
-          class="nav-link"
-          :class="{ active: tabActivo === 'facturadas' }"
-          @click="tabActivo = 'facturadas'; cargarFacturadas()"
-        >
-          <i class="bi bi-receipt me-1"></i>Facturadas
-          <span v-if="facturadas.length" class="badge badge-facturada ms-1">{{ facturadas.length }}</span>
-        </button>
-      </li>
-    </ul>
+    <!-- CUERPO PRINCIPAL: tabs + sidebar -->
+    <div class="dash-body">
 
-    <div class="tab-content dash-tab-content">
+      <!-- ── Columna principal: tabs ── -->
+      <div class="dash-main">
+        <ul class="nav nav-tabs dash-tabs" role="tablist">
+          <li class="nav-item">
+            <button
+              class="nav-link"
+              :class="{ active: tabActivo === 'nueva' }"
+              @click="tabActivo = 'nueva'"
+            >
+              <i class="bi bi-plus-circle me-1"></i>Nuevo Pedido
+            </button>
+          </li>
+          <li class="nav-item">
+            <button
+              class="nav-link"
+              :class="{ active: tabActivo === 'abiertas' }"
+              @click="tabActivo = 'abiertas'; cargarAbiertas()"
+            >
+              <i class="bi bi-table me-1"></i>Abiertas
+              <span v-if="abiertas.length" class="badge badge-abierta ms-1">{{ abiertas.length }}</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button
+              class="nav-link"
+              :class="{ active: tabActivo === 'facturadas' }"
+              @click="tabActivo = 'facturadas'; cargarFacturadas()"
+            >
+              <i class="bi bi-receipt me-1"></i>Facturadas
+              <span v-if="facturadas.length" class="badge badge-facturada ms-1">{{ facturadas.length }}</span>
+            </button>
+          </li>
+        </ul>
 
-      <!-- TAB 1: NUEVA MESA / PEDIDO -->
-      <div v-show="tabActivo === 'nueva'" class="tab-pane-inner">
-        <div v-if="mesasLoading" class="estado-carga">
-          <div class="spinner-border spinner-border-sm text-primary"></div>
-          <span>Cargando mesas...</span>
-        </div>
-        <div v-else-if="!mesas.length" class="estado-vacio">
-          <i class="bi bi-grid-3x3-gap"></i>
-          <p>No hay mesas configuradas. Sincroniza el software de escritorio primero.</p>
-        </div>
-        <template v-else>
-          <!-- Acciones rápidas -->
-          <div class="acciones-rapidas">
-            <button class="btn-accion" @click="abrirModalTakeout">
-              <i class="bi bi-bag-check"></i>
-              <span>Para Llevar</span>
-            </button>
-            <button class="btn-accion btn-accion--web">
-              <i class="bi bi-globe"></i>
-              <span>Pedido Web</span>
-            </button>
+        <div class="tab-content dash-tab-content">
+
+          <!-- TAB: NUEVO PEDIDO -->
+          <div v-show="tabActivo === 'nueva'" class="tab-pane-inner">
+            <div v-if="mesasLoading" class="estado-carga">
+              <div class="spinner-border spinner-border-sm text-primary"></div>
+              <span>Cargando mesas...</span>
+            </div>
+            <div v-else-if="!mesas.length" class="estado-vacio">
+              <i class="bi bi-grid-3x3-gap"></i>
+              <p>No hay mesas configuradas. Sincroniza el software de escritorio primero.</p>
+            </div>
+            <template v-else>
+              <!-- Acciones rápidas -->
+              <div class="acciones-rapidas">
+                <button class="btn-accion" @click="abrirModalTakeout">
+                  <i class="bi bi-bag-check"></i>
+                  <span>Para Llevar</span>
+                </button>
+                <button class="btn-accion btn-accion--web">
+                  <i class="bi bi-globe"></i>
+                  <span>Pedido Web</span>
+                </button>
+              </div>
+
+              <!-- Leyenda -->
+              <div class="mesas-leyenda">
+                <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--libre"></span>Libre</span>
+                <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--ocupada"></span>Ocupada</span>
+                <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--cuenta"></span>Pide cuenta</span>
+              </div>
+
+              <!-- Grid de mesas por zona -->
+              <template v-for="zona in zonas" :key="zona">
+                <div class="zona-label">
+                  <i class="bi bi-geo-alt"></i> {{ zona || 'Sin zona' }}
+                </div>
+                <div class="mesas-grid">
+                  <div
+                    v-for="mesa in mesasPorZona(zona)"
+                    :key="mesa.id"
+                    class="mesa-card"
+                    :class="{
+                      'mesa-card--libre':    !mesa.ocupada && !mesa.bill_requested,
+                      'mesa-card--ocupada':   mesa.ocupada && !mesa.bill_requested,
+                      'mesa-card--cuenta':    mesa.bill_requested,
+                    }"
+                    @click="handleMesaClick(mesa)"
+                  >
+                    <div class="mesa-status-bar"></div>
+                    <div class="mesa-icon">
+                      <i class="bi"
+                        :class="mesa.bill_requested ? 'bi-receipt' : mesa.ocupada ? 'bi-person-fill' : 'bi-table'">
+                      </i>
+                    </div>
+                    <div class="mesa-nombre">{{ mesa.name }}</div>
+                    <div class="mesa-info">
+                      <template v-if="mesa.ocupada || mesa.bill_requested">
+                        <span v-if="mesa.daily_seq" class="mesa-seq">#{{ mesa.daily_seq }}</span>
+                        <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
+                        <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
+                      </template>
+                      <span v-else class="mesa-seats">{{ mesa.seats }} sillas</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </template>
           </div>
 
-          <!-- Grid de mesas por zona -->
-          <template v-for="zona in zonas" :key="zona">
-            <div class="zona-label">
-              <i class="bi bi-geo-alt"></i> {{ zona || 'Sin zona' }}
+          <!-- TAB: ABIERTAS -->
+          <div v-show="tabActivo === 'abiertas'" class="tab-pane-inner">
+            <div v-if="abiertasLoading" class="estado-carga">
+              <div class="spinner-border spinner-border-sm text-warning"></div>
+              <span>Cargando comandas abiertas...</span>
             </div>
-            <div class="mesas-grid">
-              <div
-                v-for="mesa in mesasPorZona(zona)"
-                :key="mesa.id"
-                class="mesa-card"
-                :class="{
-                  'mesa-card--libre': !mesa.ocupada,
-                  'mesa-card--ocupada': mesa.ocupada
-                }"
-                @click="!mesa.ocupada && abrirModalMesa(mesa)"
-              >
-                <div class="mesa-icon">
-                  <i class="bi" :class="mesa.ocupada ? 'bi-person-fill' : 'bi-table'"></i>
+            <div v-else-if="!abiertas.length" class="estado-vacio">
+              <i class="bi bi-check-circle"></i>
+              <p>No hay comandas abiertas en este momento.</p>
+            </div>
+            <div v-else class="comandas-grid">
+              <div v-for="cmd in abiertas" :key="cmd.order_number" class="comanda-card comanda-card--abierta">
+                <div class="comanda-top">
+                  <span class="comanda-mesa"><i class="bi bi-table me-1"></i>{{ cmd.table_name || 'Sin mesa' }}</span>
+                  <span class="comanda-hora">{{ cmd.hora_apertura }}</span>
                 </div>
-                <div class="mesa-nombre">{{ mesa.name }}</div>
-                <div class="mesa-info">
-                  <span v-if="mesa.ocupada">
-                    <span class="mesa-estado ocupada">Ocupada</span>
-                    <span class="mesa-mesero">{{ mesa.waiter_name || 'Sin mesero' }}</span>
-                    <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
-                  </span>
-                  <span v-else class="mesa-estado libre">
-                    {{ mesa.seats }} sillas
-                  </span>
+                <div class="comanda-mid">
+                  <span class="comanda-mesero"><i class="bi bi-person me-1"></i>{{ cmd.waiter_name || '—' }}</span>
+                  <span class="comanda-items"><i class="bi bi-list-ul me-1"></i>{{ cmd.item_count }} ítem(s)</span>
+                  <span v-if="cmd.guests_count" class="comanda-guests"><i class="bi bi-people me-1"></i>{{ cmd.guests_count }}</span>
+                </div>
+                <div class="comanda-bot">
+                  <span class="comanda-monto">{{ fmt(cmd.amount) }}</span>
+                  <span class="comanda-num"># {{ cmd.order_number }}</span>
+                </div>
+                <div v-if="cmd.notes" class="comanda-notas">
+                  <i class="bi bi-chat-left-text me-1"></i>{{ cmd.notes }}
                 </div>
               </div>
             </div>
-          </template>
-        </template>
-      </div>
+          </div>
 
-      <!-- TAB 2: ABIERTAS -->
-      <div v-show="tabActivo === 'abiertas'" class="tab-pane-inner">
-        <div v-if="abiertasLoading" class="estado-carga">
-          <div class="spinner-border spinner-border-sm text-warning"></div>
-          <span>Cargando comandas abiertas...</span>
-        </div>
-        <div v-else-if="!abiertas.length" class="estado-vacio">
-          <i class="bi bi-check-circle"></i>
-          <p>No hay comandas abiertas en este momento.</p>
-        </div>
-        <div v-else class="comandas-grid">
-          <div v-for="cmd in abiertas" :key="cmd.order_number" class="comanda-card comanda-card--abierta">
-            <div class="comanda-top">
-              <span class="comanda-mesa">
-                <i class="bi bi-table me-1"></i>{{ cmd.table_name || 'Sin mesa' }}
-              </span>
-              <span class="comanda-hora">{{ cmd.hora_apertura }}</span>
+          <!-- TAB: FACTURADAS -->
+          <div v-show="tabActivo === 'facturadas'" class="tab-pane-inner">
+            <div v-if="facturadasLoading" class="estado-carga">
+              <div class="spinner-border spinner-border-sm text-success"></div>
+              <span>Cargando facturadas...</span>
             </div>
-            <div class="comanda-mid">
-              <span class="comanda-mesero">
-                <i class="bi bi-person me-1"></i>{{ cmd.waiter_name || '—' }}
-              </span>
-              <span class="comanda-items">
-                <i class="bi bi-list-ul me-1"></i>{{ cmd.item_count }} ítem(s)
-              </span>
-              <span v-if="cmd.guests_count" class="comanda-guests">
-                <i class="bi bi-people me-1"></i>{{ cmd.guests_count }}
-              </span>
+            <div v-else-if="!facturadas.length" class="estado-vacio">
+              <i class="bi bi-receipt"></i>
+              <p>No hay ventas facturadas para esta fecha.</p>
             </div>
-            <div class="comanda-bot">
-              <span class="comanda-monto">{{ fmt(cmd.amount) }}</span>
-              <span class="comanda-num"># {{ cmd.order_number }}</span>
+            <div v-else class="comandas-grid">
+              <div v-for="cmd in facturadas" :key="cmd.order_number" class="comanda-card comanda-card--facturada">
+                <div class="comanda-top">
+                  <span class="comanda-mesa"><i class="bi bi-table me-1"></i>{{ cmd.table_name || 'Sin mesa' }}</span>
+                  <span class="comanda-hora">{{ cmd.hora_cierre }}</span>
+                </div>
+                <div class="comanda-mid">
+                  <span class="comanda-mesero"><i class="bi bi-person me-1"></i>{{ cmd.waiter_name || '—' }}</span>
+                  <span v-if="cmd.guests_count" class="comanda-guests"><i class="bi bi-people me-1"></i>{{ cmd.guests_count }}</span>
+                </div>
+                <div class="comanda-bot">
+                  <span class="comanda-monto">{{ fmt(cmd.amount) }}</span>
+                  <span class="comanda-num">Fctr: {{ cmd.invoice_number }}</span>
+                </div>
+              </div>
             </div>
-            <div v-if="cmd.notes" class="comanda-notas">
-              <i class="bi bi-chat-left-text me-1"></i>{{ cmd.notes }}
+          </div>
+
+        </div><!-- /tab-content -->
+      </div><!-- /dash-main -->
+
+      <!-- ── Sidebar ── -->
+      <div class="dash-side">
+
+        <!-- Stock crítico -->
+        <div class="side-section">
+          <div class="side-header">
+            <span><i class="bi bi-exclamation-triangle me-1 text-danger"></i>Stock crítico</span>
+            <span v-if="stockAlertas.length" class="badge bg-danger">{{ stockAlertas.length }}</span>
+          </div>
+          <div v-if="cargandoStock" class="side-loading">
+            <div class="spinner-border spinner-border-sm text-danger"></div>
+          </div>
+          <div v-else-if="!stockAlertas.length" class="side-ok">
+            <i class="bi bi-check-circle-fill text-success me-1"></i>
+            <span>Todo en orden</span>
+          </div>
+          <div v-else class="stock-list">
+            <div v-for="item in stockAlertas" :key="item.id" class="stock-item">
+              <div class="stock-item-info">
+                <div class="stock-item-name">{{ item.name }}</div>
+                <div class="stock-item-unit">{{ item.unit_name || '' }}</div>
+              </div>
+              <div class="stock-item-nums">
+                <span :class="item.stock_qty <= 0 ? 'text-danger fw-bold' : 'text-warning fw-bold'">
+                  {{ formatNum(item.stock_qty) }}
+                </span>
+                <span class="text-muted small"> / {{ formatNum(item.min_stock) }}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- TAB 3: FACTURADAS -->
-      <div v-show="tabActivo === 'facturadas'" class="tab-pane-inner">
-        <div v-if="facturadasLoading" class="estado-carga">
-          <div class="spinner-border spinner-border-sm text-success"></div>
-          <span>Cargando facturadas...</span>
-        </div>
-        <div v-else-if="!facturadas.length" class="estado-vacio">
-          <i class="bi bi-receipt"></i>
-          <p>No hay ventas facturadas para esta fecha.</p>
-        </div>
-        <div v-else class="comandas-grid">
-          <div v-for="cmd in facturadas" :key="cmd.order_number" class="comanda-card comanda-card--facturada">
-            <div class="comanda-top">
-              <span class="comanda-mesa">
-                <i class="bi bi-table me-1"></i>{{ cmd.table_name || 'Sin mesa' }}
-              </span>
-              <span class="comanda-hora">{{ cmd.hora_cierre }}</span>
-            </div>
-            <div class="comanda-mid">
-              <span class="comanda-mesero">
-                <i class="bi bi-person me-1"></i>{{ cmd.waiter_name || '—' }}
-              </span>
-              <span v-if="cmd.guests_count" class="comanda-guests">
-                <i class="bi bi-people me-1"></i>{{ cmd.guests_count }}
-              </span>
-            </div>
-            <div class="comanda-bot">
-              <span class="comanda-monto">{{ fmt(cmd.amount) }}</span>
-              <span class="comanda-num">Fctr: {{ cmd.invoice_number }}</span>
-            </div>
+        <!-- Últimas transacciones -->
+        <div class="side-section">
+          <div class="side-header">
+            <span><i class="bi bi-clock-history me-1"></i>Últimas transacciones</span>
+            <span class="badge bg-secondary-subtle text-secondary small">
+              {{ fechaKpi === hoy ? 'Hoy' : fechaKpi }}
+            </span>
+          </div>
+          <div v-if="cargandoTx" class="side-loading">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+          </div>
+          <div v-else-if="!transacciones.length" class="side-empty">Sin transacciones</div>
+          <div v-else class="tx-wrap">
+            <table class="tx-table">
+              <thead>
+                <tr><th>Hora</th><th>Tipo</th><th>N°</th><th class="text-end">Total</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="tx in transacciones" :key="tx.tipo + tx.numero">
+                  <td class="tx-hora">{{ tx.hora?.substring(0,5) }}</td>
+                  <td>
+                    <span class="badge-tx" :class="tx.tipo === 'Factura' ? 'tx-fact' : 'tx-rec'">
+                      {{ tx.tipo }}
+                    </span>
+                  </td>
+                  <td class="tx-num">{{ tx.numero }}</td>
+                  <td class="text-end tx-total">{{ fmt(tx.total) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
 
-    </div><!-- /tab-content -->
+      </div><!-- /dash-side -->
+    </div><!-- /dash-body -->
 
     <!-- MODAL ABRIR MESA -->
     <div v-if="modalMesa.visible" class="modal-overlay" @click.self="cerrarModal">
@@ -225,34 +307,41 @@ import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
 
 const companyStore = useCompanyStore()
+const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
 
-// ── Estado ────────────────────────────────────────────────────────────────────
-const _hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
-const fechaKpi   = ref(_hoy)  // fecha única: KPIs + Facturadas
-const tabActivo  = ref('nueva')
+const fechaKpi       = ref(hoy)
+const tabActivo      = ref('nueva')
+const cargandoTodo   = ref(false)
 
 const kpiLoading        = ref(true)
 const mesasLoading      = ref(true)
 const abiertasLoading   = ref(false)
 const facturadasLoading = ref(false)
+const cargandoStock     = ref(false)
+const cargandoTx        = ref(false)
 
-const kpiData    = ref(null)
-const mesas      = ref([])
-const meseros    = ref([])
-const abiertas   = ref([])
-const facturadas = ref([])
+const kpiData      = ref(null)
+const mesas        = ref([])
+const meseros      = ref([])
+const abiertas     = ref([])
+const facturadas   = ref([])
+const stockAlertas = ref([])
+const transacciones = ref([])
 
 const modalMesa = ref({
   visible: false, id: 0, nombre: '',
   waiter_id: 0, guests_count: 1, notes: '', guardando: false,
 })
 
-// ── Formato moneda COP ────────────────────────────────────────────────────────
+// ── Formato ──────────────────────────────────────────────────────────────────
 const fmtCOP = new Intl.NumberFormat('es-CO', {
   style: 'currency', currency: 'COP',
   minimumFractionDigits: 0, maximumFractionDigits: 0,
 })
 const fmt = (v) => fmtCOP.format(v || 0)
+function formatNum(val) {
+  return Number(val || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })
+}
 
 // ── KPIs computados ───────────────────────────────────────────────────────────
 const kpis = computed(() => {
@@ -275,18 +364,18 @@ const kpis = computed(() => {
   ]
 })
 
-// ── Zonas de mesas ────────────────────────────────────────────────────────────
-const zonas = computed(() => [...new Set(mesas.value.map(m => m.zone_id || ''))])
+const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
+const zonas        = computed(() => [...new Set(mesas.value.map(m => m.zone_id || ''))])
 const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zona)
 
-// ── Refresh silencioso (sin spinner, sin borrar datos) ────────────────────────
+// ── Refresh silencioso ────────────────────────────────────────────────────────
 async function _silentKpis() {
   try {
     const { data } = await api.get('/api/pos-dashboard/kpis', {
       params: { fecha: fechaKpi.value, company_id: selectedCid.value, _t: Date.now() }
     })
     kpiData.value = data
-  } catch { /* silencioso */ }
+  } catch { }
 }
 async function _silentMesas() {
   try {
@@ -294,7 +383,7 @@ async function _silentMesas() {
       params: { company_id: selectedCid.value, _t: Date.now() }
     })
     mesas.value = data
-  } catch { /* silencioso */ }
+  } catch { }
 }
 function _tick() {
   _silentKpis()
@@ -302,22 +391,16 @@ function _tick() {
   if (tabActivo.value === 'abiertas') cargarAbiertas()
 }
 
-// ── Auto-refresh cada 15 s + visibilitychange ─────────────────────────────────
 let _timer = null
-function _startRefresh() {
-  _stopRefresh()
-  _timer = setInterval(_tick, 15000)
-}
-function _stopRefresh() {
-  if (_timer) { clearInterval(_timer); _timer = null }
-}
-function _onVisible() {
-  if (!document.hidden) _tick()
-}
+function _startRefresh() { _stopRefresh(); _timer = setInterval(_tick, 15000) }
+function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } }
+function _onVisible()    { if (!document.hidden) _tick() }
 
-// ── Carga inicial ─────────────────────────────────────────────────────────────
+// ── Ciclo de vida ─────────────────────────────────────────────────────────────
 onMounted(async () => {
-  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros()])
+  await Promise.all([
+    cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTransacciones()
+  ])
   _startRefresh()
   document.addEventListener('visibilitychange', _onVisible)
 })
@@ -328,76 +411,115 @@ onUnmounted(() => {
 
 watch(fechaKpi, () => {
   cargarKpis()
+  cargarTransacciones()
   if (tabActivo.value === 'facturadas') cargarFacturadas()
 })
 
-const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined)
+// ── Carga de datos ────────────────────────────────────────────────────────────
+async function cargarTodo() {
+  cargandoTodo.value = true
+  try {
+    await Promise.all([
+      cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTransacciones()
+    ])
+  } finally {
+    cargandoTodo.value = false
+  }
+}
 
 async function cargarKpis() {
   kpiLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fechaKpi.value, company_id: selectedCid.value } })
+    const { data } = await api.get('/api/pos-dashboard/kpis', {
+      params: { fecha: fechaKpi.value, company_id: selectedCid.value }
+    })
     kpiData.value = data
-  } catch {
-    kpiData.value = null
-  } finally {
-    kpiLoading.value = false
-  }
+  } catch { kpiData.value = null }
+  finally { kpiLoading.value = false }
 }
 
 async function cargarMesas() {
   mesasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/mesas', { params: { company_id: selectedCid.value } })
+    const { data } = await api.get('/api/pos-dashboard/mesas', {
+      params: { company_id: selectedCid.value }
+    })
     mesas.value = data
-  } catch {
-    mesas.value = []
-  } finally {
-    mesasLoading.value = false
-  }
+  } catch { mesas.value = [] }
+  finally { mesasLoading.value = false }
 }
 
 async function cargarMeseros() {
   try {
-    const { data } = await api.get('/api/pos-dashboard/meseros', { params: { company_id: selectedCid.value } })
+    const { data } = await api.get('/api/pos-dashboard/meseros', {
+      params: { company_id: selectedCid.value }
+    })
     meseros.value = data
-  } catch {
-    meseros.value = []
-  }
+  } catch { meseros.value = [] }
 }
 
 async function cargarAbiertas() {
   if (abiertasLoading.value) return
   abiertasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/abiertas', { params: { company_id: selectedCid.value } })
+    const { data } = await api.get('/api/pos-dashboard/abiertas', {
+      params: { company_id: selectedCid.value }
+    })
     abiertas.value = data
-  } catch {
-    abiertas.value = []
-  } finally {
-    abiertasLoading.value = false
-  }
+  } catch { abiertas.value = [] }
+  finally { abiertasLoading.value = false }
 }
 
 async function cargarFacturadas() {
   if (facturadasLoading.value) return
   facturadasLoading.value = true
   try {
-    const { data } = await api.get('/api/pos-dashboard/facturadas', { params: { fecha: fechaKpi.value, company_id: selectedCid.value } })
+    const { data } = await api.get('/api/pos-dashboard/facturadas', {
+      params: { fecha: fechaKpi.value, company_id: selectedCid.value }
+    })
     facturadas.value = data
-  } catch {
-    facturadas.value = []
-  } finally {
-    facturadasLoading.value = false
-  }
+  } catch { facturadas.value = [] }
+  finally { facturadasLoading.value = false }
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+async function cargarStock() {
+  cargandoStock.value = true
+  try {
+    const { data } = await api.get('/api/pos-dashboard/stock-alertas', {
+      params: { company_id: selectedCid.value }
+    })
+    stockAlertas.value = data
+  } catch { stockAlertas.value = [] }
+  finally { cargandoStock.value = false }
+}
+
+async function cargarTransacciones() {
+  cargandoTx.value = true
+  try {
+    const { data } = await api.get('/api/pos-dashboard/ultimas-transacciones', {
+      params: { fecha: fechaKpi.value, company_id: selectedCid.value }
+    })
+    transacciones.value = data
+  } catch { transacciones.value = [] }
+  finally { cargandoTx.value = false }
+}
+
+// ── Mesa / Modal ──────────────────────────────────────────────────────────────
+function handleMesaClick(mesa) {
+  if (!mesa.ocupada && !mesa.bill_requested) abrirModalMesa(mesa)
+}
+
 function abrirModalMesa(mesa) {
-  modalMesa.value = { visible: true, id: mesa.id, nombre: mesa.name, waiter_id: 0, guests_count: 1, notes: '', guardando: false }
+  modalMesa.value = {
+    visible: true, id: mesa.id, nombre: mesa.name,
+    waiter_id: 0, guests_count: 1, notes: '', guardando: false,
+  }
 }
 function abrirModalTakeout() {
-  modalMesa.value = { visible: true, id: 0, nombre: 'Para Llevar', waiter_id: 0, guests_count: 1, notes: '', guardando: false }
+  modalMesa.value = {
+    visible: true, id: 0, nombre: 'Para Llevar',
+    waiter_id: 0, guests_count: 1, notes: '', guardando: false,
+  }
 }
 function cerrarModal() { modalMesa.value.visible = false }
 
@@ -431,6 +553,7 @@ async function confirmarAbrirMesa() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
+  gap: 10px;
 }
 .dash-title {
   font-weight: 700;
@@ -438,26 +561,53 @@ async function confirmarAbrirMesa() {
   color: #1e3a5f;
   margin: 0;
 }
-.fechero-wrap {
+.dash-header-right { display: flex; align-items: center; gap: 8px; }
+
+.btn-tv {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #f0f4ff;
-  border: 1px solid #c7d7f5;
+  padding: 6px 14px;
+  border: 1.5px solid #0f172a;
   border-radius: 8px;
-  padding: 5px 10px;
-  color: #1d4ed8;
-  font-size: 13px;
-}
-.fechero-input {
-  border: none;
-  background: transparent;
-  color: #1d4ed8;
+  background: #0f172a;
+  color: #f1f5f9;
   font-size: 13px;
   font-weight: 600;
-  outline: none;
-  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
 }
+.btn-tv:hover { background: #1e293b; color: #fff; }
+
+.btn-refresh {
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.btn-refresh:hover:not(:disabled) { background: #f1f5f9; color: #1d4ed8; }
+.btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
+
+.spin { animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Cuerpo ───────────────────────────────────────────────────────────────── */
+.dash-body {
+  display: grid;
+  grid-template-columns: 1fr 290px;
+  gap: 16px;
+  align-items: start;
+}
+.dash-main { min-width: 0; }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────── */
 .dash-tabs { border-bottom: 2px solid #e2e8f0; margin-bottom: 0; gap: 2px; }
@@ -499,7 +649,7 @@ async function confirmarAbrirMesa() {
 .estado-vacio i { font-size: 40px; }
 
 /* ── Acciones rápidas ─────────────────────────────────────────────────────── */
-.acciones-rapidas { display: flex; gap: 10px; margin-bottom: 20px; }
+.acciones-rapidas { display: flex; gap: 10px; margin-bottom: 12px; }
 .btn-accion {
   display: flex;
   align-items: center;
@@ -518,6 +668,25 @@ async function confirmarAbrirMesa() {
 .btn-accion--web       { border-color: #7c3aed; color: #7c3aed; }
 .btn-accion--web:hover { background: #7c3aed; color: #fff; }
 
+/* ── Leyenda ──────────────────────────────────────────────────────────────── */
+.mesas-leyenda {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+.leyenda-item { display: flex; align-items: center; gap: 5px; }
+.leyenda-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.leyenda-dot--libre   { background: #10b981; }
+.leyenda-dot--ocupada { background: #ef4444; }
+.leyenda-dot--cuenta  { background: #f59e0b; }
+
 /* ── Zonas ────────────────────────────────────────────────────────────────── */
 .zona-label {
   font-size: 11px;
@@ -534,30 +703,57 @@ async function confirmarAbrirMesa() {
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 10px;
 }
+
 .mesa-card {
   border-radius: 12px;
   border: 2px solid #e2e8f0;
-  padding: 12px;
+  overflow: hidden;
   text-align: center;
   cursor: pointer;
   transition: transform .15s, box-shadow .15s, border-color .15s;
   background: #fff;
 }
+
+/* Color bar at top of card */
+.mesa-status-bar {
+  height: 4px;
+  background: #e2e8f0;
+}
+.mesa-card--libre   .mesa-status-bar { background: #10b981; }
+.mesa-card--ocupada .mesa-status-bar { background: #ef4444; }
+.mesa-card--cuenta  .mesa-status-bar { background: #f59e0b; }
+
 .mesa-card--libre:hover {
   border-color: #1d4ed8;
   transform: translateY(-2px);
   box-shadow: 0 4px 16px rgba(29,78,216,.15);
 }
-.mesa-card--ocupada { border-color: #f59e0b; background: #fffbeb; cursor: default; }
-.mesa-icon { font-size: 22px; margin-bottom: 4px; }
+.mesa-card--libre:hover .mesa-status-bar { background: #1d4ed8; }
+
+.mesa-card--ocupada { border-color: #fca5a5; background: #fff5f5; cursor: default; }
+.mesa-card--cuenta  { border-color: #fcd34d; background: #fffbeb; cursor: default; }
+
+.mesa-icon {
+  font-size: 22px;
+  padding-top: 12px;
+  margin-bottom: 4px;
+}
 .mesa-card--libre   .mesa-icon { color: #10b981; }
-.mesa-card--ocupada .mesa-icon { color: #f59e0b; }
-.mesa-nombre { font-weight: 700; font-size: 13px; color: #1e3a5f; margin-bottom: 4px; }
-.mesa-info   { font-size: 11px; display: flex; flex-direction: column; gap: 2px; }
-.mesa-estado.libre   { color: #10b981; font-weight: 600; }
-.mesa-estado.ocupada { color: #f59e0b; font-weight: 600; }
+.mesa-card--ocupada .mesa-icon { color: #ef4444; }
+.mesa-card--cuenta  .mesa-icon { color: #d97706; }
+
+.mesa-nombre { font-weight: 700; font-size: 13px; color: #1e3a5f; margin-bottom: 6px; padding: 0 8px; }
+.mesa-info   {
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px 10px;
+}
+.mesa-seq    { color: #1d4ed8; font-weight: 700; font-size: 12px; }
 .mesa-mesero { color: #64748b; }
 .mesa-monto  { color: #1e3a5f; font-weight: 700; }
+.mesa-seats  { color: #10b981; font-weight: 600; }
 
 /* ── Grid de comandas ─────────────────────────────────────────────────────── */
 .comandas-grid {
@@ -576,11 +772,7 @@ async function confirmarAbrirMesa() {
 }
 .comanda-card--abierta  { border-color: #f59e0b; background: #fffdf5; }
 .comanda-card--facturada { border-color: #10b981; background: #f0fdf7; }
-.comanda-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.comanda-top  { display: flex; justify-content: space-between; align-items: center; }
 .comanda-mesa { font-weight: 700; font-size: 14px; color: #1e3a5f; }
 .comanda-hora { font-size: 12px; color: #94a3b8; }
 .comanda-mid  { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: #64748b; }
@@ -594,6 +786,82 @@ async function confirmarAbrirMesa() {
   border-radius: 6px;
   padding: 4px 8px;
 }
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.dash-side { display: flex; flex-direction: column; gap: 14px; }
+
+.side-section {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  font-weight: 600;
+  font-size: 13px;
+  background: #fafafa;
+}
+.side-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.side-ok {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px;
+  font-size: 13px;
+  color: #374151;
+}
+.side-empty {
+  padding: 14px;
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* Stock */
+.stock-list { padding: 4px 0; }
+.stock-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid #f9fafb;
+}
+.stock-item:last-child { border-bottom: none; }
+.stock-item-name { font-size: 13px; font-weight: 500; color: #1e293b; }
+.stock-item-unit { font-size: 11px; color: #94a3b8; }
+.stock-item-nums { font-size: 13px; }
+
+/* Transacciones */
+.tx-wrap { overflow-x: auto; }
+.tx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tx-table th {
+  padding: 6px 10px;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafafa;
+}
+.tx-table td { padding: 7px 10px; border-bottom: 1px solid #f9fafb; }
+.tx-table tr:last-child td { border-bottom: none; }
+.tx-hora  { color: #64748b; font-size: 11px; white-space: nowrap; }
+.tx-num   { color: #374151; font-family: monospace; font-size: 11px; }
+.tx-total { font-weight: 700; color: #1e293b; white-space: nowrap; }
+.badge-tx { font-size: 10px; padding: 2px 6px; border-radius: 8px; font-weight: 600; }
+.tx-fact  { background: #dbeafe; color: #1d4ed8; }
+.tx-rec   { background: #ede9fe; color: #6d28d9; }
 
 /* ── Modal ────────────────────────────────────────────────────────────────── */
 .modal-overlay {
@@ -612,6 +880,7 @@ async function confirmarAbrirMesa() {
   max-width: 420px;
   box-shadow: 0 20px 60px rgba(0,0,0,.25);
   overflow: hidden;
+  margin: 16px;
 }
 .modal-header-custom {
   display: flex;
@@ -639,8 +908,7 @@ async function confirmarAbrirMesa() {
   transition: border-color .15s;
   width: 100%;
 }
-.campo-select:focus,
-.campo-input:focus { border-color: #1d4ed8; }
+.campo-select:focus, .campo-input:focus { border-color: #1d4ed8; }
 .modal-footer-custom {
   display: flex;
   gap: 10px;
@@ -673,14 +941,27 @@ async function confirmarAbrirMesa() {
 .btn-abrir:disabled { opacity: .6; cursor: not-allowed; }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .dash-body { grid-template-columns: 1fr; }
+  .dash-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+}
 @media (max-width: 768px) {
-  .dash-header   { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .dash-header   { flex-direction: row; flex-wrap: wrap; }
+  .btn-tv-label  { display: none; }
+  .btn-tv        { padding: 6px 10px; }
   .mesas-grid    { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
   .comandas-grid { grid-template-columns: 1fr; }
   .dash-tabs .nav-link { padding: 8px 10px; font-size: 12px; }
+  .dash-side { grid-template-columns: 1fr; }
+  .acciones-rapidas { flex-wrap: wrap; }
 }
 @media (max-width: 576px) {
-  .acciones-rapidas { flex-direction: column; }
-  .mesas-grid { grid-template-columns: repeat(3, 1fr); }
+  .mesas-grid  { grid-template-columns: repeat(3, 1fr); }
+  .mesas-leyenda { font-size: 11px; gap: 10px; }
+  .dash-side { display: flex; flex-direction: column; }
 }
 </style>

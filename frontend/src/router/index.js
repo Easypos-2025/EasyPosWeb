@@ -693,7 +693,7 @@ const routes = [
       {
         path: "/restaurante",
         name: "RestauranteDashboardView",
-        component: () => import("@/views/pos/RestauranteDashboardView.vue"),
+        component: () => import("@/views/dashboards/DashboardRestaurante.vue"),
         requiresAuth: true,
         meta: { title: "Dashboard Restaurante" }
       },
@@ -756,9 +756,44 @@ const routes = [
         meta: { title: "Consulta de Ventas" }
       },
 ]
-  }
+  },
 
+  // ── Comandera Kiosk (layout propio, sin sidebar) ──────────────────────────
+  {
+    path: "/pos/comanda",
+    component: () => import("@/components/layout/KioskLayout.vue"),
+    meta: { kiosk: true },
+    children: [
+      {
+        path: "mesas",
+        name: "PosComandaMesas",
+        component: () => import("@/views/pos/comanda/PosComandaMesasView.vue"),
+        meta: { title: "Mesas — Comandera" }
+      },
+      {
+        path: "pedido/:tableId",
+        name: "PosComandaPedido",
+        component: () => import("@/views/pos/comanda/PosComandaPedidoView.vue"),
+        meta: { title: "Pedido — Comandera" }
+      },
+    ]
+  },
 
+  // ── Login comandera (sin layout) ──────────────────────────────────────────
+  {
+    path: "/pos/comanda/login",
+    name: "PosComandaLogin",
+    component: () => import("@/views/pos/comanda/PosComandaLoginView.vue"),
+    meta: { title: "Acceso Mesero", public: true }
+  },
+
+  // ── Cocina TV (standalone, sin layout, sin auth) ──────────────────────────
+  {
+    path: "/pos/cocina",
+    name: "PosKitchenView",
+    component: () => import("@/views/pos/PosKitchenView.vue"),
+    meta: { title: "Cocina — Monitor", public: true }
+  },
 ]
 
 /* =========================================
@@ -793,8 +828,21 @@ router.beforeEach(async (to, from, next) => {
     to.path.startsWith("/invite/") ||
     to.path.startsWith("/landing/perfil/") ||
     to.path.startsWith("/prestamo-qr/") ||
-    to.path.startsWith("/activo/")
+    to.path.startsWith("/activo/") ||
+    to.path.startsWith("/pos/comanda/login") ||
+    to.path.startsWith("/pos/cocina") ||
+    to.meta?.public === true
   ) {
+    return next()
+  }
+
+  // Rutas kiosk: validar waiter_token en lugar del token normal
+  if (to.meta?.kiosk || to.path.startsWith("/pos/comanda/")) {
+    const waiterToken = localStorage.getItem("waiter_token")
+    if (!waiterToken) {
+      const cid = localStorage.getItem("waiter_company_id") || ""
+      return next(`/pos/comanda/login${cid ? `?cid=${cid}` : ""}`)
+    }
     return next()
   }
 
