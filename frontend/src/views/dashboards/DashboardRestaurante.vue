@@ -76,11 +76,11 @@
                   <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--ocupada"></span>Ocupada</span>
                   <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--cuenta"></span>Pide cuenta</span>
                 </div>
-                <template v-for="zona in zonas" :key="zona">
-                  <div class="zona-label"><i class="bi bi-geo-alt"></i> {{ zona || 'Sin zona' }}</div>
+                <template v-for="zona in zonas" :key="zona.id">
+                  <div class="zona-label"><i class="bi bi-geo-alt"></i> {{ zona.name }}</div>
                   <div class="mesas-grid">
                     <div
-                      v-for="mesa in mesasPorZona(zona)"
+                      v-for="mesa in mesasPorZona(zona.id)"
                       :key="mesa.id"
                       class="mesa-card"
                       :class="{
@@ -245,6 +245,10 @@
             <span class="wstep" :class="{ active: wizard.step === 2, done: wizard.step > 2 }">
               <i class="bi bi-geo-alt-fill"></i> Mesa
             </span>
+            <span class="wstep-sep"></span>
+            <span class="wstep" :class="{ active: wizard.step === 3 }">
+              <i class="bi bi-bug"></i> Debug
+            </span>
           </div>
           <button class="wizard-close" @click="cerrarWizard"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -258,7 +262,7 @@
             <button
               class="mesero-card"
               :class="{ 'mesero-card--selected': wizard.waiterId === 0 }"
-              @click="wizard.waiterId = 0"
+              @click="seleccionarMesero(0)"
             >
               <div class="mesero-avatar mesero-avatar--none"><i class="bi bi-person-dash"></i></div>
               <span class="mesero-name">Sin asignar</span>
@@ -270,7 +274,7 @@
               :key="m.id"
               class="mesero-card"
               :class="{ 'mesero-card--selected': wizard.waiterId === m.id }"
-              @click="wizard.waiterId = m.id"
+              @click="seleccionarMesero(m.id)"
             >
               <div class="mesero-avatar">{{ m.name.charAt(0).toUpperCase() }}</div>
               <span class="mesero-name">{{ m.name }}</span>
@@ -298,9 +302,6 @@
 
           <div class="wizard-footer">
             <button class="btn-cancelar" @click="cerrarWizard">Cancelar</button>
-            <button class="btn-wizard-next" @click="wizard.step = 2">
-              Siguiente <i class="bi bi-arrow-right ms-1"></i>
-            </button>
           </div>
         </div>
 
@@ -319,28 +320,28 @@
           <div v-else class="zonas-acordeon">
             <div
               v-for="zona in zonas"
-              :key="zona"
+              :key="zona.id"
               class="zona-acordeon"
             >
               <!-- Header zona -->
               <button
                 class="zona-acordeon__header"
-                :class="{ 'zona-acordeon__header--open': wizard.zonaAbierta === zona }"
-                @click="wizard.zonaAbierta = wizard.zonaAbierta === zona ? null : zona"
+                :class="{ 'zona-acordeon__header--open': wizard.zonaAbierta === zona.id }"
+                @click="wizard.zonaAbierta = wizard.zonaAbierta === zona.id ? null : zona.id"
               >
                 <span>
                   <i class="bi bi-geo-alt-fill me-2"></i>
-                  {{ zona || 'Sin zona' }}
-                  <span class="zona-count">{{ mesasPorZona(zona).length }}</span>
+                  {{ zona.name }}
+                  <span class="zona-count">{{ mesasPorZona(zona.id).length }}</span>
                 </span>
-                <i class="bi" :class="wizard.zonaAbierta === zona ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                <i class="bi" :class="wizard.zonaAbierta === zona.id ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
               </button>
 
               <!-- Mesas de la zona -->
-              <div v-show="wizard.zonaAbierta === zona" class="zona-acordeon__body">
+              <div v-show="wizard.zonaAbierta === zona.id" class="zona-acordeon__body">
                 <div class="mesas-grid-wizard">
                   <button
-                    v-for="mesa in mesasPorZona(zona)"
+                    v-for="mesa in mesasPorZona(zona.id)"
                     :key="mesa.id"
                     class="mesa-wizard-card"
                     :class="{
@@ -371,6 +372,61 @@
           <div class="wizard-footer">
             <button class="btn-cancelar" @click="wizard.step = 1">
               <i class="bi bi-arrow-left me-1"></i>Volver
+            </button>
+          </div>
+        </div>
+
+        <!-- PASO 3: DEBUG — verificación temporal de datos recolectados -->
+        <div v-if="wizard.step === 3" class="wizard-body">
+          <h6 class="wizard-section-title"><i class="bi bi-bug me-2 text-warning"></i>Verificación de datos (temporal)</h6>
+          <div class="debug-card">
+            <table class="debug-table">
+              <tbody>
+                <tr>
+                  <td class="debug-key">company_id</td>
+                  <td class="debug-val">{{ selectedCid }}</td>
+                </tr>
+                <tr>
+                  <td class="debug-key">waiter_id</td>
+                  <td class="debug-val">{{ wizard.waiterId ?? 0 }}
+                    <span class="debug-hint">{{ meseros.find(m => m.id === wizard.waiterId)?.name || (wizard.waiterId === 0 || wizard.waiterId === null ? 'Sin asignar' : '?') }}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="debug-key">table_id</td>
+                  <td class="debug-val">{{ wizard.mesaSeleccionada?.id }}
+                    <span class="debug-hint">{{ wizard.mesaSeleccionada?.name }}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="debug-key">zone_id</td>
+                  <td class="debug-val">{{ wizard.mesaSeleccionada?.zone_id }}
+                    <span class="debug-hint">{{ wizard.mesaSeleccionada?.zone_name }}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="debug-key">guests_count</td>
+                  <td class="debug-val">1</td>
+                </tr>
+                <tr>
+                  <td class="debug-key">waiter_company_id<br><small>(localStorage)</small></td>
+                  <td class="debug-val">{{ selectedCid }}</td>
+                </tr>
+                <tr>
+                  <td class="debug-key">token usado</td>
+                  <td class="debug-val debug-token">{{ (localStorage.getItem('waiter_token') || localStorage.getItem('token') || '').substring(0,40) }}…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="wizard-footer">
+            <button class="btn-cancelar" @click="wizard.step = 2">
+              <i class="bi bi-arrow-left me-1"></i>Volver
+            </button>
+            <button class="btn-wizard-next" @click="irAComanda(wizard.mesaSeleccionada.id, wizard.mesaSeleccionada.name, wizard.waiterId ?? 0)" :disabled="wizard.abriendo">
+              <span v-if="wizard.abriendo"><div class="spinner-border spinner-border-sm me-1"></div></span>
+              <span v-else><i class="bi bi-check-circle me-1"></i></span>
+              Abrir mesa
             </button>
           </div>
         </div>
@@ -422,11 +478,12 @@ const transacciones = ref([])
 const wizard = ref({
   visible: false,
   step: 1,
-  waiterId: 0,
+  waiterId: null,
   zonaAbierta: null,
   abriendo: false,
   showAddWaiter: false,
   takeout: false,
+  mesaSeleccionada: null,   // { id, name, zone_id, zone_name }
 })
 const newWaiter = ref({ name: '', pin: '', saving: false, error: '' })
 
@@ -462,8 +519,16 @@ const kpis = computed(() => {
 })
 
 const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
-const zonas        = computed(() => [...new Set(mesas.value.map(m => m.zone_id || ''))])
-const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zona)
+const zonas        = computed(() => {
+  const seen = new Set()
+  const result = []
+  for (const m of mesas.value) {
+    const key = m.zone_id ?? ''
+    if (!seen.has(key)) { seen.add(key); result.push({ id: key, name: m.zone_name || 'Sin zona' }) }
+  }
+  return result
+})
+const mesasPorZona = (zoneId) => mesas.value.filter(m => (m.zone_id ?? '') === zoneId)
 
 // ── Auto-refresh ──────────────────────────────────────────────────────────────
 async function _silentKpis() {
@@ -603,10 +668,8 @@ async function cargarTransacciones() {
 // ── Mesa click desde vista de estado ─────────────────────────────────────────
 function handleMesaClick(mesa) {
   if (!mesa.ocupada && !mesa.bill_requested) {
-    // Mesa libre: abrir wizard de nuevo pedido con esta mesa preseleccionada
     abrirWizard()
-    // Expandir la zona de la mesa en paso 2
-    wizard.value.zonaAbierta = mesa.zone_id || ''
+    wizard.value.zonaAbierta = mesa.zone_id ?? null
   }
 }
 
@@ -614,10 +677,16 @@ function handleMesaClick(mesa) {
 function abrirWizard() {
   wizard.value = {
     visible: true, step: 1,
-    waiterId: 0, zonaAbierta: zonas.value[0] ?? null,
+    waiterId: null, zonaAbierta: zonas.value[0]?.id ?? null,
     abriendo: false, showAddWaiter: false, takeout: false,
   }
   newWaiter.value = { name: '', pin: '', saving: false, error: '' }
+}
+
+function seleccionarMesero(waiterId) {
+  wizard.value.waiterId = waiterId
+  wizard.value.showAddWaiter = false
+  wizard.value.step = 2
 }
 
 function abrirWizardTakeout() {
@@ -627,9 +696,10 @@ function abrirWizardTakeout() {
 
 function cerrarWizard() { wizard.value.visible = false }
 
-async function seleccionarMesaWizard(mesa) {
+function seleccionarMesaWizard(mesa) {
   if (mesa.ocupada || mesa.bill_requested) return
-  await irAComanda(mesa.id, mesa.name, wizard.value.waiterId)
+  wizard.value.mesaSeleccionada = mesa
+  wizard.value.step = 3
 }
 
 async function irAComanda(tableId, tableName, waiterId) {
@@ -1209,6 +1279,39 @@ async function guardarNuevoMesero() {
   transition: opacity .15s;
 }
 .btn-wizard-next:hover { opacity: .9; }
+
+/* Debug card (paso 3 temporal) */
+.debug-card {
+  background: #0f172a;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+.debug-table { width: 100%; border-collapse: collapse; font-family: monospace; }
+.debug-table tr + tr td { border-top: 1px solid #1e293b; }
+.debug-key {
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 6px 14px 6px 0;
+  white-space: nowrap;
+  vertical-align: middle;
+  min-width: 140px;
+}
+.debug-val {
+  color: #4ade80;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 0;
+  vertical-align: middle;
+}
+.debug-hint {
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 400;
+  margin-left: 10px;
+}
+.debug-token { font-size: 10px; color: #60a5fa; word-break: break-all; }
 
 /* Loading overlay */
 .wizard-loading-overlay {

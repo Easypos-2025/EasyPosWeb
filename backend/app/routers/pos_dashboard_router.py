@@ -176,10 +176,14 @@ async def get_mesas(
     rows = (await db.execute(text("""
         SELECT
             t.id, t.name, t.location, t.seats, t.zone_id,
+            z.name AS zone_name,
             CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END AS ocupada,
+            COALESCE(o.bill_requested, 0) AS bill_requested,
             o.order_number, o.amount, o.time AS hora_apertura,
-            o.guests_count, w.name AS waiter_name
+            o.guests_count, w.name AS waiter_name,
+            o.order_number AS daily_seq
         FROM pos_tables_layout t
+        LEFT JOIN pos_zones z ON z.id = t.zone_id AND z.company_id = :cid
         LEFT JOIN pos_orders o
                ON o.table_id    = t.id
               AND o.company_id  = :cid
@@ -189,7 +193,7 @@ async def get_mesas(
               AND o.delivery    = 0
         LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = :cid
         WHERE t.company_id = :cid AND t.active = 1
-        ORDER BY t.zone_id, t.name
+        ORDER BY z.order_index, z.name, t.name
     """), {"cid": cid, "today": today})).mappings().all()
 
     return [dict(r) for r in rows]
