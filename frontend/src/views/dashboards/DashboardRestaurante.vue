@@ -316,6 +316,15 @@
           <div v-else-if="!mesas.length" class="estado-vacio">
             <i class="bi bi-grid-3x3-gap"></i>
             <p>No hay mesas configuradas.</p>
+            <!-- DEBUG temporal -->
+            <div class="debug-card mt-2" style="text-align:left">
+              <table class="debug-table">
+                <tr><td class="debug-key">selectedCid</td><td class="debug-val">{{ selectedCid ?? 'undefined' }}</td></tr>
+                <tr><td class="debug-key">mesas.length</td><td class="debug-val">{{ mesas.length }}</td></tr>
+                <tr><td class="debug-key">error</td><td class="debug-val" style="color:#f87171">{{ mesasError || 'ninguno' }}</td></tr>
+                <tr><td class="debug-key">companyStore</td><td class="debug-val">{{ companyStore.selectedCompany?.id ?? 'null' }} / {{ companyStore.selectedCompany?.name ?? '?' }}</td></tr>
+              </table>
+            </div>
           </div>
           <div v-else class="zonas-acordeon">
             <div
@@ -599,14 +608,21 @@ async function cargarKpis() {
   finally { kpiLoading.value = false }
 }
 
+const mesasError = ref('')
 async function cargarMesas() {
   mesasLoading.value = true
+  mesasError.value = ''
   try {
+    const cid = selectedCid.value
     const { data } = await api.get('/api/pos-dashboard/mesas', {
-      params: { company_id: selectedCid.value }
+      params: { company_id: cid }
     })
     mesas.value = data
-  } catch { mesas.value = [] }
+    if (!data.length) mesasError.value = `API ok pero 0 mesas (cid=${cid})`
+  } catch (e) {
+    mesas.value = []
+    mesasError.value = e?.response?.data?.detail || e?.message || 'Error desconocido'
+  }
   finally { mesasLoading.value = false }
 }
 
@@ -679,8 +695,12 @@ function abrirWizard() {
     visible: true, step: 1,
     waiterId: null, zonaAbierta: zonas.value[0]?.id ?? null,
     abriendo: false, showAddWaiter: false, takeout: false,
+    mesaSeleccionada: null,
   }
   newWaiter.value = { name: '', pin: '', saving: false, error: '' }
+  // Forzar recarga para asegurar datos frescos
+  cargarMesas()
+  cargarMeseros()
 }
 
 function seleccionarMesero(waiterId) {
