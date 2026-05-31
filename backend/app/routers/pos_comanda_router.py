@@ -190,7 +190,7 @@ async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = D
         LEFT JOIN pos_zones z ON z.id = tl.zone_id AND z.company_id = :cid
         LEFT JOIN seq s ON s.table_id = tl.id
         LEFT JOIN pos_waiters w ON w.id = s.waiter_id AND w.company_id = :cid
-        WHERE tl.company_id = :cid AND tl.active = 1
+        WHERE tl.company_id = :cid
         ORDER BY z.order_index, tl.id
     """), {"cid": cid, "today": today})).mappings().all()
 
