@@ -13,10 +13,14 @@
 
       <div class="assembly-modal__body" v-if="!loadingMenu">
 
-        <!-- Sin opciones del día -->
-        <div v-if="!categories.length" class="no-options">
-          <i class="bi bi-calendar-x text-muted fs-2"></i>
-          <p class="text-muted mt-2">No hay menú del día configurado para este plato.</p>
+        <!-- Sin opciones configuradas -->
+        <div v-if="loadError" class="no-options">
+          <i class="bi bi-exclamation-triangle text-warning fs-2"></i>
+          <p class="text-muted mt-2">Error al cargar las opciones. Intente de nuevo.</p>
+        </div>
+        <div v-else-if="!categories.length" class="no-options">
+          <i class="bi bi-sliders2 text-muted fs-2"></i>
+          <p class="text-muted mt-2">Sin opciones de armado configuradas para este plato.</p>
         </div>
 
         <!-- Categorías de armado -->
@@ -95,26 +99,25 @@ const emit = defineEmits(['close', 'added'])
 const categories    = ref([])
 const fixedProducts = ref([])
 const loadingMenu   = ref(false)
+const loadError     = ref(false)
 const saving        = ref(false)
 const selections    = ref({})  // { category_code: { item_id, item_name, discount_qty } }
 
 watch(() => props.dish, async (dish) => {
   if (!dish) return
-  qty.value = 1
   selections.value = {}
-  selectedNotes.value = []
-  customNote.value = ''
+  categories.value = []
+  loadError.value  = false
 
-  if (!dish.has_assembly) {
-    categories.value = []
-    return
-  }
+  if (!dish.has_assembly) return
 
   loadingMenu.value = true
   try {
     const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`)
     categories.value    = res.data.categories
     fixedProducts.value = res.data.fixed_products
+  } catch {
+    loadError.value = true
   } finally {
     loadingMenu.value = false
   }

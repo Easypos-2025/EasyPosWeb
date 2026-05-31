@@ -378,15 +378,18 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
 
     # active=0 es el convenio VB6 para "producto activo" (activo=no_desactivado).
     # Intenta con columnas extendidas; si fallan, usa fallbacks progresivos.
+    # has_assembly = true si:
+    #   offer_priority=1 (menú del día) O existe en pos_dish_assembly (opciones de armado)
+    # Ambos casos son mutuamente excluyentes por diseño VB6.
     dishes = None
     for sql in [
-        # Nivel 1: columnas completas + has_assembly via EXISTS real
+        # Nivel 1: columnas completas
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 COALESCE(d.tax, 0) AS tax,
-                EXISTS(
+                (COALESCE(d.offer_priority, 0) = 1 OR EXISTS(
                     SELECT 1 FROM pos_dish_assembly da
                     WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
-                ) AS has_assembly,
+                )) AS has_assembly,
                 COALESCE(d.preparation_time, 0) AS no_print,
                 c.name AS category_name
            FROM pos_dishes d
@@ -397,10 +400,10 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
         # Nivel 2: sin tax ni preparation_time
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 0 AS tax,
-                EXISTS(
+                (COALESCE(d.offer_priority, 0) = 1 OR EXISTS(
                     SELECT 1 FROM pos_dish_assembly da
                     WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
-                ) AS has_assembly,
+                )) AS has_assembly,
                 0 AS no_print,
                 c.name AS category_name
            FROM pos_dishes d
@@ -477,15 +480,28 @@ async def get_menu_diario(
     cid = payload["company_id"]
     today = _today()
 
-    assembly_cats = (await db.execute(text("""
-        SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
-               (SELECT pc2.name FROM pos_product_categories pc2
-                WHERE pc2.id = da.category_code
-                LIMIT 1) AS category_name
-        FROM pos_dish_assembly da
-        WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
-        ORDER BY da.category_code
-    """), {"did": dish_id, "cid": cid, "today": today})).mappings().all()
+    assembly_cats = None
+    for sql_cats in [
+        # Nivel 1: con nombre de pos_product_categories
+        """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
+                  (SELECT pc2.name FROM pos_product_categories pc2
+                   WHERE pc2.id = da.category_code LIMIT 1) AS category_name
+           FROM pos_dish_assembly da
+           WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
+           ORDER BY da.category_code""",
+        # Nivel 2: sin nombre (fallback si pos_product_categories no existe)
+        """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
+                  NULL AS category_name
+           FROM pos_dish_assembly da
+           WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
+           ORDER BY da.category_code""",
+    ]:
+        try:
+            rows = (await db.execute(text(sql_cats), {"did": dish_id, "cid": cid})).mappings().all()
+            assembly_cats = rows
+            break
+        except Exception:
+            continue
 
     if not assembly_cats:
         return {"categories": [], "fixed_products": []}
