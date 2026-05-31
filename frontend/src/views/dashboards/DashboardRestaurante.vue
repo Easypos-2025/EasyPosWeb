@@ -431,7 +431,7 @@
                 </tr>
                 <tr>
                   <td class="debug-key">token usado</td>
-                  <td class="debug-val debug-token">{{ (localStorage.getItem('waiter_token') || localStorage.getItem('token') || '').substring(0,40) }}…</td>
+                  <td class="debug-val debug-token">{{ tokenDebugPrefix }}</td>
                 </tr>
               </tbody>
             </table>
@@ -615,6 +615,11 @@ async function cargarKpis() {
   } catch { kpiData.value = null }
   finally { kpiLoading.value = false }
 }
+
+const tokenDebugPrefix = computed(() => {
+  const t = window.localStorage?.getItem('waiter_token') || window.localStorage?.getItem('token') || ''
+  return t ? t.substring(0, 40) + '…' : '(sin token)'
+})
 
 const mesasError = ref('')
 async function cargarMesas() {
