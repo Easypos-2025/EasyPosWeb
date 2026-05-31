@@ -179,7 +179,7 @@
 
         <div class="modal-ftr">
           <button class="btn-cancel" @click="cerrarModal">Cancelar</button>
-          <button class="btn-save" :disabled="guardando || !modal.name || !puedeGuardar" @click="guardar">
+          <button class="btn-save" :disabled="guardando || !puedeGuardar" @click="guardar">
             <span v-if="guardando"><span class="spinner-border spinner-border-sm me-1"></span></span>
             <i v-else class="bi bi-check-lg me-1"></i>Guardar
           </button>
@@ -245,6 +245,9 @@ const BLE_SERVICES = [
 ]
 
 const puedeGuardar = computed(() => {
+  // Al editar una impresora existente, solo se requiere el nombre
+  if (modal.value.id) return !!modal.value.name
+  // Al crear, se requiere además el dato de conexión según el tipo
   const t = modal.value.connection_type
   if (t === 'network')   return !!modal.value.ip
   if (t === 'bluetooth') return !!modal.value.bluetooth_address
