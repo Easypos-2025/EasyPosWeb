@@ -33,15 +33,23 @@
     </div>
 
     <!-- Tabs de categorías -->
-    <div class="cat-tabs" v-if="menuCategories.length">
-      <button
-        v-for="cat in menuCategories"
-        :key="cat.category_id"
-        class="cat-tab"
-        :class="{ 'cat-tab--active': activeCategory === cat.category_id }"
-        @click="activeCategory = cat.category_id"
-      >
-        {{ cat.category_name }}
+    <div class="cat-tabs-wrap" v-if="menuCategories.length">
+      <button class="cat-arrow cat-arrow--left" @click="scrollCats(-1)" aria-label="Anterior">
+        <i class="bi bi-chevron-left"></i>
+      </button>
+      <div class="cat-tabs" ref="catTabsRef">
+        <button
+          v-for="cat in menuCategories"
+          :key="cat.category_id"
+          class="cat-tab"
+          :class="{ 'cat-tab--active': activeCategory === cat.category_id }"
+          @click="selectCategory(cat.category_id)"
+        >
+          {{ cat.category_name }}
+        </button>
+      </div>
+      <button class="cat-arrow cat-arrow--right" @click="scrollCats(1)" aria-label="Siguiente">
+        <i class="bi bi-chevron-right"></i>
       </button>
     </div>
 
@@ -104,7 +112,7 @@
                 </span>
                 <!-- Sent badge -->
                 <span v-if="item.sent" class="cart-item__sent">
-                  <i class="bi bi-check2-circle me-1"></i>Enviado a cocina
+                  <i class="bi bi-check2-circle me-1"></i>Enviado
                 </span>
               </div>
               <span class="cart-item__price">{{ formatPrice(item.amount) }}</span>
@@ -138,7 +146,7 @@
           >
             <span v-if="sending" class="spinner-border spinner-border-sm me-2"></span>
             <i class="bi bi-send me-2" v-else></i>
-            Enviar a Cocina
+            Enviar
             <span class="badge bg-white text-success ms-2" v-if="unsentItems.length">
               {{ unsentItems.length }}
             </span>
@@ -195,7 +203,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaProductCard from '@/components/comanda/ComandaProductCard.vue'
@@ -230,6 +238,7 @@ const assemblyDish    = ref(null)
 const notasItem       = ref(null)
 const sending         = ref(false)
 const dbgError        = ref('')
+const catTabsRef      = ref(null)
 
 const currentCategoryDishes = computed(() => {
   const cat = menuCategories.value.find(c => c.category_id === activeCategory.value)
@@ -281,6 +290,19 @@ async function loadNotes() {
     const res = await apiComanda.get('/api/pos/comanda/novedades')
     preloadedNotes.value = res.data.notes
   } catch { /* silencioso */ }
+}
+
+function scrollCats(dir) {
+  if (!catTabsRef.value) return
+  catTabsRef.value.scrollBy({ left: dir * 200, behavior: 'smooth' })
+}
+
+function selectCategory(catId) {
+  activeCategory.value = catId
+  nextTick(() => {
+    const btn = catTabsRef.value?.querySelector('.cat-tab--active')
+    if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  })
 }
 
 function onDishSelect(dish) {
@@ -484,32 +506,58 @@ async function requestBill() {
 .pedido-header__bill:disabled { opacity: .4; cursor: not-allowed; }
 
 /* Category tabs */
-.cat-tabs {
+.cat-tabs-wrap {
   display: flex;
-  gap: 4px;
-  padding: 8px 12px;
+  align-items: center;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
-  overflow-x: auto;
   flex-shrink: 0;
+  padding: 0 4px;
+}
+
+.cat-arrow {
+  flex-shrink: 0;
+  width: 32px;
+  height: 100%;
+  min-height: 52px;
+  border: none;
+  background: none;
+  color: #94a3b8;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s;
+  padding: 0;
+}
+.cat-arrow:hover { color: #2563eb; }
+
+.cat-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 4px;
+  overflow-x: auto;
+  flex: 1;
   scrollbar-width: none;
 }
 .cat-tabs::-webkit-scrollbar { display: none; }
 
 .cat-tab {
-  padding: 7px 16px;
-  border: none;
-  border-radius: 20px;
-  background: #f1f5f9;
+  padding: 10px 24px;
+  border: 2px solid #e2e8f0;
+  border-radius: 24px;
+  background: #f8fafc;
   color: #475569;
-  font-size: .8rem;
-  font-weight: 600;
+  font-size: .9rem;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
   transition: all .15s;
+  letter-spacing: .01em;
 }
-.cat-tab:hover { background: #e2e8f0; }
-.cat-tab--active { background: #2563eb; color: #fff; }
+.cat-tab:hover { background: #e2e8f0; border-color: #cbd5e1; }
+.cat-tab--active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
 /* Body split */
 .pedido-body {
@@ -760,11 +808,24 @@ async function requestBill() {
   .menu-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .cat-tab {
+    padding: 9px 20px;
+    font-size: .85rem;
+  }
+  .cat-arrow {
+    min-height: 48px;
+    width: 28px;
+  }
 }
 
 @media (max-width: 576px) {
   .pedido-header__waiter { display: none; }
   .menu-grid { gap: 8px; }
   .menu-panel { padding: 8px; }
+  .cat-tab {
+    padding: 8px 16px;
+    font-size: .82rem;
+  }
+  .cat-arrow { width: 24px; font-size: .85rem; }
 }
 </style>

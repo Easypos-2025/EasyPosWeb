@@ -388,7 +388,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
                 c.name                          AS category_name
             FROM pos_dishes d
             LEFT JOIN pos_dish_categories c ON c.id = d.category_id
-            WHERE d.company_id = :cid
+            WHERE d.company_id = :cid AND d.active = 1
             ORDER BY c.name, d.name
         """), {"cid": cid})).mappings().all()
     except Exception:
