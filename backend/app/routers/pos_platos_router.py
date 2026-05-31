@@ -237,6 +237,46 @@ async def eliminar(item_id: int, authorization: str = Header(None), db: AsyncSes
     return {"ok": True}
 
 
+@router.delete("/{item_id}/definitivo")
+async def eliminar_definitivo(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+
+    # Bloquear si tiene ventas facturadas
+    ventas = (await db.execute(text(
+        "SELECT COUNT(*) FROM pos_order_details "
+        "WHERE dish_id=:id AND company_id=:cid AND invoice_number != '0'"
+    ), {"id": item_id, "cid": cid})).scalar() or 0
+    if int(ventas) > 0:
+        raise HTTPException(status_code=409,
+            detail=f"No se puede eliminar: el artículo tiene {ventas} venta(s) registrada(s) en facturas o recibos.")
+
+    # Bloquear si tiene pedidos abiertos
+    pedidos = (await db.execute(text(
+        "SELECT COUNT(*) FROM pos_order_details "
+        "WHERE dish_id=:id AND company_id=:cid AND invoice_number='0'"
+    ), {"id": item_id, "cid": cid})).scalar() or 0
+    if int(pedidos) > 0:
+        raise HTTPException(status_code=409,
+            detail=f"No se puede eliminar: el artículo tiene {pedidos} ítem(s) en pedidos activos.")
+
+    # Eliminar en cascada (sin dependencias externas)
+    for sql in [
+        "DELETE FROM pos_dish_assembly_detail WHERE dish_id=:id AND company_id=:cid",
+        "DELETE FROM pos_dish_assembly       WHERE dish_id=:id AND company_id=:cid",
+        "DELETE FROM pos_dish_products       WHERE dish_id=:id AND company_id=:cid",
+        "DELETE FROM pos_item_printers       WHERE item_id=:id AND company_id=:cid",
+        "DELETE FROM pos_dish_variants       WHERE dish_id=:id AND company_id=:cid",
+        "DELETE FROM pos_item_modifiers      WHERE item_id=:id AND company_id=:cid",
+        "DELETE FROM pos_customer_price_list WHERE id_producto=:id AND company_id=:cid",
+        "DELETE FROM pos_dishes              WHERE id=:id AND company_id=:cid",
+    ]:
+        await db.execute(text(sql), {"id": item_id, "cid": cid})
+
+    await db.commit()
+    return {"ok": True}
+
+
 # ─── Foto (photo_path) ────────────────────────────────────────────────────────
 
 @router.post("/{item_id}/foto")

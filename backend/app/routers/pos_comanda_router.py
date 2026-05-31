@@ -964,8 +964,7 @@ async def get_cocina(
         JOIN pos_item_printers ip ON ip.item_id = od.dish_id AND ip.company_id = :cid
         JOIN pos_printers p
              ON p.id = ip.printer_id AND p.company_id = :cid AND p.is_active = 1
-        WHERE od.dish_time IS NOT NULL AND od.dish_time != ''
-          AND d.preparation_time = 0
+        WHERE d.preparation_time = 0
         ORDER BY ip.printer_id, r.daily_seq
     """), {"cid": cid, "today": today})).mappings().all()
 

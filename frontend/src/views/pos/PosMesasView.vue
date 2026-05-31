@@ -85,10 +85,18 @@
             </div>
           </div>
           <div class="mesa-footer-actions" @click.stop>
+            <button
+              v-if="mesa.status === 'occupied' || mesa.status === 'bill_requested'"
+              class="btn-icon cancel-order"
+              @click="cancelarPedido(mesa)"
+              title="Cancelar pedido"
+            >
+              <i class="bi bi-x-circle-fill"></i>
+            </button>
             <button class="btn-icon" @click="abrirModal(mesa)" title="Editar">
               <i class="bi bi-pencil-fill"></i>
             </button>
-            <button class="btn-icon danger" @click="eliminar(mesa)" title="Eliminar">
+            <button class="btn-icon danger" @click="eliminar(mesa)" title="Eliminar mesa">
               <i class="bi bi-trash-fill"></i>
             </button>
           </div>
@@ -183,8 +191,10 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
+import { useCompanyStore } from '@/stores/companyStore'
 
 const { moduleName } = useModuleName()
+const companyStore = useCompanyStore()
 
 const zonas = ref([])
 const mesas = ref([])
@@ -287,6 +297,36 @@ async function eliminar(mesa) {
     await cargarZonas()
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al eliminar', 'error')
+  }
+}
+
+async function cancelarPedido(mesa) {
+  const { isConfirmed, value: motivo } = await window.Swal.fire({
+    title: `Cancelar pedido — ${mesa.name}`,
+    text: 'Esta acción liberará la mesa. Ingresa el motivo:',
+    input: 'text',
+    inputPlaceholder: 'Ej: Error de captura, cliente se fue…',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc2626',
+    confirmButtonText: 'Cancelar pedido',
+    cancelButtonText: 'Volver',
+    inputValidator: (v) => !v?.trim() ? 'El motivo es requerido' : null,
+  })
+  if (!isConfirmed) return
+  try {
+    const cid = companyStore.selectedCompany?.id
+    await api.delete('/api/pos/comanda/mesa/cancelar', {
+      data: { table_id: mesa.id },
+      headers: cid ? { 'X-Company-Id': cid } : {},
+    })
+    mesa.status = 'free'
+    const idx = mesas.value.findIndex(m => m.id === mesa.id)
+    if (idx >= 0) mesas.value[idx].status = 'free'
+    await cargarZonas()
+    showToast('Pedido cancelado', 'success')
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error al cancelar pedido', 'error')
   }
 }
 
@@ -410,7 +450,9 @@ onMounted(async () => {
   transition: background .15s;
 }
 .btn-icon:hover { background: #e5e7eb; }
-.btn-icon.danger:hover { background: #fee2e2; color: #dc2626; }
+.btn-icon.danger:hover       { background: #fee2e2; color: #dc2626; }
+.btn-icon.cancel-order       { color: #dc2626; }
+.btn-icon.cancel-order:hover { background: #fee2e2; color: #b91c1c; }
 
 /* Mesa agregar */
 .mesa-add {

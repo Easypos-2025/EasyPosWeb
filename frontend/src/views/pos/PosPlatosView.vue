@@ -126,8 +126,8 @@
                 <button class="btn-accion btn-accion--variants" @click="abrirPanel(item,'variantes')">
                   <i class="bi bi-tags-fill"></i><span>Variantes</span>
                 </button>
-                <button class="btn-accion btn-accion--danger" @click="eliminar(item.id)">
-                  <i class="bi bi-trash-fill"></i><span>Desact.</span>
+                <button class="btn-accion btn-accion--danger" @click="eliminar(item)">
+                  <i class="bi bi-trash-fill"></i><span>Eliminar</span>
                 </button>
               </div>
             </div>
@@ -278,15 +278,19 @@
             <div v-if="panel.loadingImpresoras" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
             <div v-else-if="!impresoras.length" class="mini-vacio"><i class="bi bi-printer"></i> Sin impresoras configuradas</div>
             <div v-else class="imp-lista">
-              <div v-for="imp in impresoras" :key="imp.id" class="imp-item" :class="{ 'imp-item--sel': imp.assigned }">
-                <label class="imp-check">
-                  <input type="checkbox" v-model="imp.assigned" :true-value="1" :false-value="0" @change="guardarImpresoras" />
-                  <i class="bi bi-printer"></i>
-                  <div>
-                    <div class="imp-nombre">{{ imp.name }}</div>
-                    <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
-                  </div>
-                </label>
+              <div
+                v-for="imp in impresoras" :key="imp.id"
+                class="imp-item" :class="{ 'imp-item--sel': imp.assigned }"
+                @click="imp.assigned = imp.assigned ? 0 : 1; guardarImpresoras()"
+              >
+                <i class="bi bi-printer imp-icon-print"></i>
+                <div class="imp-info">
+                  <div class="imp-nombre">{{ imp.name }}</div>
+                  <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
+                </div>
+                <span class="imp-check-indicator">
+                  <i :class="imp.assigned ? 'bi bi-check-circle-fill' : 'bi bi-circle'"></i>
+                </span>
               </div>
             </div>
           </div>
@@ -664,15 +668,48 @@ async function guardarItem() {
   } finally { guardando.value = false }
 }
 
-async function eliminar(id) {
-  const { isConfirmed } = await window.Swal.fire({
-    title:'¿Desactivar este artículo?', text:'Se ocultará del catálogo pero se conserva el historial.',
-    icon:'warning', showCancelButton:true, confirmButtonColor:'#e11d48',
-    confirmButtonText:'Sí, desactivar', cancelButtonText:'Cancelar',
+async function eliminar(item) {
+  const { isConfirmed, isDenied } = await window.Swal.fire({
+    title: item.name,
+    html: '<p style="margin:0;color:#475569;font-size:14px">¿Qué deseas hacer con este artículo?</p>',
+    icon: 'warning',
+    showCancelButton: true,
+    showDenyButton: true,
+    confirmButtonColor: '#f59e0b',
+    denyButtonColor: '#e11d48',
+    confirmButtonText: 'Desactivar',
+    denyButtonText: 'Eliminar definitivamente',
+    cancelButtonText: 'Cancelar',
   })
-  if (!isConfirmed) return
-  try { await api.delete(`${BASE}/${id}`); showToast('Artículo desactivado','success'); await cargarItems() }
-  catch { showToast('Error al desactivar','error') }
+  if (isConfirmed) {
+    try {
+      await api.delete(`${BASE}/${item.id}`)
+      showToast('Artículo desactivado', 'success')
+      await cargarItems()
+    } catch { showToast('Error al desactivar', 'error') }
+  } else if (isDenied) {
+    const { isConfirmed: ok2 } = await window.Swal.fire({
+      title: '¿Eliminar permanentemente?',
+      html: `<p style="margin:0;color:#475569;font-size:14px">Se borrarán la receta, impresoras, armado y variantes.<br><b>Esta acción no se puede deshacer.</b></p>`,
+      icon: 'error',
+      showCancelButton: true,
+      confirmButtonColor: '#e11d48',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    })
+    if (!ok2) return
+    try {
+      await api.delete(`${BASE}/${item.id}/definitivo`)
+      showToast('Artículo eliminado definitivamente', 'success')
+      await cargarItems()
+    } catch(e) {
+      window.Swal.fire({
+        title: 'No se puede eliminar',
+        text: e?.response?.data?.detail || 'Error al eliminar',
+        icon: 'error',
+      })
+    }
+  }
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
@@ -1075,18 +1112,17 @@ async function eliminarVariante(varId) {
 .receta-qty   { font-size:11px;color:#64748b; }
 
 /* Impresoras */
-.imp-lista     { display:flex;flex-direction:column;gap:8px; }
-.imp-item      { display:flex;align-items:center;justify-content:space-between;border:2px solid #e2e8f0;border-radius:10px;padding:10px 14px;transition:.15s; }
-.imp-item--sel { border-color:#1d4ed8;background:#f0f4ff; }
-.imp-check     { display:flex;align-items:center;gap:12px;cursor:pointer;flex:1; }
-.imp-check input{ display:none; }
-.imp-check i   { font-size:18px;color:#1d4ed8; }
-.imp-nombre    { font-weight:700;font-size:13px;color:#1e3a5f; }
-.imp-tipo      { font-size:11px;color:#64748b; }
-.imp-copies    { display:flex;align-items:center;gap:6px;flex-shrink:0; }
-.copies-label  { font-size:11px;font-weight:600;color:#475569; }
-.copies-input  { width:48px;border:1.5px solid #cbd5e1;border-radius:6px;padding:3px 6px;font-size:13px;font-weight:700;color:#1e3a5f;text-align:center;outline:none; }
-.copies-input:focus { border-color:#1d4ed8; }
+.imp-lista          { display:flex;flex-direction:column;gap:8px; }
+.imp-item           { display:flex;align-items:center;gap:12px;border:2px solid #e2e8f0;border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s;user-select:none; }
+.imp-item:hover     { border-color:#93c5fd;background:#f8faff; }
+.imp-item--sel      { border-color:#1d4ed8;background:#eef2ff; }
+.imp-icon-print     { font-size:20px;color:#94a3b8;flex-shrink:0;transition:color .15s; }
+.imp-item--sel .imp-icon-print { color:#1d4ed8; }
+.imp-info           { flex:1;min-width:0; }
+.imp-nombre         { font-weight:700;font-size:13px;color:#1e3a5f; }
+.imp-tipo           { font-size:11px;color:#64748b; }
+.imp-check-indicator{ font-size:22px;flex-shrink:0;color:#cbd5e1;transition:color .15s; }
+.imp-item--sel .imp-check-indicator { color:#1d4ed8; }
 
 /* Modificadores / Armado */
 .grupos-lista     { display:flex;flex-direction:column;gap:10px;margin-bottom:12px; }
