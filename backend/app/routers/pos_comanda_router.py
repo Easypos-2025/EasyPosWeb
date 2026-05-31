@@ -381,8 +381,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
     dishes = None
     for sql in [
         # Nivel 1: columnas completas
-        # INNER JOIN filtra platos sin categoría activa; is_active=1 en pos_dish_categories
-        """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
+        """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 COALESCE(d.tax, 0) AS tax,
                 COALESCE(d.offer_priority, 0) AS has_assembly,
                 COALESCE(d.preparation_time, 0) AS no_print,
@@ -392,8 +391,8 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
                    ON c.id = d.category_id AND c.company_id = d.company_id
            WHERE d.company_id = :cid AND c.is_active = 1
            ORDER BY c.name, d.name""",
-        # Nivel 2: sin columnas opcionales en pos_dishes (fallback)
-        """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
+        # Nivel 2: sin columnas opcionales (fallback)
+        """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 0 AS tax, 0 AS has_assembly, 0 AS no_print,
                 c.name AS category_name
            FROM pos_dishes d
@@ -437,6 +436,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
             "id": d["id"],
             "name": d["name"],
             "price": d["price"],
+            "photo_path": d["photo_path"] or None,
             "tax": float(d["tax"]) if d["tax"] else 0,
             "has_assembly": bool(d["has_assembly"]),
             "no_print": bool(d["no_print"]),
@@ -571,7 +571,7 @@ async def agregar_item(
         raise HTTPException(status_code=404, detail="Orden no encontrada o ya cerrada")
 
     dish = (await db.execute(text(
-        "SELECT id, price, tax FROM pos_dishes WHERE id=:did AND company_id=:cid AND active=1"
+        "SELECT id, price, tax FROM pos_dishes WHERE id=:did AND company_id=:cid"
     ), {"did": data.dish_id, "cid": cid})).mappings().first()
     if not dish:
         raise HTTPException(status_code=404, detail="Plato no encontrado o inactivo")

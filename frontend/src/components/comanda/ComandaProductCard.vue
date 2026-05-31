@@ -1,7 +1,7 @@
 <template>
   <button class="product-card" @click="$emit('select', dish)">
     <div class="product-card__img" v-if="dish.photo_path">
-      <img :src="dish.photo_path" :alt="dish.name" loading="lazy" />
+      <img :src="photoUrl(dish.photo_path)" :alt="dish.name" loading="lazy" />
     </div>
     <div class="product-card__img product-card__img--placeholder" v-else>
       <i class="bi bi-image"></i>
@@ -19,8 +19,16 @@
 </template>
 
 <script setup>
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 defineProps({ dish: Object })
 defineEmits(['select'])
+
+function photoUrl(path) {
+  if (!path) return null
+  if (path.startsWith('blob:') || path.startsWith('http')) return path
+  return API_BASE + path
+}
 
 function formatPrice(v) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v)
