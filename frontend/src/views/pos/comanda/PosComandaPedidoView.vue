@@ -86,7 +86,11 @@
             class="cart-item"
           >
             <div class="cart-item__main">
-              <span class="cart-item__qty">{{ item.quantity }}×</span>
+              <div class="cart-item__qty-ctrl">
+                <button class="qty-btn" @click.stop="changeQty(item, -1)"><i class="bi bi-dash-lg"></i></button>
+                <span class="cart-item__qty">{{ item.quantity }}</span>
+                <button class="qty-btn" @click.stop="changeQty(item, +1)"><i class="bi bi-plus-lg"></i></button>
+              </div>
               <div class="cart-item__detail">
                 <span class="cart-item__name">{{ item.dish_name }}</span>
                 <!-- Assembly selections -->
@@ -352,7 +356,14 @@ function onItemAdded(data) {
 }
 
 function openNotasModal(item) {
-  notasItem.value = item
+  let categoryId = null
+  for (const cat of menuCategories.value) {
+    if (cat.dishes?.some(d => d.id === item.dish_id)) {
+      categoryId = cat.category_id
+      break
+    }
+  }
+  notasItem.value = { ...item, category_id: categoryId }
 }
 
 async function onNotasSave({ notes, changes }) {
@@ -372,6 +383,27 @@ async function onNotasSave({ notes, changes }) {
     notasItem.value = null
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al guardar las novedades')
+  }
+}
+
+async function changeQty(item, delta) {
+  const newQty = item.quantity + delta
+  if (newQty <= 0) return removeItem(item)
+  try {
+    const unitPrice = Math.round(item.amount / item.quantity)
+    await apiComanda.put('/api/pos/comanda/orden/item', {
+      order_number: order.value.order_number,
+      date:         order.value.date,
+      dish_id:      item.dish_id,
+      item:         item.item,
+      quantity:     newQty,
+    })
+    const oldAmount = item.amount
+    item.quantity = newQty
+    item.amount   = unitPrice * newQty
+    if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - oldAmount + item.amount)
+  } catch (e) {
+    alert(e.response?.data?.detail || 'Error al actualizar cantidad')
   }
 }
 
@@ -653,11 +685,38 @@ async function requestBill() {
   align-items: flex-start;
 }
 
+.cart-item__qty-ctrl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.qty-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  color: #2563eb;
+  font-size: .75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+  padding: 0;
+}
+.qty-btn:hover { background: #eff6ff; border-color: #2563eb; }
+.qty-btn:active { transform: scale(.9); }
+
 .cart-item__qty {
   font-weight: 700;
   color: #2563eb;
-  font-size: .85rem;
-  white-space: nowrap;
+  font-size: .9rem;
+  min-width: 20px;
+  text-align: center;
 }
 
 .cart-item__detail {

@@ -462,13 +462,15 @@ async def get_menu_diario(
 
     assembly_cats = (await db.execute(text("""
         SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
-               (
-                   SELECT dm2.description FROM pos_daily_menu dm2
-                   WHERE dm2.company_id = :cid AND dm2.date = :today
-                     AND dm2.group_by = da.category_code
-                   LIMIT 1
+               COALESCE(
+                   (SELECT dm2.description FROM pos_daily_menu dm2
+                    WHERE dm2.company_id = :cid AND dm2.date = :today
+                      AND dm2.group_by = da.category_code
+                    LIMIT 1),
+                   pc.name
                ) AS category_name
         FROM pos_dish_assembly da
+        LEFT JOIN pos_product_categories pc ON pc.id = da.category_code
         WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
         ORDER BY da.category_code
     """), {"did": dish_id, "cid": cid, "today": today})).mappings().all()
@@ -485,17 +487,20 @@ async def get_menu_diario(
     options_rows = (await db.execute(text(f"""
         SELECT
             dad.category_code,
-            dad.item         AS item_id,
+            dad.item                                        AS item_id,
             dad.discount_qty,
             dad.is_default,
             dad.position,
-            dm.description   AS item_name,
-            IF(dm.id IS NOT NULL, 1, 0) AS available_today
+            COALESCE(dm.description, si.description)        AS item_name,
+            IF(COALESCE(dm.id, si.id) IS NOT NULL, 1, 0)   AS available_today
         FROM pos_dish_assembly_detail dad
         LEFT JOIN pos_daily_menu dm
                ON dm.item_id    = dad.item
               AND dm.company_id = :cid
               AND dm.date       = :today
+        LEFT JOIN supply_items si
+               ON si.id_item    = dad.position
+              AND si.company_id = :cid
         WHERE dad.dish_id = :did AND dad.company_id = :cid
           AND dad.category_code IN ({placeholders})
         ORDER BY dad.category_code, dad.position
@@ -545,11 +550,22 @@ async def get_menu_diario(
 async def get_novedades(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
     cid = payload["company_id"]
 
-    notes = (await db.execute(text(
-        "SELECT id, name FROM pos_order_notes WHERE company_id=:cid ORDER BY id"
-    ), {"cid": cid})).mappings().all()
+    notes = None
+    for sql in [
+        "SELECT id, name, COALESCE(cod_categoria, 0) AS cod_categoria FROM pos_dish_note_categories WHERE company_id=:cid ORDER BY cod_categoria, id",
+        "SELECT id, name, 0 AS cod_categoria FROM pos_order_notes WHERE company_id=:cid ORDER BY id",
+    ]:
+        try:
+            rows = (await db.execute(text(sql), {"cid": cid})).mappings().all()
+            notes = rows
+            break
+        except Exception:
+            continue
 
-    return {"notes": [{"id": n["id"], "name": n["name"]} for n in notes]}
+    if notes is None:
+        notes = []
+
+    return {"notes": [{"id": n["id"], "name": n["name"], "cod_categoria": n["cod_categoria"]} for n in notes]}
 
 
 # ── 8. AGREGAR ÍTEM A LA ORDEN ────────────────────────────────────────────────

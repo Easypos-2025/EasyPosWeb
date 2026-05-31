@@ -46,13 +46,13 @@
         <span class="filtros-label">Estado:</span>
         <button :class="['filtro-btn filtro-btn--activo', { active: filtroEstado === 1 }]" @click="setFiltroEstado(1)">Activos</button>
         <button :class="['filtro-btn filtro-btn--inactivo', { active: filtroEstado === 0 }]" @click="setFiltroEstado(0)">Inactivos</button>
-        <button v-if="categoriaTab === null" :class="['filtro-btn', { active: filtroEstado === null }]" @click="setFiltroEstado(null)">Todos</button>
+        <button :class="['filtro-btn', { active: filtroEstado === null }]" @click="setFiltroEstado(null)">Todos</button>
       </div>
       <div class="filtros-grupo">
         <span class="filtros-label">Foto:</span>
         <button :class="['filtro-btn filtro-btn--confoto', { active: filtroFoto === 'con' }]" @click="setFiltroFoto('con')">Con foto</button>
         <button :class="['filtro-btn filtro-btn--sinfoto', { active: filtroFoto === 'sin' }]" @click="setFiltroFoto('sin')">Sin foto</button>
-        <button v-if="categoriaTab === null" :class="['filtro-btn', { active: filtroFoto === null }]" @click="setFiltroFoto(null)">Todos</button>
+        <button :class="['filtro-btn', { active: filtroFoto === null }]" @click="setFiltroFoto(null)">Todos</button>
       </div>
     </div>
 
@@ -410,8 +410,8 @@ const loading    = ref(true)
 const guardando  = ref(false)
 const busqueda   = ref('')
 const categoriaTab  = ref(null)
-const filtroEstado  = ref(1)
-const filtroFoto    = ref('con')
+const filtroEstado  = ref(null)
+const filtroFoto    = ref(null)
 
 // Estado de foto pendiente (no subida aún)
 const fotoPendiente  = ref(null)   // Blob
@@ -481,10 +481,6 @@ watch(categorias, async () => { await nextTick(); updateArrows() })
 
 const setCategoria = (id) => {
   categoriaTab.value = id
-  if (id !== null) {
-    if (filtroEstado.value === null) filtroEstado.value = 1
-    if (filtroFoto.value   === null) filtroFoto.value   = 'con'
-  }
 }
 const setFiltroEstado = (v) => { filtroEstado.value = v }
 const setFiltroFoto   = (v) => { filtroFoto.value = v }
