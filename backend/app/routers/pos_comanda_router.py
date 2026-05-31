@@ -380,7 +380,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
     # Intenta con columnas extendidas; si fallan, usa fallbacks progresivos.
     dishes = None
     for sql in [
-        # Nivel 1: columnas completas + filtro activo (active=1 es el valor activo en web y VB6)
+        # Nivel 1: columnas completas — mismo WHERE que pos_platos_router (solo company_id)
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
                 COALESCE(d.tax, 0) AS tax,
                 COALESCE(d.offer_priority, 0) AS has_assembly,
@@ -388,17 +388,9 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
                 c.name AS category_name
            FROM pos_dishes d
            LEFT JOIN pos_dish_categories c ON c.id = d.category_id AND c.company_id = d.company_id
-           WHERE d.company_id = :cid AND d.active = 1
+           WHERE d.company_id = :cid
            ORDER BY c.name, d.name""",
-        # Nivel 2: sin columnas opcionales + filtro activo
-        """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
-                0 AS tax, 0 AS has_assembly, 0 AS no_print,
-                c.name AS category_name
-           FROM pos_dishes d
-           LEFT JOIN pos_dish_categories c ON c.id = d.category_id AND c.company_id = d.company_id
-           WHERE d.company_id = :cid AND d.active = 1
-           ORDER BY c.name, d.name""",
-        # Nivel 3: sin filtro active (columna puede no existir en algunas BD)
+        # Nivel 2: sin columnas opcionales (fallback si faltan columnas extendidas)
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
                 0 AS tax, 0 AS has_assembly, 0 AS no_print,
                 c.name AS category_name
