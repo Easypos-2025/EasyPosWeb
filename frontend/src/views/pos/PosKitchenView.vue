@@ -1,113 +1,119 @@
 <template>
   <div class="kitchen-view">
 
-    <!-- Header TV -->
-    <div class="kitchen-header">
-      <div class="kitchen-header__brand">
-        <i class="bi bi-display me-2"></i>
+    <!-- ── Header TV ──────────────────────────────────────────────────────── -->
+    <div class="kh">
+      <div class="kh__brand">
+        <i class="bi bi-display"></i>
         <span>Cocina</span>
       </div>
-      <div class="kitchen-header__time">{{ currentTime }}</div>
-      <div class="kitchen-header__info">
-        <span class="kitchen-header__dot" :class="connected ? 'kitchen-header__dot--ok' : 'kitchen-header__dot--err'"></span>
+      <div class="kh__status">
+        <span class="kh__dot" :class="connected ? 'kh__dot--ok' : 'kh__dot--err'"></span>
         {{ connected ? 'En línea' : 'Sin conexión' }}
       </div>
+      <div class="kh__time">{{ currentTime }}</div>
     </div>
 
-    <!-- Columnas por impresora -->
-    <div class="kitchen-columns" v-if="printers.length">
+    <!-- ── Columnas por impresora ─────────────────────────────────────────── -->
+    <div class="kcols" v-if="printers.length">
       <div
         v-for="printer in printers"
         :key="printer.printer_id"
-        class="kitchen-col"
+        class="kcol"
       >
-        <div class="kitchen-col__header">
-          <i class="bi bi-printer-fill me-2"></i>
+        <!-- Cabecera de columna -->
+        <div class="kcol__hdr">
+          <i class="bi bi-printer-fill"></i>
           {{ printer.printer_name }}
-          <span class="kitchen-col__count" v-if="printer.orders.length">
+          <span class="kcol__badge" v-if="printer.orders.length">
             {{ printer.orders.length }}
           </span>
         </div>
 
-        <div class="kitchen-col__body">
-          <div v-if="!printer.orders.length" class="kitchen-col__empty">
-            <i class="bi bi-check-circle text-success fs-2"></i>
-            <p class="text-muted small mt-2">Sin pedidos</p>
+        <!-- Cuerpo con tarjetas -->
+        <div class="kcol__body">
+          <div v-if="!printer.orders.length" class="kcol__empty">
+            <i class="bi bi-check-circle-fill"></i>
+            <p>Sin pedidos</p>
           </div>
 
           <div
             v-for="order in printer.orders"
             :key="order.order_number"
-            class="kitchen-card"
+            class="kcard"
             :class="timeClass(order.latest_dish_time)"
           >
-            <!-- Card header con semáforo de tiempo -->
-            <div class="kitchen-card__header" :class="timeClass(order.latest_dish_time)">
-              <div class="kitchen-card__left">
-                <span class="kitchen-card__seq">#{{ order.daily_seq }}</span>
-                <span class="kitchen-card__mesa">{{ order.table_name }}</span>
+            <!-- Cabecera de la tarjeta -->
+            <div class="kcard__hdr">
+              <!-- Fila 1: nro + mesa + tiempo -->
+              <div class="kcard__row1">
+                <div class="kcard__ident">
+                  <span class="kcard__seq">#{{ order.daily_seq }}</span>
+                  <span class="kcard__mesa">{{ order.table_name }}</span>
+                </div>
+                <span
+                  class="kcard__elapsed"
+                  :class="timeClass(order.latest_dish_time)"
+                >
+                  <i class="bi bi-stopwatch-fill"></i>
+                  {{ elapsed(order.latest_dish_time) || '0 min' }}
+                </span>
               </div>
-              <div class="kitchen-card__right">
-                <span class="kitchen-card__printer">
-                  <i class="bi bi-printer-fill me-1"></i>{{ printer.printer_name }}
-                </span>
-                <span class="kitchen-card__waiter">{{ order.waiter_name }}</span>
-                <span class="kitchen-card__time">{{ formatTime(order.order_time) }}</span>
-                <span class="kitchen-card__elapsed" :class="timeClass(order.latest_dish_time)">
-                  <i class="bi bi-stopwatch me-1"></i>
-                  {{ elapsed(order.latest_dish_time) }}
-                </span>
+              <!-- Fila 2: mesero -->
+              <div class="kcard__waiter">
+                <i class="bi bi-person-fill"></i>
+                {{ order.waiter_name || '—' }}
               </div>
             </div>
 
-            <!-- Bill requested indicator -->
-            <div class="kitchen-card__bill" v-if="order.bill_requested">
-              <i class="bi bi-receipt me-1"></i>Solicitó cuenta
+            <!-- Solicitud de cuenta -->
+            <div class="kcard__bill" v-if="order.bill_requested">
+              <i class="bi bi-receipt"></i> Solicitó cuenta
             </div>
 
-            <!-- Items -->
-            <div class="kitchen-card__items">
+            <!-- Lista de productos -->
+            <div class="kcard__items">
               <div
                 v-for="(item, idx) in order.items"
                 :key="`${item.dish_id}-${item.item}`"
-                class="kitchen-item"
-                :class="{ 'kitchen-item--sep': idx > 0 }"
+                class="kitem"
+                :class="{ 'kitem--sep': idx > 0 }"
               >
-                <div class="kitchen-item__main">
-                  <span class="kitchen-item__qty">{{ item.quantity }}×</span>
-                  <span class="kitchen-item__name">{{ item.dish_name }}</span>
+                <div class="kitem__main">
+                  <span class="kitem__qty">{{ item.quantity }}×</span>
+                  <span class="kitem__name">{{ item.dish_name }}</span>
                 </div>
-                <!-- Assembly -->
-                <div class="kitchen-item__assembly" v-if="item.assembly?.length">
+                <!-- Armado/Assembly -->
+                <div class="kitem__mods" v-if="item.assembly?.length">
                   <span
                     v-for="sel in item.assembly"
                     :key="sel.category_code"
-                    class="kitchen-item__sel"
+                    class="kitem__mod"
                   >
                     <i class="bi bi-dot"></i>{{ sel.item_name }}
                   </span>
                 </div>
-                <!-- Novedades -->
-                <div class="kitchen-item__notes" v-if="item.notes">
-                  <i class="bi bi-pencil-fill me-1"></i>{{ item.notes }}
+                <!-- Notas -->
+                <div class="kitem__note" v-if="item.notes">
+                  <i class="bi bi-pencil-fill"></i> {{ item.notes }}
                 </div>
                 <!-- Cambios -->
-                <div class="kitchen-item__changes" v-if="item.changes">
-                  <i class="bi bi-arrow-left-right me-1"></i>{{ item.changes }}
+                <div class="kitem__change" v-if="item.changes">
+                  <i class="bi bi-arrow-left-right"></i> {{ item.changes }}
                 </div>
               </div>
             </div>
 
-          </div>
-        </div>
-      </div>
-    </div>
+          </div><!-- /kcard -->
+        </div><!-- /kcol__body -->
+      </div><!-- /kcol -->
+    </div><!-- /kcols -->
 
-    <!-- Sin impresoras / sin datos -->
+    <!-- Sin impresoras activas -->
     <div v-else-if="!loading" class="kitchen-empty">
-      <i class="bi bi-printer text-muted" style="font-size:4rem"></i>
-      <h4 class="text-muted mt-3">No hay impresoras configuradas</h4>
-      <p class="text-muted">Configure impresoras en el panel de administración</p>
+      <i class="bi bi-printer"></i>
+      <h4>No hay impresoras configuradas</h4>
+      <p>Active al menos una impresora en el panel de administración</p>
     </div>
 
     <div v-if="loading" class="kitchen-loading">
@@ -122,7 +128,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 
-const route  = useRoute()
+const route     = useRoute()
 const companyId = ref(route.query.cid || localStorage.getItem('waiter_company_id') || '')
 
 const printers    = ref([])
@@ -149,7 +155,7 @@ onUnmounted(() => {
 function updateClock() {
   now.value = new Date()
   currentTime.value = now.value.toLocaleTimeString('es-CO', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
 }
 
@@ -169,22 +175,17 @@ async function loadKitchen() {
   }
 }
 
-function formatTime(t) {
+function elapsed(t) {
   if (!t) return ''
-  return t.substring(0, 5) // HH:MM
-}
-
-function elapsed(dishTime) {
-  if (!dishTime) return ''
-  const sent = new Date(dishTime.replace(' ', 'T'))
+  const sent = new Date(t.replace(' ', 'T'))
   const diff  = Math.floor((now.value - sent) / 60000)
   if (diff < 1) return '< 1 min'
   return `${diff} min`
 }
 
-function timeClass(dishTime) {
-  if (!dishTime) return ''
-  const sent = new Date(dishTime.replace(' ', 'T'))
+function timeClass(t) {
+  if (!t) return ''
+  const sent = new Date(t.replace(' ', 'T'))
   const diff  = Math.floor((now.value - sent) / 60000)
   if (diff >= 15) return 'time--red'
   if (diff >= 10) return 'time--orange'
@@ -193,6 +194,9 @@ function timeClass(dishTime) {
 </script>
 
 <style scoped>
+/* ══════════════════════════════════════════════════════════
+   BASE — optimizado para pantalla TV en cocina
+   ══════════════════════════════════════════════════════════ */
 .kitchen-view {
   display: flex;
   flex-direction: column;
@@ -200,312 +204,377 @@ function timeClass(dishTime) {
   background: #0f172a;
   color: #f1f5f9;
   overflow: hidden;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-/* Header */
-.kitchen-header {
+/* ── Header ──────────────────────────────────────────────── */
+.kh {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 20px;
-  height: 52px;
+  gap: 20px;
+  padding: 0 28px;
+  height: 64px;
   background: #1e293b;
-  border-bottom: 1px solid #334155;
+  border-bottom: 3px solid #2563eb;
   flex-shrink: 0;
 }
 
-.kitchen-header__brand {
+.kh__brand {
   display: flex;
   align-items: center;
-  font-size: 1rem;
-  font-weight: 700;
+  gap: 10px;
+  font-size: 1.5rem;
+  font-weight: 800;
   color: #f1f5f9;
+  letter-spacing: .5px;
 }
+.kh__brand i { font-size: 1.3rem; color: #60a5fa; }
 
-.kitchen-header__time {
-  font-size: 1.3rem;
-  font-weight: 700;
-  font-family: monospace;
-  color: #94a3b8;
-  margin-left: auto;
-}
-
-.kitchen-header__info {
+.kh__status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: .8rem;
-  color: #64748b;
+  gap: 8px;
+  font-size: 1rem;
+  color: #94a3b8;
 }
 
-.kitchen-header__dot {
-  width: 8px;
-  height: 8px;
+.kh__dot {
+  width: 11px; height: 11px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
-.kitchen-header__dot--ok { background: #22c55e; }
-.kitchen-header__dot--err { background: #ef4444; animation: pulse 1s infinite; }
+.kh__dot--ok  { background: #22c55e; }
+.kh__dot--err { background: #ef4444; animation: blink 1s infinite; }
 
-@keyframes pulse {
+@keyframes blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: .3; }
+  50%       { opacity: .25; }
 }
 
-/* Columns */
-.kitchen-columns {
+.kh__time {
+  margin-left: auto;
+  font-size: 2rem;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: #64748b;
+  letter-spacing: 3px;
+}
+
+/* ── Columnas ────────────────────────────────────────────── */
+.kcols {
   flex: 1;
   display: flex;
   overflow: hidden;
-  gap: 1px;
-  background: #1e293b;
+  background: #0a1120;
+  gap: 2px;
 }
 
-.kitchen-col {
+.kcol {
   flex: 1;
   display: flex;
   flex-direction: column;
   background: #0f172a;
   min-width: 0;
+  border-right: 1px solid #1e293b;
 }
+.kcol:last-child { border-right: none; }
 
-.kitchen-col__header {
+.kcol__hdr {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 14px 20px;
   background: #1e293b;
-  font-size: .85rem;
-  font-weight: 700;
-  color: #94a3b8;
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: #60a5fa;
   text-transform: uppercase;
-  letter-spacing: .5px;
-  border-bottom: 2px solid #2563eb;
+  letter-spacing: 1.5px;
+  border-bottom: 3px solid #2563eb;
   flex-shrink: 0;
 }
+.kcol__hdr i { font-size: 1.1rem; }
 
-.kitchen-col__count {
+.kcol__badge {
   background: #2563eb;
   color: #fff;
-  font-size: .7rem;
-  padding: 2px 7px;
-  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 800;
+  padding: 2px 11px;
+  border-radius: 14px;
   margin-left: auto;
 }
 
-.kitchen-col__body {
+.kcol__body {
   flex: 1;
   overflow-y: auto;
-  padding: 10px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   scrollbar-width: thin;
   scrollbar-color: #334155 transparent;
 }
 
-.kitchen-col__empty {
+.kcol__empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  opacity: .5;
+  gap: 14px;
+  opacity: .4;
+  color: #94a3b8;
 }
+.kcol__empty i  { font-size: 4rem; color: #22c55e; }
+.kcol__empty p  { font-size: 1.2rem; margin: 0; }
 
-/* Kitchen card */
-.kitchen-card {
+/* ── Tarjeta ─────────────────────────────────────────────── */
+.kcard {
   background: #1e293b;
-  border: 1.5px solid #334155;
-  border-radius: 12px;
+  border: 2.5px solid #334155;
+  border-radius: 16px;
   overflow: hidden;
-  transition: border-color .3s;
-}
-.kitchen-card.time--orange { border-color: #f59e0b; }
-.kitchen-card.time--red    { border-color: #ef4444; }
-
-/* Pulsing animation for urgent cards */
-.kitchen-card.time--red {
-  animation: urgentPulse 2s ease-in-out infinite;
-}
-@keyframes urgentPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
-  50%       { box-shadow: 0 0 0 4px rgba(239,68,68,.3); }
+  transition: background .35s, border-color .35s, box-shadow .35s;
 }
 
-.kitchen-card__header {
+/* Estado orange: 10–14 min */
+.kcard.time--orange {
+  background: #431407;
+  border-color: #ea580c;
+}
+
+/* Estado rojo: 15+ min */
+.kcard.time--red {
+  background: #3b0a0a;
+  border-color: #dc2626;
+  animation: urgent 2.5s ease-in-out infinite;
+}
+@keyframes urgent {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  50%       { box-shadow: 0 0 0 8px rgba(220,38,38,.22); }
+}
+
+/* Cabecera de tarjeta */
+.kcard__hdr {
+  padding: 16px 18px 12px;
+  background: rgba(0,0,0,.28);
+  border-bottom: 1px solid rgba(255,255,255,.07);
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 10px 12px 8px;
-  background: #273549;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
 }
-.kitchen-card__header.time--orange { background: #451a03; }
-.kitchen-card__header.time--red    { background: #450a0a; }
 
-.kitchen-card__left {
+.kcard__row1 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.kitchen-card__seq {
+.kcard__ident {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kcard__seq {
   background: #f1f5f9;
   color: #0f172a;
-  font-size: .75rem;
-  font-weight: 800;
-  padding: 2px 7px;
-  border-radius: 6px;
+  font-size: 1.15rem;
+  font-weight: 900;
+  padding: 4px 11px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  letter-spacing: .5px;
 }
 
-.kitchen-card__mesa {
-  font-size: 1rem;
-  font-weight: 700;
+.kcard__mesa {
+  font-size: 2.1rem;
+  font-weight: 900;
   color: #f1f5f9;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.kitchen-card__right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.kitchen-card__printer {
-  font-size: .68rem;
-  font-weight: 700;
-  color: #60a5fa;
-  background: rgba(96,165,250,.12);
-  padding: 2px 7px;
-  border-radius: 6px;
+/* Badge tiempo transcurrido */
+.kcard__elapsed {
   display: flex;
   align-items: center;
+  gap: 7px;
+  font-size: 1.85rem;
+  font-weight: 900;
+  padding: 5px 16px;
+  border-radius: 12px;
+  background: rgba(34,197,94,.13);
+  color: #4ade80;
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+  flex-shrink: 0;
+}
+.kcard__elapsed i { font-size: 1.4rem; }
+.kcard__elapsed.time--orange {
+  background: rgba(249,115,22,.18);
+  color: #fb923c;
+}
+.kcard__elapsed.time--red {
+  background: rgba(239,68,68,.18);
+  color: #f87171;
 }
 
-.kitchen-card__waiter {
-  font-size: .72rem;
-  color: #94a3b8;
+/* Mesero */
+.kcard__waiter {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #cbd5e1;
 }
+.kcard__waiter i { font-size: 1.1rem; color: #94a3b8; }
 
-.kitchen-card__time {
-  font-size: .75rem;
-  color: #64748b;
-}
-
-.kitchen-card__elapsed {
-  font-size: .78rem;
+/* Solicitud de cuenta */
+.kcard__bill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #92400e;
+  color: #fef3c7;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: #22c55e;
-}
-.kitchen-card__elapsed.time--orange { color: #f59e0b; }
-.kitchen-card__elapsed.time--red    { color: #ef4444; }
-
-.kitchen-card__bill {
-  background: #d97706;
-  color: #fff;
-  font-size: .72rem;
-  font-weight: 700;
-  padding: 3px 12px;
-  text-align: center;
+  padding: 7px 18px;
+  letter-spacing: .5px;
 }
 
-/* Items */
-.kitchen-card__items {
-  padding: 10px 12px;
+/* ── Productos ───────────────────────────────────────────── */
+.kcard__items {
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.kitchen-item { }
-.kitchen-item--sep {
-  border-top: 1px solid #1e293b;
-  padding-top: 8px;
+.kitem { }
+.kitem--sep {
+  border-top: 1px solid rgba(255,255,255,.09);
+  padding-top: 12px;
 }
 
-.kitchen-item__main {
+.kitem__main {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 12px;
 }
 
-.kitchen-item__qty {
-  font-size: .85rem;
-  font-weight: 700;
+.kitem__qty {
+  font-size: 1.55rem;
+  font-weight: 900;
   color: #60a5fa;
   white-space: nowrap;
+  min-width: 2.8rem;
+  font-family: 'Courier New', monospace;
 }
 
-.kitchen-item__name {
-  font-size: .9rem;
+.kitem__name {
+  font-size: 1.55rem;
   font-weight: 700;
   color: #f1f5f9;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: .3px;
 }
 
-.kitchen-item__assembly {
+/* Modificadores / Armado */
+.kitem__mods {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-  padding-left: 20px;
+  gap: 2px 0;
+  margin-top: 6px;
+  padding-left: 4rem;
 }
-
-.kitchen-item__sel {
-  font-size: .75rem;
-  color: #94a3b8;
+.kitem__mod {
   display: flex;
   align-items: center;
+  font-size: 1.05rem;
+  color: #94a3b8;
+  font-weight: 500;
 }
+.kitem__mod i { font-size: 1.3rem; }
 
-.kitchen-item__notes {
-  margin-top: 4px;
-  padding-left: 20px;
-  font-size: .75rem;
+/* Notas */
+.kitem__note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  padding-left: 4rem;
+  font-size: 1rem;
   color: #94a3b8;
   font-style: italic;
 }
 
-.kitchen-item__changes {
-  margin-top: 3px;
-  padding-left: 20px;
-  font-size: .75rem;
-  color: #f59e0b;
+/* Cambios */
+.kitem__change {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+  padding-left: 4rem;
+  font-size: 1rem;
+  color: #fbbf24;
   font-weight: 600;
 }
 
-/* Empty / loading */
+/* ── Estado vacío / cargando ─────────────────────────────── */
 .kitchen-empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
+  color: #64748b;
 }
+.kitchen-empty i   { font-size: 5rem; }
+.kitchen-empty h4  { font-size: 1.6rem; margin: 0; }
+.kitchen-empty p   { font-size: 1.15rem; margin: 0; }
 
 .kitchen-loading {
   position: fixed;
-  top: 60px;
-  right: 16px;
+  top: 74px;
+  right: 20px;
   opacity: .5;
 }
 
-/* Responsive */
+/* ── Responsive tablet ───────────────────────────────────── */
 @media (max-width: 768px) {
+  .kh { height: 54px; padding: 0 16px; }
+  .kh__brand  { font-size: 1.1rem; }
+  .kh__time   { font-size: 1.4rem; }
   .kitchen-columns {
     overflow-x: auto;
     scroll-snap-type: x mandatory;
   }
-  .kitchen-col {
-    min-width: 280px;
-    scroll-snap-align: start;
-  }
+  .kcol      { min-width: 310px; scroll-snap-align: start; }
+  .kcard__mesa    { font-size: 1.5rem; }
+  .kcard__elapsed { font-size: 1.3rem; }
+  .kcard__waiter  { font-size: 1rem; }
+  .kitem__qty, .kitem__name { font-size: 1.2rem; }
+  .kitem__mod, .kitem__note, .kitem__change { font-size: .9rem; }
 }
 
+/* ── Responsive móvil ────────────────────────────────────── */
 @media (max-width: 576px) {
-  .kitchen-col { min-width: 260px; }
-  .kitchen-col__body { padding: 8px; }
-  .kitchen-card__header { padding: 8px 10px 6px; }
-  .kitchen-card__items { padding: 8px 10px; }
+  .kcol           { min-width: 270px; }
+  .kcol__hdr      { font-size: 1rem; padding: 10px 14px; }
+  .kcard__mesa    { font-size: 1.3rem; }
+  .kcard__elapsed { font-size: 1.1rem; padding: 4px 10px; }
+  .kcard__waiter  { font-size: .95rem; }
+  .kitem__qty, .kitem__name { font-size: 1.1rem; }
+  .kitem__mods, .kitem__note, .kitem__change { padding-left: 2.8rem; }
 }
 </style>

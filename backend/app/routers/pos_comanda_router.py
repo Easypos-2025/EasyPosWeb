@@ -950,6 +950,7 @@ async def get_cocina(
             od.changes,
             od.custom_product,
             od.dish_time,
+            COALESCE(od.dish_time, CONCAT(r.date, ' ', r.time)) AS effective_time,
             d.name          AS dish_name,
             ip.printer_id,
             p.name          AS printer_name
@@ -995,12 +996,14 @@ async def get_cocina(
                 "table_name": row["table_name"],
                 "waiter_name": row["waiter_name"],
                 "order_time": row["order_time"],
-                "latest_dish_time": row["dish_time"] or "",
+                "latest_dish_time": row["effective_time"] or "",
                 "items": [],
             }
         else:
-            if (row["dish_time"] or "") > printer_map[pid]["orders"][oid]["latest_dish_time"]:
-                printer_map[pid]["orders"][oid]["latest_dish_time"] = row["dish_time"]
+            eff = row["effective_time"] or ""
+            cur = printer_map[pid]["orders"][oid]["latest_dish_time"]
+            if eff and (not cur or eff < cur):
+                printer_map[pid]["orders"][oid]["latest_dish_time"] = eff
 
         assembly = []
         if row["custom_product"]:
@@ -1018,7 +1021,7 @@ async def get_cocina(
             "notes": row["notes"],
             "changes": row["changes"],
             "assembly": assembly,
-            "dish_time": row["dish_time"],
+            "dish_time": row["effective_time"],
         })
 
     result = []
@@ -1027,7 +1030,7 @@ async def get_cocina(
         orders = sorted(
             pdata["orders"].values(),
             key=lambda x: x["latest_dish_time"],
-            reverse=True,
+            reverse=False,
         )
         result.append({
             "printer_id": pdata["printer_id"],
