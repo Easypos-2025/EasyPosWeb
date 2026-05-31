@@ -180,10 +180,9 @@
               <span v-else>Mesero</span>
             </span>
             <span class="wstep-sep"></span>
-            <span class="wstep" :class="{ active: wizard.step === 2, done: !!wizard.mesaSeleccionada }">
+            <span class="wstep" :class="{ active: wizard.step === 2 }">
               <i class="bi bi-geo-alt-fill"></i>
-              <span v-if="wizard.mesaSeleccionada">{{ wizard.mesaSeleccionada.name }}</span>
-              <span v-else>Mesa</span>
+              <span>Mesa</span>
             </span>
           </div>
           <button class="wizard-close" @click="cerrarWizard"><i class="bi bi-x-lg"></i></button>
@@ -277,10 +276,9 @@
                     :class="{
                       'mesa-wizard-card--libre':   !mesa.ocupada,
                       'mesa-wizard-card--ocupada':  mesa.ocupada,
-                      'mesa-wizard-card--selected': wizard.mesaSeleccionada?.id === mesa.id,
                     }"
-                    :disabled="mesa.ocupada"
-                    @click="seleccionarMesaWizard(mesa)"
+                    :disabled="mesa.ocupada || wizard.abriendo"
+                    @click="irAComanda(mesa.id, mesa.name, wizard.waiterId ?? 0)"
                   >
                     <div class="mwc-status-bar"></div>
                     <i class="bi mwc-icon"
@@ -298,19 +296,13 @@
           </div>
 
           <div class="wizard-footer">
-            <button class="btn-cancelar" @click="wizard.step = 1">
+            <button class="btn-cancelar" @click="wizard.step = 1" :disabled="wizard.abriendo">
               <i class="bi bi-arrow-left me-1"></i>Volver
             </button>
-            <button
-              v-if="wizard.mesaSeleccionada"
-              class="btn-wizard-next"
-              @click="irAComanda(wizard.mesaSeleccionada.id, wizard.mesaSeleccionada.name, wizard.waiterId ?? 0)"
-              :disabled="wizard.abriendo"
-            >
-              <span v-if="wizard.abriendo"><div class="spinner-border spinner-border-sm me-1"></div></span>
-              <span v-else><i class="bi bi-check-circle me-1"></i></span>
-              Abrir {{ wizard.mesaSeleccionada.name }}
-            </button>
+            <div v-if="wizard.abriendo" class="wizard-opening-hint">
+              <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+              Abriendo mesa...
+            </div>
           </div>
         </div>
 
@@ -363,7 +355,6 @@ const wizard = ref({
   abriendo: false,
   showAddWaiter: false,
   takeout: false,
-  mesaSeleccionada: null,
 })
 const newWaiter = ref({ name: '', pin: '', saving: false, error: '' })
 
@@ -574,7 +565,6 @@ function abrirWizard() {
     visible: true, step: 1,
     waiterId: null, zonaAbierta: zonas.value[0]?.id ?? null,
     abriendo: false, showAddWaiter: false, takeout: false,
-    mesaSeleccionada: null,
   }
   newWaiter.value = { name: '', pin: '', saving: false, error: '' }
   cargarMesas()
@@ -592,11 +582,6 @@ function abrirWizardTakeout() {
 }
 
 function cerrarWizard() { wizard.value.visible = false }
-
-function seleccionarMesaWizard(mesa) {
-  if (mesa.ocupada) return
-  wizard.value.mesaSeleccionada = mesa
-}
 
 async function irAComanda(tableId, tableName, waiterId) {
   wizard.value.abriendo = true
@@ -1222,6 +1207,13 @@ async function guardarNuevoMesero() {
   font-weight: 600;
 }
 .btn-cancelar:hover { background: #e2e8f0; }
+.wizard-opening-hint {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: #1d4ed8;
+  font-weight: 600;
+}
 .btn-wizard-next {
   background: linear-gradient(90deg, #1e3a5f, #1d4ed8);
   border: none;
