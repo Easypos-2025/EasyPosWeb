@@ -377,31 +377,44 @@ async def get_orden_mesa(
 async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
     cid = payload["company_id"]
 
-    dishes = (await db.execute(text("""
-        SELECT
-            d.id, d.name, d.price, d.compare_price, d.category_id,
-            d.photo_path, d.tax, d.order_index,
-            d.offer_priority   AS has_assembly,
-            d.preparation_time AS no_print,
-            c.name             AS category_name,
-            c.order_index      AS cat_order
-        FROM pos_dishes d
-        LEFT JOIN pos_dish_categories c
-               ON c.id = d.category_id
-        WHERE d.company_id = :cid AND d.active = 1
-        ORDER BY COALESCE(c.order_index, 9999), d.order_index
-    """), {"cid": cid})).mappings().all()
+    # Intenta con columnas extendidas; si no existen en la BD VB6, cae al fallback
+    try:
+        dishes = (await db.execute(text("""
+            SELECT
+                d.id, d.name, d.price, d.category_id,
+                COALESCE(d.tax, 0)              AS tax,
+                COALESCE(d.offer_priority, 0)   AS has_assembly,
+                COALESCE(d.preparation_time, 0) AS no_print,
+                c.name                          AS category_name
+            FROM pos_dishes d
+            LEFT JOIN pos_dish_categories c ON c.id = d.category_id
+            WHERE d.company_id = :cid
+            ORDER BY c.name, d.name
+        """), {"cid": cid})).mappings().all()
+    except Exception:
+        dishes = (await db.execute(text("""
+            SELECT d.id, d.name, d.price, d.category_id,
+                   0 AS tax, 0 AS has_assembly, 0 AS no_print,
+                   c.name AS category_name
+            FROM pos_dishes d
+            LEFT JOIN pos_dish_categories c ON c.id = d.category_id
+            WHERE d.company_id = :cid
+            ORDER BY c.name, d.name
+        """), {"cid": cid})).mappings().all()
 
-    item_printers = (await db.execute(text(
-        "SELECT item_id, printer_id FROM pos_item_printers WHERE company_id=:cid"
-    ), {"cid": cid})).mappings().all()
     ip_map: dict[int, list] = {}
-    for ip in item_printers:
-        ip_map.setdefault(int(ip["item_id"]), []).append(int(ip["printer_id"]))
-
-    printers = (await db.execute(text(
-        "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
-    ), {"cid": cid})).mappings().all()
+    printers = []
+    try:
+        item_printers = (await db.execute(text(
+            "SELECT item_id, printer_id FROM pos_item_printers WHERE company_id=:cid"
+        ), {"cid": cid})).mappings().all()
+        for ip in item_printers:
+            ip_map.setdefault(int(ip["item_id"]), []).append(int(ip["printer_id"]))
+        printers = (await db.execute(text(
+            "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
+        ), {"cid": cid})).mappings().all()
+    except Exception:
+        pass  # tablas de impresoras aún no creadas en esta BD
 
     categories: dict = {}
     for d in dishes:
@@ -410,24 +423,20 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
             categories[cat_id] = {
                 "category_id": cat_id,
                 "category_name": d["category_name"] or "Sin categoría",
-                "order_index": d["cat_order"] or 0,
                 "dishes": [],
             }
         categories[cat_id]["dishes"].append({
             "id": d["id"],
             "name": d["name"],
             "price": d["price"],
-            "compare_price": d["compare_price"],
-            "photo_path": d["photo_path"],
             "tax": float(d["tax"]) if d["tax"] else 0,
             "has_assembly": bool(d["has_assembly"]),
             "no_print": bool(d["no_print"]),
-            "order_index": d["order_index"],
             "printer_ids": ip_map.get(int(d["id"]), []),
         })
 
     return {
-        "categories": sorted(categories.values(), key=lambda x: x["order_index"]),
+        "categories": list(categories.values()),
         "printers": [{"id": p["id"], "name": p["name"]} for p in printers],
     }
 
