@@ -586,7 +586,16 @@ function cerrarWizard() { wizard.value.visible = false }
 async function irAComanda(tableId, tableName, waiterId) {
   wizard.value.abriendo = true
   try {
+    const waiterName = meseros.value.find(m => m.id === waiterId)?.name || 'Sin asignar'
     localStorage.setItem('waiter_company_id', String(selectedCid.value))
+    // Escribir contexto básico ANTES del await para que KioskLayout lo lea al montar
+    localStorage.setItem('pedido_ctx', JSON.stringify({
+      table_id:    tableId,
+      table_name:  tableName,
+      waiter_id:   waiterId || 0,
+      waiter_name: waiterName,
+      company_id:  selectedCid.value,
+    }))
 
     const { data } = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
       table_id:     tableId,
@@ -594,7 +603,7 @@ async function irAComanda(tableId, tableName, waiterId) {
       waiter_id:    waiterId || 0,
     })
 
-    const waiterName = meseros.value.find(m => m.id === waiterId)?.name || 'Sin asignar'
+    // Actualizar con order_number y date una vez que el backend responde
     localStorage.setItem('pedido_ctx', JSON.stringify({
       table_id:     tableId,
       table_name:   tableName,

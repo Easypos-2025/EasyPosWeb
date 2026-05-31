@@ -1,14 +1,9 @@
 <template>
   <div class="pedido-view">
 
-    <!-- DEBUG TEMPORAL — borrar cuando funcione -->
-    <div class="dbg-bar">
-      <span>tableId={{ tableId }} | order={{ order ? 'OK' : 'NULL' }} | cats={{ menuCategories.length }} | err={{ dbgError || 'ninguno' }}</span>
-    </div>
-
     <!-- Header -->
     <div class="pedido-header">
-      <button class="pedido-header__back" @click="$router.push('/pos/comanda/mesas')">
+      <button class="pedido-header__back" @click="goBack">
         <i class="bi bi-arrow-left"></i>
       </button>
       <div class="pedido-header__info">
@@ -237,7 +232,6 @@ const cartOpen        = ref(false)
 const assemblyDish    = ref(null)
 const notasItem       = ref(null)
 const sending         = ref(false)
-const dbgError        = ref('')
 const catTabsRef      = ref(null)
 
 const currentCategoryDishes = computed(() => {
@@ -252,6 +246,8 @@ function formatPrice(v) {
 }
 
 onMounted(async () => {
+  // Garantizar company_id correcto antes de cualquier llamada a la API
+  if (ctx.company_id) localStorage.setItem('waiter_company_id', String(ctx.company_id))
   await Promise.all([loadOrder(), loadMenu(), loadNotes()])
 })
 
@@ -268,7 +264,6 @@ async function loadOrder() {
       order.value = { order_number: openRes.data.order_number, date: openRes.data.date, amount: 0, items: [] }
     }
   } catch (e) {
-    dbgError.value = `orden:${e.response?.status || e.message}`
     if (e.response?.status === 401) router.push('/pos/comanda/login')
   }
 }
@@ -280,9 +275,7 @@ async function loadMenu() {
     if (res.data.categories.length && !activeCategory.value) {
       activeCategory.value = res.data.categories[0].category_id
     }
-  } catch (e) {
-    dbgError.value = (dbgError.value ? dbgError.value + ' | ' : '') + `menu:${e.response?.status || e.message}`
-  }
+  } catch { /* silencioso - sin menú no se puede pedir */ }
 }
 
 async function loadNotes() {
@@ -290,6 +283,18 @@ async function loadNotes() {
     const res = await apiComanda.get('/api/pos/comanda/novedades')
     preloadedNotes.value = res.data.notes
   } catch { /* silencioso */ }
+}
+
+async function goBack() {
+  if (items.value.some(i => !i.sent)) {
+    if (!confirm('Hay items sin enviar. ¿Cancelar el pedido y liberar la mesa?')) return
+  }
+  try {
+    await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
+      data: { table_id: tableId.value }
+    })
+  } catch { /* silencioso si la mesa ya estaba libre */ }
+  router.push('/pos/comanda/mesas')
 }
 
 function scrollCats(dir) {
@@ -768,21 +773,6 @@ async function requestBill() {
   flex-direction: column;
   margin-right: auto;
   line-height: 1.2;
-}
-
-/* DEBUG BAR — temporal */
-.dbg-bar {
-  position: fixed;
-  top: 52px;
-  left: 0; right: 0;
-  background: #7c3aed;
-  color: #fff;
-  font-size: .7rem;
-  font-family: monospace;
-  padding: 3px 10px;
-  z-index: 9999;
-  white-space: nowrap;
-  overflow-x: auto;
 }
 
 /* Responsive */

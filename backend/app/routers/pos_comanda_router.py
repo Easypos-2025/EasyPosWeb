@@ -376,30 +376,44 @@ async def get_orden_mesa(
 async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
     cid = payload["company_id"]
 
-    # Intenta con columnas extendidas; si no existen en la BD VB6, cae al fallback
-    try:
-        dishes = (await db.execute(text("""
-            SELECT DISTINCT
-                d.id, d.name, d.price, d.category_id,
-                COALESCE(d.tax, 0)              AS tax,
-                COALESCE(d.offer_priority, 0)   AS has_assembly,
+    # active=0 es el convenio VB6 para "producto activo" (activo=no_desactivado).
+    # Intenta con columnas extendidas; si fallan, usa fallbacks progresivos.
+    dishes = None
+    for sql in [
+        # Nivel 1: columnas completas + filtro activo VB6
+        """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
+                COALESCE(d.tax, 0) AS tax,
+                COALESCE(d.offer_priority, 0) AS has_assembly,
                 COALESCE(d.preparation_time, 0) AS no_print,
-                c.name                          AS category_name
-            FROM pos_dishes d
-            LEFT JOIN pos_dish_categories c ON c.id = d.category_id
-            WHERE d.company_id = :cid AND d.active = 1
-            ORDER BY c.name, d.name
-        """), {"cid": cid})).mappings().all()
-    except Exception:
-        dishes = (await db.execute(text("""
-            SELECT DISTINCT d.id, d.name, d.price, d.category_id,
-                   0 AS tax, 0 AS has_assembly, 0 AS no_print,
-                   c.name AS category_name
-            FROM pos_dishes d
-            LEFT JOIN pos_dish_categories c ON c.id = d.category_id
-            WHERE d.company_id = :cid
-            ORDER BY c.name, d.name
-        """), {"cid": cid})).mappings().all()
+                c.name AS category_name
+           FROM pos_dishes d
+           LEFT JOIN pos_dish_categories c ON c.id = d.category_id
+           WHERE d.company_id = :cid AND d.active = 0
+           ORDER BY c.name, d.name""",
+        # Nivel 2: sin columnas opcionales + filtro activo VB6
+        """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
+                0 AS tax, 0 AS has_assembly, 0 AS no_print,
+                c.name AS category_name
+           FROM pos_dishes d
+           LEFT JOIN pos_dish_categories c ON c.id = d.category_id
+           WHERE d.company_id = :cid AND d.active = 0
+           ORDER BY c.name, d.name""",
+        # Nivel 3: sin filtro active (columna puede no existir)
+        """SELECT DISTINCT d.id, d.name, d.price, d.category_id,
+                0 AS tax, 0 AS has_assembly, 0 AS no_print,
+                c.name AS category_name
+           FROM pos_dishes d
+           LEFT JOIN pos_dish_categories c ON c.id = d.category_id
+           WHERE d.company_id = :cid
+           ORDER BY c.name, d.name""",
+    ]:
+        try:
+            dishes = (await db.execute(text(sql), {"cid": cid})).mappings().all()
+            break
+        except Exception:
+            continue
+    if dishes is None:
+        dishes = []
 
     ip_map: dict[int, list] = {}
     printers = []
