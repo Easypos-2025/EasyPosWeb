@@ -168,6 +168,24 @@ async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = D
     cid = payload["company_id"]
     today = _today()
 
+    # Auto-cancel orders with no items (leftover test/empty sessions)
+    await db.execute(text("""
+        UPDATE pos_orders o
+        SET o.cancelled = 1
+        WHERE o.company_id = :cid
+          AND o.date = :today
+          AND o.invoice_number = '0'
+          AND o.cancelled = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM pos_order_details od
+              WHERE od.order_number   = o.order_number
+                AND od.date           = o.date
+                AND od.company_id     = o.company_id
+                AND od.invoice_number = '0'
+          )
+    """), {"cid": cid, "today": today})
+    await db.commit()
+
     rows = (await db.execute(text("""
         WITH seq AS (
             SELECT order_number, table_id, amount, time, waiter_id
@@ -945,15 +963,15 @@ async def get_cocina(
         LEFT JOIN pos_waiters w ON w.id = r.waiter_id AND w.company_id = :cid
         JOIN pos_item_printers ip ON ip.item_id = od.dish_id AND ip.company_id = :cid
         JOIN pos_printers p
-             ON p.id = ip.printer_id AND p.company_id = :cid AND p.is_active = 1
+             ON p.id = ip.printer_id AND p.company_id = :cid
         WHERE od.dish_time IS NOT NULL AND od.dish_time != ''
           AND d.preparation_time = 0
         ORDER BY ip.printer_id, r.daily_seq
     """), {"cid": cid, "today": today})).mappings().all()
 
-    # Initialize all active printers (even empty ones appear as columns)
+    # All configured printers appear as columns regardless of is_active
     all_printers = (await db.execute(text(
-        "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
+        "SELECT id, name FROM pos_printers WHERE company_id=:cid ORDER BY id"
     ), {"cid": cid})).mappings().all()
 
     printer_map: dict = {

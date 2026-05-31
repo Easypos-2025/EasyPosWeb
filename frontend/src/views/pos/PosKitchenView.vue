@@ -48,6 +48,9 @@
                 <span class="kitchen-card__mesa">{{ order.table_name }}</span>
               </div>
               <div class="kitchen-card__right">
+                <span class="kitchen-card__printer">
+                  <i class="bi bi-printer-fill me-1"></i>{{ printer.printer_name }}
+                </span>
                 <span class="kitchen-card__waiter">{{ order.waiter_name }}</span>
                 <span class="kitchen-card__time">{{ formatTime(order.order_time) }}</span>
                 <span class="kitchen-card__elapsed" :class="timeClass(order.latest_dish_time)">
@@ -367,6 +370,17 @@ function timeClass(dishTime) {
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
+}
+
+.kitchen-card__printer {
+  font-size: .68rem;
+  font-weight: 700;
+  color: #60a5fa;
+  background: rgba(96,165,250,.12);
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
 }
 
 .kitchen-card__waiter {
