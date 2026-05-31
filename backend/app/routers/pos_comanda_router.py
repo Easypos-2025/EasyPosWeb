@@ -254,8 +254,6 @@ async def abrir_mesa(
     ), {"tid": data.table_id, "cid": cid})).mappings().first()
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
-    if not mesa["active"]:
-        raise HTTPException(status_code=400, detail="Mesa inactiva")
 
     existing = (await db.execute(text(
         "SELECT order_number FROM pos_orders "

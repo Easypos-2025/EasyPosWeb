@@ -201,7 +201,21 @@ const route  = useRoute()
 const router = useRouter()
 const tableId = computed(() => parseInt(route.params.tableId))
 
-const order           = ref(null)
+// Contexto pasado desde el wizard (disponible inmediatamente, antes del loadOrder)
+const ctx = (() => {
+  try { return JSON.parse(localStorage.getItem('pedido_ctx') || '{}') } catch { return {} }
+})()
+
+const order           = ref(ctx.table_id === parseInt(route.params.tableId) ? {
+  order_number: ctx.order_number,
+  date:         ctx.date,
+  table_name:   ctx.table_name,
+  waiter_name:  ctx.waiter_name,
+  waiter_id:    ctx.waiter_id,
+  amount:       0,
+  bill_requested: false,
+  daily_seq:    null,
+} : null)
 const items           = ref([])
 const menuCategories  = ref([])
 const activeCategory  = ref(null)

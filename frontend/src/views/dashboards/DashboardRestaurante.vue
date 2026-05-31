@@ -239,11 +239,19 @@
         <div class="wizard-header">
           <div class="wizard-steps">
             <span class="wstep" :class="{ active: wizard.step === 1, done: wizard.step > 1 }">
-              <i class="bi bi-person-fill"></i> Mesero
+              <i class="bi bi-person-fill"></i>
+              <span v-if="wizard.step > 1 && wizard.waiterId !== null">
+                {{ meseros.find(m => m.id === wizard.waiterId)?.name || 'Sin asignar' }}
+              </span>
+              <span v-else>Mesero</span>
             </span>
             <span class="wstep-sep"></span>
             <span class="wstep" :class="{ active: wizard.step === 2, done: wizard.step > 2 }">
-              <i class="bi bi-geo-alt-fill"></i> Mesa
+              <i class="bi bi-geo-alt-fill"></i>
+              <span v-if="wizard.step > 2 && wizard.mesaSeleccionada">
+                {{ wizard.mesaSeleccionada.name }}
+              </span>
+              <span v-else>Mesa</span>
             </span>
             <span class="wstep-sep"></span>
             <span class="wstep" :class="{ active: wizard.step === 3 }">
@@ -725,18 +733,27 @@ function seleccionarMesaWizard(mesa) {
 async function irAComanda(tableId, tableName, waiterId) {
   wizard.value.abriendo = true
   try {
-    // Guardar company_id para que apiComanda lo use como fallback
     localStorage.setItem('waiter_company_id', String(selectedCid.value))
 
-    // Abrir/recuperar la orden en la BD
     const { data } = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
       table_id:     tableId,
       guests_count: 1,
       waiter_id:    waiterId || 0,
     })
 
+    // Guardar contexto del wizard para que PosComandaPedidoView lo muestre
+    const waiterName = meseros.find(m => m.id === waiterId)?.name || 'Sin asignar'
+    localStorage.setItem('pedido_ctx', JSON.stringify({
+      table_id:    tableId,
+      table_name:  tableName,
+      waiter_id:   waiterId || 0,
+      waiter_name: waiterName,
+      order_number: data.order_number,
+      date:         data.date,
+      company_id:   selectedCid.value,
+    }))
+
     cerrarWizard()
-    // Navegar a la pantalla de toma de pedido
     router.push(`/pos/comanda/pedido/${tableId}`)
   } catch (e) {
     alert(e?.response?.data?.detail || 'Error al abrir la mesa')
