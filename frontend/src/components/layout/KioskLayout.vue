@@ -29,17 +29,29 @@ const router = useRouter()
 const waiterName = computed(() => {
   try {
     const data = JSON.parse(localStorage.getItem('waiter_data') || '{}')
-    return data.name || ''
+    if (data.name) return data.name
+    // Admin navegando desde dashboard
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return user.name || user.username || 'Administrador'
   } catch {
-    return ''
+    return 'Administrador'
   }
 })
 
+const isAdminSession = computed(() => {
+  return !localStorage.getItem('waiter_token') && !!localStorage.getItem('token')
+})
+
 function logout() {
-  localStorage.removeItem('waiter_token')
-  localStorage.removeItem('waiter_data')
-  const cid = localStorage.getItem('waiter_company_id') || ''
-  router.push(`/pos/comanda/login?cid=${cid}`)
+  if (isAdminSession.value) {
+    // Admin vuelve al dashboard sin cerrar su sesión principal
+    router.push('/restaurante')
+  } else {
+    localStorage.removeItem('waiter_token')
+    localStorage.removeItem('waiter_data')
+    const cid = localStorage.getItem('waiter_company_id') || ''
+    router.push(`/pos/comanda/login?cid=${cid}`)
+  }
 }
 </script>
 

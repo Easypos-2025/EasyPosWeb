@@ -215,6 +215,58 @@ async def get_meseros(
     return [dict(r) for r in rows]
 
 
+# ─── Crear mesero ─────────────────────────────────────────────────────────────
+
+class CrearMeseroIn(BaseModel):
+    name: str
+    pin: str
+    company_id: Optional[int] = None
+
+
+@router.post("/mesero", status_code=201)
+async def crear_mesero(
+    data: CrearMeseroIn,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid = await _resolve_cid(user, data.company_id, db)
+
+    if not data.name.strip():
+        raise HTTPException(status_code=422, detail="El nombre es obligatorio")
+    if len(data.pin) < 4:
+        raise HTTPException(status_code=422, detail="El PIN debe tener al menos 4 dígitos")
+
+    # Verificar que no exista otro mesero con el mismo nombre en la empresa
+    dup = (await db.execute(text("""
+        SELECT id FROM pos_waiters
+        WHERE company_id = :cid AND LOWER(name) = LOWER(:name) AND status = 1
+    """), {"cid": cid, "name": data.name.strip()})).fetchone()
+    if dup:
+        raise HTTPException(status_code=409, detail="Ya existe un mesero con ese nombre")
+
+    # Generar ID correlativo por empresa (la tabla no tiene auto_increment propio)
+    row = (await db.execute(text("""
+        SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM pos_waiters WHERE company_id = :cid
+    """), {"cid": cid})).fetchone()
+    next_id = row.next_id if row else 1
+
+    await db.execute(text("""
+        INSERT INTO pos_waiters
+            (id, name, password, status, synced, company_id, updated_at)
+        VALUES
+            (:id, :name, :password, 1, 0, :cid, NOW())
+    """), {
+        "id":       next_id,
+        "name":     data.name.strip(),
+        "password": data.pin,
+        "cid":      cid,
+    })
+    await db.commit()
+
+    return {"ok": True, "id": next_id, "name": data.name.strip()}
+
+
 # ─── Comandas abiertas hoy ────────────────────────────────────────────────────
 
 @router.get("/abiertas")

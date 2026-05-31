@@ -836,10 +836,11 @@ router.beforeEach(async (to, from, next) => {
     return next()
   }
 
-  // Rutas kiosk: validar waiter_token en lugar del token normal
+  // Rutas kiosk: acepta waiter_token (mesero) O token regular (admin desde dashboard)
   if (to.meta?.kiosk || to.path.startsWith("/pos/comanda/")) {
     const waiterToken = localStorage.getItem("waiter_token")
-    if (!waiterToken) {
+    const userToken   = localStorage.getItem("token")
+    if (!waiterToken && !userToken) {
       const cid = localStorage.getItem("waiter_company_id") || ""
       return next(`/pos/comanda/login${cid ? `?cid=${cid}` : ""}`)
     }

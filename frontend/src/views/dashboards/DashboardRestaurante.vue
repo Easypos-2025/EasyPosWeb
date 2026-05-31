@@ -8,52 +8,35 @@
     <div class="dash-header">
       <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Panel de Operaciones' }}</h6>
       <div class="dash-header-right">
-        <a
-          :href="`/pos/cocina?cid=${selectedCid}`"
-          target="_blank"
-          class="btn-tv"
-          title="Abrir Vista Cocina en nueva pestaña"
-        >
+        <a :href="`/pos/cocina?cid=${selectedCid}`" target="_blank" class="btn-tv" title="Abrir Cocina TV">
           <i class="bi bi-display me-1"></i>
           <span class="btn-tv-label">Ver Cocina TV</span>
         </a>
-        <button class="btn-refresh" @click="cargarTodo" :disabled="cargandoTodo" title="Actualizar todo">
+        <button class="btn-refresh" @click="cargarTodo" :disabled="cargandoTodo" title="Actualizar">
           <i class="bi" :class="cargandoTodo ? 'bi-arrow-repeat spin' : 'bi-arrow-clockwise'"></i>
         </button>
       </div>
     </div>
 
-    <!-- CUERPO PRINCIPAL: tabs + sidebar -->
+    <!-- CUERPO: tabs + sidebar -->
     <div class="dash-body">
 
-      <!-- ── Columna principal: tabs ── -->
+      <!-- ── Columna principal ── -->
       <div class="dash-main">
         <ul class="nav nav-tabs dash-tabs" role="tablist">
           <li class="nav-item">
-            <button
-              class="nav-link"
-              :class="{ active: tabActivo === 'nueva' }"
-              @click="tabActivo = 'nueva'"
-            >
+            <button class="nav-link" :class="{ active: tabActivo === 'nueva' }" @click="tabActivo = 'nueva'">
               <i class="bi bi-plus-circle me-1"></i>Nuevo Pedido
             </button>
           </li>
           <li class="nav-item">
-            <button
-              class="nav-link"
-              :class="{ active: tabActivo === 'abiertas' }"
-              @click="tabActivo = 'abiertas'; cargarAbiertas()"
-            >
+            <button class="nav-link" :class="{ active: tabActivo === 'abiertas' }" @click="tabActivo = 'abiertas'; cargarAbiertas()">
               <i class="bi bi-table me-1"></i>Abiertas
               <span v-if="abiertas.length" class="badge badge-abierta ms-1">{{ abiertas.length }}</span>
             </button>
           </li>
           <li class="nav-item">
-            <button
-              class="nav-link"
-              :class="{ active: tabActivo === 'facturadas' }"
-              @click="tabActivo = 'facturadas'; cargarFacturadas()"
-            >
+            <button class="nav-link" :class="{ active: tabActivo === 'facturadas' }" @click="tabActivo = 'facturadas'; cargarFacturadas()">
               <i class="bi bi-receipt me-1"></i>Facturadas
               <span v-if="facturadas.length" class="badge badge-facturada ms-1">{{ facturadas.length }}</span>
             </button>
@@ -64,68 +47,65 @@
 
           <!-- TAB: NUEVO PEDIDO -->
           <div v-show="tabActivo === 'nueva'" class="tab-pane-inner">
+            <!-- Botón principal para iniciar pedido -->
+            <div class="nuevo-pedido-hero">
+              <button class="btn-iniciar" @click="abrirWizard">
+                <i class="bi bi-plus-circle-fill"></i>
+                <span>Iniciar Nuevo Pedido</span>
+              </button>
+              <button class="btn-accion btn-accion--llevar" @click="abrirWizardTakeout">
+                <i class="bi bi-bag-check"></i>
+                <span>Para Llevar</span>
+              </button>
+            </div>
+
+            <!-- Mini-resumen de mesas abiertas -->
             <div v-if="mesasLoading" class="estado-carga">
               <div class="spinner-border spinner-border-sm text-primary"></div>
               <span>Cargando mesas...</span>
             </div>
-            <div v-else-if="!mesas.length" class="estado-vacio">
-              <i class="bi bi-grid-3x3-gap"></i>
-              <p>No hay mesas configuradas. Sincroniza el software de escritorio primero.</p>
-            </div>
             <template v-else>
-              <!-- Acciones rápidas -->
-              <div class="acciones-rapidas">
-                <button class="btn-accion" @click="abrirModalTakeout">
-                  <i class="bi bi-bag-check"></i>
-                  <span>Para Llevar</span>
-                </button>
-                <button class="btn-accion btn-accion--web">
-                  <i class="bi bi-globe"></i>
-                  <span>Pedido Web</span>
-                </button>
+              <div class="zona-label"><i class="bi bi-geo-alt"></i> Estado de mesas</div>
+              <div v-if="!mesas.length" class="estado-vacio">
+                <i class="bi bi-grid-3x3-gap"></i>
+                <p>No hay mesas configuradas.</p>
               </div>
-
-              <!-- Leyenda -->
-              <div class="mesas-leyenda">
-                <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--libre"></span>Libre</span>
-                <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--ocupada"></span>Ocupada</span>
-                <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--cuenta"></span>Pide cuenta</span>
-              </div>
-
-              <!-- Grid de mesas por zona -->
-              <template v-for="zona in zonas" :key="zona">
-                <div class="zona-label">
-                  <i class="bi bi-geo-alt"></i> {{ zona || 'Sin zona' }}
+              <template v-else>
+                <div class="mesas-leyenda">
+                  <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--libre"></span>Libre</span>
+                  <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--ocupada"></span>Ocupada</span>
+                  <span class="leyenda-item"><span class="leyenda-dot leyenda-dot--cuenta"></span>Pide cuenta</span>
                 </div>
-                <div class="mesas-grid">
-                  <div
-                    v-for="mesa in mesasPorZona(zona)"
-                    :key="mesa.id"
-                    class="mesa-card"
-                    :class="{
-                      'mesa-card--libre':    !mesa.ocupada && !mesa.bill_requested,
-                      'mesa-card--ocupada':   mesa.ocupada && !mesa.bill_requested,
-                      'mesa-card--cuenta':    mesa.bill_requested,
-                    }"
-                    @click="handleMesaClick(mesa)"
-                  >
-                    <div class="mesa-status-bar"></div>
-                    <div class="mesa-icon">
-                      <i class="bi"
-                        :class="mesa.bill_requested ? 'bi-receipt' : mesa.ocupada ? 'bi-person-fill' : 'bi-table'">
-                      </i>
-                    </div>
-                    <div class="mesa-nombre">{{ mesa.name }}</div>
-                    <div class="mesa-info">
-                      <template v-if="mesa.ocupada || mesa.bill_requested">
-                        <span v-if="mesa.daily_seq" class="mesa-seq">#{{ mesa.daily_seq }}</span>
-                        <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
-                        <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
-                      </template>
-                      <span v-else class="mesa-seats">{{ mesa.seats }} sillas</span>
+                <template v-for="zona in zonas" :key="zona">
+                  <div class="zona-label"><i class="bi bi-geo-alt"></i> {{ zona || 'Sin zona' }}</div>
+                  <div class="mesas-grid">
+                    <div
+                      v-for="mesa in mesasPorZona(zona)"
+                      :key="mesa.id"
+                      class="mesa-card"
+                      :class="{
+                        'mesa-card--libre':    !mesa.ocupada && !mesa.bill_requested,
+                        'mesa-card--ocupada':   mesa.ocupada && !mesa.bill_requested,
+                        'mesa-card--cuenta':    mesa.bill_requested,
+                      }"
+                      @click="handleMesaClick(mesa)"
+                    >
+                      <div class="mesa-status-bar"></div>
+                      <div class="mesa-icon">
+                        <i class="bi" :class="mesa.bill_requested ? 'bi-receipt' : mesa.ocupada ? 'bi-person-fill' : 'bi-table'"></i>
+                      </div>
+                      <div class="mesa-nombre">{{ mesa.name }}</div>
+                      <div class="mesa-info">
+                        <template v-if="mesa.ocupada || mesa.bill_requested">
+                          <span v-if="mesa.daily_seq" class="mesa-seq">#{{ mesa.daily_seq }}</span>
+                          <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
+                          <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
+                        </template>
+                        <span v-else class="mesa-seats">{{ mesa.seats }} sillas</span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </template>
               </template>
             </template>
           </div>
@@ -155,9 +135,7 @@
                   <span class="comanda-monto">{{ fmt(cmd.amount) }}</span>
                   <span class="comanda-num"># {{ cmd.order_number }}</span>
                 </div>
-                <div v-if="cmd.notes" class="comanda-notas">
-                  <i class="bi bi-chat-left-text me-1"></i>{{ cmd.notes }}
-                </div>
+                <div v-if="cmd.notes" class="comanda-notas"><i class="bi bi-chat-left-text me-1"></i>{{ cmd.notes }}</div>
               </div>
             </div>
           </div>
@@ -190,12 +168,11 @@
             </div>
           </div>
 
-        </div><!-- /tab-content -->
+        </div>
       </div><!-- /dash-main -->
 
       <!-- ── Sidebar ── -->
       <div class="dash-side">
-
         <!-- Stock crítico -->
         <div class="side-section">
           <div class="side-header">
@@ -224,14 +201,11 @@
             </div>
           </div>
         </div>
-
         <!-- Últimas transacciones -->
         <div class="side-section">
           <div class="side-header">
             <span><i class="bi bi-clock-history me-1"></i>Últimas transacciones</span>
-            <span class="badge bg-secondary-subtle text-secondary small">
-              {{ fechaKpi === hoy ? 'Hoy' : fechaKpi }}
-            </span>
+            <span class="badge bg-secondary-subtle text-secondary small">{{ fechaKpi === hoy ? 'Hoy' : fechaKpi }}</span>
           </div>
           <div v-if="cargandoTx" class="side-loading">
             <div class="spinner-border spinner-border-sm text-primary"></div>
@@ -239,17 +213,11 @@
           <div v-else-if="!transacciones.length" class="side-empty">Sin transacciones</div>
           <div v-else class="tx-wrap">
             <table class="tx-table">
-              <thead>
-                <tr><th>Hora</th><th>Tipo</th><th>N°</th><th class="text-end">Total</th></tr>
-              </thead>
+              <thead><tr><th>Hora</th><th>Tipo</th><th>N°</th><th class="text-end">Total</th></tr></thead>
               <tbody>
                 <tr v-for="tx in transacciones" :key="tx.tipo + tx.numero">
                   <td class="tx-hora">{{ tx.hora?.substring(0,5) }}</td>
-                  <td>
-                    <span class="badge-tx" :class="tx.tipo === 'Factura' ? 'tx-fact' : 'tx-rec'">
-                      {{ tx.tipo }}
-                    </span>
-                  </td>
+                  <td><span class="badge-tx" :class="tx.tipo === 'Factura' ? 'tx-fact' : 'tx-rec'">{{ tx.tipo }}</span></td>
                   <td class="tx-num">{{ tx.numero }}</td>
                   <td class="text-end tx-total">{{ fmt(tx.total) }}</td>
                 </tr>
@@ -257,43 +225,162 @@
             </table>
           </div>
         </div>
+      </div>
 
-      </div><!-- /dash-side -->
     </div><!-- /dash-body -->
 
-    <!-- MODAL ABRIR MESA -->
-    <div v-if="modalMesa.visible" class="modal-overlay" @click.self="cerrarModal">
-      <div class="modal-card">
-        <div class="modal-header-custom">
-          <span><i class="bi bi-table me-2"></i>{{ modalMesa.nombre }}</span>
-          <button class="btn-close-modal" @click="cerrarModal"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <div class="modal-body-custom">
-          <div class="campo-grupo">
-            <label>Mesero</label>
-            <select v-model="modalMesa.waiter_id" class="campo-select">
-              <option value="0">— Sin asignar —</option>
-              <option v-for="m in meseros" :key="m.id" :value="m.id">{{ m.name }}</option>
-            </select>
-          </div>
-          <div class="campo-grupo">
-            <label>Comensales</label>
-            <input type="number" v-model.number="modalMesa.guests_count" min="1" class="campo-input" placeholder="Cantidad de personas" />
-          </div>
-          <div class="campo-grupo">
-            <label>Notas <small class="text-muted">(opcional)</small></label>
-            <input type="text" v-model="modalMesa.notes" class="campo-input" placeholder="Alergias, preferencias..." maxlength="250" />
-          </div>
-        </div>
-        <div class="modal-footer-custom">
-          <button class="btn-cancelar" @click="cerrarModal">Cancelar</button>
-          <button class="btn-abrir" :disabled="modalMesa.guardando" @click="confirmarAbrirMesa">
-            <span v-if="modalMesa.guardando">
-              <span class="spinner-border spinner-border-sm me-1"></span>Abriendo...
+    <!-- ══════════════════════════════════════════════════════════
+         WIZARD: NUEVO PEDIDO (mesero → zona/mesa en acordeón)
+    ══════════════════════════════════════════════════════════ -->
+    <div v-if="wizard.visible" class="wizard-overlay" @click.self="cerrarWizard">
+      <div class="wizard-modal">
+
+        <!-- Header -->
+        <div class="wizard-header">
+          <div class="wizard-steps">
+            <span class="wstep" :class="{ active: wizard.step === 1, done: wizard.step > 1 }">
+              <i class="bi bi-person-fill"></i> Mesero
             </span>
-            <span v-else><i class="bi bi-check-lg me-1"></i>Abrir Mesa</span>
-          </button>
+            <span class="wstep-sep"></span>
+            <span class="wstep" :class="{ active: wizard.step === 2, done: wizard.step > 2 }">
+              <i class="bi bi-geo-alt-fill"></i> Mesa
+            </span>
+          </div>
+          <button class="wizard-close" @click="cerrarWizard"><i class="bi bi-x-lg"></i></button>
         </div>
+
+        <!-- PASO 1: MESERO -->
+        <div v-if="wizard.step === 1" class="wizard-body">
+          <h6 class="wizard-section-title">¿Quién atiende la mesa?</h6>
+
+          <div class="meseros-grid">
+            <!-- Opción sin asignar -->
+            <button
+              class="mesero-card"
+              :class="{ 'mesero-card--selected': wizard.waiterId === 0 }"
+              @click="wizard.waiterId = 0"
+            >
+              <div class="mesero-avatar mesero-avatar--none"><i class="bi bi-person-dash"></i></div>
+              <span class="mesero-name">Sin asignar</span>
+            </button>
+
+            <!-- Meseros -->
+            <button
+              v-for="m in meseros"
+              :key="m.id"
+              class="mesero-card"
+              :class="{ 'mesero-card--selected': wizard.waiterId === m.id }"
+              @click="wizard.waiterId = m.id"
+            >
+              <div class="mesero-avatar">{{ m.name.charAt(0).toUpperCase() }}</div>
+              <span class="mesero-name">{{ m.name }}</span>
+            </button>
+
+            <!-- Agregar mesero -->
+            <button class="mesero-card mesero-card--add" @click="wizard.showAddWaiter = !wizard.showAddWaiter">
+              <div class="mesero-avatar mesero-avatar--add"><i class="bi bi-plus-lg"></i></div>
+              <span class="mesero-name">Agregar</span>
+            </button>
+          </div>
+
+          <!-- Mini formulario agregar mesero -->
+          <div v-if="wizard.showAddWaiter" class="add-waiter-form">
+            <div class="aw-row">
+              <input v-model="newWaiter.name" class="campo-input" placeholder="Nombre del mesero" maxlength="80" />
+              <input v-model="newWaiter.pin" class="campo-input" placeholder="PIN (4 dígitos)" maxlength="4" type="password" />
+              <button class="btn-aw-save" @click="guardarNuevoMesero" :disabled="newWaiter.saving">
+                <span v-if="newWaiter.saving"><div class="spinner-border spinner-border-sm"></div></span>
+                <span v-else><i class="bi bi-check-lg"></i></span>
+              </button>
+            </div>
+            <p v-if="newWaiter.error" class="text-danger small mt-1">{{ newWaiter.error }}</p>
+          </div>
+
+          <div class="wizard-footer">
+            <button class="btn-cancelar" @click="cerrarWizard">Cancelar</button>
+            <button class="btn-wizard-next" @click="wizard.step = 2">
+              Siguiente <i class="bi bi-arrow-right ms-1"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- PASO 2: ZONA + MESA (acordeón) -->
+        <div v-if="wizard.step === 2" class="wizard-body">
+          <h6 class="wizard-section-title">Selecciona la mesa</h6>
+
+          <div v-if="mesasLoading" class="estado-carga">
+            <div class="spinner-border spinner-border-sm text-primary"></div>
+            <span>Cargando mesas...</span>
+          </div>
+          <div v-else-if="!mesas.length" class="estado-vacio">
+            <i class="bi bi-grid-3x3-gap"></i>
+            <p>No hay mesas configuradas.</p>
+          </div>
+          <div v-else class="zonas-acordeon">
+            <div
+              v-for="zona in zonas"
+              :key="zona"
+              class="zona-acordeon"
+            >
+              <!-- Header zona -->
+              <button
+                class="zona-acordeon__header"
+                :class="{ 'zona-acordeon__header--open': wizard.zonaAbierta === zona }"
+                @click="wizard.zonaAbierta = wizard.zonaAbierta === zona ? null : zona"
+              >
+                <span>
+                  <i class="bi bi-geo-alt-fill me-2"></i>
+                  {{ zona || 'Sin zona' }}
+                  <span class="zona-count">{{ mesasPorZona(zona).length }}</span>
+                </span>
+                <i class="bi" :class="wizard.zonaAbierta === zona ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+              </button>
+
+              <!-- Mesas de la zona -->
+              <div v-show="wizard.zonaAbierta === zona" class="zona-acordeon__body">
+                <div class="mesas-grid-wizard">
+                  <button
+                    v-for="mesa in mesasPorZona(zona)"
+                    :key="mesa.id"
+                    class="mesa-wizard-card"
+                    :class="{
+                      'mesa-wizard-card--libre':    !mesa.ocupada && !mesa.bill_requested,
+                      'mesa-wizard-card--ocupada':   mesa.ocupada && !mesa.bill_requested,
+                      'mesa-wizard-card--cuenta':    mesa.bill_requested,
+                    }"
+                    :disabled="mesa.ocupada || mesa.bill_requested"
+                    @click="seleccionarMesaWizard(mesa)"
+                  >
+                    <div class="mwc-status-bar"></div>
+                    <i class="bi mwc-icon"
+                      :class="mesa.bill_requested ? 'bi-receipt' : mesa.ocupada ? 'bi-person-fill' : 'bi-table'">
+                    </i>
+                    <span class="mwc-name">{{ mesa.name }}</span>
+                    <span class="mwc-info">
+                      <span v-if="mesa.ocupada || mesa.bill_requested" class="mwc-badge">
+                        {{ mesa.bill_requested ? 'Cuenta' : 'Ocupada' }}
+                      </span>
+                      <span v-else class="mwc-seats">{{ mesa.seats }} sillas</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="wizard-footer">
+            <button class="btn-cancelar" @click="wizard.step = 1">
+              <i class="bi bi-arrow-left me-1"></i>Volver
+            </button>
+          </div>
+        </div>
+
+        <!-- Loading state al abrir mesa -->
+        <div v-if="wizard.abriendo" class="wizard-loading-overlay">
+          <div class="spinner-border text-primary"></div>
+          <span>Abriendo mesa...</span>
+        </div>
+
       </div>
     </div>
 
@@ -302,11 +389,14 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
+import apiComanda from '@/services/apiComanda.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
 
 const companyStore = useCompanyStore()
+const router = useRouter()
 const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
 
 const fechaKpi       = ref(hoy)
@@ -320,18 +410,25 @@ const facturadasLoading = ref(false)
 const cargandoStock     = ref(false)
 const cargandoTx        = ref(false)
 
-const kpiData      = ref(null)
-const mesas        = ref([])
-const meseros      = ref([])
-const abiertas     = ref([])
-const facturadas   = ref([])
-const stockAlertas = ref([])
+const kpiData       = ref(null)
+const mesas         = ref([])
+const meseros       = ref([])
+const abiertas      = ref([])
+const facturadas    = ref([])
+const stockAlertas  = ref([])
 const transacciones = ref([])
 
-const modalMesa = ref({
-  visible: false, id: 0, nombre: '',
-  waiter_id: 0, guests_count: 1, notes: '', guardando: false,
+// ── Wizard nuevo pedido ───────────────────────────────────────────────────────
+const wizard = ref({
+  visible: false,
+  step: 1,
+  waiterId: 0,
+  zonaAbierta: null,
+  abriendo: false,
+  showAddWaiter: false,
+  takeout: false,
 })
+const newWaiter = ref({ name: '', pin: '', saving: false, error: '' })
 
 // ── Formato ──────────────────────────────────────────────────────────────────
 const fmtCOP = new Intl.NumberFormat('es-CO', {
@@ -343,7 +440,7 @@ function formatNum(val) {
   return Number(val || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })
 }
 
-// ── KPIs computados ───────────────────────────────────────────────────────────
+// ── KPIs ─────────────────────────────────────────────────────────────────────
 const kpis = computed(() => {
   const d = kpiData.value
   if (!d) return [
@@ -368,7 +465,7 @@ const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefine
 const zonas        = computed(() => [...new Set(mesas.value.map(m => m.zone_id || ''))])
 const mesasPorZona = (zona) => mesas.value.filter(m => (m.zone_id || '') === zona)
 
-// ── Refresh silencioso ────────────────────────────────────────────────────────
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
 async function _silentKpis() {
   try {
     const { data } = await api.get('/api/pos-dashboard/kpis', {
@@ -396,7 +493,6 @@ function _startRefresh() { _stopRefresh(); _timer = setInterval(_tick, 15000) }
 function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } }
 function _onVisible()    { if (!document.hidden) _tick() }
 
-// ── Ciclo de vida ─────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([
     cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTransacciones()
@@ -504,44 +600,85 @@ async function cargarTransacciones() {
   finally { cargandoTx.value = false }
 }
 
-// ── Mesa / Modal ──────────────────────────────────────────────────────────────
+// ── Mesa click desde vista de estado ─────────────────────────────────────────
 function handleMesaClick(mesa) {
-  if (!mesa.ocupada && !mesa.bill_requested) abrirModalMesa(mesa)
-}
-
-function abrirModalMesa(mesa) {
-  modalMesa.value = {
-    visible: true, id: mesa.id, nombre: mesa.name,
-    waiter_id: 0, guests_count: 1, notes: '', guardando: false,
+  if (!mesa.ocupada && !mesa.bill_requested) {
+    // Mesa libre: abrir wizard de nuevo pedido con esta mesa preseleccionada
+    abrirWizard()
+    // Expandir la zona de la mesa en paso 2
+    wizard.value.zonaAbierta = mesa.zone_id || ''
   }
 }
-function abrirModalTakeout() {
-  modalMesa.value = {
-    visible: true, id: 0, nombre: 'Para Llevar',
-    waiter_id: 0, guests_count: 1, notes: '', guardando: false,
-  }
-}
-function cerrarModal() { modalMesa.value.visible = false }
 
-async function confirmarAbrirMesa() {
-  modalMesa.value.guardando = true
+// ── Wizard ────────────────────────────────────────────────────────────────────
+function abrirWizard() {
+  wizard.value = {
+    visible: true, step: 1,
+    waiterId: 0, zonaAbierta: zonas.value[0] ?? null,
+    abriendo: false, showAddWaiter: false, takeout: false,
+  }
+  newWaiter.value = { name: '', pin: '', saving: false, error: '' }
+}
+
+function abrirWizardTakeout() {
+  // Para Llevar: va directo al pedido con table_id=0
+  irAComanda(0, 'Para Llevar', 0)
+}
+
+function cerrarWizard() { wizard.value.visible = false }
+
+async function seleccionarMesaWizard(mesa) {
+  if (mesa.ocupada || mesa.bill_requested) return
+  await irAComanda(mesa.id, mesa.name, wizard.value.waiterId)
+}
+
+async function irAComanda(tableId, tableName, waiterId) {
+  wizard.value.abriendo = true
   try {
-    await api.post('/api/pos-dashboard/abrir-mesa', {
-      table_id:     modalMesa.value.id,
-      table_name:   modalMesa.value.nombre,
-      waiter_id:    modalMesa.value.waiter_id,
-      guests_count: modalMesa.value.guests_count,
-      notes:        modalMesa.value.notes,
-      delivery:     0,
-    }, { params: { company_id: selectedCid.value } })
-    cerrarModal()
-    await Promise.all([cargarMesas(), cargarKpis()])
-    tabActivo.value = 'abiertas'
-    await cargarAbiertas()
+    // Guardar company_id para que apiComanda lo use como fallback
+    localStorage.setItem('waiter_company_id', String(selectedCid.value))
+
+    // Abrir/recuperar la orden en la BD
+    const { data } = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
+      table_id:     tableId,
+      guests_count: 1,
+      waiter_id:    waiterId || 0,
+    })
+
+    cerrarWizard()
+    // Navegar a la pantalla de toma de pedido
+    router.push(`/pos/comanda/pedido/${tableId}`)
   } catch (e) {
     alert(e?.response?.data?.detail || 'Error al abrir la mesa')
   } finally {
-    modalMesa.value.guardando = false
+    wizard.value.abriendo = false
+  }
+}
+
+async function guardarNuevoMesero() {
+  if (!newWaiter.value.name.trim()) {
+    newWaiter.value.error = 'El nombre es obligatorio'
+    return
+  }
+  if (newWaiter.value.pin.length < 4) {
+    newWaiter.value.error = 'El PIN debe tener 4 dígitos'
+    return
+  }
+  newWaiter.value.saving = true
+  newWaiter.value.error = ''
+  try {
+    await api.post('/api/pos-dashboard/mesero', {
+      name:       newWaiter.value.name.trim(),
+      pin:        newWaiter.value.pin,
+      company_id: selectedCid.value,
+    })
+    await cargarMeseros()
+    newWaiter.value = { name: '', pin: '', saving: false, error: '' }
+    wizard.value.showAddWaiter = false
+  } catch (e) {
+    newWaiter.value.error = e?.response?.data?.detail || 'Error al guardar'
+  } finally {
+    newWaiter.value.saving = false
   }
 }
 </script>
@@ -555,12 +692,7 @@ async function confirmarAbrirMesa() {
   margin-bottom: 14px;
   gap: 10px;
 }
-.dash-title {
-  font-weight: 700;
-  font-size: 15px;
-  color: #1e3a5f;
-  margin: 0;
-}
+.dash-title { font-weight: 700; font-size: 15px; color: #1e3a5f; margin: 0; }
 .dash-header-right { display: flex; align-items: center; gap: 8px; }
 
 .btn-tv {
@@ -574,7 +706,7 @@ async function confirmarAbrirMesa() {
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
-  transition: background .15s, color .15s;
+  transition: background .15s;
   white-space: nowrap;
 }
 .btn-tv:hover { background: #1e293b; color: #fff; }
@@ -591,16 +723,15 @@ async function confirmarAbrirMesa() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background .15s, color .15s;
+  transition: background .15s;
   flex-shrink: 0;
 }
 .btn-refresh:hover:not(:disabled) { background: #f1f5f9; color: #1d4ed8; }
 .btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
-
 .spin { animation: spin .8s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Cuerpo ───────────────────────────────────────────────────────────────── */
+/* ── Layout ───────────────────────────────────────────────────────────────── */
 .dash-body {
   display: grid;
   grid-template-columns: 1fr 290px;
@@ -622,17 +753,53 @@ async function confirmarAbrirMesa() {
   transition: color .15s, border-color .15s;
 }
 .dash-tabs .nav-link:hover { color: #1d4ed8; }
-.dash-tabs .nav-link.active {
-  color: #1d4ed8;
-  border-bottom-color: #1d4ed8;
-  background: transparent;
-  font-weight: 700;
-}
+.dash-tabs .nav-link.active { color: #1d4ed8; border-bottom-color: #1d4ed8; background: transparent; font-weight: 700; }
 .badge-abierta   { background: #f59e0b; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 10px; }
 .badge-facturada { background: #10b981; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 10px; }
 
 .dash-tab-content { padding-top: 16px; }
 .tab-pane-inner   { min-height: 200px; }
+
+/* ── Nuevo pedido hero ────────────────────────────────────────────────────── */
+.nuevo-pedido-hero {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.btn-iniciar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1e3a5f, #1d4ed8);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s, transform .15s;
+  box-shadow: 0 4px 12px rgba(29,78,216,.3);
+}
+.btn-iniciar:hover { opacity: .92; transform: translateY(-1px); }
+.btn-iniciar i { font-size: 1.3rem; }
+
+.btn-accion--llevar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  border: 2px solid #64748b;
+  border-radius: 10px;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-accion--llevar:hover { background: #64748b; color: #fff; }
 
 /* ── Estados ──────────────────────────────────────────────────────────────── */
 .estado-carga, .estado-vacio {
@@ -641,69 +808,41 @@ async function confirmarAbrirMesa() {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 180px;
+  min-height: 120px;
   color: #94a3b8;
   font-size: 14px;
   text-align: center;
 }
 .estado-vacio i { font-size: 40px; }
 
-/* ── Acciones rápidas ─────────────────────────────────────────────────────── */
-.acciones-rapidas { display: flex; gap: 10px; margin-bottom: 12px; }
-.btn-accion {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border: 2px solid #1d4ed8;
-  border-radius: 8px;
-  background: #fff;
-  color: #1d4ed8;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-.btn-accion:hover      { background: #1d4ed8; color: #fff; }
-.btn-accion--web       { border-color: #7c3aed; color: #7c3aed; }
-.btn-accion--web:hover { background: #7c3aed; color: #fff; }
-
 /* ── Leyenda ──────────────────────────────────────────────────────────────── */
 .mesas-leyenda {
   display: flex;
   gap: 16px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   font-size: 12px;
   color: #64748b;
 }
 .leyenda-item { display: flex; align-items: center; gap: 5px; }
-.leyenda-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
+.leyenda-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .leyenda-dot--libre   { background: #10b981; }
 .leyenda-dot--ocupada { background: #ef4444; }
 .leyenda-dot--cuenta  { background: #f59e0b; }
 
-/* ── Zonas ────────────────────────────────────────────────────────────────── */
+/* ── Zonas y mesas ────────────────────────────────────────────────────────── */
 .zona-label {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .5px;
   color: #94a3b8;
-  margin: 16px 0 8px;
+  margin: 14px 0 8px;
 }
-
-/* ── Grid de mesas ────────────────────────────────────────────────────────── */
 .mesas-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 10px;
 }
-
 .mesa-card {
   border-radius: 12px;
   border: 2px solid #e2e8f0;
@@ -713,49 +852,26 @@ async function confirmarAbrirMesa() {
   transition: transform .15s, box-shadow .15s, border-color .15s;
   background: #fff;
 }
-
-/* Color bar at top of card */
-.mesa-status-bar {
-  height: 4px;
-  background: #e2e8f0;
-}
+.mesa-status-bar { height: 4px; background: #e2e8f0; }
 .mesa-card--libre   .mesa-status-bar { background: #10b981; }
 .mesa-card--ocupada .mesa-status-bar { background: #ef4444; }
 .mesa-card--cuenta  .mesa-status-bar { background: #f59e0b; }
-
-.mesa-card--libre:hover {
-  border-color: #1d4ed8;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(29,78,216,.15);
-}
+.mesa-card--libre:hover { border-color: #1d4ed8; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(29,78,216,.15); }
 .mesa-card--libre:hover .mesa-status-bar { background: #1d4ed8; }
-
 .mesa-card--ocupada { border-color: #fca5a5; background: #fff5f5; cursor: default; }
 .mesa-card--cuenta  { border-color: #fcd34d; background: #fffbeb; cursor: default; }
-
-.mesa-icon {
-  font-size: 22px;
-  padding-top: 12px;
-  margin-bottom: 4px;
-}
+.mesa-icon { font-size: 22px; padding-top: 12px; margin-bottom: 4px; }
 .mesa-card--libre   .mesa-icon { color: #10b981; }
 .mesa-card--ocupada .mesa-icon { color: #ef4444; }
 .mesa-card--cuenta  .mesa-icon { color: #d97706; }
-
 .mesa-nombre { font-weight: 700; font-size: 13px; color: #1e3a5f; margin-bottom: 6px; padding: 0 8px; }
-.mesa-info   {
-  font-size: 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 8px 10px;
-}
+.mesa-info   { font-size: 11px; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; }
 .mesa-seq    { color: #1d4ed8; font-weight: 700; font-size: 12px; }
 .mesa-mesero { color: #64748b; }
 .mesa-monto  { color: #1e3a5f; font-weight: 700; }
 .mesa-seats  { color: #10b981; font-weight: 600; }
 
-/* ── Grid de comandas ─────────────────────────────────────────────────────── */
+/* ── Comandas ─────────────────────────────────────────────────────────────── */
 .comandas-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -780,16 +896,12 @@ async function confirmarAbrirMesa() {
 .comanda-monto { font-size: 18px; font-weight: 800; color: #1e3a5f; }
 .comanda-num   { font-size: 11px; color: #94a3b8; }
 .comanda-notas {
-  font-size: 11px;
-  color: #64748b;
-  background: #f8fafc;
-  border-radius: 6px;
-  padding: 4px 8px;
+  font-size: 11px; color: #64748b;
+  background: #f8fafc; border-radius: 6px; padding: 4px 8px;
 }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 .dash-side { display: flex; flex-direction: column; gap: 14px; }
-
 .side-section {
   background: #fff;
   border-radius: 10px;
@@ -807,28 +919,10 @@ async function confirmarAbrirMesa() {
   font-size: 13px;
   background: #fafafa;
 }
-.side-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-.side-ok {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 14px;
-  font-size: 13px;
-  color: #374151;
-}
-.side-empty {
-  padding: 14px;
-  font-size: 13px;
-  color: #94a3b8;
-  text-align: center;
-}
+.side-loading { display: flex; align-items: center; justify-content: center; padding: 20px; }
+.side-ok { display: flex; align-items: center; gap: 6px; padding: 14px; font-size: 13px; color: #374151; }
+.side-empty { padding: 14px; font-size: 13px; color: #94a3b8; text-align: center; }
 
-/* Stock */
 .stock-list { padding: 4px 0; }
 .stock-item {
   display: flex;
@@ -842,17 +936,11 @@ async function confirmarAbrirMesa() {
 .stock-item-unit { font-size: 11px; color: #94a3b8; }
 .stock-item-nums { font-size: 13px; }
 
-/* Transacciones */
 .tx-wrap { overflow-x: auto; }
 .tx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .tx-table th {
-  padding: 6px 10px;
-  color: #64748b;
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafafa;
+  padding: 6px 10px; color: #64748b; font-weight: 600; font-size: 11px;
+  text-transform: uppercase; border-bottom: 1px solid #f1f5f9; background: #fafafa;
 }
 .tx-table td { padding: 7px 10px; border-bottom: 1px solid #f9fafb; }
 .tx-table tr:last-child td { border-bottom: none; }
@@ -863,58 +951,240 @@ async function confirmarAbrirMesa() {
 .tx-fact  { background: #dbeafe; color: #1d4ed8; }
 .tx-rec   { background: #ede9fe; color: #6d28d9; }
 
-/* ── Modal ────────────────────────────────────────────────────────────────── */
-.modal-overlay {
+/* ══════════════════════════════════════════════════════════
+   WIZARD MODAL
+══════════════════════════════════════════════════════════ */
+.wizard-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.45);
+  background: rgba(0,0,0,.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1050;
+  padding: 16px;
 }
-.modal-card {
+.wizard-modal {
   background: #fff;
   border-radius: 16px;
   width: 100%;
-  max-width: 420px;
+  max-width: 560px;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0,0,0,.25);
   overflow: hidden;
-  margin: 16px;
+  position: relative;
 }
-.modal-header-custom {
+
+/* Header wizard */
+.wizard-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  justify-content: space-between;
+  padding: 14px 20px;
   background: linear-gradient(90deg, #1e3a5f, #1d4ed8);
   color: #fff;
-  font-weight: 700;
-  font-size: 15px;
+  flex-shrink: 0;
 }
-.btn-close-modal { background: none; border: none; color: #fff; cursor: pointer; font-size: 16px; opacity: .8; }
-.btn-close-modal:hover { opacity: 1; }
-.modal-body-custom  { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-.campo-grupo        { display: flex; flex-direction: column; gap: 4px; }
-.campo-grupo label  { font-size: 12px; font-weight: 600; color: #475569; }
-.campo-select,
+.wizard-steps { display: flex; align-items: center; gap: 10px; }
+.wstep {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: .5;
+  transition: opacity .2s;
+}
+.wstep.active { opacity: 1; }
+.wstep.done   { opacity: .7; }
+.wstep-sep {
+  width: 30px;
+  height: 2px;
+  background: rgba(255,255,255,.3);
+  border-radius: 1px;
+}
+.wizard-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,.7);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.wizard-close:hover { color: #fff; }
+
+/* Body wizard */
+.wizard-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.wizard-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e3a5f;
+  margin: 0;
+}
+
+/* Meseros */
+.meseros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+.mesero-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: all .15s;
+}
+.mesero-card:hover { border-color: #1d4ed8; }
+.mesero-card--selected { border-color: #1d4ed8; background: #eff6ff; }
+.mesero-card--add { border-style: dashed; color: #64748b; }
+.mesero-card--add:hover { border-color: #10b981; color: #10b981; }
+
+.mesero-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e3a5f, #1d4ed8);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mesero-avatar--none { background: #e2e8f0; color: #94a3b8; }
+.mesero-avatar--add  { background: #f0fdf4; color: #16a34a; font-size: 1.1rem; }
+.mesero-card--selected .mesero-avatar { box-shadow: 0 0 0 3px #2563eb; }
+
+.mesero-name { font-size: 11px; font-weight: 600; color: #334155; text-align: center; line-height: 1.3; }
+
+/* Agregar mesero form */
+.add-waiter-form {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+.aw-row { display: flex; gap: 8px; align-items: center; }
 .campo-input {
+  flex: 1;
   border: 1.5px solid #cbd5e1;
   border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 14px;
+  padding: 8px 10px;
+  font-size: 13px;
   color: #1e3a5f;
   outline: none;
-  transition: border-color .15s;
-  width: 100%;
+  min-width: 0;
 }
-.campo-select:focus, .campo-input:focus { border-color: #1d4ed8; }
-.modal-footer-custom {
+.campo-input:focus { border-color: #1d4ed8; }
+.btn-aw-save {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 8px;
+  background: #10b981;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.btn-aw-save:disabled { opacity: .6; }
+
+/* Acordeón zonas */
+.zonas-acordeon { display: flex; flex-direction: column; gap: 8px; }
+.zona-acordeon { border: 1.5px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+.zona-acordeon__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: none;
+  font-weight: 600;
+  font-size: 13px;
+  color: #1e3a5f;
+  cursor: pointer;
+  text-align: left;
+  transition: background .15s;
+}
+.zona-acordeon__header:hover { background: #f1f5f9; }
+.zona-acordeon__header--open { background: #eff6ff; color: #1d4ed8; }
+.zona-count {
+  display: inline-block;
+  background: #e2e8f0;
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+  color: #64748b;
+}
+
+.zona-acordeon__body { padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; }
+.mesas-grid-wizard {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+.mesa-wizard-card {
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+  transition: all .15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.mwc-status-bar { width: 100%; height: 4px; background: #e2e8f0; }
+.mesa-wizard-card--libre .mwc-status-bar   { background: #10b981; }
+.mesa-wizard-card--ocupada .mwc-status-bar { background: #ef4444; }
+.mesa-wizard-card--cuenta .mwc-status-bar  { background: #f59e0b; }
+.mesa-wizard-card--libre:hover { border-color: #1d4ed8; transform: translateY(-1px); box-shadow: 0 3px 10px rgba(29,78,216,.15); }
+.mesa-wizard-card--libre:hover .mwc-status-bar { background: #1d4ed8; }
+.mesa-wizard-card--ocupada,
+.mesa-wizard-card--cuenta { border-color: #fca5a5; opacity: .65; cursor: not-allowed; }
+.mesa-wizard-card--cuenta { border-color: #fcd34d; }
+
+.mwc-icon { font-size: 20px; margin: 10px 0 4px; }
+.mesa-wizard-card--libre .mwc-icon   { color: #10b981; }
+.mesa-wizard-card--ocupada .mwc-icon { color: #ef4444; }
+.mesa-wizard-card--cuenta .mwc-icon  { color: #d97706; }
+.mwc-name  { font-size: 12px; font-weight: 700; color: #1e3a5f; padding: 0 6px; }
+.mwc-info  { font-size: 10px; padding: 2px 6px 8px; }
+.mwc-badge { background: #fee2e2; color: #b91c1c; border-radius: 6px; padding: 1px 5px; font-weight: 600; }
+.mesa-wizard-card--cuenta .mwc-badge { background: #fef3c7; color: #92400e; }
+.mwc-seats { color: #10b981; font-weight: 600; }
+
+/* Footer wizard */
+.wizard-footer {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  padding: 14px 20px;
+  padding-top: 8px;
   border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
 }
 .btn-cancelar {
   background: #f1f5f9;
@@ -927,7 +1197,7 @@ async function confirmarAbrirMesa() {
   font-weight: 600;
 }
 .btn-cancelar:hover { background: #e2e8f0; }
-.btn-abrir {
+.btn-wizard-next {
   background: linear-gradient(90deg, #1e3a5f, #1d4ed8);
   border: none;
   border-radius: 8px;
@@ -938,30 +1208,45 @@ async function confirmarAbrirMesa() {
   cursor: pointer;
   transition: opacity .15s;
 }
-.btn-abrir:disabled { opacity: .6; cursor: not-allowed; }
+.btn-wizard-next:hover { opacity: .9; }
+
+/* Loading overlay */
+.wizard-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  color: #1e3a5f;
+  font-weight: 600;
+  border-radius: 16px;
+}
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .dash-body { grid-template-columns: 1fr; }
-  .dash-side {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-  }
+  .dash-side { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 }
 @media (max-width: 768px) {
-  .dash-header   { flex-direction: row; flex-wrap: wrap; }
-  .btn-tv-label  { display: none; }
-  .btn-tv        { padding: 6px 10px; }
-  .mesas-grid    { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .dash-header { flex-direction: row; flex-wrap: wrap; }
+  .btn-tv-label { display: none; }
+  .btn-tv { padding: 6px 10px; }
+  .mesas-grid    { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
   .comandas-grid { grid-template-columns: 1fr; }
   .dash-tabs .nav-link { padding: 8px 10px; font-size: 12px; }
   .dash-side { grid-template-columns: 1fr; }
-  .acciones-rapidas { flex-wrap: wrap; }
+  .nuevo-pedido-hero { flex-wrap: wrap; }
+  .meseros-grid { grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); }
 }
 @media (max-width: 576px) {
   .mesas-grid  { grid-template-columns: repeat(3, 1fr); }
   .mesas-leyenda { font-size: 11px; gap: 10px; }
   .dash-side { display: flex; flex-direction: column; }
+  .wizard-overlay { padding: 0; align-items: flex-end; }
+  .wizard-modal { border-radius: 20px 20px 0 0; max-height: 92dvh; }
 }
 </style>

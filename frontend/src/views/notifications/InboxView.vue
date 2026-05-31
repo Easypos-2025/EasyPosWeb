@@ -50,6 +50,9 @@
             <div class="ii-main">
               <div class="ii-top">
                 <span class="ii-from" :class="{ 'access-from': isAccessNotif(n) }">{{ n.sender_name }}</span>
+                <span v-if="n.company_name" class="ii-company">
+                  <i class="bi bi-building"></i> {{ n.company_name }}
+                </span>
                 <span class="ii-time">{{ fmtAgo(n.created_at) }}</span>
               </div>
               <div class="ii-title">
@@ -263,8 +266,16 @@ onMounted(() => { load(); loadRecipients() })
 .ii-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; }
 .ii-avatar { font-size: 26px; color: #93c5fd; opacity: .7; flex-shrink: 0; margin-top: 2px; }
 .ii-main { flex: 1; min-width: 0; }
-.ii-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; }
+.ii-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; flex-wrap: wrap; }
+.ii-top .ii-time { margin-left: auto; }
 .ii-from { font-size: 12px; font-weight: 700; color: #93c5fd; }
+.ii-company {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; padding: 1px 7px;
+  background: rgba(168,85,247,0.15); color: #c084fc;
+  border: 1px solid rgba(168,85,247,0.25); border-radius: 10px;
+  flex-shrink: 0; white-space: nowrap;
+}
 .ii-time { font-size: 10px; color: rgba(255,255,255,.35); flex-shrink: 0; }
 .ii-title { font-size: 13px; font-weight: 600; color: var(--text-primary, #e2e8f0); margin-bottom: 2px; }
 .ii-preview {

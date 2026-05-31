@@ -36,13 +36,26 @@ def _order_number(cid: int, table_id: int) -> str:
     return f"WEB-{cid}-{table_id}-{ts}"
 
 
-async def _auth_waiter(authorization: str) -> dict:
+async def _auth_comanda(
+    authorization: str = Header(None),
+    x_company_id: Optional[int] = Header(None, alias="X-Company-Id"),
+) -> dict:
+    """Acepta tokens de mesero Y tokens de usuario regular (admin desde dashboard)."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Token requerido")
     token = authorization.replace("Bearer ", "")
     payload = decode_access_token(token)
-    if not payload or payload.get("type") != "waiter":
-        raise HTTPException(status_code=401, detail="Token de mesero inválido")
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+    payload = dict(payload)
+    # Para usuarios regulares: company_id viene del header X-Company-Id
+    if not payload.get("company_id") and x_company_id:
+        payload["company_id"] = x_company_id
+    if not payload.get("company_id"):
+        raise HTTPException(status_code=400, detail="company_id requerido")
+    # waiter_id = 0 para usuarios regulares (admin)
+    if "waiter_id" not in payload:
+        payload["waiter_id"] = 0
     return payload
 
 
@@ -57,6 +70,7 @@ class WaiterLoginIn(BaseModel):
 class AbrirMesaIn(BaseModel):
     table_id: int
     guests_count: Optional[int] = 1
+    waiter_id: Optional[int] = None  # Admin puede pasarlo explícitamente
 
 
 class AssemblySelection(BaseModel):
@@ -149,8 +163,7 @@ async def login_mesero(data: WaiterLoginIn, db: AsyncSession = Depends(get_db)):
 # ── 2. MESAS POR ZONA ─────────────────────────────────────────────────────────
 
 @router.get("/mesas")
-async def get_mesas(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    payload = await _auth_waiter(authorization)
+async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
     cid = payload["company_id"]
     today = _today()
 
@@ -228,12 +241,12 @@ async def get_mesas(authorization: str = Header(None), db: AsyncSession = Depend
 @router.post("/mesa/abrir")
 async def abrir_mesa(
     data: AbrirMesaIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
-    waiter_id = payload["waiter_id"]
+    # Admin puede pasar waiter_id en el body; mesero lo trae en el JWT
+    waiter_id = data.waiter_id if data.waiter_id is not None else payload.get("waiter_id", 0)
     today = _today()
 
     mesa = (await db.execute(text(
@@ -277,10 +290,9 @@ async def abrir_mesa(
 @router.get("/mesa/{table_id}/orden")
 async def get_orden_mesa(
     table_id: int,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
     today = _today()
 
@@ -364,8 +376,7 @@ async def get_orden_mesa(
 # ── 5. MENÚ (platos con config de armado) ────────────────────────────────────
 
 @router.get("/menu")
-async def get_menu(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    payload = await _auth_waiter(authorization)
+async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
     cid = payload["company_id"]
 
     dishes = (await db.execute(text("""
@@ -428,10 +439,9 @@ async def get_menu(authorization: str = Header(None), db: AsyncSession = Depends
 @router.get("/menu-diario/{dish_id}")
 async def get_menu_diario(
     dish_id: int,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
     today = _today()
 
@@ -517,8 +527,7 @@ async def get_menu_diario(
 # ── 7. NOVEDADES PRECARGADAS ──────────────────────────────────────────────────
 
 @router.get("/novedades")
-async def get_novedades(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    payload = await _auth_waiter(authorization)
+async def get_novedades(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
     cid = payload["company_id"]
 
     notes = (await db.execute(text(
@@ -533,10 +542,9 @@ async def get_novedades(authorization: str = Header(None), db: AsyncSession = De
 @router.post("/orden/item")
 async def agregar_item(
     data: AgregarItemIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
 
     order = (await db.execute(text(
@@ -634,10 +642,9 @@ async def agregar_item(
 @router.put("/orden/item")
 async def actualizar_item(
     data: ActualizarItemIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
 
     current = (await db.execute(text(
@@ -682,10 +689,9 @@ async def actualizar_item(
 @router.delete("/orden/item")
 async def eliminar_item(
     data: EliminarItemIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
 
     await db.execute(text("""
@@ -711,10 +717,9 @@ async def eliminar_item(
 @router.post("/orden/cocina")
 async def enviar_cocina(
     data: EnviarCocinaIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
     now_str = _now_bog().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -735,10 +740,9 @@ async def enviar_cocina(
 @router.post("/mesa/solicitar-cuenta")
 async def solicitar_cuenta(
     data: SolicitarCuentaIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
     today = _today()
 
@@ -756,10 +760,9 @@ async def solicitar_cuenta(
 @router.delete("/mesa/cancelar")
 async def cancelar_orden(
     data: CancelarOrdenIn,
-    authorization: str = Header(None),
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    payload = await _auth_waiter(authorization)
     cid = payload["company_id"]
     today = _today()
 

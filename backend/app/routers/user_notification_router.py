@@ -4,6 +4,8 @@ from sqlalchemy import select, func
 from app.database import get_db
 from app.models.user_notification_model import UserNotification
 from app.models.user_model import User
+from app.models.role_model import Role
+from app.models.company_model import Company
 from app.models.user_session_model import UserSession
 from app.auth.jwt_handler import decode_access_token
 
@@ -28,40 +30,54 @@ async def _get_user(authorization: str, db: AsyncSession):
     return user
 
 
-def _ser(n: UserNotification, sender_name: str = None, receiver_name: str = None):
+def _ser(n: UserNotification, sender_name: str = None, receiver_name: str = None, company_name: str = None):
     return {"id": n.id, "sender_id": n.sender_id, "sender_name": sender_name,
             "receiver_id": n.receiver_id, "receiver_name": receiver_name,
             "title": n.title, "message": n.message, "is_read": n.is_read,
+            "company_name": company_name,
             "created_at": n.created_at.isoformat() if n.created_at else None}
 
 
 _SYSTEM_ACCESS_TITLES = ("Entrada al sistema", "Salida del sistema")
 
+async def _is_sysadmin(user: User, db: AsyncSession) -> bool:
+    role = await db.get(Role, user.role_id)
+    return bool(role and role.is_system)
+
+
 @router.get("/inbox/count")
 async def inbox_count(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    count = (await db.execute(
+    sysadmin = await _is_sysadmin(user, db)
+    q = (
         select(func.count()).select_from(UserNotification)
         .where(
-            UserNotification.receiver_id == user.id,
             UserNotification.is_read == False,
             UserNotification.title.notin_(_SYSTEM_ACCESS_TITLES),
         )
-    )).scalar()
+    )
+    if not sysadmin:
+        q = q.where(UserNotification.receiver_id == user.id)
+    count = (await db.execute(q)).scalar()
     return {"count": count}
 
 
 @router.get("/inbox")
 async def inbox(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    result = await db.execute(
-        select(UserNotification, User)
+    sysadmin = await _is_sysadmin(user, db)
+    q = (
+        select(UserNotification, User, Company)
         .join(User, UserNotification.sender_id == User.id)
-        .where(UserNotification.receiver_id == user.id)
+        .outerjoin(Company, User.company_id == Company.id_company)
         .order_by(UserNotification.created_at.desc())
-        .limit(50)
     )
-    return [_ser(n, sender_name=u.nombre) for n, u in result.all()]
+    if sysadmin:
+        q = q.limit(200)
+    else:
+        q = q.where(UserNotification.receiver_id == user.id).limit(50)
+    result = await db.execute(q)
+    return [_ser(n, sender_name=u.nombre, company_name=c.name if c else None) for n, u, c in result.all()]
 
 
 @router.get("/outbox")
