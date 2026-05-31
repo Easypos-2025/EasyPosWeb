@@ -54,46 +54,6 @@
           </div>
         </div>
 
-        <!-- Novedades -->
-        <div class="assembly-cat">
-          <div class="assembly-cat__header">
-            <span class="assembly-cat__name">
-              <i class="bi bi-chat-text me-1 text-secondary"></i>
-              Novedades <small class="text-muted fw-normal">(opcional)</small>
-            </span>
-          </div>
-          <div class="chips">
-            <button
-              v-for="n in preloadedNotes"
-              :key="n.id"
-              class="chip"
-              :class="{ 'chip--active': selectedNotes.includes(n.name) }"
-              @click="toggleNote(n.name)"
-            >{{ n.name }}</button>
-          </div>
-          <input
-            v-model="customNote"
-            type="text"
-            class="form-control form-control-sm mt-2"
-            placeholder="Comentario libre..."
-            maxlength="200"
-          />
-        </div>
-
-        <!-- Cantidad -->
-        <div class="assembly-qty">
-          <label class="fw-semibold text-secondary me-3">Cantidad</label>
-          <div class="qty-control">
-            <button class="qty-btn" @click="qty = Math.max(1, qty - 1)">
-              <i class="bi bi-dash-lg"></i>
-            </button>
-            <span class="qty-val">{{ qty }}</span>
-            <button class="qty-btn" @click="qty++">
-              <i class="bi bi-plus-lg"></i>
-            </button>
-          </div>
-        </div>
-
       </div>
 
       <div v-else class="assembly-loading">
@@ -132,14 +92,11 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'added'])
 
-const categories   = ref([])
+const categories    = ref([])
 const fixedProducts = ref([])
-const loadingMenu  = ref(false)
-const saving       = ref(false)
-const selections   = ref({})  // { category_code: { item_id, item_name, discount_qty } }
-const selectedNotes = ref([])
-const customNote   = ref('')
-const qty          = ref(1)
+const loadingMenu   = ref(false)
+const saving        = ref(false)
+const selections    = ref({})  // { category_code: { item_id, item_name, discount_qty } }
 
 watch(() => props.dish, async (dish) => {
   if (!dish) return
@@ -158,18 +115,6 @@ watch(() => props.dish, async (dish) => {
     const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`)
     categories.value    = res.data.categories
     fixedProducts.value = res.data.fixed_products
-
-    // Pre-select defaults
-    for (const cat of categories.value) {
-      const defaultOpt = cat.options.find(o => o.is_default && o.available_today)
-      if (defaultOpt) {
-        selections.value[cat.category_code] = {
-          item_id:      defaultOpt.item_id,
-          item_name:    defaultOpt.item_name,
-          discount_qty: defaultOpt.discount_qty,
-        }
-      }
-    }
   } finally {
     loadingMenu.value = false
   }
@@ -198,12 +143,6 @@ function toggleOption(cat, opt) {
   }
 }
 
-function toggleNote(name) {
-  const idx = selectedNotes.value.indexOf(name)
-  if (idx >= 0) selectedNotes.value.splice(idx, 1)
-  else selectedNotes.value.push(name)
-}
-
 function formatPrice(v) {
   if (!v) return '$0'
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v)
@@ -220,16 +159,12 @@ async function add() {
       discount_qty:  sel.discount_qty,
     }))
 
-    const parts = [...selectedNotes.value]
-    if (customNote.value.trim()) parts.push(customNote.value.trim())
-
     const res = await apiComanda.post('/api/pos/comanda/orden/item', {
       order_number:        props.orderNumber,
       date:                props.orderDate,
       table_id:            props.tableId,
       dish_id:             props.dish.id,
-      quantity:            qty.value,
-      notes:               parts.join(' | ') || null,
+      quantity:            1,
       assembly_selections: assemblySelections,
     })
     emit('added', res.data)
@@ -369,69 +304,6 @@ async function add() {
 .assembly-option--selected .assembly-option__check {
   background: rgba(255,255,255,.25);
   border-color: transparent;
-}
-
-/* Chips novedades */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.chip {
-  padding: 5px 12px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 16px;
-  background: #fff;
-  font-size: .78rem;
-  font-weight: 600;
-  color: #475569;
-  cursor: pointer;
-  transition: all .15s;
-}
-.chip:hover { border-color: #64748b; }
-.chip--active { border-color: #64748b; background: #1e293b; color: #fff; }
-
-/* Cantidad */
-.assembly-qty {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 4px;
-}
-
-.qty-control {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: #f1f5f9;
-  border-radius: 30px;
-  padding: 4px;
-}
-
-.qty-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: none;
-  background: #fff;
-  color: #1e293b;
-  font-size: 1rem;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all .15s;
-}
-.qty-btn:hover { background: #2563eb; color: #fff; }
-
-.qty-val {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: #1e293b;
-  min-width: 28px;
-  text-align: center;
 }
 
 /* Footer */
