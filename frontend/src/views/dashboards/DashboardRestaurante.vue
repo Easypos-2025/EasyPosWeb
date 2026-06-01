@@ -85,6 +85,16 @@
                   <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
                 </div>
                 <div class="mesa-estado">Ocupada</div>
+                <div class="mesa-acciones">
+                  <button class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
+                    title="Eliminar pedido (irreversible)">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                  <button class="mesa-btn mesa-btn--fac" disabled
+                    title="Facturación próximamente">
+                    <i class="bi bi-receipt"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </template>
@@ -698,6 +708,26 @@ async function irAComanda(tableId, tableName, waiterId) {
   }
 }
 
+async function eliminarOrden(mesa) {
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Eliminar pedido de ${mesa.name}?`,
+    html: `<div>Esta acción <strong>no se puede revertir</strong>.<br>El pedido y todos sus platos quedarán cancelados permanentemente.</div>`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!isConfirmed) return
+  try {
+    localStorage.setItem('waiter_company_id', String(selectedCid.value))
+    await apiComanda.delete('/api/pos/comanda/mesa/cancelar', { data: { table_id: mesa.id } })
+    await cargarMesas()
+  } catch (e) {
+    window.Swal.fire('Error', e?.response?.data?.detail || 'No se pudo eliminar el pedido', 'error')
+  }
+}
+
 async function guardarNuevoMesero() {
   if (!newWaiter.value.name.trim()) {
     newWaiter.value.error = 'El nombre es obligatorio'
@@ -913,6 +943,29 @@ async function guardarNuevoMesero() {
 .mesa-estado { font-size: 10px; font-weight: 700; padding: 4px 8px 10px; }
 .mesa-card--ocupada .mesa-estado { color: #ef4444; }
 .mesa-card--cuenta  .mesa-estado { color: #d97706; }
+
+.mesa-acciones {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  padding: 0 8px 10px;
+}
+.mesa-btn {
+  flex: 1;
+  padding: 5px 0;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mesa-btn--del { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.mesa-btn--del:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+.mesa-btn--fac { background: #f0fdf4; color: #16a34a; border-color: #86efac; }
+.mesa-btn--fac:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── Modales ──────────────────────────────────────────────────────────────── */
 .modal-overlay {
