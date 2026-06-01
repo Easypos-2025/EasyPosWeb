@@ -3517,3 +3517,161 @@ async def push_inventory_exits(
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SYNC BIDIRECCIONAL — Descarga web → desktop
+# Todos los endpoints usan X-Api-Key igual que el resto del router.
+# Solo retornan pedidos cuyo order_number empieza con 'WEB-' (origen web).
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/sync/health")
+async def sync_health(x_api_key: str = Header(...)):
+    verify_api_key(x_api_key)
+    return {"ok": True, "ts": datetime.now().isoformat()}
+
+
+@router.get("/sync/pull/web-orders")
+async def pull_web_orders(
+    company_id: int = Query(...),
+    desde: str = Query(default="2024-01-01 00:00:00"),
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    rows = (await db.execute(text("""
+        SELECT order_number, date, invoice_number, table_name, time,
+               waiter_id, cancelled, amount, notes, complimentary,
+               guests_count, delivery, customer_id, table_id, updated_at
+        FROM pos_orders
+        WHERE company_id = :cid
+          AND order_number LIKE 'WEB-%'
+          AND updated_at > :desde
+        ORDER BY updated_at ASC
+        LIMIT 200
+    """), {"cid": company_id, "desde": desde})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/sync/pull/web-order-details")
+async def pull_web_order_details(
+    company_id: int = Query(...),
+    desde: str = Query(default="2024-01-01 00:00:00"),
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    rows = (await db.execute(text("""
+        SELECT od.order_number, od.date, od.invoice_number,
+               od.dish_id, od.item, od.depends_on,
+               od.quantity, od.amount, od.notes, od.complimentary,
+               od.dish_discount_pct, od.general_discount_pct,
+               od.seat_number, od.pays_tax, od.tax, od.original_tax,
+               od.pays_dish, od.changes, od.dish_time, od.custom_product,
+               od.updated_at
+        FROM pos_order_details od
+        WHERE od.company_id = :cid
+          AND od.order_number LIKE 'WEB-%'
+          AND od.updated_at > :desde
+        ORDER BY od.updated_at ASC
+        LIMIT 1000
+    """), {"cid": company_id, "desde": desde})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/sync/pull/web-order-assembly")
+async def pull_web_order_assembly(
+    company_id: int = Query(...),
+    desde: str = Query(default="2024-01-01 00:00:00"),
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    rows = (await db.execute(text("""
+        SELECT p.order_number, p.date, p.invoice_number,
+               p.dish_id, p.item, p.group_id, p.item_id, p.quantity,
+               p.updated_at
+        FROM pos_order_detail_products p
+        WHERE p.company_id = :cid
+          AND p.order_number LIKE 'WEB-%'
+          AND p.updated_at > :desde
+        ORDER BY p.updated_at ASC
+        LIMIT 1000
+    """), {"cid": company_id, "desde": desde})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/sync/pull/table-status")
+async def pull_table_status(
+    company_id: int = Query(...),
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    rows = (await db.execute(text("""
+        SELECT id   AS table_id,
+               name AS table_name,
+               CASE WHEN status = 'free' THEN 0 ELSE 1 END AS is_open,
+               updated_at
+        FROM pos_tables
+        WHERE company_id = :cid AND is_active = 1
+        ORDER BY id
+    """), {"cid": company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+class LockComandaIn(BaseModel):
+    company_id: int
+    nro_pedido: str
+    bloqueado_por: str
+    lock_token: str
+
+@router.post("/sync/lock/comanda")
+async def lock_comanda(
+    data: LockComandaIn,
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    TTL = 90
+    existing = (await db.execute(text("""
+        SELECT bloqueado_por, bloqueado_en, lock_token
+        FROM pos_sync_locks
+        WHERE nro_pedido = :np AND company_id = :cid LIMIT 1
+    """), {"np": data.nro_pedido, "cid": data.company_id})).mappings().first()
+
+    if existing:
+        seg = (datetime.now() - existing["bloqueado_en"]).total_seconds()
+        if seg < TTL and existing["bloqueado_por"] != data.bloqueado_por:
+            raise HTTPException(status_code=423, detail={
+                "locked_by": existing["bloqueado_por"],
+                "since": str(existing["bloqueado_en"]),
+                "expires_in": int(TTL - seg),
+            })
+
+    await db.execute(text("""
+        INSERT INTO pos_sync_locks (nro_pedido, company_id, bloqueado_por, bloqueado_en, lock_token)
+        VALUES (:np, :cid, :por, NOW(), :tok)
+        ON DUPLICATE KEY UPDATE
+            bloqueado_por = :por, bloqueado_en = NOW(), lock_token = :tok
+    """), {"np": data.nro_pedido, "cid": data.company_id,
+           "por": data.bloqueado_por, "tok": data.lock_token})
+    await db.commit()
+    return {"ok": True, "nro_pedido": data.nro_pedido, "ttl": TTL}
+
+
+@router.delete("/sync/lock/comanda/{nro_pedido}")
+async def unlock_comanda(
+    nro_pedido: str,
+    company_id: int = Query(...),
+    lock_token: str = Query(...),
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    result = await db.execute(text("""
+        DELETE FROM pos_sync_locks
+        WHERE nro_pedido = :np AND company_id = :cid AND lock_token = :tok
+    """), {"np": nro_pedido, "cid": company_id, "tok": lock_token})
+    await db.commit()
+    return {"ok": True, "released": result.rowcount > 0}
