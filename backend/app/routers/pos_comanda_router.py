@@ -1030,7 +1030,7 @@ async def get_cocina(
         orders = sorted(
             pdata["orders"].values(),
             key=lambda x: x["latest_dish_time"],
-            reverse=False,
+            reverse=True,
         )
         result.append({
             "printer_id": pdata["printer_id"],

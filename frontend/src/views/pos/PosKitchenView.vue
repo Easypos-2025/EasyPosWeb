@@ -17,7 +17,7 @@
     <!-- ── Columnas por impresora ─────────────────────────────────────────── -->
     <div class="kcols" v-if="printers.length">
       <div
-        v-for="(printer, idx) in printers"
+        v-for="printer in printers"
         :key="printer.printer_id"
         class="kcol"
       >
@@ -31,7 +31,7 @@
         </div>
 
         <!-- Cuerpo con tarjetas -->
-        <div class="kcol__body" :ref="el => setColBody(el, idx)">
+        <div class="kcol__body">
           <div v-if="!printer.orders.length" class="kcol__empty">
             <i class="bi bi-check-circle-fill"></i>
             <p>Sin pedidos</p>
@@ -124,7 +124,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, onBeforeUpdate } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 
@@ -136,52 +136,6 @@ const loading     = ref(false)
 const connected   = ref(false)
 const currentTime = ref('')
 const now         = ref(new Date())
-
-// ── Auto-scroll por columna ────────────────────────────────────────────────
-const colBodies = []
-let scrollRAF   = null
-
-onBeforeUpdate(() => { colBodies.length = 0 })
-
-function setColBody(el, idx) {
-  if (el) colBodies[idx] = el
-}
-
-function stopAutoScroll() {
-  if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null }
-}
-
-function startAutoScroll() {
-  stopAutoScroll()
-  const states = colBodies.map(() => ({ dir: 1, pause: 0 }))
-  let last = 0
-
-  function tick(ts) {
-    const dt = Math.min(ts - last, 100)  // cap delta a 100ms
-    last = ts
-    colBodies.forEach((col, i) => {
-      if (!col) return
-      const max = col.scrollHeight - col.clientHeight
-      if (max < 8) return
-      const s = states[i]
-      s.pause = Math.max(0, s.pause - dt)
-      if (s.pause > 0) return
-      col.scrollTop += s.dir * 0.7
-      if (col.scrollTop >= max - 1) {
-        col.scrollTop = max
-        s.dir = -1
-        s.pause = 3000   // pausa 3 s al llegar al fondo
-      } else if (col.scrollTop <= 1) {
-        col.scrollTop = 0
-        s.dir = 1
-        s.pause = 1500   // pausa 1.5 s al volver al inicio
-      }
-    })
-    scrollRAF = requestAnimationFrame(tick)
-  }
-  scrollRAF = requestAnimationFrame(tick)
-}
-// ──────────────────────────────────────────────────────────────────────────
 
 let pollTimer  = null
 let clockTimer = null
@@ -196,7 +150,6 @@ onMounted(async () => {
 onUnmounted(() => {
   clearInterval(pollTimer)
   clearInterval(clockTimer)
-  stopAutoScroll()
 })
 
 function updateClock() {
@@ -219,8 +172,6 @@ async function loadKitchen() {
     connected.value = false
   } finally {
     loading.value = false
-    await nextTick()
-    startAutoScroll()
   }
 }
 
