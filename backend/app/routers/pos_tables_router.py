@@ -107,25 +107,34 @@ async def list_zones(company_id: Optional[int] = None, authorization: str = Head
         ORDER BY t.zone_id
     """), {"cid": cid, "today": today})).mappings().all()
 
+    counts_by_zone = {r["zone_id"]: r for r in counts}
+
     result = []
-    for r in counts:
-        zid = r["zone_id"]
-        meta = zone_map.get(zid) or {
-            "id": zid,
-            "name": f"Zona {zid}",
-            "description": None,
-            "color": "#1d4ed8",
-            "icon": "bi-grid",
-            "is_active": 1,
-            "order_index": zid,
-        }
+    # 1. Todas las zonas registradas en pos_zones (con o sin mesas)
+    for meta in zone_rows:
+        zid = meta["id"]
+        r   = counts_by_zone.get(zid)
         result.append({
-            **meta,
-            "table_count":    int(r["table_count"]),
-            "occupied_count": int(r["occupied_count"]),
+            **dict(meta),
+            "table_count":    int(r["table_count"])    if r else 0,
+            "occupied_count": int(r["occupied_count"]) if r else 0,
             "bill_count":     0,
-            "free_count":     int(r["free_count"]),
+            "free_count":     int(r["free_count"])     if r else 0,
         })
+    # 2. Zonas en pos_tables_layout sin entrada en pos_zones (datos legacy VB6)
+    zone_ids_in_map = {meta["id"] for meta in zone_rows}
+    for r in counts:
+        if r["zone_id"] not in zone_ids_in_map:
+            result.append({
+                "id": r["zone_id"], "name": f"Zona {r['zone_id']}",
+                "description": None, "color": "#1d4ed8", "icon": "bi-grid",
+                "is_active": 1, "order_index": r["zone_id"],
+                "table_count":    int(r["table_count"]),
+                "occupied_count": int(r["occupied_count"]),
+                "bill_count":     0,
+                "free_count":     int(r["free_count"]),
+            })
+    result.sort(key=lambda x: x.get("order_index") or 0)
     return result
 
 

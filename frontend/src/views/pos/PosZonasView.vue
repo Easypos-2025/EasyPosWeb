@@ -145,8 +145,10 @@ import { ref, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
+import { useCompanyStore } from '@/stores/companyStore'
 
 const { moduleName } = useModuleName()
+const companyStore = useCompanyStore()
 const BASE = '/api/pos/zonas'
 
 const items    = ref([])
@@ -163,7 +165,8 @@ const modal = ref(emptyModal())
 async function cargar() {
   loading.value = true
   try {
-    const res = await api.get(BASE)
+    const cid = companyStore.selectedCompany?.id
+    const res = await api.get(BASE, { params: cid ? { company_id: cid } : {} })
     items.value = res.data
   } catch {
     showToast('Error al cargar zonas', 'error')
