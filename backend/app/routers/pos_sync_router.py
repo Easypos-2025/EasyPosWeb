@@ -3675,3 +3675,103 @@ async def unlock_comanda(
     """), {"np": nro_pedido, "cid": company_id, "tok": lock_token})
     await db.commit()
     return {"ok": True, "released": result.rowcount > 0}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PUSH — VB6 sube estado de mesas (temp_mesa_abierta → pos_tables)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TableStatusPushIn(BaseModel):
+    company_id: int
+    table_id:   int
+    table_name: Optional[str] = ""
+    is_open:    Optional[int] = 0
+
+
+@router.post("/sync/push/table-status")
+async def push_table_status(
+    tables: List[TableStatusPushIn],
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    saved, failed = 0, 0
+    for t in tables:
+        try:
+            await db.execute(text("""
+                UPDATE pos_tables
+                SET is_open = :is_open, updated_at = NOW()
+                WHERE company_id = :cid AND id = :tid
+            """), {"is_open": t.is_open, "cid": t.company_id, "tid": t.table_id})
+            saved += 1
+        except Exception:
+            failed += 1
+    await db.commit()
+    return {"total_sent": len(tables), "total_saved": saved, "total_failed": failed}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PUSH — VB6 sube novedades de platos en pedidos (temp_novedades_plato_pedido)
+# Tabla destino: pos_order_dish_notes
+# SQL para crear la tabla en servidor:
+#   CREATE TABLE IF NOT EXISTS pos_order_dish_notes (
+#     id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+#     company_id     INT NOT NULL,
+#     order_number   VARCHAR(255) NOT NULL,
+#     consecutive_id INT DEFAULT 0,
+#     item           INT DEFAULT 0,
+#     depends_on     INT DEFAULT 0,
+#     category_id    INT DEFAULT 0,
+#     note_id        INT DEFAULT 0,
+#     note           TEXT,
+#     synced         TINYINT DEFAULT 1,
+#     updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#     UNIQUE KEY uq_dish_note (company_id, order_number, consecutive_id, item, depends_on, category_id, note_id)
+#   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+# ─────────────────────────────────────────────────────────────────────────────
+
+class OrderDishNoteIn(BaseModel):
+    company_id:     int
+    order_number:   str
+    consecutive_id: Optional[int] = 0
+    item:           Optional[int] = 0
+    depends_on:     Optional[int] = 0
+    category_id:    Optional[int] = 0
+    note_id:        Optional[int] = 0
+    note:           Optional[str] = ""
+
+
+@router.post("/sync/push/order-dish-notes")
+async def push_order_dish_notes(
+    notes: List[OrderDishNoteIn],
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    saved, failed = 0, 0
+    for n in notes:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_order_dish_notes
+                    (company_id, order_number, consecutive_id, item,
+                     depends_on, category_id, note_id, note, synced, updated_at)
+                VALUES
+                    (:cid, :order_number, :consecutive_id, :item,
+                     :depends_on, :category_id, :note_id, :note, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    note = VALUES(note), synced = 1, updated_at = NOW()
+            """), {
+                "cid":            n.company_id,
+                "order_number":   n.order_number,
+                "consecutive_id": n.consecutive_id,
+                "item":           n.item,
+                "depends_on":     n.depends_on,
+                "category_id":    n.category_id,
+                "note_id":        n.note_id,
+                "note":           n.note,
+            })
+            saved += 1
+        except Exception:
+            failed += 1
+    await db.commit()
+    return {"total_sent": len(notes), "total_saved": saved, "total_failed": failed}
