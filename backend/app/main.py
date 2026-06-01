@@ -1308,6 +1308,15 @@ async def _init_db_data():
                 created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_pz_company (company_id)
             )""",
+            """CREATE TABLE IF NOT EXISTS pos_kitchen_status (
+                order_number VARCHAR(50) NOT NULL,
+                date         DATE        NOT NULL,
+                company_id   INT         NOT NULL,
+                dispatched   TINYINT(1)  NOT NULL DEFAULT 0,
+                resent_at    DATETIME    NULL,
+                PRIMARY KEY (order_number, date, company_id),
+                INDEX idx_pks_company_date (company_id, date)
+            )""",
         ]
         for _sql in _pos_tables_sql:
             try:

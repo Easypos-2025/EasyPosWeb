@@ -859,8 +859,40 @@ class DespacharIn(BaseModel):
     date: str
 
 
+class ReenviarIn(BaseModel):
+    order_number: str
+    date: str
+
+
 @router.post("/orden/despachar")
-async def despachar_orden(data: DespacharIn, payload: dict = Depends(_auth_comanda)):
+async def despachar_orden(
+    data: DespacharIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    cid = payload["company_id"]
+    await db.execute(text("""
+        INSERT INTO pos_kitchen_status (order_number, date, company_id, dispatched, resent_at)
+        VALUES (:on, :date, :cid, 1, NULL)
+        ON DUPLICATE KEY UPDATE dispatched = 1, resent_at = NULL
+    """), {"on": data.order_number, "date": data.date, "cid": cid})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/orden/reenviar")
+async def reenviar_orden(
+    data: ReenviarIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    cid = payload["company_id"]
+    await db.execute(text("""
+        INSERT INTO pos_kitchen_status (order_number, date, company_id, dispatched, resent_at)
+        VALUES (:on, :date, :cid, 0, NOW())
+        ON DUPLICATE KEY UPDATE dispatched = 0, resent_at = NOW()
+    """), {"on": data.order_number, "date": data.date, "cid": cid})
+    await db.commit()
     return {"ok": True}
 
 
@@ -892,8 +924,11 @@ async def get_cocina_pedidos(
              LIMIT 5) AS items_preview
         FROM pos_orders o
         LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = :cid
+        LEFT JOIN pos_kitchen_status ks
+               ON ks.order_number = o.order_number AND ks.date = o.date AND ks.company_id = :cid
         WHERE o.company_id = :cid AND o.date = :today
           AND o.invoice_number = '0' AND o.cancelled = 0
+          AND (ks.dispatched IS NULL OR ks.dispatched = 0)
           AND EXISTS (
               SELECT 1 FROM pos_order_details od
               WHERE od.order_number = o.order_number AND od.date = o.date
@@ -995,7 +1030,8 @@ async def get_cocina(
             COALESCE(od.dish_time, CONCAT(r.date, ' ', r.time)) AS effective_time,
             d.name          AS dish_name,
             ip.printer_id,
-            p.name          AS printer_name
+            p.name          AS printer_name,
+            COALESCE(ks.resent_at, '') AS resent_at
         FROM ranked r
         JOIN pos_order_details od
              ON od.order_number   = r.order_number
@@ -1007,7 +1043,10 @@ async def get_cocina(
         JOIN pos_item_printers ip ON ip.item_id = od.dish_id AND ip.company_id = :cid
         JOIN pos_printers p
              ON p.id = ip.printer_id AND p.company_id = :cid AND p.is_active = 1
+        LEFT JOIN pos_kitchen_status ks
+             ON ks.order_number = r.order_number AND ks.date = r.date AND ks.company_id = :cid
         WHERE d.preparation_time = 0
+          AND (ks.dispatched IS NULL OR ks.dispatched = 0)
         ORDER BY ip.printer_id, r.daily_seq
     """), {"cid": cid, "today": today})).mappings().all()
 
@@ -1031,6 +1070,8 @@ async def get_cocina(
         if pid not in printer_map:
             continue
 
+        resent_at = str(row["resent_at"]) if row["resent_at"] else ""
+
         if oid not in printer_map[pid]["orders"]:
             printer_map[pid]["orders"][oid] = {
                 "order_number": oid,
@@ -1039,6 +1080,7 @@ async def get_cocina(
                 "waiter_name": row["waiter_name"],
                 "order_time": row["order_time"],
                 "latest_dish_time": row["effective_time"] or "",
+                "resent_at": resent_at,
                 "items": [],
             }
         else:
@@ -1071,7 +1113,7 @@ async def get_cocina(
         pdata = printer_map[pid]
         orders = sorted(
             pdata["orders"].values(),
-            key=lambda x: x["latest_dish_time"],
+            key=lambda x: x["resent_at"] or x["latest_dish_time"],
             reverse=True,
         )
         result.append({

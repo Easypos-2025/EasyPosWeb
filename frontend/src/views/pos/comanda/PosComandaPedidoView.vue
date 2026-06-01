@@ -150,6 +150,16 @@
               {{ unsentItems.length }}
             </span>
           </button>
+          <button
+            v-if="items.length && !unsentItems.length"
+            class="btn btn-outline-warning w-100 mt-1"
+            @click="reenviarATV"
+            :disabled="reenviando"
+          >
+            <span v-if="reenviando" class="spinner-border spinner-border-sm me-1"></span>
+            <i class="bi bi-arrow-repeat me-1" v-else></i>
+            {{ reenvioOk ? 'Reenviado ✓' : 'Reenviar a TV' }}
+          </button>
         </div>
       </div>
 
@@ -174,6 +184,16 @@
         <span v-if="sending" class="spinner-border spinner-border-sm me-1"></span>
         <i class="bi bi-send me-1" v-else></i>
         Enviar ({{ unsentItems.length }})
+      </button>
+      <button
+        v-if="items.length && !unsentItems.length"
+        class="btn btn-warning btn-sm"
+        @click="reenviarATV"
+        :disabled="reenviando"
+      >
+        <span v-if="reenviando" class="spinner-border spinner-border-sm me-1"></span>
+        <i class="bi bi-arrow-repeat me-1" v-else></i>
+        {{ reenvioOk ? '✓' : 'TV' }}
       </button>
     </div>
 
@@ -236,6 +256,8 @@ const cartOpen        = ref(false)
 const assemblyDish    = ref(null)
 const notasItem       = ref(null)
 const sending         = ref(false)
+const reenviando      = ref(false)
+const reenvioOk       = ref(false)
 const catTabsRef      = ref(null)
 
 const currentCategoryDishes = computed(() => {
@@ -441,6 +463,23 @@ async function sendToKitchen() {
     alert(e.response?.data?.detail || 'Error al enviar a cocina')
   } finally {
     sending.value = false
+  }
+}
+
+async function reenviarATV() {
+  if (!order.value || reenviando.value) return
+  reenviando.value = true
+  try {
+    await apiComanda.post('/api/pos/comanda/orden/reenviar', {
+      order_number: order.value.order_number,
+      date:         order.value.date,
+    })
+    reenvioOk.value = true
+    setTimeout(() => { reenvioOk.value = false }, 3000)
+  } catch (e) {
+    alert(e.response?.data?.detail || 'Error al reenviar a cocina TV')
+  } finally {
+    reenviando.value = false
   }
 }
 
