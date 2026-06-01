@@ -4,6 +4,7 @@ Endpoints para la app de comandera del mesero y la vista de cocina TV.
 """
 from datetime import datetime, timezone, timedelta
 import json
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -919,12 +920,53 @@ async def get_cocina_pedidos(
 
 # ── 14. COCINA TV ─────────────────────────────────────────────────────────────
 
-@router.get("/cocina")
-async def get_cocina(
-    company_id: int = Query(..., description="ID de empresa (para la pantalla TV, sin auth)"),
+@router.get("/cocina/tv-config")
+async def get_tv_config(
+    payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    cid = company_id
+    """Retorna (y genera si no existe) el token TV de la empresa."""
+    cid = payload["company_id"]
+    row = (await db.execute(text(
+        "SELECT kitchen_tv_token FROM companies WHERE id_company = :cid"
+    ), {"cid": cid})).mappings().first()
+    token = row["kitchen_tv_token"] if row else None
+    if not token:
+        token = secrets.token_hex(32)
+        await db.execute(text(
+            "UPDATE companies SET kitchen_tv_token = :tok WHERE id_company = :cid"
+        ), {"tok": token, "cid": cid})
+        await db.commit()
+    return {"token": token}
+
+
+@router.post("/cocina/tv-token/regenerar")
+async def regenerar_tv_token(
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """Genera un nuevo token TV, invalidando el anterior."""
+    cid = payload["company_id"]
+    token = secrets.token_hex(32)
+    await db.execute(text(
+        "UPDATE companies SET kitchen_tv_token = :tok WHERE id_company = :cid"
+    ), {"tok": token, "cid": cid})
+    await db.commit()
+    return {"token": token}
+
+
+@router.get("/cocina")
+async def get_cocina(
+    token: str = Query(..., description="Token TV de la empresa (opaco, sin exponer company_id)"),
+    db: AsyncSession = Depends(get_db),
+):
+    # Mapear token → company_id
+    company_row = (await db.execute(text(
+        "SELECT id_company FROM companies WHERE kitchen_tv_token = :tok LIMIT 1"
+    ), {"tok": token})).mappings().first()
+    if not company_row:
+        raise HTTPException(status_code=403, detail="Token de cocina inválido")
+    cid = int(company_row["id_company"])
     today = _today()
 
     rows = (await db.execute(text("""

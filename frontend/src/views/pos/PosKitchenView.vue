@@ -128,8 +128,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 
-const route     = useRoute()
-const companyId = ref(route.query.cid || localStorage.getItem('waiter_company_id') || '')
+const route        = useRoute()
+const kitchenToken = ref(route.query.token || '')
 
 const printers    = ref([])
 const loading     = ref(false)
@@ -160,12 +160,12 @@ function updateClock() {
 }
 
 async function loadKitchen() {
-  if (!companyId.value) return
+  if (!kitchenToken.value) return
   if (loading.value) return
   loading.value = true
   try {
     const base = import.meta.env.VITE_API_URL
-    const res  = await axios.get(`${base}/api/pos/comanda/cocina?company_id=${companyId.value}`)
+    const res  = await axios.get(`${base}/api/pos/comanda/cocina?token=${kitchenToken.value}`)
     printers.value = res.data
     connected.value = true
   } catch {

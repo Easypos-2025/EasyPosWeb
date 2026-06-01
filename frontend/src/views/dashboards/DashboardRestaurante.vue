@@ -8,10 +8,23 @@
     <div class="dash-header">
       <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Panel de Operaciones' }}</h6>
       <div class="dash-header-right">
-        <a :href="`/pos/cocina?cid=${selectedCid}`" target="_blank" class="btn-tv" title="Abrir Cocina TV">
+        <a
+          :href="tvUrl" target="_blank"
+          class="btn-tv"
+          :class="{ 'btn-tv--disabled': !tvToken }"
+          title="Abrir Pedidos TV en pantalla"
+        >
           <i class="bi bi-display me-1"></i>
-          <span class="btn-tv-label">Ver Cocina TV</span>
+          <span class="btn-tv-label">Ver Pedidos TV</span>
         </a>
+        <button class="btn-tv-icon" @click="copiarUrlTV" :disabled="!tvToken"
+          :title="urlCopiada ? '¡URL copiada!' : 'Copiar URL para el TV'">
+          <i class="bi" :class="urlCopiada ? 'bi-clipboard-check-fill' : 'bi-clipboard'"></i>
+        </button>
+        <button class="btn-tv-icon btn-tv-icon--regen" @click="regenerarUrlTV" :disabled="!tvToken"
+          title="Regenerar URL del TV (invalida la anterior)">
+          <i class="bi bi-arrow-repeat"></i>
+        </button>
         <button class="btn-refresh" @click="cargarTodo" :disabled="cargandoTodo" title="Actualizar">
           <i class="bi" :class="cargandoTodo ? 'bi-arrow-repeat spin' : 'bi-arrow-clockwise'"></i>
         </button>
@@ -391,6 +404,68 @@ const kpis = computed(() => {
 
 const selectedCid = computed(() => companyStore.selectedCompany?.id || undefined)
 
+// ── TV Cocina — token seguro ──────────────────────────────────────────────────
+const tvToken   = ref('')
+const urlCopiada = ref(false)
+
+const tvUrl = computed(() => {
+  if (!tvToken.value) return '#'
+  return `${window.location.origin}/pos/cocina?token=${tvToken.value}`
+})
+
+async function cargarTvToken() {
+  try {
+    const cid = selectedCid.value
+    const { data } = await api.get('/api/pos/comanda/cocina/tv-config', {
+      headers: cid ? { 'X-Company-Id': String(cid) } : {},
+    })
+    tvToken.value = data.token || ''
+  } catch { /* silencioso */ }
+}
+
+async function copiarUrlTV() {
+  if (!tvUrl.value || tvUrl.value === '#') return
+  try {
+    await navigator.clipboard.writeText(tvUrl.value)
+  } catch {
+    const el = document.createElement('textarea')
+    el.value = tvUrl.value
+    document.body.appendChild(el)
+    el.select()
+    document.execCommand('copy')
+    document.body.removeChild(el)
+  }
+  urlCopiada.value = true
+  setTimeout(() => { urlCopiada.value = false }, 2500)
+}
+
+async function regenerarUrlTV() {
+  const { isConfirmed } = await window.Swal.fire({
+    title: 'Regenerar URL del TV',
+    text: 'La URL actual dejará de funcionar. Deberás configurar la nueva en el TV. ¿Continuar?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, regenerar',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!isConfirmed) return
+  try {
+    const cid = selectedCid.value
+    const { data } = await api.post('/api/pos/comanda/cocina/tv-token/regenerar', {}, {
+      headers: cid ? { 'X-Company-Id': String(cid) } : {},
+    })
+    tvToken.value = data.token || ''
+    await window.Swal.fire({
+      title: 'URL regenerada',
+      text: 'Copia la nueva URL con el botón de portapapeles y pégala en el TV.',
+      icon: 'success',
+      timer: 3000,
+      showConfirmButton: false,
+    })
+  } catch { /* silencioso */ }
+}
+
 const zonas = computed(() => {
   const seen = new Set()
   const result = []
@@ -447,7 +522,7 @@ function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } 
 function _onVisible()    { if (!document.hidden) _tick() }
 
 onMounted(async () => {
-  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock()])
+  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTvToken()])
   _startRefresh()
   document.addEventListener('visibilitychange', _onVisible)
 })
@@ -678,6 +753,23 @@ async function guardarNuevoMesero() {
   white-space: nowrap;
 }
 .btn-tv:hover { background: #1e293b; color: #fff; }
+.btn-tv--disabled { opacity: .5; pointer-events: none; }
+
+.btn-tv-icon {
+  width: 34px; height: 34px;
+  border: 1.5px solid #0f172a;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #94a3b8;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.btn-tv-icon:hover:not(:disabled) { background: #1e293b; color: #f1f5f9; }
+.btn-tv-icon:disabled { opacity: .4; cursor: not-allowed; }
+.btn-tv-icon--regen:hover:not(:disabled) { background: #7c3aed; border-color: #7c3aed; color: #fff; }
 
 .btn-refresh {
   width: 34px;
