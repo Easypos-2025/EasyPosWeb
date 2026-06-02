@@ -1,6 +1,7 @@
 """
 POS Comanda — Modalidad B: Servicio a Mesas
-Endpoints para la app de comandera del mesero y la vista de cocina TV.
+Pedidos activos → datatemppos (temp_comanda, temp_detalle_comanda_parcial, etc.)
+Datos de referencia → easyposweb (menú, zonas, meseros, impresoras, pos_kitchen_status)
 """
 from datetime import datetime, timezone, timedelta
 import json
@@ -12,7 +13,7 @@ from sqlalchemy import text
 from pydantic import BaseModel
 from typing import Optional, List
 
-from app.database import get_db
+from app.database import get_db, get_datatemppos_db
 from app.auth.jwt_handler import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/api/pos/comanda", tags=["POS Comanda"])
@@ -37,6 +38,17 @@ def _order_number(cid: int, table_id: int) -> str:
     return f"WEB-{cid}-{table_id}-{ts}"
 
 
+def _parse_table_id_from_order(order_number: str) -> int:
+    """Extrae table_id del formato WEB-{cid}-{table_id}-{ts}."""
+    try:
+        parts = order_number.split("-")
+        if len(parts) >= 3:
+            return int(parts[2])
+    except Exception:
+        pass
+    return 0
+
+
 async def _auth_comanda(
     authorization: str = Header(None),
     x_company_id: Optional[int] = Header(None, alias="X-Company-Id"),
@@ -49,13 +61,10 @@ async def _auth_comanda(
     if not payload:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
     payload = dict(payload)
-    # X-Company-Id siempre tiene prioridad: el admin puede gestionar
-    # la comanda de cualquier empresa asignada sin importar su JWT.
     if x_company_id:
         payload["company_id"] = x_company_id
     if not payload.get("company_id"):
         raise HTTPException(status_code=400, detail="company_id requerido")
-    # waiter_id = 0 para usuarios regulares (admin)
     if "waiter_id" not in payload:
         payload["waiter_id"] = 0
     return payload
@@ -165,91 +174,113 @@ async def login_mesero(data: WaiterLoginIn, db: AsyncSession = Depends(get_db)):
 # ── 2. MESAS POR ZONA ─────────────────────────────────────────────────────────
 
 @router.get("/mesas")
-async def get_mesas(payload: dict = Depends(_auth_comanda), db: AsyncSession = Depends(get_db)):
+async def get_mesas(
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
     cid = payload["company_id"]
     today = _today()
 
-    # Auto-cancel orders with no items (leftover test/empty sessions)
-    await db.execute(text("""
-        UPDATE pos_orders o
-        SET o.cancelled = 1
-        WHERE o.company_id = :cid
-          AND o.date = :today
-          AND o.invoice_number = '0'
-          AND o.cancelled = 0
+    # Auto-cancel web orders sin ítems (Movil=1 solo — VB6 gestiona los suyos)
+    await db_temp.execute(text("""
+        UPDATE temp_comanda tc
+        SET tc.Cancelado = 1
+        WHERE tc.company_id = :cid
+          AND tc.Fecha = :today
+          AND tc.Nro_Factura = '0'
+          AND tc.Cancelado = 0
+          AND tc.Movil = 1
           AND NOT EXISTS (
-              SELECT 1 FROM pos_order_details od
-              WHERE od.order_number   = o.order_number
-                AND od.date           = o.date
-                AND od.company_id     = o.company_id
-                AND od.invoice_number = '0'
+              SELECT 1 FROM temp_detalle_comanda_parcial tdc
+              WHERE tdc.Nro_pedido = tc.Nro_Pedido
+                AND tdc.Fecha = tc.Fecha
+                AND tdc.company_id = tc.company_id
+                AND tdc.Nro_Factura = '0'
           )
     """), {"cid": cid, "today": today})
-    await db.commit()
+    await db_temp.commit()
 
-    rows = (await db.execute(text("""
-        WITH seq AS (
-            SELECT order_number, table_id, amount, time, waiter_id
-            FROM pos_orders
-            WHERE company_id = :cid AND date = :today
-              AND invoice_number = '0' AND cancelled = 0
-        )
+    # Layout de mesas y zonas desde easyposweb
+    layout_rows = (await db.execute(text("""
         SELECT
             tl.id, tl.name, tl.seats, tl.zone_id, tl.active,
             z.name          AS zone_name,
             z.color         AS zone_color,
             z.icon          AS zone_icon,
-            z.order_index   AS zone_order,
-            s.order_number,
-            s.amount,
-            s.time          AS order_time,
-            s.waiter_id,
-            w.name          AS waiter_name
+            z.order_index   AS zone_order
         FROM pos_tables_layout tl
         LEFT JOIN pos_zones z ON z.id = tl.zone_id AND z.company_id = :cid
-        LEFT JOIN seq s ON s.table_id = tl.id
-        LEFT JOIN pos_waiters w ON w.id = s.waiter_id AND w.company_id = :cid
         WHERE tl.company_id = :cid
         ORDER BY z.order_index, tl.id
+    """), {"cid": cid})).mappings().all()
+
+    # Mesas abiertas desde datatemppos
+    open_rows = (await db_temp.execute(text(
+        "SELECT Id_Mesa FROM temp_mesa_abierta WHERE company_id=:cid AND Abierta=1"
+    ), {"cid": cid})).mappings().all()
+    open_set = {int(r["Id_Mesa"]) for r in open_rows}
+
+    # Pedidos activos del día desde datatemppos (ambos orígenes: VB6 y web)
+    order_rows = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Mesa, Mesero, Hora, Valor
+        FROM temp_comanda
+        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0' AND Cancelado=0
+        ORDER BY Hora ASC
     """), {"cid": cid, "today": today})).mappings().all()
 
-    # Compute daily_seq for occupied tables from a separate query
-    seq_rows = (await db.execute(text("""
-        SELECT order_number,
-               ROW_NUMBER() OVER (PARTITION BY company_id, date ORDER BY time ASC) AS daily_seq
-        FROM pos_orders
-        WHERE company_id = :cid AND date = :today
-          AND invoice_number = '0' AND cancelled = 0
-    """), {"cid": cid, "today": today})).mappings().all()
-    seq_map = {r["order_number"]: int(r["daily_seq"]) for r in seq_rows}
+    # Mapa: nombre de mesa → info del pedido (con daily_seq calculado)
+    order_by_mesa: dict = {}
+    for seq_num, o in enumerate(order_rows, start=1):
+        mesa_key = str(o["Mesa"] or "").strip()
+        if mesa_key and mesa_key not in order_by_mesa:
+            order_by_mesa[mesa_key] = {
+                "order_number": o["Nro_Pedido"],
+                "amount":       int(o["Valor"] or 0),
+                "order_time":   str(o["Hora"] or ""),
+                "waiter_id":    int(o["Mesero"] or 0),
+                "daily_seq":    seq_num,
+            }
 
+    # Nombres de meseros desde easyposweb
+    waiter_ids = {v["waiter_id"] for v in order_by_mesa.values() if v["waiter_id"]}
+    waiter_names: dict = {}
+    if waiter_ids:
+        id_list = ",".join(str(w) for w in waiter_ids)
+        wrows = (await db.execute(text(
+            f"SELECT id, name FROM pos_waiters WHERE company_id=:cid AND id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        waiter_names = {int(r["id"]): r["name"] for r in wrows}
+
+    # Construir respuesta por zonas
     zones: dict = {}
-    for r in rows:
+    for r in layout_rows:
         zid = r["zone_id"] or 0
         if zid not in zones:
             zones[zid] = {
-                "id": zid,
-                "name": r["zone_name"] or f"Zona {zid}",
-                "color": r["zone_color"] or "#1d4ed8",
-                "icon": r["zone_icon"] or "bi-grid",
+                "id":          zid,
+                "name":        r["zone_name"] or f"Zona {zid}",
+                "color":       r["zone_color"] or "#1d4ed8",
+                "icon":        r["zone_icon"] or "bi-grid",
                 "order_index": r["zone_order"] or 0,
-                "tables": [],
+                "tables":      [],
             }
-        status = "free"
-        if r["order_number"]:
-            status = "occupied"
+
+        tid = int(r["id"])
+        status = "occupied" if tid in open_set else "free"
+        order_info = order_by_mesa.get(str(r["name"]).strip()) if status == "occupied" else None
 
         zones[zid]["tables"].append({
-            "id": r["id"],
-            "name": r["name"],
-            "seats": r["seats"],
-            "status": status,
-            "order_number": r["order_number"],
-            "amount": r["amount"],
-            "order_time": r["order_time"],
-            "waiter_id": r["waiter_id"],
-            "waiter_name": r["waiter_name"],
-            "daily_seq": seq_map.get(r["order_number"]) if r["order_number"] else None,
+            "id":          tid,
+            "name":        r["name"],
+            "seats":       r["seats"],
+            "status":      status,
+            "order_number": order_info["order_number"] if order_info else None,
+            "amount":       order_info["amount"] if order_info else None,
+            "order_time":   order_info["order_time"] if order_info else None,
+            "waiter_id":    order_info["waiter_id"] if order_info else None,
+            "waiter_name":  waiter_names.get(order_info["waiter_id"]) if order_info else None,
+            "daily_seq":    order_info["daily_seq"] if order_info else None,
         })
 
     return sorted(zones.values(), key=lambda z: z["order_index"])
@@ -262,9 +293,9 @@ async def abrir_mesa(
     data: AbrirMesaIn,
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
-    # Admin puede pasar waiter_id en el body; mesero lo trae en el JWT
     waiter_id = data.waiter_id if data.waiter_id is not None else payload.get("waiter_id", 0)
     today = _today()
 
@@ -274,31 +305,49 @@ async def abrir_mesa(
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
 
-    existing = (await db.execute(text(
-        "SELECT order_number FROM pos_orders "
-        "WHERE table_id=:tid AND company_id=:cid AND date=:today "
-        "AND invoice_number='0' AND cancelled=0 LIMIT 1"
-    ), {"tid": data.table_id, "cid": cid, "today": today})).mappings().first()
+    # Verificar si ya existe un pedido activo para esta mesa (cualquier origen)
+    existing = (await db_temp.execute(text("""
+        SELECT Nro_Pedido FROM temp_comanda
+        WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+          AND Nro_Factura='0' AND Cancelado=0
+        LIMIT 1
+    """), {"mesa": mesa["name"], "cid": cid, "today": today})).mappings().first()
     if existing:
-        return {"order_number": existing["order_number"], "date": today, "already_open": True}
+        return {"order_number": existing["Nro_Pedido"], "date": today, "already_open": True}
 
     order_number = _order_number(cid, data.table_id)
-    await db.execute(text("""
-        INSERT INTO pos_orders
-          (order_number, date, invoice_number, table_id, table_name,
-           waiter_id, guests_count, amount, cancelled, delivery,
-           company_id, time)
-        VALUES
-          (:on, :date, '0', :tid, :tname,
-           :wid, :guests, 0, 0, 0,
-           :cid, :time)
-    """), {
-        "on": order_number, "date": today, "tid": data.table_id,
-        "tname": mesa["name"], "wid": waiter_id,
-        "guests": data.guests_count, "cid": cid, "time": _time_str(),
-    })
-    await db.commit()
 
+    # Insertar en temp_comanda (Movil=1 = origen web)
+    await db_temp.execute(text("""
+        INSERT INTO temp_comanda
+            (company_id, Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora,
+             Mesero, Cancelado, Valor, Nro_Comenzales, Domicilio, Id_Cliente, Movil, updated_at)
+        VALUES
+            (:cid, :on, :date, '0', :mesa, :hora,
+             :wid, 0, 0, :guests, 0, 0, 1, NOW())
+    """), {
+        "cid":    cid,
+        "on":     order_number,
+        "date":   today,
+        "mesa":   mesa["name"],
+        "hora":   _time_str(),
+        "wid":    waiter_id,
+        "guests": data.guests_count,
+    })
+
+    # Marcar mesa como abierta en temp_mesa_abierta
+    await db_temp.execute(text("""
+        INSERT INTO temp_mesa_abierta
+            (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
+        VALUES (:cid, :tid, :mesa, 1, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            Mesa          = VALUES(Mesa),
+            Abierta       = 1,
+            Abierta_Desde = CASE WHEN Abierta = 0 THEN NOW() ELSE Abierta_Desde END,
+            updated_at    = NOW()
+    """), {"cid": cid, "tid": data.table_id, "mesa": mesa["name"]})
+
+    await db_temp.commit()
     return {"order_number": order_number, "date": today, "already_open": False}
 
 
@@ -309,81 +358,106 @@ async def get_orden_mesa(
     table_id: int,
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
     today = _today()
 
-    order = (await db.execute(text("""
-        SELECT o.order_number, o.date, o.amount, o.time, o.guests_count,
-               o.waiter_id, o.notes, o.table_name,
-               w.name AS waiter_name
-        FROM pos_orders o
-        LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = o.company_id
-        WHERE o.table_id = :tid AND o.company_id = :cid
-          AND o.date = :today AND o.invoice_number = '0' AND o.cancelled = 0
+    # Obtener nombre de mesa desde easyposweb
+    mesa_row = (await db.execute(text(
+        "SELECT name FROM pos_tables_layout WHERE id=:tid AND company_id=:cid"
+    ), {"tid": table_id, "cid": cid})).mappings().first()
+    if not mesa_row:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    mesa_name = str(mesa_row["name"])
+
+    # Pedido activo desde datatemppos
+    order = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
+        FROM temp_comanda
+        WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+          AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
-    """), {"tid": table_id, "cid": cid, "today": today})).mappings().first()
+    """), {"mesa": mesa_name, "cid": cid, "today": today})).mappings().first()
 
     if not order:
         return {"order": None, "items": []}
 
-    seq = (await db.execute(text("""
-        SELECT daily_seq FROM (
-            SELECT order_number,
-                   ROW_NUMBER() OVER (PARTITION BY company_id, date ORDER BY time ASC) AS daily_seq
-            FROM pos_orders
-            WHERE company_id = :cid AND date = :today
-              AND invoice_number = '0' AND cancelled = 0
-        ) ranked WHERE order_number = :on
-    """), {"cid": cid, "today": today, "on": order["order_number"]})).scalar()
+    on    = order["Nro_Pedido"]
+    fecha = str(order["Fecha"])
 
-    items_rows = (await db.execute(text("""
-        SELECT od.dish_id, od.item, od.depends_on, od.quantity, od.amount,
-               od.notes, od.changes, od.custom_product, od.dish_time,
-               d.name AS dish_name, d.price,
-               d.offer_priority   AS has_assembly,
-               d.preparation_time AS no_print
-        FROM pos_order_details od
-        JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
-        WHERE od.order_number = :on AND od.date = :date
-          AND od.invoice_number = '0' AND od.company_id = :cid
-          AND od.depends_on = 0
-        ORDER BY od.item
-    """), {"on": order["order_number"], "date": str(order["date"]), "cid": cid})).mappings().all()
+    # Calcular daily_seq
+    seq_rows = (await db_temp.execute(text("""
+        SELECT Nro_Pedido FROM temp_comanda
+        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0' AND Cancelado=0
+        ORDER BY Hora ASC
+    """), {"cid": cid, "today": today})).mappings().all()
+    seq_map = {r["Nro_Pedido"]: i + 1 for i, r in enumerate(seq_rows)}
+
+    # Nombre del mesero desde easyposweb
+    waiter_id = int(order["Mesero"] or 0)
+    waiter_name = None
+    if waiter_id:
+        wrow = (await db.execute(text(
+            "SELECT name FROM pos_waiters WHERE id=:wid AND company_id=:cid"
+        ), {"wid": waiter_id, "cid": cid})).mappings().first()
+        waiter_name = wrow["name"] if wrow else None
+
+    # Ítems del pedido desde datatemppos (solo registros maestros: Mostrar=1)
+    items_rows = (await db_temp.execute(text("""
+        SELECT Id_Plato, Item, Depende, Cantidad, Valor, Novedad,
+               Cambios, Producto_Personalizado, Hora_Plato
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Fecha=:fecha AND Nro_Factura='0'
+          AND company_id=:cid AND Mostrar=1
+        ORDER BY Item
+    """), {"on": on, "fecha": fecha, "cid": cid})).mappings().all()
+
+    # Nombres de platos desde easyposweb
+    dish_ids = list({int(r["Id_Plato"]) for r in items_rows})
+    dish_names: dict = {}
+    if dish_ids:
+        id_list = ",".join(str(d) for d in dish_ids)
+        drows = (await db.execute(text(
+            f"SELECT id, name FROM pos_dishes WHERE company_id=:cid AND id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        dish_names = {int(r["id"]): r["name"] for r in drows}
 
     items = []
     for r in items_rows:
         assembly = []
-        if r["custom_product"]:
+        if r["Producto_Personalizado"]:
             try:
-                cp = json.loads(r["custom_product"])
+                cp = json.loads(r["Producto_Personalizado"])
                 assembly = cp.get("assembly", [])
             except Exception:
                 pass
+        hora_plato = str(r["Hora_Plato"] or "")
+        sent = bool(hora_plato and hora_plato not in ("", "0"))
         items.append({
-            "dish_id": r["dish_id"],
-            "item": r["item"],
-            "dish_name": r["dish_name"],
-            "quantity": r["quantity"],
-            "amount": r["amount"],
-            "notes": r["notes"],
-            "changes": r["changes"],
-            "assembly": assembly,
-            "dish_time": r["dish_time"],
-            "sent": bool(r["dish_time"]),
+            "dish_id":   int(r["Id_Plato"]),
+            "item":      int(r["Item"]),
+            "dish_name": dish_names.get(int(r["Id_Plato"]), f"Plato {r['Id_Plato']}"),
+            "quantity":  float(r["Cantidad"] or 0),
+            "amount":    int(r["Valor"] or 0),
+            "notes":     r["Novedad"],
+            "changes":   r["Cambios"],
+            "assembly":  assembly,
+            "dish_time": hora_plato,
+            "sent":      sent,
         })
 
     return {
         "order": {
-            "order_number": order["order_number"],
-            "date": str(order["date"]),
-            "amount": order["amount"],
-            "time": order["time"],
-            "guests_count": order["guests_count"],
-            "waiter_id": order["waiter_id"],
-            "waiter_name": order["waiter_name"],
-            "table_name": order["table_name"],
-            "daily_seq": int(seq) if seq else 1,
+            "order_number": on,
+            "date":         fecha,
+            "amount":       int(order["Valor"] or 0),
+            "time":         str(order["Hora"] or ""),
+            "guests_count": int(order["Nro_Comenzales"] or 0),
+            "waiter_id":    waiter_id,
+            "waiter_name":  waiter_name,
+            "table_name":   order["Mesa"],
+            "daily_seq":    seq_map.get(on, 1),
         },
         "items": items,
     }
@@ -467,24 +541,24 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
         cat_id = d["category_id"] or 0
         if cat_id not in categories:
             categories[cat_id] = {
-                "category_id": cat_id,
+                "category_id":   cat_id,
                 "category_name": d["category_name"] or "Sin categoría",
-                "dishes": [],
+                "dishes":        [],
             }
         categories[cat_id]["dishes"].append({
-            "id": d["id"],
-            "name": d["name"],
-            "price": d["price"],
-            "photo_path": d["photo_path"] or None,
-            "tax": float(d["tax"]) if d["tax"] else 0,
+            "id":          d["id"],
+            "name":        d["name"],
+            "price":       d["price"],
+            "photo_path":  d["photo_path"] or None,
+            "tax":         float(d["tax"]) if d["tax"] else 0,
             "has_assembly": bool(d["has_assembly"]),
-            "no_print": bool(d["no_print"]),
+            "no_print":    bool(d["no_print"]),
             "printer_ids": ip_map.get(int(d["id"]), []),
         })
 
     return {
         "categories": list(categories.values()),
-        "printers": [{"id": p["id"], "name": p["name"]} for p in printers],
+        "printers":   [{"id": p["id"], "name": p["name"]} for p in printers],
     }
 
 
@@ -557,10 +631,10 @@ async def get_menu_diario(
     for row in options_rows:
         cc = int(row["category_code"])
         options_by_cat.setdefault(cc, []).append({
-            "item_id": row["item_id"],
-            "item_name": row["item_name"] or f"Opción {row['item_id']}",
-            "discount_qty": float(row["discount_qty"]) if row["discount_qty"] else 1.0,
-            "is_default": bool(row["is_default"]),
+            "item_id":        row["item_id"],
+            "item_name":      row["item_name"] or f"Opción {row['item_id']}",
+            "discount_qty":   float(row["discount_qty"]) if row["discount_qty"] else 1.0,
+            "is_default":     bool(row["is_default"]),
             "available_today": bool(row["available_today"]),
         })
 
@@ -574,16 +648,16 @@ async def get_menu_diario(
     for cat in assembly_cats:
         cc = int(cat["category_code"])
         result.append({
-            "category_code": cc,
-            "category_name": cat["category_name"] or f"Categoría {cc}",
-            "max_choices": cat["max_choices"],
-            "is_required": bool(cat["is_required"]),
+            "category_code":        cc,
+            "category_name":        cat["category_name"] or f"Categoría {cc}",
+            "max_choices":          cat["max_choices"],
+            "is_required":          bool(cat["is_required"]),
             "print_on_change_only": bool(cat["print_on_change_only"]),
-            "options": options_by_cat.get(cc, []),
+            "options":              options_by_cat.get(cc, []),
         })
 
     return {
-        "categories": result,
+        "categories":     result,
         "fixed_products": [
             {"item_id": f["item_id"], "quantity": f["quantity"], "description": f["description"]}
             for f in fixed
@@ -622,33 +696,38 @@ async def agregar_item(
     data: AgregarItemIn,
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
 
-    order = (await db.execute(text(
-        "SELECT order_number FROM pos_orders "
-        "WHERE order_number=:on AND date=:date AND company_id=:cid "
-        "AND invoice_number='0' AND cancelled=0 LIMIT 1"
-    ), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().first()
+    # Verificar pedido activo en datatemppos
+    order = (await db_temp.execute(text("""
+        SELECT Nro_Pedido FROM temp_comanda
+        WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
+          AND Nro_Factura='0' AND Cancelado=0
+        LIMIT 1
+    """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().first()
     if not order:
         raise HTTPException(status_code=404, detail="Orden no encontrada o ya cerrada")
 
+    # Info del plato desde easyposweb
     dish = (await db.execute(text(
         "SELECT id, price, tax FROM pos_dishes WHERE id=:did AND company_id=:cid"
     ), {"did": data.dish_id, "cid": cid})).mappings().first()
     if not dish:
         raise HTTPException(status_code=404, detail="Plato no encontrado o inactivo")
 
-    max_item = (await db.execute(text(
-        "SELECT COALESCE(MAX(item), 0) FROM pos_order_details "
-        "WHERE order_number=:on AND date=:date AND company_id=:cid"
+    # Siguiente número de ítem en datatemppos
+    max_item = (await db_temp.execute(text(
+        "SELECT COALESCE(MAX(Item), 0) FROM temp_detalle_comanda_parcial "
+        "WHERE Nro_pedido=:on AND Fecha=:date AND company_id=:cid"
     ), {"on": data.order_number, "date": data.date, "cid": cid})).scalar() or 0
     item_num = int(max_item) + 1
 
     amount = data.amount if data.amount else int(dish["price"] * data.quantity)
     tax_pct = float(dish["tax"]) if dish["tax"] else 0
     pays_tax = 1 if tax_pct > 0 else 0
-    tax_val = int(amount * tax_pct / 100) if pays_tax else 0
+    tax_val  = int(amount * tax_pct / 100) if pays_tax else 0
 
     custom_product = None
     if data.assembly_selections:
@@ -657,61 +736,62 @@ async def agregar_item(
             ensure_ascii=False,
         )
 
-    await db.execute(text("""
-        INSERT INTO pos_order_details
-          (order_number, date, invoice_number, dish_id, item, depends_on,
-           quantity, amount, notes, changes, pays_tax, tax, original_tax,
-           custom_product, seat_number, company_id)
+    # Insertar ítem en datatemppos (Mostrar=1 = registro maestro)
+    await db_temp.execute(text("""
+        INSERT INTO temp_detalle_comanda_parcial
+            (company_id, Nro_pedido, Fecha, Nro_Factura, Id_Plato, Item, Depende,
+             Cantidad, Valor, Novedad, Cambios, Paga_Impuesto, Impuesto, Impuesto_Original,
+             Producto_Personalizado, Nro_Puesto, Mostrar, updated_at)
         VALUES
-          (:on, :date, '0', :did, :item, 0,
-           :qty, :amount, :notes, :changes, :pays_tax, :tax, :tax,
-           :custom, 0, :cid)
+            (:cid, :on, :date, '0', :did, :item, '0',
+             :qty, :amount, :notes, :changes, :pays_tax, :tax, :tax,
+             :custom, 0, 1, NOW())
     """), {
-        "on": data.order_number, "date": data.date, "did": data.dish_id,
-        "item": item_num, "qty": data.quantity, "amount": amount,
-        "notes": data.notes, "changes": data.changes,
-        "pays_tax": pays_tax, "tax": tax_val,
-        "custom": custom_product, "cid": cid,
+        "cid":      cid,
+        "on":       data.order_number,
+        "date":     data.date,
+        "did":      data.dish_id,
+        "item":     item_num,
+        "qty":      data.quantity,
+        "amount":   amount,
+        "notes":    data.notes,
+        "changes":  data.changes,
+        "pays_tax": pays_tax,
+        "tax":      tax_val,
+        "custom":   custom_product,
     })
 
-    # Assembly selections → pos_order_detail_products
+    # Armado → temp_plato_producto_parcial
     for sel in (data.assembly_selections or []):
-        await db.execute(text("""
-            INSERT INTO pos_order_detail_products
-              (order_number, date, invoice_number, dish_id, item, group_id, item_id, quantity, company_id)
-            VALUES (:on, :date, '0', :did, :item, :gid, :iid, :qty, :cid)
-            ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)
+        await db_temp.execute(text("""
+            INSERT INTO temp_plato_producto_parcial
+                (company_id, Nro_Pedido, Fecha, Nro_Factura,
+                 Id_Plato, Item, Id_Grupo, Id_Item, Cantidad, updated_at)
+            VALUES
+                (:cid, :on, :date, '0',
+                 :did, :item, :gid, :iid, :qty, NOW())
+            ON DUPLICATE KEY UPDATE Cantidad = VALUES(Cantidad)
         """), {
-            "on": data.order_number, "date": data.date, "did": data.dish_id,
-            "item": item_num, "gid": sel.category_code,
-            "iid": sel.item_id, "qty": sel.discount_qty, "cid": cid,
+            "cid":  cid,
+            "on":   data.order_number,
+            "date": data.date,
+            "did":  data.dish_id,
+            "item": item_num,
+            "gid":  sel.category_code,
+            "iid":  sel.item_id,
+            "qty":  sel.discount_qty,
         })
 
-    # Fixed products (group_id=0, always deducted at invoice time)
-    fixed_rows = (await db.execute(text(
-        "SELECT supplier_id, minimum_units FROM pos_dish_products "
-        "WHERE dish_id=:did AND company_id=:cid AND active=1"
-    ), {"did": data.dish_id, "cid": cid})).mappings().all()
-    for fp in fixed_rows:
-        await db.execute(text("""
-            INSERT INTO pos_order_detail_products
-              (order_number, date, invoice_number, dish_id, item, group_id, item_id, quantity, company_id)
-            VALUES (:on, :date, '0', :did, :item, 0, :iid, :qty, :cid)
-            ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)
-        """), {
-            "on": data.order_number, "date": data.date, "did": data.dish_id,
-            "item": item_num, "iid": fp["supplier_id"],
-            "qty": float(fp["minimum_units"]) * data.quantity, "cid": cid,
-        })
-
-    # Recalculate order total
-    await _recalc_total(db, data.order_number, data.date, cid)
-    await db.commit()
+    await _recalc_total(db_temp, data.order_number, data.date, cid)
+    await db_temp.commit()
 
     return {
-        "item": item_num, "dish_id": data.dish_id,
-        "quantity": data.quantity, "amount": amount,
-        "notes": data.notes, "changes": data.changes,
+        "item":     item_num,
+        "dish_id":  data.dish_id,
+        "quantity": data.quantity,
+        "amount":   amount,
+        "notes":    data.notes,
+        "changes":  data.changes,
     }
 
 
@@ -721,15 +801,18 @@ async def agregar_item(
 async def actualizar_item(
     data: ActualizarItemIn,
     payload: dict = Depends(_auth_comanda),
-    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
 
-    current = (await db.execute(text(
-        "SELECT quantity, amount FROM pos_order_details "
-        "WHERE order_number=:on AND date=:date AND invoice_number='0' "
-        "AND dish_id=:did AND item=:item AND company_id=:cid"
-    ), {"on": data.order_number, "date": data.date, "did": data.dish_id, "item": data.item, "cid": cid})).mappings().first()
+    current = (await db_temp.execute(text("""
+        SELECT Cantidad, Valor FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
+          AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1
+    """), {
+        "on": data.order_number, "date": data.date,
+        "did": data.dish_id, "item": data.item, "cid": cid,
+    })).mappings().first()
     if not current:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
 
@@ -739,25 +822,26 @@ async def actualizar_item(
     }
 
     if data.quantity is not None:
-        unit_price = int(current["amount"] / current["quantity"]) if current["quantity"] else 0
-        sets += ["quantity = :qty", "amount = :amount"]
-        params["qty"] = data.quantity
+        qty = float(current["Cantidad"])
+        unit_price = int(int(current["Valor"]) / qty) if qty else 0
+        sets += ["Cantidad = :qty", "Valor = :amount"]
+        params["qty"]    = data.quantity
         params["amount"] = unit_price * data.quantity
     if data.notes is not None:
-        sets.append("notes = :notes")
+        sets.append("Novedad = :notes")
         params["notes"] = data.notes
     if data.changes is not None:
-        sets.append("changes = :changes")
+        sets.append("Cambios = :changes")
         params["changes"] = data.changes
 
     if sets:
-        await db.execute(text(
-            f"UPDATE pos_order_details SET {', '.join(sets)} "
-            "WHERE order_number=:on AND date=:date AND invoice_number='0' "
-            "AND dish_id=:did AND item=:item AND company_id=:cid"
+        await db_temp.execute(text(
+            f"UPDATE temp_detalle_comanda_parcial SET {', '.join(sets)} "
+            "WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0' "
+            "AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1"
         ), params)
-        await _recalc_total(db, data.order_number, data.date, cid)
-        await db.commit()
+        await _recalc_total(db_temp, data.order_number, data.date, cid)
+        await db_temp.commit()
 
     return {"ok": True}
 
@@ -768,25 +852,31 @@ async def actualizar_item(
 async def eliminar_item(
     data: EliminarItemIn,
     payload: dict = Depends(_auth_comanda),
-    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
 
-    await db.execute(text("""
-        DELETE FROM pos_order_detail_products
-        WHERE order_number=:on AND date=:date AND invoice_number='0'
-          AND dish_id=:did AND item=:item AND company_id=:cid
-    """), {"on": data.order_number, "date": data.date, "did": data.dish_id, "item": data.item, "cid": cid})
+    # Borrar armado del ítem
+    await db_temp.execute(text("""
+        DELETE FROM temp_plato_producto_parcial
+        WHERE Nro_Pedido=:on AND Id_Plato=:did AND Item=:item AND company_id=:cid
+    """), {
+        "on": data.order_number, "did": data.dish_id,
+        "item": data.item, "cid": cid,
+    })
 
-    await db.execute(text("""
-        DELETE FROM pos_order_details
-        WHERE order_number=:on AND date=:date AND invoice_number='0'
-          AND dish_id=:did AND item=:item AND depends_on=:dep AND company_id=:cid
-    """), {"on": data.order_number, "date": data.date, "did": data.dish_id,
-           "item": data.item, "dep": data.depends_on, "cid": cid})
+    # Borrar ítem principal
+    await db_temp.execute(text("""
+        DELETE FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
+          AND Id_Plato=:did AND Item=:item AND company_id=:cid
+    """), {
+        "on": data.order_number, "date": data.date,
+        "did": data.dish_id, "item": data.item, "cid": cid,
+    })
 
-    await _recalc_total(db, data.order_number, data.date, cid)
-    await db.commit()
+    await _recalc_total(db_temp, data.order_number, data.date, cid)
+    await db_temp.commit()
     return {"ok": True}
 
 
@@ -796,20 +886,20 @@ async def eliminar_item(
 async def enviar_cocina(
     data: EnviarCocinaIn,
     payload: dict = Depends(_auth_comanda),
-    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
     now_str = _now_bog().strftime("%Y-%m-%d %H:%M:%S")
 
-    result = await db.execute(text("""
-        UPDATE pos_order_details
-        SET dish_time = :now
-        WHERE order_number = :on AND date = :date
-          AND invoice_number = '0' AND company_id = :cid
-          AND (dish_time IS NULL OR dish_time = '')
+    result = await db_temp.execute(text("""
+        UPDATE temp_detalle_comanda_parcial
+        SET Hora_Plato = :now
+        WHERE Nro_pedido = :on AND Fecha = :date
+          AND Nro_Factura = '0' AND company_id = :cid
+          AND (Hora_Plato IS NULL OR Hora_Plato = '' OR Hora_Plato = '0')
     """), {"now": now_str, "on": data.order_number, "date": data.date, "cid": cid})
 
-    await db.commit()
+    await db_temp.commit()
     return {"sent": result.rowcount}
 
 
@@ -819,7 +909,6 @@ async def enviar_cocina(
 async def solicitar_cuenta(
     data: SolicitarCuentaIn,
     payload: dict = Depends(_auth_comanda),
-    db: AsyncSession = Depends(get_db),
 ):
     return {"ok": True}
 
@@ -831,24 +920,43 @@ async def cancelar_orden(
     data: CancelarOrdenIn,
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
     today = _today()
 
-    order = (await db.execute(text(
-        "SELECT order_number, date FROM pos_orders "
-        "WHERE table_id=:tid AND company_id=:cid AND date=:today "
-        "AND invoice_number='0' AND cancelled=0 LIMIT 1"
-    ), {"tid": data.table_id, "cid": cid, "today": today})).mappings().first()
+    # Obtener nombre de mesa desde easyposweb
+    mesa_row = (await db.execute(text(
+        "SELECT name FROM pos_tables_layout WHERE id=:tid AND company_id=:cid"
+    ), {"tid": data.table_id, "cid": cid})).mappings().first()
+    if not mesa_row:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    mesa_name = str(mesa_row["name"])
+
+    # Buscar pedido activo en datatemppos
+    order = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Fecha FROM temp_comanda
+        WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+          AND Nro_Factura='0' AND Cancelado=0
+        LIMIT 1
+    """), {"mesa": mesa_name, "cid": cid, "today": today})).mappings().first()
     if not order:
         raise HTTPException(status_code=404, detail="No hay orden activa para esta mesa")
 
-    await db.execute(text(
-        "UPDATE pos_orders SET cancelled=1 "
-        "WHERE order_number=:on AND date=:date AND company_id=:cid"
-    ), {"on": order["order_number"], "date": order["date"], "cid": cid})
+    # Cancelar en temp_comanda
+    await db_temp.execute(text("""
+        UPDATE temp_comanda SET Cancelado=1
+        WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
+    """), {"on": order["Nro_Pedido"], "date": str(order["Fecha"]), "cid": cid})
 
-    await db.commit()
+    # Marcar mesa como cerrada en temp_mesa_abierta
+    await db_temp.execute(text("""
+        UPDATE temp_mesa_abierta
+        SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW()
+        WHERE Id_Mesa=:tid AND company_id=:cid
+    """), {"tid": data.table_id, "cid": cid})
+
+    await db_temp.commit()
     return {"ok": True}
 
 
@@ -902,55 +1010,98 @@ async def reenviar_orden(
 async def get_cocina_pedidos(
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     """Lista órdenes actualmente visibles en la pantalla de cocina TV."""
     cid = payload["company_id"]
     today = _today()
 
-    rows = (await db.execute(text("""
-        SELECT
-            o.order_number, o.date, o.table_name, o.amount, o.time AS order_time,
-            w.name AS waiter_name,
-            (SELECT COUNT(*) FROM pos_order_details od2
-             WHERE od2.order_number = o.order_number AND od2.date = o.date
-               AND od2.invoice_number = '0' AND od2.company_id = :cid
-               AND od2.dish_time IS NOT NULL AND od2.dish_time != '') AS item_count,
-            (SELECT GROUP_CONCAT(d2.name ORDER BY d2.name SEPARATOR ', ')
-             FROM pos_order_details od3
-             JOIN pos_dishes d2 ON d2.id = od3.dish_id
-             WHERE od3.order_number = o.order_number AND od3.date = o.date
-               AND od3.invoice_number = '0' AND od3.company_id = :cid
-               AND od3.dish_time IS NOT NULL AND od3.dish_time != ''
-             LIMIT 5) AS items_preview
-        FROM pos_orders o
-        LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = :cid
-        LEFT JOIN pos_kitchen_status ks
-               ON ks.order_number = o.order_number AND ks.date = o.date AND ks.company_id = :cid
-        WHERE o.company_id = :cid AND o.date = :today
-          AND o.invoice_number = '0' AND o.cancelled = 0
-          AND (ks.dispatched IS NULL OR ks.dispatched = 0)
-          AND EXISTS (
-              SELECT 1 FROM pos_order_details od
-              WHERE od.order_number = o.order_number AND od.date = o.date
-                AND od.invoice_number = '0' AND od.company_id = :cid
-                AND od.dish_time IS NOT NULL AND od.dish_time != ''
-          )
-        ORDER BY o.time
+    # Pedidos activos desde datatemppos
+    order_rows = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Fecha, Mesa, Valor, Hora, Mesero
+        FROM temp_comanda
+        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0' AND Cancelado=0
+        ORDER BY Hora ASC
     """), {"cid": cid, "today": today})).mappings().all()
 
-    return [
-        {
-            "order_number": r["order_number"],
-            "date": r["date"],
-            "table_name": r["table_name"],
-            "waiter_name": r["waiter_name"],
-            "order_time": str(r["order_time"] or "")[:5],
-            "amount": float(r["amount"] or 0),
-            "item_count": int(r["item_count"] or 0),
-            "items_preview": r["items_preview"] or "",
-        }
-        for r in rows
-    ]
+    if not order_rows:
+        return []
+
+    order_numbers = [r["Nro_Pedido"] for r in order_rows]
+    on_quoted = ",".join(f"'{o}'" for o in order_numbers)
+
+    # Pedidos ya despachados desde easyposweb
+    ks_rows = (await db.execute(text(
+        f"SELECT order_number FROM pos_kitchen_status "
+        f"WHERE company_id=:cid AND date=:today AND dispatched=1 "
+        f"AND order_number IN ({on_quoted})"
+    ), {"cid": cid, "today": today})).mappings().all()
+    dispatched_set = {r["order_number"] for r in ks_rows}
+
+    # Ítems enviados (Hora_Plato establecida) por pedido desde datatemppos
+    detail_rows = (await db_temp.execute(text(
+        f"SELECT Nro_pedido, Id_Plato, COUNT(*) AS cnt "
+        f"FROM temp_detalle_comanda_parcial "
+        f"WHERE company_id=:cid AND Nro_Factura='0' AND Mostrar=1 "
+        f"AND Hora_Plato IS NOT NULL AND Hora_Plato NOT IN ('', '0') "
+        f"AND Nro_pedido IN ({on_quoted}) "
+        f"GROUP BY Nro_pedido, Id_Plato"
+    ), {"cid": cid})).mappings().all()
+
+    sent_count: dict = {}
+    dish_ids_sent: set = set()
+    for r in detail_rows:
+        on = r["Nro_pedido"]
+        sent_count[on] = sent_count.get(on, 0) + int(r["cnt"])
+        dish_ids_sent.add(int(r["Id_Plato"]))
+
+    # Nombres de platos desde easyposweb
+    dish_names: dict = {}
+    if dish_ids_sent:
+        id_list = ",".join(str(d) for d in dish_ids_sent)
+        drows = (await db.execute(text(
+            f"SELECT id, name FROM pos_dishes WHERE company_id=:cid AND id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        dish_names = {int(r["id"]): r["name"] for r in drows}
+
+    # Preview de platos enviados por pedido
+    preview_per_order: dict = {}
+    for r in detail_rows:
+        on = r["Nro_pedido"]
+        dn = dish_names.get(int(r["Id_Plato"]), "")
+        if dn:
+            preview_per_order.setdefault(on, []).append(dn)
+
+    # Nombres de meseros desde easyposweb
+    waiter_ids = {int(r["Mesero"]) for r in order_rows if r["Mesero"]}
+    waiter_names: dict = {}
+    if waiter_ids:
+        id_list = ",".join(str(w) for w in waiter_ids)
+        wrows = (await db.execute(text(
+            f"SELECT id, name FROM pos_waiters WHERE company_id=:cid AND id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        waiter_names = {int(r["id"]): r["name"] for r in wrows}
+
+    result = []
+    for r in order_rows:
+        on = r["Nro_Pedido"]
+        if on in dispatched_set:
+            continue
+        if sent_count.get(on, 0) == 0:
+            continue
+        waiter_id = int(r["Mesero"] or 0)
+        result.append({
+            "order_number":  on,
+            "date":          str(r["Fecha"]),
+            "table_name":    r["Mesa"],
+            "waiter_name":   waiter_names.get(waiter_id),
+            "order_time":    str(r["Hora"] or "")[:5],
+            "amount":        float(r["Valor"] or 0),
+            "item_count":    sent_count.get(on, 0),
+            "items_preview": ", ".join(preview_per_order.get(on, [])[:5]),
+        })
+
+    return result
 
 
 # ── 14. COCINA TV ─────────────────────────────────────────────────────────────
@@ -994,8 +1145,9 @@ async def regenerar_tv_token(
 async def get_cocina(
     token: str = Query(..., description="Token TV de la empresa (opaco, sin exponer company_id)"),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
-    # Mapear token → company_id
+    # 1. Resolver token → company_id desde easyposweb
     company_row = (await db.execute(text(
         "SELECT id_company FROM companies WHERE kitchen_tv_token = :tok LIMIT 1"
     ), {"tok": token})).mappings().first()
@@ -1004,109 +1156,166 @@ async def get_cocina(
     cid = int(company_row["id_company"])
     today = _today()
 
-    rows = (await db.execute(text("""
-        WITH ranked AS (
-            SELECT order_number, date, table_name, waiter_id, time,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY company_id, date ORDER BY time ASC
-                   ) AS daily_seq
-            FROM pos_orders
-            WHERE company_id = :cid AND date = :today
-              AND invoice_number = '0' AND cancelled = 0
-        )
-        SELECT
-            r.daily_seq,
-            r.table_name,
-            r.time          AS order_time,
-            w.name          AS waiter_name,
-            od.order_number,
-            od.dish_id,
-            od.item,
-            od.quantity,
-            od.notes,
-            od.changes,
-            od.custom_product,
-            od.dish_time,
-            COALESCE(od.dish_time, CONCAT(r.date, ' ', r.time)) AS effective_time,
-            d.name          AS dish_name,
-            ip.printer_id,
-            p.name          AS printer_name,
-            COALESCE(ks.resent_at, '') AS resent_at
-        FROM ranked r
-        JOIN pos_order_details od
-             ON od.order_number   = r.order_number
-            AND od.date           = r.date
-            AND od.invoice_number = '0'
-            AND od.company_id     = :cid
-        JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
-        LEFT JOIN pos_waiters w ON w.id = r.waiter_id AND w.company_id = :cid
-        JOIN pos_item_printers ip ON ip.item_id = od.dish_id AND ip.company_id = :cid
-        JOIN pos_printers p
-             ON p.id = ip.printer_id AND p.company_id = :cid AND p.is_active = 1
-        LEFT JOIN pos_kitchen_status ks
-             ON ks.order_number = r.order_number AND ks.date = r.date AND ks.company_id = :cid
-        WHERE d.preparation_time = 0
-          AND (ks.dispatched IS NULL OR ks.dispatched = 0)
-        ORDER BY ip.printer_id, r.daily_seq
-    """), {"cid": cid, "today": today})).mappings().all()
-
-    # Solo impresoras activas como columnas
+    # 2. Impresoras activas desde easyposweb
     all_printers = (await db.execute(text(
         "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
     ), {"cid": cid})).mappings().all()
-
     printer_map: dict = {
-        int(p["id"]): {
-            "printer_id": int(p["id"]),
-            "printer_name": p["name"],
-            "orders": {},
-        }
+        int(p["id"]): {"printer_id": int(p["id"]), "printer_name": p["name"], "orders": {}}
         for p in all_printers
     }
 
-    for row in rows:
-        pid = int(row["printer_id"])
-        oid = row["order_number"]
-        if pid not in printer_map:
+    # 3. Pedidos activos + ítems desde datatemppos
+    order_rows = (await db_temp.execute(text("""
+        SELECT tc.Nro_Pedido, tc.Mesa, tc.Hora, tc.Mesero,
+               tdc.Id_Plato, tdc.Item, tdc.Cantidad,
+               tdc.Novedad, tdc.Cambios, tdc.Hora_Plato, tdc.Producto_Personalizado
+        FROM temp_comanda tc
+        JOIN temp_detalle_comanda_parcial tdc
+             ON tdc.Nro_pedido  = tc.Nro_Pedido
+            AND tdc.Fecha       = tc.Fecha
+            AND tdc.Nro_Factura = '0'
+            AND tdc.company_id  = :cid
+            AND tdc.Mostrar     = 1
+        WHERE tc.company_id  = :cid
+          AND tc.Fecha       = :today
+          AND tc.Nro_Factura = '0'
+          AND tc.Cancelado   = 0
+        ORDER BY tc.Hora ASC, tdc.Item ASC
+    """), {"cid": cid, "today": today})).mappings().all()
+
+    if not order_rows:
+        return [
+            {"printer_id": pdata["printer_id"], "printer_name": pdata["printer_name"], "orders": []}
+            for pdata in printer_map.values()
+        ]
+
+    # 4. Colectar IDs para lookups en easyposweb
+    dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
+    order_numbers = list({r["Nro_Pedido"] for r in order_rows})
+    waiter_ids    = list({int(r["Mesero"]) for r in order_rows if r["Mesero"]})
+    id_list       = ",".join(str(d) for d in dish_ids)
+    on_quoted     = ",".join(f"'{o}'" for o in order_numbers)
+
+    # 5. Info de platos (nombre, flag no_print) desde easyposweb
+    dish_info: dict = {}
+    if dish_ids:
+        drows = (await db.execute(text(
+            f"SELECT id, name, preparation_time FROM pos_dishes "
+            f"WHERE company_id=:cid AND id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        dish_info = {
+            int(r["id"]): {"name": r["name"], "no_print": bool(r["preparation_time"])}
+            for r in drows
+        }
+
+    # 6. Asignación de impresoras por plato desde easyposweb
+    printer_for_dish: dict = {}
+    if dish_ids:
+        prows = (await db.execute(text(
+            f"SELECT ip.item_id, ip.printer_id "
+            f"FROM pos_item_printers ip "
+            f"JOIN pos_printers p ON p.id=ip.printer_id AND p.company_id=:cid AND p.is_active=1 "
+            f"WHERE ip.company_id=:cid AND ip.item_id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        for pr in prows:
+            printer_for_dish.setdefault(int(pr["item_id"]), []).append(int(pr["printer_id"]))
+
+    # 7. Nombres de meseros desde easyposweb
+    waiter_names: dict = {}
+    if waiter_ids:
+        wrows = (await db.execute(text(
+            f"SELECT id, name FROM pos_waiters WHERE company_id=:cid "
+            f"AND id IN ({','.join(str(w) for w in waiter_ids)})"
+        ), {"cid": cid})).mappings().all()
+        waiter_names = {int(r["id"]): r["name"] for r in wrows}
+
+    # 8. Estado de despacho/reenvío desde easyposweb
+    ks_map: dict = {}
+    if order_numbers:
+        ksrows = (await db.execute(text(
+            f"SELECT order_number, dispatched, resent_at FROM pos_kitchen_status "
+            f"WHERE company_id=:cid AND date=:today AND order_number IN ({on_quoted})"
+        ), {"cid": cid, "today": today})).mappings().all()
+        ks_map = {
+            r["order_number"]: {
+                "dispatched": bool(r["dispatched"]),
+                "resent_at":  str(r["resent_at"] or ""),
+            }
+            for r in ksrows
+        }
+
+    # 9. Calcular daily_seq por hora de pedido
+    order_times: dict = {}
+    for r in order_rows:
+        on = r["Nro_Pedido"]
+        if on not in order_times:
+            order_times[on] = str(r["Hora"] or "")
+    sorted_orders = sorted(order_times.keys(), key=lambda x: order_times[x])
+    daily_seq_map = {on: i + 1 for i, on in enumerate(sorted_orders)}
+
+    # 10. Construir columnas por impresora
+    for row in order_rows:
+        did  = int(row["Id_Plato"])
+        dinfo = dish_info.get(did, {})
+
+        if dinfo.get("no_print"):
             continue
 
-        resent_at = str(row["resent_at"]) if row["resent_at"] else ""
+        on = row["Nro_Pedido"]
+        ks = ks_map.get(on, {})
+        if ks.get("dispatched"):
+            continue
 
-        if oid not in printer_map[pid]["orders"]:
-            printer_map[pid]["orders"][oid] = {
-                "order_number": oid,
-                "daily_seq": int(row["daily_seq"]),
-                "table_name": row["table_name"],
-                "waiter_name": row["waiter_name"],
-                "order_time": row["order_time"],
-                "latest_dish_time": row["effective_time"] or "",
-                "resent_at": resent_at,
-                "items": [],
-            }
-        else:
-            eff = row["effective_time"] or ""
-            cur = printer_map[pid]["orders"][oid]["latest_dish_time"]
-            if eff and (not cur or eff < cur):
-                printer_map[pid]["orders"][oid]["latest_dish_time"] = eff
+        printers_for_dish = printer_for_dish.get(did, [])
+        if not printers_for_dish:
+            continue
+
+        hora_plato = str(row["Hora_Plato"] or "")
+        sent = hora_plato and hora_plato not in ("", "0")
+        eff_time = hora_plato if sent else f"{today} {str(row['Hora'] or '')}"
 
         assembly = []
-        if row["custom_product"]:
+        if row["Producto_Personalizado"]:
             try:
-                cp = json.loads(row["custom_product"])
+                cp = json.loads(row["Producto_Personalizado"])
                 assembly = cp.get("assembly", [])
             except Exception:
                 pass
 
-        printer_map[pid]["orders"][oid]["items"].append({
-            "dish_id": row["dish_id"],
-            "item": row["item"],
-            "dish_name": row["dish_name"],
-            "quantity": row["quantity"],
-            "notes": row["notes"],
-            "changes": row["changes"],
-            "assembly": assembly,
-            "dish_time": row["effective_time"],
-        })
+        item_data = {
+            "dish_id":   did,
+            "item":      int(row["Item"]),
+            "dish_name": dinfo.get("name", f"Plato {did}"),
+            "quantity":  float(row["Cantidad"] or 0),
+            "notes":     row["Novedad"],
+            "changes":   row["Cambios"],
+            "assembly":  assembly,
+            "dish_time": eff_time,
+        }
+
+        for pid in printers_for_dish:
+            if pid not in printer_map:
+                continue
+            if on not in printer_map[pid]["orders"]:
+                waiter_id = int(row["Mesero"] or 0)
+                printer_map[pid]["orders"][on] = {
+                    "order_number":    on,
+                    "daily_seq":       daily_seq_map.get(on, 0),
+                    "table_name":      row["Mesa"],
+                    "waiter_name":     waiter_names.get(waiter_id),
+                    "order_time":      str(row["Hora"] or ""),
+                    "latest_dish_time": eff_time,
+                    "resent_at":       ks.get("resent_at", ""),
+                    "bill_requested":  False,
+                    "items":           [],
+                }
+            else:
+                cur = printer_map[pid]["orders"][on]["latest_dish_time"]
+                if eff_time and (not cur or eff_time < cur):
+                    printer_map[pid]["orders"][on]["latest_dish_time"] = eff_time
+
+            printer_map[pid]["orders"][on]["items"].append(item_data)
 
     result = []
     for pid in sorted(printer_map.keys()):
@@ -1117,9 +1326,9 @@ async def get_cocina(
             reverse=True,
         )
         result.append({
-            "printer_id": pdata["printer_id"],
+            "printer_id":   pdata["printer_id"],
             "printer_name": pdata["printer_name"],
-            "orders": orders,
+            "orders":       orders,
         })
 
     return result
@@ -1127,16 +1336,20 @@ async def get_cocina(
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-async def _recalc_total(db: AsyncSession, order_number: str, date: str, cid: int) -> None:
-    await db.execute(text("""
-        UPDATE pos_orders o
-        SET amount = (
-            SELECT COALESCE(SUM(od.amount), 0)
-            FROM pos_order_details od
-            WHERE od.order_number   = o.order_number
-              AND od.date           = o.date
-              AND od.invoice_number = '0'
-              AND od.company_id     = o.company_id
+async def _recalc_total(db_temp: AsyncSession, order_number: str, date: str, cid: int) -> None:
+    """Recalcula el total de un pedido en temp_comanda desde sus ítems en datatemppos."""
+    await db_temp.execute(text("""
+        UPDATE temp_comanda tc
+        SET tc.Valor = (
+            SELECT COALESCE(SUM(tdc.Valor), 0)
+            FROM temp_detalle_comanda_parcial tdc
+            WHERE tdc.Nro_pedido  = tc.Nro_Pedido
+              AND tdc.Fecha       = tc.Fecha
+              AND tdc.Nro_Factura = '0'
+              AND tdc.company_id  = tc.company_id
+              AND tdc.Mostrar     = 1
         )
-        WHERE o.order_number = :on AND o.date = :date AND o.company_id = :cid
+        WHERE tc.Nro_Pedido   = :on
+          AND tc.Fecha        = :date
+          AND tc.company_id   = :cid
     """), {"on": order_number, "date": date, "cid": cid})

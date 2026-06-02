@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
-from app.database import get_db
+from app.database import get_db, get_datatemppos_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
@@ -67,6 +67,7 @@ async def get_kpis(
     company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
@@ -93,48 +94,44 @@ async def get_kpis(
         WHERE company_id = :cid AND date = :fecha AND voided = 0
     """), {"cid": cid, "fecha": fecha})).mappings().one()
 
-    # Comandas abiertas — siempre HOY (local, sin facturar)
-    r_cmd = (await db.execute(text("""
+    # Comandas abiertas — siempre HOY (desde datatemppos)
+    r_cmd = (await db_temp.execute(text("""
         SELECT
-            COALESCE(SUM(amount), 0) AS total,
-            COUNT(*)                 AS cnt
-        FROM pos_orders
+            COALESCE(SUM(Valor), 0) AS total,
+            COUNT(*)                AS cnt
+        FROM temp_comanda
         WHERE company_id = :cid
-          AND date = :today
-          AND invoice_number = '0'
-          AND cancelled = 0
-          AND delivery = 0
+          AND Fecha      = :today
+          AND Nro_Factura = '0'
+          AND Cancelado  = 0
+          AND Domicilio  = 0
     """), {"cid": cid, "today": today})).mappings().one()
 
-    # Plataforma / Delivery — siempre HOY (operativo en tiempo real)
-    r_plat = (await db.execute(text("""
+    # Plataforma / Delivery — siempre HOY (desde datatemppos)
+    r_plat = (await db_temp.execute(text("""
         SELECT
-            COALESCE(SUM(amount), 0) AS total,
-            COUNT(*)                 AS cnt
-        FROM pos_orders
+            COALESCE(SUM(Valor), 0) AS total,
+            COUNT(*)                AS cnt
+        FROM temp_comanda
         WHERE company_id = :cid
-          AND date = :today
-          AND delivery = 1
-          AND cancelled = 0
+          AND Fecha      = :today
+          AND Domicilio  = 1
+          AND Cancelado  = 0
     """), {"cid": cid, "today": today})).mappings().one()
 
-    # Estado de mesas (pos_tables_layout + pos_orders)
-    r_mesas = (await db.execute(text("""
-        SELECT
-            COALESCE(SUM(CASE WHEN o.order_number IS NULL     THEN 1 ELSE 0 END), 0) AS libres,
-            COALESCE(SUM(CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END), 0) AS ocupadas,
-            0 AS cuenta,
-            COUNT(t.id) AS total
-        FROM pos_tables_layout t
-        LEFT JOIN pos_orders o
-               ON o.table_id    = t.id
-              AND o.company_id  = :cid
-              AND o.date        = :today
-              AND o.invoice_number = '0'
-              AND o.cancelled   = 0
-              AND o.delivery    = 0
-        WHERE t.company_id = :cid
-    """), {"cid": cid, "today": today})).mappings().one()
+    # Estado de mesas: total desde easyposweb, abiertas desde datatemppos
+    _total_mesas   = int((await db.execute(text(
+        "SELECT COUNT(*) FROM pos_tables_layout WHERE company_id=:cid"
+    ), {"cid": cid})).scalar() or 0)
+    _ocupadas_cnt  = int((await db_temp.execute(text(
+        "SELECT COUNT(*) FROM temp_mesa_abierta WHERE company_id=:cid AND Abierta=1"
+    ), {"cid": cid})).scalar() or 0)
+    r_mesas = {
+        "libres":   max(0, _total_mesas - _ocupadas_cnt),
+        "ocupadas": _ocupadas_cnt,
+        "cuenta":   0,
+        "total":    _total_mesas,
+    }
 
     # Alertas de stock crítico
     r_stock = (await db.execute(text("""
@@ -168,34 +165,76 @@ async def get_mesas(
     company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
     today = _today()
 
-    rows = (await db.execute(text("""
-        SELECT
-            t.id, t.name, t.location, t.seats, t.zone_id,
-            z.name AS zone_name,
-            CASE WHEN o.order_number IS NOT NULL THEN 1 ELSE 0 END AS ocupada,
-            o.order_number, o.amount, o.time AS hora_apertura,
-            o.guests_count, w.name AS waiter_name,
-            o.order_number AS daily_seq
+    # Layout de mesas y zonas desde easyposweb
+    layout = (await db.execute(text("""
+        SELECT t.id, t.name, t.location, t.seats, t.zone_id,
+               z.name AS zone_name, z.order_index AS zone_order
         FROM pos_tables_layout t
         LEFT JOIN pos_zones z ON z.id = t.zone_id AND z.company_id = :cid
-        LEFT JOIN pos_orders o
-               ON o.table_id    = t.id
-              AND o.company_id  = :cid
-              AND o.date        = :today
-              AND o.invoice_number = '0'
-              AND o.cancelled   = 0
-              AND o.delivery    = 0
-        LEFT JOIN pos_waiters w ON w.id = o.waiter_id AND w.company_id = :cid
         WHERE t.company_id = :cid
         ORDER BY z.order_index, z.name, t.name
+    """), {"cid": cid})).mappings().all()
+
+    # Mesas abiertas desde datatemppos
+    open_rows = (await db_temp.execute(text(
+        "SELECT Id_Mesa FROM temp_mesa_abierta WHERE company_id=:cid AND Abierta=1"
+    ), {"cid": cid})).mappings().all()
+    open_set = {int(r["Id_Mesa"]) for r in open_rows}
+
+    # Pedidos activos desde datatemppos
+    order_rows = (await db_temp.execute(text("""
+        SELECT Nro_Pedido AS order_number, Mesa, Hora AS hora_apertura,
+               Valor AS amount, Nro_Comenzales AS guests_count, Mesero
+        FROM temp_comanda
+        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0'
+          AND Cancelado=0 AND Domicilio=0
+        ORDER BY Hora ASC
     """), {"cid": cid, "today": today})).mappings().all()
 
-    return [dict(r) for r in rows]
+    order_by_mesa: dict = {}
+    for i, o in enumerate(order_rows, start=1):
+        key = str(o["Mesa"] or "").strip()
+        if key and key not in order_by_mesa:
+            order_by_mesa[key] = dict(o) | {"daily_seq": i}
+
+    # Nombres de meseros desde easyposweb
+    waiter_ids = {int(v["Mesero"]) for v in order_by_mesa.values() if v.get("Mesero")}
+    waiter_names: dict = {}
+    if waiter_ids:
+        wrows = (await db.execute(text(
+            f"SELECT id, name FROM pos_waiters WHERE company_id=:cid "
+            f"AND id IN ({','.join(str(w) for w in waiter_ids)})"
+        ), {"cid": cid})).mappings().all()
+        waiter_names = {int(r["id"]): r["name"] for r in wrows}
+
+    result = []
+    for t in layout:
+        tid = int(t["id"])
+        ocupada = 1 if tid in open_set else 0
+        order_info = order_by_mesa.get(str(t["name"]).strip()) if ocupada else None
+        row = {
+            "id":          tid,
+            "name":        t["name"],
+            "location":    t["location"],
+            "seats":       t["seats"],
+            "zone_id":     t["zone_id"],
+            "zone_name":   t["zone_name"],
+            "ocupada":     ocupada,
+            "order_number": order_info["order_number"] if order_info else None,
+            "amount":       int(order_info["amount"] or 0) if order_info else None,
+            "hora_apertura": str(order_info["hora_apertura"] or "") if order_info else None,
+            "guests_count": order_info["guests_count"] if order_info else None,
+            "waiter_name":  waiter_names.get(int(order_info["Mesero"] or 0)) if order_info else None,
+            "daily_seq":    order_info["daily_seq"] if order_info else None,
+        }
+        result.append(row)
+    return result
 
 
 # ─── Meseros activos (para modal) ─────────────────────────────────────────────
@@ -277,37 +316,68 @@ async def get_abiertas(
     company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
     today = _today()
 
-    rows = (await db.execute(text("""
-        SELECT
-            o.order_number, o.table_name, o.table_id,
-            o.time AS hora_apertura, o.amount, o.guests_count, o.notes,
-            w.name AS waiter_name,
-            COUNT(od.dish_id) AS item_count
-        FROM pos_orders o
-        LEFT JOIN pos_waiters w
-               ON w.id = o.waiter_id AND w.company_id = :cid
-        LEFT JOIN pos_order_details od
-               ON od.order_number = o.order_number
-              AND od.date         = o.date
-              AND od.invoice_number = o.invoice_number
-              AND od.company_id   = :cid
-        WHERE o.company_id     = :cid
-          AND o.date           = :today
-          AND o.invoice_number = '0'
-          AND o.cancelled      = 0
-          AND o.delivery       = 0
-        GROUP BY o.order_number, o.date, o.invoice_number,
-                 o.table_name, o.table_id, o.time, o.amount,
-                 o.guests_count, o.notes, w.name
-        ORDER BY o.time ASC
+    # Pedidos activos desde datatemppos
+    order_rows = (await db_temp.execute(text("""
+        SELECT Nro_Pedido AS order_number, Mesa AS table_name, Mesero,
+               Hora AS hora_apertura, Valor AS amount,
+               Nro_Comenzales AS guests_count, Novedad AS notes
+        FROM temp_comanda
+        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0'
+          AND Cancelado=0 AND Domicilio=0
+        ORDER BY Hora ASC
     """), {"cid": cid, "today": today})).mappings().all()
 
-    return [dict(r) for r in rows]
+    if not order_rows:
+        return []
+
+    order_numbers = [r["order_number"] for r in order_rows]
+    on_quoted = ",".join(f"'{o}'" for o in order_numbers)
+
+    # Conteo de ítems por pedido desde datatemppos
+    item_rows = (await db_temp.execute(text(
+        f"SELECT Nro_pedido, COUNT(*) AS cnt FROM temp_detalle_comanda_parcial "
+        f"WHERE company_id=:cid AND Nro_Factura='0' AND Mostrar=1 "
+        f"AND Nro_pedido IN ({on_quoted}) GROUP BY Nro_pedido"
+    ), {"cid": cid})).mappings().all()
+    item_count_map = {r["Nro_pedido"]: int(r["cnt"]) for r in item_rows}
+
+    # table_id desde easyposweb (pos_tables_layout por nombre de mesa)
+    table_rows = (await db.execute(text(
+        "SELECT id, name FROM pos_tables_layout WHERE company_id=:cid"
+    ), {"cid": cid})).mappings().all()
+    table_id_by_name = {str(r["name"]).strip(): int(r["id"]) for r in table_rows}
+
+    # Nombres de meseros desde easyposweb
+    waiter_ids = {int(r["Mesero"]) for r in order_rows if r["Mesero"]}
+    waiter_names: dict = {}
+    if waiter_ids:
+        wrows = (await db.execute(text(
+            f"SELECT id, name FROM pos_waiters WHERE company_id=:cid "
+            f"AND id IN ({','.join(str(w) for w in waiter_ids)})"
+        ), {"cid": cid})).mappings().all()
+        waiter_names = {int(r["id"]): r["name"] for r in wrows}
+
+    result = []
+    for r in order_rows:
+        mesa_name = str(r["table_name"] or "").strip()
+        result.append({
+            "order_number":  r["order_number"],
+            "table_name":    r["table_name"],
+            "table_id":      table_id_by_name.get(mesa_name),
+            "hora_apertura": str(r["hora_apertura"] or ""),
+            "amount":        int(r["amount"] or 0),
+            "guests_count":  int(r["guests_count"] or 0),
+            "notes":         r["notes"],
+            "waiter_name":   waiter_names.get(int(r["Mesero"] or 0)),
+            "item_count":    item_count_map.get(r["order_number"], 0),
+        })
+    return result
 
 
 # ─── Comandas facturadas ──────────────────────────────────────────────────────
@@ -359,52 +429,58 @@ async def abrir_mesa(
     company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
     today = _today()
-    now_time = datetime.now().strftime("%H:%M:%S")
+    now_time = datetime.now(_BOG).strftime("%H:%M:%S")
 
-    # Verificar que la mesa no esté ya abierta
-    existing = (await db.execute(text("""
-        SELECT order_number FROM pos_orders
-        WHERE company_id = :cid AND table_id = :tid
-          AND date = :today AND invoice_number = '0'
-          AND cancelled = 0
+    # Verificar que la mesa no esté ya abierta (datatemppos)
+    existing = (await db_temp.execute(text("""
+        SELECT Nro_Pedido FROM temp_comanda
+        WHERE company_id=:cid AND Mesa=:mesa AND Fecha=:today
+          AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
-    """), {"cid": cid, "tid": data.table_id, "today": today})).fetchone()
+    """), {"cid": cid, "mesa": data.table_name, "today": today})).fetchone()
 
     if existing:
         raise HTTPException(status_code=409, detail="La mesa ya tiene una comanda abierta")
 
-    ts = int(datetime.now().timestamp() * 1000)
-    order_number = f"WEB-{cid}-{ts}"
+    ts = int(datetime.now(_BOG).timestamp() * 1000)
+    order_number = f"WEB-{cid}-{data.table_id}-{ts}"
 
-    await db.execute(text("""
-        INSERT INTO pos_orders
-            (order_number, date, invoice_number, table_name, time,
-             waiter_id, cancelled, amount, notes, complimentary,
-             guests_count, delivery, customer_id, table_id,
-             synced, company_id, updated_at)
+    # Insertar en temp_comanda (Movil=1 = origen web)
+    await db_temp.execute(text("""
+        INSERT INTO temp_comanda
+            (company_id, Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora,
+             Mesero, Cancelado, Valor, Nro_Comenzales, Domicilio, Id_Cliente, Movil, updated_at)
         VALUES
-            (:order_number, :date, '0', :table_name, :time,
-             :waiter_id, 0, 0, :notes, 0,
-             :guests_count, :delivery, 0, :table_id,
-             0, :company_id, NOW())
+            (:cid, :on, :date, '0', :mesa, :hora,
+             :wid, 0, 0, :guests, :delivery, 0, 1, NOW())
     """), {
-        "order_number": order_number,
-        "date":         today,
-        "table_name":   data.table_name,
-        "time":         now_time,
-        "waiter_id":    data.waiter_id,
-        "notes":        data.notes or "",
-        "guests_count": data.guests_count,
-        "delivery":     data.delivery,
-        "table_id":     data.table_id,
-        "company_id":   cid,
+        "cid":      cid,
+        "on":       order_number,
+        "date":     today,
+        "mesa":     data.table_name,
+        "hora":     now_time,
+        "wid":      data.waiter_id or 0,
+        "guests":   data.guests_count,
+        "delivery": data.delivery,
     })
-    await db.commit()
 
+    # Marcar mesa como abierta en temp_mesa_abierta
+    await db_temp.execute(text("""
+        INSERT INTO temp_mesa_abierta
+            (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
+        VALUES (:cid, :tid, :mesa, 1, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            Mesa=VALUES(Mesa), Abierta=1,
+            Abierta_Desde=CASE WHEN Abierta=0 THEN NOW() ELSE Abierta_Desde END,
+            updated_at=NOW()
+    """), {"cid": cid, "tid": data.table_id, "mesa": data.table_name})
+
+    await db_temp.commit()
     return {"ok": True, "order_number": order_number}
 
 

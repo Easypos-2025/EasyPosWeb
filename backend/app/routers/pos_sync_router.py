@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.database import get_db
+from app.database import get_db, get_datatemppos_db
 from app.services.plan_limits_service import get_limits
 
 router = APIRouter(prefix="/api/pos", tags=["POS Sync"])
@@ -3538,21 +3538,43 @@ async def pull_web_orders(
     company_id: int = Query(...),
     desde: str = Query(default="2024-01-01 00:00:00"),
     x_api_key: str = Header(...),
-    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     verify_api_key(x_api_key)
-    rows = (await db.execute(text("""
-        SELECT order_number, date, invoice_number, table_name, time,
-               waiter_id, cancelled, amount, notes, complimentary,
-               guests_count, delivery, customer_id, table_id, updated_at
-        FROM pos_orders
+    rows = (await db_temp.execute(text("""
+        SELECT
+            Nro_Pedido      AS order_number,
+            Fecha           AS date,
+            Nro_Factura     AS invoice_number,
+            Mesa            AS table_name,
+            Hora            AS time,
+            Mesero          AS waiter_id,
+            Cancelado       AS cancelled,
+            Valor           AS amount,
+            Novedad         AS notes,
+            Cortesia        AS complimentary,
+            Nro_Comenzales  AS guests_count,
+            Domicilio       AS delivery,
+            Id_Cliente      AS customer_id,
+            updated_at
+        FROM temp_comanda
         WHERE company_id = :cid
-          AND order_number LIKE 'WEB-%'
+          AND Nro_Pedido LIKE 'WEB-%'
           AND updated_at > :desde
         ORDER BY updated_at ASC
         LIMIT 200
     """), {"cid": company_id, "desde": desde})).mappings().all()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        row = dict(r)
+        # Extraer table_id desde el order_number (formato WEB-{cid}-{tid}-{ts})
+        try:
+            parts = str(row["order_number"]).split("-")
+            row["table_id"] = int(parts[2]) if len(parts) >= 3 else 0
+        except Exception:
+            row["table_id"] = 0
+        result.append(row)
+    return result
 
 
 @router.get("/sync/pull/web-order-details")
@@ -3560,22 +3582,38 @@ async def pull_web_order_details(
     company_id: int = Query(...),
     desde: str = Query(default="2024-01-01 00:00:00"),
     x_api_key: str = Header(...),
-    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     verify_api_key(x_api_key)
-    rows = (await db.execute(text("""
-        SELECT od.order_number, od.date, od.invoice_number,
-               od.dish_id, od.item, od.depends_on,
-               od.quantity, od.amount, od.notes, od.complimentary,
-               od.dish_discount_pct, od.general_discount_pct,
-               od.seat_number, od.pays_tax, od.tax, od.original_tax,
-               od.pays_dish, od.changes, od.dish_time, od.custom_product,
-               od.updated_at
-        FROM pos_order_details od
-        WHERE od.company_id = :cid
-          AND od.order_number LIKE 'WEB-%'
-          AND od.updated_at > :desde
-        ORDER BY od.updated_at ASC
+    rows = (await db_temp.execute(text("""
+        SELECT
+            Nro_pedido              AS order_number,
+            Fecha                   AS date,
+            Nro_Factura             AS invoice_number,
+            Id_Plato                AS dish_id,
+            Item                    AS item,
+            Depende                 AS depends_on,
+            Cantidad                AS quantity,
+            Valor                   AS amount,
+            Novedad                 AS notes,
+            Cortesia                AS complimentary,
+            Porc_Descuento_Plato    AS dish_discount_pct,
+            Porc_Descuento_General  AS general_discount_pct,
+            Nro_Puesto              AS seat_number,
+            Paga_Impuesto           AS pays_tax,
+            Impuesto                AS tax,
+            Impuesto_Original       AS original_tax,
+            Paga_Plato              AS pays_dish,
+            Cambios                 AS changes,
+            Hora_Plato              AS dish_time,
+            Producto_Personalizado  AS custom_product,
+            updated_at
+        FROM temp_detalle_comanda_parcial
+        WHERE company_id = :cid
+          AND Nro_pedido LIKE 'WEB-%'
+          AND Mostrar = 1
+          AND updated_at > :desde
+        ORDER BY updated_at ASC
         LIMIT 1000
     """), {"cid": company_id, "desde": desde})).mappings().all()
     return [dict(r) for r in rows]
@@ -3586,18 +3624,25 @@ async def pull_web_order_assembly(
     company_id: int = Query(...),
     desde: str = Query(default="2024-01-01 00:00:00"),
     x_api_key: str = Header(...),
-    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     verify_api_key(x_api_key)
-    rows = (await db.execute(text("""
-        SELECT p.order_number, p.date, p.invoice_number,
-               p.dish_id, p.item, p.group_id, p.item_id, p.quantity,
-               p.updated_at
-        FROM pos_order_detail_products p
-        WHERE p.company_id = :cid
-          AND p.order_number LIKE 'WEB-%'
-          AND p.updated_at > :desde
-        ORDER BY p.updated_at ASC
+    rows = (await db_temp.execute(text("""
+        SELECT
+            Nro_Pedido   AS order_number,
+            Fecha        AS date,
+            Nro_Factura  AS invoice_number,
+            Id_Plato     AS dish_id,
+            Item         AS item,
+            Id_Grupo     AS group_id,
+            Id_Item      AS item_id,
+            Cantidad     AS quantity,
+            updated_at
+        FROM temp_plato_producto_parcial
+        WHERE company_id = :cid
+          AND Nro_Pedido LIKE 'WEB-%'
+          AND updated_at > :desde
+        ORDER BY updated_at ASC
         LIMIT 1000
     """), {"cid": company_id, "desde": desde})).mappings().all()
     return [dict(r) for r in rows]
