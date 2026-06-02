@@ -1,6 +1,6 @@
 ' ============================================================
 ' SubirTempDetalleComanda.bas
-' Endpoint: POST /api/pos/sync/push/order-details-replace
+' Endpoint: POST /api/pos/sync/push/temp-details-replace
 ' Tabla fuente: datatemppos.temp_detalle_comanda_parcial
 ' Estrategia: REPLACE por pedido (Variante C)
 '   - Itera cada pedido activo del dia (origin local, Movil=0)
@@ -99,7 +99,7 @@ Public Sub SubirTempDetalleComanda(Var_Id_Company_Envio As Integer, Var_Limit_Re
 
     ' -- 3. Enviar al servidor (replace atomico por pedido) -----
     Dim respuesta As String
-    respuesta = ApiPost("/sync/push/order-details-replace", json)
+    respuesta = ApiPost("/sync/push/temp-details-replace", json)
 
     If respuesta = "" Then Exit Sub
 

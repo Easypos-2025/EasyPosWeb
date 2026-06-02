@@ -1,6 +1,6 @@
 ' ============================================================
 ' SubirTempMesaAbierta.bas
-' Endpoint: POST /api/pos/sync/push/table-status
+' Endpoint: POST /api/pos/sync/push/temp-table-status
 ' Tabla fuente: datatemppos.temp_mesa_abierta
 ' Sincroniza estado abierta/cerrada de todas las mesas al servidor
 ' Sin filtro de fecha — envia el estado actual completo cada ciclo
@@ -37,7 +37,7 @@ Public Sub SubirTempMesaAbierta(Var_Id_Company_Envio As Integer, Var_Limit_Regis
     rs.Close: conn.Close
 
     Dim respuesta As String
-    respuesta = ApiPost("/sync/push/table-status", json)
+    respuesta = ApiPost("/sync/push/temp-table-status", json)
 
     If respuesta = "" Then Exit Sub
 

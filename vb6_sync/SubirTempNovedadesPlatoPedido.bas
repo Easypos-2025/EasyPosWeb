@@ -1,6 +1,6 @@
 ' ============================================================
 ' SubirTempNovedadesPlatoPedido.bas
-' Endpoint: POST /api/pos/sync/push/order-dish-notes-replace
+' Endpoint: POST /api/pos/sync/push/temp-notes-replace
 ' Tabla fuente: datatemppos.temp_novedades_plato_pedido
 ' Estrategia: REPLACE por pedido (Variante C)
 '   - Por cada pedido activo envia el estado COMPLETO de sus novedades
@@ -80,7 +80,7 @@ Public Sub SubirTempNovedadesPlatoPedido(Var_Id_Company_Envio As Integer, Var_Li
 
     ' -- 3. Enviar al servidor (replace atomico por pedido) -----
     Dim respuesta As String
-    respuesta = ApiPost("/sync/push/order-dish-notes-replace", json)
+    respuesta = ApiPost("/sync/push/temp-notes-replace", json)
 
     If respuesta = "" Then Exit Sub
 

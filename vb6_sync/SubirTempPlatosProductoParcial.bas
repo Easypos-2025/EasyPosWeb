@@ -1,6 +1,6 @@
 ' ============================================================
 ' SubirTempPlatosProductoParcial.bas
-' Endpoint: POST /api/pos/sync/push/order-detail-products-replace
+' Endpoint: POST /api/pos/sync/push/temp-assembly-replace
 ' Tabla fuente: datatemppos.temp_plato_producto_parcial
 ' Estrategia: REPLACE por pedido (Variante C)
 '   - Por cada pedido activo envia el estado COMPLETO de sus armados
@@ -83,7 +83,7 @@ Public Sub SubirTempPlatosProductoParcial(Var_Id_Company_Envio As Integer, Var_L
 
     ' -- 3. Enviar al servidor (replace atomico por pedido) -----
     Dim respuesta As String
-    respuesta = ApiPost("/sync/push/order-detail-products-replace", json)
+    respuesta = ApiPost("/sync/push/temp-assembly-replace", json)
 
     If respuesta = "" Then Exit Sub
 

@@ -933,10 +933,12 @@ async def push_tables(
             await db.execute(text("""
                 INSERT INTO pos_tables_layout (
                     id, company_id, zone_id, name, seats, active,
-                    branch_id, customer_id, dynamic_zone, synced, updated_at
+                    branch_id, customer_id, dynamic_zone, location,
+                    synced, updated_at
                 ) VALUES (
                     :id, :company_id, :zone_id, :name, :capacity, :is_active,
-                    0, 0, 0, 1, NOW()
+                    0, 0, 0, '',
+                    1, NOW()
                 )
                 ON DUPLICATE KEY UPDATE
                     name       = VALUES(name),
