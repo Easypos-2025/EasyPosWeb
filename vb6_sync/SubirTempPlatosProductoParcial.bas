@@ -1,9 +1,11 @@
 ' ============================================================
 ' SubirTempPlatosProductoParcial.bas
-' Endpoint: POST /api/pos/sync/push/order-detail-products
+' Endpoint: POST /api/pos/sync/push/order-detail-products-replace
 ' Tabla fuente: datatemppos.temp_plato_producto_parcial
-' Sube selecciones de armado (modificadores) de pedidos activos
-' Filtro: no WEB, dia de hoy
+' Estrategia: REPLACE por pedido (Variante C)
+'   - Por cada pedido activo envia el estado COMPLETO de sus armados
+'   - El servidor borra lo que tenia e inserta el estado actual
+'   - Cubre: agregar modificador, eliminar modificador, cambiar cantidad
 ' ============================================================
 Public Sub SubirTempPlatosProductoParcial(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -11,41 +13,77 @@ Public Sub SubirTempPlatosProductoParcial(Var_Id_Company_Envio As Integer, Var_L
     Dim conn As Object
     Set conn = GetConnDatatemppos()
 
-    Dim rs As Object
-    Set rs = CreateObject("ADODB.Recordset")
-    rs.Open "SELECT * FROM temp_plato_producto_parcial " & _
-            "WHERE Nro_Pedido NOT LIKE 'WEB-%' " & _
-            "  AND Fecha=DATE(NOW()) " & _
-            "LIMIT " & Var_Limit_Registros, conn
+    ' -- 1. Obtener pedidos activos del dia (origen desktop) ----
+    Dim rsOrd As Object
+    Set rsOrd = CreateObject("ADODB.Recordset")
+    rsOrd.Open "SELECT Nro_Pedido, Fecha FROM temp_comanda " & _
+               "WHERE Movil=0 AND Fecha=DATE(NOW())", conn
 
-    If rs.EOF Then
-        rs.Close: conn.Close
+    If rsOrd.EOF Then
+        rsOrd.Close: conn.Close
         Exit Sub
     End If
 
-    Dim json As String, sep As String
-    json = "[": sep = ""
+    ' -- 2. Construir JSON: array de pedidos con sus armados ----
+    Dim json As String, sepOrd As String
+    json = "[": sepOrd = ""
+    Dim totalOrders As Integer
+    totalOrders = 0
 
-    Do While Not rs.EOF
-        json = json & sep & "{"
-        json = json & """order_number"":"   & """" & EscapeJson(CStr(rs("Nro_Pedido")))                        & ""","
-        json = json & """company_id"":"     & Var_Id_Company_Envio                                               & ","
-        json = json & """date"":"           & """" & EscapeJson(CStr(Nz(rs("Fecha"), "")))                      & ""","
-        json = json & """invoice_number"":"  & """" & EscapeJson(CStr(Nz(rs("Nro_Factura"), "0")))              & ""","
-        json = json & """dish_id"":"        & CLng(Nz(rs("Id_Plato"), 0))                                        & ","
-        json = json & """item"":"           & CLng(Nz(rs("Item"), 0))                                            & ","
-        json = json & """group_id"":"       & CLng(Nz(rs("Id_Grupo"), 0))                                        & ","
-        json = json & """item_id"":"        & CLng(Nz(rs("Id_Item"), 0))                                         & ","
-        json = json & """quantity"":"       & CDbl(Nz(rs("Cantidad"), 0))
-        json = json & "}"
-        sep = ","
-        rs.MoveNext
+    Do While Not rsOrd.EOF
+        Dim nroPedido As String
+        nroPedido = CStr(rsOrd("Nro_Pedido"))
+        Dim fecha As String
+        fecha = CStr(rsOrd("Fecha"))
+
+        Dim rsItems As Object
+        Set rsItems = CreateObject("ADODB.Recordset")
+        rsItems.Open "SELECT * FROM temp_plato_producto_parcial " & _
+                     "WHERE Nro_Pedido='" & Replace(nroPedido, "'", "''") & "' " & _
+                     "  AND Fecha='" & fecha & "'", conn
+
+        Dim ordJson As String
+        ordJson = "{"
+        ordJson = ordJson & """order_number"":""" & EscapeJson(nroPedido) & ""","
+        ordJson = ordJson & """company_id"":" & Var_Id_Company_Envio & ","
+        ordJson = ordJson & """date"":""" & fecha & ""","
+        ordJson = ordJson & """items"":["
+
+        Dim sepItem As String: sepItem = ""
+
+        Do While Not rsItems.EOF
+            ordJson = ordJson & sepItem & "{"
+            ordJson = ordJson & """dish_id"":"         & CLng(Nz(rsItems("Id_Plato"), 0))                              & ","
+            ordJson = ordJson & """item"":"             & CLng(Nz(rsItems("Item"), 0))                                  & ","
+            ordJson = ordJson & """group_id"":"         & CLng(Nz(rsItems("Id_Grupo"), 0))                              & ","
+            ordJson = ordJson & """item_id"":"          & CLng(Nz(rsItems("Id_Item"), 0))                               & ","
+            ordJson = ordJson & """invoice_number"":"   & """" & EscapeJson(CStr(Nz(rsItems("Nro_Factura"), "0")))     & ""","
+            ordJson = ordJson & """quantity"":"         & CDbl(Nz(rsItems("Cantidad"), 0))
+            ordJson = ordJson & "}"
+            sepItem = ","
+            rsItems.MoveNext
+        Loop
+
+        rsItems.Close
+        Set rsItems = Nothing
+
+        ordJson = ordJson & "]}"
+        json = json & sepOrd & ordJson
+        sepOrd = ","
+        totalOrders = totalOrders + 1
+
+        rsOrd.MoveNext
     Loop
-    json = json & "]"
-    rs.Close: conn.Close
 
+    rsOrd.Close
+    json = json & "]"
+    conn.Close
+
+    If totalOrders = 0 Then Exit Sub
+
+    ' -- 3. Enviar al servidor (replace atomico por pedido) -----
     Dim respuesta As String
-    respuesta = ApiPost("/sync/push/order-detail-products", json)
+    respuesta = ApiPost("/sync/push/order-detail-products-replace", json)
 
     If respuesta = "" Then Exit Sub
 
@@ -53,11 +91,14 @@ Public Sub SubirTempPlatosProductoParcial(Var_Id_Company_Envio As Integer, Var_L
     Set sc = CreateObject("ScriptControl")
     sc.language = "JScript"
     sc.ExecuteStatement "var r = " & respuesta & ";"
-    Var_Caption_Error = "TempArmado Env.: " & sc.Eval("r.total_saved") & _
-                        " | Fallidas: " & sc.Eval("r.total_failed")
+    Var_Caption_Error = "Armado: " & sc.Eval("r.total_saved") & _
+                        " items | " & sc.Eval("r.total_orders") & " pedidos"
     Exit Sub
 
 ErrHandler:
     Var_Caption_Error = "SubirTempPlatosProductoParcial: " & Err.Description
-    On Error Resume Next: If Not conn Is Nothing Then conn.Close
+    On Error Resume Next
+    If Not rsItems Is Nothing Then rsItems.Close
+    If Not rsOrd Is Nothing Then rsOrd.Close
+    If Not conn Is Nothing Then conn.Close
 End Sub

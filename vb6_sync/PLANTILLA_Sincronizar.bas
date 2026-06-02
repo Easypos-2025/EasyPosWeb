@@ -159,3 +159,102 @@ End Sub
 '     End If
 '     ...
 ' End Sub
+
+
+' ── VARIANTE C — REPLACE POR PEDIDO (tablas temp con items por comanda) ───────
+' USAR cuando los registros de detalle pueden ser BORRADOS FISICAMENTE en local.
+' Ejemplo: temp_detalle_comanda_parcial, temp_plato_producto_parcial,
+'          temp_novedades_plato_pedido.
+'
+' Razon: si el cajero elimina un item de la comanda, EasyPOS borra el row.
+' Un INSERT/UPDATE simple no detectaria la eliminacion — el servidor
+' conservaria el item "fantasma". Con REPLACE:
+'   1. El servidor borra TODOS los items del pedido
+'   2. Reinserta solo los que existen actualmente en local
+'   => eliminados desaparecen, nuevos aparecen, modificados se actualizan.
+'
+' Endpoint servidor: POST /api/pos/sync/push/[modulo]-replace
+' Recibe: [ { order_number, company_id, date, items:[...] }, ... ]
+' Retorna: { total_orders, total_saved }
+'
+' FILTRO obligatorio en servidor: skip si order_number LIKE "WEB-%" (evita
+' borrar items de pedidos web que bajaron al local como descarga).
+'
+' Public Sub [NombreFuncion](Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
+'     On Error GoTo ErrHandler
+'     Dim conn As Object
+'     Set conn = GetConnDatatemppos()
+'
+'     ' 1. Pedidos activos del dia (solo origen desktop)
+'     Dim rsOrd As Object
+'     Set rsOrd = CreateObject("ADODB.Recordset")
+'     rsOrd.Open "SELECT Nro_Pedido, Fecha FROM temp_comanda " & _
+'                "WHERE Movil=0 AND Fecha=DATE(NOW())", conn
+'
+'     If rsOrd.EOF Then rsOrd.Close: conn.Close: Exit Sub
+'
+'     Dim json As String, sepOrd As String
+'     json = "[": sepOrd = ""
+'     Dim totalOrders As Integer: totalOrders = 0
+'
+'     Do While Not rsOrd.EOF
+'         Dim nroPedido As String: nroPedido = CStr(rsOrd("Nro_Pedido"))
+'         Dim fecha As String:     fecha     = CStr(rsOrd("Fecha"))
+'
+'         ' 2. Items actuales de este pedido
+'         Dim rsItems As Object
+'         Set rsItems = CreateObject("ADODB.Recordset")
+'         rsItems.Open "SELECT * FROM [tabla_detalle] " & _
+'                      "WHERE Nro_Pedido='" & Replace(nroPedido,"'","''") & "' " & _
+'                      "  AND Fecha='" & fecha & "' [AND Mostrar=1]", conn
+'
+'         ' 3. Construir entrada de este pedido
+'         Dim ordJson As String
+'         ordJson = "{""order_number"":""" & EscapeJson(nroPedido) & ""","
+'         ordJson = ordJson & """company_id"":" & Var_Id_Company_Envio & ","
+'         ordJson = ordJson & """date"":""" & fecha & ""","
+'         ordJson = ordJson & """items"":["
+'
+'         Dim sepItem As String: sepItem = ""
+'         Do While Not rsItems.EOF
+'             ordJson = ordJson & sepItem & "{"
+'             ' ENTERO:   ordJson = ordJson & """[campo]"":" & CLng(Nz(rsItems("[Col]"), 0))        & ","
+'             ' DECIMAL:  ordJson = ordJson & """[campo]"":" & CDbl(Nz(rsItems("[Col]"), 0))        & ","
+'             ' TEXTO:    ordJson = ordJson & """[campo]"":""" & EscapeJson(CStr(Nz(rsItems("[Col]"),""))) & ""","
+'             ' ULTIMO sin coma:
+'             ordJson = ordJson & """[ultimo]"":" & CLng(Nz(rsItems("[Col_Final]"), 0))
+'             ordJson = ordJson & "}"
+'             sepItem = ","
+'             rsItems.MoveNext
+'         Loop
+'         rsItems.Close: Set rsItems = Nothing
+'
+'         ordJson = ordJson & "]}"
+'         json = json & sepOrd & ordJson
+'         sepOrd = ","
+'         totalOrders = totalOrders + 1
+'         rsOrd.MoveNext
+'     Loop
+'
+'     rsOrd.Close: json = json & "]": conn.Close
+'     If totalOrders = 0 Then Exit Sub
+'
+'     ' 4. Enviar (una sola llamada con todos los pedidos)
+'     Dim respuesta As String
+'     respuesta = ApiPost("/sync/push/[modulo]-replace", json)
+'     If respuesta = "" Then Exit Sub
+'
+'     Dim sc As Object
+'     Set sc = CreateObject("ScriptControl")
+'     sc.language = "JScript"
+'     sc.ExecuteStatement "var r = " & respuesta & ";"
+'     Var_Caption_Error = "[Etiqueta]: " & sc.Eval("r.total_saved") & _
+'                         " items | " & sc.Eval("r.total_orders") & " pedidos"
+'     Exit Sub
+' ErrHandler:
+'     Var_Caption_Error = "[NombreFuncion]: " & Err.Description
+'     On Error Resume Next
+'     If Not rsItems Is Nothing Then rsItems.Close
+'     If Not rsOrd   Is Nothing Then rsOrd.Close
+'     If Not conn    Is Nothing Then conn.Close
+' End Sub

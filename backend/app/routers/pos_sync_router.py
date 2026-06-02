@@ -3742,7 +3742,7 @@ class OrderDishNoteIn(BaseModel):
 
 
 @router.post("/sync/push/order-dish-notes")
-async def push_order_dish_notes(
+async def push_order_dish_notes_legacy(
     notes: List[OrderDishNoteIn],
     x_api_key: str = Header(...),
     db: AsyncSession = Depends(get_db),
@@ -3775,3 +3775,195 @@ async def push_order_dish_notes(
             failed += 1
     await db.commit()
     return {"total_sent": len(notes), "total_saved": saved, "total_failed": failed}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPLACE — VB6 reemplaza ítems de comanda por pedido completo
+# Estrategia: DELETE existentes + INSERT estado actual (maneja borrados parciales)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _DetailItem(BaseModel):
+    dish_id:              int
+    item:                 int
+    depends_on:           Optional[int]   = 0
+    invoice_number:       Optional[str]   = "0"
+    quantity:             Optional[float] = 0
+    amount:               Optional[int]   = 0
+    notes:                Optional[str]   = ""
+    complimentary:        Optional[int]   = 0
+    dish_discount_pct:    Optional[float] = 0
+    general_discount_pct: Optional[float] = 0
+    seat_number:          Optional[int]   = 0
+    changes:              Optional[str]   = ""
+    dish_time:            Optional[str]   = ""
+    pays_tax:             Optional[int]   = 0
+    tax:                  Optional[int]   = 0
+    original_tax:         Optional[int]   = 0
+    pays_dish:            Optional[int]   = 0
+    custom_product:       Optional[str]   = ""
+
+
+class OrderDetailReplaceIn(BaseModel):
+    company_id:   int
+    order_number: str
+    date:         str
+    items:        List[_DetailItem]
+
+
+@router.post("/sync/push/order-details-replace")
+async def replace_order_details(
+    orders: List[OrderDetailReplaceIn],
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    saved, total_orders = 0, 0
+    for order in orders:
+        if order.order_number.startswith("WEB-"):
+            continue
+        try:
+            await db.execute(text("""
+                DELETE FROM pos_order_details
+                WHERE company_id = :cid AND order_number = :on AND date = :d
+            """), {"cid": order.company_id, "on": order.order_number, "d": order.date})
+            for it in order.items:
+                await db.execute(text("""
+                    INSERT INTO pos_order_details
+                        (company_id, order_number, date, invoice_number,
+                         dish_id, item, depends_on, quantity, amount, notes,
+                         complimentary, dish_discount_pct, general_discount_pct,
+                         seat_number, changes, dish_time, pays_tax, tax,
+                         original_tax, pays_dish, custom_product, synced, updated_at)
+                    VALUES
+                        (:cid, :on, :d, :inv,
+                         :dish_id, :item, :dep, :qty, :amt, :notes,
+                         :comp, :dsc_d, :dsc_g,
+                         :seat, :changes, :dish_time, :ptax, :tax,
+                         :otax, :pdish, :custom, 1, NOW())
+                """), {
+                    "cid": order.company_id, "on": order.order_number,
+                    "d": order.date,         "inv": it.invoice_number,
+                    "dish_id": it.dish_id,   "item": it.item,
+                    "dep": it.depends_on,    "qty": it.quantity,
+                    "amt": it.amount,        "notes": it.notes,
+                    "comp": it.complimentary, "dsc_d": it.dish_discount_pct,
+                    "dsc_g": it.general_discount_pct, "seat": it.seat_number,
+                    "changes": it.changes,   "dish_time": it.dish_time,
+                    "ptax": it.pays_tax,     "tax": it.tax,
+                    "otax": it.original_tax, "pdish": it.pays_dish,
+                    "custom": it.custom_product,
+                })
+                saved += 1
+            total_orders += 1
+        except Exception:
+            pass
+    await db.commit()
+    return {"total_orders": total_orders, "total_saved": saved}
+
+
+class _AssemblyItem(BaseModel):
+    dish_id:        int
+    item:           int
+    group_id:       int
+    item_id:        int
+    invoice_number: Optional[str]   = "0"
+    quantity:       Optional[float] = 0
+
+
+class OrderAssemblyReplaceIn(BaseModel):
+    company_id:   int
+    order_number: str
+    date:         str
+    items:        List[_AssemblyItem]
+
+
+@router.post("/sync/push/order-detail-products-replace")
+async def replace_order_detail_products(
+    orders: List[OrderAssemblyReplaceIn],
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    saved, total_orders = 0, 0
+    for order in orders:
+        if order.order_number.startswith("WEB-"):
+            continue
+        try:
+            await db.execute(text("""
+                DELETE FROM pos_order_detail_products
+                WHERE company_id = :cid AND order_number = :on
+            """), {"cid": order.company_id, "on": order.order_number})
+            for it in order.items:
+                await db.execute(text("""
+                    INSERT INTO pos_order_detail_products
+                        (company_id, order_number, date, invoice_number,
+                         dish_id, item, group_id, item_id, quantity, synced, updated_at)
+                    VALUES
+                        (:cid, :on, :d, :inv,
+                         :dish_id, :item, :group_id, :item_id, :qty, 1, NOW())
+                """), {
+                    "cid": order.company_id, "on": order.order_number,
+                    "d": order.date,         "inv": it.invoice_number,
+                    "dish_id": it.dish_id,   "item": it.item,
+                    "group_id": it.group_id, "item_id": it.item_id,
+                    "qty": it.quantity,
+                })
+                saved += 1
+            total_orders += 1
+        except Exception:
+            pass
+    await db.commit()
+    return {"total_orders": total_orders, "total_saved": saved}
+
+
+class _DishNoteItem(BaseModel):
+    consecutive_id: Optional[int] = 0
+    item:           Optional[int] = 0
+    depends_on:     Optional[int] = 0
+    category_id:    Optional[int] = 0
+    note_id:        Optional[int] = 0
+    note:           Optional[str] = ""
+
+
+class OrderDishNotesReplaceIn(BaseModel):
+    company_id:   int
+    order_number: str
+    items:        List[_DishNoteItem]
+
+
+@router.post("/sync/push/order-dish-notes-replace")
+async def replace_order_dish_notes(
+    orders: List[OrderDishNotesReplaceIn],
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    verify_api_key(x_api_key)
+    saved, total_orders = 0, 0
+    for order in orders:
+        if order.order_number.startswith("WEB-"):
+            continue
+        try:
+            await db.execute(text("""
+                DELETE FROM pos_order_dish_notes
+                WHERE company_id = :cid AND order_number = :on
+            """), {"cid": order.company_id, "on": order.order_number})
+            for it in order.items:
+                await db.execute(text("""
+                    INSERT INTO pos_order_dish_notes
+                        (company_id, order_number, consecutive_id, item,
+                         depends_on, category_id, note_id, note, synced, updated_at)
+                    VALUES
+                        (:cid, :on, :cons, :item,
+                         :dep, :cat, :note_id, :note, 1, NOW())
+                """), {
+                    "cid": order.company_id, "on": order.order_number,
+                    "cons": it.consecutive_id, "item": it.item,
+                    "dep": it.depends_on,      "cat": it.category_id,
+                    "note_id": it.note_id,     "note": it.note,
+                })
+                saved += 1
+            total_orders += 1
+        except Exception:
+            pass
+    await db.commit()
+    return {"total_orders": total_orders, "total_saved": saved}
