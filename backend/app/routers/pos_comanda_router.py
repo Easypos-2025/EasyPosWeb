@@ -741,11 +741,11 @@ async def agregar_item(
         INSERT INTO temp_detalle_comanda_parcial
             (company_id, Nro_pedido, Fecha, Nro_Factura, Id_Plato, Item, Depende,
              Cantidad, Valor, Novedad, Cambios, Paga_Impuesto, Impuesto, Impuesto_Original,
-             Producto_Personalizado, Nro_Puesto, Mostrar, updated_at)
+             Producto_Personalizado, Nro_Puesto, Mostrar, Hora, updated_at)
         VALUES
             (:cid, :on, :date, '0', :did, :item, '0',
              :qty, :amount, :notes, :changes, :pays_tax, :tax, :tax,
-             :custom, 0, 1, NOW())
+             :custom, 0, 1, :hora, NOW())
     """), {
         "cid":      cid,
         "on":       data.order_number,
@@ -759,6 +759,7 @@ async def agregar_item(
         "pays_tax": pays_tax,
         "tax":      tax_val,
         "custom":   custom_product,
+        "hora":     _time_str(),
     })
 
     # Armado → temp_plato_producto_parcial
@@ -891,16 +892,38 @@ async def enviar_cocina(
     cid = payload["company_id"]
     now_str = _now_bog().strftime("%Y-%m-%d %H:%M:%S")
 
+    # Determinar si es PEDIDO NUEVO (tc.Salio=0) o PEDIDO AGREGADO (tc.Salio=1)
+    order = (await db_temp.execute(text("""
+        SELECT Salio FROM temp_comanda
+        WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
+          AND Nro_Factura='0' AND Cancelado=0
+        LIMIT 1
+    """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+
+    is_nuevo = int(order["Salio"] or 0) == 0
+    tipo = "nuevo" if is_nuevo else "agregado"
+
+    # Si es NUEVO: activar visibilidad del pedido completo en tc
+    if is_nuevo:
+        await db_temp.execute(text("""
+            UPDATE temp_comanda SET Salio = 1
+            WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
+        """), {"on": data.order_number, "date": data.date, "cid": cid})
+
+    # Marcar con Hora_Plato solo los ítems aún no enviados (Salio=0)
     result = await db_temp.execute(text("""
         UPDATE temp_detalle_comanda_parcial
-        SET Hora_Plato = :now
+        SET Hora_Plato = :now, Salio = 1
         WHERE Nro_pedido = :on AND Fecha = :date
           AND Nro_Factura = '0' AND company_id = :cid
-          AND (Hora_Plato IS NULL OR Hora_Plato = '' OR Hora_Plato = '0')
+          AND Salio = 0
     """), {"now": now_str, "on": data.order_number, "date": data.date, "cid": cid})
 
     await db_temp.commit()
-    return {"sent": result.rowcount}
+    return {"tipo": tipo, "sent": result.rowcount}
 
 
 # ── 12. SOLICITAR CUENTA ──────────────────────────────────────────────────────
@@ -933,9 +956,9 @@ async def cancelar_orden(
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
     mesa_name = str(mesa_row["name"])
 
-    # Buscar pedido activo en datatemppos
+    # Buscar pedido activo en datatemppos (con Salio para saber si ya fue a cocina)
     order = (await db_temp.execute(text("""
-        SELECT Nro_Pedido, Fecha FROM temp_comanda
+        SELECT Nro_Pedido, Fecha, Mesa, Mesero, Salio FROM temp_comanda
         WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
           AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
@@ -943,11 +966,57 @@ async def cancelar_orden(
     if not order:
         raise HTTPException(status_code=404, detail="No hay orden activa para esta mesa")
 
+    on    = str(order["Nro_Pedido"])
+    fecha = str(order["Fecha"])
+
+    # Si el pedido ya fue enviado a cocina → crear evento CANCELADO para TV
+    if int(order["Salio"] or 0) == 1:
+        items_rows = (await db_temp.execute(text("""
+            SELECT Id_Plato, Cantidad, Novedad, Hora AS hora_tomado
+            FROM temp_detalle_comanda_parcial
+            WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
+              AND company_id=:cid AND Mostrar=1 AND Salio=1
+        """), {"on": on, "date": fecha, "cid": cid})).mappings().all()
+
+        dish_ids_ev = list({int(r["Id_Plato"]) for r in items_rows})
+        dish_names_ev: dict = {}
+        if dish_ids_ev:
+            id_list = ",".join(str(d) for d in dish_ids_ev)
+            drows = (await db.execute(text(
+                f"SELECT id, name FROM pos_dishes WHERE company_id=:cid AND id IN ({id_list})"
+            ), {"cid": cid})).mappings().all()
+            dish_names_ev = {int(r["id"]): r["name"] for r in drows}
+
+        snapshot = json.dumps([{
+            "dish_id":    int(r["Id_Plato"]),
+            "dish_name":  dish_names_ev.get(int(r["Id_Plato"]), f"Plato {r['Id_Plato']}"),
+            "quantity":   float(r["Cantidad"] or 0),
+            "notes":      str(r["Novedad"] or ""),
+            "hora_tomado": str(r["hora_tomado"] or ""),
+            "assembly":   [],
+            "changes":    None,
+        } for r in items_rows], ensure_ascii=False)
+
+        await db.execute(text("""
+            INSERT INTO pos_kitchen_events
+                (company_id, event_type, order_number, table_name, waiter_id,
+                 items_snapshot, event_date, created_at)
+            VALUES (:cid, 'cancelado', :on, :mesa, :wid, :snap, :edate, NOW())
+        """), {
+            "cid":   cid,
+            "on":    on,
+            "mesa":  str(order["Mesa"]),
+            "wid":   int(order["Mesero"] or 0),
+            "snap":  snapshot,
+            "edate": today,
+        })
+        await db.commit()
+
     # Cancelar en temp_comanda
     await db_temp.execute(text("""
         UPDATE temp_comanda SET Cancelado=1
         WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
-    """), {"on": order["Nro_Pedido"], "date": str(order["Fecha"]), "cid": cid})
+    """), {"on": on, "date": fecha, "cid": cid})
 
     # Marcar mesa como cerrada en temp_mesa_abierta
     await db_temp.execute(text("""
@@ -968,6 +1037,11 @@ class DespacharIn(BaseModel):
 
 
 class ReenviarIn(BaseModel):
+    order_number: str
+    date: str
+
+
+class ReimprimirIn(BaseModel):
     order_number: str
     date: str
 
@@ -1002,6 +1076,73 @@ async def reenviar_orden(
     """), {"on": data.order_number, "date": data.date, "cid": cid})
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/orden/reimprimir")
+async def reimprimir_orden(
+    data: ReimprimirIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    """Genera evento REIMPRESIÓN: pone el pedido al inicio de la cola de TV."""
+    cid = payload["company_id"]
+    today = _today()
+
+    order = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Fecha, Mesa, Mesero, Salio FROM temp_comanda
+        WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
+          AND Nro_Factura='0' AND Cancelado=0
+        LIMIT 1
+    """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+    if not int(order["Salio"] or 0):
+        raise HTTPException(status_code=400, detail="El pedido aún no ha sido enviado a cocina")
+
+    items_rows = (await db_temp.execute(text("""
+        SELECT Id_Plato, Cantidad, Novedad, Hora AS hora_tomado
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
+          AND company_id=:cid AND Mostrar=1 AND Salio=1
+    """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().all()
+    if not items_rows:
+        raise HTTPException(status_code=400, detail="Sin ítems enviados para reimprimir")
+
+    dish_ids_ev = list({int(r["Id_Plato"]) for r in items_rows})
+    dish_names_ev: dict = {}
+    if dish_ids_ev:
+        id_list = ",".join(str(d) for d in dish_ids_ev)
+        drows = (await db.execute(text(
+            f"SELECT id, name FROM pos_dishes WHERE company_id=:cid AND id IN ({id_list})"
+        ), {"cid": cid})).mappings().all()
+        dish_names_ev = {int(r["id"]): r["name"] for r in drows}
+
+    snapshot = json.dumps([{
+        "dish_id":    int(r["Id_Plato"]),
+        "dish_name":  dish_names_ev.get(int(r["Id_Plato"]), f"Plato {r['Id_Plato']}"),
+        "quantity":   float(r["Cantidad"] or 0),
+        "notes":      str(r["Novedad"] or ""),
+        "hora_tomado": str(r["hora_tomado"] or ""),
+        "assembly":   [],
+        "changes":    None,
+    } for r in items_rows], ensure_ascii=False)
+
+    await db.execute(text("""
+        INSERT INTO pos_kitchen_events
+            (company_id, event_type, order_number, table_name, waiter_id,
+             items_snapshot, event_date, created_at)
+        VALUES (:cid, 'reimpresion', :on, :mesa, :wid, :snap, :edate, NOW())
+    """), {
+        "cid":   cid,
+        "on":    data.order_number,
+        "mesa":  str(order["Mesa"]),
+        "wid":   int(order["Mesero"] or 0),
+        "snap":  snapshot,
+        "edate": today,
+    })
+    await db.commit()
+    return {"ok": True, "items": len(items_rows)}
 
 
 # ── 14c. PEDIDOS EN TV (dashboard admin) ──────────────────────────────────────
@@ -1156,20 +1297,23 @@ async def get_cocina(
     cid = int(company_row["id_company"])
     today = _today()
 
-    # 2. Impresoras activas desde easyposweb
+    # 2. Impresoras activas
     all_printers = (await db.execute(text(
         "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
     ), {"cid": cid})).mappings().all()
     printer_map: dict = {
-        int(p["id"]): {"printer_id": int(p["id"]), "printer_name": p["name"], "orders": {}}
+        int(p["id"]): {"printer_id": int(p["id"]), "printer_name": p["name"]}
         for p in all_printers
     }
+    if not printer_map:
+        return []
 
-    # 3. Pedidos activos + ítems desde datatemppos
+    # 3. Pedidos activos + ítems (solo enviados: Hora_Plato establecida; web: tc.Salio=1)
     order_rows = (await db_temp.execute(text("""
         SELECT tc.Nro_Pedido, tc.Mesa, tc.Hora, tc.Mesero,
                tdc.Id_Plato, tdc.Item, tdc.Cantidad,
-               tdc.Novedad, tdc.Cambios, tdc.Hora_Plato, tdc.Producto_Personalizado
+               tdc.Novedad, tdc.Cambios, tdc.Hora_Plato,
+               tdc.Hora AS Hora_Tomado, tdc.Producto_Personalizado
         FROM temp_comanda tc
         JOIN temp_detalle_comanda_parcial tdc
              ON tdc.Nro_pedido  = tc.Nro_Pedido
@@ -1177,51 +1321,44 @@ async def get_cocina(
             AND tdc.Nro_Factura = '0'
             AND tdc.company_id  = :cid
             AND tdc.Mostrar     = 1
+            AND tdc.Hora_Plato IS NOT NULL
+            AND tdc.Hora_Plato NOT IN ('', '0')
         WHERE tc.company_id  = :cid
           AND tc.Fecha       = :today
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado   = 0
-        ORDER BY tc.Hora ASC, tdc.Item ASC
+          AND (tc.Movil = 0 OR tc.Salio = 1)
+        ORDER BY tc.Hora ASC, tdc.Hora_Plato ASC, tdc.Item ASC
     """), {"cid": cid, "today": today})).mappings().all()
 
-    if not order_rows:
-        return [
-            {"printer_id": pdata["printer_id"], "printer_name": pdata["printer_name"], "orders": []}
-            for pdata in printer_map.values()
-        ]
-
-    # 4. Colectar IDs para lookups en easyposweb
+    # 4. Colectar IDs para lookups
     dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
     order_numbers = list({r["Nro_Pedido"] for r in order_rows})
     waiter_ids    = list({int(r["Mesero"]) for r in order_rows if r["Mesero"]})
-    id_list       = ",".join(str(d) for d in dish_ids)
-    on_quoted     = ",".join(f"'{o}'" for o in order_numbers)
 
-    # 5. Info de platos (nombre, flag no_print) desde easyposweb
+    # 5. Info de platos
     dish_info: dict = {}
     if dish_ids:
+        id_list = ",".join(str(d) for d in dish_ids)
         drows = (await db.execute(text(
             f"SELECT id, name, preparation_time FROM pos_dishes "
             f"WHERE company_id=:cid AND id IN ({id_list})"
         ), {"cid": cid})).mappings().all()
-        dish_info = {
-            int(r["id"]): {"name": r["name"], "no_print": bool(r["preparation_time"])}
-            for r in drows
-        }
+        dish_info = {int(r["id"]): {"name": r["name"], "no_print": bool(r["preparation_time"])} for r in drows}
 
-    # 6. Asignación de impresoras por plato desde easyposweb
+    # 6. Impresoras por plato
     printer_for_dish: dict = {}
     if dish_ids:
+        id_list = ",".join(str(d) for d in dish_ids)
         prows = (await db.execute(text(
-            f"SELECT ip.item_id, ip.printer_id "
-            f"FROM pos_item_printers ip "
+            f"SELECT ip.item_id, ip.printer_id FROM pos_item_printers ip "
             f"JOIN pos_printers p ON p.id=ip.printer_id AND p.company_id=:cid AND p.is_active=1 "
             f"WHERE ip.company_id=:cid AND ip.item_id IN ({id_list})"
         ), {"cid": cid})).mappings().all()
         for pr in prows:
             printer_for_dish.setdefault(int(pr["item_id"]), []).append(int(pr["printer_id"]))
 
-    # 7. Nombres de meseros desde easyposweb
+    # 7. Nombres de meseros
     waiter_names: dict = {}
     if waiter_ids:
         wrows = (await db.execute(text(
@@ -1230,105 +1367,193 @@ async def get_cocina(
         ), {"cid": cid})).mappings().all()
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
-    # 8. Estado de despacho/reenvío desde easyposweb
-    ks_map: dict = {}
+    # 8. Pedidos despachados
+    dispatched_set: set = set()
     if order_numbers:
+        on_quoted = ",".join(f"'{o}'" for o in order_numbers)
         ksrows = (await db.execute(text(
-            f"SELECT order_number, dispatched, resent_at FROM pos_kitchen_status "
-            f"WHERE company_id=:cid AND date=:today AND order_number IN ({on_quoted})"
+            f"SELECT order_number FROM pos_kitchen_status "
+            f"WHERE company_id=:cid AND date=:today AND dispatched=1 "
+            f"AND order_number IN ({on_quoted})"
         ), {"cid": cid, "today": today})).mappings().all()
-        ks_map = {
-            r["order_number"]: {
-                "dispatched": bool(r["dispatched"]),
-                "resent_at":  str(r["resent_at"] or ""),
-            }
-            for r in ksrows
-        }
+        dispatched_set = {r["order_number"] for r in ksrows}
 
-    # 9. Calcular daily_seq por hora de pedido
-    order_times: dict = {}
+    # 9. daily_seq por hora de apertura
+    order_first_hora: dict = {}
     for r in order_rows:
         on = r["Nro_Pedido"]
-        if on not in order_times:
-            order_times[on] = str(r["Hora"] or "")
-    sorted_orders = sorted(order_times.keys(), key=lambda x: order_times[x])
-    daily_seq_map = {on: i + 1 for i, on in enumerate(sorted_orders)}
+        if on not in order_first_hora:
+            order_first_hora[on] = str(r["Hora"] or "")
+    daily_seq_map = {on: i + 1 for i, on in enumerate(sorted(order_first_hora, key=order_first_hora.get))}
 
-    # 10. Construir columnas por impresora
+    # 10. Agrupar ítems por (order_number, Hora_Plato) → lotes/batches
+    batch_items: dict = {}  # (on, hp) → [item_data]
+    batch_meta: dict  = {}  # (on, hp) → {mesa, order_hora, mesero, printers}
+
     for row in order_rows:
-        did  = int(row["Id_Plato"])
-        dinfo = dish_info.get(did, {})
+        on  = row["Nro_Pedido"]
+        did = int(row["Id_Plato"])
 
-        if dinfo.get("no_print"):
+        if dish_info.get(did, {}).get("no_print"):
             continue
-
-        on = row["Nro_Pedido"]
-        ks = ks_map.get(on, {})
-        if ks.get("dispatched"):
+        if on in dispatched_set:
             continue
-
         printers_for_dish = printer_for_dish.get(did, [])
         if not printers_for_dish:
             continue
 
-        hora_plato = str(row["Hora_Plato"] or "")
-        sent = hora_plato and hora_plato not in ("", "0")
-        eff_time = hora_plato if sent else f"{today} {str(row['Hora'] or '')}"
+        hp  = str(row["Hora_Plato"] or "")
+        key = (on, hp)
+
+        if key not in batch_meta:
+            wid = int(row["Mesero"] or 0)
+            batch_meta[key] = {
+                "order_number": on,
+                "hora_plato":   hp,
+                "mesa":         str(row["Mesa"] or ""),
+                "order_hora":   str(row["Hora"] or ""),
+                "waiter_id":    wid,
+                "waiter_name":  waiter_names.get(wid),
+                "printers":     set(),
+            }
+        batch_meta[key]["printers"].update(printers_for_dish)
 
         assembly = []
         if row["Producto_Personalizado"]:
             try:
-                cp = json.loads(row["Producto_Personalizado"])
-                assembly = cp.get("assembly", [])
+                assembly = json.loads(row["Producto_Personalizado"]).get("assembly", [])
             except Exception:
                 pass
 
-        item_data = {
-            "dish_id":   did,
-            "item":      int(row["Item"]),
-            "dish_name": dinfo.get("name", f"Plato {did}"),
-            "quantity":  float(row["Cantidad"] or 0),
-            "notes":     row["Novedad"],
-            "changes":   row["Cambios"],
-            "assembly":  assembly,
-            "dish_time": eff_time,
+        batch_items.setdefault(key, []).append({
+            "dish_id":     did,
+            "item":        int(row["Item"]),
+            "dish_name":   dish_info.get(did, {}).get("name", f"Plato {did}"),
+            "quantity":    float(row["Cantidad"] or 0),
+            "notes":       row["Novedad"],
+            "changes":     row["Cambios"],
+            "assembly":    assembly,
+            "hora_tomado": str(row["Hora_Tomado"] or ""),
+        })
+
+    # 11. Mínimo Hora_Plato por pedido → distinguir NUEVO vs AGREGADO
+    min_hp_per_order: dict = {}
+    for (on, hp) in batch_meta:
+        if on not in min_hp_per_order or hp < min_hp_per_order[on]:
+            min_hp_per_order[on] = hp
+
+    # 12. Construir tarjetas de órdenes vivas
+    all_cards: list = []  # [{printer_id, card}]
+    for key, meta in batch_meta.items():
+        on, hp = key
+        event_type = "nuevo" if hp == min_hp_per_order.get(on, hp) else "agregado"
+        card = {
+            "order_number":     on,
+            "event_type":       event_type,
+            "daily_seq":        daily_seq_map.get(on, 0),
+            "table_name":       meta["mesa"],
+            "order_hora":       meta["order_hora"],
+            "waiter_name":      meta["waiter_name"],
+            "latest_dish_time": hp,
+            "bill_requested":   False,
+            "items":            batch_items.get(key, []),
         }
+        for pid in meta["printers"]:
+            if pid in printer_map:
+                all_cards.append({"printer_id": pid, "card": card})
 
-        for pid in printers_for_dish:
-            if pid not in printer_map:
-                continue
-            if on not in printer_map[pid]["orders"]:
-                waiter_id = int(row["Mesero"] or 0)
-                printer_map[pid]["orders"][on] = {
-                    "order_number":    on,
-                    "daily_seq":       daily_seq_map.get(on, 0),
-                    "table_name":      row["Mesa"],
-                    "waiter_name":     waiter_names.get(waiter_id),
-                    "order_time":      str(row["Hora"] or ""),
-                    "latest_dish_time": eff_time,
-                    "resent_at":       ks.get("resent_at", ""),
-                    "bill_requested":  False,
-                    "items":           [],
-                }
-            else:
-                cur = printer_map[pid]["orders"][on]["latest_dish_time"]
-                if eff_time and (not cur or eff_time < cur):
-                    printer_map[pid]["orders"][on]["latest_dish_time"] = eff_time
+    # 13. Eventos efímeros del día (CANCELADO + REIMPRESION) desde easyposweb
+    event_rows = (await db.execute(text("""
+        SELECT id, event_type, order_number, table_name, waiter_id,
+               items_snapshot, created_at
+        FROM pos_kitchen_events
+        WHERE company_id=:cid AND event_date=:today
+        ORDER BY created_at ASC
+    """), {"cid": cid, "today": today})).mappings().all()
 
-            printer_map[pid]["orders"][on]["items"].append(item_data)
+    if event_rows:
+        # Lookup impresoras para los platos del snapshot (puede no estar en printer_for_dish)
+        ev_dish_ids: set = set()
+        for ev in event_rows:
+            if ev["items_snapshot"]:
+                try:
+                    for it in json.loads(ev["items_snapshot"]):
+                        if "dish_id" in it:
+                            ev_dish_ids.add(int(it["dish_id"]))
+                except Exception:
+                    pass
+        missing_ids = ev_dish_ids - set(printer_for_dish.keys())
+        if missing_ids:
+            id_list2 = ",".join(str(d) for d in missing_ids)
+            prows2 = (await db.execute(text(
+                f"SELECT ip.item_id, ip.printer_id FROM pos_item_printers ip "
+                f"JOIN pos_printers p ON p.id=ip.printer_id AND p.company_id=:cid AND p.is_active=1 "
+                f"WHERE ip.company_id=:cid AND ip.item_id IN ({id_list2})"
+            ), {"cid": cid})).mappings().all()
+            for pr in prows2:
+                printer_for_dish.setdefault(int(pr["item_id"]), []).append(int(pr["printer_id"]))
 
+        # Lookup meseros de eventos no cargados aún
+        ev_waiter_ids = {int(r["waiter_id"]) for r in event_rows if r["waiter_id"]} - set(waiter_names.keys())
+        if ev_waiter_ids:
+            wrows2 = (await db.execute(text(
+                f"SELECT id, name FROM pos_waiters WHERE company_id=:cid "
+                f"AND id IN ({','.join(str(w) for w in ev_waiter_ids)})"
+            ), {"cid": cid})).mappings().all()
+            for wr in wrows2:
+                waiter_names[int(wr["id"])] = wr["name"]
+
+        for ev in event_rows:
+            items_snap = []
+            if ev["items_snapshot"]:
+                try:
+                    items_snap = json.loads(ev["items_snapshot"])
+                    for it in items_snap:
+                        it.setdefault("assembly", [])
+                        it.setdefault("changes", None)
+                        it.setdefault("hora_tomado", "")
+                        it.setdefault("item", 0)
+                except Exception:
+                    pass
+
+            # Calcular impresoras desde los dish_ids del snapshot
+            ev_printers: set = set()
+            for it in items_snap:
+                did = int(it.get("dish_id", 0))
+                ev_printers.update(printer_for_dish.get(did, []))
+            if not ev_printers:
+                ev_printers = set(printer_map.keys())  # fallback: todas
+
+            wid = int(ev["waiter_id"] or 0)
+            card = {
+                "order_number":     str(ev["order_number"]),
+                "event_type":       ev["event_type"],
+                "event_id":         int(ev["id"]),
+                "daily_seq":        daily_seq_map.get(str(ev["order_number"])),
+                "table_name":       str(ev["table_name"] or ""),
+                "order_hora":       "",
+                "waiter_name":      waiter_names.get(wid),
+                "latest_dish_time": str(ev["created_at"]),
+                "bill_requested":   False,
+                "items":            items_snap,
+            }
+            for pid in ev_printers:
+                if pid in printer_map:
+                    all_cards.append({"printer_id": pid, "card": card})
+
+    # 14. Ensamblar resultado por impresora (sort DESC por latest_dish_time → más nuevo arriba)
     result = []
     for pid in sorted(printer_map.keys()):
         pdata = printer_map[pid]
-        orders = sorted(
-            pdata["orders"].values(),
-            key=lambda x: x["resent_at"] or x["latest_dish_time"],
+        cards = sorted(
+            [c["card"] for c in all_cards if c["printer_id"] == pid],
+            key=lambda x: x["latest_dish_time"] or "",
             reverse=True,
         )
         result.append({
             "printer_id":   pdata["printer_id"],
             "printer_name": pdata["printer_name"],
-            "orders":       orders,
+            "orders":       cards,
         })
 
     return result

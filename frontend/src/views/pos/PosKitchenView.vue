@@ -38,17 +38,24 @@
           </div>
 
           <div
-            v-for="order in printer.orders"
-            :key="order.order_number"
+            v-for="(order, orderIdx) in printer.orders"
+            :key="`${order.order_number}-${order.event_type}-${orderIdx}`"
             class="kcard"
-            :class="timeClass(order.latest_dish_time)"
+            :class="[`ev--${order.event_type}`, timeClass(order.latest_dish_time)]"
           >
+            <!-- Etiqueta de tipo de pedido -->
+            <div class="kcard__label" :class="`klabel--${order.event_type}`">
+              <i :class="eventIcon(order.event_type)"></i>
+              {{ eventLabel(order.event_type) }}
+            </div>
+
             <!-- Cabecera de la tarjeta -->
             <div class="kcard__hdr">
               <!-- Fila 1: nro + mesa + tiempo -->
               <div class="kcard__row1">
                 <div class="kcard__ident">
-                  <span class="kcard__seq">#{{ order.daily_seq }}</span>
+                  <span class="kcard__seq" :class="`ka--${orderIdx % 5}`"
+                    v-if="order.daily_seq">#{{ order.daily_seq }}</span>
                   <span class="kcard__mesa">{{ order.table_name }}</span>
                 </div>
                 <span
@@ -59,10 +66,16 @@
                   {{ elapsed(order.latest_dish_time) || '0 min' }}
                 </span>
               </div>
-              <!-- Fila 2: mesero -->
-              <div class="kcard__waiter">
-                <i class="bi bi-person-fill"></i>
-                {{ order.waiter_name || '—' }}
+              <!-- Fila 2: mesero + hora apertura -->
+              <div class="kcard__meta">
+                <span class="kcard__waiter">
+                  <i class="bi bi-person-fill"></i>
+                  {{ order.waiter_name || '—' }}
+                </span>
+                <span class="kcard__open-time" v-if="order.order_hora">
+                  <i class="bi bi-clock"></i>
+                  Abierto: {{ order.order_hora.slice(0,5) }}
+                </span>
               </div>
             </div>
 
@@ -75,13 +88,16 @@
             <div class="kcard__items">
               <div
                 v-for="(item, idx) in order.items"
-                :key="`${item.dish_id}-${item.item}`"
+                :key="`${item.dish_id}-${item.item ?? idx}`"
                 class="kitem"
                 :class="{ 'kitem--sep': idx > 0 }"
               >
                 <div class="kitem__main">
                   <span class="kitem__qty">{{ item.quantity }}×</span>
                   <span class="kitem__name">{{ item.dish_name }}</span>
+                  <span class="kitem__hora" v-if="item.hora_tomado">
+                    {{ item.hora_tomado.slice(0,5) }}
+                  </span>
                 </div>
                 <!-- Armado/Assembly -->
                 <div class="kitem__mods" v-if="item.assembly?.length">
@@ -191,6 +207,21 @@ function timeClass(t) {
   if (diff >= 10) return 'time--orange'
   return ''
 }
+
+const EVENT_LABELS = {
+  nuevo:       'PEDIDO NUEVO',
+  agregado:    'PEDIDO AGREGADO',
+  cancelado:   'PEDIDO CANCELADO',
+  reimpresion: 'REIMPRESIÓN PEDIDO',
+}
+const EVENT_ICONS = {
+  nuevo:       'bi bi-plus-circle-fill',
+  agregado:    'bi bi-plus-square-fill',
+  cancelado:   'bi bi-x-circle-fill',
+  reimpresion: 'bi bi-arrow-repeat',
+}
+function eventLabel(type) { return EVENT_LABELS[type] || type }
+function eventIcon(type)  { return EVENT_ICONS[type]  || 'bi bi-circle' }
 </script>
 
 <style scoped>
@@ -334,18 +365,29 @@ function timeClass(t) {
   background: #1e293b;
   border: 2.5px solid #334155;
   border-radius: 16px;
-  overflow: visible;        /* NO clipear el contenido */
-  flex-shrink: 0;           /* nunca comprimir la tarjeta */
+  overflow: visible;
+  flex-shrink: 0;
   transition: background .35s, border-color .35s, box-shadow .35s;
 }
-/* Estado orange: 10–14 min */
-.kcard.time--orange {
-  background: #431407;
-  border-color: #ea580c;
+
+/* Variantes por tipo de evento */
+.kcard.ev--nuevo     { border-color: #22c55e; }
+.kcard.ev--agregado  { border-color: #f59e0b; background: #1c1a0e; }
+.kcard.ev--cancelado {
+  border-color: #dc2626;
+  background: #1a0a0a;
+  animation: urgent-cancel 2s ease-in-out infinite;
+}
+.kcard.ev--reimpresion { border-color: #06b6d4; background: #071c22; }
+
+@keyframes urgent-cancel {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  50%       { box-shadow: 0 0 0 10px rgba(220,38,38,.28); }
 }
 
-/* Estado rojo: 15+ min */
-.kcard.time--red {
+/* Estado orange / rojo por tiempo — superpone al color de evento */
+.kcard.time--orange { background: #431407; border-color: #ea580c; }
+.kcard.time--red    {
   background: #3b0a0a;
   border-color: #dc2626;
   animation: urgent 2.5s ease-in-out infinite;
@@ -355,13 +397,28 @@ function timeClass(t) {
   50%       { box-shadow: 0 0 0 8px rgba(220,38,38,.22); }
 }
 
+/* ── Etiqueta de tipo ────────────────────────────────────── */
+.kcard__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 18px;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  border-radius: 13px 13px 0 0;
+}
+.klabel--nuevo       { background: rgba(34,197,94,.18);  color: #4ade80; }
+.klabel--agregado    { background: rgba(245,158,11,.18); color: #fbbf24; }
+.klabel--cancelado   { background: rgba(220,38,38,.25);  color: #f87171; }
+.klabel--reimpresion { background: rgba(6,182,212,.18);  color: #22d3ee; }
+
 /* Cabecera de tarjeta */
 .kcard__hdr {
-  padding: 16px 18px 12px;
+  padding: 14px 18px 12px;
   background: rgba(0,0,0,.28);
   border-bottom: 1px solid rgba(255,255,255,.07);
-  border-radius: 14px 14px 0 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -391,6 +448,11 @@ function timeClass(t) {
   flex-shrink: 0;
   letter-spacing: .5px;
 }
+.kcard__seq.ka--0 { background: #3b82f6; color: #fff; }
+.kcard__seq.ka--1 { background: #8b5cf6; color: #fff; }
+.kcard__seq.ka--2 { background: #06b6d4; color: #fff; }
+.kcard__seq.ka--3 { background: #f59e0b; color: #fff; }
+.kcard__seq.ka--4 { background: #10b981; color: #fff; }
 
 .kcard__mesa {
   font-size: 2.1rem;
@@ -419,16 +481,16 @@ function timeClass(t) {
   flex-shrink: 0;
 }
 .kcard__elapsed i { font-size: 1.4rem; }
-.kcard__elapsed.time--orange {
-  background: rgba(249,115,22,.18);
-  color: #fb923c;
-}
-.kcard__elapsed.time--red {
-  background: rgba(239,68,68,.18);
-  color: #f87171;
-}
+.kcard__elapsed.time--orange { background: rgba(249,115,22,.18); color: #fb923c; }
+.kcard__elapsed.time--red    { background: rgba(239,68,68,.18);  color: #f87171; }
 
-/* Mesero */
+/* Mesero + hora apertura */
+.kcard__meta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
 .kcard__waiter {
   display: flex;
   align-items: center;
@@ -438,6 +500,15 @@ function timeClass(t) {
   color: #cbd5e1;
 }
 .kcard__waiter i { font-size: 1.1rem; color: #94a3b8; }
+.kcard__open-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1rem;
+  color: #64748b;
+  font-family: 'Courier New', monospace;
+}
+.kcard__open-time i { font-size: .9rem; }
 
 /* Solicitud de cuenta */
 .kcard__bill {
@@ -470,6 +541,17 @@ function timeClass(t) {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Hora en que se tomó el ítem */
+.kitem__hora {
+  margin-left: auto;
+  font-size: .95rem;
+  color: #475569;
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .kitem__qty {
@@ -557,26 +639,29 @@ function timeClass(t) {
   .kh { height: 54px; padding: 0 16px; }
   .kh__brand  { font-size: 1.1rem; }
   .kh__time   { font-size: 1.4rem; }
-  .kitchen-columns {
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-  }
-  .kcol      { min-width: 310px; scroll-snap-align: start; }
+  .kcols      { overflow-x: auto; scroll-snap-type: x mandatory; }
+  .kcol       { min-width: 310px; scroll-snap-align: start; }
+  .kcard__label   { font-size: .85rem; padding: 5px 14px; }
   .kcard__mesa    { font-size: 1.5rem; }
   .kcard__elapsed { font-size: 1.3rem; }
   .kcard__waiter  { font-size: 1rem; }
+  .kcard__open-time { font-size: .85rem; }
   .kitem__qty, .kitem__name { font-size: 1.2rem; }
+  .kitem__hora    { font-size: .85rem; }
   .kitem__mod, .kitem__note, .kitem__change { font-size: .9rem; }
 }
 
 /* ── Responsive móvil ────────────────────────────────────── */
 @media (max-width: 576px) {
-  .kcol           { min-width: 270px; }
-  .kcol__hdr      { font-size: 1rem; padding: 10px 14px; }
-  .kcard__mesa    { font-size: 1.3rem; }
-  .kcard__elapsed { font-size: 1.1rem; padding: 4px 10px; }
-  .kcard__waiter  { font-size: .95rem; }
+  .kcol             { min-width: 270px; }
+  .kcol__hdr        { font-size: 1rem; padding: 10px 14px; }
+  .kcard__label     { font-size: .8rem; padding: 4px 12px; }
+  .kcard__mesa      { font-size: 1.3rem; }
+  .kcard__elapsed   { font-size: 1.1rem; padding: 4px 10px; }
+  .kcard__waiter    { font-size: .95rem; }
+  .kcard__open-time { display: none; }
   .kitem__qty, .kitem__name { font-size: 1.1rem; }
+  .kitem__hora      { font-size: .8rem; }
   .kitem__mods, .kitem__note, .kitem__change { padding-left: 2.8rem; }
 }
 </style>
