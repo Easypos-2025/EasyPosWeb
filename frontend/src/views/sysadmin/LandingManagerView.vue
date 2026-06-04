@@ -404,6 +404,7 @@ import ImageUploaderPro from "@/components/common/ImageUploaderPro.vue"
 
 export default {
   name: "LandingManagerView",
+  components: { ImageUploaderPro },
 
   setup() {
     const activeTab = ref("sections")
@@ -640,7 +641,6 @@ export default {
 
     return {
       activeTab, tabs,
-      ImageUploaderPro,
       sections, loadingSections, sectionModal, savingSection,
       openEditSection, openNewSection, saveSection, toggleSection, uploadSectionImage,
       profiles, loadingProfiles, saveProfile, uploadProfileImage,
