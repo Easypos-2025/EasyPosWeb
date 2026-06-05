@@ -15,7 +15,7 @@ Public Sub SubirTempComandas(Var_Id_Company_Envio As Integer, Var_Limit_Registro
     Dim rs As Object
     Set rs = CreateObject("ADODB.Recordset")
     rs.Open "SELECT * FROM temp_comanda " & _
-            "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' " & _
+            "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Salio=1 " & _
             "LIMIT " & Var_Limit_Registros, conn
 
     If rs.EOF Then

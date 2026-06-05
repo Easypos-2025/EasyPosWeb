@@ -21,7 +21,7 @@ Public Sub SubirTempDetalleComanda(Var_Id_Company_Envio As Integer, Var_Limit_Re
     Dim rsOrd As Object
     Set rsOrd = CreateObject("ADODB.Recordset")
     rsOrd.Open "SELECT Nro_Pedido, Fecha FROM temp_comanda " & _
-               "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "'", conn
+               "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Salio=1", conn
 
     If rsOrd.EOF Then
         rsOrd.Close: conn.Close
@@ -44,7 +44,7 @@ Public Sub SubirTempDetalleComanda(Var_Id_Company_Envio As Integer, Var_Limit_Re
         Set rsItems = CreateObject("ADODB.Recordset")
         rsItems.Open "SELECT * FROM temp_detalle_comanda_parcial " & _
                      "WHERE Nro_pedido='" & Replace(nroPedido, "'", "''") & "' " & _
-                     "  AND Fecha='" & fecha & "' AND Mostrar=1", conn
+                     "  AND Fecha='" & fecha & "' AND Mostrar=1 AND Salio=1", conn
 
         Dim ordJson As String
         ordJson = "{"
