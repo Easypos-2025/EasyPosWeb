@@ -334,52 +334,50 @@ async def push_temp_notes_replace(
 
 # ═══════════════════════════════════════════════════════════════
 # PUSH — temp_mesa_abierta (estado de mesas)
+# Estrategia: REPLACE completo por company (Variante D)
+#   VB6 envía {company_id, tables:[...]} con el estado COMPLETO actual.
+#   Si tables=[] significa que no hay mesas bloqueadas → limpiar todo.
 # Destino: datatemppos.temp_mesa_abierta
 # ═══════════════════════════════════════════════════════════════
 
-class TempTableStatusIn(BaseModel):
-    company_id: int
+class _TempTableItem(BaseModel):
     table_id:   int
     table_name: Optional[str] = ""
-    is_open:    Optional[int] = 0
+    is_open:    Optional[int] = 1
+
+
+class TempTableStatusBatchIn(BaseModel):
+    company_id: int
+    tables:     List[_TempTableItem]
 
 
 @router.post("/sync/push/temp-table-status")
 async def push_temp_table_status(
-    tables: List[TempTableStatusIn],
+    batch: TempTableStatusBatchIn,
     x_api_key: str = Header(...),
     db: AsyncSession = Depends(get_datatemppos_db),
 ):
     _verify(x_api_key)
-    saved, failed = 0, 0
-    for t in tables:
-        try:
-            await db.execute(text("""
-                INSERT INTO temp_mesa_abierta
-                    (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
-                VALUES
-                    (:cid, :id_mesa, :mesa, :abierta,
-                     CASE WHEN :abierta = 1 THEN NOW() ELSE NULL END, NOW())
-                ON DUPLICATE KEY UPDATE
-                    Mesa        = VALUES(Mesa),
-                    Abierta     = VALUES(Abierta),
-                    Abierta_Desde = CASE
-                        WHEN VALUES(Abierta) = 1 AND Abierta = 0 THEN NOW()
-                        WHEN VALUES(Abierta) = 0 THEN NULL
-                        ELSE Abierta_Desde
-                    END,
-                    updated_at  = NOW()
-            """), {
-                "cid":     t.company_id,
-                "id_mesa": t.table_id,
-                "mesa":    t.table_name,
-                "abierta": t.is_open,
-            })
-            saved += 1
-        except Exception:
-            failed += 1
+    await db.execute(
+        text("DELETE FROM temp_mesa_abierta WHERE company_id = :cid"),
+        {"cid": batch.company_id},
+    )
+    saved = 0
+    for t in batch.tables:
+        await db.execute(text("""
+            INSERT INTO temp_mesa_abierta
+                (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
+            VALUES
+                (:cid, :id_mesa, :mesa, :abierta, NOW(), NOW())
+        """), {
+            "cid":     batch.company_id,
+            "id_mesa": t.table_id,
+            "mesa":    t.table_name,
+            "abierta": t.is_open,
+        })
+        saved += 1
     await db.commit()
-    return {"total_sent": len(tables), "total_saved": saved, "total_failed": failed}
+    return {"total_sent": len(batch.tables), "total_saved": saved}
 
 
 # ═══════════════════════════════════════════════════════════════

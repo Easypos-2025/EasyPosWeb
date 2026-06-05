@@ -21,7 +21,8 @@ Public Sub SubirTempDetalleComanda(Var_Id_Company_Envio As Integer, Var_Limit_Re
     Dim rsOrd As Object
     Set rsOrd = CreateObject("ADODB.Recordset")
     rsOrd.Open "SELECT Nro_Pedido, Fecha FROM temp_comanda " & _
-               "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Salio=1", conn
+               "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Salio=0 " & _
+               "  AND Mesa NOT IN (SELECT Mesa FROM temp_mesa_abierta)", conn
 
     If rsOrd.EOF Then
         rsOrd.Close: conn.Close
