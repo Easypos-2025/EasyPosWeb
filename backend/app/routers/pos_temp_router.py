@@ -27,6 +27,11 @@ def _verify(x_api_key: str = Header(...)):
         raise HTTPException(status_code=401, detail="API Key inválida")
 
 
+def _norm_date(d: str) -> str:
+    """VB6 envía fechas como YYYY/MM/DD — normalizar a YYYY-MM-DD para queries."""
+    return d.replace("/", "-") if d else d
+
+
 # ═══════════════════════════════════════════════════════════════
 # PUSH — temp_comanda (cabeceras de pedidos activos)
 # Destino: datatemppos.temp_comanda
@@ -81,7 +86,7 @@ async def push_temp_comanda(
             """), {
                 "cid":        o.company_id,
                 "np":         o.order_number,
-                "fecha":      o.date,
+                "fecha":      _norm_date(o.date),
                 "nf":         o.invoice_number,
                 "mesa":       o.table_name,
                 "hora":       o.time,
@@ -151,7 +156,7 @@ async def push_temp_details_replace(
             await db.execute(text("""
                 DELETE FROM temp_detalle_comanda_parcial
                 WHERE company_id = :cid AND Nro_pedido = :np AND Fecha = :fecha
-            """), {"cid": order.company_id, "np": order.order_number, "fecha": order.date})
+            """), {"cid": order.company_id, "np": order.order_number, "fecha": _norm_date(order.date)})
             for it in order.items:
                 await db.execute(text("""
                     INSERT INTO temp_detalle_comanda_parcial
@@ -171,7 +176,7 @@ async def push_temp_details_replace(
                 """), {
                     "cid":      order.company_id,
                     "np":       order.order_number,
-                    "fecha":    order.date,
+                    "fecha":    _norm_date(order.date),
                     "nf":       it.invoice_number,
                     "dish_id":  it.dish_id,
                     "item":     it.item,
@@ -248,7 +253,7 @@ async def push_temp_assembly_replace(
                 """), {
                     "cid":      order.company_id,
                     "np":       order.order_number,
-                    "fecha":    order.date,
+                    "fecha":    _norm_date(order.date),
                     "nf":       it.invoice_number,
                     "dish_id":  it.dish_id,
                     "item":     it.item,

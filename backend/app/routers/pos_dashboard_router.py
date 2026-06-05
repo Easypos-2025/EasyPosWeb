@@ -216,8 +216,8 @@ async def get_mesas(
     result = []
     for t in layout:
         tid = int(t["id"])
-        ocupada = 1 if tid in open_set else 0
-        order_info = order_by_mesa.get(str(t["name"]).strip()) if ocupada else None
+        order_info = order_by_mesa.get(str(t["name"]).strip())
+        ocupada = 1 if (tid in open_set or order_info is not None) else 0
         row = {
             "id":          tid,
             "name":        t["name"],
