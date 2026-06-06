@@ -1415,11 +1415,13 @@ async def get_cocina(
         if not printers_for_dish:
             continue
 
-        # Movil=0 (VB6): agrupa TODOS los ítems del pedido en un único batch
-        # para evitar split NUEVO/AGREGADO por timestamps ligeramente distintos
-        movil = int(row["Movil"] or 0)
-        hp    = str(row["Hora_Plato"] or "") if movil == 1 else ""
-        key   = (on, hp)
+        # Movil=0 (VB6): agrupa por minuto (HH:MM) para que ítems del mismo
+        # "envío a cocina" queden en un batch, pero envíos posteriores generen
+        # un batch nuevo → etiqueta PEDIDO AGREGADO correcta.
+        movil  = int(row["Movil"] or 0)
+        hp_raw = str(row["Hora_Plato"] or "")
+        hp     = hp_raw if movil == 1 else hp_raw[:5]   # "HH:MM" para VB6
+        key    = (on, hp)
 
         if key not in batch_meta:
             wid = int(row["Mesero"] or 0)

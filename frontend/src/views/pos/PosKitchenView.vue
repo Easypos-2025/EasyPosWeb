@@ -212,9 +212,12 @@ function _elapsedMin(t) {
 
 function elapsed(t) {
   const diff = _elapsedMin(t)
-  if (isNaN(diff)) return ''
+  if (isNaN(diff) || diff < 0) return ''
   if (diff < 1) return '< 1 min'
-  return `${diff} min`
+  if (diff < 60) return `${diff} min`
+  const h = Math.floor(diff / 60)
+  const m = diff % 60
+  return `${h}:${String(m).padStart(2, '0')}`
 }
 
 function timeClass(t) {
@@ -418,11 +421,11 @@ function eventIcon(type)  { return EVENT_ICONS[type]  || 'bi bi-circle' }
 .kcard__label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 18px;
-  font-size: 1rem;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 1.7rem;
   font-weight: 900;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   text-transform: uppercase;
   border-radius: 13px 13px 0 0;
 }
@@ -458,9 +461,9 @@ function eventIcon(type)  { return EVENT_ICONS[type]  || 'bi bi-circle' }
 .kcard__seq {
   background: #f1f5f9;
   color: #0f172a;
-  font-size: 1.15rem;
+  font-size: 1.5rem;
   font-weight: 900;
-  padding: 4px 11px;
+  padding: 5px 13px;
   border-radius: 8px;
   flex-shrink: 0;
   letter-spacing: .5px;
@@ -512,20 +515,21 @@ function eventIcon(type)  { return EVENT_ICONS[type]  || 'bi bi-circle' }
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 1.25rem;
+  font-size: 1.6rem;
   font-weight: 600;
   color: #cbd5e1;
 }
-.kcard__waiter i { font-size: 1.1rem; color: #94a3b8; }
+.kcard__waiter i { font-size: 1.4rem; color: #94a3b8; }
 .kcard__open-time {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 1rem;
-  color: #64748b;
+  gap: 8px;
+  font-size: 1.5rem;
+  color: #94a3b8;
   font-family: 'Courier New', monospace;
+  font-weight: 700;
 }
-.kcard__open-time i { font-size: .9rem; }
+.kcard__open-time i { font-size: 1.3rem; }
 
 /* Solicitud de cuenta */
 .kcard__bill {
