@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Header, HTTPException, Depends
+from fastapi import APIRouter, Header, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
+from typing import Optional
 
 from app.database import get_db, get_datatemppos_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
+from app.utils.pos_archive import archive_commands_to_history
 
 router = APIRouter(prefix="/api/pos/utilitarios", tags=["POS Utilitarios"])
 
@@ -61,7 +63,6 @@ async def _get_admin_user(authorization: str, db: AsyncSession) -> User:
 
 # ═══════════════════════════════════════════════════════════════
 # GET /api/pos/utilitarios/temp-status
-# Retorna el conteo actual de registros por tabla temp_ para la empresa.
 # ═══════════════════════════════════════════════════════════════
 @router.get("/temp-status")
 async def temp_status(
@@ -88,8 +89,6 @@ async def temp_status(
 
 # ═══════════════════════════════════════════════════════════════
 # POST /api/pos/utilitarios/cleanup-temp
-# Elimina pedidos huérfanos de todas las tablas temp_.
-# Requiere sesión activa con rol ADMIN o SYSADMIN.
 # ═══════════════════════════════════════════════════════════════
 @router.post("/cleanup-temp")
 async def cleanup_temp(
@@ -99,6 +98,19 @@ async def cleanup_temp(
 ):
     user = await _get_admin_user(authorization, db)
     cid = user.company_id
+
+    # Identificar huérfanos antes de borrar para archivar
+    try:
+        orphan_rows = (await db_temp.execute(text(f"""
+            SELECT DISTINCT Nro_Pedido FROM temp_comanda
+            WHERE company_id = :cid
+              AND Nro_Pedido IN ({ORPHAN_SUBQUERY})
+        """), {"cid": cid})).fetchall()
+        orphan_ids = [r[0] for r in orphan_rows]
+        if orphan_ids:
+            await archive_commands_to_history(db_temp, db, cid, orphan_ids, "manual_cleanup")
+    except Exception:
+        pass  # Archivado best-effort; la limpieza continúa igual
 
     result_tables = []
     for t in TEMP_TABLES:
@@ -130,3 +142,146 @@ async def cleanup_temp(
         "deleted_details": total_details,
         "tables": result_tables,
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/pos/utilitarios/command-history
+# Retorna historial de comandas archivadas para una fecha,
+# con comparación contra factura/recibo correspondiente.
+# ═══════════════════════════════════════════════════════════════
+@router.get("/command-history")
+async def command_history(
+    fecha: str = Query(..., description="YYYY-MM-DD"),
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_admin_user(authorization, db)
+    cid = user.company_id
+
+    # 1. Cabeceras archivadas del día
+    headers = (await db.execute(text("""
+        SELECT Nro_Pedido, Mesa, Hora, Mesero, Valor, Cancelado,
+               Movil, archive_reason, archived_at
+        FROM order_command_history
+        WHERE company_id = :cid AND Fecha = :fecha
+        ORDER BY archived_at DESC
+    """), {"cid": cid, "fecha": fecha})).mappings().all()
+
+    if not headers:
+        return {"orders": []}
+
+    nro_pedidos = [h["Nro_Pedido"] for h in headers]
+    ph = ",".join(f":np_{i}" for i in range(len(nro_pedidos)))
+    id_params = {"cid": cid}
+    id_params.update({f"np_{i}": v for i, v in enumerate(nro_pedidos)})
+
+    # 2. Ítems archivados
+    items_rows = (await db.execute(text(f"""
+        SELECT Nro_Pedido, Id_Plato, Item, Cantidad, Valor, Novedad, Cambios, Hora_Plato, Mostrar
+        FROM order_command_history_items
+        WHERE company_id = :cid AND Nro_Pedido IN ({ph})
+        ORDER BY Nro_Pedido, Item
+    """), id_params)).mappings().all()
+
+    items_by_order: dict = {}
+    for it in items_rows:
+        items_by_order.setdefault(it["Nro_Pedido"], []).append(dict(it))
+
+    # 3. Facturas DIAN (pos_orders + pos_invoice_details)
+    invoice_rows = (await db.execute(text(f"""
+        SELECT order_number, invoice_number, amount, time
+        FROM pos_orders
+        WHERE company_id = :cid AND order_number IN ({ph})
+    """), id_params)).mappings().all()
+    invoices_by_order = {r["order_number"]: dict(r) for r in invoice_rows}
+
+    inv_detail_rows = (await db.execute(text(f"""
+        SELECT order_number, dish_id, item, quantity, dish_amount AS amount, notes, complimentary
+        FROM pos_invoice_details
+        WHERE company_id = :cid AND order_number IN ({ph})
+        ORDER BY order_number, item
+    """), id_params)).mappings().all()
+    inv_details_by_order: dict = {}
+    for d in inv_detail_rows:
+        inv_details_by_order.setdefault(d["order_number"], []).append(dict(d))
+
+    # 4. Recibos (pos_receipt_orders + pos_order_details)
+    receipt_rows = (await db.execute(text(f"""
+        SELECT order_number, receipt_number, amount, time
+        FROM pos_receipt_orders
+        WHERE company_id = :cid AND order_number IN ({ph})
+    """), id_params)).mappings().all()
+    receipts_by_order = {r["order_number"]: dict(r) for r in receipt_rows}
+
+    rec_detail_rows = (await db.execute(text(f"""
+        SELECT order_number, dish_id, item, quantity, amount, notes, complimentary
+        FROM pos_order_details
+        WHERE company_id = :cid AND order_number IN ({ph})
+        ORDER BY order_number, item
+    """), id_params)).mappings().all()
+    rec_details_by_order: dict = {}
+    for d in rec_detail_rows:
+        rec_details_by_order.setdefault(d["order_number"], []).append(dict(d))
+
+    # 5. Info de eliminación
+    del_rows = (await db.execute(text(f"""
+        SELECT Nro_Pedido, Quien_Elimino, Motivo_Eliminacion, Fecha
+        FROM historico_comandas_eliminadas
+        WHERE company_id = :cid AND Nro_Pedido IN ({ph})
+    """), id_params)).mappings().all()
+    deletions_by_order = {r["Nro_Pedido"]: dict(r) for r in del_rows}
+
+    # 6. Nombres de meseros
+    waiter_rows = (await db.execute(text(
+        "SELECT id, full_name FROM pos_users WHERE company_id = :cid"
+    ), {"cid": cid})).mappings().all()
+    waiter_names = {str(r["id"]): r["full_name"] for r in waiter_rows}
+
+    # 7. Ensamblar respuesta
+    orders = []
+    for h in headers:
+        np = h["Nro_Pedido"]
+        invoice = invoices_by_order.get(np)
+        receipt = receipts_by_order.get(np)
+
+        if invoice:
+            invoice_info = {
+                "type":           "dian",
+                "number":         invoice["invoice_number"],
+                "amount":         float(invoice["amount"] or 0),
+                "time":           str(invoice["time"] or ""),
+                "items":          inv_details_by_order.get(np, []),
+            }
+        elif receipt:
+            invoice_info = {
+                "type":           "receipt",
+                "number":         receipt["receipt_number"],
+                "amount":         float(receipt["amount"] or 0),
+                "time":           str(receipt["time"] or ""),
+                "items":          rec_details_by_order.get(np, []),
+            }
+        else:
+            invoice_info = None
+
+        deletion = deletions_by_order.get(np)
+        mesero_id = str(h["Mesero"] or "")
+
+        orders.append({
+            "order_number":   np,
+            "Mesa":           str(h["Mesa"]   or ""),
+            "Hora":           str(h["Hora"]   or ""),
+            "Mesero":         waiter_names.get(mesero_id, mesero_id),
+            "Valor":          float(h["Valor"] or 0),
+            "Cancelado":      int(h["Cancelado"] or 0),
+            "Movil":          int(h["Movil"]    or 0),
+            "archive_reason": h["archive_reason"],
+            "archived_at":    str(h["archived_at"] or ""),
+            "commanded_items": items_by_order.get(np, []),
+            "invoice":         invoice_info,
+            "deletion":        {
+                "quien":  deletion["Quien_Elimino"]       if deletion else None,
+                "motivo": deletion["Motivo_Eliminacion"]  if deletion else None,
+            } if deletion else None,
+        })
+
+    return {"orders": orders}

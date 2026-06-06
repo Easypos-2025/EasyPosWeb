@@ -5,6 +5,7 @@ Datos de referencia → easyposweb (menú, zonas, meseros, impresoras, pos_kitch
 """
 from datetime import datetime, timezone, timedelta
 import json
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -1459,17 +1460,23 @@ async def get_cocina(
             "hora_tomado": str(row["Hora_Tomado"] or ""),
         })
 
-    # 11. Mínimo Hora_Plato por pedido → distinguir NUEVO vs AGREGADO
-    min_hp_per_order: dict = {}
-    for (on, hp) in batch_meta:
-        if on not in min_hp_per_order or hp < min_hp_per_order[on]:
-            min_hp_per_order[on] = hp
+    # 11. Mínimo Hora_Plato por (impresora, pedido) — NUEVO solo cuando ESA impresora
+    #     ve por primera vez ese pedido; AGREGADO si ya tenía ítems anteriores.
+    #     Se usa _hp_sort_key para comparación numérica correcta (evita "7:10:" > "12:07").
+    min_sk_per_printer_order: dict = {}  # (pid, on) → (sort_key, hp_string)
+    for (on, hp), meta in batch_meta.items():
+        sk = _hp_sort_key(hp)
+        for item_data in batch_items.get((on, hp), []):
+            for pid in printer_for_dish.get(item_data["dish_id"], []):
+                if pid in meta["printers"]:
+                    pkey = (pid, on)
+                    if pkey not in min_sk_per_printer_order or sk < min_sk_per_printer_order[pkey][0]:
+                        min_sk_per_printer_order[pkey] = (sk, hp)
 
     # 12. Construir tarjetas de órdenes vivas — cada impresora ve solo SUS ítems
     all_cards: list = []  # [{printer_id, card}]
     for key, meta in batch_meta.items():
         on, hp = key
-        event_type = "nuevo" if hp == min_hp_per_order.get(on, hp) else "agregado"
         display_hp = meta.get("max_hp") or hp
 
         # Agrupar ítems del batch por impresora
@@ -1485,6 +1492,12 @@ async def get_cocina(
             pid_items = items_by_printer.get(pid, [])
             if not pid_items:
                 continue
+
+            # event_type basado en el mínimo POR ESTA IMPRESORA para este pedido
+            pkey = (pid, on)
+            min_entry = min_sk_per_printer_order.get(pkey)
+            event_type = "nuevo" if (min_entry is None or hp == min_entry[1]) else "agregado"
+
             card = {
                 "order_number":     on,
                 "event_type":       event_type,
@@ -1585,7 +1598,7 @@ async def get_cocina(
         pdata = printer_map[pid]
         cards = sorted(
             [c["card"] for c in all_cards if c["printer_id"] == pid],
-            key=lambda x: x["latest_dish_time"] or "",
+            key=lambda x: _hp_sort_key(x["latest_dish_time"]),
             reverse=True,
         )
         result.append({
@@ -1598,6 +1611,36 @@ async def get_cocina(
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+
+def _hp_sort_key(t: str) -> int:
+    """
+    Convierte Hora_Plato (locale colombiana) o datetime ISO a segundos-desde-medianoche.
+    Necesario porque "7:10:23 a. m." > "12:07:43 p. m." como string, rompiendo el orden.
+    """
+    if not t:
+        return 0
+    t = t.strip()
+    # ISO datetime "2026-06-06 12:08:40" — extraer solo la parte hora
+    if re.match(r'\d{4}-\d{2}-\d{2}', t):
+        m = re.search(r'(\d{1,2}):(\d{2}):(\d{2})', t)
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        return 0
+    # Locale colombiana "7:10:23 a. m." / "12:07:43 p. m."
+    m = re.match(r'(\d{1,2}):(\d{2}):(\d{2})\s+(a|p)', t, re.IGNORECASE)
+    if m:
+        h, mn, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if m.group(4).lower() == 'p' and h != 12:
+            h += 12
+        elif m.group(4).lower() == 'a' and h == 12:
+            h = 0
+        return h * 3600 + mn * 60 + s
+    # Truncado "7:10:" o "12:07"
+    m = re.match(r'(\d{1,2}):(\d{2})', t)
+    if m:
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60
+    return 0
+
 
 async def _recalc_total(db_temp: AsyncSession, order_number: str, date: str, cid: int) -> None:
     """Recalcula el total de un pedido en temp_comanda desde sus ítems en datatemppos."""

@@ -16,6 +16,7 @@ from sqlalchemy import text
 from fastapi import Depends
 
 from app.database import get_datatemppos_db, get_db
+from app.utils.pos_archive import archive_commands_to_history
 
 router = APIRouter(prefix="/api/pos", tags=["POS Temp Sync"])
 
@@ -174,6 +175,19 @@ async def push_temp_comanda(
             ph = ",".join(f":np_{i}" for i in range(len(batch_orders)))
             params: dict = {"cid": cid}
             params.update({f"np_{i}": v for i, v in enumerate(batch_orders)})
+
+            # Identificar huérfanos antes de borrar (para archivar)
+            orphan_rows = (await db.execute(text(f"""
+                SELECT DISTINCT Nro_Pedido FROM temp_comanda
+                WHERE company_id = :cid
+                  AND Movil = 0
+                  AND (Nro_Pedido NOT IN ({ph}) OR Cancelado = 1)
+            """), params)).fetchall()
+            orphan_ids = [r[0] for r in orphan_rows]
+
+            # Archivar en easyposweb antes de borrar
+            if orphan_ids:
+                await archive_commands_to_history(db, db_main, cid, orphan_ids, "sync_removed")
 
             # Subquery de huérfanos (alias obligatorio por restricción MySQL)
             orphan_sq = f"""
@@ -733,6 +747,9 @@ async def push_historico_comanda_eliminada(
                     SET tv_notified = 1
                     WHERE company_id = :cid AND Nro_Pedido = :np AND Fecha = :fecha
                 """), {"cid": r.company_id, "np": r.order_number, "fecha": fecha})
+
+            # Archivar antes de borrar de temp_
+            await archive_commands_to_history(db, db_main, r.company_id, [r.order_number], "deleted")
 
             # Cleanup SIEMPRE — idempotente, evita pedidos fantasma en todas las temp_
             _p = {"cid": r.company_id, "np": r.order_number}
