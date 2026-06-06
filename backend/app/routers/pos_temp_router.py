@@ -159,22 +159,45 @@ async def push_temp_comanda(
         except Exception:
             pass
 
-    # Cleanup temp_ para TODOS los Cancelado=1 del lote — idempotente.
-    # Cubre tanto transiciones nuevas como registros ya cancelados previamente
-    # que quedaron atascados (ej: M-01 con Cancelado=1 preexistente en servidor).
-    for o in orders:
-        if o.cancelled == 1:
-            try:
-                await db.execute(text("""
-                    DELETE FROM temp_detalle_comanda_parcial
-                    WHERE company_id = :cid AND Nro_pedido = :np
-                """), {"cid": o.company_id, "np": o.order_number})
-                await db.execute(text("""
-                    DELETE FROM temp_comanda
-                    WHERE company_id = :cid AND Nro_Pedido = :np
-                """), {"cid": o.company_id, "np": o.order_number})
-            except Exception:
-                pass
+    # Limpieza proactiva de huérfanos — corre cada ciclo de sync para cada empresa.
+    # Cubre registros que VB6 ya borró localmente pero quedaron en el servidor.
+    company_ids = {o.company_id for o in orders}
+    for cid in company_ids:
+        try:
+            # 1. Eliminar detalles de pedidos cancelados
+            await db.execute(text("""
+                DELETE FROM temp_detalle_comanda_parcial
+                WHERE company_id = :cid
+                  AND Nro_pedido IN (
+                      SELECT Nro_Pedido FROM temp_comanda
+                      WHERE company_id = :cid AND Cancelado = 1
+                  )
+            """), {"cid": cid})
+            # 2. Eliminar cabeceras canceladas
+            await db.execute(text("""
+                DELETE FROM temp_comanda
+                WHERE company_id = :cid AND Cancelado = 1
+            """), {"cid": cid})
+            # 3. Eliminar detalles de pedidos ya eliminados en escritorio
+            await db.execute(text("""
+                DELETE FROM temp_detalle_comanda_parcial
+                WHERE company_id = :cid
+                  AND Nro_pedido IN (
+                      SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
+                      WHERE company_id = :cid
+                  )
+            """), {"cid": cid})
+            # 4. Eliminar cabeceras de pedidos ya eliminados en escritorio
+            await db.execute(text("""
+                DELETE FROM temp_comanda
+                WHERE company_id = :cid
+                  AND Nro_Pedido IN (
+                      SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
+                      WHERE company_id = :cid
+                  )
+            """), {"cid": cid})
+        except Exception:
+            pass
     await db.commit()
 
     return {"saved": saved, "failed": failed,
