@@ -712,11 +712,11 @@
               <div class="form-row-2">
                 <div class="form-group">
                   <label>Fecha inicio deseada</label>
-                  <input v-model="pauteForm.start_date" type="date" class="form-ctrl" />
+                  <CustomDatePicker v-model="pauteForm.start_date" />
                 </div>
                 <div class="form-group">
                   <label>Fecha fin deseada</label>
-                  <input v-model="pauteForm.end_date" type="date" class="form-ctrl" />
+                  <CustomDatePicker v-model="pauteForm.end_date" />
                 </div>
               </div>
               <div class="form-group">
@@ -838,8 +838,9 @@
 
 <script>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from "vue"
-import LandingAdBanner  from "@/components/landing/LandingAdBanner.vue"
-import LandingAdSidebar from "@/components/landing/LandingAdSidebar.vue"
+import LandingAdBanner    from "@/components/landing/LandingAdBanner.vue"
+import LandingAdSidebar  from "@/components/landing/LandingAdSidebar.vue"
+import CustomDatePicker  from "@/components/common/CustomDatePicker.vue"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000"
 

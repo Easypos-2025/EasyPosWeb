@@ -17,11 +17,11 @@
         <div class="he-filter-row">
           <div class="he-filter-group">
             <label class="he-label">Desde</label>
-            <input type="date" class="form-control he-input" v-model="filtros.desde" @change="buscar" />
+            <CustomDatePicker v-model="filtros.desde" @update:modelValue="buscar" />
           </div>
           <div class="he-filter-group">
             <label class="he-label">Hasta</label>
-            <input type="date" class="form-control he-input" v-model="filtros.hasta" @change="buscar" />
+            <CustomDatePicker v-model="filtros.hasta" @update:modelValue="buscar" />
           </div>
           <div class="he-filter-group">
             <label class="he-label">Mesa</label>
@@ -148,6 +148,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 // ── State ──────────────────────────────────────────────────────
 const hoy = new Date().toISOString().slice(0, 10)
