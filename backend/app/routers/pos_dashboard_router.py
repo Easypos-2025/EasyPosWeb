@@ -94,30 +94,28 @@ async def get_kpis(
         WHERE company_id = :cid AND date = :fecha AND voided = 0
     """), {"cid": cid, "fecha": fecha})).mappings().one()
 
-    # Comandas abiertas — siempre HOY (desde datatemppos)
+    # Comandas abiertas — todos los pendientes sin importar fecha (desde datatemppos)
     r_cmd = (await db_temp.execute(text("""
         SELECT
             COALESCE(SUM(Valor), 0) AS total,
             COUNT(*)                AS cnt
         FROM temp_comanda
         WHERE company_id = :cid
-          AND Fecha      = :today
           AND Nro_Factura = '0'
           AND Cancelado  = 0
           AND Domicilio  = 0
-    """), {"cid": cid, "today": today})).mappings().one()
+    """), {"cid": cid})).mappings().one()
 
-    # Plataforma / Delivery — siempre HOY (desde datatemppos)
+    # Plataforma / Delivery — todos los pendientes sin importar fecha (desde datatemppos)
     r_plat = (await db_temp.execute(text("""
         SELECT
             COALESCE(SUM(Valor), 0) AS total,
             COUNT(*)                AS cnt
         FROM temp_comanda
         WHERE company_id = :cid
-          AND Fecha      = :today
           AND Domicilio  = 1
           AND Cancelado  = 0
-    """), {"cid": cid, "today": today})).mappings().one()
+    """), {"cid": cid})).mappings().one()
 
     # Estado de mesas: total desde easyposweb, abiertas desde datatemppos
     _total_mesas   = int((await db.execute(text(
@@ -169,7 +167,6 @@ async def get_mesas(
 ):
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
-    today = _today()
 
     # Layout de mesas y zonas desde easyposweb
     layout = (await db.execute(text("""
@@ -187,15 +184,15 @@ async def get_mesas(
     ), {"cid": cid})).mappings().all()
     open_set = {int(r["Id_Mesa"]) for r in open_rows}
 
-    # Pedidos activos desde datatemppos
+    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
     order_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido AS order_number, Mesa, Hora AS hora_apertura,
                Valor AS amount, Nro_Comenzales AS guests_count, Mesero
         FROM temp_comanda
-        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0'
+        WHERE company_id=:cid AND Nro_Factura='0'
           AND Cancelado=0 AND Domicilio=0
         ORDER BY Hora ASC
-    """), {"cid": cid, "today": today})).mappings().all()
+    """), {"cid": cid})).mappings().all()
 
     order_by_mesa: dict = {}
     for i, o in enumerate(order_rows, start=1):
@@ -320,18 +317,17 @@ async def get_abiertas(
 ):
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
-    today = _today()
 
-    # Pedidos activos desde datatemppos
+    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
     order_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido AS order_number, Mesa AS table_name, Mesero,
                Hora AS hora_apertura, Valor AS amount,
                Nro_Comenzales AS guests_count, Novedad AS notes
         FROM temp_comanda
-        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0'
+        WHERE company_id=:cid AND Nro_Factura='0'
           AND Cancelado=0 AND Domicilio=0
         ORDER BY Hora ASC
-    """), {"cid": cid, "today": today})).mappings().all()
+    """), {"cid": cid})).mappings().all()
 
     if not order_rows:
         return []

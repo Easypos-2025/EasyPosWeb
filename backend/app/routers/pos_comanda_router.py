@@ -221,13 +221,13 @@ async def get_mesas(
     ), {"cid": cid})).mappings().all()
     open_set = {int(r["Id_Mesa"]) for r in open_rows}
 
-    # Pedidos activos del día desde datatemppos (ambos orígenes: VB6 y web)
+    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
     order_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Mesa, Mesero, Hora, Valor
         FROM temp_comanda
-        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0' AND Cancelado=0
+        WHERE company_id=:cid AND Nro_Factura='0' AND Cancelado=0
         ORDER BY Hora ASC
-    """), {"cid": cid, "today": today})).mappings().all()
+    """), {"cid": cid})).mappings().all()
 
     # Mapa: nombre de mesa → info del pedido (con daily_seq calculado)
     order_by_mesa: dict = {}
@@ -1170,13 +1170,13 @@ async def get_cocina_pedidos(
     cid = payload["company_id"]
     today = _today()
 
-    # Pedidos activos desde datatemppos
+    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
     order_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Fecha, Mesa, Valor, Hora, Mesero
         FROM temp_comanda
-        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0' AND Cancelado=0
+        WHERE company_id=:cid AND Nro_Factura='0' AND Cancelado=0
         ORDER BY Hora ASC
-    """), {"cid": cid, "today": today})).mappings().all()
+    """), {"cid": cid})).mappings().all()
 
     if not order_rows:
         return []
@@ -1308,7 +1308,6 @@ async def get_cocina(
     if not company_row:
         raise HTTPException(status_code=403, detail="Token de cocina inválido")
     cid = int(company_row["id_company"])
-    today = _today()
 
     # 2. Impresoras activas
     all_printers = (await db.execute(text(
@@ -1337,12 +1336,11 @@ async def get_cocina(
             AND tdc.Hora_Plato IS NOT NULL
             AND tdc.Hora_Plato NOT IN ('', '0')
         WHERE tc.company_id  = :cid
-          AND tc.Fecha       = :today
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado   = 0
           AND (tc.Movil = 0 OR tc.Salio = 1)
         ORDER BY tc.Hora ASC, tdc.Hora_Plato ASC, tdc.Item ASC
-    """), {"cid": cid, "today": today})).mappings().all()
+    """), {"cid": cid})).mappings().all()
 
     # 4. Colectar IDs para lookups
     dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
