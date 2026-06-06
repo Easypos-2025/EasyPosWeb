@@ -769,7 +769,29 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Limpiar Temporales" }
       },
+      {
+        path: "/pos/utilitarios/historico-comandado",
+        name: "PosHistoricoComandadoView",
+        component: () => import("@/views/pos/PosHistoricoComandadoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Histórico Comandado" }
+      },
+      {
+        path: "/pos/utilitarios/pantallas-tv",
+        name: "PosUtilitariosTvScreensView",
+        component: () => import("@/views/pos/PosUtilitariosTvScreensView.vue"),
+        requiresAuth: true,
+        meta: { title: "Pantallas TV" }
+      },
 ]
+  },
+
+  // ── TV Pantalla pública (sin auth, sin sidebar) ───────────────────────────
+  {
+    path: "/tv/:code",
+    name: "TvScreenView",
+    component: () => import("@/views/pos/TvScreenView.vue"),
+    meta: { title: "Pantalla TV" },
   },
 
   // ── Comandera Kiosk (layout propio, sin sidebar) ──────────────────────────

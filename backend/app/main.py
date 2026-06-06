@@ -90,6 +90,7 @@ from app.routers.pos_platos_router import router as pos_platos_router
 from app.routers.pos_tables_router import router as pos_tables_router
 from app.routers.pos_comanda_router import router as pos_comanda_router
 from app.routers.pos_utilitarios_router import router as pos_utilitarios_router
+from app.routers.tv_router import router as tv_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
 from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
@@ -1049,6 +1050,49 @@ async def _init_db_data():
                 ))
         await db.commit()
 
+        # ── PANTALLAS TV: tablas ─────────────────────────────────────────
+        for _tv_sql in [
+            """CREATE TABLE IF NOT EXISTS tv_screens (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                company_id   INT          NOT NULL,
+                name         VARCHAR(100) NOT NULL,
+                screen_code  VARCHAR(16)  NOT NULL,
+                printer_ids  JSON         DEFAULT NULL,
+                is_active    TINYINT      NOT NULL DEFAULT 1,
+                created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_tv_code (screen_code),
+                INDEX idx_tvs_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS tv_screen_devices (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                screen_id    INT          NOT NULL,
+                device_token VARCHAR(64)  NOT NULL,
+                device_name  VARCHAR(100) NULL,
+                activated_at DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                last_seen    DATETIME     NULL,
+                is_active    TINYINT      NOT NULL DEFAULT 1,
+                UNIQUE KEY uq_tv_dev_token (device_token),
+                INDEX idx_tvd_screen (screen_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS tv_sessions (
+                id              INT AUTO_INCREMENT PRIMARY KEY,
+                screen_id       INT         NOT NULL,
+                poll_token      VARCHAR(32) NOT NULL,
+                activation_code CHAR(4)     NOT NULL,
+                device_token    VARCHAR(64) NULL,
+                expires_at      DATETIME    NOT NULL,
+                created_at      DATETIME    DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_tvss_poll (poll_token),
+                INDEX idx_tvss_screen (screen_id),
+                INDEX idx_tvss_code   (activation_code)
+            )""",
+        ]:
+            try:
+                await db.execute(text(_tv_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
         # ── PAUTAS PUBLICITARIAS: tablas ─────────────────────────────────
         ad_tables = [
             """CREATE TABLE IF NOT EXISTS advertisements (
@@ -1404,6 +1448,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/auth/forgot-password": (5, 3600),
     "/qr/prestamo/": (15, 60),
     "/ads/": (30, 60),
+    "/api/tv/": (120, 60),
 }
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
     lambda: collections.defaultdict(collections.deque)
@@ -1556,6 +1601,7 @@ routers = [
     pos_tables_router,
     pos_comanda_router,
     pos_utilitarios_router,
+    tv_router,
     plan_associate_limits_router,
     advertisement_router,
     welcome_steps_router,

@@ -1,0 +1,430 @@
+<template>
+  <div class="tv-root">
+
+    <!-- ══════ CARGANDO ══════ -->
+    <div v-if="state === 'loading'" class="tv-center">
+      <div class="spinner-border text-primary" style="width:3rem;height:3rem;"></div>
+      <p class="mt-3 tv-sub">Conectando pantalla…</p>
+    </div>
+
+    <!-- ══════ NO ENCONTRADA ══════ -->
+    <div v-else-if="state === 'notfound'" class="tv-center">
+      <i class="bi bi-x-octagon-fill tv-big-icon text-danger"></i>
+      <h4 class="tv-title">Pantalla no encontrada</h4>
+      <p class="tv-sub">El código de esta URL no existe o fue desactivado.</p>
+    </div>
+
+    <!-- ══════ PENDIENTE — ACTIVACIÓN ══════ -->
+    <div v-else-if="state === 'pending'" class="tv-center">
+      <i class="bi bi-tv tv-big-icon"></i>
+      <h4 class="tv-title">{{ screenName || 'Pantalla de Cocina' }}</h4>
+      <p class="tv-sub">Esta pantalla no está activada. Ingresa el código en el panel de administración.</p>
+
+      <div class="tv-code-box">
+        <div class="tv-code-label">Código de activación</div>
+        <div class="tv-code-digits">
+          <span v-for="(d, i) in activationCode" :key="i" class="tv-digit">{{ d }}</span>
+        </div>
+        <div class="tv-code-hint">
+          Ve a <strong>Utilitarios → Pantallas TV</strong> e ingresa este código
+        </div>
+      </div>
+
+      <div class="tv-countdown">
+        <i class="bi bi-clock me-1"></i>Expira en {{ countdown }}
+      </div>
+    </div>
+
+    <!-- ══════ COCINA ACTIVA ══════ -->
+    <template v-else-if="state === 'active'">
+
+      <!-- Topbar TV -->
+      <div class="tv-topbar">
+        <div class="tv-topbar__name">
+          <i class="bi bi-tv-fill me-2"></i>{{ screenName }}
+        </div>
+        <div class="tv-topbar__clock">{{ clockStr }}</div>
+      </div>
+
+      <!-- Sin pedidos -->
+      <div v-if="!sections.length || sections.every(s => !s.orders.length)" class="tv-center tv-center--active">
+        <i class="bi bi-check2-circle tv-big-icon text-success"></i>
+        <h4 class="tv-title">Sin pedidos pendientes</h4>
+        <p class="tv-sub">La cocina está al día</p>
+      </div>
+
+      <!-- Secciones por impresora -->
+      <div v-else class="tv-sections">
+        <div v-for="sec in sections.filter(s => s.orders.length)" :key="sec.printer_id" class="tv-section">
+          <div class="tv-section__header">
+            <i class="bi bi-printer me-2"></i>{{ sec.printer_name }}
+            <span class="tv-section__count">{{ sec.orders.length }} pedido{{ sec.orders.length !== 1 ? 's' : '' }}</span>
+          </div>
+
+          <div class="tv-cards-grid">
+            <div v-for="card in sec.orders" :key="card.order_number + card.event_type"
+                 class="tv-card"
+                 :class="{
+                   'tv-card--nuevo':     card.event_type === 'nuevo',
+                   'tv-card--agregado':  card.event_type === 'agregado',
+                   'tv-card--cancelado': card.event_type === 'cancelado',
+                   'tv-card--reimpresion': card.event_type === 'reimpresion',
+                 }">
+
+              <!-- Badge evento -->
+              <div class="tv-card__badge">
+                <span class="evt-badge">
+                  <i class="bi" :class="{
+                    'bi-bell-fill':        card.event_type === 'nuevo',
+                    'bi-plus-circle-fill': card.event_type === 'agregado',
+                    'bi-x-circle-fill':    card.event_type === 'cancelado',
+                    'bi-arrow-repeat':     card.event_type === 'reimpresion',
+                  }"></i>
+                  {{ evtLabel(card.event_type) }}
+                </span>
+                <span class="tv-seq" v-if="card.daily_seq">#{{ card.daily_seq }}</span>
+              </div>
+
+              <!-- Mesa y hora -->
+              <div class="tv-card__mesa">{{ card.table_name || '—' }}</div>
+              <div class="tv-card__meta">
+                <span v-if="card.waiter_name"><i class="bi bi-person me-1"></i>{{ card.waiter_name }}</span>
+                <span><i class="bi bi-clock me-1"></i>{{ fmtHora(card.latest_dish_time) }}</span>
+              </div>
+
+              <!-- Ítems -->
+              <ul class="tv-items">
+                <li v-for="(it, idx) in card.items" :key="idx" class="tv-item">
+                  <span class="tv-qty">{{ fmtQty(it.quantity) }}×</span>
+                  <span class="tv-name">{{ it.dish_name }}</span>
+                  <span v-if="it.notes" class="tv-notes">{{ it.notes }}</span>
+                  <span v-if="it.changes" class="tv-changes">{{ it.changes }}</span>
+                  <div v-if="it.assembly && it.assembly.length" class="tv-assembly">
+                    <span v-for="a in it.assembly" :key="a.name" class="tv-asm-item">
+                      · {{ a.name }}
+                    </span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </template>
+
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route    = useRoute()
+const code     = route.params.code
+
+const state          = ref('loading')
+const screenName     = ref('')
+const activationCode = ref([])
+const pollToken      = ref('')
+const deviceToken    = ref('')
+const printerFilter  = ref([])
+const sections       = ref([])
+const clockStr       = ref('')
+const countdown      = ref('10:00')
+const expiresAt      = ref(null)
+
+const LS_TOKEN = `tv_token_${code}`
+const LS_POLL  = `tv_poll_${code}`
+
+// ── Helpers ──────────────────────────────────────────────────────
+function evtLabel(t) {
+  return { nuevo: 'NUEVO', agregado: 'AGREGADO', cancelado: 'CANCELADO', reimpresion: 'REIMP.' }[t] || t.toUpperCase()
+}
+
+function fmtHora(t) {
+  if (!t) return ''
+  const m = String(t).match(/(\d{1,2}:\d{2})/)
+  return m ? m[1] : String(t).slice(0, 5)
+}
+
+function fmtQty(q) {
+  const n = parseFloat(q)
+  return Number.isInteger(n) ? n : n.toFixed(1)
+}
+
+// ── Clock ─────────────────────────────────────────────────────────
+function updateClock() {
+  clockStr.value = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function updateCountdown() {
+  if (!expiresAt.value) return
+  const secs = Math.max(0, Math.floor((expiresAt.value - Date.now()) / 1000))
+  const m = Math.floor(secs / 60).toString().padStart(2, '0')
+  const s = (secs % 60).toString().padStart(2, '0')
+  countdown.value = `${m}:${s}`
+  if (secs === 0) { localStorage.removeItem(LS_POLL); initPoll() }
+}
+
+// ── API ───────────────────────────────────────────────────────────
+async function callInit() {
+  const dt = localStorage.getItem(LS_TOKEN) || ''
+  const pt = localStorage.getItem(LS_POLL)  || ''
+  const params = new URLSearchParams({ device_token: dt, poll_token: pt })
+  const res = await fetch(`/api/tv/${code}/init?${params}`)
+  if (res.status === 404) { state.value = 'notfound'; return null }
+  if (!res.ok) throw new Error('Error de red')
+  return res.json()
+}
+
+async function fetchCards() {
+  const dt = localStorage.getItem(LS_TOKEN) || deviceToken.value
+  if (!dt) return
+  const res = await fetch(`/api/tv/${code}/cards?device_token=${dt}`)
+  if (res.status === 401) { localStorage.removeItem(LS_TOKEN); deviceToken.value = ''; initPoll(); return }
+  if (!res.ok) return
+  sections.value = await res.json()
+}
+
+// ── Flujo principal ───────────────────────────────────────────────
+let timers = []
+
+function clearTimers() { timers.forEach(clearInterval); timers = [] }
+
+async function initPoll() {
+  clearTimers()
+  try {
+    const data = await callInit()
+    if (!data) return
+
+    screenName.value = data.screen_name || ''
+
+    if (data.status === 'active') {
+      state.value = 'active'
+      printerFilter.value = data.printer_ids || []
+      await fetchCards()
+      timers.push(setInterval(fetchCards, 8000))
+      timers.push(setInterval(updateClock, 1000))
+      updateClock()
+
+    } else if (data.status === 'just_activated') {
+      localStorage.setItem(LS_TOKEN, data.device_token)
+      localStorage.removeItem(LS_POLL)
+      deviceToken.value = data.device_token
+      initPoll()
+
+    } else {
+      // pending
+      state.value = 'active' === state.value ? 'pending' : 'pending'
+      state.value = 'pending'
+      activationCode.value = (data.activation_code || '????').split('')
+      if (data.poll_token) {
+        pollToken.value = data.poll_token
+        localStorage.setItem(LS_POLL, data.poll_token)
+      }
+      expiresAt.value = Date.now() + (data.expires_minutes || 10) * 60 * 1000
+      timers.push(setInterval(updateCountdown, 1000))
+      timers.push(setInterval(initPoll, 8000))
+      updateCountdown()
+    }
+  } catch (e) {
+    if (state.value === 'loading') state.value = 'notfound'
+  }
+}
+
+onMounted(initPoll)
+onUnmounted(clearTimers)
+</script>
+
+<style scoped>
+.tv-root {
+  min-height: 100vh;
+  background: #0f172a;
+  color: #f1f5f9;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Centrado (loading / pending / not found) ── */
+.tv-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+.tv-center--active { flex: 1; }
+
+.tv-big-icon { font-size: 5rem; color: #94a3b8; margin-bottom: 16px; }
+.tv-title    { font-size: 1.8rem; font-weight: 700; color: #f1f5f9; margin-bottom: 8px; }
+.tv-sub      { font-size: 1rem; color: #94a3b8; margin-bottom: 0; }
+
+/* ── Código de activación ── */
+.tv-code-box {
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 16px;
+  padding: 28px 40px;
+  margin: 24px 0 16px;
+  min-width: 320px;
+}
+.tv-code-label {
+  font-size: .9rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+.tv-code-digits {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.tv-digit {
+  width: 64px;
+  height: 80px;
+  background: #0f172a;
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tv-code-hint { font-size: .85rem; color: #64748b; }
+
+.tv-countdown { font-size: .9rem; color: #64748b; }
+
+/* ── Topbar activo ── */
+.tv-topbar {
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tv-topbar__name  { font-size: 1rem; font-weight: 700; color: #60a5fa; }
+.tv-topbar__clock { font-size: 1rem; font-weight: 600; color: #94a3b8; font-variant-numeric: tabular-nums; }
+
+/* ── Secciones ── */
+.tv-sections { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+
+.tv-section__header {
+  display: flex;
+  align-items: center;
+  font-size: .8rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+.tv-section__count {
+  margin-left: auto;
+  background: #334155;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: .72rem;
+}
+
+/* ── Grid de tarjetas ── */
+.tv-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+/* ── Tarjeta ── */
+.tv-card {
+  background: #1e293b;
+  border: 2px solid #334155;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tv-card--nuevo     { border-color: #22c55e; }
+.tv-card--agregado  { border-color: #f59e0b; }
+.tv-card--cancelado { border-color: #ef4444; background: #1c0f0f; }
+.tv-card--reimpresion { border-color: #a78bfa; }
+
+.tv-card__badge { display: flex; align-items: center; justify-content: space-between; }
+
+.evt-badge {
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tv-card--nuevo     .evt-badge { background: #14532d; color: #4ade80; }
+.tv-card--agregado  .evt-badge { background: #451a03; color: #fbbf24; }
+.tv-card--cancelado .evt-badge { background: #450a0a; color: #f87171; }
+.tv-card--reimpresion .evt-badge { background: #2e1065; color: #c4b5fd; }
+
+.tv-seq { font-size: .7rem; color: #475569; }
+
+.tv-card__mesa {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #f1f5f9;
+  line-height: 1.1;
+}
+.tv-card__meta {
+  display: flex;
+  gap: 10px;
+  font-size: .75rem;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+/* ── Ítems ── */
+.tv-items {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid #334155;
+  padding-top: 6px;
+}
+.tv-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; font-size: .88rem; }
+.tv-qty  { color: #60a5fa; font-weight: 700; white-space: nowrap; }
+.tv-name { color: #f1f5f9; font-weight: 600; }
+.tv-notes   { color: #fbbf24; font-size: .8rem; font-style: italic; }
+.tv-changes { color: #a78bfa; font-size: .8rem; }
+.tv-assembly { width: 100%; padding-left: 20px; }
+.tv-asm-item { font-size: .78rem; color: #64748b; margin-right: 6px; }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .tv-cards-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .tv-card__mesa { font-size: 1.2rem; }
+  .tv-digit { width: 50px; height: 60px; font-size: 2rem; }
+  .tv-title { font-size: 1.4rem; }
+}
+
+@media (max-width: 576px) {
+  .tv-sections { padding: 8px; gap: 10px; }
+  .tv-cards-grid { grid-template-columns: 1fr 1fr; }
+  .tv-topbar { padding: 8px 12px; }
+  .tv-topbar__name  { font-size: .85rem; }
+  .tv-topbar__clock { font-size: .85rem; }
+  .tv-code-box { padding: 20px 16px; min-width: auto; width: 100%; }
+  .tv-digit { width: 42px; height: 52px; font-size: 1.6rem; gap: 6px; }
+}
+</style>
