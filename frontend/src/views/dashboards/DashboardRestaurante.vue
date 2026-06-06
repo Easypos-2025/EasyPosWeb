@@ -635,11 +635,12 @@ async function despacharPedido(pedido) {
 function irAMesaExistente(mesa) {
   localStorage.setItem('waiter_company_id', String(selectedCid.value))
   localStorage.setItem('pedido_ctx', JSON.stringify({
-    table_id:    mesa.id,
-    table_name:  mesa.name,
-    waiter_id:   0,
-    waiter_name: mesa.waiter_name || '',
-    company_id:  selectedCid.value,
+    table_id:     mesa.id,
+    table_name:   mesa.name,
+    order_number: mesa.order_number || '',
+    waiter_id:    0,
+    waiter_name:  mesa.waiter_name || '',
+    company_id:   selectedCid.value,
   }))
   router.push(`/pos/comanda/pedido/${mesa.id}`)
 }

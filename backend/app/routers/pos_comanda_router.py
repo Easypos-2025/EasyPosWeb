@@ -356,6 +356,7 @@ async def abrir_mesa(
 @router.get("/mesa/{table_id}/orden")
 async def get_orden_mesa(
     table_id: int,
+    order_number: Optional[str] = Query(None),
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
@@ -372,13 +373,25 @@ async def get_orden_mesa(
     mesa_name = str(mesa_row["name"])
 
     # Pedido activo desde datatemppos
-    order = (await db_temp.execute(text("""
-        SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
-        FROM temp_comanda
-        WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
-          AND Nro_Factura='0' AND Cancelado=0
-        LIMIT 1
-    """), {"mesa": mesa_name, "cid": cid, "today": today})).mappings().first()
+    # Si viene order_number (pedido VB6 conocido): lookup directo por Nro_Pedido
+    # Si no: buscar por mesa, prefiriendo Movil=0 (VB6) sobre Movil=1 (web)
+    if order_number:
+        order = (await db_temp.execute(text("""
+            SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
+            FROM temp_comanda
+            WHERE Nro_Pedido=:on AND company_id=:cid AND Fecha=:today
+              AND Nro_Factura='0' AND Cancelado=0
+            LIMIT 1
+        """), {"on": order_number, "cid": cid, "today": today})).mappings().first()
+    else:
+        order = (await db_temp.execute(text("""
+            SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
+            FROM temp_comanda
+            WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+              AND Nro_Factura='0' AND Cancelado=0
+            ORDER BY Movil ASC, Hora ASC
+            LIMIT 1
+        """), {"mesa": mesa_name, "cid": cid, "today": today})).mappings().first()
 
     if not order:
         return {"order": None, "items": []}
@@ -1310,7 +1323,7 @@ async def get_cocina(
 
     # 3. Pedidos activos + ítems (solo enviados: Hora_Plato establecida; web: tc.Salio=1)
     order_rows = (await db_temp.execute(text("""
-        SELECT tc.Nro_Pedido, tc.Mesa, tc.Hora, tc.Mesero,
+        SELECT tc.Nro_Pedido, tc.Mesa, tc.Hora, tc.Mesero, tc.Movil,
                tdc.Id_Plato, tdc.Item, tdc.Cantidad,
                tdc.Novedad, tdc.Cambios, tdc.Hora_Plato,
                tdc.Hora AS Hora_Tomado, tdc.Producto_Personalizado
@@ -1402,8 +1415,11 @@ async def get_cocina(
         if not printers_for_dish:
             continue
 
-        hp  = str(row["Hora_Plato"] or "")
-        key = (on, hp)
+        # Movil=0 (VB6): agrupa TODOS los ítems del pedido en un único batch
+        # para evitar split NUEVO/AGREGADO por timestamps ligeramente distintos
+        movil = int(row["Movil"] or 0)
+        hp    = str(row["Hora_Plato"] or "") if movil == 1 else ""
+        key   = (on, hp)
 
         if key not in batch_meta:
             wid = int(row["Mesero"] or 0)
@@ -1415,7 +1431,13 @@ async def get_cocina(
                 "waiter_id":    wid,
                 "waiter_name":  waiter_names.get(wid),
                 "printers":     set(),
+                "max_hp":       str(row["Hora_Plato"] or ""),
             }
+        else:
+            # Actualizar max_hp para usar el timestamp más reciente como referencia de tiempo
+            cur_hp = str(row["Hora_Plato"] or "")
+            if cur_hp > batch_meta[key]["max_hp"]:
+                batch_meta[key]["max_hp"] = cur_hp
         batch_meta[key]["printers"].update(printers_for_dish)
 
         assembly = []
@@ -1447,6 +1469,8 @@ async def get_cocina(
     for key, meta in batch_meta.items():
         on, hp = key
         event_type = "nuevo" if hp == min_hp_per_order.get(on, hp) else "agregado"
+        # Para VB6 (hp=""), usar el max_hp almacenado como referencia de tiempo
+        display_hp = meta.get("max_hp") or hp
         card = {
             "order_number":     on,
             "event_type":       event_type,
@@ -1454,7 +1478,7 @@ async def get_cocina(
             "table_name":       meta["mesa"],
             "order_hora":       meta["order_hora"],
             "waiter_name":      meta["waiter_name"],
-            "latest_dish_time": hp,
+            "latest_dish_time": display_hp,
             "bill_requested":   False,
             "items":            batch_items.get(key, []),
         }
@@ -1463,11 +1487,13 @@ async def get_cocina(
                 all_cards.append({"printer_id": pid, "card": card})
 
     # 13. Eventos efímeros del día (CANCELADO + REIMPRESION) desde easyposweb
+    # CANCELADO expira a los 2 min — se oculta solo en el siguiente ciclo de polling
     event_rows = (await db.execute(text("""
         SELECT id, event_type, order_number, table_name, waiter_id,
                items_snapshot, created_at
         FROM pos_kitchen_events
         WHERE company_id=:cid AND event_date=:today
+          AND NOT (event_type = 'cancelado' AND created_at < NOW() - INTERVAL 2 MINUTE)
         ORDER BY created_at ASC
     """), {"cid": cid, "today": today})).mappings().all()
 

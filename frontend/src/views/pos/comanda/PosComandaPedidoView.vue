@@ -279,11 +279,13 @@ onMounted(async () => {
 
 async function loadOrder() {
   try {
-    const res = await apiComanda.get(`/api/pos/comanda/mesa/${tableId.value}/orden`)
+    const params = {}
+    if (ctx.order_number) params.order_number = ctx.order_number
+    const res = await apiComanda.get(`/api/pos/comanda/mesa/${tableId.value}/orden`, { params })
     if (res.data.order) {
       order.value = res.data.order
       items.value = res.data.items
-    } else {
+    } else if (!ctx.order_number) {
       const openRes = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
         table_id: tableId.value, guests_count: 1,
       })
