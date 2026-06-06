@@ -582,7 +582,8 @@ async def push_historico_comanda_eliminada(
     db_main: AsyncSession = Depends(get_db),
 ):
     _verify(x_api_key)
-    saved, tv_fired = 0, 0
+    saved, tv_fired, failed = 0, 0, 0
+    errors = []
 
     for r in records:
         fecha = _norm_date(r.date)
@@ -643,10 +644,10 @@ async def push_historico_comanda_eliminada(
                 # Get item snapshot from datatemppos before cleanup
                 items_rows = (await db.execute(text("""
                     SELECT Id_Plato, Cantidad FROM temp_detalle_comanda_parcial
-                    WHERE Nro_pedido = :np AND Fecha = :fecha AND company_id = :cid
+                    WHERE Nro_pedido = :np AND company_id = :cid
                       AND Mostrar = 1
                     LIMIT 30
-                """), {"np": r.order_number, "cid": r.company_id, "fecha": fecha})).mappings().all()
+                """), {"np": r.order_number, "cid": r.company_id})).mappings().all()
 
                 snap = json.dumps([
                     {"dish_id": int(row["Id_Plato"] or 0),
@@ -684,22 +685,23 @@ async def push_historico_comanda_eliminada(
                     WHERE company_id = :cid AND Nro_Pedido = :np AND Fecha = :fecha
                 """), {"cid": r.company_id, "np": r.order_number, "fecha": fecha})
 
-                # Clean up active order from datatemppos
+                # Clean up active order from datatemppos (sin filtro Fecha — por si la fecha difiere)
                 await db.execute(text("""
                     DELETE FROM temp_detalle_comanda_parcial
-                    WHERE company_id = :cid AND Nro_pedido = :np AND Fecha = :fecha
-                """), {"cid": r.company_id, "np": r.order_number, "fecha": fecha})
+                    WHERE company_id = :cid AND Nro_pedido = :np
+                """), {"cid": r.company_id, "np": r.order_number})
                 await db.execute(text("""
                     DELETE FROM temp_comanda
-                    WHERE company_id = :cid AND Nro_Pedido = :np AND Fecha = :fecha
-                """), {"cid": r.company_id, "np": r.order_number, "fecha": fecha})
+                    WHERE company_id = :cid AND Nro_Pedido = :np
+                """), {"cid": r.company_id, "np": r.order_number})
 
-        except Exception:
-            pass
+        except Exception as e:
+            failed += 1
+            errors.append(f"{r.order_number}: {str(e)[:120]}")
 
     await db_main.commit()
     await db.commit()
-    return {"total_saved": saved, "tv_fired": tv_fired}
+    return {"total_saved": saved, "total_failed": failed, "tv_fired": tv_fired, "errors": errors}
 
 
 # ═══════════════════════════════════════════════════════════════

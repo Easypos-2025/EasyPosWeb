@@ -1308,6 +1308,7 @@ async def get_cocina(
     if not company_row:
         raise HTTPException(status_code=403, detail="Token de cocina inválido")
     cid = int(company_row["id_company"])
+    today = _today()
 
     # 2. Impresoras activas
     all_printers = (await db.execute(text(
