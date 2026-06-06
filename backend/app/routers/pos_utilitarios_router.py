@@ -66,11 +66,19 @@ async def cleanup_temp(
          WHERE company_id = :cid
     """
 
-    r_det = await db_temp.execute(text(f"""
-        DELETE FROM temp_detalle_comanda_parcial
-        WHERE company_id = :cid
-          AND Nro_pedido IN ({orphan_subquery})
-    """), {"cid": cid})
+    # Eliminar tablas relacionadas antes que las cabeceras
+    deleted_details = 0
+    for tbl, col in [
+        ("temp_detalle_comanda_parcial", "Nro_pedido"),
+        ("temp_plato_producto_parcial",  "Nro_Pedido"),
+        ("temp_novedades_plato_pedido",  "Nro_Pedido"),
+    ]:
+        r = await db_temp.execute(text(f"""
+            DELETE FROM {tbl}
+            WHERE company_id = :cid
+              AND {col} IN ({orphan_subquery})
+        """), {"cid": cid})
+        deleted_details += r.rowcount
 
     r_cab = await db_temp.execute(text(f"""
         DELETE FROM temp_comanda
@@ -82,5 +90,5 @@ async def cleanup_temp(
 
     return {
         "deleted_headers": r_cab.rowcount,
-        "deleted_details": r_det.rowcount,
+        "deleted_details": deleted_details,
     }
