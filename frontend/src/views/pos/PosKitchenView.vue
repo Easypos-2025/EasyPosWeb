@@ -191,18 +191,35 @@ async function loadKitchen() {
   }
 }
 
+function _elapsedMin(t) {
+  if (!t) return NaN
+  // Si solo es hora "HH:MM:SS", calcular minutos contra hora Colombia actual
+  if (!t.includes('-')) {
+    const [h, m] = t.split(':').map(Number)
+    if (isNaN(h) || isNaN(m)) return NaN
+    // Hora Colombia = UTC - 5
+    const colNow = new Date(Number(now.value) - 5 * 3600000)
+    const nowMin = colNow.getUTCHours() * 60 + colNow.getUTCMinutes()
+    let diff = nowMin - (h * 60 + m)
+    if (diff < 0) diff += 1440
+    return diff
+  }
+  // Datetime completo "YYYY-MM-DD HH:MM:SS" — asumir zona Colombia (-05:00)
+  const sent = new Date(t.replace(' ', 'T') + '-05:00')
+  if (isNaN(sent.getTime())) return NaN
+  return Math.floor((Number(now.value) - sent.getTime()) / 60000)
+}
+
 function elapsed(t) {
-  if (!t) return ''
-  const sent = new Date(t.replace(' ', 'T'))
-  const diff  = Math.floor((now.value - sent) / 60000)
+  const diff = _elapsedMin(t)
+  if (isNaN(diff)) return ''
   if (diff < 1) return '< 1 min'
   return `${diff} min`
 }
 
 function timeClass(t) {
-  if (!t) return ''
-  const sent = new Date(t.replace(' ', 'T'))
-  const diff  = Math.floor((now.value - sent) / 60000)
+  const diff = _elapsedMin(t)
+  if (isNaN(diff)) return ''
   if (diff >= 15) return 'time--red'
   if (diff >= 10) return 'time--orange'
   return ''

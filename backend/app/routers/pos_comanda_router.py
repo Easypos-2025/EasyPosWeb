@@ -1464,27 +1464,38 @@ async def get_cocina(
         if on not in min_hp_per_order or hp < min_hp_per_order[on]:
             min_hp_per_order[on] = hp
 
-    # 12. Construir tarjetas de órdenes vivas
+    # 12. Construir tarjetas de órdenes vivas — cada impresora ve solo SUS ítems
     all_cards: list = []  # [{printer_id, card}]
     for key, meta in batch_meta.items():
         on, hp = key
         event_type = "nuevo" if hp == min_hp_per_order.get(on, hp) else "agregado"
-        # Para VB6 (hp=""), usar el max_hp almacenado como referencia de tiempo
         display_hp = meta.get("max_hp") or hp
-        card = {
-            "order_number":     on,
-            "event_type":       event_type,
-            "daily_seq":        daily_seq_map.get(on, 0),
-            "table_name":       meta["mesa"],
-            "order_hora":       meta["order_hora"],
-            "waiter_name":      meta["waiter_name"],
-            "latest_dish_time": display_hp,
-            "bill_requested":   False,
-            "items":            batch_items.get(key, []),
-        }
+
+        # Agrupar ítems del batch por impresora
+        items_by_printer: dict = {}
+        for item_data in batch_items.get(key, []):
+            for pid in printer_for_dish.get(item_data["dish_id"], []):
+                if pid in meta["printers"]:
+                    items_by_printer.setdefault(pid, []).append(item_data)
+
         for pid in meta["printers"]:
-            if pid in printer_map:
-                all_cards.append({"printer_id": pid, "card": card})
+            if pid not in printer_map:
+                continue
+            pid_items = items_by_printer.get(pid, [])
+            if not pid_items:
+                continue
+            card = {
+                "order_number":     on,
+                "event_type":       event_type,
+                "daily_seq":        daily_seq_map.get(on, 0),
+                "table_name":       meta["mesa"],
+                "order_hora":       meta["order_hora"],
+                "waiter_name":      meta["waiter_name"],
+                "latest_dish_time": display_hp,
+                "bill_requested":   False,
+                "items":            pid_items,
+            }
+            all_cards.append({"printer_id": pid, "card": card})
 
     # 13. Eventos efímeros del día (CANCELADO + REIMPRESION) desde easyposweb
     # CANCELADO expira a los 2 min — se oculta solo en el siguiente ciclo de polling

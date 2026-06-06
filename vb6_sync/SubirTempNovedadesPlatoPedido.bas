@@ -18,8 +18,7 @@ Public Sub SubirTempNovedadesPlatoPedido(Var_Id_Company_Envio As Integer, Var_Li
     Dim rsOrd As Object
     Set rsOrd = CreateObject("ADODB.Recordset")
     rsOrd.Open "SELECT Nro_Pedido FROM temp_comanda " & _
-               "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Cancelado=0 AND Salio=0 " & _
-               "  AND Mesa NOT IN (SELECT Mesa FROM temp_mesa_abierta)", conn
+               "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Cancelado=0 AND Salio=0", conn
 
     If rsOrd.EOF Then
         rsOrd.Close: conn.Close
