@@ -57,7 +57,7 @@ Public Sub SubirHistoricoEliminadasDetalle(Var_Id_Company_Envio As Integer)
         json = json & sep & "{"
         json = json & """company_id"":"              & Var_Id_Company_Envio                                                                & ","
         json = json & """order_number"":"             & """" & EscapeJson(nroPedido)                                                       & ""","
-        json = json & """date"":"                     & """" & CStr(Nz(rs("Fecha"),                              ""))                      & ""","
+        json = json & """date"":"                     & """" & Format(rs("Fecha"), "YYYY/MM/DD")                                         & ""","
         json = json & """invoice_number"":"           & """" & EscapeJson(CStr(Nz(rs("Nro_Factura"),             "0")))                    & ""","
         json = json & """dish_id"":"                  & CLng(Nz(rs("Id_Plato"),                                  0))                       & ","
         json = json & """item"":"                     & CLng(Nz(rs("Item"),                                      0))                       & ","
