@@ -762,6 +762,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Pedidos Eliminados" }
       },
+      {
+        path: "/pos/utilitarios/limpiar-temporales",
+        name: "PosUtilitariosLimpiarView",
+        component: () => import("@/views/pos/PosUtilitariosLimpiarView.vue"),
+        requiresAuth: true,
+        meta: { title: "Limpiar Temporales" }
+      },
 ]
   },
 

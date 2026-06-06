@@ -159,37 +159,44 @@ async def push_temp_comanda(
         except Exception:
             pass
 
-    # Limpieza proactiva de huérfanos — corre cada ciclo de sync para cada empresa.
-    # Cubre registros que VB6 ya borró localmente pero quedaron en el servidor.
-    company_ids = {o.company_id for o in orders}
-    for cid in company_ids:
+    # Limpieza proactiva — el lote VB6 es la fuente de verdad para Movil=0.
+    # Si un pedido ya no llega en el lote (facturado, eliminado, cancelado,
+    # o cualquier otra razón), se borra del servidor automáticamente.
+    # Movil=1 (pedidos web) nunca se toca.
+    batch_by_company: dict = {}
+    for o in orders:
+        batch_by_company.setdefault(o.company_id, []).append(o.order_number)
+
+    for cid, batch_orders in batch_by_company.items():
+        if not batch_orders:
+            continue
         try:
-            # Construir lista de Nro_Pedido huérfanos: cancelados + eliminados + facturados
-            orphan_subquery = """
-                SELECT Nro_Pedido FROM temp_comanda
-                WHERE company_id = :cid AND Cancelado = 1
-                UNION
-                SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
-                WHERE company_id = :cid
-                UNION
-                SELECT order_number FROM easyposweb.pos_orders
-                WHERE company_id = :cid
-                UNION
-                SELECT order_number FROM easyposweb.pos_receipt_orders
-                WHERE company_id = :cid
-            """
-            # Eliminar detalles huérfanos
+            ph = ",".join(f":np_{i}" for i in range(len(batch_orders)))
+            params: dict = {"cid": cid}
+            params.update({f"np_{i}": v for i, v in enumerate(batch_orders)})
+
+            # Primero detalles (subquery sobre alias para evitar restricción MySQL)
             await db.execute(text(f"""
                 DELETE FROM temp_detalle_comanda_parcial
                 WHERE company_id = :cid
-                  AND Nro_pedido IN ({orphan_subquery})
-            """), {"cid": cid})
-            # Eliminar cabeceras huérfanas
+                  AND Nro_pedido IN (
+                      SELECT Nro_Pedido FROM (
+                          SELECT Nro_Pedido FROM temp_comanda
+                          WHERE company_id = :cid
+                            AND Movil = 0
+                            AND (Nro_Pedido NOT IN ({ph}) OR Cancelado = 1)
+                      ) AS _orphans
+                  )
+            """), params)
+
+            # Luego cabeceras
             await db.execute(text(f"""
                 DELETE FROM temp_comanda
                 WHERE company_id = :cid
-                  AND Nro_Pedido IN ({orphan_subquery})
-            """), {"cid": cid})
+                  AND Movil = 0
+                  AND (Nro_Pedido NOT IN ({ph}) OR Cancelado = 1)
+            """), params)
+
         except Exception:
             pass
     await db.commit()
