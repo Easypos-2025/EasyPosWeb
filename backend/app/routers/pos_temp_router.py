@@ -159,6 +159,24 @@ async def push_temp_comanda(
         except Exception:
             pass
 
+    # Cleanup temp_ para TODOS los Cancelado=1 del lote — idempotente.
+    # Cubre tanto transiciones nuevas como registros ya cancelados previamente
+    # que quedaron atascados (ej: M-01 con Cancelado=1 preexistente en servidor).
+    for o in orders:
+        if o.cancelled == 1:
+            try:
+                await db.execute(text("""
+                    DELETE FROM temp_detalle_comanda_parcial
+                    WHERE company_id = :cid AND Nro_pedido = :np
+                """), {"cid": o.company_id, "np": o.order_number})
+                await db.execute(text("""
+                    DELETE FROM temp_comanda
+                    WHERE company_id = :cid AND Nro_Pedido = :np
+                """), {"cid": o.company_id, "np": o.order_number})
+            except Exception:
+                pass
+    await db.commit()
+
     return {"saved": saved, "failed": failed,
             "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
 
@@ -641,7 +659,7 @@ async def push_historico_comanda_eliminada(
             saved += 1
 
             if not already_notified:
-                # Get item snapshot from datatemppos before cleanup
+                # Get item snapshot before cleanup (solo si aún no se notificó TV)
                 items_rows = (await db.execute(text("""
                     SELECT Id_Plato, Cantidad FROM temp_detalle_comanda_parcial
                     WHERE Nro_pedido = :np AND company_id = :cid
@@ -685,15 +703,15 @@ async def push_historico_comanda_eliminada(
                     WHERE company_id = :cid AND Nro_Pedido = :np AND Fecha = :fecha
                 """), {"cid": r.company_id, "np": r.order_number, "fecha": fecha})
 
-                # Clean up active order from datatemppos (sin filtro Fecha — por si la fecha difiere)
-                await db.execute(text("""
-                    DELETE FROM temp_detalle_comanda_parcial
-                    WHERE company_id = :cid AND Nro_pedido = :np
-                """), {"cid": r.company_id, "np": r.order_number})
-                await db.execute(text("""
-                    DELETE FROM temp_comanda
-                    WHERE company_id = :cid AND Nro_Pedido = :np
-                """), {"cid": r.company_id, "np": r.order_number})
+            # Cleanup SIEMPRE — idempotente, evita que queden pedidos fantasma en temp_
+            await db.execute(text("""
+                DELETE FROM temp_detalle_comanda_parcial
+                WHERE company_id = :cid AND Nro_pedido = :np
+            """), {"cid": r.company_id, "np": r.order_number})
+            await db.execute(text("""
+                DELETE FROM temp_comanda
+                WHERE company_id = :cid AND Nro_Pedido = :np
+            """), {"cid": r.company_id, "np": r.order_number})
 
         except Exception as e:
             failed += 1
