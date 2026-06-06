@@ -755,6 +755,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Consulta de Ventas" }
       },
+      {
+        path: "/pos/consultas/eliminadas",
+        name: "PosHistoricoEliminadasView",
+        component: () => import("@/views/pos/PosHistoricoEliminadasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Pedidos Eliminados" }
+      },
 ]
   },
 

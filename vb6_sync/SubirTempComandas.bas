@@ -3,7 +3,7 @@
 ' Endpoint: POST /api/pos/sync/push/temp-comanda
 ' Tabla fuente: datatemppos.temp_comanda
 ' Sube pedidos activos del desktop al servidor (origen local)
-' Filtro: Movil=0 (no WEB), dia de hoy, no cancelados
+' Filtro: Movil=0 (no WEB), dia de hoy, activos (Salio=0) o recién cancelados (Cancelado=1)
 ' Estrategia: re-envia todo el dia cada ciclo — servidor hace upsert
 ' ============================================================
 Public Sub SubirTempComandas(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
@@ -15,7 +15,7 @@ Public Sub SubirTempComandas(Var_Id_Company_Envio As Integer, Var_Limit_Registro
     Dim rs As Object
     Set rs = CreateObject("ADODB.Recordset")
     rs.Open "SELECT * FROM temp_comanda " & _
-            "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND Salio=0 " & _
+            "WHERE Movil=0 AND Fecha='" & Format(Date, "YYYY/MM/DD") & "' AND (Salio=0 OR Cancelado=1) " & _
             "LIMIT " & Var_Limit_Registros, conn
 
     If rs.EOF Then

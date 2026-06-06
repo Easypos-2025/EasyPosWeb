@@ -1617,3 +1617,93 @@ async def _recalc_total(db_temp: AsyncSession, order_number: str, date: str, cid
           AND tc.Fecha        = :date
           AND tc.company_id   = :cid
     """), {"on": order_number, "date": date, "cid": cid})
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET — Trazabilidad de pedidos eliminados
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/historico-eliminadas")
+async def get_historico_eliminadas(
+    fecha_desde:   Optional[str] = Query(None),
+    fecha_hasta:   Optional[str] = Query(None),
+    mesa:          Optional[str] = Query(None),
+    quien_elimino: Optional[str] = Query(None),
+    auth: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    cid = int(auth["company_id"])
+    today = _today()
+    since = fecha_desde or today
+    until = fecha_hasta or today
+
+    # Headers
+    sql_params: dict = {"cid": cid, "since": since, "until": until}
+    sql_where = "WHERE h.company_id = :cid AND h.Fecha BETWEEN :since AND :until"
+    if mesa:
+        sql_where += " AND h.Mesa LIKE :mesa"
+        sql_params["mesa"] = f"%{mesa}%"
+    if quien_elimino:
+        sql_where += " AND h.Quien_Elimino LIKE :quien"
+        sql_params["quien"] = f"%{quien_elimino}%"
+
+    orders_rows = (await db.execute(text(f"""
+        SELECT h.id, h.Nro_Pedido, h.Fecha, h.Nro_Factura,
+               h.Mesa, h.Hora, h.Mesero, h.Valor,
+               h.Novedad, h.Quien_Elimino, h.Motivo_Eliminacion,
+               h.created_at,
+               COUNT(d.id) AS total_items,
+               COALESCE(SUM(d.Cantidad), 0) AS total_qty
+        FROM historico_comandas_eliminadas h
+        LEFT JOIN historico_detalle_comanda_eliminadas d
+               ON d.company_id = h.company_id
+              AND d.Nro_Pedido = h.Nro_Pedido
+              AND d.Fecha      = h.Fecha
+        {sql_where}
+        GROUP BY h.id
+        ORDER BY h.Fecha DESC, h.Hora DESC
+        LIMIT 500
+    """), sql_params)).mappings().all()
+
+    orders = []
+    for row in orders_rows:
+        # Fetch items for this order
+        items_rows = (await db.execute(text("""
+            SELECT Id_Plato, Item, Cantidad, Valor, Novedad, Cambios,
+                   Cortesia, Hora_Plato, Producto_Personalizado
+            FROM historico_detalle_comanda_eliminadas
+            WHERE company_id = :cid AND Nro_Pedido = :np AND Fecha = :fecha
+            ORDER BY Item ASC
+        """), {"cid": cid, "np": row["Nro_Pedido"], "fecha": str(row["Fecha"])})).mappings().all()
+
+        orders.append({
+            "id":                 row["id"],
+            "order_number":       row["Nro_Pedido"],
+            "date":               str(row["Fecha"]),
+            "invoice_number":     row["Nro_Factura"],
+            "table_name":         row["Mesa"],
+            "time":               str(row["Hora"] or ""),
+            "waiter_id":          row["Mesero"],
+            "amount":             float(row["Valor"] or 0),
+            "notes":              row["Novedad"],
+            "quien_elimino":      row["Quien_Elimino"],
+            "motivo_eliminacion": row["Motivo_Eliminacion"],
+            "created_at":         str(row["created_at"] or ""),
+            "total_items":        int(row["total_items"] or 0),
+            "items": [
+                {
+                    "dish_id":       it["Id_Plato"],
+                    "item":          it["Item"],
+                    "quantity":      float(it["Cantidad"] or 0),
+                    "amount":        float(it["Valor"] or 0),
+                    "notes":         it["Novedad"],
+                    "changes":       it["Cambios"],
+                    "complimentary": it["Cortesia"],
+                    "dish_time":     str(it["Hora_Plato"] or ""),
+                    "custom_product": it["Producto_Personalizado"],
+                }
+                for it in items_rows
+            ],
+        })
+
+    return {"total": len(orders), "orders": orders}
