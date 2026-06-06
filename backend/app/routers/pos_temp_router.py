@@ -164,37 +164,31 @@ async def push_temp_comanda(
     company_ids = {o.company_id for o in orders}
     for cid in company_ids:
         try:
-            # 1. Eliminar detalles de pedidos cancelados
-            await db.execute(text("""
-                DELETE FROM temp_detalle_comanda_parcial
-                WHERE company_id = :cid
-                  AND Nro_pedido IN (
-                      SELECT Nro_Pedido FROM temp_comanda
-                      WHERE company_id = :cid AND Cancelado = 1
-                  )
-            """), {"cid": cid})
-            # 2. Eliminar cabeceras canceladas
-            await db.execute(text("""
-                DELETE FROM temp_comanda
+            # Construir lista de Nro_Pedido huérfanos: cancelados + eliminados + facturados
+            orphan_subquery = """
+                SELECT Nro_Pedido FROM temp_comanda
                 WHERE company_id = :cid AND Cancelado = 1
-            """), {"cid": cid})
-            # 3. Eliminar detalles de pedidos ya eliminados en escritorio
-            await db.execute(text("""
+                UNION
+                SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
+                WHERE company_id = :cid
+                UNION
+                SELECT order_number FROM easyposweb.pos_orders
+                WHERE company_id = :cid
+                UNION
+                SELECT order_number FROM easyposweb.pos_receipt_orders
+                WHERE company_id = :cid
+            """
+            # Eliminar detalles huérfanos
+            await db.execute(text(f"""
                 DELETE FROM temp_detalle_comanda_parcial
                 WHERE company_id = :cid
-                  AND Nro_pedido IN (
-                      SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
-                      WHERE company_id = :cid
-                  )
+                  AND Nro_pedido IN ({orphan_subquery})
             """), {"cid": cid})
-            # 4. Eliminar cabeceras de pedidos ya eliminados en escritorio
-            await db.execute(text("""
+            # Eliminar cabeceras huérfanas
+            await db.execute(text(f"""
                 DELETE FROM temp_comanda
                 WHERE company_id = :cid
-                  AND Nro_Pedido IN (
-                      SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
-                      WHERE company_id = :cid
-                  )
+                  AND Nro_Pedido IN ({orphan_subquery})
             """), {"cid": cid})
         except Exception:
             pass
