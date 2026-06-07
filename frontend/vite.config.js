@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import legacy from '@vitejs/plugin-legacy'
 import path from 'path'
 import { execSync } from 'child_process'
 
@@ -10,7 +11,13 @@ export default defineConfig({
   define: {
     __APP_BUILD__: JSON.stringify(`${buildDate}·${gitHash}`)
   },
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    legacy({
+      targets: ['chrome >= 53', 'safari >= 10', 'firefox >= 60'],
+      modernPolyfills: true,
+    }),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')
