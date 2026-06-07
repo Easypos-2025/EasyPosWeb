@@ -146,142 +146,169 @@ async def cleanup_temp(
 
 # ═══════════════════════════════════════════════════════════════
 # GET /api/pos/utilitarios/command-history
-# Retorna historial de comandas archivadas para una fecha,
-# con comparación contra factura/recibo correspondiente.
+# Facturas/Recibos del período con sus ítems COMANDADOS archivados.
+# Patrón idéntico a pos_consultas_router:
+#   Facturas : pos_invoices JOIN pos_orders  → order_number, mesa, mesero
+#   Recibos  : pos_receipts JOIN pos_receipt_orders → order_number, mesa, mesero
+#   Detalle  : order_command_history_items WHERE Nro_Pedido = order_number
 # ═══════════════════════════════════════════════════════════════
 @router.get("/command-history")
 async def command_history(
-    fecha: str = Query(..., description="YYYY-MM-DD"),
+    desde: str = Query(..., description="YYYY-MM-DD"),
+    hasta: str = Query(..., description="YYYY-MM-DD"),
+    tipo:  str = Query("ambos", description="ambos|factura|recibo"),
     authorization: str = Header(...),
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_admin_user(authorization, db)
     cid = user.company_id
 
-    # 1. Cabeceras archivadas del día
-    headers = (await db.execute(text("""
-        SELECT Nro_Pedido, Mesa, Hora, Mesero, Valor, Cancelado,
-               Movil, archive_reason, archived_at
-        FROM order_command_history
-        WHERE company_id = :cid AND Fecha = :fecha
-        ORDER BY archived_at DESC
-    """), {"cid": cid, "fecha": fecha})).mappings().all()
+    rows: list = []
 
-    if not headers:
-        return {"orders": []}
+    if tipo in ("factura", "ambos"):
+        fact_rows = (await db.execute(text("""
+            SELECT
+                i.invoice_number                                    AS numero,
+                i.date,
+                i.time                                              AS hora,
+                COALESCE(o.table_name, '')                          AS mesa,
+                COALESCE(w.name, '')                                AS mesero,
+                COALESCE(o.order_number, '')                        AS order_number,
+                COALESCE(i.cash_amount,0)+COALESCE(i.credit_card_amount,0)
+                  +COALESCE(i.debit_card_amount,0)+COALESCE(i.adjustment,0)
+                  -COALESCE(i.discount,0)                          AS valor,
+                'factura'                                           AS tipo
+            FROM pos_invoices i
+            LEFT JOIN pos_orders o
+                   ON o.invoice_number = i.invoice_number
+                  AND o.company_id     = i.company_id
+                  AND o.date           = i.date
+                  AND o.delivery       = 0
+            LEFT JOIN pos_waiters w
+                   ON w.id = o.waiter_id AND w.company_id = i.company_id
+            WHERE i.company_id = :cid
+              AND i.date BETWEEN :desde AND :hasta
+              AND i.voided = 0
+            ORDER BY i.invoice_number DESC
+            LIMIT 500
+        """), {"cid": cid, "desde": desde, "hasta": hasta})).mappings().all()
+        rows.extend([dict(r) for r in fact_rows])
 
-    nro_pedidos = [h["Nro_Pedido"] for h in headers]
-    ph = ",".join(f":np_{i}" for i in range(len(nro_pedidos)))
-    id_params = {"cid": cid}
-    id_params.update({f"np_{i}": v for i, v in enumerate(nro_pedidos)})
+    if tipo in ("recibo", "ambos"):
+        rec_rows = (await db.execute(text("""
+            SELECT
+                rc.receipt_number                                   AS numero,
+                rc.date,
+                rc.time                                             AS hora,
+                COALESCE(ro.table_name, '')                         AS mesa,
+                COALESCE(w.name, '')                                AS mesero,
+                COALESCE(ro.order_number, '')                       AS order_number,
+                COALESCE(rc.cash_amount,0)+COALESCE(rc.credit_card_amount,0)
+                  +COALESCE(rc.debit_card_amount,0)+COALESCE(rc.adjustment,0)
+                  -COALESCE(rc.discount,0)                         AS valor,
+                'recibo'                                            AS tipo
+            FROM pos_receipts rc
+            LEFT JOIN pos_receipt_orders ro
+                   ON ro.receipt_number = rc.receipt_number
+                  AND ro.company_id     = rc.company_id
+                  AND ro.date           = rc.date
+            LEFT JOIN pos_waiters w
+                   ON w.id = ro.waiter_id AND w.company_id = rc.company_id
+            WHERE rc.company_id = :cid
+              AND rc.date BETWEEN :desde AND :hasta
+              AND rc.voided = 0
+            ORDER BY rc.receipt_number DESC
+            LIMIT 500
+        """), {"cid": cid, "desde": desde, "hasta": hasta})).mappings().all()
+        rows.extend([dict(r) for r in rec_rows])
 
-    # 2. Ítems archivados
-    items_rows = (await db.execute(text(f"""
-        SELECT Nro_Pedido, Id_Plato, Item, Cantidad, Valor, Novedad, Cambios, Hora_Plato, Mostrar
-        FROM order_command_history_items
-        WHERE company_id = :cid AND Nro_Pedido IN ({ph})
-        ORDER BY Nro_Pedido, Item
-    """), id_params)).mappings().all()
+    if not rows:
+        return {"ventas": []}
 
-    items_by_order: dict = {}
-    for it in items_rows:
-        items_by_order.setdefault(it["Nro_Pedido"], []).append(dict(it))
+    rows.sort(key=lambda x: (str(x["date"]), str(x["hora"])), reverse=True)
+    rows = rows[:500]
 
-    # 3. Facturas DIAN (pos_orders + pos_invoice_details)
-    invoice_rows = (await db.execute(text(f"""
-        SELECT order_number, invoice_number, amount, time
-        FROM pos_orders
-        WHERE company_id = :cid AND order_number IN ({ph})
-    """), id_params)).mappings().all()
-    invoices_by_order = {r["order_number"]: dict(r) for r in invoice_rows}
+    # Separar números por tipo para las consultas de ítems
+    fact_nums   = [r["numero"]       for r in rows if r["tipo"] == "factura"]
+    rec_nums    = [r["numero"]       for r in rows if r["tipo"] == "recibo"]
+    order_nums  = [r["order_number"] for r in rows if r.get("order_number")]
 
-    inv_detail_rows = (await db.execute(text(f"""
-        SELECT order_number, dish_id, item, quantity, dish_amount AS amount, notes, complimentary
-        FROM pos_invoice_details
-        WHERE company_id = :cid AND order_number IN ({ph})
-        ORDER BY order_number, item
-    """), id_params)).mappings().all()
-    inv_details_by_order: dict = {}
-    for d in inv_detail_rows:
-        inv_details_by_order.setdefault(d["order_number"], []).append(dict(d))
+    inv_items_by_num:  dict = {}
+    rec_items_by_num:  dict = {}
+    cmd_by_order:      dict = {}
 
-    # 4. Recibos (pos_receipt_orders + pos_order_details)
-    receipt_rows = (await db.execute(text(f"""
-        SELECT order_number, receipt_number, amount, time
-        FROM pos_receipt_orders
-        WHERE company_id = :cid AND order_number IN ({ph})
-    """), id_params)).mappings().all()
-    receipts_by_order = {r["order_number"]: dict(r) for r in receipt_rows}
+    # Ítems facturados (pos_order_details por invoice_number)
+    if fact_nums:
+        phf = ",".join(f":fn_{i}" for i in range(len(fact_nums)))
+        pf: dict = {"cid": cid}
+        pf.update({f"fn_{i}": v for i, v in enumerate(fact_nums)})
+        inv_rows = (await db.execute(text(f"""
+            SELECT od.invoice_number AS numero,
+                   COALESCE(d.name, od.dish_id) AS dish_name,
+                   od.dish_id, od.item, od.quantity,
+                   COALESCE(od.amount, 0) AS valor, od.notes
+            FROM pos_order_details od
+            LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
+            WHERE od.company_id = :cid AND od.invoice_number IN ({phf})
+            ORDER BY od.invoice_number, od.item
+        """), pf)).mappings().all()
+        for it in inv_rows:
+            inv_items_by_num.setdefault(it["numero"], []).append(dict(it))
 
-    rec_detail_rows = (await db.execute(text(f"""
-        SELECT order_number, dish_id, item, quantity, amount, notes, complimentary
-        FROM pos_order_details
-        WHERE company_id = :cid AND order_number IN ({ph})
-        ORDER BY order_number, item
-    """), id_params)).mappings().all()
-    rec_details_by_order: dict = {}
-    for d in rec_detail_rows:
-        rec_details_by_order.setdefault(d["order_number"], []).append(dict(d))
+    # Ítems facturados (pos_receipt_order_details por receipt_number)
+    if rec_nums:
+        phr = ",".join(f":rn_{i}" for i in range(len(rec_nums)))
+        pr: dict = {"cid": cid}
+        pr.update({f"rn_{i}": v for i, v in enumerate(rec_nums)})
+        rec_det_rows = (await db.execute(text(f"""
+            SELECT rod.receipt_number AS numero,
+                   COALESCE(d.name, rod.dish_id) AS dish_name,
+                   rod.dish_id, rod.item, rod.quantity,
+                   COALESCE(rod.amount, 0) AS valor, rod.notes
+            FROM pos_receipt_order_details rod
+            LEFT JOIN pos_dishes d ON d.id = rod.dish_id AND d.company_id = :cid
+            WHERE rod.company_id = :cid AND rod.receipt_number IN ({phr})
+            ORDER BY rod.receipt_number, rod.item
+        """), pr)).mappings().all()
+        for it in rec_det_rows:
+            rec_items_by_num.setdefault(it["numero"], []).append(dict(it))
 
-    # 5. Info de eliminación
-    del_rows = (await db.execute(text(f"""
-        SELECT Nro_Pedido, Quien_Elimino, Motivo_Eliminacion, Fecha
-        FROM historico_comandas_eliminadas
-        WHERE company_id = :cid AND Nro_Pedido IN ({ph})
-    """), id_params)).mappings().all()
-    deletions_by_order = {r["Nro_Pedido"]: dict(r) for r in del_rows}
+    # Ítems comandados archivados (order_command_history_items por order_number)
+    if order_nums:
+        pho = ",".join(f":np_{i}" for i in range(len(order_nums)))
+        po: dict = {"cid": cid}
+        po.update({f"np_{i}": v for i, v in enumerate(order_nums)})
+        cmd_rows = (await db.execute(text(f"""
+            SELECT chi.Nro_Pedido,
+                   COALESCE(d.name, chi.Id_Plato) AS dish_name,
+                   chi.Id_Plato, chi.Item, chi.Cantidad, chi.Valor,
+                   chi.Novedad, chi.Cambios, chi.Hora_Plato
+            FROM order_command_history_items chi
+            LEFT JOIN pos_dishes d ON d.id = chi.Id_Plato AND d.company_id = :cid
+            WHERE chi.company_id = :cid
+              AND chi.Nro_Pedido IN ({pho})
+              AND chi.Mostrar = 1
+            ORDER BY chi.Nro_Pedido, chi.Item
+        """), po)).mappings().all()
+        for it in cmd_rows:
+            cmd_by_order.setdefault(it["Nro_Pedido"], []).append(dict(it))
 
-    # 6. Nombres de meseros
-    waiter_rows = (await db.execute(text(
-        "SELECT id, full_name FROM pos_users WHERE company_id = :cid"
-    ), {"cid": cid})).mappings().all()
-    waiter_names = {str(r["id"]): r["full_name"] for r in waiter_rows}
-
-    # 7. Ensamblar respuesta
-    orders = []
-    for h in headers:
-        np = h["Nro_Pedido"]
-        invoice = invoices_by_order.get(np)
-        receipt = receipts_by_order.get(np)
-
-        if invoice:
-            invoice_info = {
-                "type":           "dian",
-                "number":         invoice["invoice_number"],
-                "amount":         float(invoice["amount"] or 0),
-                "time":           str(invoice["time"] or ""),
-                "items":          inv_details_by_order.get(np, []),
-            }
-        elif receipt:
-            invoice_info = {
-                "type":           "receipt",
-                "number":         receipt["receipt_number"],
-                "amount":         float(receipt["amount"] or 0),
-                "time":           str(receipt["time"] or ""),
-                "items":          rec_details_by_order.get(np, []),
-            }
-        else:
-            invoice_info = None
-
-        deletion = deletions_by_order.get(np)
-        mesero_id = str(h["Mesero"] or "")
-
-        orders.append({
-            "order_number":   np,
-            "Mesa":           str(h["Mesa"]   or ""),
-            "Hora":           str(h["Hora"]   or ""),
-            "Mesero":         waiter_names.get(mesero_id, mesero_id),
-            "Valor":          float(h["Valor"] or 0),
-            "Cancelado":      int(h["Cancelado"] or 0),
-            "Movil":          int(h["Movil"]    or 0),
-            "archive_reason": h["archive_reason"],
-            "archived_at":    str(h["archived_at"] or ""),
-            "commanded_items": items_by_order.get(np, []),
-            "invoice":         invoice_info,
-            "deletion":        {
-                "quien":  deletion["Quien_Elimino"]       if deletion else None,
-                "motivo": deletion["Motivo_Eliminacion"]  if deletion else None,
-            } if deletion else None,
+    ventas = []
+    for r in rows:
+        np  = r.get("order_number", "")
+        num = r["numero"]
+        inv_items = inv_items_by_num.get(num, []) if r["tipo"] == "factura" else rec_items_by_num.get(num, [])
+        ventas.append({
+            "numero":          num,
+            "date":            str(r["date"]),
+            "hora":            str(r["hora"]),
+            "mesa":            r["mesa"],
+            "mesero":          r["mesero"],
+            "order_number":    np,
+            "valor":           float(r["valor"] or 0),
+            "tipo":            r["tipo"],
+            "invoiced_items":  inv_items,
+            "commanded_items": cmd_by_order.get(np, []),
         })
 
-    return {"orders": orders}
+    return {"ventas": ventas}

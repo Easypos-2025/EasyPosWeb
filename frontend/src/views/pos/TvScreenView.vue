@@ -71,25 +71,27 @@
                    'tv-card--reimpresion': card.event_type === 'reimpresion',
                  }">
 
-              <!-- Badge evento -->
+              <!-- Badge evento + hora -->
               <div class="tv-card__badge">
-                <span class="evt-badge">
-                  <i class="bi" :class="{
-                    'bi-bell-fill':        card.event_type === 'nuevo',
-                    'bi-plus-circle-fill': card.event_type === 'agregado',
-                    'bi-x-circle-fill':    card.event_type === 'cancelado',
-                    'bi-arrow-repeat':     card.event_type === 'reimpresion',
-                  }"></i>
-                  {{ evtLabel(card.event_type) }}
-                </span>
+                <div class="tv-badge-left">
+                  <span class="evt-badge">
+                    <i class="bi" :class="{
+                      'bi-bell-fill':        card.event_type === 'nuevo',
+                      'bi-plus-circle-fill': card.event_type === 'agregado',
+                      'bi-x-circle-fill':    card.event_type === 'cancelado',
+                      'bi-arrow-repeat':     card.event_type === 'reimpresion',
+                    }"></i>
+                    {{ evtLabel(card.event_type) }}
+                  </span>
+                  <span class="tv-time"><i class="bi bi-clock me-1"></i>{{ fmtHora(card.latest_dish_time) }}</span>
+                </div>
                 <span class="tv-seq" v-if="card.daily_seq">#{{ card.daily_seq }}</span>
               </div>
 
-              <!-- Mesa y hora -->
+              <!-- Mesa y mesero -->
               <div class="tv-card__mesa">{{ card.table_name || '—' }}</div>
-              <div class="tv-card__meta">
-                <span v-if="card.waiter_name"><i class="bi bi-person me-1"></i>{{ card.waiter_name }}</span>
-                <span><i class="bi bi-clock me-1"></i>{{ fmtHora(card.latest_dish_time) }}</span>
+              <div class="tv-card__meta" v-if="card.waiter_name">
+                <span><i class="bi bi-person me-1"></i>{{ card.waiter_name }}</span>
               </div>
 
               <!-- Ítems -->
@@ -315,7 +317,7 @@ onUnmounted(clearTimers)
 .tv-topbar__clock { font-size: 1rem; font-weight: 600; color: #94a3b8; font-variant-numeric: tabular-nums; }
 
 /* ── Secciones ── */
-.tv-sections { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+.tv-sections { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 
 .tv-section__header {
   display: flex;
@@ -325,7 +327,7 @@ onUnmounted(clearTimers)
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 1px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .tv-section__count {
   margin-left: auto;
@@ -347,10 +349,10 @@ onUnmounted(clearTimers)
   background: #1e293b;
   border: 2px solid #334155;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 .tv-card--nuevo     { border-color: #22c55e; }
 .tv-card--agregado  { border-color: #f59e0b; }
@@ -358,6 +360,8 @@ onUnmounted(clearTimers)
 .tv-card--reimpresion { border-color: #a78bfa; }
 
 .tv-card__badge { display: flex; align-items: center; justify-content: space-between; }
+.tv-badge-left  { display: flex; align-items: center; gap: 6px; }
+.tv-time        { font-size: .7rem; color: #64748b; }
 
 .evt-badge {
   font-size: .7rem;
@@ -395,12 +399,12 @@ onUnmounted(clearTimers)
 .tv-items {
   list-style: none;
   padding: 0;
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   border-top: 1px solid #334155;
-  padding-top: 6px;
+  padding-top: 4px;
 }
 .tv-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; font-size: .88rem; }
 .tv-qty  { color: #60a5fa; font-weight: 700; white-space: nowrap; }
