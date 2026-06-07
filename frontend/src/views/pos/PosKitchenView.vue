@@ -74,7 +74,7 @@
                 </span>
                 <span class="kcard__open-time" v-if="order.order_hora">
                   <i class="bi bi-clock"></i>
-                  Abierto: {{ order.order_hora.slice(0,5) }}
+                  {{ order.order_hora.slice(0,5) }}
                 </span>
               </div>
             </div>

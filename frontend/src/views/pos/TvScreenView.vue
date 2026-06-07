@@ -71,20 +71,18 @@
                    'tv-card--reimpresion': card.event_type === 'reimpresion',
                  }">
 
-              <!-- Badge evento + hora -->
+              <!-- Badge evento + hora comanda -->
               <div class="tv-card__badge">
-                <div class="tv-badge-left">
-                  <span class="evt-badge">
-                    <i class="bi" :class="{
-                      'bi-bell-fill':        card.event_type === 'nuevo',
-                      'bi-plus-circle-fill': card.event_type === 'agregado',
-                      'bi-x-circle-fill':    card.event_type === 'cancelado',
-                      'bi-arrow-repeat':     card.event_type === 'reimpresion',
-                    }"></i>
-                    {{ evtLabel(card.event_type) }}
-                  </span>
-                  <span class="tv-time"><i class="bi bi-clock me-1"></i>{{ fmtHora(card.latest_dish_time) }}</span>
-                </div>
+                <span class="evt-badge">
+                  <i class="bi" :class="{
+                    'bi-bell-fill':        card.event_type === 'nuevo',
+                    'bi-plus-circle-fill': card.event_type === 'agregado',
+                    'bi-x-circle-fill':    card.event_type === 'cancelado',
+                    'bi-arrow-repeat':     card.event_type === 'reimpresion',
+                  }"></i>
+                  {{ evtLabel(card.event_type) }}
+                  <span class="evt-hora" v-if="card.order_hora">⏱ {{ fmtHora(card.order_hora) }}</span>
+                </span>
                 <span class="tv-seq" v-if="card.daily_seq">#{{ card.daily_seq }}</span>
               </div>
 
@@ -349,10 +347,10 @@ onUnmounted(clearTimers)
   background: #1e293b;
   border: 2px solid #334155;
   border-radius: 12px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 .tv-card--nuevo     { border-color: #22c55e; }
 .tv-card--agregado  { border-color: #f59e0b; }
@@ -360,19 +358,24 @@ onUnmounted(clearTimers)
 .tv-card--reimpresion { border-color: #a78bfa; }
 
 .tv-card__badge { display: flex; align-items: center; justify-content: space-between; }
-.tv-badge-left  { display: flex; align-items: center; gap: 6px; }
-.tv-time        { font-size: .7rem; color: #64748b; }
 
 .evt-badge {
-  font-size: .7rem;
+  font-size: .68rem;
   font-weight: 800;
-  letter-spacing: 1px;
+  letter-spacing: .5px;
   text-transform: uppercase;
-  padding: 3px 10px;
+  padding: 2px 8px;
   border-radius: 20px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+}
+.evt-hora {
+  font-weight: 600;
+  font-size: .65rem;
+  opacity: .85;
+  margin-left: 3px;
+  letter-spacing: 0;
 }
 .tv-card--nuevo     .evt-badge { background: #14532d; color: #4ade80; }
 .tv-card--agregado  .evt-badge { background: #451a03; color: #fbbf24; }
@@ -382,10 +385,10 @@ onUnmounted(clearTimers)
 .tv-seq { font-size: .7rem; color: #475569; }
 
 .tv-card__mesa {
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: #f1f5f9;
-  line-height: 1.1;
+  line-height: 1;
 }
 .tv-card__meta {
   display: flex;
