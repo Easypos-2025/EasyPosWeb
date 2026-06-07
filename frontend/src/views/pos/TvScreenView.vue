@@ -152,10 +152,16 @@ function evtLabel(t) {
 function elapsedMin(t) {
   nowMs.value  // dependencia reactiva — se recalcula cada segundo
   if (!t) return NaN
-  const m = String(t).match(/(\d{1,2}):(\d{2})/)
+  const s = String(t)
+  const m = s.match(/(\d{1,2}):(\d{2})/)
   if (!m) return NaN
+  let h = parseInt(m[1])
+  const min = parseInt(m[2])
+  // VB6 puede guardar hora en formato 12h: "4:22:15 p.m." → sumar 12
+  if (h < 12 && /p\.?\s*m\.?/i.test(s)) h += 12
+  else if (h === 12 && /a\.?\s*m\.?/i.test(s)) h = 0
   const now = new Date()
-  const orderSec = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60
+  const orderSec = h * 3600 + min * 60
   const nowSec   = now.getHours() * 3600 + now.getMinutes() * 60
   let diff = Math.floor((nowSec - orderSec) / 60)
   if (diff < 0) diff += 1440
@@ -494,9 +500,9 @@ onUnmounted(clearTimers)
   gap: 4px;
 }
 .evt-hora {
-  font-weight: 600;
-  font-size: .65rem;
-  opacity: .85;
+  font-weight: 700;
+  font-size: .9rem;
+  opacity: .9;
   margin-left: 3px;
   letter-spacing: 0;
 }

@@ -48,7 +48,7 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
 .badge-agregado{background:#451a03;color:#fbbf24;}
 .badge-cancelado{background:#450a0a;color:#f87171;}
 .badge-reimpresion{background:#2e1065;color:#c4b5fd;}
-.evt-hora{font-weight:600;font-size:.65rem;opacity:.85;margin-left:3px;}
+.evt-hora{font-weight:700;font-size:.9rem;opacity:.9;margin-left:4px;}
 .seq{font-size:.7rem;color:#475569;}
 
 .mesa-row{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;gap:6px;}
@@ -110,10 +110,15 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
   var EVT_ICON     = {nuevo:'&#x1F514;',agregado:'&#x2795;',cancelado:'&#x2715;',reimpresion:'&#x21BA;'};
   function fmtElapsedMin(t){
     if(!t) return NaN;
-    var m = String(t).match(/(\d{1,2}):(\d{2})/);
+    var s = String(t);
+    var m = s.match(/(\d{1,2}):(\d{2})/);
     if(!m) return NaN;
+    var h = parseInt(m[1]), min = parseInt(m[2]);
+    // VB6 puede guardar hora en formato 12h: "4:22:15 p.m." → sumar 12
+    if(h < 12 && /p\.?\s*m\.?/i.test(s)) h += 12;
+    else if(h === 12 && /a\.?\s*m\.?/i.test(s)) h = 0;
     var d = new Date();
-    var orderSec = parseInt(m[1])*3600 + parseInt(m[2])*60;
+    var orderSec = h*3600 + min*60;
     var nowSec   = d.getHours()*3600 + d.getMinutes()*60;
     var diff = Math.floor((nowSec - orderSec)/60);
     if(diff < 0) diff += 1440;
