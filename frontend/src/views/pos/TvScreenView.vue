@@ -65,10 +65,12 @@
             <div v-for="card in sortedOrders(sec.orders)" :key="card.order_number + card.event_type"
                  class="tv-card"
                  :class="{
-                   'tv-card--nuevo':     card.event_type === 'nuevo',
-                   'tv-card--agregado':  card.event_type === 'agregado',
-                   'tv-card--cancelado': card.event_type === 'cancelado',
+                   'tv-card--nuevo':       card.event_type === 'nuevo',
+                   'tv-card--agregado':    card.event_type === 'agregado',
+                   'tv-card--cancelado':   card.event_type === 'cancelado',
                    'tv-card--reimpresion': card.event_type === 'reimpresion',
+                   'tv-card--warn':  elapsedMin(card.latest_dish_time) >= 10 && elapsedMin(card.latest_dish_time) < 15,
+                   'tv-card--alert': elapsedMin(card.latest_dish_time) >= 15,
                  }">
 
               <!-- Badge evento + hora comanda -->
@@ -485,6 +487,8 @@ onUnmounted(clearTimers)
 .tv-card--agregado  { border-color: #f59e0b; }
 .tv-card--cancelado { border-color: #ef4444; background: #1c0f0f; }
 .tv-card--reimpresion { border-color: #a78bfa; }
+.tv-card.tv-card--warn  { border-color: #fb923c; }
+.tv-card.tv-card--alert { border-color: #ef4444; background: #1c0a0a; }
 
 .tv-card__badge { display: flex; align-items: center; justify-content: space-between; }
 

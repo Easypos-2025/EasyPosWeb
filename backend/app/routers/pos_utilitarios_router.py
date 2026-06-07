@@ -20,16 +20,16 @@ TEMP_TABLES = [
 ]
 
 ORPHAN_SUBQUERY = """
-    SELECT Nro_Pedido FROM temp_comanda
+    SELECT CONVERT(Nro_Pedido  USING utf8mb4) COLLATE utf8mb4_general_ci FROM temp_comanda
      WHERE company_id = :cid AND Cancelado = 1
     UNION
-    SELECT Nro_Pedido FROM easyposweb.historico_comandas_eliminadas
+    SELECT CONVERT(Nro_Pedido  USING utf8mb4) COLLATE utf8mb4_general_ci FROM easyposweb.historico_comandas_eliminadas
      WHERE company_id = :cid
     UNION
-    SELECT order_number FROM easyposweb.pos_orders
+    SELECT CONVERT(order_number USING utf8mb4) COLLATE utf8mb4_general_ci FROM easyposweb.pos_orders
      WHERE company_id = :cid
     UNION
-    SELECT order_number FROM easyposweb.pos_receipt_orders
+    SELECT CONVERT(order_number USING utf8mb4) COLLATE utf8mb4_general_ci FROM easyposweb.pos_receipt_orders
      WHERE company_id = :cid
 """
 

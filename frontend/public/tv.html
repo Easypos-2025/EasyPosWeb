@@ -40,6 +40,8 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
 .card-agregado{border-color:#f59e0b;}
 .card-cancelado{border-color:#ef4444;background:#1c0f0f;}
 .card-reimpresion{border-color:#a78bfa;}
+.card.card-warn{border-color:#fb923c;}
+.card.card-alert{border-color:#ef4444;background:#1c0a0a;}
 
 /* ── Badge ── */
 .badge-row{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;}
@@ -309,7 +311,9 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
         var et = c.event_type || 'nuevo';
         var bl = EVT_LABEL[et] || et.toUpperCase();
         var bi = EVT_ICON[et] || '';
-        html += '<div class="card card-'+esc(et)+'">';
+        var elMin = fmtElapsedMin(c.latest_dish_time);
+        var warnCls = (!isNaN(elMin) && elMin >= 15) ? ' card-alert' : (!isNaN(elMin) && elMin >= 10) ? ' card-warn' : '';
+        html += '<div class="card card-'+esc(et)+warnCls+'">';
         // Badge row
         html += '<div class="badge-row">';
         html += '<span class="evt-badge badge-'+esc(et)+'">'+bi+' '+bl;
