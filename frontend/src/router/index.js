@@ -791,7 +791,7 @@ const routes = [
     path: "/tv/:code",
     name: "TvScreenView",
     component: () => import("@/views/pos/TvScreenView.vue"),
-    meta: { title: "Pantalla TV" },
+    meta: { title: "Pantalla TV", public: true },
   },
 
   // ── Comandera Kiosk (layout propio, sin sidebar) ──────────────────────────

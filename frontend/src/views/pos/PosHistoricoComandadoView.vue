@@ -172,7 +172,7 @@ import { ref, onMounted } from 'vue'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
-const hoy    = new Date().toISOString().slice(0, 10)
+const hoy    = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
 const fecha  = ref(hoy)
 const orders = ref([])
 const loading    = ref(false)
