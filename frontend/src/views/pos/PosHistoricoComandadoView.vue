@@ -383,12 +383,18 @@ onMounted(buscar)
   display: grid;
   grid-template-columns: 340px 1fr;
   gap: 10px;
-  min-height: 0;
+  align-items: start;
 }
 .hc-panel-left, .hc-panel-right {
   border-radius: 10px; overflow: hidden;
-  min-height: 400px; display: flex; flex-direction: column;
+  display: flex; flex-direction: column;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 200px);
+  min-height: 200px;
 }
+.hc-panel-left  { overflow: hidden; }
+.hc-panel-right { overflow: hidden; }
 
 /* ── Placeholder ── */
 .hc-placeholder {

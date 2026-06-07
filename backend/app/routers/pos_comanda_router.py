@@ -901,6 +901,7 @@ async def eliminar_item(
 async def enviar_cocina(
     data: EnviarCocinaIn,
     payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
@@ -937,6 +938,14 @@ async def enviar_cocina(
     """), {"now": now_str, "on": data.order_number, "date": data.date, "cid": cid})
 
     await db_temp.commit()
+
+    # Archivar snapshot de ítems comandados para trazabilidad
+    # (INSERT IGNORE → idempotente; se acumulan nuevos ítems en envíos adicionales)
+    try:
+        await archive_commands_to_history(db_temp, db, cid, [data.order_number], "kitchen_send")
+    except Exception:
+        pass  # Best-effort: no bloquear el flujo principal
+
     return {"tipo": tipo, "sent": result.rowcount}
 
 
@@ -972,7 +981,7 @@ async def cancelar_orden(
 
     # Buscar pedido activo en datatemppos (con Salio para saber si ya fue a cocina)
     order = (await db_temp.execute(text("""
-        SELECT Nro_Pedido, Fecha, Mesa, Mesero, Salio FROM temp_comanda
+        SELECT Nro_Pedido, Fecha, Mesa, Hora, Mesero, Valor, Salio FROM temp_comanda
         WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
           AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
@@ -983,16 +992,19 @@ async def cancelar_orden(
     on    = str(order["Nro_Pedido"])
     fecha = str(order["Fecha"])
 
-    # Si el pedido ya fue enviado a cocina → crear evento CANCELADO para TV
-    if int(order["Salio"] or 0) == 1:
-        items_rows = (await db_temp.execute(text("""
-            SELECT Id_Plato, Cantidad, Novedad, Hora AS hora_tomado
-            FROM temp_detalle_comanda_parcial
-            WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
-              AND company_id=:cid AND Mostrar=1 AND Salio=1
-        """), {"on": on, "date": fecha, "cid": cid})).mappings().all()
+    # ── Obtener todos los ítems del pedido (para TV + historial) ──────────────
+    all_items = (await db_temp.execute(text("""
+        SELECT Id_Plato, Item, Cantidad, Valor, Novedad, Cambios,
+               Hora_Plato, Mostrar, Salio, Nro_Factura
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Fecha=:date AND company_id=:cid
+    """), {"on": on, "date": fecha, "cid": cid})).mappings().all()
 
-        dish_ids_ev = list({int(r["Id_Plato"]) for r in items_rows})
+    # ── Evento TV CANCELADO (solo si ya salió a cocina) ───────────────────────
+    tv_notified = 0
+    if int(order["Salio"] or 0) == 1:
+        kitchen_items = [r for r in all_items if int(r["Mostrar"] or 0) == 1 and int(r["Salio"] or 0) == 1]
+        dish_ids_ev = list({int(r["Id_Plato"]) for r in kitchen_items})
         dish_names_ev: dict = {}
         if dish_ids_ev:
             id_list = ",".join(str(d) for d in dish_ids_ev)
@@ -1006,10 +1018,10 @@ async def cancelar_orden(
             "dish_name":  dish_names_ev.get(int(r["Id_Plato"]), f"Plato {r['Id_Plato']}"),
             "quantity":   float(r["Cantidad"] or 0),
             "notes":      str(r["Novedad"] or ""),
-            "hora_tomado": str(r["hora_tomado"] or ""),
+            "hora_tomado": str(r.get("Hora_Plato") or ""),
             "assembly":   [],
             "changes":    None,
-        } for r in items_rows], ensure_ascii=False)
+        } for r in kitchen_items], ensure_ascii=False)
 
         await db.execute(text("""
             INSERT INTO pos_kitchen_events
@@ -1024,15 +1036,86 @@ async def cancelar_orden(
             "snap":  snapshot,
             "edate": today,
         })
-        await db.commit()
+        tv_notified = 1
 
-    # Cancelar en temp_comanda
+    # ── Archivar cabecera en historico_comandas_eliminadas ────────────────────
+    quien = str(payload.get("sub") or payload.get("name") or "web")
+    await db.execute(text("""
+        INSERT INTO historico_comandas_eliminadas
+            (company_id, Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora,
+             Mesero, Cancelado, Valor, Salio, Mostrar,
+             Motivo_Eliminacion, Quien_Elimino, tv_notified, updated_at)
+        VALUES
+            (:cid, :np, :fecha, '0', :mesa, :hora,
+             :mesero, 1, :valor, :salio, 1,
+             '', :quien, :tv_notified, NOW())
+        ON DUPLICATE KEY UPDATE
+            Quien_Elimino = VALUES(Quien_Elimino),
+            tv_notified   = GREATEST(tv_notified, VALUES(tv_notified)),
+            updated_at    = NOW()
+    """), {
+        "cid":         cid,
+        "np":          on,
+        "fecha":       fecha,
+        "mesa":        str(order["Mesa"]),
+        "hora":        str(order.get("Hora") or ""),
+        "mesero":      int(order["Mesero"] or 0),
+        "valor":       float(order.get("Valor") or 0),
+        "salio":       int(order["Salio"] or 0),
+        "quien":       quien,
+        "tv_notified": tv_notified,
+    })
+
+    # ── Archivar ítems en historico_detalle_comanda_eliminadas ────────────────
+    for it in all_items:
+        await db.execute(text("""
+            INSERT IGNORE INTO historico_detalle_comanda_eliminadas
+                (company_id, Nro_pedido, Fecha, Nro_Factura,
+                 Id_Plato, Item, Cantidad, Valor, Novedad, Cambios,
+                 Hora_Plato, Mostrar, Salio, updated_at)
+            VALUES
+                (:cid, :np, :fecha, '0',
+                 :dish_id, :item, :qty, :valor, :novedad, :cambios,
+                 :hora_plato, :mostrar, :salio, NOW())
+        """), {
+            "cid":       cid,
+            "np":        on,
+            "fecha":     fecha,
+            "dish_id":   int(it["Id_Plato"] or 0),
+            "item":      int(it["Item"] or 0),
+            "qty":       float(it["Cantidad"] or 0),
+            "valor":     float(it["Valor"] or 0),
+            "novedad":   str(it["Novedad"] or ""),
+            "cambios":   str(it["Cambios"] or ""),
+            "hora_plato": str(it["Hora_Plato"] or ""),
+            "mostrar":   int(it["Mostrar"] or 0),
+            "salio":     int(it["Salio"] or 0),
+        })
+
+    await db.commit()
+
+    # ── Borrar de las 4 tablas temp (hard delete) ─────────────────────────────
     await db_temp.execute(text("""
-        UPDATE temp_comanda SET Cancelado=1
+        DELETE FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Fecha=:date AND company_id=:cid
+    """), {"on": on, "date": fecha, "cid": cid})
+
+    await db_temp.execute(text("""
+        DELETE FROM temp_plato_producto_parcial
+        WHERE Nro_Pedido=:on AND company_id=:cid
+    """), {"on": on, "cid": cid})
+
+    await db_temp.execute(text("""
+        DELETE FROM temp_novedades_plato_pedido
+        WHERE Nro_Pedido=:on AND company_id=:cid
+    """), {"on": on, "cid": cid})
+
+    await db_temp.execute(text("""
+        DELETE FROM temp_comanda
         WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
     """), {"on": on, "date": fecha, "cid": cid})
 
-    # Marcar mesa como cerrada en temp_mesa_abierta
+    # ── Marcar mesa como cerrada en temp_mesa_abierta ─────────────────────────
     await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
         SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW()
@@ -1497,6 +1580,16 @@ async def get_cocina(
             pkey = (pid, on)
             min_entry = min_sk_per_printer_order.get(pkey)
             event_type = "nuevo" if (min_entry is None or hp == min_entry[1]) else "agregado"
+
+            # Agrupar ítems idénticos (mismo plato + misma novedad + mismos cambios)
+            grouped: dict = {}
+            for it in pid_items:
+                gkey = (it["dish_id"], (it.get("notes") or "").strip(), (it.get("changes") or "").strip())
+                if gkey in grouped:
+                    grouped[gkey]["quantity"] += it["quantity"]
+                else:
+                    grouped[gkey] = dict(it)
+            pid_items = list(grouped.values())
 
             card = {
                 "order_number":     on,
