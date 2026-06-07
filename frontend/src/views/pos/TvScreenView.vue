@@ -86,8 +86,14 @@
                 <span class="tv-seq" v-if="card.daily_seq">#{{ card.daily_seq }}</span>
               </div>
 
-              <!-- Mesa y mesero -->
-              <div class="tv-card__mesa">{{ card.table_name || '—' }}</div>
+              <!-- Mesa + tiempo transcurrido -->
+              <div class="tv-card__mesa-row">
+                <span class="tv-card__mesa">{{ card.table_name || '—' }}</span>
+                <span v-if="card.order_hora && elapsedStr(card.order_hora)"
+                      class="tv-elapsed" :class="elapsedClass(card.order_hora)">
+                  ⏱ {{ elapsedStr(card.order_hora) }}
+                </span>
+              </div>
               <div class="tv-card__meta" v-if="card.waiter_name">
                 <span><i class="bi bi-person me-1"></i>{{ card.waiter_name }}</span>
               </div>
@@ -123,6 +129,7 @@ import { useRoute } from 'vue-router'
 const route    = useRoute()
 const code     = route.params.code
 
+const nowMs          = ref(Date.now())
 const state          = ref('loading')
 const screenName     = ref('')
 const activationCode = ref([])
@@ -142,11 +149,41 @@ function evtLabel(t) {
   return { nuevo: 'NUEVO', agregado: 'AGREGADO', cancelado: 'CANCELADO', reimpresion: 'REIMP.' }[t] || t.toUpperCase()
 }
 
-const EVT_PRIORITY = { cancelado: 0, agregado: 1, reimpresion: 2, nuevo: 3 }
+function elapsedMin(t) {
+  nowMs.value  // dependencia reactiva — se recalcula cada segundo
+  if (!t) return NaN
+  const m = String(t).match(/(\d{1,2}):(\d{2})/)
+  if (!m) return NaN
+  const now = new Date()
+  const orderSec = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60
+  const nowSec   = now.getHours() * 3600 + now.getMinutes() * 60
+  let diff = Math.floor((nowSec - orderSec) / 60)
+  if (diff < 0) diff += 1440
+  return diff
+}
+
+function elapsedStr(t) {
+  const d = elapsedMin(t)
+  if (isNaN(d) || d < 0) return ''
+  if (d < 1) return '< 1m'
+  if (d < 60) return `${d}m`
+  return `${Math.floor(d / 60)}h ${d % 60}m`
+}
+
+function elapsedClass(t) {
+  const d = elapsedMin(t)
+  if (isNaN(d)) return ''
+  if (d >= 15) return 'tv-elapsed--red'
+  if (d >= 10) return 'tv-elapsed--orange'
+  return ''
+}
+
 function sortedOrders(orders) {
-  return [...orders].sort((a, b) =>
-    (EVT_PRIORITY[a.event_type] ?? 3) - (EVT_PRIORITY[b.event_type] ?? 3)
-  )
+  return [...orders].sort((a, b) => {
+    const ta = String(a.latest_dish_time || a.order_hora || '')
+    const tb = String(b.latest_dish_time || b.order_hora || '')
+    return tb > ta ? 1 : tb < ta ? -1 : 0
+  })
 }
 
 function fmtHora(t) {
@@ -212,7 +249,7 @@ async function initPoll() {
       printerFilter.value = data.printer_ids || []
       await fetchCards()
       timers.push(setInterval(fetchCards, 8000))
-      timers.push(setInterval(updateClock, 1000))
+      timers.push(setInterval(() => { updateClock(); nowMs.value = Date.now() }, 1000))
       updateClock()
 
     } else if (data.status === 'just_activated') {
@@ -401,12 +438,28 @@ onUnmounted(clearTimers)
 
 .tv-seq { font-size: .7rem; color: #475569; }
 
+.tv-card__mesa-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
 .tv-card__mesa {
   font-size: 1.35rem;
   font-weight: 800;
   color: #f1f5f9;
   line-height: 1;
 }
+.tv-elapsed {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #64748b;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.tv-elapsed--orange { color: #fb923c; }
+.tv-elapsed--red    { color: #f87171; }
 .tv-card__meta {
   display: flex;
   gap: 10px;

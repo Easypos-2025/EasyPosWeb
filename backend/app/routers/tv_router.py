@@ -154,6 +154,17 @@ async def _build_cards(
         ), {"cid": cid, "today": today})).mappings().all()
         dispatched_set = {r["order_number"] for r in ksrows}
 
+    # Limpiar datatemppos: borrar pedidos despachados para que no persistan en TV
+    if dispatched_set:
+        for _on in list(dispatched_set):
+            await db_temp.execute(text(
+                "DELETE FROM temp_detalle_comanda_parcial WHERE Nro_pedido=:on AND company_id=:cid"
+            ), {"on": _on, "cid": cid})
+            await db_temp.execute(text(
+                "DELETE FROM temp_comanda WHERE Nro_Pedido=:on AND company_id=:cid"
+            ), {"on": _on, "cid": cid})
+        await db_temp.commit()
+
     order_first_hora: dict = {}
     for r in order_rows:
         on = r["Nro_Pedido"]

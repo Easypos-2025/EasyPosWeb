@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS sync_inbox (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ------------------------------------------------------------
--- 3. Control de sincronización: timestamps por dirección
+-- 3. Control de sincronización: timestamps por dirección 
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sync_control (
     id           INT          PRIMARY KEY DEFAULT 1,

@@ -51,7 +51,11 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
 .evt-hora{font-weight:600;font-size:.65rem;opacity:.85;margin-left:3px;}
 .seq{font-size:.7rem;color:#475569;}
 
+.mesa-row{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;gap:6px;}
 .mesa{font-size:1.35rem;font-weight:800;color:#f1f5f9;line-height:1;}
+.elapsed{font-size:.72rem;font-weight:700;color:#64748b;white-space:nowrap;}
+.elapsed--orange{color:#fb923c;}
+.elapsed--red{color:#f87171;}
 .meta{font-size:.75rem;color:#64748b;}
 
 /* ── Items ── */
@@ -104,13 +108,39 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
 
   var EVT_LABEL    = {nuevo:'NUEVO',agregado:'AGREGADO',cancelado:'CANCELADO',reimpresion:'REIMP.'};
   var EVT_ICON     = {nuevo:'&#x1F514;',agregado:'&#x2795;',cancelado:'&#x2715;',reimpresion:'&#x21BA;'};
-  var EVT_PRIORITY = {cancelado:0, agregado:1, reimpresion:2, nuevo:3};
+  function fmtElapsedMin(t){
+    if(!t) return NaN;
+    var m = String(t).match(/(\d{1,2}):(\d{2})/);
+    if(!m) return NaN;
+    var d = new Date();
+    var orderSec = parseInt(m[1])*3600 + parseInt(m[2])*60;
+    var nowSec   = d.getHours()*3600 + d.getMinutes()*60;
+    var diff = Math.floor((nowSec - orderSec)/60);
+    if(diff < 0) diff += 1440;
+    return diff;
+  }
+
+  function fmtElapsed(t){
+    var d = fmtElapsedMin(t);
+    if(isNaN(d) || d < 0) return '';
+    if(d < 1) return '< 1m';
+    if(d < 60) return d+'m';
+    return Math.floor(d/60)+'h '+(d%60)+'m';
+  }
+
+  function elapsedCls(t){
+    var d = fmtElapsedMin(t);
+    if(isNaN(d)) return '';
+    if(d >= 15) return ' elapsed--red';
+    if(d >= 10) return ' elapsed--orange';
+    return '';
+  }
 
   function sortOrders(orders){
     return orders.slice().sort(function(a,b){
-      var pa = EVT_PRIORITY[a.event_type]; if(pa===undefined) pa=3;
-      var pb = EVT_PRIORITY[b.event_type]; if(pb===undefined) pb=3;
-      return pa - pb;
+      var ta = String(a.latest_dish_time || a.order_hora || '');
+      var tb = String(b.latest_dish_time || b.order_hora || '');
+      return tb > ta ? 1 : tb < ta ? -1 : 0;
     });
   }
 
@@ -228,8 +258,12 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
         html += '</span>';
         if(c.daily_seq) html += '<span class="seq">#'+esc(String(c.daily_seq))+'</span>';
         html += '</div>';
-        // Mesa
-        html += '<div class="mesa">'+esc(c.table_name||'—')+'</div>';
+        // Mesa + tiempo transcurrido
+        html += '<div class="mesa-row">';
+        html += '<span class="mesa">'+esc(c.table_name||'—')+'</span>';
+        var ela = fmtElapsed(c.order_hora);
+        if(ela) html += '<span class="elapsed'+elapsedCls(c.order_hora)+'">&#x23F1; '+esc(ela)+'</span>';
+        html += '</div>';
         // Mesero
         if(c.waiter_name) html += '<div class="meta">&#x1F464; '+esc(c.waiter_name)+'</div>';
         // Items
