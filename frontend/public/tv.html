@@ -166,6 +166,7 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
   }
   function playKitchenAlert(et){
     unlockAudio();
+    if(_audioCtx && _audioCtx.state==='suspended') _audioCtx.resume();
     if(et==='nuevo'){        _beep(523,0,0.22,'sine',0.35);    _beep(784,0.2,0.38,'sine',0.35); }
     else if(et==='agregado'){   _beep(659,0,0.28,'sine',0.28); }
     else if(et==='cancelado'){  _beep(392,0,0.18,'sawtooth',0.18); _beep(262,0.15,0.32,'sawtooth',0.18); }
@@ -378,6 +379,7 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
       var sname = data.screen_name || 'Cocina';
 
       if(data.status === 'active'){
+        unlockAudio();
         renderActive(sname);
         fetchCards();
         timers.push(setInterval(fetchCards, 8000));
@@ -400,7 +402,7 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
   }
 
   renderLoading();
-  document.addEventListener('click', function _u(){ unlockAudio(); document.removeEventListener('click',_u); });
+  unlockAudio();
   initPoll();
 })();
 </script>

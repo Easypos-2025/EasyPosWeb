@@ -1,5 +1,5 @@
 <template>
-  <div class="tv-root" @click.once="unlockAudio">
+  <div class="tv-root">
 
     <!-- ══════ CARGANDO ══════ -->
     <div v-if="state === 'loading'" class="tv-center">
@@ -219,6 +219,7 @@ function _beep(freq, t0, dur, type, vol) {
 }
 function playKitchenAlert(eventType) {
   unlockAudio()
+  if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume()
   switch (eventType) {
     case 'nuevo':
       _beep(523, 0,    0.22, 'sine',      0.35)  // C5
@@ -313,6 +314,7 @@ async function initPoll() {
 
     if (data.status === 'active') {
       state.value = 'active'
+      unlockAudio()
       printerFilter.value = data.printer_ids || []
       await fetchCards()
       timers.push(setInterval(fetchCards, 8000))
