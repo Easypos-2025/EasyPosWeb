@@ -89,9 +89,9 @@
               <!-- Mesa + tiempo transcurrido -->
               <div class="tv-card__mesa-row">
                 <span class="tv-card__mesa">{{ card.table_name || '—' }}</span>
-                <span v-if="card.order_hora && elapsedStr(card.order_hora)"
-                      class="tv-elapsed" :class="elapsedClass(card.order_hora)">
-                  ⏱ {{ elapsedStr(card.order_hora) }}
+                <span v-if="card.latest_dish_time && elapsedStr(card.latest_dish_time)"
+                      class="tv-elapsed" :class="elapsedClass(card.latest_dish_time)">
+                  ⏱ {{ elapsedStr(card.latest_dish_time) }}
                 </span>
               </div>
               <div class="tv-card__meta" v-if="card.waiter_name">
@@ -451,7 +451,7 @@ onUnmounted(clearTimers)
   line-height: 1;
 }
 .tv-elapsed {
-  font-size: .72rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: #64748b;
   white-space: nowrap;

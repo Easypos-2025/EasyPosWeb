@@ -61,6 +61,7 @@ class TempComandaIn(BaseModel):
 async def push_temp_comanda(
     orders: List[TempComandaIn],
     x_api_key: str = Header(...),
+    company_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_datatemppos_db),
     db_main: AsyncSession = Depends(get_db),
 ):
@@ -164,12 +165,38 @@ async def push_temp_comanda(
     # Si un pedido ya no llega en el lote (facturado, eliminado, cancelado,
     # o cualquier otra razón), se borra del servidor automáticamente.
     # Movil=1 (pedidos web) nunca se toca.
+    # Caso especial: VB6 envía [] con ?company_id=X cuando ya no tiene pedidos activos.
     batch_by_company: dict = {}
     for o in orders:
         batch_by_company.setdefault(o.company_id, []).append(o.order_number)
+    if not orders and company_id:
+        batch_by_company[company_id] = []
 
     for cid, batch_orders in batch_by_company.items():
         if not batch_orders:
+            # Batch vacío: VB6 no tiene pedidos activos → eliminar todos los Movil=0 de esta empresa
+            try:
+                orphan_rows = (await db.execute(text("""
+                    SELECT DISTINCT Nro_Pedido FROM temp_comanda
+                    WHERE company_id = :cid AND Movil = 0
+                """), {"cid": cid})).fetchall()
+                orphan_ids = [r[0] for r in orphan_rows]
+                if orphan_ids:
+                    await archive_commands_to_history(db, db_main, cid, orphan_ids, "sync_removed")
+                    ids_q = ",".join(f"'{o}'" for o in orphan_ids)
+                    for tbl, col in [
+                        ("temp_detalle_comanda_parcial", "Nro_pedido"),
+                        ("temp_plato_producto_parcial",  "Nro_Pedido"),
+                        ("temp_novedades_plato_pedido",  "Nro_Pedido"),
+                    ]:
+                        await db.execute(text(
+                            f"DELETE FROM {tbl} WHERE company_id = :cid AND {col} IN ({ids_q})"
+                        ), {"cid": cid})
+                    await db.execute(text(
+                        "DELETE FROM temp_comanda WHERE company_id = :cid AND Movil = 0"
+                    ), {"cid": cid})
+            except Exception:
+                pass
             continue
         try:
             ph = ",".join(f":np_{i}" for i in range(len(batch_orders)))

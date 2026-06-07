@@ -20,6 +20,8 @@ Public Sub SubirTempComandas(Var_Id_Company_Envio As Integer, Var_Limit_Registro
 
     If rs.EOF Then
         rs.Close: conn.Close
+        ' Sin pedidos activos: notificar al servidor para limpiar huerfanos VB6
+        ApiPost("/sync/push/temp-comanda?company_id=" & Var_Id_Company_Envio, "[]")
         Exit Sub
     End If
 
