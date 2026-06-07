@@ -56,7 +56,10 @@ let _redirecting = false
 api.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401 && !_redirecting) {
+    const publicPaths = ["/tv/", "/pos/cocina", "/pos/comanda/login", "/pos/comanda/"]
+    const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p))
+
+    if (err.response?.status === 401 && !_redirecting && !isPublicPage) {
       _redirecting = true
       localStorage.removeItem("token")
       localStorage.removeItem("user")

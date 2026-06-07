@@ -867,6 +867,7 @@ router.beforeEach(async (to, from, next) => {
     to.path.startsWith("/activo/") ||
     to.path.startsWith("/pos/comanda/login") ||
     to.path.startsWith("/pos/cocina") ||
+    to.path.startsWith("/tv/") ||
     to.meta?.public === true
   ) {
     return next()
