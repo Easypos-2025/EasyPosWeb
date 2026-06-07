@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cocina TV</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;}
+
+/* ── Estados centrados ── */
+.center{flex:1;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;padding:32px;text-align:center;}
+.big-icon{font-size:4rem;color:#94a3b8;margin-bottom:16px;}
+.h-title{font-size:1.8rem;font-weight:700;margin-bottom:8px;}
+.h-sub{font-size:1rem;color:#94a3b8;}
+
+/* ── Código activación ── */
+.code-box{background:#1e293b;border:2px solid #334155;border-radius:16px;padding:28px 40px;margin:24px 0 16px;min-width:300px;}
+.code-label{font-size:.85rem;color:#94a3b8;text-transform:uppercase;letter-spacing:2px;margin-bottom:16px;}
+.code-digits{display:-webkit-flex;display:flex;gap:12px;-webkit-justify-content:center;justify-content:center;margin-bottom:16px;}
+.code-digit{width:64px;height:80px;background:#0f172a;border:2px solid #3b82f6;border-radius:12px;font-size:2.8rem;font-weight:800;color:#60a5fa;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;}
+.countdown{font-size:.9rem;color:#64748b;margin-top:8px;}
+
+/* ── Topbar ── */
+.topbar{background:#1e293b;border-bottom:1px solid #334155;padding:10px 20px;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;-webkit-flex-shrink:0;flex-shrink:0;}
+.topbar-name{font-size:1rem;font-weight:700;color:#60a5fa;}
+.topbar-clock{font-size:1rem;font-weight:600;color:#94a3b8;}
+
+/* ── Layout secciones: columnas lado a lado ── */
+.sections{flex:1;padding:8px;display:-webkit-flex;display:flex;-webkit-flex-direction:row;flex-direction:row;-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-items:flex-start;align-items:flex-start;gap:10px;overflow-y:auto;}
+.section{-webkit-flex:1 1 0;flex:1 1 0;min-width:200px;}
+
+.sec-header{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;font-size:.8rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.sec-count{margin-left:auto;background:#334155;padding:2px 10px;border-radius:20px;font-size:.72rem;}
+
+/* ── Cards ── */
+.cards-col{display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;gap:8px;}
+.card{background:#1e293b;border:2px solid #334155;border-radius:12px;padding:6px 8px;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;gap:2px;}
+.card-nuevo{border-color:#22c55e;}
+.card-agregado{border-color:#f59e0b;}
+.card-cancelado{border-color:#ef4444;background:#1c0f0f;}
+.card-reimpresion{border-color:#a78bfa;}
+
+/* ── Badge ── */
+.badge-row{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:space-between;justify-content:space-between;}
+.evt-badge{font-size:.68rem;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:2px 8px;border-radius:20px;display:-webkit-inline-flex;display:inline-flex;-webkit-align-items:center;align-items:center;gap:4px;}
+.badge-nuevo{background:#14532d;color:#4ade80;}
+.badge-agregado{background:#451a03;color:#fbbf24;}
+.badge-cancelado{background:#450a0a;color:#f87171;}
+.badge-reimpresion{background:#2e1065;color:#c4b5fd;}
+.evt-hora{font-weight:600;font-size:.65rem;opacity:.85;margin-left:3px;}
+.seq{font-size:.7rem;color:#475569;}
+
+.mesa{font-size:1.35rem;font-weight:800;color:#f1f5f9;line-height:1;}
+.meta{font-size:.75rem;color:#64748b;}
+
+/* ── Items ── */
+.items{list-style:none;margin-top:2px;border-top:1px solid #334155;padding-top:4px;}
+.item{display:-webkit-flex;display:flex;-webkit-flex-wrap:wrap;flex-wrap:wrap;-webkit-align-items:baseline;align-items:baseline;gap:4px;font-size:.88rem;margin-bottom:2px;}
+.qty{color:#60a5fa;font-weight:700;}
+.iname{color:#f1f5f9;font-weight:600;}
+.notes{color:#fbbf24;font-size:.8rem;font-style:italic;display:block;width:100%;padding-left:18px;}
+.changes{color:#a78bfa;font-size:.8rem;display:block;width:100%;padding-left:18px;}
+
+/* ── Sin pedidos ── */
+.empty{flex:1;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;padding:32px;text-align:center;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function(){
+  /* ── Obtener código de la URL ── */
+  var parts = window.location.pathname.split('/');
+  var CODE = '';
+  for(var i = parts.length - 1; i >= 0; i--){
+    if(parts[i]){ CODE = parts[i]; break; }
+  }
+  var LS_TOKEN = 'tv_token_' + CODE;
+  var LS_POLL  = 'tv_poll_'  + CODE;
+
+  var timers   = [];
+  var expiresAt = null;
+
+  /* ── Helpers ── */
+  function pad2(n){ return n < 10 ? '0'+n : String(n); }
+
+  function fmtHora(t){
+    if(!t) return '';
+    var s = String(t);
+    var m = s.match(/(\d{1,2}:\d{2})/);
+    return m ? m[1] : s.slice(0,5);
+  }
+
+  function fmtQty(q){
+    var n = parseFloat(q);
+    if(isNaN(n)) return String(q);
+    return n === Math.floor(n) ? String(n) : n.toFixed(1);
+  }
+
+  function esc(s){
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  var EVT_LABEL = {nuevo:'NUEVO',agregado:'AGREGADO',cancelado:'CANCELADO',reimpresion:'REIMP.'};
+  var EVT_ICON  = {nuevo:'&#x1F514;',agregado:'&#x2795;',cancelado:'&#x2715;',reimpresion:'&#x21BA;'};
+
+  /* ── Timers ── */
+  function clearTimers(){ for(var i=0;i<timers.length;i++) clearInterval(timers[i]); timers=[]; }
+
+  /* ── Clock ── */
+  function updateClock(){
+    var el = document.getElementById('clock');
+    if(!el) return;
+    var d = new Date();
+    el.innerHTML = pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());
+  }
+
+  /* ── Countdown ── */
+  function updateCountdown(){
+    if(!expiresAt) return;
+    var secs = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+    var el = document.getElementById('countdown');
+    if(el) el.innerHTML = 'Expira en '+pad2(Math.floor(secs/60))+':'+pad2(secs%60);
+    if(secs === 0){ localStorage.removeItem(LS_POLL); clearTimers(); initPoll(); }
+  }
+
+  /* ── XHR ── */
+  function xhr(url, cb){
+    var req = new XMLHttpRequest();
+    req.open('GET', url, true);
+    req.onreadystatechange = function(){
+      if(req.readyState !== 4) return;
+      if(req.status === 200){
+        try{ cb(null, JSON.parse(req.responseText)); }
+        catch(e){ cb(e, null); }
+      } else {
+        cb({status: req.status}, null);
+      }
+    };
+    req.send();
+  }
+
+  /* ── Render ── */
+  function setHTML(html){ document.getElementById('root').innerHTML = html; }
+
+  function renderLoading(){
+    setHTML('<div class="center"><div class="h-sub" style="font-size:1.1rem">Conectando pantalla…</div></div>');
+  }
+
+  function renderNotFound(){
+    setHTML('<div class="center"><div class="big-icon">⛔</div><div class="h-title">Pantalla no encontrada</div><div class="h-sub">El código no existe o fue desactivado.</div></div>');
+  }
+
+  function renderPending(data){
+    var ac = String(data.activation_code || '????');
+    var sname = esc(data.screen_name || 'Pantalla de Cocina');
+    var digits = '';
+    for(var i=0;i<ac.length;i++) digits += '<div class="code-digit">'+esc(ac[i])+'</div>';
+    setHTML(
+      '<div class="center">'+
+      '<div class="big-icon">&#x1F4FA;</div>'+
+      '<div class="h-title">'+sname+'</div>'+
+      '<div class="h-sub">Esta pantalla no está activada.</div>'+
+      '<div class="code-box">'+
+        '<div class="code-label">Código de activación</div>'+
+        '<div class="code-digits">'+digits+'</div>'+
+        '<div class="h-sub" style="font-size:.85rem">Ve a Utilitarios → Pantallas TV e ingresa este código</div>'+
+      '</div>'+
+      '<div class="countdown" id="countdown"></div>'+
+      '</div>'
+    );
+  }
+
+  function renderActive(sname){
+    setHTML(
+      '<div class="topbar">'+
+        '<div class="topbar-name">&#x1F5A5; '+esc(sname)+'</div>'+
+        '<div class="topbar-clock" id="clock"></div>'+
+      '</div>'+
+      '<div id="sections-wrap" style="flex:1;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;overflow-y:auto;"></div>'
+    );
+    updateClock();
+  }
+
+  function renderSections(sections){
+    var wrap = document.getElementById('sections-wrap');
+    if(!wrap) return;
+
+    var hasOrders = false;
+    for(var si=0;si<sections.length;si++){
+      if(sections[si].orders && sections[si].orders.length){ hasOrders=true; break; }
+    }
+
+    if(!hasOrders){
+      wrap.innerHTML = '<div class="empty"><div style="font-size:3rem;margin-bottom:10px">&#x2705;</div><div class="h-title" style="font-size:1.4rem">Sin pedidos pendientes</div><div class="h-sub">La cocina está al día</div></div>';
+      return;
+    }
+
+    var html = '<div class="sections">';
+    for(var si=0;si<sections.length;si++){
+      var sec = sections[si];
+      if(!sec.orders || !sec.orders.length) continue;
+      var cnt = sec.orders.length;
+      html += '<div class="section">';
+      html += '<div class="sec-header">&#x1F5A8; '+esc(sec.printer_name||'')+'<span class="sec-count">'+cnt+' pedido'+(cnt!==1?'s':'')+'</span></div>';
+      html += '<div class="cards-col">';
+      for(var oi=0;oi<sec.orders.length;oi++){
+        var c = sec.orders[oi];
+        var et = c.event_type || 'nuevo';
+        var bl = EVT_LABEL[et] || et.toUpperCase();
+        var bi = EVT_ICON[et] || '';
+        html += '<div class="card card-'+esc(et)+'">';
+        // Badge row
+        html += '<div class="badge-row">';
+        html += '<span class="evt-badge badge-'+esc(et)+'">'+bi+' '+bl;
+        if(c.order_hora) html += '<span class="evt-hora">&#x23F1; '+esc(fmtHora(c.order_hora))+'</span>';
+        html += '</span>';
+        if(c.daily_seq) html += '<span class="seq">#'+esc(String(c.daily_seq))+'</span>';
+        html += '</div>';
+        // Mesa
+        html += '<div class="mesa">'+esc(c.table_name||'—')+'</div>';
+        // Mesero
+        if(c.waiter_name) html += '<div class="meta">&#x1F464; '+esc(c.waiter_name)+'</div>';
+        // Items
+        if(c.items && c.items.length){
+          html += '<ul class="items">';
+          for(var ii=0;ii<c.items.length;ii++){
+            var it = c.items[ii];
+            html += '<li class="item">';
+            html += '<span class="qty">'+esc(fmtQty(it.quantity))+'&times;</span> ';
+            html += '<span class="iname">'+esc(it.dish_name||'')+'</span>';
+            if(it.notes)   html += '<span class="notes">'+esc(it.notes)+'</span>';
+            if(it.changes) html += '<span class="changes">'+esc(it.changes)+'</span>';
+            html += '</li>';
+          }
+          html += '</ul>';
+        }
+        html += '</div>'; // card
+      }
+      html += '</div>'; // cards-col
+      html += '</div>'; // section
+    }
+    html += '</div>'; // sections
+    wrap.innerHTML = html;
+  }
+
+  /* ── Fetch cards ── */
+  function fetchCards(){
+    var dt = localStorage.getItem(LS_TOKEN) || '';
+    if(!dt) return;
+    xhr('/api/tv/'+encodeURIComponent(CODE)+'/cards?device_token='+encodeURIComponent(dt), function(err, data){
+      if(err){
+        if(err.status === 401){ localStorage.removeItem(LS_TOKEN); clearTimers(); initPoll(); }
+        return;
+      }
+      renderSections(data || []);
+    });
+  }
+
+  /* ── Init ── */
+  function initPoll(){
+    clearTimers();
+    var dt = localStorage.getItem(LS_TOKEN) || '';
+    var pt = localStorage.getItem(LS_POLL)  || '';
+    var url = '/api/tv/'+encodeURIComponent(CODE)+'/init?device_token='+encodeURIComponent(dt)+'&poll_token='+encodeURIComponent(pt);
+
+    xhr(url, function(err, data){
+      if(err){
+        if(err.status === 404){ renderNotFound(); return; }
+        renderNotFound(); return;
+      }
+
+      var sname = data.screen_name || 'Cocina';
+
+      if(data.status === 'active'){
+        renderActive(sname);
+        fetchCards();
+        timers.push(setInterval(fetchCards, 8000));
+        timers.push(setInterval(updateClock, 1000));
+
+      } else if(data.status === 'just_activated'){
+        localStorage.setItem(LS_TOKEN, data.device_token);
+        localStorage.removeItem(LS_POLL);
+        initPoll();
+
+      } else {
+        renderPending(data);
+        if(data.poll_token) localStorage.setItem(LS_POLL, data.poll_token);
+        expiresAt = Date.now() + ((data.expires_minutes||10) * 60 * 1000);
+        timers.push(setInterval(updateCountdown, 1000));
+        timers.push(setInterval(initPoll, 8000));
+        updateCountdown();
+      }
+    });
+  }
+
+  renderLoading();
+  initPoll();
+})();
+</script>
+</body>
+</html>

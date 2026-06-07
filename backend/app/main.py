@@ -1628,6 +1628,12 @@ async def serve_spa(full_path: str):
     if full_path.startswith("api/"):
         return {"detail": "Not Found"}
 
+    # Standalone TV page: máxima compatibilidad con WebOS/browsers viejos
+    if full_path.startswith("tv/"):
+        tv_page = FRONTEND_DIST / "tv.html"
+        if tv_page.exists():
+            return FileResponse(tv_page, headers=_NO_CACHE_HEADERS)
+
     requested = FRONTEND_DIST / full_path
 
     if requested.exists() and requested.is_file():

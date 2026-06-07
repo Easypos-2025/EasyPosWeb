@@ -315,7 +315,17 @@ onUnmounted(clearTimers)
 .tv-topbar__clock { font-size: 1rem; font-weight: 600; color: #94a3b8; font-variant-numeric: tabular-nums; }
 
 /* ── Secciones ── */
-.tv-sections { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.tv-sections {
+  flex: 1;
+  padding: 8px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  overflow-y: auto;
+}
+.tv-section { flex: 1 1 0; min-width: 200px; }
 
 .tv-section__header {
   display: flex;
@@ -337,9 +347,9 @@ onUnmounted(clearTimers)
 
 /* ── Grid de tarjetas ── */
 .tv-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* ── Tarjeta ── */
