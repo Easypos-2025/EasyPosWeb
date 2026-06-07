@@ -533,8 +533,8 @@ onUnmounted(clearTimers)
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
-.tv-elapsed--orange { color: #fb923c; }
-.tv-elapsed--red    { color: #f87171; }
+.tv-elapsed.tv-elapsed--orange { color: #fb923c; }
+.tv-elapsed.tv-elapsed--red    { color: #f87171; }
 .tv-card__meta {
   display: flex;
   gap: 10px;
