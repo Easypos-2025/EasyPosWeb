@@ -102,8 +102,17 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
     return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  var EVT_LABEL = {nuevo:'NUEVO',agregado:'AGREGADO',cancelado:'CANCELADO',reimpresion:'REIMP.'};
-  var EVT_ICON  = {nuevo:'&#x1F514;',agregado:'&#x2795;',cancelado:'&#x2715;',reimpresion:'&#x21BA;'};
+  var EVT_LABEL    = {nuevo:'NUEVO',agregado:'AGREGADO',cancelado:'CANCELADO',reimpresion:'REIMP.'};
+  var EVT_ICON     = {nuevo:'&#x1F514;',agregado:'&#x2795;',cancelado:'&#x2715;',reimpresion:'&#x21BA;'};
+  var EVT_PRIORITY = {cancelado:0, agregado:1, reimpresion:2, nuevo:3};
+
+  function sortOrders(orders){
+    return orders.slice().sort(function(a,b){
+      var pa = EVT_PRIORITY[a.event_type]; if(pa===undefined) pa=3;
+      var pb = EVT_PRIORITY[b.event_type]; if(pb===undefined) pb=3;
+      return pa - pb;
+    });
+  }
 
   /* ── Timers ── */
   function clearTimers(){ for(var i=0;i<timers.length;i++) clearInterval(timers[i]); timers=[]; }
@@ -205,8 +214,9 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
       html += '<div class="section">';
       html += '<div class="sec-header">&#x1F5A8; '+esc(sec.printer_name||'')+'<span class="sec-count">'+cnt+' pedido'+(cnt!==1?'s':'')+'</span></div>';
       html += '<div class="cards-col">';
-      for(var oi=0;oi<sec.orders.length;oi++){
-        var c = sec.orders[oi];
+      var sorted = sortOrders(sec.orders);
+      for(var oi=0;oi<sorted.length;oi++){
+        var c = sorted[oi];
         var et = c.event_type || 'nuevo';
         var bl = EVT_LABEL[et] || et.toUpperCase();
         var bi = EVT_ICON[et] || '';

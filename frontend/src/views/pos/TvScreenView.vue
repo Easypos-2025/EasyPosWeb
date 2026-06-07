@@ -62,7 +62,7 @@
           </div>
 
           <div class="tv-cards-grid">
-            <div v-for="card in sec.orders" :key="card.order_number + card.event_type"
+            <div v-for="card in sortedOrders(sec.orders)" :key="card.order_number + card.event_type"
                  class="tv-card"
                  :class="{
                    'tv-card--nuevo':     card.event_type === 'nuevo',
@@ -140,6 +140,13 @@ const LS_POLL  = `tv_poll_${code}`
 // ── Helpers ──────────────────────────────────────────────────────
 function evtLabel(t) {
   return { nuevo: 'NUEVO', agregado: 'AGREGADO', cancelado: 'CANCELADO', reimpresion: 'REIMP.' }[t] || t.toUpperCase()
+}
+
+const EVT_PRIORITY = { cancelado: 0, agregado: 1, reimpresion: 2, nuevo: 3 }
+function sortedOrders(orders) {
+  return [...orders].sort((a, b) =>
+    (EVT_PRIORITY[a.event_type] ?? 3) - (EVT_PRIORITY[b.event_type] ?? 3)
+  )
 }
 
 function fmtHora(t) {
