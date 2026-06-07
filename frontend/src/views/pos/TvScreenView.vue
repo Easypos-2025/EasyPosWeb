@@ -1,5 +1,5 @@
 <template>
-  <div class="tv-root">
+  <div class="tv-root" @click.once="unlockAudio">
 
     <!-- ══════ CARGANDO ══════ -->
     <div v-if="state === 'loading'" class="tv-center">
@@ -197,6 +197,71 @@ function fmtQty(q) {
   return Number.isInteger(n) ? n : n.toFixed(1)
 }
 
+// ── Audio engine ─────────────────────────────────────────────────
+let _audioCtx = null
+function unlockAudio() {
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    if (_audioCtx.state === 'suspended') _audioCtx.resume()
+  } catch(e) {}
+}
+function _beep(freq, t0, dur, type, vol) {
+  if (!_audioCtx) return
+  try {
+    const o = _audioCtx.createOscillator(), g = _audioCtx.createGain()
+    o.connect(g); g.connect(_audioCtx.destination)
+    o.type = type; o.frequency.value = freq
+    const t = _audioCtx.currentTime + t0
+    g.gain.setValueAtTime(vol, t)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    o.start(t); o.stop(t + dur + 0.05)
+  } catch(e) {}
+}
+function playKitchenAlert(eventType) {
+  unlockAudio()
+  switch (eventType) {
+    case 'nuevo':
+      _beep(523, 0,    0.22, 'sine',      0.35)  // C5
+      _beep(784, 0.2,  0.38, 'sine',      0.35)  // G5
+      break
+    case 'agregado':
+      _beep(659, 0,    0.28, 'sine',      0.28)  // E5 suave
+      break
+    case 'cancelado':
+      _beep(392, 0,    0.18, 'sawtooth',  0.18)  // G4 descendente
+      _beep(262, 0.15, 0.32, 'sawtooth',  0.18)  // C4
+      break
+    case 'reimpresion':
+      _beep(440, 0,    0.09, 'square',    0.17)  // A4 × 3
+      _beep(440, 0.16, 0.09, 'square',    0.17)
+      _beep(440, 0.32, 0.14, 'square',    0.17)
+      break
+  }
+}
+
+// ── Detección de tarjetas nuevas ─────────────────────────────────
+const _knownKeys = new Set()
+let _firstPoll = true
+const _PRIORITY = ['cancelado', 'nuevo', 'agregado', 'reimpresion']
+function _cardKey(c) { return `${c.order_number}|${c.latest_dish_time}|${c.event_type}` }
+function detectAndAlert(allCards) {
+  if (_firstPoll) {
+    allCards.forEach(c => _knownKeys.add(_cardKey(c)))
+    _firstPoll = false
+    return
+  }
+  const newTypes = new Set()
+  allCards.forEach(c => {
+    const k = _cardKey(c)
+    if (!_knownKeys.has(k)) { newTypes.add(c.event_type); _knownKeys.add(k) }
+  })
+  for (const et of _PRIORITY) {
+    if (newTypes.has(et)) { playKitchenAlert(et); break }
+  }
+  const cur = new Set(allCards.map(_cardKey))
+  _knownKeys.forEach(k => { if (!cur.has(k)) _knownKeys.delete(k) })
+}
+
 // ── Clock ─────────────────────────────────────────────────────────
 function updateClock() {
   clockStr.value = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -228,7 +293,9 @@ async function fetchCards() {
   const res = await fetch(`/api/tv/${code}/cards?device_token=${dt}`)
   if (res.status === 401) { localStorage.removeItem(LS_TOKEN); deviceToken.value = ''; initPoll(); return }
   if (!res.ok) return
-  sections.value = await res.json()
+  const data = await res.json()
+  detectAndAlert(data.flatMap(s => s.orders || []))
+  sections.value = data
 }
 
 // ── Flujo principal ───────────────────────────────────────────────
