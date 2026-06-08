@@ -21,7 +21,6 @@ import RolesView from "../views/system/RolesView.vue"
 import ForgotPassword from "@/views/auth/ForgotPassword.vue"
 import ResetPassword from "@/views/auth/ResetPassword.vue"
 import api from "@/services/apis"
-import { useMenuStore } from "@/stores/menuStore"
 
 /* =========================================
 DEFINICIÓN DE RUTAS DEL SISTEMA
@@ -989,10 +988,9 @@ router.afterEach((to) => {
   const now = Date.now()
   if (now - _lastMenuRefresh < MENU_REFRESH_COOLDOWN) return
   _lastMenuRefresh = now
-  try {
-    const menuStore = useMenuStore()
-    menuStore.loadMenu()
-  } catch { /* Pinia puede no estar lista en el primer arranque */ }
+  import("@/stores/menuStore").then(({ useMenuStore }) => {
+    try { useMenuStore().loadMenu() } catch { /* pinia aún no lista */ }
+  }).catch(() => {})
 })
 
 /* =========================================
