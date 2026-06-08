@@ -102,6 +102,7 @@
             </div>
             <div class="vc-row-bot">
               <span class="vc-mesa"><i class="bi bi-table"></i> {{ item.mesa || '—' }}</span>
+              <span class="vc-fecha-item"><i class="bi bi-calendar3"></i> {{ fmtFecha(item.date) }}</span>
               <span v-if="item.propina  > 0" class="vc-chip-propina">+{{ fmt(item.propina) }}</span>
               <span v-if="item.domicilio> 0" class="vc-chip-domicilio">
                 <i class="bi bi-bicycle"></i>{{ fmt(item.domicilio) }}
@@ -485,6 +486,7 @@ onMounted(() => buscar())
 .vc-valor { font-size:14px; font-weight:700; color:#16a34a; }
 .vc-row-bot { display:flex; align-items:center; gap:8px; font-size:11px; color:#64748b; }
 .vc-hora { font-size: 11px; }
+.vc-fecha-item { font-size: 11px; color: #94a3b8; display:flex; align-items:center; gap:3px; }
 .vc-chip-propina, .vc-chip-domicilio {
   font-size:10px; font-weight:700; border-radius:4px; padding:1px 5px; white-space:nowrap;
 }
