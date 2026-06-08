@@ -64,41 +64,36 @@
           <i class="bi bi-check-circle"></i>
           <p>No hay mesas abiertas en este momento.</p>
         </div>
-        <template v-else>
-          <template v-for="zona in zonasConOcupadas" :key="zona.id">
-            <div class="zona-label"><i class="bi bi-geo-alt me-1"></i>{{ zona.name }}</div>
-            <div class="mesas-grid">
-              <div
-                v-for="mesa in mesasOcupadasPorZona(zona.id)"
-                :key="mesa.id"
-                class="mesa-card mesa-card--ocupada"
-                @click="irAMesaExistente(mesa)"
-              >
-                <div class="mesa-status-bar"></div>
-                <div class="mesa-icon">
-                  <i class="bi bi-people-fill"></i>
-                </div>
-                <div class="mesa-nombre">{{ mesa.name }}</div>
-                <div class="mesa-info">
-                  <span v-if="mesa.daily_seq" class="mesa-seq">#{{ mesa.daily_seq }}</span>
-                  <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
-                  <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
-                </div>
-                <div class="mesa-estado">Ocupada</div>
-                <div class="mesa-acciones">
-                  <button class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
-                    title="Eliminar pedido (irreversible)">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                  <button class="mesa-btn mesa-btn--fac" disabled
-                    title="Facturación próximamente">
-                    <i class="bi bi-receipt"></i>
-                  </button>
-                </div>
-              </div>
+        <div v-else class="mesas-grid">
+          <div
+            v-for="mesa in mesasOcupadasOrdenadas"
+            :key="mesa.id"
+            class="mesa-card mesa-card--ocupada"
+            @click="irAMesaExistente(mesa)"
+          >
+            <div class="mesa-status-bar"></div>
+            <div class="mesa-icon">
+              <i class="bi bi-people-fill"></i>
             </div>
-          </template>
-        </template>
+            <div class="mesa-nombre">{{ mesa.name }}</div>
+            <div class="mesa-info">
+              <span v-if="mesa.daily_seq" class="mesa-seq">#{{ mesa.daily_seq }}</span>
+              <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
+              <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
+            </div>
+            <div class="mesa-estado">Ocupada</div>
+            <div class="mesa-acciones">
+              <button class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
+                title="Eliminar pedido (irreversible)">
+                <i class="bi bi-trash"></i>
+              </button>
+              <button class="mesa-btn mesa-btn--fac" disabled
+                title="Facturación próximamente">
+                <i class="bi bi-receipt"></i>
+              </button>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
 
@@ -490,19 +485,11 @@ const mesasOcupadas = computed(() =>
   mesas.value.filter(m => m.ocupada)
 )
 
-const zonasConOcupadas = computed(() => {
-  const seen = new Set()
-  const result = []
-  for (const m of mesasOcupadas.value) {
-    const key = m.zone_id ?? ''
-    if (!seen.has(key)) { seen.add(key); result.push({ id: key, name: m.zone_name || 'Sin zona' }) }
-  }
-  return result
-})
+const mesasOcupadasOrdenadas = computed(() =>
+  [...mesasOcupadas.value].sort((a, b) => (a.daily_seq || 0) - (b.daily_seq || 0))
+)
 
 const mesasPorZona = (zoneId) => mesas.value.filter(m => (m.zone_id ?? '') === zoneId)
-const mesasOcupadasPorZona = (zoneId) =>
-  mesasOcupadas.value.filter(m => (m.zone_id ?? '') === zoneId)
 
 // ── Auto-refresh ──────────────────────────────────────────────────────────────
 async function _silentKpis() {
@@ -898,15 +885,6 @@ async function guardarNuevoMesero() {
   text-align: center;
 }
 .estado-vacio i { font-size: 40px; }
-
-.zona-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .5px;
-  color: #94a3b8;
-  margin: 14px 0 8px;
-}
 
 /* ── Mesas grid ───────────────────────────────────────────────────────────── */
 .mesas-grid {
