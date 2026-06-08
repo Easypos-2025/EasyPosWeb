@@ -70,6 +70,73 @@ async def _get_admin_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
+async def _cleanup_zombie_orders(cid: int, db_main: AsyncSession, db_temp: AsyncSession) -> None:
+    """Limpia pedidos zombies: headers con Nro_Factura='0' cuyos ítems ya fueron facturados por VB6."""
+    d = date.today()
+    today_vb6 = f"{d.day}/{d.month:02d}/{d.year}"
+    today_iso = d.isoformat()
+
+    # Borrar headers de días anteriores con Nro_Factura='0' (zombies de jornadas pasadas)
+    await db_temp.execute(text("""
+        DELETE FROM temp_comanda
+        WHERE company_id = :cid
+          AND Nro_Factura = '0'
+          AND Fecha != :today_vb6
+    """), {"cid": cid, "today_vb6": today_vb6})
+
+    # Borrar headers donde VB6 actualizó todos los ítems (Nro_Factura!=0) pero no el header
+    await db_temp.execute(text("""
+        DELETE tc FROM temp_comanda tc
+        INNER JOIN (
+            SELECT Nro_pedido, company_id
+            FROM temp_detalle_comanda_parcial
+            WHERE company_id = :cid
+            GROUP BY Nro_pedido, company_id
+            HAVING SUM(CASE WHEN Nro_Factura = '0' THEN 1 ELSE 0 END) = 0
+               AND COUNT(*) > 0
+        ) AS billed ON tc.Nro_Pedido = billed.Nro_pedido
+            AND tc.company_id = billed.company_id
+        WHERE tc.Nro_Factura = '0'
+    """), {"cid": cid})
+
+    # Borrar detalles huérfanos cuyo header ya no existe
+    await db_temp.execute(text("""
+        DELETE tdc FROM temp_detalle_comanda_parcial tdc
+        LEFT JOIN temp_comanda tc
+            ON tc.Nro_Pedido = tdc.Nro_pedido
+           AND tc.company_id  = tdc.company_id
+        WHERE tdc.company_id = :cid
+          AND tc.Nro_Pedido IS NULL
+    """), {"cid": cid})
+
+    await db_temp.commit()
+
+    # Obtener pedidos activos tras limpieza para purgar eventos de cocina obsoletos
+    active_rows = (await db_temp.execute(text(
+        "SELECT Nro_Pedido FROM temp_comanda WHERE company_id=:cid AND Nro_Factura='0'"
+    ), {"cid": cid})).fetchall()
+    active_orders = [r[0] for r in active_rows]
+
+    if active_orders:
+        quoted = ",".join(f"'{o}'" for o in active_orders)
+        await db_main.execute(text(f"""
+            DELETE FROM pos_kitchen_events
+            WHERE company_id = :cid
+              AND event_date  = :today
+              AND created_at  < NOW() - INTERVAL 10 MINUTE
+              AND order_number NOT IN ({quoted})
+        """), {"cid": cid, "today": today_iso})
+    else:
+        await db_main.execute(text("""
+            DELETE FROM pos_kitchen_events
+            WHERE company_id = :cid
+              AND event_date  = :today
+              AND created_at  < NOW() - INTERVAL 10 MINUTE
+        """), {"cid": cid, "today": today_iso})
+
+    await db_main.commit()
+
+
 async def _build_cards(
     cid: int,
     db: AsyncSession,
@@ -78,6 +145,7 @@ async def _build_cards(
 ) -> list:
     """Genera tarjetas de cocina para la empresa, filtradas por impresoras."""
     today = _today()
+    await _cleanup_zombie_orders(cid, db, db_temp)
 
     all_printers = (await db.execute(text(
         "SELECT id, name FROM pos_printers WHERE company_id=:cid AND is_active=1 ORDER BY id"
@@ -90,6 +158,9 @@ async def _build_cards(
         printer_map = {k: v for k, v in printer_map.items() if k in printer_ids_filter}
     if not printer_map:
         return []
+
+    d = date.today()
+    today_vb6 = f"{d.day}/{d.month:02d}/{d.year}"
 
     order_rows = (await db_temp.execute(text("""
         SELECT tc.Nro_Pedido, tc.Mesa, tc.Hora, tc.Mesero, tc.Movil,
@@ -108,9 +179,10 @@ async def _build_cards(
         WHERE tc.company_id  = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado   = 0
+          AND tc.Fecha        = :today_vb6
           AND (tc.Movil = 0 OR tc.Salio = 1)
         ORDER BY tc.Hora ASC, tdc.Hora_Plato ASC, tdc.Item ASC
-    """), {"cid": cid})).mappings().all()
+    """), {"cid": cid, "today_vb6": today_vb6})).mappings().all()
 
     dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
     order_numbers = list({r["Nro_Pedido"] for r in order_rows})
