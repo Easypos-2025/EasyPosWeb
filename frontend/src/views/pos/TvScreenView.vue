@@ -487,8 +487,8 @@ onUnmounted(clearTimers)
 .tv-card--agregado  { border-color: #f59e0b; }
 .tv-card--cancelado { border-color: #ef4444; background: #1c0f0f; }
 .tv-card--reimpresion { border-color: #a78bfa; }
-.tv-card.tv-card--warn  { border-color: #fb923c; }
-.tv-card.tv-card--alert { border-color: #ef4444; background: #1c0a0a; }
+.tv-card.tv-card--warn  { border-color: #fb923c !important; background: #1a1100 !important; }
+.tv-card.tv-card--alert { border-color: #ef4444 !important; background: #1c0500 !important; }
 
 .tv-card__badge { display: flex; align-items: center; justify-content: space-between; }
 
