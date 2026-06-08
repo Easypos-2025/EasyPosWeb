@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, delete
@@ -7,6 +8,7 @@ from app.database import get_db
 from app.models.system_module_model import SystemModule
 from app.schemas.system_module_schema import SystemModuleCreate, SystemModuleOut, SystemModuleUpdate
 from app.models.business_profile_module import BusinessProfileModule
+from app.models.company_model import Company
 from app.auth.dependencies import get_current_user
 from app.models.role_model import Role
 
@@ -62,12 +64,31 @@ def _ser_mod(m: SystemModule) -> dict:
 
 
 @router.get("/flat/")
-async def get_all_modules_flat(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def get_all_modules_flat(
+    company_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
     role = await db.get(Role, user.role_id)
-    if role and role.is_system:
-        result = await db.execute(select(SystemModule))
-    else:
-        result = await db.execute(select(SystemModule).where(SystemModule.is_sysadmin == False))
+    is_sysadmin = role and role.is_system
+
+    # Resolver qué company_id usar: parámetro explícito o el del usuario
+    effective_company_id = company_id or (user.company_id if not is_sysadmin else None)
+
+    if effective_company_id:
+        company = await db.get(Company, effective_company_id)
+        if company and company.business_profile_id:
+            result = await db.execute(
+                select(SystemModule)
+                .join(BusinessProfileModule, BusinessProfileModule.module_id == SystemModule.id)
+                .where(BusinessProfileModule.business_profile_id == company.business_profile_id)
+                .where(SystemModule.is_active == True)
+                .order_by(SystemModule.order_index)
+            )
+            return [_ser_mod(m) for m in result.scalars().all()]
+
+    # SYSADMIN sin empresa seleccionada → todos los módulos
+    result = await db.execute(select(SystemModule).order_by(SystemModule.order_index))
     return [_ser_mod(m) for m in result.scalars().all()]
 
 

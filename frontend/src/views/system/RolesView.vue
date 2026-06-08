@@ -201,7 +201,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -244,10 +244,11 @@ async function loadRoles() {
   }
 }
 
-// ─── Cargar catálogo de módulos (una vez) ────────────────────
-async function loadModules() {
+// ─── Cargar catálogo de módulos filtrado por empresa activa ──
+async function loadModules(cid) {
   try {
-    const res = await api.get("/system-modules/flat/")
+    const params = cid ? { company_id: cid } : {}
+    const res = await api.get("/system-modules/flat/", { params })
     allModules.value = res.data
   } catch {
     showToast("Error cargando módulos", "error")
@@ -259,7 +260,10 @@ function onCompanyChange() {
   roles.value = []
   selectedRole.value = null
   editablePerms.value = []
-  loadRoles()
+  allModules.value = []
+  const cid = selectedCompanyId.value || null
+  loadModules(cid)
+  if (cid) loadRoles()
 }
 
 // ─── Seleccionar rol ─────────────────────────────────────────
@@ -387,9 +391,8 @@ async function handleDeleteRole(role) {
 
 // ─── Init ─────────────────────────────────────────────────────
 onMounted(async () => {
-  await loadModules()
-  // SYSADMIN: espera que el usuario seleccione empresa en el dropdown
-  // ADMIN normal: carga roles de su empresa automáticamente
+  const initCid = companyStore.isSystem ? null : (activeCompanyId.value || null)
+  await loadModules(initCid)
   if (!companyStore.isSystem && activeCompanyId.value) {
     await loadRoles()
   }
