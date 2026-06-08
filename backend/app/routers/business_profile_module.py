@@ -61,6 +61,25 @@ async def get_available_modules(
     ]
 
 
+@router.delete("/{bpm_id}")
+async def remove_module_from_profile(
+    bpm_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    bpm = await db.get(BusinessProfileModule, bpm_id)
+    if not bpm:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    # Reasignar hijos al padre del módulo eliminado para no romper jerarquía
+    await db.execute(
+        text("UPDATE business_profile_modules SET parent_id = :new_parent WHERE parent_id = :bpm_id"),
+        {"new_parent": bpm.parent_id, "bpm_id": bpm_id}
+    )
+    await db.delete(bpm)
+    await db.commit()
+    return {"message": "Módulo eliminado del perfil"}
+
+
 @router.patch("/{bpm_id}")
 async def update_module_assignment(
     bpm_id: int,

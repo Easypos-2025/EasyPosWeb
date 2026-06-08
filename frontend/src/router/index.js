@@ -21,6 +21,7 @@ import RolesView from "../views/system/RolesView.vue"
 import ForgotPassword from "@/views/auth/ForgotPassword.vue"
 import ResetPassword from "@/views/auth/ResetPassword.vue"
 import api from "@/services/apis"
+import { useMenuStore } from "@/stores/menuStore"
 
 /* =========================================
 DEFINICIÓN DE RUTAS DEL SISTEMA
@@ -970,6 +971,28 @@ router.beforeEach(async (to, from, next) => {
   }
 
   return next()
+})
+
+/* =========================================
+REFRESH DE MENÚ POR NAVEGACIÓN
+Refresca el menú del sidebar cada 30 s como máximo al navegar,
+así todos los asociados con el mismo perfil ven los cambios
+que hizo el SYSADMIN sin tener que cerrar sesión.
+========================================= */
+let _lastMenuRefresh = 0
+const MENU_REFRESH_COOLDOWN = 30_000
+
+router.afterEach((to) => {
+  if (to.meta?.public || to.meta?.kiosk) return
+  const token = localStorage.getItem("token")
+  if (!token) return
+  const now = Date.now()
+  if (now - _lastMenuRefresh < MENU_REFRESH_COOLDOWN) return
+  _lastMenuRefresh = now
+  try {
+    const menuStore = useMenuStore()
+    menuStore.loadMenu()
+  } catch { /* Pinia puede no estar lista en el primer arranque */ }
 })
 
 /* =========================================

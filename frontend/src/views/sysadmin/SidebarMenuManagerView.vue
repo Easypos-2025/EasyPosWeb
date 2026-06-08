@@ -94,6 +94,9 @@
             <button class="smm-btn-edit" title="Editar asignación" @click.stop="openEdit(element)">
               <i class="bi bi-pencil-square"></i>
             </button>
+            <button class="smm-btn-remove" title="Quitar del perfil" @click.stop="confirmRemove(element)">
+              <i class="bi bi-trash3"></i>
+            </button>
 
             <!-- HIJOS -->
             <draggable
@@ -117,6 +120,9 @@
                   <button class="smm-btn-edit" title="Editar asignación" @click.stop="openEdit(child)">
                     <i class="bi bi-pencil-square"></i>
                   </button>
+                  <button class="smm-btn-remove" title="Quitar del perfil" @click.stop="confirmRemove(child)">
+                    <i class="bi bi-trash3"></i>
+                  </button>
                 </div>
               </template>
             </draggable>
@@ -128,6 +134,32 @@
     </div>
 
   </div>
+
+  <!-- MODAL CONFIRMAR ELIMINACIÓN -->
+  <teleport to="body">
+    <div v-if="removeModal.open" class="smm-overlay" @click.self="removeModal.open = false">
+      <div class="smm-modal">
+        <div class="smm-modal-header">
+          <span><i class="bi bi-trash3 text-danger"></i> Quitar módulo del perfil</span>
+          <button class="smm-modal-close" @click="removeModal.open = false"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="smm-modal-body">
+          <p style="color:#e2e8f0;font-size:14px;">
+            ¿Quitar <strong>{{ removeModal.name }}</strong> de este perfil?<br>
+            <span style="color:#94a3b8;font-size:12px;">Los módulos hijos quedarán bajo el mismo nivel que este módulo tenía.</span>
+          </p>
+        </div>
+        <div class="smm-modal-footer">
+          <button class="btn smm-btn-cancel" @click="removeModal.open = false">Cancelar</button>
+          <button class="btn smm-btn-danger" :disabled="removing" @click="removeModule">
+            <i v-if="removing" class="bi bi-arrow-repeat spin"></i>
+            <i v-else class="bi bi-trash3"></i>
+            {{ removing ? 'Quitando...' : 'Quitar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </teleport>
 
   <!-- MODAL EDITAR ASIGNACIÓN -->
   <teleport to="body">
@@ -280,6 +312,31 @@ watch(selectedProfileId, async () => {
 })
 
 loadProfiles()
+
+// ── Eliminar módulo del perfil ───────────────────────────────────────────────
+const removeModal = ref({ open: false, bpmId: null, name: '' })
+const removing = ref(false)
+
+function confirmRemove(item) {
+  removeModal.value = { open: true, bpmId: item.id, name: item.name }
+}
+
+async function removeModule() {
+  removing.value = true
+  try {
+    await api.delete(`/business-profile-module/${removeModal.value.bpmId}`)
+    showToast(`Módulo "${removeModal.value.name}" quitado del perfil`, "success")
+    removeModal.value.open = false
+    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
+    modules.value    = res.data
+    flatModules.value = flatList(modules.value)
+    await Promise.all([loadAvailable(), menuStore.loadMenu()])
+  } catch (error) {
+    showToast(error.response?.data?.detail || "Error al quitar módulo", "error")
+  } finally {
+    removing.value = false
+  }
+}
 
 // ── Editar asignación existente ──────────────────────────────────────────────
 const editModal = ref({ open: false, bpmId: null, name: '', route: '' })
@@ -516,6 +573,38 @@ async function saveEdit() {
   margin-left: auto;
 }
 .smm-btn-edit:hover { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
+
+/* ── Botón eliminar por ítem ── */
+.smm-btn-remove {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #64748b;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.smm-btn-remove:hover { background: #3b1c1c; color: #f87171; border-color: #ef4444; }
+
+/* ── Botón danger en modal ── */
+.smm-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  background: #7f1d1d;
+  color: #fca5a5;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.smm-btn-danger:hover:not(:disabled) { background: #991b1b; color: #fff; }
+.smm-btn-danger:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ── Info módulo en modal ── */
 .smm-module-info {

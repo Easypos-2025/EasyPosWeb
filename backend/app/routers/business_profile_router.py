@@ -73,26 +73,50 @@ async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get
 
 @router.post("/{profile_id}/modules/")
 async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Asigna módulos al perfil de forma no-destructiva: solo agrega los nuevos y elimina los quitados,
+    preservando parent_id, sort_order y display_name de los módulos que permanecen."""
     try:
-        await db.execute(text("DELETE FROM business_profile_modules WHERE business_profile_id = :profile_id"), {"profile_id": profile_id})
-        if module_ids:
-            await db.execute(text("""
-                INSERT INTO business_profile_modules (business_profile_id, module_id, parent_id, sort_order)
-                SELECT DISTINCT :profile_id, sm.id, NULL, 0
-                FROM system_modules sm WHERE sm.id IN :module_ids
-            """), {"profile_id": profile_id, "module_ids": tuple(module_ids)})
-            await db.execute(text("""
-                INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
-                SELECT DISTINCT r.id, bpm.module_id, 1, 0, 0, 0
-                FROM roles r
-                JOIN companies c ON c.id_company = r.company_id
-                JOIN business_profile_modules bpm ON bpm.business_profile_id = c.business_profile_id
-                JOIN system_modules sm ON sm.id = bpm.module_id AND sm.is_active = 1
-                WHERE c.business_profile_id = :profile_id
-                  AND NOT EXISTS (SELECT 1 FROM role_modules rm2 WHERE rm2.role_id = r.id AND rm2.module_id = bpm.module_id)
-            """), {"profile_id": profile_id})
+        # Módulos actualmente asignados al perfil
+        current_result = await db.execute(
+            text("SELECT module_id FROM business_profile_modules WHERE business_profile_id = :pid"),
+            {"pid": profile_id}
+        )
+        current_ids = {row[0] for row in current_result.fetchall()}
+        new_ids = set(module_ids)
+
+        # Eliminar solo los que se quitaron (preserva bpm.id y jerarquía del resto)
+        to_remove = current_ids - new_ids
+        if to_remove:
+            for mid in to_remove:
+                await db.execute(
+                    text("DELETE FROM business_profile_modules WHERE business_profile_id = :pid AND module_id = :mid"),
+                    {"pid": profile_id, "mid": mid}
+                )
+
+        # Agregar solo los módulos nuevos (flat, el usuario los organiza en SidebarMenuManager)
+        to_add = new_ids - current_ids
+        if to_add:
+            for mid in to_add:
+                await db.execute(
+                    text("""
+                        INSERT INTO business_profile_modules (business_profile_id, module_id, parent_id, sort_order)
+                        VALUES (:pid, :mid, NULL, 0)
+                    """),
+                    {"pid": profile_id, "mid": mid}
+                )
+            # Auto-permisos can_view para roles del perfil solo en los módulos nuevos
+            for mid in to_add:
+                await db.execute(text("""
+                    INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
+                    SELECT DISTINCT r.id, :mid, 1, 0, 0, 0
+                    FROM roles r
+                    JOIN companies c ON c.id_company = r.company_id
+                    WHERE c.business_profile_id = :pid
+                      AND NOT EXISTS (SELECT 1 FROM role_modules rm2 WHERE rm2.role_id = r.id AND rm2.module_id = :mid)
+                """), {"pid": profile_id, "mid": mid})
+
         await db.commit()
-        return {"message": "Módulos asignados correctamente"}
+        return {"message": "Módulos asignados correctamente", "added": len(to_add), "removed": len(to_remove)}
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=400, detail="Ya existen módulos duplicados para este perfil")
