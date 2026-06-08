@@ -72,17 +72,16 @@ async def _get_admin_user(authorization: str, db: AsyncSession) -> User:
 
 async def _cleanup_zombie_orders(cid: int, db_main: AsyncSession, db_temp: AsyncSession) -> None:
     """Limpia pedidos zombies: headers con Nro_Factura='0' cuyos ítems ya fueron facturados por VB6."""
-    d = date.today()
-    today_vb6 = f"{d.day}/{d.month:02d}/{d.year}"
-    today_iso = d.isoformat()
+    today_iso = date.today().isoformat()
 
     # Borrar headers de días anteriores con Nro_Factura='0' (zombies de jornadas pasadas)
+    # temp_comanda.Fecha se almacena en formato ISO 'YYYY-MM-DD'
     await db_temp.execute(text("""
         DELETE FROM temp_comanda
         WHERE company_id = :cid
           AND Nro_Factura = '0'
-          AND Fecha != :today_vb6
-    """), {"cid": cid, "today_vb6": today_vb6})
+          AND Fecha != :today_iso
+    """), {"cid": cid, "today_iso": today_iso})
 
     # Borrar headers donde VB6 actualizó todos los ítems (Nro_Factura!=0) pero no el header
     await db_temp.execute(text("""
@@ -159,9 +158,6 @@ async def _build_cards(
     if not printer_map:
         return []
 
-    d = date.today()
-    today_vb6 = f"{d.day}/{d.month:02d}/{d.year}"
-
     order_rows = (await db_temp.execute(text("""
         SELECT tc.Nro_Pedido, tc.Mesa, tc.Hora, tc.Mesero, tc.Movil,
                tdc.Id_Plato, tdc.Item, tdc.Cantidad,
@@ -179,10 +175,10 @@ async def _build_cards(
         WHERE tc.company_id  = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado   = 0
-          AND tc.Fecha        = :today_vb6
+          AND tc.Fecha        = :today
           AND (tc.Movil = 0 OR tc.Salio = 1)
         ORDER BY tc.Hora ASC, tdc.Hora_Plato ASC, tdc.Item ASC
-    """), {"cid": cid, "today_vb6": today_vb6})).mappings().all()
+    """), {"cid": cid, "today": today})).mappings().all()
 
     dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
     order_numbers = list({r["Nro_Pedido"] for r in order_rows})
