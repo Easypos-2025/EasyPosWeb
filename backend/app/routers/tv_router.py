@@ -12,6 +12,8 @@ from typing import Optional, List
 
 # Señales de refresh en memoria (company_id → unix timestamp)
 _refresh_signals: dict[int, float] = {}
+# Throttle cleanup: máximo una vez por minuto por empresa
+_last_cleanup: dict[int, float] = {}
 
 from fastapi import APIRouter, Header, HTTPException, Depends, Query
 from pydantic import BaseModel
@@ -75,7 +77,11 @@ async def _get_admin_user(authorization: str, db: AsyncSession) -> User:
 
 
 async def _cleanup_zombie_orders(cid: int, db_main: AsyncSession, db_temp: AsyncSession) -> None:
-    """Limpia pedidos zombies: headers con Nro_Factura='0' cuyos ítems ya fueron facturados por VB6."""
+    """Limpia pedidos zombies cada 60s por empresa para evitar table locks frecuentes."""
+    now = time.time()
+    if now - _last_cleanup.get(cid, 0) < 60:
+        return
+    _last_cleanup[cid] = now
     today_iso = date.today().isoformat()
 
     # Borrar headers de días anteriores con Nro_Factura='0' (zombies de jornadas pasadas)
