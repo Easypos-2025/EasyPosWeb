@@ -161,7 +161,7 @@ function clearAll() {
 async function loadMenu() {
   loading.value = true
   try {
-    const cid = localStorage.getItem('company_id')
+    const cid = JSON.parse(localStorage.getItem('user') || '{}').company_id
     const res = await api.get('/api/pos/comanda/menu-diario-admin', {
       headers: { 'X-Company-Id': cid },
     })
@@ -188,7 +188,7 @@ async function guardar() {
       })
     })
 
-    const cid = localStorage.getItem('company_id')
+    const cid = JSON.parse(localStorage.getItem('user') || '{}').company_id
     await api.post('/api/pos/comanda/menu-diario-admin/guardar',
       { date: targetDate.value, selected_ids: selected },
       { headers: { 'X-Company-Id': cid } }
