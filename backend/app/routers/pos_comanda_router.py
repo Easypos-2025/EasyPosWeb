@@ -1894,7 +1894,8 @@ async def get_menu_diario_admin(
                si.Agrupar AS group_id,
                pc.name AS group_name
         FROM supply_items si
-        INNER JOIN pos_product_categories pc ON si.Agrupar = pc.id
+        INNER JOIN pos_product_categories pc
+               ON si.Agrupar = pc.id AND pc.company_id = :cid
         WHERE si.company_id = :cid
           AND si.is_active = 1
           AND pc.percentage = 1

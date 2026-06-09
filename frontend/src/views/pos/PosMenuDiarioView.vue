@@ -136,9 +136,8 @@ function countSelected(cat) {
 }
 
 function toggleGroup(id) {
-  const s = new Set(openGroups.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  openGroups.value = s
+  // Solo una categoría abierta a la vez
+  openGroups.value = openGroups.value.has(id) ? new Set() : new Set([id])
 }
 
 function toggleGroupAll(cat) {
@@ -169,8 +168,9 @@ async function loadMenu() {
     categories.value  = res.data.categories
     displayDate.value = formatDisplayDate(res.data.date)
 
-    // Abrir todos los grupos por defecto
-    openGroups.value = new Set(res.data.categories.map(c => c.group_id))
+    // Abrir solo la primera categoría por defecto
+    const first = res.data.categories[0]
+    openGroups.value = first ? new Set([first.group_id]) : new Set()
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al cargar el menú diario')
   } finally {
