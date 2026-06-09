@@ -85,14 +85,14 @@ async def _cleanup_zombie_orders(cid: int, db_main: AsyncSession, db_temp: Async
     _last_cleanup[cid] = now
     today_iso = date.today().isoformat()
 
-    # Borrar headers de días anteriores con Nro_Factura='0' (zombies de jornadas pasadas)
-    # temp_comanda.Fecha se almacena en formato ISO 'YYYY-MM-DD'
+    # Borrar headers de días anteriores — usa CURDATE() de MySQL para respetar
+    # el timezone del servidor de BD (evita desfase UTC vs hora local).
     await db_temp.execute(text("""
         DELETE FROM temp_comanda
         WHERE company_id = :cid
           AND Nro_Factura = '0'
-          AND Fecha != :today_iso
-    """), {"cid": cid, "today_iso": today_iso})
+          AND Fecha < CURDATE()
+    """), {"cid": cid})
 
     # Borrar headers donde VB6 actualizó todos los ítems (Nro_Factura!=0) pero no el header
     await db_temp.execute(text("""
@@ -186,10 +186,9 @@ async def _build_cards(
         WHERE tc.company_id  = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado   = 0
-          AND tc.Fecha        = :today
           AND (tc.Movil = 0 OR tc.Salio = 1)
         ORDER BY tc.Hora ASC, tdc.Hora_Plato ASC, tdc.Item ASC
-    """), {"cid": cid, "today": today})).mappings().all()
+    """), {"cid": cid})).mappings().all()
 
     dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
     order_numbers = list({r["Nro_Pedido"] for r in order_rows})
