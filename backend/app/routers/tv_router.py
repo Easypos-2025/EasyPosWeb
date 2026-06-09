@@ -16,6 +16,7 @@ _refresh_signals: dict[int, float] = {}
 _last_cleanup: dict[int, float] = {}
 
 from fastapi import APIRouter, Header, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
@@ -696,7 +697,16 @@ async def tv_cards(
 
     cards = await _build_cards(cid, db_main, db, printer_ids_filter)
     refresh_token = str(_refresh_signals.get(cid, 0))
-    return {"sections": cards, "refresh_token": refresh_token}
+
+    build_row = (await db_main.execute(text(
+        "SELECT config_value FROM system_config WHERE config_key='app_version' LIMIT 1"
+    ))).first()
+    app_build = build_row[0] if build_row else ""
+
+    return JSONResponse(
+        content={"sections": cards, "refresh_token": refresh_token, "app_build": app_build},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 @router.post("/screens/force-refresh")

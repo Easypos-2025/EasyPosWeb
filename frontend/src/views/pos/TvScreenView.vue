@@ -250,6 +250,15 @@ function playKitchenAlert(eventType) {
 
 // ── Refresh forzado desde dashboard ──────────────────────────────
 let _lastRefreshToken = ''
+let _loadedBuild = ''
+
+// Hard reload compatible con WebOS, Tizen y browsers de TV viejitos.
+// window.location.reload() puede servir caché en esos sistemas;
+// forzar URL nueva con timestamp garantiza petición fresca al servidor.
+function _hardReload() {
+  const base = window.location.pathname
+  window.location.replace(base + '?_r=' + Date.now())
+}
 
 // ── Detección de tarjetas nuevas ─────────────────────────────────
 const _knownKeys = new Set()
@@ -308,9 +317,16 @@ async function fetchCards() {
   const data = await res.json()
   const cardSections = data.sections ?? data
   const refreshToken = data.refresh_token ?? ''
-  // Si el token cambió y ya teníamos uno → recargar página
+  const appBuild = data.app_build ?? ''
+
+  // Recarga automática si el build del servidor cambió
+  if (appBuild) {
+    if (_loadedBuild && appBuild !== _loadedBuild) { _hardReload(); return }
+    _loadedBuild = appBuild
+  }
+  // Recarga por señal manual (botón recargar pantallas)
   if (refreshToken && _lastRefreshToken && refreshToken !== _lastRefreshToken) {
-    window.location.reload()
+    _hardReload()
     return
   }
   _lastRefreshToken = refreshToken
