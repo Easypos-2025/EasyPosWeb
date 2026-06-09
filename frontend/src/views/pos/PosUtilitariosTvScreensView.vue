@@ -5,9 +5,17 @@
         <h5 class="crud-titulo">Pantallas TV</h5>
         <p class="crud-sub">Gestión de pantallas de cocina por código de acceso</p>
       </div>
-      <button class="btn-nueva" @click="abrirModal()">
-        <i class="bi bi-plus-lg me-1"></i>Nueva pantalla
-      </button>
+      <div class="header-actions">
+        <button class="btn-refresh-tv" @click="refrescarPantallas" :disabled="refrescando"
+          title="Recargar todas las pantallas TV activas">
+          <span v-if="refrescando" class="spinner-border spinner-border-sm me-1"></span>
+          <i v-else class="bi bi-arrow-clockwise me-1"></i>
+          Recargar pantallas
+        </button>
+        <button class="btn-nueva" @click="abrirModal()">
+          <i class="bi bi-plus-lg me-1"></i>Nueva pantalla
+        </button>
+      </div>
     </div>
 
     <!-- Panel: activar dispositivo -->
@@ -165,6 +173,7 @@ const activateCode = ref('')
 const activateName = ref('')
 const activando    = ref(false)
 const activateMsg  = ref(null)
+const refrescando  = ref(false)
 
 const origin = window.location.origin
 
@@ -252,6 +261,24 @@ async function activarDispositivo() {
   }
 }
 
+async function refrescarPantallas() {
+  refrescando.value = true
+  try {
+    await api.post('/api/tv/screens/force-refresh')
+    window.Swal?.fire({
+      title: 'Señal enviada',
+      text: 'Todas las pantallas TV activas se recargarán en los próximos segundos.',
+      icon: 'success',
+      timer: 2500,
+      showConfirmButton: false,
+    })
+  } catch {
+    alert('No se pudo enviar la señal de recarga.')
+  } finally {
+    refrescando.value = false
+  }
+}
+
 function copiarURL(code) {
   navigator.clipboard?.writeText(`${origin}/tv/${code}`)
     .then(() => alert(`URL copiada: ${origin}/tv/${code}`))
@@ -262,6 +289,18 @@ onMounted(cargarScreens)
 </script>
 
 <style scoped>
+/* ── Header actions ── */
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.btn-refresh-tv {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px; border: 1.5px solid #0369a1;
+  background: #e0f2fe; color: #0369a1; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background .15s, color .15s; white-space: nowrap;
+}
+.btn-refresh-tv:hover:not(:disabled) { background: #0369a1; color: #fff; }
+.btn-refresh-tv:disabled { opacity: .55; cursor: not-allowed; }
+
 /* ── Panel activación ── */
 .activate-panel {
   background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;

@@ -6,8 +6,12 @@ import json
 import re
 import secrets
 import random
+import time
 from datetime import datetime, timedelta, date
 from typing import Optional, List
+
+# Señales de refresh en memoria (company_id → unix timestamp)
+_refresh_signals: dict[int, float] = {}
 
 from fastapi import APIRouter, Header, HTTPException, Depends, Query
 from pydantic import BaseModel
@@ -685,4 +689,16 @@ async def tv_cards(
     printer_ids_filter = json.loads(screen["printer_ids"]) if screen["printer_ids"] else []
 
     cards = await _build_cards(cid, db_main, db, printer_ids_filter)
-    return cards
+    refresh_token = str(_refresh_signals.get(cid, 0))
+    return {"sections": cards, "refresh_token": refresh_token}
+
+
+@router.post("/screens/force-refresh")
+async def force_refresh_all_screens(
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fuerza el recargo de todas las pantallas TV activas de la empresa."""
+    user = await _get_admin_user(authorization, db)
+    _refresh_signals[user.company_id] = time.time()
+    return {"message": "Señal de recarga enviada a todas las pantallas"}

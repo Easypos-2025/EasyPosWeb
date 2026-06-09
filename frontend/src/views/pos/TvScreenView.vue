@@ -248,6 +248,9 @@ function playKitchenAlert(eventType) {
   }
 }
 
+// ── Refresh forzado desde dashboard ──────────────────────────────
+let _lastRefreshToken = ''
+
 // ── Detección de tarjetas nuevas ─────────────────────────────────
 const _knownKeys = new Set()
 let _firstPoll = true
@@ -303,8 +306,16 @@ async function fetchCards() {
   if (res.status === 401) { localStorage.removeItem(LS_TOKEN); deviceToken.value = ''; initPoll(); return }
   if (!res.ok) return
   const data = await res.json()
-  detectAndAlert(data.flatMap(s => s.orders || []))
-  sections.value = data
+  const cardSections = data.sections ?? data
+  const refreshToken = data.refresh_token ?? ''
+  // Si el token cambió y ya teníamos uno → recargar página
+  if (refreshToken && _lastRefreshToken && refreshToken !== _lastRefreshToken) {
+    window.location.reload()
+    return
+  }
+  _lastRefreshToken = refreshToken
+  detectAndAlert(cardSections.flatMap(s => s.orders || []))
+  sections.value = cardSections
 }
 
 // ── Flujo principal ───────────────────────────────────────────────
@@ -487,8 +498,32 @@ onUnmounted(clearTimers)
 .tv-card--agregado  { border-color: #f59e0b; }
 .tv-card--cancelado { border-color: #ef4444; background: #1c0f0f; }
 .tv-card--reimpresion { border-color: #a78bfa; }
-.tv-card.tv-card--warn  { border-color: #fb923c !important; background: #1a1100 !important; }
-.tv-card.tv-card--alert { border-color: #ef4444 !important; background: #1c0500 !important; }
+
+.tv-card.tv-card--warn {
+  border-color: #fb923c !important;
+  background: #2d1800 !important;
+  box-shadow: 0 0 14px rgba(251,146,60,.35) !important;
+}
+.tv-card.tv-card--warn .evt-badge {
+  background: #4a2800 !important;
+  color: #fb923c !important;
+}
+
+.tv-card.tv-card--alert {
+  border-color: #ef4444 !important;
+  background: #2a0600 !important;
+  box-shadow: 0 0 16px rgba(239,68,68,.45) !important;
+  animation: pulse-alert 1.2s ease-in-out infinite;
+}
+.tv-card.tv-card--alert .evt-badge {
+  background: #4a0a00 !important;
+  color: #ef4444 !important;
+}
+
+@keyframes pulse-alert {
+  0%, 100% { box-shadow: 0 0 10px rgba(239,68,68,.3); }
+  50%       { box-shadow: 0 0 24px rgba(239,68,68,.65); }
+}
 
 .tv-card__badge { display: flex; align-items: center; justify-content: space-between; }
 
