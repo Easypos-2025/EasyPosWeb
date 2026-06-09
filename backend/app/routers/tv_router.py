@@ -85,13 +85,13 @@ async def _cleanup_zombie_orders(cid: int, db_main: AsyncSession, db_temp: Async
     _last_cleanup[cid] = now
     today_iso = date.today().isoformat()
 
-    # Borrar headers de días anteriores — usa CURDATE() de MySQL para respetar
-    # el timezone del servidor de BD (evita desfase UTC vs hora local).
+    # Buffer de 1 día para evitar borrar pedidos del día local cuando el servidor
+    # corre en UTC y la fecha local (VB6) es un día antes de CURDATE() en el server.
     await db_temp.execute(text("""
         DELETE FROM temp_comanda
         WHERE company_id = :cid
           AND Nro_Factura = '0'
-          AND Fecha < CURDATE()
+          AND Fecha < DATE_SUB(CURDATE(), INTERVAL 1 DAY)
     """), {"cid": cid})
 
     # Borrar headers donde VB6 actualizó todos los ítems (Nro_Factura!=0) pero no el header
