@@ -502,7 +502,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
            FROM pos_dishes d
            INNER JOIN pos_dish_categories c
                    ON c.id = d.category_id AND c.company_id = d.company_id
-           WHERE d.company_id = :cid AND c.is_active = 1
+           WHERE d.company_id = :cid AND c.is_active = 1 AND d.active = 0
            ORDER BY c.name, d.name""",
         # Nivel 2: sin tax ni preparation_time
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
@@ -516,7 +516,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
            FROM pos_dishes d
            INNER JOIN pos_dish_categories c
                    ON c.id = d.category_id AND c.company_id = d.company_id
-           WHERE d.company_id = :cid AND c.is_active = 1
+           WHERE d.company_id = :cid AND c.is_active = 1 AND d.active = 0
            ORDER BY c.name, d.name""",
         # Nivel 3: último recurso sin columnas opcionales
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
@@ -627,7 +627,7 @@ async def get_menu_diario(
             dad.is_default,
             dad.position,
             COALESCE(dm.description, si.description)        AS item_name,
-            IF(COALESCE(dm.id, si.id) IS NOT NULL, 1, 0)   AS available_today
+            IF(dm.id IS NOT NULL, 1, 0)                     AS available_today
         FROM pos_dish_assembly_detail dad
         LEFT JOIN pos_daily_menu dm
                ON dm.item_id    = dad.item
@@ -1254,11 +1254,12 @@ async def get_cocina_pedidos(
     cid = payload["company_id"]
     today = _today()
 
-    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
+    # Pedidos activos — solo los visibles en TV (mismos criterios que _build_cards)
     order_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Fecha, Mesa, Valor, Hora, Mesero
         FROM temp_comanda
         WHERE company_id=:cid AND Nro_Factura='0' AND Cancelado=0
+          AND (Movil = 0 OR Salio = 1)
         ORDER BY Hora ASC
     """), {"cid": cid})).mappings().all()
 
@@ -1267,6 +1268,13 @@ async def get_cocina_pedidos(
 
     order_numbers = [r["Nro_Pedido"] for r in order_rows]
     on_quoted = ",".join(f"'{o}'" for o in order_numbers)
+
+    # Excluir pedidos ya facturados en pos_invoice_details (misma red de seguridad que TV)
+    inv_rows = (await db.execute(text(
+        f"SELECT DISTINCT order_number FROM pos_invoice_details "
+        f"WHERE company_id=:cid AND order_number IN ({on_quoted})"
+    ), {"cid": cid})).mappings().all()
+    invoiced_set = {r["order_number"] for r in inv_rows}
 
     # Pedidos ya despachados desde easyposweb
     ks_rows = (await db.execute(text(
@@ -1324,6 +1332,8 @@ async def get_cocina_pedidos(
     for r in order_rows:
         on = r["Nro_Pedido"]
         if on in dispatched_set:
+            continue
+        if on in invoiced_set:
             continue
         if sent_count.get(on, 0) == 0:
             continue
@@ -1853,3 +1863,137 @@ async def get_historico_eliminadas(
         })
 
     return {"total": len(orders), "orders": orders}
+
+
+# ── MENÚ DIARIO — GESTIÓN ADMIN ──────────────────────────────────────────────
+# Endpoints de administración para armar el menú del día.
+# Usan _auth_comanda (acepta tanto token de mesero como de admin).
+
+class GuardarMenuDiarioIn(BaseModel):
+    date: str
+    selected_ids: List[int]  # id_item de supply_items seleccionados
+
+
+@router.get("/menu-diario-admin")
+async def get_menu_diario_admin(
+    date: Optional[str] = Query(None),
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Devuelve todos los insumos agrupados por categoría de menú diario.
+    Si no hay registros para la fecha → auto-inserta todos con selected=0.
+    Marca con is_selected los que ya están en pos_daily_menu para esa fecha.
+    """
+    cid = payload["company_id"]
+    target_date = date or _today()
+
+    # Cargar todos los insumos disponibles para menú
+    items_rows = (await db.execute(text("""
+        SELECT si.id_item, si.description AS item_name,
+               si.Agrupar AS group_id,
+               pc.name AS group_name
+        FROM supply_items si
+        INNER JOIN pos_product_categories pc ON si.Agrupar = pc.id
+        WHERE si.company_id = :cid
+          AND si.is_active = 1
+          AND pc.percentage = 1
+          AND si.control_stock = 1
+        ORDER BY pc.name, si.description
+    """), {"cid": cid})).mappings().all()
+
+    if not items_rows:
+        return {"date": target_date, "categories": []}
+
+    # Verificar si ya hay registros para esta fecha
+    existing = (await db.execute(text("""
+        SELECT item_id, selected
+        FROM pos_daily_menu
+        WHERE company_id = :cid AND date = :d
+    """), {"cid": cid, "d": target_date})).mappings().all()
+
+    # Si no hay nada para esta fecha → auto-inicializar todos como selected=0
+    if not existing:
+        for row in items_rows:
+            await db.execute(text("""
+                INSERT INTO pos_daily_menu (company_id, menu_id, item_id, date, category, description, group_by, selected, synced, updated_at)
+                VALUES (:cid, :menu_id, :item_id, :d, :cat, :desc, :grp, 0, 0, NOW())
+                ON DUPLICATE KEY UPDATE date = :d, selected = 0, updated_at = NOW()
+            """), {
+                "cid":     cid,
+                "menu_id": int(row["group_id"]),
+                "item_id": int(row["id_item"]),
+                "d":       target_date,
+                "cat":     str(row["group_name"] or ""),
+                "desc":    str(row["item_name"] or ""),
+                "grp":     int(row["group_id"]),
+            })
+        await db.commit()
+        selected_ids: set = set()
+    else:
+        selected_ids = {int(r["item_id"]) for r in existing if int(r["selected"]) == 1}
+
+    # Agrupar por categoría
+    categories: dict = {}
+    for row in items_rows:
+        gid = int(row["group_id"])
+        if gid not in categories:
+            categories[gid] = {
+                "group_id":   gid,
+                "group_name": row["group_name"] or f"Categoría {gid}",
+                "items":      [],
+            }
+        categories[gid]["items"].append({
+            "item_id":     int(row["id_item"]),
+            "item_name":   row["item_name"] or f"Ítem {row['id_item']}",
+            "is_selected": int(row["id_item"]) in selected_ids,
+        })
+
+    return {
+        "date":       target_date,
+        "categories": list(categories.values()),
+    }
+
+
+@router.post("/menu-diario-admin/guardar")
+async def guardar_menu_diario(
+    data: GuardarMenuDiarioIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Guarda la selección del menú del día:
+    - Marca como selected=1 los elegidos.
+    - Elimina los no seleccionados para esa fecha.
+    - Si selected_ids está vacío → elimina todos (menú sin armar).
+    """
+    cid = payload["company_id"]
+    d   = data.date
+
+    if not data.selected_ids:
+        # Nada seleccionado → borrar todo para esta fecha
+        await db.execute(text("""
+            DELETE FROM pos_daily_menu
+            WHERE company_id = :cid AND date = :d
+        """), {"cid": cid, "d": d})
+    else:
+        # Marcar seleccionados
+        placeholders = ", ".join([f":id{i}" for i in range(len(data.selected_ids))])
+        params: dict = {"cid": cid, "d": d}
+        for i, sid in enumerate(data.selected_ids):
+            params[f"id{i}"] = sid
+
+        await db.execute(text(f"""
+            UPDATE pos_daily_menu
+            SET selected = 1, updated_at = NOW()
+            WHERE company_id = :cid AND date = :d AND item_id IN ({placeholders})
+        """), params)
+
+        # Eliminar los no seleccionados
+        await db.execute(text(f"""
+            DELETE FROM pos_daily_menu
+            WHERE company_id = :cid AND date = :d AND item_id NOT IN ({placeholders})
+        """), params)
+
+    await db.commit()
+    return {"ok": True, "date": d, "selected_count": len(data.selected_ids)}

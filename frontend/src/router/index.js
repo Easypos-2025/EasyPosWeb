@@ -783,6 +783,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Pantallas TV" }
       },
+      {
+        path: "/pos/menu-diario",
+        name: "PosMenuDiarioView",
+        component: () => import("@/views/pos/PosMenuDiarioView.vue"),
+        requiresAuth: true,
+        meta: { title: "Menú Diario" }
+      },
 ]
   },
 

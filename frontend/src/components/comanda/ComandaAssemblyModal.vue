@@ -23,38 +23,58 @@
           <p class="text-muted mt-2">Sin opciones de armado configuradas para este plato.</p>
         </div>
 
-        <!-- Categorías de armado -->
-        <div v-for="cat in categories" :key="cat.category_code" class="assembly-cat">
-          <div class="assembly-cat__header">
-            <span class="assembly-cat__name">
-              {{ cat.category_name }}
-            </span>
-            <span class="assembly-cat__rule">
-              <span v-if="cat.is_required" class="badge bg-danger">Obligatorio</span>
-              <span class="text-muted ms-1" v-if="cat.max_choices > 1">
-                (máx {{ cat.max_choices }})
+        <!-- Categorías en acordeón -->
+        <div
+          v-for="cat in categories"
+          :key="cat.category_code"
+          class="acc-cat"
+          :class="{ 'acc-cat--open': openCats.has(cat.category_code), 'acc-cat--done': !!selections[cat.category_code] }"
+        >
+          <!-- Cabecera clickeable -->
+          <button class="acc-cat__head" @click="toggleCat(cat.category_code)">
+            <div class="acc-cat__head-left">
+              <span class="acc-cat__name">{{ cat.category_name }}</span>
+              <!-- Ítem seleccionado en el resumen del header cuando está colapsado -->
+              <span
+                v-if="selections[cat.category_code] && !openCats.has(cat.category_code)"
+                class="acc-cat__selected-preview"
+              >
+                <i class="bi bi-check-circle-fill text-success me-1"></i>
+                {{ selections[cat.category_code].item_name }}
               </span>
-            </span>
-          </div>
-
-          <!-- Sin opciones disponibles hoy -->
-          <p v-if="!cat.options.filter(o => o.available_today).length" class="text-muted small ps-2">
-            Sin opciones disponibles hoy en esta categoría
-          </p>
-
-          <div class="assembly-options">
-            <button
-              v-for="opt in cat.options.filter(o => o.available_today)"
-              :key="opt.item_id"
-              class="assembly-option"
-              :class="{ 'assembly-option--selected': isSelected(cat.category_code, opt.item_id) }"
-              @click="toggleOption(cat, opt)"
-            >
-              <span class="assembly-option__check">
-                <i class="bi bi-check-lg" v-if="isSelected(cat.category_code, opt.item_id)"></i>
+              <span v-else-if="!openCats.has(cat.category_code) && cat.is_required" class="acc-cat__required-hint">
+                Requerido
               </span>
-              {{ opt.item_name }}
-            </button>
+            </div>
+            <div class="acc-cat__head-right">
+              <span v-if="cat.is_required && !selections[cat.category_code]" class="badge bg-danger me-2">Obligatorio</span>
+              <span v-else-if="cat.is_required && selections[cat.category_code]" class="badge bg-success me-2">
+                <i class="bi bi-check-lg"></i>
+              </span>
+              <span class="text-muted small me-2" v-if="cat.max_choices > 1">(máx {{ cat.max_choices }})</span>
+              <i class="bi acc-cat__chevron" :class="openCats.has(cat.category_code) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+            </div>
+          </button>
+
+          <!-- Opciones (solo cuando está abierto) -->
+          <div class="acc-cat__body" v-if="openCats.has(cat.category_code)">
+            <p v-if="!cat.options.filter(o => o.available_today).length" class="text-muted small ps-2 mb-0">
+              Sin opciones disponibles hoy — configure el Menú Diario.
+            </p>
+            <div class="assembly-options">
+              <button
+                v-for="opt in cat.options.filter(o => o.available_today)"
+                :key="opt.item_id"
+                class="assembly-option"
+                :class="{ 'assembly-option--selected': isSelected(cat.category_code, opt.item_id) }"
+                @click="toggleOption(cat, opt)"
+              >
+                <span class="assembly-option__check">
+                  <i class="bi bi-check-lg" v-if="isSelected(cat.category_code, opt.item_id)"></i>
+                </span>
+                {{ opt.item_name }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -96,18 +116,22 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'added'])
 
+const qty           = ref(1)
 const categories    = ref([])
 const fixedProducts = ref([])
 const loadingMenu   = ref(false)
 const loadError     = ref(false)
 const saving        = ref(false)
-const selections    = ref({})  // { category_code: { item_id, item_name, discount_qty } }
+const selections    = ref({})    // { category_code: { item_id, item_name, discount_qty } }
+const openCats      = ref(new Set())
 
 watch(() => props.dish, async (dish) => {
   if (!dish) return
   selections.value = {}
   categories.value = []
+  openCats.value   = new Set()
   loadError.value  = false
+  qty.value        = 1
 
   if (!dish.has_assembly) return
 
@@ -116,12 +140,23 @@ watch(() => props.dish, async (dish) => {
     const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`)
     categories.value    = res.data.categories
     fixedProducts.value = res.data.fixed_products
+
+    // Abrir todas las categorías obligatorias (o la primera si no hay ninguna obligatoria)
+    const required = res.data.categories.filter(c => c.is_required)
+    const toOpen   = required.length ? required : res.data.categories.slice(0, 1)
+    openCats.value = new Set(toOpen.map(c => c.category_code))
   } catch {
     loadError.value = true
   } finally {
     loadingMenu.value = false
   }
 }, { immediate: true })
+
+function toggleCat(code) {
+  const s = new Set(openCats.value)
+  s.has(code) ? s.delete(code) : s.add(code)
+  openCats.value = s
+}
 
 const isValid = computed(() => {
   if (!categories.value.length) return true
@@ -143,6 +178,13 @@ function toggleOption(cat, opt) {
       item_name:    opt.item_name,
       discount_qty: opt.discount_qty,
     }
+    // Colapsar automáticamente al seleccionar, y abrir la siguiente sin responder
+    const s     = new Set(openCats.value)
+    s.delete(cat.category_code)
+    const idx   = categories.value.findIndex(c => c.category_code === cat.category_code)
+    const next  = categories.value.slice(idx + 1).find(c => !selections.value[c.category_code])
+    if (next) s.add(next.category_code)
+    openCats.value = s
   }
 }
 
@@ -167,7 +209,7 @@ async function add() {
       date:                props.orderDate,
       table_id:            props.tableId,
       dish_id:             props.dish.id,
-      quantity:            1,
+      quantity:            qty.value,
       assembly_selections: assemblySelections,
     })
     emit('added', res.data)
@@ -234,10 +276,10 @@ async function add() {
 .assembly-modal__body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 .no-options {
@@ -245,32 +287,74 @@ async function add() {
   padding: 24px 0;
 }
 
-.assembly-cat {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+/* ── Acordeón ── */
+.acc-cat {
+  border: 1.5px solid #e2e8f0;
   border-radius: 12px;
-  padding: 14px;
+  overflow: hidden;
+  transition: border-color .15s;
 }
+.acc-cat--done { border-color: #22c55e; }
+.acc-cat--open { border-color: #2563eb; }
 
-.assembly-cat__header {
+.acc-cat__head {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 8px;
 }
+.acc-cat--done .acc-cat__head  { background: #f0fdf4; }
+.acc-cat--open .acc-cat__head  { background: #eff6ff; }
 
-.assembly-cat__name {
+.acc-cat__head-left  { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acc-cat__head-right { display: flex; align-items: center; flex-shrink: 0; }
+
+.acc-cat__name {
   font-weight: 700;
-  font-size: .9rem;
+  font-size: .88rem;
   color: #334155;
   text-transform: uppercase;
   letter-spacing: .5px;
+}
+
+.acc-cat__selected-preview {
+  font-size: .78rem;
+  color: #166534;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acc-cat__required-hint {
+  font-size: .72rem;
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.acc-cat__chevron {
+  font-size: .85rem;
+  color: #64748b;
+  transition: transform .2s;
+}
+
+.acc-cat__body {
+  padding: 12px 14px 14px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
 }
 
 .assembly-options {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 4px;
 }
 
 .assembly-option {
@@ -303,6 +387,7 @@ async function add() {
   align-items: center;
   justify-content: center;
   font-size: .75rem;
+  flex-shrink: 0;
 }
 .assembly-option--selected .assembly-option__check {
   background: rgba(255,255,255,.25);
@@ -326,14 +411,29 @@ async function add() {
   margin-right: auto;
 }
 
+.assembly-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
 /* Responsive */
 @media (min-width: 640px) {
   .modal-overlay { align-items: center; }
   .assembly-modal { border-radius: 20px; max-height: 85dvh; }
 }
 
+@media (max-width: 768px) {
+  .assembly-modal__body { padding: 10px 12px; gap: 7px; }
+  .acc-cat__head { padding: 10px 12px; }
+  .assembly-option { padding: 7px 12px; font-size: .84rem; }
+}
+
 @media (max-width: 576px) {
-  .assembly-modal__body { padding: 12px 14px; gap: 12px; }
+  .assembly-modal__body { padding: 8px 10px; gap: 6px; }
   .assembly-modal__footer { padding: 12px 14px; }
+  .acc-cat__head { padding: 9px 10px; }
+  .assembly-option { padding: 6px 10px; font-size: .82rem; }
 }
 </style>
