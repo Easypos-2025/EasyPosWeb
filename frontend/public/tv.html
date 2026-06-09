@@ -85,8 +85,15 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
   var LS_TOKEN = 'tv_token_' + CODE;
   var LS_POLL  = 'tv_poll_'  + CODE;
 
-  var timers   = [];
-  var expiresAt = null;
+  var timers      = [];
+  var expiresAt   = null;
+  var _loadedBuild = '';
+  var _lastRT      = '';
+
+  function _hardReload(){
+    var base = window.location.pathname;
+    window.location.replace(base + '?_r=' + Date.now());
+  }
 
   /* ── Helpers ── */
   function pad2(n){ return n < 10 ? '0'+n : String(n); }
@@ -361,7 +368,12 @@ body{min-height:100vh;background:#0f172a;color:#f1f5f9;font-family:Segoe UI,Aria
         if(err.status === 401){ localStorage.removeItem(LS_TOKEN); clearTimers(); initPoll(); }
         return;
       }
-      var sections = data || [];
+      var sections = Array.isArray(data) ? data : (data && Array.isArray(data.sections) ? data.sections : []);
+      var _rt = data && data.refresh_token ? String(data.refresh_token) : '';
+      var _ab = data && data.app_build    ? String(data.app_build)    : '';
+      if(_ab){ if(_loadedBuild && _ab !== _loadedBuild){ _hardReload(); return; } _loadedBuild=_ab; }
+      if(_rt && _lastRT && _rt !== _lastRT){ _hardReload(); return; }
+      _lastRT = _rt;
       var allCards = [];
       for(var i=0;i<sections.length;i++){
         var ords = sections[i].orders || [];

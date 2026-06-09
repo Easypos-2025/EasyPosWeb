@@ -46,13 +46,6 @@
         <div class="tv-topbar__clock">{{ clockStr }}</div>
       </div>
 
-      <!-- DEBUG TEMPORAL -->
-      <div style="position:fixed;top:60px;right:8px;background:#111;color:#0f0;font-size:11px;padding:6px 10px;z-index:9999;border-radius:6px;font-family:monospace;max-width:280px;word-break:break-all;">
-        secs:{{ sections.length }} | orders:[{{ sections.map(s=>s.orders.length).join(',') }}]<br>
-        token:{{ (localStorage?.getItem(`tv_token_${$route?.params?.code||''}`))||'NONE' }}<br>
-        state:{{ state }}
-      </div>
-
       <!-- Sin pedidos -->
       <div v-if="!sections.length || sections.every(s => !s.orders.length)" class="tv-center tv-center--active">
         <i class="bi bi-check2-circle tv-big-icon text-success"></i>
