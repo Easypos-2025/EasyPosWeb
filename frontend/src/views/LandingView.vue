@@ -41,12 +41,9 @@
     </nav>
 
     <!-- ══════════════════════════════════════════════
-         PRIMERA VISTA — AD BANNER + PERFILES
+         PRIMERA VISTA — PERFILES
     ══════════════════════════════════════════════ -->
     <section id="perfiles" class="section-perfiles">
-
-      <!-- Franja publicitaria — siempre visible, sin toggle -->
-      <LandingAdBanner class="ad-banner-strip" />
 
       <!-- Slider perfiles de negocio -->
       <div class="profiles-section">
@@ -833,6 +830,9 @@
     <!-- Sidebar publicitario fijo reservado para uso futuro -->
     <!-- <LandingAdSidebar class="landing-fixed-sidebar" /> -->
 
+    <!-- Anchor Ad flotante — bottom sticky con toggle -->
+    <LandingAdBanner />
+
   </div>
 </template>
 
@@ -1286,12 +1286,6 @@ export default {
   background: #0f172a;
 }
 
-/* Franja publicitaria — altura fija */
-.ad-banner-strip {
-  height: clamp(170px, 26vh, 260px);
-  flex-shrink: 0;
-}
-
 /* Sección perfiles — ocupa el espacio restante */
 .profiles-section {
   flex: 1;
@@ -1305,18 +1299,6 @@ export default {
   height: 100%;
   position: relative;
   overflow: hidden;
-}
-
-/* Responsive: banner en móvil */
-@media (max-width: 767px) {
-  .ad-banner-strip { height: clamp(130px, 22vh, 180px); }
-}
-@media (max-width: 767px) and (orientation: portrait) {
-  .ad-banner-strip { height: clamp(145px, 27vh, 200px); }
-}
-/* Landscape móvil: pantalla corta → banner mínimo para que los perfiles sean visibles */
-@media (max-height: 480px) and (orientation: landscape) {
-  .ad-banner-strip { height: 68px; }
 }
 
 .slider-track {
@@ -2286,4 +2268,11 @@ export default {
   .landing-root.has-ad-sidebar { padding-right: 260px; }
   .landing-fixed-sidebar { width: 250px; }
 }
+
+/* ════════════════════════════════════════════════════
+   COMPENSAR ALTURA DEL ANCHOR AD STICKY
+════════════════════════════════════════════════════ */
+.landing-root { padding-bottom: 155px; }
+@media (max-width: 767px) { .landing-root { padding-bottom: 120px; } }
+@media (max-width: 576px) { .landing-root { padding-bottom: 105px; } }
 </style>

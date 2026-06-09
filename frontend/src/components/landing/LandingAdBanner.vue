@@ -1,125 +1,129 @@
 <template>
-  <div class="ad-banner-wrap">
+  <div class="ad-sticky-root">
 
-    <!-- ── Desktop / Tablet: 3 slots en fila ── -->
-    <template v-if="!isMobilePortrait">
-      <div v-for="(slot, si) in slots" :key="slot.slot" class="ad-slot">
-        <component
-          :is="slot.cta_url ? 'a' : 'div'"
-          v-bind="slot.cta_url ? { href: slot.cta_url, target: '_blank', rel: 'noopener noreferrer' } : {}"
-          class="slot-inner"
-          :class="{ 'slot-link': slot.cta_url }"
-        >
-          <template v-if="slot.active && slot.pieces?.length">
-            <SlotPiece
-              :piece="currentSlotPiece(slot, si)"
-              :title="slot.title"
-              :muted="slotMuted[si]"
-            />
-            <!-- Label: Publicidad -->
-            <span class="ad-label">Publicidad</span>
-            <!-- Botón audio (video/youtube) -->
-            <button
-              v-if="isMediaPiece(currentSlotPiece(slot, si))"
-              class="btn-audio"
-              @click.prevent.stop="toggleAudio(si)"
-              :title="slotMuted[si] ? 'Activar audio' : 'Silenciar'"
-            >
-              <i :class="slotMuted[si] ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'"></i>
-            </button>
-            <!-- Dots piezas múltiples -->
-            <div v-if="slot.pieces.length > 1" class="slot-piece-dots">
-              <span v-for="(p, pi) in slot.pieces" :key="pi"
-                class="spdot" :class="{ active: pi === slotPieceIdx[si] }"></span>
-            </div>
-            <!-- Iconos redes sociales del anunciante -->
-            <div v-if="slotHasSocial(slot)" class="slot-social-icons">
-              <a v-if="slot.social_instagram" :href="slot.social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-instagram" title="Instagram"><i class="bi bi-instagram"></i></a>
-              <a v-if="slot.social_tiktok" :href="slot.social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-tiktok" title="TikTok"><i class="bi bi-tiktok"></i></a>
-              <a v-if="slot.social_facebook" :href="slot.social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-facebook" title="Facebook"><i class="bi bi-facebook"></i></a>
-              <a v-if="slot.social_youtube_channel" :href="slot.social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-youtube" title="YouTube"><i class="bi bi-youtube"></i></a>
-              <a v-if="slot.social_website" :href="slot.social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-website" title="Sitio web"><i class="bi bi-globe2"></i></a>
-            </div>
-          </template>
-          <!-- Placeholder → contacto -->
-          <template v-else>
-            <a href="#pauta" class="slot-placeholder-inner">
-              <div class="ph-bg"></div>
-              <div class="ph-content">
-                <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
-                <div class="ph-text">
-                  <span class="ph-title">¡Paute Aquí!</span>
-                  <span class="ph-sub">Llega a miles de asociados</span>
-                </div>
-                <span class="ph-cta">→ Solicitar espacio</span>
+    <!-- ── Tab de toggle: siempre visible ── -->
+    <div class="ad-toggle-row">
+      <button class="ad-toggle-tab" @click="isOpen = !isOpen" :title="isOpen ? 'Ocultar publicidad' : 'Mostrar publicidad'">
+        <i :class="isOpen ? 'bi bi-chevron-down' : 'bi bi-chevron-up'"></i>
+        <span>{{ isOpen ? 'Ocultar' : 'Publicidad' }}</span>
+      </button>
+    </div>
+
+    <!-- ── Contenido colapsable ── -->
+    <div class="ad-banner-wrap" :class="{ 'is-collapsed': !isOpen }">
+
+      <!-- Desktop / Tablet: 3 slots en fila -->
+      <template v-if="!isMobilePortrait">
+        <div v-for="(slot, si) in slots" :key="slot.slot" class="ad-slot">
+          <component
+            :is="slot.cta_url ? 'a' : 'div'"
+            v-bind="slot.cta_url ? { href: slot.cta_url, target: '_blank', rel: 'noopener noreferrer' } : {}"
+            class="slot-inner"
+            :class="{ 'slot-link': slot.cta_url }"
+          >
+            <template v-if="slot.active && slot.pieces?.length">
+              <SlotPiece
+                :piece="currentSlotPiece(slot, si)"
+                :title="slot.title"
+                :muted="slotMuted[si]"
+              />
+              <span class="ad-label">Publicidad</span>
+              <button
+                v-if="isMediaPiece(currentSlotPiece(slot, si))"
+                class="btn-audio"
+                @click.prevent.stop="toggleAudio(si)"
+                :title="slotMuted[si] ? 'Activar audio' : 'Silenciar'"
+              >
+                <i :class="slotMuted[si] ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'"></i>
+              </button>
+              <div v-if="slot.pieces.length > 1" class="slot-piece-dots">
+                <span v-for="(p, pi) in slot.pieces" :key="pi"
+                  class="spdot" :class="{ active: pi === slotPieceIdx[si] }"></span>
               </div>
-            </a>
-          </template>
-        </component>
-      </div>
-    </template>
-
-    <!-- ── Móvil portrait: carrusel de slots ── -->
-    <template v-else>
-      <div class="carousel-wrap">
-        <Transition name="ad-fade" mode="out-in">
-          <div :key="`${currentSlot}-${slotPieceIdx[currentSlot]}`" class="ad-slot carousel-slot">
-            <component
-              :is="slots[currentSlot]?.cta_url ? 'a' : 'div'"
-              v-bind="slots[currentSlot]?.cta_url ? { href: slots[currentSlot].cta_url, target: '_blank', rel: 'noopener noreferrer' } : {}"
-              class="slot-inner"
-              :class="{ 'slot-link': slots[currentSlot]?.cta_url }"
-            >
-              <template v-if="slots[currentSlot]?.active && slots[currentSlot]?.pieces?.length">
-                <SlotPiece
-                  :piece="currentSlotPiece(slots[currentSlot], currentSlot)"
-                  :title="slots[currentSlot].title"
-                  :muted="slotMuted[currentSlot]"
-                />
-                <!-- Label: Publicidad -->
-                <span class="ad-label">Publicidad</span>
-                <button
-                  v-if="isMediaPiece(currentSlotPiece(slots[currentSlot], currentSlot))"
-                  class="btn-audio"
-                  @click.prevent.stop="toggleAudio(currentSlot)"
-                  :title="slotMuted[currentSlot] ? 'Activar audio' : 'Silenciar'"
-                >
-                  <i :class="slotMuted[currentSlot] ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'"></i>
-                </button>
-                <!-- Iconos redes sociales -->
-                <div v-if="slotHasSocial(slots[currentSlot])" class="slot-social-icons">
-                  <a v-if="slots[currentSlot].social_instagram" :href="slots[currentSlot].social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-instagram" title="Instagram"><i class="bi bi-instagram"></i></a>
-                  <a v-if="slots[currentSlot].social_tiktok" :href="slots[currentSlot].social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-tiktok" title="TikTok"><i class="bi bi-tiktok"></i></a>
-                  <a v-if="slots[currentSlot].social_facebook" :href="slots[currentSlot].social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-facebook" title="Facebook"><i class="bi bi-facebook"></i></a>
-                  <a v-if="slots[currentSlot].social_youtube_channel" :href="slots[currentSlot].social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-youtube" title="YouTube"><i class="bi bi-youtube"></i></a>
-                  <a v-if="slots[currentSlot].social_website" :href="slots[currentSlot].social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-website" title="Sitio web"><i class="bi bi-globe2"></i></a>
-                </div>
-              </template>
-              <template v-else>
-                <a href="#pauta" class="slot-placeholder-inner">
-                  <div class="ph-bg"></div>
-                  <div class="ph-content">
-                    <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
-                    <div class="ph-text">
-                      <span class="ph-title">¡Paute Aquí!</span>
-                      <span class="ph-sub">Llega a miles de asociados</span>
-                    </div>
-                    <span class="ph-cta">→ Solicitar espacio</span>
+              <div v-if="slotHasSocial(slot)" class="slot-social-icons">
+                <a v-if="slot.social_instagram" :href="slot.social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-instagram" title="Instagram"><i class="bi bi-instagram"></i></a>
+                <a v-if="slot.social_tiktok" :href="slot.social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-tiktok" title="TikTok"><i class="bi bi-tiktok"></i></a>
+                <a v-if="slot.social_facebook" :href="slot.social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-facebook" title="Facebook"><i class="bi bi-facebook"></i></a>
+                <a v-if="slot.social_youtube_channel" :href="slot.social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-youtube" title="YouTube"><i class="bi bi-youtube"></i></a>
+                <a v-if="slot.social_website" :href="slot.social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-website" title="Sitio web"><i class="bi bi-globe2"></i></a>
+              </div>
+            </template>
+            <template v-else>
+              <a href="#pauta" class="slot-placeholder-inner">
+                <div class="ph-bg"></div>
+                <div class="ph-content">
+                  <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
+                  <div class="ph-text">
+                    <span class="ph-title">¡Paute Aquí!</span>
+                    <span class="ph-sub">Llega a miles de asociados</span>
                   </div>
-                </a>
-              </template>
-            </component>
-          </div>
-        </Transition>
-        <!-- Dots slots -->
-        <div class="carousel-dots">
-          <button v-for="i in 3" :key="i" class="c-dot"
-            :class="{ active: i - 1 === currentSlot }"
-            @click="goToSlot(i - 1)" :aria-label="`Pauta ${i}`"></button>
+                  <span class="ph-cta">→ Solicitar espacio</span>
+                </div>
+              </a>
+            </template>
+          </component>
         </div>
-      </div>
-    </template>
+      </template>
 
+      <!-- Móvil portrait: carrusel de slots -->
+      <template v-else>
+        <div class="carousel-wrap">
+          <Transition name="ad-fade" mode="out-in">
+            <div :key="`${currentSlot}-${slotPieceIdx[currentSlot]}`" class="ad-slot carousel-slot">
+              <component
+                :is="slots[currentSlot]?.cta_url ? 'a' : 'div'"
+                v-bind="slots[currentSlot]?.cta_url ? { href: slots[currentSlot].cta_url, target: '_blank', rel: 'noopener noreferrer' } : {}"
+                class="slot-inner"
+                :class="{ 'slot-link': slots[currentSlot]?.cta_url }"
+              >
+                <template v-if="slots[currentSlot]?.active && slots[currentSlot]?.pieces?.length">
+                  <SlotPiece
+                    :piece="currentSlotPiece(slots[currentSlot], currentSlot)"
+                    :title="slots[currentSlot].title"
+                    :muted="slotMuted[currentSlot]"
+                  />
+                  <span class="ad-label">Publicidad</span>
+                  <button
+                    v-if="isMediaPiece(currentSlotPiece(slots[currentSlot], currentSlot))"
+                    class="btn-audio"
+                    @click.prevent.stop="toggleAudio(currentSlot)"
+                    :title="slotMuted[currentSlot] ? 'Activar audio' : 'Silenciar'"
+                  >
+                    <i :class="slotMuted[currentSlot] ? 'bi bi-volume-mute-fill' : 'bi bi-volume-up-fill'"></i>
+                  </button>
+                  <div v-if="slotHasSocial(slots[currentSlot])" class="slot-social-icons">
+                    <a v-if="slots[currentSlot].social_instagram" :href="slots[currentSlot].social_instagram" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-instagram" title="Instagram"><i class="bi bi-instagram"></i></a>
+                    <a v-if="slots[currentSlot].social_tiktok" :href="slots[currentSlot].social_tiktok" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-tiktok" title="TikTok"><i class="bi bi-tiktok"></i></a>
+                    <a v-if="slots[currentSlot].social_facebook" :href="slots[currentSlot].social_facebook" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-facebook" title="Facebook"><i class="bi bi-facebook"></i></a>
+                    <a v-if="slots[currentSlot].social_youtube_channel" :href="slots[currentSlot].social_youtube_channel" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-youtube" title="YouTube"><i class="bi bi-youtube"></i></a>
+                    <a v-if="slots[currentSlot].social_website" :href="slots[currentSlot].social_website" target="_blank" rel="noopener" @click.stop class="slot-soc-btn soc-website" title="Sitio web"><i class="bi bi-globe2"></i></a>
+                  </div>
+                </template>
+                <template v-else>
+                  <a href="#pauta" class="slot-placeholder-inner">
+                    <div class="ph-bg"></div>
+                    <div class="ph-content">
+                      <div class="ph-icon-wrap"><i class="bi bi-megaphone-fill ph-icon"></i></div>
+                      <div class="ph-text">
+                        <span class="ph-title">¡Paute Aquí!</span>
+                        <span class="ph-sub">Llega a miles de asociados</span>
+                      </div>
+                      <span class="ph-cta">→ Solicitar espacio</span>
+                    </div>
+                  </a>
+                </template>
+              </component>
+            </div>
+          </Transition>
+          <div class="carousel-dots">
+            <button v-for="i in 3" :key="i" class="c-dot"
+              :class="{ active: i - 1 === currentSlot }"
+              @click="goToSlot(i - 1)" :aria-label="`Pauta ${i}`"></button>
+          </div>
+        </div>
+      </template>
+
+    </div>
   </div>
 </template>
 
@@ -200,6 +204,9 @@ export default { components: { SlotPiece } }
 import { ref, watch, nextTick, onMounted, onUnmounted } from "vue"
 import api from "@/services/apis"
 
+// ── Toggle open/closed ─────────────────────────────────────────────────────
+const isOpen = ref(true)
+
 // ── Orientación ────────────────────────────────────────────────────────────
 const isMobilePortrait = ref(false)
 function checkOrientation() {
@@ -244,7 +251,6 @@ function cleanPauseCleanup(si) {
   if (pauseCleanups[si]) { pauseCleanups[si](); pauseCleanups[si] = null }
 }
 
-// Avanza la pieza del slot si (extrae la lógica del timeout para reusar en pausa)
 function advancePiece(si) {
   cleanPauseCleanup(si)
   clearTimeout(slotTimers[si])
@@ -291,7 +297,6 @@ function attachPauseListener(si, piece) {
       if (evt.source !== iframe?.contentWindow) return
       try {
         const d = JSON.parse(evt.data)
-        // playerState 0 = ended (avanzar); ignorar 2 = paused (puede dispararse al cargar)
         if (d.event === 'infoDelivery' && d.info?.playerState === 0) advancePiece(si)
       } catch {}
     }
@@ -304,7 +309,6 @@ function currentSlotPiece(slot, si) {
   return slot.pieces[slotPieceIdx.value[si] % slot.pieces.length] ?? slot.pieces[0]
 }
 
-// ── Duración inteligente por tipo ──────────────────────────────────────────
 function getVideoDuration(url) {
   return new Promise((resolve) => {
     const v = document.createElement("video")
@@ -318,27 +322,24 @@ function getVideoDuration(url) {
 async function pieceDuration(piece) {
   if (!piece) return 8_000
   if (piece.piece_type === "video" && piece.media_url) return await getVideoDuration(piece.media_url)
-  // Timeout de fallback si el evento 'ended' no llega (proxy, iframe restrictions)
   if (piece.piece_type === "youtube") return isMobilePortrait.value ? 20_000 : 3 * 60 * 1000
-  return 8_000   // imagen / texto
+  return 8_000
 }
 
 function clearSlotTimers() {
   slotTimers.forEach((_, i) => { clearTimeout(slotTimers[i]); slotTimers[i] = null; cleanPauseCleanup(i) })
 }
 
-// ── Scheduling: respeta duración + detecta pausa para avanzar anticipadamente ─
 async function scheduleSlot(si) {
   cleanPauseCleanup(si)
   const slot = slots.value[si]
   if (!slot?.pieces?.length) {
-    // Slot vacío en móvil: mostrar placeholder 5s y luego avanzar
     if (isMobilePortrait.value) {
       slotTimers[si] = setTimeout(() => advancePiece(si), 5_000)
     }
     return
   }
-  if (slot.pieces.length <= 1 && !isMobilePortrait.value) return  // 1 pieza sin rotación en desktop
+  if (slot.pieces.length <= 1 && !isMobilePortrait.value) return
 
   const piece    = slot.pieces[slotPieceIdx.value[si]]
   const duration = await pieceDuration(piece)
@@ -352,11 +353,10 @@ function startTimers() {
     currentSlot.value = 0
     scheduleSlot(0)
   } else {
-    slots.value.forEach((_, si) => scheduleSlot(si))  // independiente en desktop
+    slots.value.forEach((_, si) => scheduleSlot(si))
   }
 }
 
-// Reiniciar timers al cambiar orientación
 watch(isMobilePortrait, () => {
   slotPieceIdx.value = [0, 0, 0]
   startTimers()
@@ -373,7 +373,6 @@ async function loadSlots() {
   try {
     const res = await api.get("/ads/active-slots")
     if (!Array.isArray(res.data)) return
-    // Solo reiniciar rotación si cambiaron los ads asignados a los slots
     const changed = res.data.some((s, i) =>
       s.ad_id !== slots.value[i]?.ad_id ||
       s.pieces?.length !== slots.value[i]?.pieces?.length
@@ -408,16 +407,79 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ad-banner-wrap {
-  width: 100%; height: 100%;
-  display: flex; flex-direction: row;
-  gap: 5px; padding: 5px; box-sizing: border-box;
-  background: #0a0e1a;
+/* ── Sticky root ── */
+.ad-sticky-root {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
 }
 
+/* ── Fila del tab toggle ── */
+.ad-toggle-row {
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ad-toggle-tab {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,.18);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  padding: 5px 20px 6px;
+  cursor: pointer;
+  color: rgba(255,255,255,.85);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  transition: background .2s, color .2s;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 -3px 12px rgba(0,0,0,.35);
+}
+.ad-toggle-tab:hover {
+  background: #2d3f55;
+  color: #fff;
+}
+.ad-toggle-tab i { font-size: 10px; transition: transform .3s; }
+
+/* ── Banner colapsable ── */
+.ad-banner-wrap {
+  pointer-events: auto;
+  width: 100%;
+  height: 120px;
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  padding: 5px;
+  box-sizing: border-box;
+  background: #0a0e1a;
+  overflow: hidden;
+  transition: height .35s cubic-bezier(.4,0,.2,1), opacity .3s, padding .35s;
+  box-shadow: 0 -4px 24px rgba(0,0,0,.5);
+}
+.ad-banner-wrap.is-collapsed {
+  height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* ── Slots ── */
 .ad-slot {
-  flex: 1; border-radius: 10px; overflow: hidden;
-  position: relative; min-width: 0;
+  flex: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  min-width: 0;
 }
 
 .slot-inner {
@@ -506,7 +568,7 @@ onUnmounted(() => {
 }
 .c-dot.active { background: #fff; transform: scale(1.25); }
 
-/* ── Label Publicidad (top-right) ── */
+/* ── Label Publicidad ── */
 .ad-label {
   position: absolute; top: 7px; right: 7px; z-index: 10;
   font-size: 9px; font-weight: 700; letter-spacing: .5px;
@@ -531,7 +593,6 @@ onUnmounted(() => {
 }
 .slot-soc-btn:hover { transform: scale(1.15); filter: brightness(1.1); }
 
-/* Colores reales de cada red social */
 .soc-instagram {
   background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
 }
@@ -541,25 +602,28 @@ onUnmounted(() => {
 .soc-youtube   { background: #ff0000; }
 .soc-website   { background: #374151; }
 
-/* ── Transición ── */
+/* ── Transición carrusel ── */
 .ad-fade-enter-active, .ad-fade-leave-active { transition: opacity .3s; }
 .ad-fade-enter-from, .ad-fade-leave-to       { opacity: 0; }
 
 /* ── Responsive ── */
 @media (max-width: 767px) {
-  .ad-banner-wrap { gap: 3px; padding: 3px; }
-  .ad-slot        { border-radius: 7px; }
-  .ph-content     { gap: 8px; padding: 0 12px; }
-  .ph-icon-wrap   { width: 36px; height: 36px; border-radius: 9px; }
-  .ph-icon        { font-size: 18px; }
-  .ph-title       { font-size: 13px; }
-  .ph-sub         { font-size: 10px; }
-  .ph-cta         { font-size: 10px; padding: 5px 10px; }
-  .btn-audio      { width: 24px; height: 24px; font-size: 10px; bottom: 6px; right: 6px; }
+  .ad-banner-wrap         { height: 100px; gap: 3px; padding: 3px; }
+  .ad-slot                { border-radius: 7px; }
+  .ph-content             { gap: 8px; padding: 0 12px; }
+  .ph-icon-wrap           { width: 36px; height: 36px; border-radius: 9px; }
+  .ph-icon                { font-size: 18px; }
+  .ph-title               { font-size: 13px; }
+  .ph-sub                 { font-size: 10px; }
+  .ph-cta                 { font-size: 10px; padding: 5px 10px; }
+  .btn-audio              { width: 24px; height: 24px; font-size: 10px; bottom: 6px; right: 6px; }
+  .ad-toggle-tab          { font-size: 10px; padding: 4px 16px 5px; }
 }
-@media (max-width: 420px) {
-  .ph-title { font-size: 12px; }
-  .ph-cta   { display: none; }
+@media (max-width: 576px) {
+  .ad-banner-wrap { height: 84px; }
+  .ph-title       { font-size: 12px; }
+  .ph-cta         { display: none; }
+  .ad-toggle-tab  { font-size: 10px; padding: 4px 14px 5px; }
 }
 </style>
 
@@ -587,7 +651,6 @@ onUnmounted(() => {
 .slot-text-title { font-size: 13px; font-weight: 700; color: #fff; text-align: center; margin: 0; }
 .slot-text-body  { font-size: 11px; color: rgba(255,255,255,.75); text-align: center; line-height: 1.5; margin: 0; }
 
-/* Pieza tipo social (Instagram, TikTok, etc.) */
 .slot-social-card {
   flex: 1; width: 100%; height: 100%;
   display: flex; position: relative;
