@@ -3,9 +3,6 @@
 
     <!-- Header -->
     <div class="pedido-header">
-      <button class="pedido-header__back" @click="goBack">
-        <i class="bi bi-arrow-left"></i>
-      </button>
       <div class="pedido-header__info">
         <span class="pedido-header__mesa">{{ order?.table_name }}</span>
         <span class="pedido-header__seq" v-if="order?.daily_seq">#{{ order.daily_seq }}</span>
@@ -16,14 +13,8 @@
       <div class="pedido-header__total">
         {{ formatPrice(order?.amount || 0) }}
       </div>
-      <button
-        class="pedido-header__bill"
-        :class="{ 'pedido-header__bill--active': order?.bill_requested }"
-        @click="requestBill"
-        :disabled="!order || !items.length || order.bill_requested"
-        title="Solicitar cuenta"
-      >
-        <i class="bi bi-receipt"></i>
+      <button class="pedido-header__back" @click="goToDashboard" title="Volver al dashboard">
+        <i class="bi bi-x-lg me-1"></i>Volver
       </button>
     </div>
 
@@ -87,44 +78,31 @@
             class="cart-item"
             :class="{ 'cart-item--unsent': group.hasUnsent, 'cart-item--sent': !group.hasUnsent }"
           >
+            <!-- Fila principal: qty ctrl · nombre · precio · botones -->
             <div class="cart-item__main">
               <div class="cart-item__qty-ctrl">
                 <button class="qty-btn" @click.stop="removeGroupItem(group)"><i class="bi bi-dash-lg"></i></button>
                 <span class="cart-item__qty">{{ group.qty }}</span>
                 <button class="qty-btn" @click.stop="addGroupItem(group)"><i class="bi bi-plus-lg"></i></button>
               </div>
-              <div class="cart-item__detail">
-                <span class="cart-item__name">{{ group.dish_name }}</span>
-                <!-- Assembly selections -->
-                <span
-                  v-for="sel in group.assembly"
-                  :key="sel.category_code"
-                  class="cart-item__assembly"
-                >
-                  {{ sel.item_name }}
-                </span>
-                <!-- Notes -->
-                <span v-if="group.notes" class="cart-item__notes">
-                  <i class="bi bi-pencil-fill me-1"></i>{{ group.notes }}
-                </span>
-                <!-- Changes -->
-                <span v-if="group.changes" class="cart-item__changes">
-                  <i class="bi bi-arrow-left-right me-1"></i>{{ group.changes }}
-                </span>
-                <!-- Sent badge -->
-                <span v-if="!group.hasUnsent" class="cart-item__sent">
-                  <i class="bi bi-check2-circle me-1"></i>Enviado
-                </span>
-              </div>
+              <span class="cart-item__name">{{ group.dish_name }}</span>
               <span class="cart-item__price">{{ formatPrice(group.totalAmount) }}</span>
-            </div>
-            <div class="cart-item__actions">
               <button class="cart-item__btn cart-item__btn--notes" @click="openNotasModal(group.allItems[group.allItems.length - 1])">
                 <i class="bi bi-chat-text"></i>
               </button>
               <button class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
+            </div>
+            <!-- Segunda fila: tags de armado, notas, estado -->
+            <div
+              class="cart-item__tags"
+              v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent"
+            >
+              <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
+              <span v-if="group.notes" class="ci-tag ci-tag--note"><i class="bi bi-pencil-fill"></i> {{ group.notes }}</span>
+              <span v-if="group.changes" class="ci-tag ci-tag--change"><i class="bi bi-arrow-left-right"></i> {{ group.changes }}</span>
+              <span v-if="!group.hasUnsent" class="ci-tag ci-tag--sent"><i class="bi bi-check2-circle"></i> Enviado</span>
             </div>
           </div>
         </div>
@@ -152,16 +130,6 @@
               {{ unsentItems.length }}
             </span>
           </button>
-          <button
-            v-if="items.length && !unsentItems.length"
-            class="btn btn-outline-warning w-100 mt-1"
-            @click="reenviarATV"
-            :disabled="reenviando"
-          >
-            <span v-if="reenviando" class="spinner-border spinner-border-sm me-1"></span>
-            <i class="bi bi-arrow-repeat me-1" v-else></i>
-            {{ reenvioOk ? 'Reenviado ✓' : 'Reenviar a TV' }}
-          </button>
         </div>
       </div>
 
@@ -186,16 +154,6 @@
         <span v-if="sending" class="spinner-border spinner-border-sm me-1"></span>
         <i class="bi bi-send me-1" v-else></i>
         Enviar ({{ unsentItems.length }})
-      </button>
-      <button
-        v-if="items.length && !unsentItems.length"
-        class="btn btn-warning btn-sm"
-        @click="reenviarATV"
-        :disabled="reenviando"
-      >
-        <span v-if="reenviando" class="spinner-border spinner-border-sm me-1"></span>
-        <i class="bi bi-arrow-repeat me-1" v-else></i>
-        {{ reenvioOk ? '✓' : 'TV' }}
       </button>
     </div>
 
@@ -258,8 +216,6 @@ const cartOpen        = ref(false)
 const assemblyDish    = ref(null)
 const notasItem       = ref(null)
 const sending         = ref(false)
-const reenviando      = ref(false)
-const reenvioOk       = ref(false)
 const catTabsRef      = ref(null)
 
 const currentCategoryDishes = computed(() => {
@@ -347,16 +303,16 @@ async function loadNotes() {
   } catch { /* silencioso */ }
 }
 
-async function goBack() {
+async function goToDashboard() {
   if (items.value.some(i => !i.sent)) {
-    if (!confirm('Hay items sin enviar. ¿Cancelar el pedido y liberar la mesa?')) return
+    if (!confirm('Hay ítems sin enviar. ¿Descartar y volver al dashboard?')) return
+    try {
+      await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
+        data: { table_id: tableId.value }
+      })
+    } catch { /* silencioso */ }
   }
-  try {
-    await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
-      data: { table_id: tableId.value }
-    })
-  } catch { /* silencioso si la mesa ya estaba libre */ }
-  router.push('/pos/comanda/mesas')
+  router.push('/restaurante')
 }
 
 function scrollCats(dir) {
@@ -549,27 +505,11 @@ async function sendToKitchen() {
       date:         order.value.date,
     })
     items.value.forEach(i => { i.sent = true })
+    router.push('/restaurante')
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al enviar a cocina')
   } finally {
     sending.value = false
-  }
-}
-
-async function reenviarATV() {
-  if (!order.value || reenviando.value) return
-  reenviando.value = true
-  try {
-    await apiComanda.post('/api/pos/comanda/orden/reenviar', {
-      order_number: order.value.order_number,
-      date:         order.value.date,
-    })
-    reenvioOk.value = true
-    setTimeout(() => { reenvioOk.value = false }, 3000)
-  } catch (e) {
-    alert(e.response?.data?.detail || 'Error al reenviar a cocina TV')
-  } finally {
-    reenviando.value = false
   }
 }
 
@@ -609,15 +549,18 @@ async function requestBill() {
 
 .pedido-header__back {
   background: none;
-  border: none;
-  font-size: 1.1rem;
+  border: 1.5px solid #e2e8f0;
+  font-size: .8rem;
+  font-weight: 600;
   color: #64748b;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 5px 12px;
   border-radius: 8px;
   transition: all .2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.pedido-header__back:hover { background: #f1f5f9; color: #1e293b; }
+.pedido-header__back:hover { background: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
 
 .pedido-header__info {
   display: flex;
@@ -795,41 +738,42 @@ async function requestBill() {
 .cart-items {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .cart-item {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 6px 8px;
 }
+.cart-item--sent { background: #f0fdf4; border-color: #bbf7d0; }
 
 .cart-item__main {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
+  gap: 6px;
+  align-items: center;
 }
 
 .cart-item__qty-ctrl {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 1px;
   flex-shrink: 0;
 }
 
 .qty-btn {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 1.5px solid #e2e8f0;
   background: #fff;
   color: #2563eb;
-  font-size: .75rem;
+  font-size: .65rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -843,76 +787,66 @@ async function requestBill() {
 .cart-item__qty {
   font-weight: 700;
   color: #2563eb;
-  font-size: .9rem;
-  min-width: 20px;
+  font-size: .82rem;
+  min-width: 18px;
   text-align: center;
 }
 
-.cart-item__detail {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
 .cart-item__name {
-  font-size: .875rem;
+  flex: 1;
+  font-size: .82rem;
   font-weight: 600;
   color: #1e293b;
-}
-
-.cart-item__assembly {
-  font-size: .75rem;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.cart-item__notes {
-  font-size: .72rem;
-  color: #475569;
-  font-style: italic;
-}
-
-.cart-item__changes {
-  font-size: .72rem;
-  color: #d97706;
-  font-weight: 600;
-}
-
-.cart-item__sent {
-  font-size: .7rem;
-  color: #16a34a;
-  font-weight: 600;
-}
-
-.cart-item__price {
-  font-size: .85rem;
-  font-weight: 700;
-  color: #1e293b;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cart-item__actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  justify-content: flex-end;
+.cart-item__price {
+  font-size: .8rem;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .cart-item__btn {
   background: none;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: .8rem;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 5px;
+  font-size: .78rem;
   cursor: pointer;
   transition: all .15s;
+  flex-shrink: 0;
+  line-height: 1;
 }
-.cart-item__btn--notes { color: #64748b; }
-.cart-item__btn--notes:hover { border-color: #2563eb; color: #2563eb; }
-.cart-item__btn--del { color: #ef4444; }
-.cart-item__btn--del:hover { border-color: #ef4444; background: #fff5f5; }
+.cart-item__btn--notes { color: #94a3b8; }
+.cart-item__btn--notes:hover { color: #2563eb; background: #eff6ff; }
+.cart-item__btn--del { color: #fca5a5; }
+.cart-item__btn--del:hover { color: #ef4444; background: #fff5f5; }
+
+/* Tags de armado/notas en fila */
+.cart-item__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+  padding-left: 34px;
+}
+
+.ci-tag {
+  font-size: .68rem;
+  background: #e2e8f0;
+  color: #475569;
+  padding: 1px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.ci-tag--note   { background: #fef9c3; color: #92400e; font-style: italic; }
+.ci-tag--change { background: #fef3c7; color: #d97706; font-weight: 600; }
+.ci-tag--sent   { background: #dcfce7; color: #16a34a; font-weight: 600; }
 
 .cart-empty {
   flex: 1;
