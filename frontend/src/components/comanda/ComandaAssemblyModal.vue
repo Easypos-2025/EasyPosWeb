@@ -112,6 +112,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import apiComanda from '@/services/apiComanda'
+import { showToast } from '@/utils/toast'
 
 const props = defineProps({
   dish:           Object,
@@ -188,7 +189,7 @@ async function add() {
     })
     emit('added', res.data)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al agregar el plato')
+    showToast(e.response?.data?.detail || 'Error al agregar el plato', 'error', 3000)
   } finally {
     saving.value = false
   }

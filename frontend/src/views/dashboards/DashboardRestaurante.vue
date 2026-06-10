@@ -351,6 +351,7 @@ import api from '@/services/apis.js'
 import apiComanda from '@/services/apiComanda.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
+import { showToast } from '@/utils/toast'
 
 const companyStore = useCompanyStore()
 const router = useRouter()
@@ -636,7 +637,7 @@ async function despacharPedido(pedido) {
     })
     pedidosTV.value = pedidosTV.value.filter(p => p.order_number !== pedido.order_number)
   } catch (e) {
-    alert(e?.response?.data?.detail || 'Error al despachar')
+    showToast(e?.response?.data?.detail || 'Error al despachar', 'error', 3000)
     pedido.despachando = false
   }
 }
@@ -720,7 +721,7 @@ async function irAComanda(tableId, tableName, waiterId) {
     cerrarWizard()
     router.push(`/pos/comanda/pedido/${tableId}`)
   } catch (e) {
-    alert(e?.response?.data?.detail || 'Error al abrir la mesa')
+    showToast(e?.response?.data?.detail || 'Error al abrir la mesa', 'error', 3000)
   } finally {
     wizard.value.abriendo = false
   }

@@ -188,6 +188,8 @@ import apiComanda from '@/services/apiComanda'
 import ComandaProductCard from '@/components/comanda/ComandaProductCard.vue'
 import ComandaAssemblyModal from '@/components/comanda/ComandaAssemblyModal.vue'
 import ComandaNotasModal from '@/components/comanda/ComandaNotasModal.vue'
+import Swal from 'sweetalert2'
+import { showToast } from '@/utils/toast'
 
 const route  = useRoute()
 const router = useRouter()
@@ -305,7 +307,16 @@ async function loadNotes() {
 
 async function goToDashboard() {
   if (items.value.some(i => !i.sent)) {
-    if (!confirm('Hay ítems sin enviar. ¿Descartar y volver al dashboard?')) return
+    const result = await Swal.fire({
+      title: 'Ítems sin enviar',
+      text: 'Hay ítems sin enviar. ¿Descartar y volver al dashboard?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#e11d48',
+      confirmButtonText: 'Sí, descartar',
+      cancelButtonText: 'Cancelar',
+    })
+    if (!result.isConfirmed) return
     try {
       await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
         data: { table_id: tableId.value }
@@ -359,7 +370,7 @@ async function addSimpleDish(dish) {
     })
     if (order.value) order.value.amount = (order.value.amount || 0) + res.data.amount
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al agregar el plato')
+    showToast(e.response?.data?.detail || 'Error al agregar el plato', 'error', 3000)
   }
 }
 
@@ -400,7 +411,7 @@ async function onNotasSave({ notes, changes }) {
     }
     notasItem.value = null
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al guardar las novedades')
+    showToast(e.response?.data?.detail || 'Error al guardar las novedades', 'error', 3000)
   }
 }
 
@@ -421,7 +432,7 @@ async function changeQty(item, delta) {
     item.amount   = unitPrice * newQty
     if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - oldAmount + item.amount)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al actualizar cantidad')
+    showToast(e.response?.data?.detail || 'Error al actualizar cantidad', 'error', 3000)
   }
 }
 
@@ -451,7 +462,7 @@ async function addGroupItem(group) {
     })
     if (order.value) order.value.amount = (order.value.amount || 0) + res.data.amount
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al agregar')
+    showToast(e.response?.data?.detail || 'Error al agregar', 'error', 3000)
   }
 }
 
@@ -475,12 +486,21 @@ async function removeGroupItem(group) {
       items.value.splice(idx, 1)
     }
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al eliminar')
+    showToast(e.response?.data?.detail || 'Error al eliminar', 'error', 3000)
   }
 }
 
 async function removeItem(item) {
-  if (!confirm(`¿Eliminar ${item.dish_name}?`)) return
+  const result = await Swal.fire({
+    title: '¿Eliminar plato?',
+    text: `¿Eliminar ${item.dish_name} del pedido?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   try {
     await apiComanda.delete('/api/pos/comanda/orden/item', {
       data: {
@@ -496,7 +516,7 @@ async function removeItem(item) {
       items.value.splice(idx, 1)
     }
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al eliminar')
+    showToast(e.response?.data?.detail || 'Error al eliminar', 'error', 3000)
   }
 }
 
@@ -511,7 +531,7 @@ async function sendToKitchen() {
     items.value.forEach(i => { i.sent = true })
     router.push('/restaurante')
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al enviar a cocina')
+    showToast(e.response?.data?.detail || 'Error al enviar a cocina', 'error', 3000)
   } finally {
     sending.value = false
   }
@@ -519,14 +539,23 @@ async function sendToKitchen() {
 
 async function requestBill() {
   if (!order.value || order.value.bill_requested) return
-  if (!confirm('¿Solicitar la cuenta para esta mesa?')) return
+  const result = await Swal.fire({
+    title: '¿Solicitar la cuenta?',
+    text: '¿Solicitar la cuenta para esta mesa?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#2563eb',
+    confirmButtonText: 'Sí, solicitar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   try {
     await apiComanda.post('/api/pos/comanda/mesa/solicitar-cuenta', {
       table_id: tableId.value,
     })
     if (order.value) order.value.bill_requested = true
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error')
+    showToast(e.response?.data?.detail || 'Error', 'error', 3000)
   }
 }
 </script>

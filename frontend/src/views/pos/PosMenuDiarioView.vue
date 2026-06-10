@@ -98,6 +98,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/apis'
+import { showToast as showToastUtil } from '@/utils/toast'
 
 const router   = useRouter()
 const loading  = ref(false)
@@ -147,7 +148,7 @@ async function loadMenu() {
     categories.value  = res.data.categories
     displayDate.value = formatDisplayDate(res.data.date)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al cargar el menú diario')
+    showToastUtil(e.response?.data?.detail || 'Error al cargar el menú diario', 'error', 3000)
   } finally {
     loading.value = false
   }
@@ -170,7 +171,7 @@ async function guardar() {
       : 'Menú del día borrado'
     )
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al guardar el menú')
+    showToastUtil(e.response?.data?.detail || 'Error al guardar el menú', 'error', 3000)
   } finally {
     saving.value = false
   }

@@ -160,6 +160,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '@/services/apis'
+import Swal from 'sweetalert2'
+import { showToast } from '@/utils/toast'
 
 const screens      = ref([])
 const printers     = ref([])
@@ -230,13 +232,31 @@ async function guardar() {
 }
 
 async function eliminarPantalla(s) {
-  if (!confirm(`¿Eliminar la pantalla "${s.name}" y todos sus dispositivos?`)) return
+  const result = await Swal.fire({
+    title: '¿Eliminar pantalla?',
+    text: `¿Eliminar la pantalla "${s.name}" y todos sus dispositivos?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   await api.delete(`/api/tv/screens/${s.id}`)
   await cargarScreens()
 }
 
 async function revocarDispositivo(screen, device) {
-  if (!confirm(`¿Revocar acceso a "${device.device_name || 'TV'}"?`)) return
+  const result = await Swal.fire({
+    title: '¿Revocar acceso?',
+    text: `¿Revocar acceso a "${device.device_name || 'TV'}"?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#2563eb',
+    confirmButtonText: 'Sí, revocar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   await api.delete(`/api/tv/screens/${screen.id}/devices/${device.id}`)
   await cargarScreens()
 }
@@ -273,7 +293,7 @@ async function refrescarPantallas() {
       showConfirmButton: false,
     })
   } catch {
-    alert('No se pudo enviar la señal de recarga.')
+    showToast('No se pudo enviar la señal de recarga.', 'error', 3000)
   } finally {
     refrescando.value = false
   }
@@ -281,8 +301,8 @@ async function refrescarPantallas() {
 
 function copiarURL(code) {
   navigator.clipboard?.writeText(`${origin}/tv/${code}`)
-    .then(() => alert(`URL copiada: ${origin}/tv/${code}`))
-    .catch(() => alert(`URL: ${origin}/tv/${code}`))
+    .then(() => showToast('URL copiada al portapapeles', 'success', 2000))
+    .catch(() => showToast(`URL: ${origin}/tv/${code}`, 'info', 2000))
 }
 
 onMounted(cargarScreens)

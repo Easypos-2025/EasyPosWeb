@@ -763,14 +763,13 @@ async def agregar_item(
 ):
     cid = payload["company_id"]
 
-    # Verificar pedido activo — buscar solo por Nro_Pedido (sin filtrar por Fecha exacta)
-    # porque temp_comanda.Fecha es DATETIME y puede diferir en formato (VB6 vs web).
+    # Verificar pedido activo — sin filtro de fecha (un pedido puede cruzar días)
     order_row = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Fecha FROM temp_comanda
         WHERE Nro_Pedido=:on AND company_id=:cid
-          AND DATE(Fecha)=:today AND Nro_Factura='0' AND Cancelado=0
+          AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
-    """), {"on": data.order_number, "cid": cid, "today": _today()})).mappings().first()
+    """), {"on": data.order_number, "cid": cid})).mappings().first()
     if not order_row:
         raise HTTPException(status_code=404, detail="Orden no encontrada o ya cerrada")
 

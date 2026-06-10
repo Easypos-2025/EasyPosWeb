@@ -400,6 +400,7 @@ import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
+import Swal from 'sweetalert2'
 
 const tab = ref('history')
 
@@ -526,7 +527,16 @@ async function saveEditItem() {
 
 // ── CRUD eliminar ítem ────────────────────────────────────────────────────────
 async function deleteItem(r) {
-  if (!confirm(`¿Eliminar "${r.item_name}" de este corte?`)) return
+  const result = await Swal.fire({
+    title: '¿Eliminar ítem?',
+    text: `¿Eliminar "${r.item_name}" de este corte?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   saving.value = true
   try {
     await api.delete(`/api/inventory/physical/${r.id}`)

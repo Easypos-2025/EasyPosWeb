@@ -138,6 +138,7 @@ import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import { showToast } from '@/utils/toast'
+import Swal from 'sweetalert2'
 
 const rows        = ref([])
 const supplyItems = ref([])
@@ -243,7 +244,16 @@ async function save() {
 }
 
 async function remove(row) {
-  if (!confirm(`¿Anular entrada de ${fmt(row.cantidad)} ${row.unit_name} de ${row.item_name}?\nEsto restará del stock.`)) return
+  const result = await Swal.fire({
+    title: '¿Anular entrada?',
+    text: `¿Anular entrada de ${fmt(row.cantidad)} ${row.unit_name} de ${row.item_name}? Esto restará del stock.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#2563eb',
+    confirmButtonText: 'Sí, anular',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   try {
     await api.delete(`/api/inventory/entries/${row.id}`)
     showToast('Entrada anulada', 'success')

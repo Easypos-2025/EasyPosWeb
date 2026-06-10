@@ -93,6 +93,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
+import Swal from 'sweetalert2'
+import { showToast } from '@/utils/toast'
 
 const props = defineProps({
   table: { type: Object, required: true },
@@ -175,7 +177,7 @@ async function enviarTV() {
     tvOk.value = true
     setTimeout(() => { tvOk.value = false }, 3000)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al reenviar a TV')
+    showToast(e.response?.data?.detail || 'Error al reenviar a TV', 'error', 3000)
   } finally {
     enviando.value = false
   }
@@ -196,7 +198,16 @@ function agregarMas() {
 }
 
 async function eliminarPedido() {
-  if (!confirm(`¿Eliminar el pedido de ${props.table.name}? Esta acción no se puede deshacer.`)) return
+  const result = await Swal.fire({
+    title: '¿Eliminar pedido?',
+    text: `¿Eliminar el pedido de ${props.table.name}? Esta acción no se puede deshacer.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   cancelando.value = true
   try {
     await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
@@ -204,7 +215,7 @@ async function eliminarPedido() {
     })
     emit('cancelled', props.table.id)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al eliminar el pedido')
+    showToast(e.response?.data?.detail || 'Error al eliminar el pedido', 'error', 3000)
   } finally {
     cancelando.value = false
   }

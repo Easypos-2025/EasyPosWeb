@@ -112,6 +112,7 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import Swal from 'sweetalert2'
 
 const items      = ref([])
 const loading    = ref(false)
@@ -145,7 +146,16 @@ function toggleExpand(id) {
 }
 
 async function deleteMsg(id) {
-  if (!confirm("¿Eliminar este mensaje enviado?")) return
+  const result = await Swal.fire({
+    title: '¿Eliminar mensaje?',
+    text: '¿Eliminar este mensaje enviado?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  })
+  if (!result.isConfirmed) return
   try {
     await api.delete(`/user-notifications/${id}`)
     items.value = items.value.filter(n => n.id !== id)

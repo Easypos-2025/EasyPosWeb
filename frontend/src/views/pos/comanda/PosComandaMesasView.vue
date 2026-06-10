@@ -106,6 +106,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
+import { showToast } from '@/utils/toast'
 
 const router = useRouter()
 
@@ -192,7 +193,7 @@ async function openTable() {
     openingTable.value = null
     router.push(`/pos/comanda/pedido/${tid}`)
   } catch (e) {
-    alert(e.response?.data?.detail || 'Error al abrir la mesa')
+    showToast(e.response?.data?.detail || 'Error al abrir la mesa', 'error', 3000)
   } finally {
     opening.value = false
   }
