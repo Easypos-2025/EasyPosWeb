@@ -96,11 +96,10 @@
         <button class="btn btn-outline-secondary btn-sm" @click="$emit('close')">Cancelar</button>
         <button
           class="btn btn-primary btn-sm"
-          :disabled="!isValid || saving"
+          :disabled="!isValid"
           @click="add"
         >
-          <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
-          <i class="bi bi-plus-circle me-1" v-else></i>
+          <i class="bi bi-plus-circle me-1"></i>
           Agregar
         </button>
       </div>
@@ -112,13 +111,9 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import apiComanda from '@/services/apiComanda'
-import { showToast } from '@/utils/toast'
 
 const props = defineProps({
   dish:           Object,
-  orderNumber:    String,
-  orderDate:      String,
-  tableId:        Number,
   preloadedNotes: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close', 'added'])
@@ -128,7 +123,6 @@ const categories    = ref([])
 const fixedProducts = ref([])
 const loadingMenu   = ref(false)
 const loadError     = ref(false)
-const saving        = ref(false)
 const selections    = ref({})  // { category_code: { item_id, item_name, discount_qty } }
 
 const totalSelected = computed(() =>
@@ -169,30 +163,15 @@ function formatPrice(v) {
   }).format(v)
 }
 
-async function add() {
-  if (!isValid.value || saving.value) return
-  saving.value = true
-  try {
-    const assemblySelections = Object.entries(selections.value).map(([cc, sel]) => ({
-      category_code: parseInt(cc),
-      item_id:       sel.item_id,
-      item_name:     sel.item_name,
-      discount_qty:  sel.discount_qty,
-    }))
-    const res = await apiComanda.post('/api/pos/comanda/orden/item', {
-      order_number:        props.orderNumber,
-      date:                props.orderDate,
-      table_id:            props.tableId,
-      dish_id:             props.dish.id,
-      quantity:            qty.value,
-      assembly_selections: assemblySelections,
-    })
-    emit('added', res.data)
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al agregar el plato', 'error', 3000)
-  } finally {
-    saving.value = false
-  }
+function add() {
+  if (!isValid.value) return
+  const assemblySelections = Object.entries(selections.value).map(([cc, sel]) => ({
+    category_code: parseInt(cc),
+    item_id:       sel.item_id,
+    item_name:     sel.item_name,
+    discount_qty:  sel.discount_qty,
+  }))
+  emit('added', { dish: props.dish, assemblySelections, qty: qty.value })
 }
 
 watch(() => props.dish, async (dish) => {

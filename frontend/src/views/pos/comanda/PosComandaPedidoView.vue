@@ -11,11 +11,8 @@
         </span>
       </div>
       <div class="pedido-header__total">
-        {{ formatPrice(order?.amount || 0) }}
+        {{ formatPrice(localTotal) }}
       </div>
-      <button class="pedido-header__back" @click="goToDashboard" title="Volver al dashboard">
-        <i class="bi bi-x-lg me-1"></i>Volver
-      </button>
     </div>
 
     <!-- Tabs de categorías -->
@@ -64,8 +61,8 @@
           <span class="cart-panel__title">
             <i class="bi bi-bag me-2"></i>Pedido
           </span>
-          <span class="cart-panel__count">{{ items.length }} platos</span>
-          <span class="cart-panel__count" v-if="groupedItems.length !== items.length" style="font-size:.72rem;color:#94a3b8;margin-left:4px">({{ groupedItems.length }} líneas)</span>
+          <span class="cart-panel__count">{{ visibleItemsCount }} platos</span>
+          <span class="cart-panel__count" v-if="groupedItems.length !== visibleItemsCount" style="font-size:.72rem;color:#94a3b8;margin-left:4px">({{ groupedItems.length }} líneas)</span>
           <button class="cart-panel__close d-md-none" @click="cartOpen = false">
             <i class="bi bi-chevron-down"></i>
           </button>
@@ -87,7 +84,12 @@
               </div>
               <span class="cart-item__name">{{ group.dish_name }}</span>
               <span class="cart-item__price">{{ formatPrice(group.totalAmount) }}</span>
-              <button class="cart-item__btn cart-item__btn--notes" @click="openNotasModal(group.allItems[group.allItems.length - 1])">
+              <button
+                class="cart-item__btn cart-item__btn--notes"
+                :disabled="group.lastSent"
+                :title="group.lastSent ? 'Plato ya enviado a cocina' : 'Agregar nota'"
+                @click="openNotasModal(group.allItems[group.allItems.length - 1])"
+              >
                 <i class="bi bi-chat-text"></i>
               </button>
               <button class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
@@ -116,19 +118,22 @@
         <div class="cart-footer">
           <div class="cart-total">
             <span>Total</span>
-            <span class="cart-total__value">{{ formatPrice(order?.amount || 0) }}</span>
+            <span class="cart-total__value">{{ formatPrice(localTotal) }}</span>
           </div>
           <button
             class="btn btn-success w-100"
-            @click="sendToKitchen"
-            :disabled="!unsentItems.length || sending"
+            @click="submitOrder"
+            :disabled="!hasChanges || sending"
           >
             <span v-if="sending" class="spinner-border spinner-border-sm me-2"></span>
             <i class="bi bi-send me-2" v-else></i>
             Enviar
-            <span class="badge bg-white text-success ms-2" v-if="unsentItems.length">
-              {{ unsentItems.length }}
+            <span class="badge bg-white text-success ms-2" v-if="newItemsCount">
+              {{ newItemsCount }}
             </span>
+          </button>
+          <button class="btn btn-outline-secondary w-100 btn-sm" @click="cancelOrder">
+            <i class="bi bi-x-circle me-1"></i>Cancelar
           </button>
         </div>
       </div>
@@ -139,21 +144,24 @@
     <div class="mobile-bar d-md-none">
       <div class="mobile-bar__total">
         <span class="text-muted small">Total</span>
-        <span class="fw-bold">{{ formatPrice(order?.amount || 0) }}</span>
+        <span class="fw-bold">{{ formatPrice(localTotal) }}</span>
       </div>
       <button class="btn btn-outline-primary btn-sm" @click="cartOpen = true">
         <i class="bi bi-bag me-1"></i>
-        Ver pedido
-        <span class="badge bg-primary text-white ms-1" v-if="items.length">{{ items.length }}</span>
+        Ver
+        <span class="badge bg-primary text-white ms-1" v-if="visibleItemsCount">{{ visibleItemsCount }}</span>
       </button>
       <button
         class="btn btn-success btn-sm"
-        @click="sendToKitchen"
-        :disabled="!unsentItems.length || sending"
+        @click="submitOrder"
+        :disabled="!hasChanges || sending"
       >
         <span v-if="sending" class="spinner-border spinner-border-sm me-1"></span>
         <i class="bi bi-send me-1" v-else></i>
-        Enviar ({{ unsentItems.length }})
+        Enviar
+      </button>
+      <button class="btn btn-outline-secondary btn-sm mobile-bar__cancel" @click="cancelOrder">
+        <i class="bi bi-x-circle"></i>
       </button>
     </div>
 
@@ -161,9 +169,6 @@
     <ComandaAssemblyModal
       v-if="assemblyDish"
       :dish="assemblyDish"
-      :order-number="order?.order_number"
-      :order-date="order?.date"
-      :table-id="tableId"
       :preloaded-notes="preloadedNotes"
       @close="assemblyDish = null"
       @added="onItemAdded"
@@ -191,84 +196,107 @@ import ComandaNotasModal from '@/components/comanda/ComandaNotasModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
-const route  = useRoute()
-const router = useRouter()
+const route   = useRoute()
+const router  = useRouter()
 const tableId = computed(() => parseInt(route.params.tableId))
 
-// Contexto pasado desde el wizard (disponible inmediatamente, antes del loadOrder)
 const ctx = (() => {
   try { return JSON.parse(localStorage.getItem('pedido_ctx') || '{}') } catch { return {} }
 })()
 
-const order           = ref(ctx.table_id === parseInt(route.params.tableId) ? {
-  order_number: ctx.order_number,
-  date:         ctx.date,
-  table_name:   ctx.table_name,
-  waiter_name:  ctx.waiter_name,
-  waiter_id:    ctx.waiter_id,
-  amount:       0,
+const order          = ref(ctx.table_id === parseInt(route.params.tableId) ? {
+  order_number:  ctx.order_number,
+  date:          ctx.date,
+  table_name:    ctx.table_name,
+  waiter_name:   ctx.waiter_name,
+  waiter_id:     ctx.waiter_id,
+  amount:        0,
   bill_requested: false,
-  daily_seq:    null,
+  daily_seq:     null,
 } : null)
-const items           = ref([])
-const menuCategories  = ref([])
-const activeCategory  = ref(null)
-const preloadedNotes  = ref([])
-const cartOpen        = ref(false)
-const assemblyDish    = ref(null)
-const notasItem       = ref(null)
-const sending         = ref(false)
-const catTabsRef      = ref(null)
+const items          = ref([])
+const menuCategories = ref([])
+const activeCategory = ref(null)
+const preloadedNotes = ref([])
+const cartOpen       = ref(false)
+const assemblyDish   = ref(null)
+const notasItem      = ref(null)
+const sending        = ref(false)
+const catTabsRef     = ref(null)
+let _tempId = -1
 
-const currentCategoryDishes = computed(() => {
-  const cat = menuCategories.value.find(c => c.category_id === activeCategory.value)
-  return cat?.dishes || []
-})
-
-const unsentItems = computed(() => items.value.filter(i => !i.sent))
-
-// Grouping helpers
+// ── Helpers ────────────────────────────────────────────────────────────────
 function _assemblyKey(assembly) {
   return JSON.stringify(
     [...(assembly || [])].sort((a, b) => (a.category_code ?? 0) - (b.category_code ?? 0))
   )
 }
 
+function formatPrice(v) {
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v || 0)
+}
+
+// ── Computed ───────────────────────────────────────────────────────────────
+const currentCategoryDishes = computed(() => {
+  const cat = menuCategories.value.find(c => c.category_id === activeCategory.value)
+  return cat?.dishes || []
+})
+
 const groupedItems = computed(() => {
   const groups = []
-  const map = new Map()
+  const map    = new Map()
   for (const item of items.value) {
+    if (item._deleted) continue
     const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
     if (map.has(k)) {
       const g = map.get(k)
-      g.qty += item.quantity
+      g.qty        += item.quantity
       g.totalAmount += item.amount
       g.allItems.push(item)
-      if (!item.sent) g.hasUnsent = true
+      if (!item.sent || item.isNew) g.hasUnsent = true
+      if (item.isNew) g.hasNew = true
     } else {
-      const g = {
+      map.set(k, {
         key: k, dish_id: item.dish_id, dish_name: item.dish_name,
         qty: item.quantity, totalAmount: item.amount,
         assembly: item.assembly, notes: item.notes, changes: item.changes,
-        hasUnsent: !item.sent, allItems: [item],
-      }
-      map.set(k, g)
-      groups.push(g)
+        hasUnsent: !item.sent || item.isNew,
+        hasNew: item.isNew,
+        allItems: [item],
+      })
+      groups.push(map.get(k))
     }
+  }
+  for (const g of groups) {
+    g.lastSent  = g.allItems.every(i => i.sent && !i.isNew)
+    g.unitPrice = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
   }
   return groups
 })
 
-function formatPrice(v) {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v)
-}
+const localTotal = computed(() =>
+  items.value.filter(i => !i._deleted).reduce((s, i) => s + i.amount, 0)
+)
 
+const hasChanges = computed(() =>
+  items.value.some(i => i.isNew || i._dirty || i._deleted)
+)
+
+const newItemsCount = computed(() =>
+  items.value.filter(i => i.isNew && !i._deleted).length
+)
+
+const visibleItemsCount = computed(() =>
+  items.value.filter(i => !i._deleted).length
+)
+
+// ── Lifecycle ──────────────────────────────────────────────────────────────
 onMounted(async () => {
-  // Garantizar company_id correcto antes de cualquier llamada a la API
   if (ctx.company_id) localStorage.setItem('waiter_company_id', String(ctx.company_id))
   await Promise.all([loadOrder(), loadMenu(), loadNotes()])
 })
 
+// ── Data loading ───────────────────────────────────────────────────────────
 async function loadOrder() {
   try {
     const params = {}
@@ -276,7 +304,15 @@ async function loadOrder() {
     const res = await apiComanda.get(`/api/pos/comanda/mesa/${tableId.value}/orden`, { params })
     if (res.data.order) {
       order.value = res.data.order
-      items.value = res.data.items
+      items.value = res.data.items.map(i => ({
+        ...i,
+        isNew:        false,
+        _deleted:     false,
+        _dirty:       false,
+        _origQty:     i.quantity,
+        _origNotes:   i.notes,
+        _origChanges: i.changes,
+      }))
     } else if (!ctx.order_number) {
       const openRes = await apiComanda.post('/api/pos/comanda/mesa/abrir', {
         table_id: tableId.value, guests_count: 1,
@@ -295,7 +331,7 @@ async function loadMenu() {
     if (res.data.categories.length && !activeCategory.value) {
       activeCategory.value = res.data.categories[0].category_id
     }
-  } catch { /* silencioso - sin menú no se puede pedir */ }
+  } catch { /* silencioso */ }
 }
 
 async function loadNotes() {
@@ -305,27 +341,7 @@ async function loadNotes() {
   } catch { /* silencioso */ }
 }
 
-async function goToDashboard() {
-  if (items.value.some(i => !i.sent)) {
-    const result = await Swal.fire({
-      title: 'Ítems sin enviar',
-      text: 'Hay ítems sin enviar. ¿Descartar y volver al dashboard?',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#e11d48',
-      confirmButtonText: 'Sí, descartar',
-      cancelButtonText: 'Cancelar',
-    })
-    if (!result.isConfirmed) return
-    try {
-      await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
-        data: { table_id: tableId.value }
-      })
-    } catch { /* silencioso */ }
-  }
-  router.push('/restaurante')
-}
-
+// ── Navigation ─────────────────────────────────────────────────────────────
 function scrollCats(dir) {
   if (!catTabsRef.value) return
   catTabsRef.value.scrollBy({ left: dir * 200, behavior: 'smooth' })
@@ -339,224 +355,152 @@ function selectCategory(catId) {
   })
 }
 
+// ── Local item management (no API calls) ───────────────────────────────────
 function onDishSelect(dish) {
-  if (dish.has_assembly) {
-    assemblyDish.value = dish
-  } else {
-    addSimpleDish(dish)
-  }
+  if (dish.has_assembly) assemblyDish.value = dish
+  else addSimpleDish(dish)
 }
 
-async function addSimpleDish(dish) {
-  if (!order.value) return
-  try {
-    const res = await apiComanda.post('/api/pos/comanda/orden/item', {
-      order_number: order.value.order_number,
-      date:         order.value.date,
-      table_id:     tableId.value,
-      dish_id:      dish.id,
-      quantity:     1,
-    })
-    items.value.push({
-      dish_id:   dish.id,
-      item:      res.data.item,
-      dish_name: dish.name,
-      quantity:  1,
-      amount:    res.data.amount,
-      notes:     null,
-      changes:   null,
-      assembly:  [],
-      sent:      false,
-    })
-    if (order.value) order.value.amount = (order.value.amount || 0) + res.data.amount
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al agregar el plato', 'error', 3000)
-  }
+function addSimpleDish(dish) {
+  items.value.push({
+    dish_id: dish.id, item: _tempId--,
+    dish_name: dish.name, quantity: 1, amount: dish.price || 0,
+    notes: null, changes: null, assembly: [],
+    sent: false, isNew: true, _deleted: false, _dirty: false,
+  })
 }
 
-function onItemAdded(data) {
+function onItemAdded({ dish, assemblySelections, qty }) {
   assemblyDish.value = null
-  // Reload order to get updated state
-  loadOrder()
+  items.value.push({
+    dish_id: dish.id, item: _tempId--,
+    dish_name: dish.name, quantity: qty, amount: (dish.price || 0) * qty,
+    notes: null, changes: null, assembly: assemblySelections,
+    sent: false, isNew: true, _deleted: false, _dirty: false,
+  })
 }
 
-function openNotasModal(item) {
-  let categoryId = null
-  for (const cat of menuCategories.value) {
-    if (cat.dishes?.some(d => d.id === item.dish_id)) {
-      categoryId = cat.category_id
-      break
-    }
+function addGroupItem(group) {
+  items.value.push({
+    dish_id: group.dish_id, item: _tempId--,
+    dish_name: group.dish_name, quantity: 1, amount: group.unitPrice,
+    notes: group.notes || null, changes: group.changes || null,
+    assembly: group.assembly || [],
+    sent: false, isNew: true, _deleted: false, _dirty: false,
+  })
+}
+
+function removeGroupItem(group) {
+  // Prefer removing the last unsubmitted (new) item first
+  const lastNew = [...group.allItems].reverse().find(i => i.isNew)
+  if (lastNew) {
+    const idx = items.value.indexOf(lastNew)
+    if (idx >= 0) items.value.splice(idx, 1)
+    return
   }
-  notasItem.value = { ...item, category_id: categoryId }
-}
-
-async function onNotasSave({ notes, changes }) {
-  const item = notasItem.value
-  if (!item || !order.value) return
-  try {
-    await apiComanda.put('/api/pos/comanda/orden/item', {
-      order_number: order.value.order_number,
-      date:         order.value.date,
-      dish_id:      item.dish_id,
-      item:         item.item,
-      notes,
-      changes,
-    })
-    // Actualizar el item ORIGINAL en items.value (no la copia del modal)
-    const original = items.value.find(i => i.dish_id === item.dish_id && i.item === item.item)
-    if (original) {
-      original.notes   = notes
-      original.changes = changes
-    }
-    notasItem.value = null
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al guardar las novedades', 'error', 3000)
-  }
-}
-
-async function changeQty(item, delta) {
-  const newQty = item.quantity + delta
-  if (newQty <= 0) return removeItem(item)
-  try {
-    const unitPrice = Math.round(item.amount / item.quantity)
-    await apiComanda.put('/api/pos/comanda/orden/item', {
-      order_number: order.value.order_number,
-      date:         order.value.date,
-      dish_id:      item.dish_id,
-      item:         item.item,
-      quantity:     newQty,
-    })
-    const oldAmount = item.amount
-    item.quantity = newQty
-    item.amount   = unitPrice * newQty
-    if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - oldAmount + item.amount)
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al actualizar cantidad', 'error', 3000)
-  }
-}
-
-async function addGroupItem(group) {
-  if (!order.value) return
-  try {
-    const res = await apiComanda.post('/api/pos/comanda/orden/item', {
-      order_number:        order.value.order_number,
-      date:                order.value.date,
-      table_id:            tableId.value,
-      dish_id:             group.dish_id,
-      quantity:            1,
-      assembly_selections: group.assembly || [],
-      notes:               group.notes || null,
-      changes:             group.changes || null,
-    })
-    items.value.push({
-      dish_id:   group.dish_id,
-      item:      res.data.item,
-      dish_name: group.dish_name,
-      quantity:  1,
-      amount:    res.data.amount,
-      notes:     group.notes || null,
-      changes:   group.changes || null,
-      assembly:  group.assembly || [],
-      sent:      false,
-    })
-    if (order.value) order.value.amount = (order.value.amount || 0) + res.data.amount
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al agregar', 'error', 3000)
-  }
-}
-
-async function removeGroupItem(group) {
+  // All items are from DB — decrease qty on last item
   const last = group.allItems[group.allItems.length - 1]
-  if (group.allItems.length === 1) {
-    return removeItem(last)
-  }
-  try {
-    await apiComanda.delete('/api/pos/comanda/orden/item', {
-      data: {
-        order_number: order.value.order_number,
-        date:         order.value.date,
-        dish_id:      last.dish_id,
-        item:         last.item,
-      }
-    })
-    const idx = items.value.findIndex(i => i.dish_id === last.dish_id && i.item === last.item)
-    if (idx >= 0) {
-      if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - last.amount)
-      items.value.splice(idx, 1)
-    }
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al eliminar', 'error', 3000)
+  if (last.quantity <= 1) {
+    removeItem(last)
+  } else {
+    const unitPrice = Math.round(last.amount / last.quantity)
+    last.quantity -= 1
+    last.amount    = unitPrice * last.quantity
+    last._dirty    = true
   }
 }
 
 async function removeItem(item) {
   const result = await Swal.fire({
     title: '¿Eliminar plato?',
-    text: `¿Eliminar ${item.dish_name} del pedido?`,
-    icon: 'warning',
-    showCancelButton: true,
+    text: `¿Eliminar "${item.dish_name}" del pedido?`,
+    icon: 'warning', showCancelButton: true,
     confirmButtonColor: '#e11d48',
-    confirmButtonText: 'Sí, eliminar',
-    cancelButtonText: 'Cancelar',
+    confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar',
   })
   if (!result.isConfirmed) return
-  try {
-    await apiComanda.delete('/api/pos/comanda/orden/item', {
-      data: {
-        order_number: order.value.order_number,
-        date:         order.value.date,
-        dish_id:      item.dish_id,
-        item:         item.item,
-      }
-    })
-    const idx = items.value.findIndex(i => i.dish_id === item.dish_id && i.item === item.item)
-    if (idx >= 0) {
-      if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - item.amount)
-      items.value.splice(idx, 1)
-    }
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al eliminar', 'error', 3000)
+  if (item.isNew) {
+    const idx = items.value.indexOf(item)
+    if (idx >= 0) items.value.splice(idx, 1)
+  } else {
+    item._deleted = true
   }
 }
 
-async function sendToKitchen() {
+function openNotasModal(item) {
+  if (!item || item._deleted || item.sent && !item.isNew) return
+  let categoryId = null
+  for (const cat of menuCategories.value) {
+    if (cat.dishes?.some(d => d.id === item.dish_id)) { categoryId = cat.category_id; break }
+  }
+  notasItem.value = { ...item, category_id: categoryId }
+}
+
+function onNotasSave({ notes, changes }) {
+  const item = notasItem.value
+  if (!item) return
+  const original = items.value.find(i => i.item === item.item && i.dish_id === item.dish_id)
+  if (original) {
+    original.notes   = notes
+    original.changes = changes
+    if (!original.isNew) original._dirty = true
+  }
+  notasItem.value = null
+}
+
+// ── Submit / Cancel ────────────────────────────────────────────────────────
+async function submitOrder() {
   if (!order.value || sending.value) return
+  if (!hasChanges.value) { router.push('/restaurante'); return }
   sending.value = true
   try {
-    await apiComanda.post('/api/pos/comanda/orden/cocina', {
-      order_number: order.value.order_number,
-      date:         order.value.date,
-    })
-    items.value.forEach(i => { i.sent = true })
+    const newItems = items.value.filter(i => i.isNew && !i._deleted)
+    for (const ni of newItems) {
+      await apiComanda.post('/api/pos/comanda/orden/item', {
+        order_number:        order.value.order_number,
+        date:                order.value.date,
+        table_id:            tableId.value,
+        dish_id:             ni.dish_id,
+        quantity:            ni.quantity,
+        assembly_selections: ni.assembly || [],
+        notes:               ni.notes || null,
+        changes:             ni.changes || null,
+      })
+    }
+    const dirtyItems = items.value.filter(i => !i.isNew && i._dirty && !i._deleted)
+    for (const di of dirtyItems) {
+      await apiComanda.put('/api/pos/comanda/orden/item', {
+        order_number: order.value.order_number,
+        date:         order.value.date,
+        dish_id:      di.dish_id,
+        item:         di.item,
+        quantity:     di.quantity,
+        notes:        di.notes,
+        changes:      di.changes,
+      })
+    }
+    const deletedItems = items.value.filter(i => !i.isNew && i._deleted)
+    for (const del of deletedItems) {
+      await apiComanda.delete('/api/pos/comanda/orden/item', {
+        data: { order_number: order.value.order_number, date: order.value.date, dish_id: del.dish_id, item: del.item }
+      })
+    }
+    if (newItems.length) {
+      await apiComanda.post('/api/pos/comanda/orden/cocina', {
+        order_number: order.value.order_number,
+        date:         order.value.date,
+      })
+    }
     router.push('/restaurante')
   } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al enviar a cocina', 'error', 3000)
+    showToast(e.response?.data?.detail || 'Error al enviar', 'error', 3000)
   } finally {
     sending.value = false
   }
 }
 
-async function requestBill() {
-  if (!order.value || order.value.bill_requested) return
-  const result = await Swal.fire({
-    title: '¿Solicitar la cuenta?',
-    text: '¿Solicitar la cuenta para esta mesa?',
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonColor: '#2563eb',
-    confirmButtonText: 'Sí, solicitar',
-    cancelButtonText: 'Cancelar',
-  })
-  if (!result.isConfirmed) return
-  try {
-    await apiComanda.post('/api/pos/comanda/mesa/solicitar-cuenta', {
-      table_id: tableId.value,
-    })
-    if (order.value) order.value.bill_requested = true
-  } catch (e) {
-    showToast(e.response?.data?.detail || 'Error', 'error', 3000)
-  }
+function cancelOrder() {
+  router.push('/restaurante')
 }
 </script>
 
@@ -580,20 +524,6 @@ async function requestBill() {
   flex-shrink: 0;
 }
 
-.pedido-header__back {
-  background: none;
-  border: 1.5px solid #e2e8f0;
-  font-size: .8rem;
-  font-weight: 600;
-  color: #64748b;
-  cursor: pointer;
-  padding: 5px 12px;
-  border-radius: 8px;
-  transition: all .2s;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.pedido-header__back:hover { background: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
 
 .pedido-header__info {
   display: flex;
@@ -856,7 +786,8 @@ async function requestBill() {
   line-height: 1;
 }
 .cart-item__btn--notes { color: #94a3b8; }
-.cart-item__btn--notes:hover { color: #2563eb; background: #eff6ff; }
+.cart-item__btn--notes:hover:not(:disabled) { color: #2563eb; background: #eff6ff; }
+.cart-item__btn--notes:disabled { color: #e2e8f0; cursor: not-allowed; }
 .cart-item__btn--del { color: #fca5a5; }
 .cart-item__btn--del:hover { color: #ef4444; background: #fff5f5; }
 
@@ -929,6 +860,11 @@ async function requestBill() {
   flex-direction: column;
   margin-right: auto;
   line-height: 1.2;
+}
+
+.mobile-bar__cancel {
+  flex-shrink: 0;
+  padding: 6px 10px;
 }
 
 /* Responsive */
