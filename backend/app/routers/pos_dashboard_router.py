@@ -168,6 +168,24 @@ async def get_mesas(
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
 
+    # Auto-cancelar pedidos web sin ítems (igual que en endpoint de meseros)
+    await db_temp.execute(text("""
+        UPDATE temp_comanda tc
+        SET tc.Cancelado = 1
+        WHERE tc.company_id = :cid
+          AND tc.Nro_Factura = '0'
+          AND tc.Cancelado = 0
+          AND tc.Movil = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM temp_detalle_comanda_parcial tdc
+              WHERE tdc.Nro_pedido = tc.Nro_Pedido
+                AND tdc.Fecha = tc.Fecha
+                AND tdc.company_id = tc.company_id
+                AND tdc.Nro_Factura = '0'
+          )
+    """), {"cid": cid})
+    await db_temp.commit()
+
     # Layout de mesas y zonas desde easyposweb
     layout = (await db.execute(text("""
         SELECT t.id, t.name, t.location, t.seats, t.zone_id,
