@@ -873,8 +873,8 @@ async def actualizar_item(
     cid = payload["company_id"]
 
     current = (await db_temp.execute(text("""
-        SELECT Cantidad, Valor FROM temp_detalle_comanda_parcial
-        WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
+        SELECT Cantidad, Valor, Fecha FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND DATE(Fecha)=DATE(:date) AND Nro_Factura='0'
           AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1
     """), {
         "on": data.order_number, "date": data.date,
@@ -883,8 +883,9 @@ async def actualizar_item(
     if not current:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
 
+    real_fecha = current["Fecha"]
     sets, params = [], {
-        "on": data.order_number, "date": data.date,
+        "on": data.order_number, "fecha": real_fecha,
         "did": data.dish_id, "item": data.item, "cid": cid,
     }
 
@@ -904,10 +905,10 @@ async def actualizar_item(
     if sets:
         await db_temp.execute(text(
             f"UPDATE temp_detalle_comanda_parcial SET {', '.join(sets)} "
-            "WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0' "
+            "WHERE Nro_pedido=:on AND Fecha=:fecha AND Nro_Factura='0' "
             "AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1"
         ), params)
-        await _recalc_total(db_temp, data.order_number, data.date, cid)
+        await _recalc_total(db_temp, data.order_number, real_fecha, cid)
         await db_temp.commit()
 
     return {"ok": True}
@@ -932,17 +933,26 @@ async def eliminar_item(
         "item": data.item, "cid": cid,
     })
 
-    # Borrar ítem principal
+    # Borrar ítem principal — usar DATE(Fecha) para cubrir DATETIME con hora
+    fecha_row = (await db_temp.execute(text("""
+        SELECT Fecha FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND DATE(Fecha)=DATE(:date) AND Nro_Factura='0'
+          AND Id_Plato=:did AND Item=:item AND company_id=:cid
+        LIMIT 1
+    """), {"on": data.order_number, "date": data.date, "did": data.dish_id,
+           "item": data.item, "cid": cid})).mappings().first()
+    real_fecha = fecha_row["Fecha"] if fecha_row else data.date
+
     await db_temp.execute(text("""
         DELETE FROM temp_detalle_comanda_parcial
-        WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
+        WHERE Nro_pedido=:on AND Fecha=:fecha AND Nro_Factura='0'
           AND Id_Plato=:did AND Item=:item AND company_id=:cid
     """), {
-        "on": data.order_number, "date": data.date,
+        "on": data.order_number, "fecha": real_fecha,
         "did": data.dish_id, "item": data.item, "cid": cid,
     })
 
-    await _recalc_total(db_temp, data.order_number, data.date, cid)
+    await _recalc_total(db_temp, data.order_number, real_fecha, cid)
     await db_temp.commit()
     return {"ok": True}
 

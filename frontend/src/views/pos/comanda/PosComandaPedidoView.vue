@@ -81,9 +81,9 @@
             <!-- Fila principal: qty ctrl · nombre · precio · botones -->
             <div class="cart-item__main">
               <div class="cart-item__qty-ctrl">
-                <button class="qty-btn" @click.stop="removeGroupItem(group)"><i class="bi bi-dash-lg"></i></button>
-                <span class="cart-item__qty">{{ group.qty }}</span>
                 <button class="qty-btn" @click.stop="addGroupItem(group)"><i class="bi bi-plus-lg"></i></button>
+                <span class="cart-item__qty">{{ group.qty }}</span>
+                <button class="qty-btn" @click.stop="removeGroupItem(group)"><i class="bi bi-dash-lg"></i></button>
               </div>
               <span class="cart-item__name">{{ group.dish_name }}</span>
               <span class="cart-item__price">{{ formatPrice(group.totalAmount) }}</span>
@@ -94,16 +94,22 @@
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
-            <!-- Segunda fila: tags de armado, notas, estado -->
-            <div
+            <!-- Segunda fila compacta: armado · notas · estado -->
+            <p
               class="cart-item__tags"
               v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent"
-            >
-              <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
-              <span v-if="group.notes" class="ci-tag ci-tag--note"><i class="bi bi-pencil-fill"></i> {{ group.notes }}</span>
-              <span v-if="group.changes" class="ci-tag ci-tag--change"><i class="bi bi-arrow-left-right"></i> {{ group.changes }}</span>
-              <span v-if="!group.hasUnsent" class="ci-tag ci-tag--sent"><i class="bi bi-check2-circle"></i> Enviado</span>
-            </div>
+            ><span
+                v-for="(sel, i) in group.assembly" :key="sel.category_code"
+              >{{ i > 0 ? ' · ' : '' }}{{ sel.item_name }}</span><span
+                v-if="group.notes"
+                class="ci-note"
+              >{{ group.assembly?.length ? ' · ' : '' }}{{ group.notes }}</span><span
+                v-if="group.changes"
+                class="ci-change"
+              >{{ (group.assembly?.length || group.notes) ? ' · ' : '' }}{{ group.changes }}</span><span
+                v-if="!group.hasUnsent"
+                class="ci-sent"
+              > ✓</span></p>
           </div>
         </div>
 
@@ -392,8 +398,12 @@ async function onNotasSave({ notes, changes }) {
       notes,
       changes,
     })
-    item.notes   = notes
-    item.changes = changes
+    // Actualizar el item ORIGINAL en items.value (no la copia del modal)
+    const original = items.value.find(i => i.dish_id === item.dish_id && i.item === item.item)
+    if (original) {
+      original.notes   = notes
+      original.changes = changes
+    }
     notasItem.value = null
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al guardar las novedades')
@@ -827,26 +837,20 @@ async function requestBill() {
 .cart-item__btn--del { color: #fca5a5; }
 .cart-item__btn--del:hover { color: #ef4444; background: #fff5f5; }
 
-/* Tags de armado/notas en fila */
+/* Línea compacta de armado/notas */
 .cart-item__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 3px;
+  margin: 2px 0 0;
   padding-left: 34px;
-}
-
-.ci-tag {
-  font-size: .68rem;
-  background: #e2e8f0;
-  color: #475569;
-  padding: 1px 6px;
-  border-radius: 10px;
+  font-size: .67rem;
+  color: #64748b;
+  line-height: 1.3;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ci-tag--note   { background: #fef9c3; color: #92400e; font-style: italic; }
-.ci-tag--change { background: #fef3c7; color: #d97706; font-weight: 600; }
-.ci-tag--sent   { background: #dcfce7; color: #16a34a; font-weight: 600; }
+.ci-note   { color: #92400e; font-style: italic; }
+.ci-change { color: #d97706; font-weight: 600; }
+.ci-sent   { color: #16a34a; font-weight: 700; }
 
 .cart-empty {
   flex: 1;
