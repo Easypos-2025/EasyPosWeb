@@ -103,8 +103,8 @@ async function guardar() {
   guardando.value = true
   try {
     const p = { name:modal.value.name, type:modal.value.type, is_active:modal.value.is_active }
-    if (modal.value.id) await api.put(`${BASE}/${modal.value.id}`, p)
-    else                await api.post(BASE, p)
+    if (modal.value.id !== null) await api.put(`${BASE}/${modal.value.id}`, p)
+    else                         await api.post(BASE, p)
     showToast('Caja guardada', 'success')
     cerrarModal(); await cargar()
   } catch(e) { showToast(e?.response?.data?.detail || 'Error al guardar', 'error') }
