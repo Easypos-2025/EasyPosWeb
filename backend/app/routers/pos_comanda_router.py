@@ -318,14 +318,15 @@ async def abrir_mesa(
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
 
-    # Verificar si ya existe un pedido activo para esta mesa (cualquier origen)
-    # DATE(Fecha)=:today para cubrir DATETIME con componente de hora (VB6 y web)
+    # Verificar si ya existe un pedido activo para esta mesa (sin filtro de fecha:
+    # un pedido puede cruzar medianoche y seguir activo al día siguiente)
     existing = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
-        WHERE Mesa=:mesa AND company_id=:cid AND DATE(Fecha)=:today
+        WHERE Mesa=:mesa AND company_id=:cid
           AND Nro_Factura='0' AND Cancelado=0
+        ORDER BY Fecha DESC
         LIMIT 1
-    """), {"mesa": mesa["name"], "cid": cid, "today": today})).mappings().first()
+    """), {"mesa": mesa["name"], "cid": cid})).mappings().first()
     if existing:
         return {"order_number": existing["Nro_Pedido"], "date": today, "already_open": True}
 
@@ -390,24 +391,23 @@ async def get_orden_mesa(
     # Si viene order_number (pedido VB6 conocido): lookup directo por Nro_Pedido
     # Si no: buscar por mesa, prefiriendo Movil=0 (VB6) sobre Movil=1 (web)
     if order_number:
-        # Buscar por Nro_Pedido sin filtro de fecha — DATE(Fecha) sería suficiente pero
-        # Nro_Pedido web ya incluye timestamp único; para VB6 evitar mismatch de hora.
         order = (await db_temp.execute(text("""
             SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
             FROM temp_comanda
             WHERE Nro_Pedido=:on AND company_id=:cid
-              AND DATE(Fecha)=:today AND Nro_Factura='0' AND Cancelado=0
+              AND Nro_Factura='0' AND Cancelado=0
             LIMIT 1
-        """), {"on": order_number, "cid": cid, "today": today})).mappings().first()
+        """), {"on": order_number, "cid": cid})).mappings().first()
     else:
+        # Sin filtro de fecha: un pedido puede cruzar medianoche y seguir activo
         order = (await db_temp.execute(text("""
             SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
             FROM temp_comanda
-            WHERE Mesa=:mesa AND company_id=:cid AND DATE(Fecha)=:today
+            WHERE Mesa=:mesa AND company_id=:cid
               AND Nro_Factura='0' AND Cancelado=0
-            ORDER BY Movil ASC, Hora ASC
+            ORDER BY Movil ASC, Fecha DESC, Hora DESC
             LIMIT 1
-        """), {"mesa": mesa_name, "cid": cid, "today": today})).mappings().first()
+        """), {"mesa": mesa_name, "cid": cid})).mappings().first()
 
     if not order:
         return {"order": None, "items": []}
