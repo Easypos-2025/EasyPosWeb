@@ -599,16 +599,21 @@ async def get_menu_diario(
     cid = payload["company_id"]
     today = _today()
 
+    # ── Verificar si es plato de Menú del Día (offer_priority=1) ──────────────
+    dish_row = (await db.execute(text(
+        "SELECT COALESCE(offer_priority,0) AS offer_priority FROM pos_dishes WHERE id=:did AND company_id=:cid"
+    ), {"did": dish_id, "cid": cid})).mappings().first()
+    is_daily_menu = bool(dish_row and int(dish_row["offer_priority"]) == 1)
+
+    # ── Categorías de armado desde pos_dish_assembly ───────────────────────────
     assembly_cats = None
     for sql_cats in [
-        # Nivel 1: con nombre de pos_product_categories filtrado por company
         """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
                   (SELECT pc2.name FROM pos_product_categories pc2
                    WHERE pc2.id = da.category_code AND pc2.company_id = :cid LIMIT 1) AS category_name
            FROM pos_dish_assembly da
            WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
            ORDER BY da.category_code""",
-        # Nivel 2: sin nombre (fallback si pos_product_categories no existe)
         """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
                   NULL AS category_name
            FROM pos_dish_assembly da
@@ -631,38 +636,66 @@ async def get_menu_diario(
     for i, cc in enumerate(category_codes):
         params[f"cc{i}"] = cc
 
-    options_rows = (await db.execute(text(f"""
-        SELECT
-            dad.category_code,
-            dad.item                                        AS item_id,
-            dad.discount_qty,
-            dad.is_default,
-            dad.position,
-            COALESCE(dm.description, si.description)        AS item_name,
-            IF(dm.id IS NOT NULL, 1, 0)                     AS available_today
-        FROM pos_dish_assembly_detail dad
-        LEFT JOIN pos_daily_menu dm
-               ON dm.item_id    = dad.item
-              AND dm.company_id = :cid
-              AND dm.date       = :today
-        LEFT JOIN supply_items si
-               ON si.id_item    = dad.position
-              AND si.company_id = :cid
-        WHERE dad.dish_id = :did AND dad.company_id = :cid
-          AND dad.category_code IN ({placeholders})
-        ORDER BY dad.category_code, dad.position
-    """), params)).mappings().all()
-
     options_by_cat: dict[int, list] = {}
-    for row in options_rows:
-        cc = int(row["category_code"])
-        options_by_cat.setdefault(cc, []).append({
-            "item_id":        row["item_id"],
-            "item_name":      row["item_name"] or f"Opción {row['item_id']}",
-            "discount_qty":   float(row["discount_qty"]) if row["discount_qty"] else 1.0,
-            "is_default":     bool(row["is_default"]),
-            "available_today": bool(row["available_today"]),
-        })
+
+    if is_daily_menu:
+        # Para Menú del Día: las opciones vienen directamente de pos_daily_menu
+        # agrupadas por menu_id (= pos_product_categories.id = category_code).
+        # Solo se muestran los ítems que el admin seleccionó para hoy.
+        daily_rows = (await db.execute(text(f"""
+            SELECT dm.menu_id AS category_code,
+                   dm.item_id,
+                   dm.description AS item_name
+            FROM pos_daily_menu dm
+            WHERE dm.company_id = :cid
+              AND dm.date       = :today
+              AND dm.menu_id    IN ({placeholders})
+            ORDER BY dm.menu_id, dm.description
+        """), params)).mappings().all()
+
+        for row in daily_rows:
+            cc = int(row["category_code"])
+            options_by_cat.setdefault(cc, []).append({
+                "item_id":         row["item_id"],
+                "item_name":       row["item_name"] or f"Opción {row['item_id']}",
+                "discount_qty":    1.0,
+                "is_default":      False,
+                "available_today": True,
+            })
+    else:
+        # Para platos con armado fijo: pos_dish_assembly_detail + filtro daily_menu
+        # JOIN correcto: dm.item_id = dad.position (supply_items.id_item)
+        options_rows = (await db.execute(text(f"""
+            SELECT
+                dad.category_code,
+                dad.item                                        AS item_id,
+                dad.discount_qty,
+                dad.is_default,
+                dad.position,
+                COALESCE(si.description, si.description)        AS item_name,
+                IF(dm.id IS NOT NULL, 1, 0)                     AS available_today
+            FROM pos_dish_assembly_detail dad
+            LEFT JOIN pos_daily_menu dm
+                   ON dm.item_id    = dad.position
+                  AND dm.company_id = :cid
+                  AND dm.date       = :today
+            LEFT JOIN supply_items si
+                   ON si.id_item    = dad.position
+                  AND si.company_id = :cid
+            WHERE dad.dish_id = :did AND dad.company_id = :cid
+              AND dad.category_code IN ({placeholders})
+            ORDER BY dad.category_code, dad.position
+        """), params)).mappings().all()
+
+        for row in options_rows:
+            cc = int(row["category_code"])
+            options_by_cat.setdefault(cc, []).append({
+                "item_id":         row["item_id"],
+                "item_name":       row["item_name"] or f"Opción {row['item_id']}",
+                "discount_qty":    float(row["discount_qty"]) if row["discount_qty"] else 1.0,
+                "is_default":      bool(row["is_default"]),
+                "available_today": bool(row["available_today"]),
+            })
 
     fixed = (await db.execute(text("""
         SELECT dp.supplier_id AS item_id, dp.minimum_units AS quantity, dp.description
