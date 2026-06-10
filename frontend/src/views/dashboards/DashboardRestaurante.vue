@@ -332,6 +332,14 @@
       </div>
     </div>
 
+    <!-- Modal detalle de mesa ocupada -->
+    <ComandaOrderDetailModal
+      v-if="detailMesa"
+      :table="detailMesa"
+      @close="detailMesa = null"
+      @cancelled="onMesaCancelled"
+    />
+
   </div>
 </template>
 
@@ -342,6 +350,7 @@ import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
 import apiComanda from '@/services/apiComanda.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
+import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 
 const companyStore = useCompanyStore()
 const router = useRouter()
@@ -352,6 +361,7 @@ const cargandoTodo = ref(false)
 
 const kpiLoading   = ref(true)
 const mesasLoading = ref(true)
+const detailMesa   = ref(null)
 const cargandoStock = ref(false)
 const cargandoTV   = ref(false)
 
@@ -508,9 +518,22 @@ async function _silentMesas() {
     mesas.value = data
   } catch { }
 }
+async function _silentTV() {
+  try {
+    localStorage.setItem('waiter_company_id', String(selectedCid.value))
+    const { data } = await apiComanda.get('/api/pos/comanda/cocina-pedidos')
+    if (showTVModal.value) {
+      pedidosTV.value = data.map(p => ({ ...p, despachando: false }))
+    } else {
+      pedidosTV.value = data
+    }
+  } catch { /* silencioso */ }
+}
+
 function _tick() {
   _silentKpis()
   _silentMesas()
+  _silentTV()
 }
 
 let _timer = null
@@ -519,7 +542,7 @@ function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } 
 function _onVisible()    { if (!document.hidden) _tick() }
 
 onMounted(async () => {
-  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTvToken()])
+  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTvToken(), _silentTV()])
   _startRefresh()
   document.addEventListener('visibilitychange', _onVisible)
 })
@@ -618,18 +641,25 @@ async function despacharPedido(pedido) {
   }
 }
 
-// ── Navegar a mesa existente ──────────────────────────────────────────────────
+// ── Abrir modal detalle de mesa ocupada ───────────────────────────────────────
 function irAMesaExistente(mesa) {
   localStorage.setItem('waiter_company_id', String(selectedCid.value))
-  localStorage.setItem('pedido_ctx', JSON.stringify({
-    table_id:     mesa.id,
-    table_name:   mesa.name,
-    order_number: mesa.order_number || '',
-    waiter_id:    0,
+  detailMesa.value = {
+    id:           mesa.id,
+    name:         mesa.name,
+    status:       'occupied',
+    order_number: mesa.order_number || null,
+    amount:       mesa.amount || 0,
+    order_time:   mesa.hora_apertura || null,
     waiter_name:  mesa.waiter_name || '',
-    company_id:   selectedCid.value,
-  }))
-  router.push(`/pos/comanda/pedido/${mesa.id}`)
+    waiter_id:    0,
+    daily_seq:    mesa.daily_seq || null,
+  }
+}
+
+function onMesaCancelled() {
+  detailMesa.value = null
+  _silentMesas()
 }
 
 // ── Wizard ────────────────────────────────────────────────────────────────────
