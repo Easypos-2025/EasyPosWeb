@@ -413,7 +413,7 @@ const kpis = computed(() => {
     { icon: 'bi-journal-text',   label: `Recibos (${d.ventas_recibos.count})`,     value: fmt(d.ventas_recibos.total) },
     { icon: 'bi-graph-up-arrow', label: `Total (${countFactRec})`,                 value: fmt(totalFactRec) },
     { icon: 'bi-table',          label: `Abiertas (${d.comandas_abiertas.count})`, value: fmt(d.comandas_abiertas.total) },
-    { icon: 'bi-globe',          label: `Plataforma (${d.plataforma.count})`,      value: fmt(d.plataforma.total) },
+    { icon: 'bi-globe',          label: `Domicilio (${d.plataforma.count})`,       value: fmt(d.plataforma.total) },
   ]
 })
 
