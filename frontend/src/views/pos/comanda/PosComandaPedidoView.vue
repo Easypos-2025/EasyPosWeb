@@ -74,60 +74,62 @@
             <i class="bi bi-bag me-2"></i>Pedido
           </span>
           <span class="cart-panel__count">{{ items.length }} platos</span>
+          <span class="cart-panel__count" v-if="groupedItems.length !== items.length" style="font-size:.72rem;color:#94a3b8;margin-left:4px">({{ groupedItems.length }} líneas)</span>
           <button class="cart-panel__close d-md-none" @click="cartOpen = false">
             <i class="bi bi-chevron-down"></i>
           </button>
         </div>
 
-        <div class="cart-items" v-if="items.length">
+        <div class="cart-items" v-if="groupedItems.length">
           <div
-            v-for="item in items"
-            :key="`${item.dish_id}-${item.item}`"
+            v-for="group in groupedItems"
+            :key="group.key"
             class="cart-item"
+            :class="{ 'cart-item--unsent': group.hasUnsent, 'cart-item--sent': !group.hasUnsent }"
           >
             <div class="cart-item__main">
               <div class="cart-item__qty-ctrl">
-                <button class="qty-btn" @click.stop="changeQty(item, -1)"><i class="bi bi-dash-lg"></i></button>
-                <span class="cart-item__qty">{{ item.quantity }}</span>
-                <button class="qty-btn" @click.stop="changeQty(item, +1)"><i class="bi bi-plus-lg"></i></button>
+                <button class="qty-btn" @click.stop="removeGroupItem(group)"><i class="bi bi-dash-lg"></i></button>
+                <span class="cart-item__qty">{{ group.qty }}</span>
+                <button class="qty-btn" @click.stop="addGroupItem(group)"><i class="bi bi-plus-lg"></i></button>
               </div>
               <div class="cart-item__detail">
-                <span class="cart-item__name">{{ item.dish_name }}</span>
+                <span class="cart-item__name">{{ group.dish_name }}</span>
                 <!-- Assembly selections -->
                 <span
-                  v-for="sel in item.assembly"
+                  v-for="sel in group.assembly"
                   :key="sel.category_code"
                   class="cart-item__assembly"
                 >
                   {{ sel.item_name }}
                 </span>
                 <!-- Notes -->
-                <span v-if="item.notes" class="cart-item__notes">
-                  <i class="bi bi-pencil-fill me-1"></i>{{ item.notes }}
+                <span v-if="group.notes" class="cart-item__notes">
+                  <i class="bi bi-pencil-fill me-1"></i>{{ group.notes }}
                 </span>
                 <!-- Changes -->
-                <span v-if="item.changes" class="cart-item__changes">
-                  <i class="bi bi-arrow-left-right me-1"></i>{{ item.changes }}
+                <span v-if="group.changes" class="cart-item__changes">
+                  <i class="bi bi-arrow-left-right me-1"></i>{{ group.changes }}
                 </span>
                 <!-- Sent badge -->
-                <span v-if="item.sent" class="cart-item__sent">
+                <span v-if="!group.hasUnsent" class="cart-item__sent">
                   <i class="bi bi-check2-circle me-1"></i>Enviado
                 </span>
               </div>
-              <span class="cart-item__price">{{ formatPrice(item.amount) }}</span>
+              <span class="cart-item__price">{{ formatPrice(group.totalAmount) }}</span>
             </div>
             <div class="cart-item__actions">
-              <button class="cart-item__btn cart-item__btn--notes" @click="openNotasModal(item)">
+              <button class="cart-item__btn cart-item__btn--notes" @click="openNotasModal(group.allItems[group.allItems.length - 1])">
                 <i class="bi bi-chat-text"></i>
               </button>
-              <button class="cart-item__btn cart-item__btn--del" @click="removeItem(item)">
+              <button class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
           </div>
         </div>
 
-        <div class="cart-empty" v-else>
+        <div class="cart-empty" v-if="!groupedItems.length">
           <i class="bi bi-bag text-muted fs-2"></i>
           <p class="text-muted small mt-2">Toca un plato para agregar</p>
         </div>
@@ -266,6 +268,38 @@ const currentCategoryDishes = computed(() => {
 })
 
 const unsentItems = computed(() => items.value.filter(i => !i.sent))
+
+// Grouping helpers
+function _assemblyKey(assembly) {
+  return JSON.stringify(
+    [...(assembly || [])].sort((a, b) => (a.category_code ?? 0) - (b.category_code ?? 0))
+  )
+}
+
+const groupedItems = computed(() => {
+  const groups = []
+  const map = new Map()
+  for (const item of items.value) {
+    const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
+    if (map.has(k)) {
+      const g = map.get(k)
+      g.qty += item.quantity
+      g.totalAmount += item.amount
+      g.allItems.push(item)
+      if (!item.sent) g.hasUnsent = true
+    } else {
+      const g = {
+        key: k, dish_id: item.dish_id, dish_name: item.dish_name,
+        qty: item.quantity, totalAmount: item.amount,
+        assembly: item.assembly, notes: item.notes, changes: item.changes,
+        hasUnsent: !item.sent, allItems: [item],
+      }
+      map.set(k, g)
+      groups.push(g)
+    }
+  }
+  return groups
+})
 
 function formatPrice(v) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v)
@@ -428,6 +462,60 @@ async function changeQty(item, delta) {
     if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - oldAmount + item.amount)
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al actualizar cantidad')
+  }
+}
+
+async function addGroupItem(group) {
+  if (!order.value) return
+  try {
+    const res = await apiComanda.post('/api/pos/comanda/orden/item', {
+      order_number:        order.value.order_number,
+      date:                order.value.date,
+      table_id:            tableId.value,
+      dish_id:             group.dish_id,
+      quantity:            1,
+      assembly_selections: group.assembly || [],
+      notes:               group.notes || null,
+      changes:             group.changes || null,
+    })
+    items.value.push({
+      dish_id:   group.dish_id,
+      item:      res.data.item,
+      dish_name: group.dish_name,
+      quantity:  1,
+      amount:    res.data.amount,
+      notes:     group.notes || null,
+      changes:   group.changes || null,
+      assembly:  group.assembly || [],
+      sent:      false,
+    })
+    if (order.value) order.value.amount = (order.value.amount || 0) + res.data.amount
+  } catch (e) {
+    alert(e.response?.data?.detail || 'Error al agregar')
+  }
+}
+
+async function removeGroupItem(group) {
+  const last = group.allItems[group.allItems.length - 1]
+  if (group.allItems.length === 1) {
+    return removeItem(last)
+  }
+  try {
+    await apiComanda.delete('/api/pos/comanda/orden/item', {
+      data: {
+        order_number: order.value.order_number,
+        date:         order.value.date,
+        dish_id:      last.dish_id,
+        item:         last.item,
+      }
+    })
+    const idx = items.value.findIndex(i => i.dish_id === last.dish_id && i.item === last.item)
+    if (idx >= 0) {
+      if (order.value) order.value.amount = Math.max(0, (order.value.amount || 0) - last.amount)
+      items.value.splice(idx, 1)
+    }
+  } catch (e) {
+    alert(e.response?.data?.detail || 'Error al eliminar')
   }
 }
 

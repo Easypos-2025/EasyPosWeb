@@ -188,7 +188,6 @@ async def get_mesas(
         UPDATE temp_comanda tc
         SET tc.Cancelado = 1
         WHERE tc.company_id = :cid
-          AND tc.Fecha = :today
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado = 0
           AND tc.Movil = 1
@@ -199,7 +198,7 @@ async def get_mesas(
                 AND tdc.company_id = tc.company_id
                 AND tdc.Nro_Factura = '0'
           )
-    """), {"cid": cid, "today": today})
+    """), {"cid": cid})
     await db_temp.commit()
 
     # Layout de mesas y zonas desde easyposweb

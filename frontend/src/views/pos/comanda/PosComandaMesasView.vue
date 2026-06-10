@@ -59,6 +59,14 @@
       <p class="mt-3 text-muted">Cargando mesas...</p>
     </div>
 
+    <!-- Modal detalle pedido -->
+    <ComandaOrderDetailModal
+      v-if="detailTable"
+      :table="detailTable"
+      @close="detailTable = null"
+      @cancelled="onOrderCancelled"
+    />
+
     <!-- Modal abrir mesa -->
     <div class="modal-overlay" v-if="openingTable" @click.self="openingTable = null">
       <div class="open-modal">
@@ -97,15 +105,17 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
+import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 
 const router = useRouter()
 
 const zonas      = ref([])
 const loading    = ref(false)
 const activeZone = ref(null)
-const openingTable = ref(null)
-const guests     = ref(2)
-const opening    = ref(false)
+const openingTable  = ref(null)
+const detailTable   = ref(null)
+const guests        = ref(2)
+const opening       = ref(false)
 
 let pollTimer = null
 
@@ -158,9 +168,14 @@ function onTableClick(table) {
     openingTable.value = table
     guests.value = 2
   } else {
-    _setCtx(table.id, table.name, table.waiter_name)
-    router.push(`/pos/comanda/pedido/${table.id}`)
+    detailTable.value = table
   }
+}
+
+function onOrderCancelled(tableId) {
+  detailTable.value = null
+  // Refrescar mesas para reflejar que la mesa quedó libre
+  loadMesas()
 }
 
 async function openTable() {
