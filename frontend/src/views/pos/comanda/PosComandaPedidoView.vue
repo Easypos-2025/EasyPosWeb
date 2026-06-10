@@ -78,12 +78,12 @@
             class="cart-item"
             :class="{ 'cart-item--unsent': group.hasUnsent, 'cart-item--sent': !group.hasUnsent }"
           >
-            <!-- Fila principal: qty ctrl · nombre · precio · botones -->
+            <!-- Fila única: [-] qty [+] · nombre · precio · notas · borrar -->
             <div class="cart-item__main">
               <div class="cart-item__qty-ctrl">
-                <button class="qty-btn" @click.stop="addGroupItem(group)"><i class="bi bi-plus-lg"></i></button>
-                <span class="cart-item__qty">{{ group.qty }}</span>
                 <button class="qty-btn" @click.stop="removeGroupItem(group)"><i class="bi bi-dash-lg"></i></button>
+                <span class="cart-item__qty">{{ group.qty }}</span>
+                <button class="qty-btn" @click.stop="addGroupItem(group)"><i class="bi bi-plus-lg"></i></button>
               </div>
               <span class="cart-item__name">{{ group.dish_name }}</span>
               <span class="cart-item__price">{{ formatPrice(group.totalAmount) }}</span>
@@ -94,22 +94,16 @@
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
-            <!-- Segunda fila compacta: armado · notas · estado -->
-            <p
+            <!-- Segunda fila: pills de armado · notas · estado -->
+            <div
               class="cart-item__tags"
               v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent"
-            ><span
-                v-for="(sel, i) in group.assembly" :key="sel.category_code"
-              >{{ i > 0 ? ' · ' : '' }}{{ sel.item_name }}</span><span
-                v-if="group.notes"
-                class="ci-note"
-              >{{ group.assembly?.length ? ' · ' : '' }}{{ group.notes }}</span><span
-                v-if="group.changes"
-                class="ci-change"
-              >{{ (group.assembly?.length || group.notes) ? ' · ' : '' }}{{ group.changes }}</span><span
-                v-if="!group.hasUnsent"
-                class="ci-sent"
-              > ✓</span></p>
+            >
+              <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
+              <span v-if="group.notes" class="ci-tag ci-note">{{ group.notes }}</span>
+              <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
+              <span v-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
+            </div>
           </div>
         </div>
 
@@ -770,20 +764,20 @@ async function requestBill() {
 
 .cart-item__qty-ctrl {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
 .qty-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
   border: 1.5px solid #e2e8f0;
   background: #fff;
   color: #2563eb;
-  font-size: .65rem;
+  font-size: .6rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -797,8 +791,8 @@ async function requestBill() {
 .cart-item__qty {
   font-weight: 700;
   color: #2563eb;
-  font-size: .82rem;
-  min-width: 18px;
+  font-size: .8rem;
+  min-width: 16px;
   text-align: center;
 }
 
@@ -837,20 +831,27 @@ async function requestBill() {
 .cart-item__btn--del { color: #fca5a5; }
 .cart-item__btn--del:hover { color: #ef4444; background: #fff5f5; }
 
-/* Línea compacta de armado/notas */
+/* Pills de armado/notas */
 .cart-item__tags {
-  margin: 2px 0 0;
-  padding-left: 34px;
-  font-size: .67rem;
-  color: #64748b;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin: 3px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
 }
-.ci-note   { color: #92400e; font-style: italic; }
-.ci-change { color: #d97706; font-weight: 600; }
-.ci-sent   { color: #16a34a; font-weight: 700; }
+.ci-tag {
+  background: #f1f5f9;
+  color: #475569;
+  font-size: .6rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.ci-note   { background: #fef3c7; color: #92400e; border-color: #fcd34d; font-style: italic; font-weight: 400; text-transform: none; }
+.ci-change { background: #fff7ed; color: #c2410c; border-color: #fed7aa; font-weight: 700; text-transform: none; }
+.ci-sent   { color: #16a34a; font-size: .65rem; font-weight: 700; align-self: center; }
 
 .cart-empty {
   flex: 1;
