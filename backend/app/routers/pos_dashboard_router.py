@@ -168,20 +168,33 @@ async def get_mesas(
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
 
-    # Auto-cancelar pedidos web sin ítems (igual que en endpoint de meseros)
+    # Auto-cancelar pedidos sin ítems (web y escritorio)
     await db_temp.execute(text("""
         UPDATE temp_comanda tc
         SET tc.Cancelado = 1
         WHERE tc.company_id = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado = 0
-          AND tc.Movil = 1
           AND NOT EXISTS (
               SELECT 1 FROM temp_detalle_comanda_parcial tdc
               WHERE tdc.Nro_pedido = tc.Nro_Pedido
                 AND tdc.Fecha = tc.Fecha
                 AND tdc.company_id = tc.company_id
                 AND tdc.Nro_Factura = '0'
+          )
+    """), {"cid": cid})
+    # Cerrar en temp_mesa_abierta las mesas sin pedido activo
+    await db_temp.execute(text("""
+        UPDATE temp_mesa_abierta tma
+        SET tma.Abierta = 0, tma.Abierta_Desde = NULL, tma.updated_at = NOW()
+        WHERE tma.company_id = :cid
+          AND tma.Abierta = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM temp_comanda tc
+              WHERE tc.company_id = :cid
+                AND tc.Mesa = tma.Mesa
+                AND tc.Cancelado = 0
+                AND tc.Nro_Factura = '0'
           )
     """), {"cid": cid})
     await db_temp.commit()
