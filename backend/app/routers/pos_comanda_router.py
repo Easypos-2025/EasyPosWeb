@@ -1866,12 +1866,10 @@ async def get_historico_eliminadas(
 
 
 # ── MENÚ DIARIO — GESTIÓN ADMIN ──────────────────────────────────────────────
-# Endpoints de administración para armar el menú del día.
-# Usan _auth_comanda (acepta tanto token de mesero como de admin).
 
 class GuardarMenuDiarioIn(BaseModel):
     date: str
-    selected_ids: List[int]  # id_item de supply_items seleccionados
+    selected_ids: List[int]
 
 
 @router.get("/menu-diario-admin")
@@ -1881,24 +1879,23 @@ async def get_menu_diario_admin(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Devuelve todos los insumos agrupados por categoría de menú diario.
-    Si no hay registros para la fecha → auto-inserta todos con selected=0.
-    Marca con is_selected los que ya están en pos_daily_menu para esa fecha.
+    Devuelve todos los insumos de menú agrupados por categoría.
+    Marca is_selected según pos_daily_menu para la fecha dada.
+    No hace auto-init: la fuente de verdad son supply_items.
     """
     cid = payload["company_id"]
     target_date = date or _today()
 
-    # Cargar todos los insumos disponibles para menú
     items_rows = (await db.execute(text("""
         SELECT si.id_item, si.description AS item_name,
                si.Agrupar AS group_id,
-               pc.name AS group_name
+               pc.name    AS group_name
         FROM supply_items si
         INNER JOIN pos_product_categories pc
                ON si.Agrupar = pc.id AND pc.company_id = :cid
         WHERE si.company_id = :cid
-          AND si.is_active = 1
-          AND pc.percentage = 1
+          AND si.is_active   = 1
+          AND pc.percentage  = 1
           AND si.control_stock = 1
         ORDER BY pc.name, si.description
     """), {"cid": cid})).mappings().all()
@@ -1906,35 +1903,13 @@ async def get_menu_diario_admin(
     if not items_rows:
         return {"date": target_date, "categories": []}
 
-    # Verificar si ya hay registros para esta fecha
-    existing = (await db.execute(text("""
-        SELECT item_id, selected
-        FROM pos_daily_menu
+    # IDs guardados para hoy (solo los que el admin seleccionó)
+    saved_rows = (await db.execute(text("""
+        SELECT item_id FROM pos_daily_menu
         WHERE company_id = :cid AND date = :d
     """), {"cid": cid, "d": target_date})).mappings().all()
+    selected_ids = {int(r["item_id"]) for r in saved_rows}
 
-    # Si no hay nada para esta fecha → auto-inicializar todos como selected=0
-    if not existing:
-        for row in items_rows:
-            await db.execute(text("""
-                INSERT INTO pos_daily_menu (company_id, menu_id, item_id, date, category, description, group_by, selected, synced, updated_at)
-                VALUES (:cid, :menu_id, :item_id, :d, :cat, :desc, :grp, 0, 0, NOW())
-                ON DUPLICATE KEY UPDATE date = :d, selected = 0, updated_at = NOW()
-            """), {
-                "cid":     cid,
-                "menu_id": int(row["group_id"]),
-                "item_id": int(row["id_item"]),
-                "d":       target_date,
-                "cat":     str(row["group_name"] or ""),
-                "desc":    str(row["item_name"] or ""),
-                "grp":     int(row["group_id"]),
-            })
-        await db.commit()
-        selected_ids: set = set()
-    else:
-        selected_ids = {int(r["item_id"]) for r in existing if int(r["selected"]) == 1}
-
-    # Agrupar por categoría
     categories: dict = {}
     for row in items_rows:
         gid = int(row["group_id"])
@@ -1950,10 +1925,7 @@ async def get_menu_diario_admin(
             "is_selected": int(row["id_item"]) in selected_ids,
         })
 
-    return {
-        "date":       target_date,
-        "categories": list(categories.values()),
-    }
+    return {"date": target_date, "categories": list(categories.values())}
 
 
 @router.post("/menu-diario-admin/guardar")
@@ -1963,37 +1935,37 @@ async def guardar_menu_diario(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Guarda la selección del menú del día:
-    - Marca como selected=1 los elegidos.
-    - Elimina los no seleccionados para esa fecha.
-    - Si selected_ids está vacío → elimina todos (menú sin armar).
+    Guarda el menú del día con lógica DELETE+INSERT (pizarra limpia):
+    1. Borra todos los registros de esa fecha.
+    2. Re-inserta solo los seleccionados tomando datos de supply_items.
+    Esto evita el bug donde ítems previamente no seleccionados no pueden
+    re-seleccionarse porque ya no existen en la tabla.
     """
     cid = payload["company_id"]
     d   = data.date
 
-    if not data.selected_ids:
-        # Nada seleccionado → borrar todo para esta fecha
-        await db.execute(text("""
-            DELETE FROM pos_daily_menu
-            WHERE company_id = :cid AND date = :d
-        """), {"cid": cid, "d": d})
-    else:
-        # Marcar seleccionados
+    # Pizarra limpia para esta fecha
+    await db.execute(text("""
+        DELETE FROM pos_daily_menu WHERE company_id = :cid AND date = :d
+    """), {"cid": cid, "d": d})
+
+    if data.selected_ids:
         placeholders = ", ".join([f":id{i}" for i in range(len(data.selected_ids))])
         params: dict = {"cid": cid, "d": d}
         for i, sid in enumerate(data.selected_ids):
             params[f"id{i}"] = sid
 
+        # Re-insertar seleccionados con datos frescos de supply_items
         await db.execute(text(f"""
-            UPDATE pos_daily_menu
-            SET selected = 1, updated_at = NOW()
-            WHERE company_id = :cid AND date = :d AND item_id IN ({placeholders})
-        """), params)
-
-        # Eliminar los no seleccionados
-        await db.execute(text(f"""
-            DELETE FROM pos_daily_menu
-            WHERE company_id = :cid AND date = :d AND item_id NOT IN ({placeholders})
+            INSERT INTO pos_daily_menu
+                (company_id, menu_id, item_id, date, category, description, group_by, selected, synced, updated_at)
+            SELECT si.company_id, si.Agrupar, si.id_item, :d,
+                   pc.name, si.description, si.Agrupar, 1, 0, NOW()
+            FROM supply_items si
+            INNER JOIN pos_product_categories pc
+                   ON si.Agrupar = pc.id AND pc.company_id = :cid
+            WHERE si.company_id = :cid AND si.id_item IN ({placeholders})
+            ON DUPLICATE KEY UPDATE date = :d, selected = 1, updated_at = NOW()
         """), params)
 
     await db.commit()

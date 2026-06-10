@@ -1,7 +1,7 @@
 <template>
-  <div class="menu-diario-view">
+  <div class="md-view">
 
-    <!-- Header -->
+    <!-- Header sticky -->
     <div class="md-header">
       <button class="md-header__back" @click="handleSalir" :disabled="saving">
         <i class="bi bi-arrow-left"></i>
@@ -28,86 +28,67 @@
     <!-- Loading -->
     <div class="md-loading" v-if="loading">
       <div class="spinner-border text-primary"></div>
-      <p class="text-muted mt-2">Cargando menú…</p>
+      <p class="text-muted mt-2 small">Cargando menú…</p>
     </div>
 
     <!-- Sin datos -->
     <div class="md-empty" v-else-if="!categories.length">
       <i class="bi bi-journal-x fs-1 text-muted"></i>
       <p class="text-muted mt-2">No hay insumos configurados para menú diario.</p>
-      <p class="text-muted small">Verifique que existan categorías con <em>percentage=1</em> y suministros con <em>control_stock=1</em>.</p>
     </div>
 
-    <!-- Categorías -->
-    <div class="md-body" v-else>
-
-      <!-- Barra de selección rápida -->
-      <div class="md-quick-bar">
-        <button class="btn btn-outline-secondary btn-sm" @click="selectAll">
-          <i class="bi bi-check2-all me-1"></i>Todo
-        </button>
-        <button class="btn btn-outline-secondary btn-sm" @click="clearAll">
-          <i class="bi bi-x-lg me-1"></i>Ninguno
-        </button>
-        <div class="md-quick-bar__spacer"></div>
-        <span class="md-quick-bar__total">
-          {{ totalItems }} ítems disponibles
-        </span>
-      </div>
-
-      <!-- Acordeón de categorías -->
+    <!-- Columnas de categorías -->
+    <div class="md-grid" v-else>
       <div
+        class="md-col"
         v-for="cat in categories"
         :key="cat.group_id"
-        class="md-cat"
-        :class="{ 'md-cat--open': openGroups.has(cat.group_id) }"
       >
-        <!-- Cabecera -->
-        <button class="md-cat__head" @click="toggleGroup(cat.group_id)">
-          <div class="md-cat__head-left">
-            <span class="md-cat__name">{{ cat.group_name }}</span>
-            <span class="md-cat__summary">
-              {{ countSelected(cat) }} / {{ cat.items.length }} seleccionados
-            </span>
-          </div>
-          <div class="md-cat__head-right">
-            <span
-              class="md-cat__badge"
-              :class="countSelected(cat) === cat.items.length ? 'md-cat__badge--full' : countSelected(cat) > 0 ? 'md-cat__badge--partial' : 'md-cat__badge--none'"
-            >
-              {{ countSelected(cat) === cat.items.length ? 'Completo' : countSelected(cat) > 0 ? 'Parcial' : 'Sin selección' }}
-            </span>
-            <button class="md-cat__toggle-btn" @click.stop="toggleGroupAll(cat)">
-              {{ countSelected(cat) === cat.items.length ? 'Quitar todos' : 'Marcar todos' }}
+        <!-- Cabecera de columna -->
+        <div class="md-col__head">
+          <div class="md-col__head-top">
+            <span class="md-col__title">{{ cat.group_name }}</span>
+            <button class="md-col__toggle" @click="toggleGroupAll(cat)">
+              {{ countSelected(cat) === cat.items.length ? 'Quitar' : 'Marcar todos' }}
             </button>
-            <i class="bi ms-2" :class="openGroups.has(cat.group_id) ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
           </div>
-        </button>
+          <span class="md-col__summary"
+            :class="countSelected(cat) > 0 ? 'text-success' : 'text-muted'">
+            {{ countSelected(cat) }} / {{ cat.items.length }}
+          </span>
+        </div>
 
-        <!-- Items -->
-        <div class="md-cat__body" v-if="openGroups.has(cat.group_id)">
-          <div class="md-items-grid">
-            <button
-              v-for="item in cat.items"
-              :key="item.item_id"
-              class="md-item"
-              :class="{ 'md-item--selected': item.is_selected }"
-              @click="toggleItem(item)"
-            >
-              <span class="md-item__check">
-                <i class="bi bi-check-lg" v-if="item.is_selected"></i>
-              </span>
-              <span class="md-item__name">{{ item.item_name }}</span>
-            </button>
-          </div>
+        <!-- Lista de ítems -->
+        <div class="md-col__body">
+          <button
+            v-for="item in cat.items"
+            :key="item.item_id"
+            class="md-item"
+            :class="{ 'md-item--on': item.is_selected }"
+            @click="toggleItem(item)"
+          >
+            <span class="md-item__dot"></span>
+            <span class="md-item__name">{{ item.item_name }}</span>
+            <i class="bi bi-check-lg md-item__check" v-if="item.is_selected"></i>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Toast de confirmación -->
-    <div class="md-toast" :class="{ 'md-toast--show': toastMsg }" v-if="toastMsg">
-      <i class="bi bi-check-circle-fill me-2 text-success"></i>
-      {{ toastMsg }}
+    <!-- Barra inferior acciones rápidas -->
+    <div class="md-footer" v-if="!loading && categories.length">
+      <button class="btn btn-outline-secondary btn-sm" @click="selectAll">
+        <i class="bi bi-check2-all me-1"></i>Todo
+      </button>
+      <button class="btn btn-outline-secondary btn-sm" @click="clearAll">
+        <i class="bi bi-x-lg me-1"></i>Ninguno
+      </button>
+      <span class="md-footer__total">{{ totalItems }} ítems</span>
+    </div>
+
+    <!-- Toast -->
+    <div class="md-toast" :class="{ 'md-toast--show': toastMsg }">
+      <i class="bi bi-check-circle-fill me-2 text-success"></i>{{ toastMsg }}
     </div>
 
   </div>
@@ -126,23 +107,21 @@ const toastMsg = ref('')
 const targetDate  = ref('')
 const displayDate = ref('')
 const categories  = ref([])
-const openGroups  = ref(new Set())
 
-const totalSelected = computed(() => categories.value.reduce((acc, cat) => acc + countSelected(cat), 0))
-const totalItems    = computed(() => categories.value.reduce((acc, cat) => acc + cat.items.length, 0))
+const totalSelected = computed(() =>
+  categories.value.reduce((acc, cat) => acc + countSelected(cat), 0)
+)
+const totalItems = computed(() =>
+  categories.value.reduce((acc, cat) => acc + cat.items.length, 0)
+)
 
 function countSelected(cat) {
   return cat.items.filter(i => i.is_selected).length
 }
 
-function toggleGroup(id) {
-  // Solo una categoría abierta a la vez
-  openGroups.value = openGroups.value.has(id) ? new Set() : new Set([id])
-}
-
 function toggleGroupAll(cat) {
-  const allSelected = countSelected(cat) === cat.items.length
-  cat.items.forEach(i => { i.is_selected = !allSelected })
+  const allOn = countSelected(cat) === cat.items.length
+  cat.items.forEach(i => { i.is_selected = !allOn })
 }
 
 function toggleItem(item) {
@@ -167,10 +146,6 @@ async function loadMenu() {
     targetDate.value  = res.data.date
     categories.value  = res.data.categories
     displayDate.value = formatDisplayDate(res.data.date)
-
-    // Abrir solo la primera categoría por defecto
-    const first = res.data.categories[0]
-    openGroups.value = first ? new Set([first.group_id]) : new Set()
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al cargar el menú diario')
   } finally {
@@ -182,19 +157,18 @@ async function guardar() {
   saving.value = true
   try {
     const selected = []
-    categories.value.forEach(cat => {
-      cat.items.forEach(item => {
-        if (item.is_selected) selected.push(item.item_id)
-      })
-    })
-
+    categories.value.forEach(cat =>
+      cat.items.forEach(item => { if (item.is_selected) selected.push(item.item_id) })
+    )
     const cid = JSON.parse(localStorage.getItem('user') || '{}').company_id
     await api.post('/api/pos/comanda/menu-diario-admin/guardar',
       { date: targetDate.value, selected_ids: selected },
       { headers: { 'X-Company-Id': cid } }
     )
-
-    showToast(selected.length ? `Menú guardado: ${selected.length} ítems activos` : 'Menú del día borrado')
+    showToast(selected.length
+      ? `Guardado: ${selected.length} ítems activos para hoy`
+      : 'Menú del día borrado'
+    )
   } catch (e) {
     alert(e.response?.data?.detail || 'Error al guardar el menú')
   } finally {
@@ -202,9 +176,7 @@ async function guardar() {
   }
 }
 
-async function handleGuardar() {
-  await guardar()
-}
+async function handleGuardar() { await guardar() }
 
 async function handleSalir() {
   await guardar()
@@ -226,24 +198,26 @@ onMounted(loadMenu)
 </script>
 
 <style scoped>
-.menu-diario-view {
+/* ══ Layout base ══ */
+.md-view {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
   background: #f1f5f9;
+  padding-bottom: 64px; /* espacio para footer */
 }
 
-/* ── Header ── */
+/* ══ Header ══ */
 .md-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 12px 16px;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 20;
 }
 
 .md-header__back {
@@ -257,22 +231,16 @@ onMounted(loadMenu)
 }
 .md-header__back:disabled { opacity: .5; }
 
-.md-header__info {
-  flex: 1;
-  min-width: 0;
-}
+.md-header__info { flex: 1; min-width: 0; }
 
 .md-header__title {
-  font-size: 1rem;
+  font-size: .95rem;
   font-weight: 700;
   color: #1e293b;
-  margin: 0 0 2px;
+  margin: 0 0 1px;
 }
 
-.md-header__date {
-  font-size: .8rem;
-  color: #64748b;
-}
+.md-header__date { font-size: .78rem; color: #64748b; }
 
 .md-header__actions {
   display: flex;
@@ -281,13 +249,9 @@ onMounted(loadMenu)
   flex-shrink: 0;
 }
 
-.md-header__count {
-  font-size: .82rem;
-  font-weight: 600;
-  color: #166534;
-}
+.md-header__count { font-size: .8rem; font-weight: 600; color: #166534; }
 
-/* ── Loading / Empty ── */
+/* ══ Loading / Empty ══ */
 .md-loading, .md-empty {
   flex: 1;
   display: flex;
@@ -298,181 +262,189 @@ onMounted(loadMenu)
   text-align: center;
 }
 
-/* ── Body ── */
-.md-body {
-  padding: 14px 14px 80px;
+/* ══ Grid de columnas ══
+   auto-fill: cuantas quepan (mín 200px), las extra se van a la siguiente fila */
+.md-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  align-items: start;
+  flex: 1;
+}
+
+/* ══ Columna ══ */
+.md-col {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-/* ── Barra rápida ── */
-.md-quick-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-}
-
-.md-quick-bar__spacer { flex: 1; }
-
-.md-quick-bar__total {
-  font-size: .78rem;
-  color: #94a3b8;
-}
-
-/* ── Categoría acordeón ── */
-.md-cat {
-  background: #fff;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 12px;
   overflow: hidden;
-  transition: border-color .15s;
 }
-.md-cat--open { border-color: #2563eb; }
 
-.md-cat__head {
-  width: 100%;
+.md-col__head {
+  padding: 10px 12px 8px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  position: sticky;
+  top: 56px; /* altura del header */
+}
+
+.md-col__head-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  gap: 8px;
+  gap: 6px;
+  margin-bottom: 2px;
 }
-.md-cat--open .md-cat__head { background: #eff6ff; }
 
-.md-cat__head-left { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.md-cat__head-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-
-.md-cat__name {
+.md-col__title {
   font-weight: 700;
-  font-size: .9rem;
+  font-size: .82rem;
   color: #1e293b;
   text-transform: uppercase;
-  letter-spacing: .4px;
+  letter-spacing: .3px;
+  flex: 1;
+  min-width: 0;
 }
 
-.md-cat__summary {
-  font-size: .75rem;
-  color: #64748b;
-}
-
-.md-cat__badge {
-  font-size: .7rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 20px;
-}
-.md-cat__badge--full    { background: #dcfce7; color: #166534; }
-.md-cat__badge--partial { background: #fef9c3; color: #854d0e; }
-.md-cat__badge--none    { background: #fee2e2; color: #991b1b; }
-
-.md-cat__toggle-btn {
+.md-col__toggle {
   background: none;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
-  padding: 2px 8px;
-  font-size: .72rem;
+  padding: 1px 7px;
+  font-size: .68rem;
   color: #475569;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-.md-cat__toggle-btn:hover { background: #f1f5f9; }
+.md-col__toggle:hover { background: #f1f5f9; }
 
-.md-cat__body {
-  padding: 12px 14px 14px;
-  border-top: 1px solid #e2e8f0;
-}
+.md-col__summary { font-size: .72rem; font-weight: 600; }
 
-/* ── Grid de ítems ── */
-.md-items-grid {
+/* ══ Lista de ítems ══ */
+.md-col__body {
+  overflow-y: auto;
+  max-height: calc(100dvh - 190px);
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
 }
 
 .md-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 20px;
+  gap: 8px;
+  padding: 7px 12px;
   background: #fff;
-  font-size: .85rem;
-  font-weight: 600;
-  color: #475569;
+  border: none;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: left;
   cursor: pointer;
-  transition: all .15s;
+  transition: background .1s;
+  width: 100%;
 }
-.md-item:hover { border-color: #2563eb; color: #2563eb; }
-.md-item--selected {
-  border-color: #16a34a;
-  background: #16a34a;
-  color: #fff;
+.md-item:last-child { border-bottom: none; }
+.md-item:hover { background: #f8fafc; }
+
+.md-item--on {
+  background: #dcfce7;
 }
+.md-item--on:hover { background: #bbf7d0; }
+
+.md-item__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  transition: background .1s;
+}
+.md-item--on .md-item__dot { background: #16a34a; }
+
+.md-item__name {
+  flex: 1;
+  font-size: .8rem;
+  font-weight: 500;
+  color: #334155;
+  line-height: 1.3;
+}
+.md-item--on .md-item__name { color: #166534; font-weight: 600; }
 
 .md-item__check {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: .7rem;
+  font-size: .78rem;
+  color: #16a34a;
   flex-shrink: 0;
 }
-.md-item--selected .md-item__check {
-  background: rgba(255,255,255,.25);
-  border-color: transparent;
+
+/* ══ Footer acciones rápidas ══ */
+.md-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  z-index: 20;
 }
 
-/* ── Toast ── */
+.md-footer__total {
+  margin-left: auto;
+  font-size: .78rem;
+  color: #94a3b8;
+}
+
+/* ══ Toast ══ */
 .md-toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 70px;
   left: 50%;
-  transform: translateX(-50%) translateY(80px);
+  transform: translateX(-50%) translateY(60px);
   background: #1e293b;
   color: #fff;
-  padding: 10px 20px;
+  padding: 9px 18px;
   border-radius: 20px;
-  font-size: .88rem;
+  font-size: .84rem;
   font-weight: 600;
   opacity: 0;
   transition: transform .3s, opacity .3s;
   z-index: 9999;
   white-space: nowrap;
+  pointer-events: none;
 }
-.md-toast--show {
-  transform: translateX(-50%) translateY(0);
-  opacity: 1;
+.md-toast--show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* ══ Tablet: máx 2-3 columnas ══ */
+@media (max-width: 1024px) {
+  .md-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .md-col__body { max-height: calc(50dvh - 100px); }
 }
 
-/* ── Responsive ── */
+/* ══ Mobile ≤768px: 2 columnas ══ */
 @media (max-width: 768px) {
-  .md-header { padding: 10px 12px; gap: 8px; }
+  .md-grid {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 8px;
+    gap: 8px;
+  }
+  .md-col__body { max-height: calc(42dvh - 60px); }
+  .md-header { padding: 10px 12px; }
   .md-header__count { display: none; }
-  .md-body { padding: 10px 10px 80px; gap: 8px; }
-  .md-cat__head { padding: 10px 12px; }
-  .md-item { padding: 7px 11px; font-size: .82rem; }
+  .md-col__head { top: 52px; padding: 8px 10px 6px; }
+  .md-item { padding: 6px 10px; }
+  .md-item__name { font-size: .75rem; }
 }
 
-@media (max-width: 576px) {
-  .md-header__title { font-size: .9rem; }
-  .md-header__date  { font-size: .72rem; }
-  .md-body { padding: 8px 8px 80px; gap: 7px; }
-  .md-cat__name { font-size: .83rem; }
-  .md-items-grid { gap: 6px; }
-  .md-item { padding: 6px 10px; font-size: .8rem; }
-  .md-cat__toggle-btn { display: none; }
+/* ══ Mobile ≤480px: 1 columna ══ */
+@media (max-width: 480px) {
+  .md-grid { grid-template-columns: 1fr; }
+  .md-col__body { max-height: none; }
+  .md-col__toggle { display: none; }
 }
 </style>
