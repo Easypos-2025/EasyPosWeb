@@ -319,9 +319,10 @@ async def abrir_mesa(
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
 
     # Verificar si ya existe un pedido activo para esta mesa (cualquier origen)
+    # DATE(Fecha)=:today para cubrir DATETIME con componente de hora (VB6 y web)
     existing = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
-        WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+        WHERE Mesa=:mesa AND company_id=:cid AND DATE(Fecha)=:today
           AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
     """), {"mesa": mesa["name"], "cid": cid, "today": today})).mappings().first()
@@ -389,18 +390,20 @@ async def get_orden_mesa(
     # Si viene order_number (pedido VB6 conocido): lookup directo por Nro_Pedido
     # Si no: buscar por mesa, prefiriendo Movil=0 (VB6) sobre Movil=1 (web)
     if order_number:
+        # Buscar por Nro_Pedido sin filtro de fecha — DATE(Fecha) sería suficiente pero
+        # Nro_Pedido web ya incluye timestamp único; para VB6 evitar mismatch de hora.
         order = (await db_temp.execute(text("""
             SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
             FROM temp_comanda
-            WHERE Nro_Pedido=:on AND company_id=:cid AND Fecha=:today
-              AND Nro_Factura='0' AND Cancelado=0
+            WHERE Nro_Pedido=:on AND company_id=:cid
+              AND DATE(Fecha)=:today AND Nro_Factura='0' AND Cancelado=0
             LIMIT 1
         """), {"on": order_number, "cid": cid, "today": today})).mappings().first()
     else:
         order = (await db_temp.execute(text("""
             SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
             FROM temp_comanda
-            WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+            WHERE Mesa=:mesa AND company_id=:cid AND DATE(Fecha)=:today
               AND Nro_Factura='0' AND Cancelado=0
             ORDER BY Movil ASC, Hora ASC
             LIMIT 1
@@ -759,15 +762,19 @@ async def agregar_item(
 ):
     cid = payload["company_id"]
 
-    # Verificar pedido activo en datatemppos
-    order = (await db_temp.execute(text("""
-        SELECT Nro_Pedido FROM temp_comanda
-        WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
-          AND Nro_Factura='0' AND Cancelado=0
+    # Verificar pedido activo — buscar solo por Nro_Pedido (sin filtrar por Fecha exacta)
+    # porque temp_comanda.Fecha es DATETIME y puede diferir en formato (VB6 vs web).
+    order_row = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Fecha FROM temp_comanda
+        WHERE Nro_Pedido=:on AND company_id=:cid
+          AND DATE(Fecha)=:today AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
-    """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().first()
-    if not order:
+    """), {"on": data.order_number, "cid": cid, "today": _today()})).mappings().first()
+    if not order_row:
         raise HTTPException(status_code=404, detail="Orden no encontrada o ya cerrada")
+
+    # Usar la Fecha real de la DB para todos los INSERT/SELECT posteriores
+    real_fecha = order_row["Fecha"]
 
     # Info del plato desde easyposweb
     dish = (await db.execute(text(
@@ -779,8 +786,8 @@ async def agregar_item(
     # Siguiente número de ítem en datatemppos
     max_item = (await db_temp.execute(text(
         "SELECT COALESCE(MAX(Item), 0) FROM temp_detalle_comanda_parcial "
-        "WHERE Nro_pedido=:on AND Fecha=:date AND company_id=:cid"
-    ), {"on": data.order_number, "date": data.date, "cid": cid})).scalar() or 0
+        "WHERE Nro_pedido=:on AND Fecha=:fecha AND company_id=:cid"
+    ), {"on": data.order_number, "fecha": real_fecha, "cid": cid})).scalar() or 0
     item_num = int(max_item) + 1
 
     amount = data.amount if data.amount else int(dish["price"] * data.quantity)
@@ -802,13 +809,13 @@ async def agregar_item(
              Cantidad, Valor, Novedad, Cambios, Paga_Impuesto, Impuesto, Impuesto_Original,
              Producto_Personalizado, Nro_Puesto, Mostrar, Hora, updated_at)
         VALUES
-            (:cid, :on, :date, '0', :did, :item, '0',
+            (:cid, :on, :fecha, '0', :did, :item, '0',
              :qty, :amount, :notes, :changes, :pays_tax, :tax, :tax,
              :custom, 0, 1, :hora, NOW())
     """), {
         "cid":      cid,
         "on":       data.order_number,
-        "date":     data.date,
+        "fecha":    real_fecha,
         "did":      data.dish_id,
         "item":     item_num,
         "qty":      data.quantity,
@@ -828,13 +835,13 @@ async def agregar_item(
                 (company_id, Nro_Pedido, Fecha, Nro_Factura,
                  Id_Plato, Item, Id_Grupo, Id_Item, Cantidad, updated_at)
             VALUES
-                (:cid, :on, :date, '0',
+                (:cid, :on, :fecha, '0',
                  :did, :item, :gid, :iid, :qty, NOW())
             ON DUPLICATE KEY UPDATE Cantidad = VALUES(Cantidad)
         """), {
-            "cid":  cid,
-            "on":   data.order_number,
-            "date": data.date,
+            "cid":   cid,
+            "on":    data.order_number,
+            "fecha": real_fecha,
             "did":  data.dish_id,
             "item": item_num,
             "gid":  sel.category_code,
@@ -842,7 +849,7 @@ async def agregar_item(
             "qty":  sel.discount_qty,
         })
 
-    await _recalc_total(db_temp, data.order_number, data.date, cid)
+    await _recalc_total(db_temp, data.order_number, real_fecha, cid)
     await db_temp.commit()
 
     return {
