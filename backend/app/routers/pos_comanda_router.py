@@ -418,7 +418,7 @@ async def get_orden_mesa(
     # Calcular daily_seq
     seq_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
-        WHERE company_id=:cid AND Fecha=:today AND Nro_Factura='0' AND Cancelado=0
+        WHERE company_id=:cid AND DATE(Fecha)=:today AND Nro_Factura='0' AND Cancelado=0
         ORDER BY Hora ASC
     """), {"cid": cid, "today": today})).mappings().all()
     seq_map = {r["Nro_Pedido"]: i + 1 for i, r in enumerate(seq_rows)}
@@ -433,14 +433,15 @@ async def get_orden_mesa(
         waiter_name = wrow["name"] if wrow else None
 
     # Ítems del pedido desde datatemppos (solo registros maestros: Mostrar=1)
+    # No filtramos por Fecha — Nro_pedido+company_id es suficiente y evita mismatch DATETIME
     items_rows = (await db_temp.execute(text("""
         SELECT Id_Plato, Item, Depende, Cantidad, Valor, Novedad,
                Cambios, Producto_Personalizado, Hora_Plato
         FROM temp_detalle_comanda_parcial
-        WHERE Nro_pedido=:on AND Fecha=:fecha AND Nro_Factura='0'
+        WHERE Nro_pedido=:on AND Nro_Factura='0'
           AND company_id=:cid AND Mostrar=1
         ORDER BY Item
-    """), {"on": on, "fecha": fecha, "cid": cid})).mappings().all()
+    """), {"on": on, "cid": cid})).mappings().all()
 
     # Nombres de platos desde easyposweb
     dish_ids = list({int(r["Id_Plato"]) for r in items_rows})
@@ -786,8 +787,8 @@ async def agregar_item(
     # Siguiente número de ítem en datatemppos
     max_item = (await db_temp.execute(text(
         "SELECT COALESCE(MAX(Item), 0) FROM temp_detalle_comanda_parcial "
-        "WHERE Nro_pedido=:on AND Fecha=:fecha AND company_id=:cid"
-    ), {"on": data.order_number, "fecha": real_fecha, "cid": cid})).scalar() or 0
+        "WHERE Nro_pedido=:on AND company_id=:cid"
+    ), {"on": data.order_number, "cid": cid})).scalar() or 0
     item_num = int(max_item) + 1
 
     amount = data.amount if data.amount else int(dish["price"] * data.quantity)
@@ -849,7 +850,7 @@ async def agregar_item(
             "qty":  sel.discount_qty,
         })
 
-    await _recalc_total(db_temp, data.order_number, real_fecha, cid)
+    await _recalc_total(db_temp, data.order_number, cid)
     await db_temp.commit()
 
     return {
@@ -873,19 +874,18 @@ async def actualizar_item(
     cid = payload["company_id"]
 
     current = (await db_temp.execute(text("""
-        SELECT Cantidad, Valor, Fecha FROM temp_detalle_comanda_parcial
-        WHERE Nro_pedido=:on AND DATE(Fecha)=DATE(:date) AND Nro_Factura='0'
+        SELECT Cantidad, Valor FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Nro_Factura='0'
           AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1
     """), {
-        "on": data.order_number, "date": data.date,
+        "on": data.order_number,
         "did": data.dish_id, "item": data.item, "cid": cid,
     })).mappings().first()
     if not current:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
 
-    real_fecha = current["Fecha"]
     sets, params = [], {
-        "on": data.order_number, "fecha": real_fecha,
+        "on": data.order_number,
         "did": data.dish_id, "item": data.item, "cid": cid,
     }
 
@@ -905,10 +905,10 @@ async def actualizar_item(
     if sets:
         await db_temp.execute(text(
             f"UPDATE temp_detalle_comanda_parcial SET {', '.join(sets)} "
-            "WHERE Nro_pedido=:on AND Fecha=:fecha AND Nro_Factura='0' "
+            "WHERE Nro_pedido=:on AND Nro_Factura='0' "
             "AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1"
         ), params)
-        await _recalc_total(db_temp, data.order_number, real_fecha, cid)
+        await _recalc_total(db_temp, data.order_number, cid)
         await db_temp.commit()
 
     return {"ok": True}
@@ -933,26 +933,17 @@ async def eliminar_item(
         "item": data.item, "cid": cid,
     })
 
-    # Borrar ítem principal — usar DATE(Fecha) para cubrir DATETIME con hora
-    fecha_row = (await db_temp.execute(text("""
-        SELECT Fecha FROM temp_detalle_comanda_parcial
-        WHERE Nro_pedido=:on AND DATE(Fecha)=DATE(:date) AND Nro_Factura='0'
-          AND Id_Plato=:did AND Item=:item AND company_id=:cid
-        LIMIT 1
-    """), {"on": data.order_number, "date": data.date, "did": data.dish_id,
-           "item": data.item, "cid": cid})).mappings().first()
-    real_fecha = fecha_row["Fecha"] if fecha_row else data.date
-
+    # Borrar ítem principal — solo por Nro_pedido sin Fecha (evita mismatch DATETIME)
     await db_temp.execute(text("""
         DELETE FROM temp_detalle_comanda_parcial
-        WHERE Nro_pedido=:on AND Fecha=:fecha AND Nro_Factura='0'
+        WHERE Nro_pedido=:on AND Nro_Factura='0'
           AND Id_Plato=:did AND Item=:item AND company_id=:cid
     """), {
-        "on": data.order_number, "fecha": real_fecha,
+        "on": data.order_number,
         "did": data.dish_id, "item": data.item, "cid": cid,
     })
 
-    await _recalc_total(db_temp, data.order_number, real_fecha, cid)
+    await _recalc_total(db_temp, data.order_number, cid)
     await db_temp.commit()
     return {"ok": True}
 
@@ -1818,7 +1809,7 @@ def _hp_sort_key(t: str) -> int:
     return 0
 
 
-async def _recalc_total(db_temp: AsyncSession, order_number: str, date: str, cid: int) -> None:
+async def _recalc_total(db_temp: AsyncSession, order_number: str, cid: int) -> None:
     """Recalcula el total de un pedido en temp_comanda desde sus ítems en datatemppos."""
     await db_temp.execute(text("""
         UPDATE temp_comanda tc
@@ -1826,15 +1817,13 @@ async def _recalc_total(db_temp: AsyncSession, order_number: str, date: str, cid
             SELECT COALESCE(SUM(tdc.Valor), 0)
             FROM temp_detalle_comanda_parcial tdc
             WHERE tdc.Nro_pedido  = tc.Nro_Pedido
-              AND tdc.Fecha       = tc.Fecha
               AND tdc.Nro_Factura = '0'
               AND tdc.company_id  = tc.company_id
               AND tdc.Mostrar     = 1
         )
-        WHERE tc.Nro_Pedido   = :on
-          AND tc.Fecha        = :date
-          AND tc.company_id   = :cid
-    """), {"on": order_number, "date": date, "cid": cid})
+        WHERE tc.Nro_Pedido  = :on
+          AND tc.company_id  = :cid
+    """), {"on": order_number, "cid": cid})
 
 
 # ═══════════════════════════════════════════════════════════════
