@@ -1956,7 +1956,7 @@ async def get_menu_diario_admin(
     # IDs guardados para hoy (solo los que el admin seleccionó)
     saved_rows = (await db.execute(text("""
         SELECT item_id FROM pos_daily_menu
-        WHERE company_id = :cid AND date = :d
+        WHERE company_id = :cid AND date = :d AND selected = 1
     """), {"cid": cid, "d": target_date})).mappings().all()
     selected_ids = {int(r["item_id"]) for r in saved_rows}
 
