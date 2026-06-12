@@ -109,6 +109,42 @@ async def _cleanup_zombie_orders(cid: int, db_main: AsyncSession, db_temp: Async
         WHERE tc.Nro_Factura = '0'
     """), {"cid": cid})
 
+    # Borrar zombies VB6: Nro_Factura='0' cuyo mismo Nro_Pedido ya tiene una fila facturada.
+    # VB6 no actualiza la fila '0', sino que inserta una nueva con el número real.
+    await db_temp.execute(text("""
+        DELETE tc FROM temp_comanda tc
+        WHERE tc.company_id = :cid
+          AND tc.Nro_Factura = '0'
+          AND EXISTS (
+              SELECT 1 FROM temp_comanda tc2
+              WHERE tc2.company_id = :cid
+                AND tc2.Nro_Pedido = tc.Nro_Pedido
+                AND tc2.Nro_Factura <> '0'
+          )
+    """), {"cid": cid})
+
+    # Borrar zombies web: pedidos ya en pos_invoice_details que siguen con Nro_Factura='0'
+    inv_rows = (await db_main.execute(text("""
+        SELECT DISTINCT order_number
+        FROM pos_invoice_details
+        WHERE company_id = :cid
+          AND date >= CURDATE() - INTERVAL 7 DAY
+    """), {"cid": cid})).fetchall()
+    if inv_rows:
+        inv_quoted = ",".join(f"'{r[0]}'" for r in inv_rows)
+        await db_temp.execute(text(f"""
+            DELETE FROM temp_detalle_comanda_parcial
+            WHERE company_id = :cid
+              AND Nro_Factura = '0'
+              AND Nro_pedido IN ({inv_quoted})
+        """), {"cid": cid})
+        await db_temp.execute(text(f"""
+            DELETE FROM temp_comanda
+            WHERE company_id = :cid
+              AND Nro_Factura = '0'
+              AND Nro_Pedido IN ({inv_quoted})
+        """), {"cid": cid})
+
     # Borrar detalles huérfanos cuyo header ya no existe
     await db_temp.execute(text("""
         DELETE tdc FROM temp_detalle_comanda_parcial tdc
@@ -189,6 +225,20 @@ async def _build_cards(
           AND (tc.Movil = 0 OR tc.Salio = 1)
         ORDER BY tc.Hora ASC, tdc.Hora_Plato ASC, tdc.Item ASC
     """), {"cid": cid})).mappings().all()
+
+    # Red de seguridad: excluir órdenes ya facturadas en pos_invoice_details
+    # aunque el cleanup no haya corrido aún en este ciclo.
+    raw_order_numbers = list({r["Nro_Pedido"] for r in order_rows})
+    invoiced_set: set = set()
+    if raw_order_numbers:
+        on_q = ",".join(f"'{o}'" for o in raw_order_numbers)
+        inv_check = (await db.execute(text(f"""
+            SELECT DISTINCT order_number FROM pos_invoice_details
+            WHERE company_id=:cid AND order_number IN ({on_q})
+        """), {"cid": cid})).fetchall()
+        invoiced_set = {r[0] for r in inv_check}
+    if invoiced_set:
+        order_rows = [r for r in order_rows if r["Nro_Pedido"] not in invoiced_set]
 
     dish_ids      = list({int(r["Id_Plato"]) for r in order_rows})
     order_numbers = list({r["Nro_Pedido"] for r in order_rows})

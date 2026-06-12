@@ -2277,7 +2277,6 @@ async def push_printers(
                     name       = VALUES(name),
                     ip         = VALUES(ip),
                     port       = VALUES(port),
-                    is_active  = VALUES(is_active),
                     synced     = 1,
                     updated_at = NOW()
             """), p.dict())

@@ -776,20 +776,42 @@ function cancelOrder() {
 
 .cart-item__btn {
   background: none;
-  border: none;
-  border-radius: 6px;
-  padding: 3px 5px;
-  font-size: .78rem;
+  border: 1.5px solid transparent;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: .8rem;
   cursor: pointer;
   transition: all .15s;
   flex-shrink: 0;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.cart-item__btn--notes { color: #94a3b8; }
-.cart-item__btn--notes:hover:not(:disabled) { color: #2563eb; background: #eff6ff; }
-.cart-item__btn--notes:disabled { color: #e2e8f0; cursor: not-allowed; }
-.cart-item__btn--del { color: #fca5a5; }
-.cart-item__btn--del:hover { color: #ef4444; background: #fff5f5; }
+.cart-item__btn--notes {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.cart-item__btn--notes:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+.cart-item__btn--notes:disabled {
+  color: #cbd5e1;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+.cart-item__btn--del {
+  color: #dc2626;
+  background: #fff1f2;
+  border-color: #fecaca;
+}
+.cart-item__btn--del:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
 
 /* Pills de armado/notas */
 .cart-item__tags {

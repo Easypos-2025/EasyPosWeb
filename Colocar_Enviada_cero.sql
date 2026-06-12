@@ -44,3 +44,8 @@ UPDATE recibos                          SET Enviada_MySql=0 WHERE Enviada_MySql=
 UPDATE inventarios_entradas_manuales    SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE inventarios_fisicos_manuales     SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE inventarios_entradas_manuales    SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE consecutivo_factura_sistema      SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE consecutivo_factura_manual       SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE apidian_caja_facturas            SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE apidian_clientes_adquiriente     SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE apidian_facturas_cufe            SET Enviada_MySql=0 WHERE Enviada_MySql=1;

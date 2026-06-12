@@ -32,14 +32,14 @@ async def _get_latest_payment(company_id: int, db: AsyncSession):
     result = await db.execute(
         select(CompanyPayment).where(CompanyPayment.company_id == company_id).order_by(CompanyPayment.id.desc())
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def _get_active_plan(company_id: int, db: AsyncSession):
     result = await db.execute(
         select(CompanyPlan).where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True).order_by(CompanyPlan.id.desc())
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def _plan_price_for(plan: Plan, currency_code: str, db: AsyncSession) -> float:
