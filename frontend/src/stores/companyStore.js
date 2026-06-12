@@ -88,11 +88,12 @@ export const useCompanyStore = defineStore("company", () => {
         companies.value = []
       }
 
-      // Empresa activa: restaurar selección o usar la del usuario
+      // Empresa activa: restaurar selección solo si pertenece a las empresas del usuario
       const stored = localStorage.getItem("selected_company")
       if (stored) {
         const parsed  = JSON.parse(stored)
         const stillOk = companies.value.find(c => c.id === parsed.id)
+        if (!stillOk) localStorage.removeItem("selected_company")
         selectedCompany.value = stillOk ? parsed : (companies.value.find(c => c.id === companyId) ?? companies.value[0] ?? null)
       } else {
         selectedCompany.value = companies.value.find(c => c.id === companyId) ?? companies.value[0] ?? null

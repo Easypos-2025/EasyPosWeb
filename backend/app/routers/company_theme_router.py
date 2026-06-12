@@ -4,6 +4,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.models.role_model import Role
+from app.models.user_model import User
 from app.models.company_theme_model import CompanyTheme
 
 router = APIRouter(prefix="/company-theme", tags=["Company Theme"])
@@ -32,10 +33,20 @@ def _serialize(theme) -> dict:
 
 
 async def _authorize(current_user, company_id: int, db: AsyncSession):
+    if current_user.company_id == company_id:
+        return
     role = await db.get(Role, current_user.role_id)
-    is_system = role.is_system if role else False
-    if not is_system and current_user.company_id != company_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if role and role.is_system:
+        return
+    # Permite acceso si el usuario tiene una cuenta con el mismo email en la empresa destino
+    # (usuario multi-sede que cambió de contexto sin cerrar sesión)
+    if current_user.email:
+        match = (await db.execute(
+            select(User).where(User.email == current_user.email, User.company_id == company_id)
+        )).scalar_one_or_none()
+        if match:
+            return
+    raise HTTPException(status_code=403, detail="Not authorized")
 
 
 @router.get("/{company_id}/colors")
