@@ -22,6 +22,10 @@ import DashboardDistribuidora from "@/views/dashboards/DashboardDistribuidora.vu
 import DashboardLujosAutos    from "@/views/dashboards/DashboardLujosAutos.vue"
 import DashboardMarketing     from "@/views/dashboards/DashboardMarketing.vue"
 import DashboardMiniMarket    from "@/views/dashboards/DashboardMiniMarket.vue"
+import DashboardCompraventa   from "@/views/dashboards/DashboardCompraventa.vue"
+import DashboardHipotecas     from "@/views/dashboards/DashboardHipotecas.vue"
+import DashboardPanaderia     from "@/views/dashboards/DashboardPanaderia.vue"
+import DashboardServicecar    from "@/views/dashboards/DashboardServicecar.vue"
 
 // business_profile_id → componente de dashboard
 const DASHBOARD_MAP = {
@@ -37,6 +41,10 @@ const DASHBOARD_MAP = {
   12: DashboardMarketing,      // Agencia de Marketing
   13: DashboardMiniMarket,     // Mini-Market / Supermercados
   14: DashboardAlmacenModa,    // Almacenes Moda
+  15: DashboardServicecar,     // Servicars
+  16: DashboardPanaderia,      // Panaderías - Pastelerías
+  17: DashboardHipotecas,      // Hipotecas - Cobros
+  19: DashboardCompraventa,    // Compraventas - Joyerías
 }
 
 const companyStore = useCompanyStore()

@@ -4,18 +4,18 @@
     <KpiStrip :kpis="kpis" :showLabels="true" />
 
     <div class="dash-header">
-      <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Distribuidora' }}</h6>
+      <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Compraventa / Joyería' }}</h6>
     </div>
 
     <div class="welcome-card">
-      <div class="wc-icon"><i class="bi bi-truck-front-fill"></i></div>
+      <div class="wc-icon"><i class="bi bi-gem"></i></div>
       <div class="wc-body">
-        <h5>¡Bienvenido a tu panel de Distribuidora!</h5>
-        <p>Desde aquí gestionas tus pedidos, rutas de entrega, cartera de clientes e inventario de productos. Comienza configurando tus clientes, listas de precios y rutas.</p>
+        <h5>¡Bienvenido a tu panel de Compraventa / Joyería!</h5>
+        <p>Gestiona tus compras y ventas de artículos, joyería, prendas de empeño y objetos de valor. Mantén el control de cada pieza con su costo, valor de venta y estado.</p>
         <div class="wc-tips">
-          <span><i class="bi bi-check-circle-fill"></i> Registra tus clientes y zonas de reparto</span>
-          <span><i class="bi bi-check-circle-fill"></i> Configura listas de precios por cliente</span>
-          <span><i class="bi bi-check-circle-fill"></i> Crea pedidos y controla entregas pendientes</span>
+          <span><i class="bi bi-check-circle-fill"></i> Registra artículos con costo de compra y precio de venta</span>
+          <span><i class="bi bi-check-circle-fill"></i> Controla el inventario de piezas disponibles</span>
+          <span><i class="bi bi-check-circle-fill"></i> Gestiona clientes compradores y proveedores</span>
         </div>
       </div>
     </div>
@@ -31,9 +31,9 @@ const companyStore = useCompanyStore()
 
 const kpis = [
   { icon: "bi-cash-coin",        label: "Ventas hoy",          value: "$ —" },
-  { icon: "bi-receipt",          label: "Pedidos hoy",         value: "—"   },
+  { icon: "bi-receipt",          label: "Transacciones",       value: "—"   },
   { icon: "bi-graph-up-arrow",   label: "Ticket promedio",     value: "$ —" },
-  { icon: "bi-people",           label: "Clientes atendidos",  value: "—"   },
+  { icon: "bi-bag-check",        label: "Artículos vendidos",  value: "—"   },
 ]
 </script>
 
@@ -42,14 +42,14 @@ const kpis = [
 .dash-title   { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0; }
 .welcome-card {
   display: flex; gap: 20px; align-items: flex-start;
-  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
-  border: 1px solid #bfdbfe; border-radius: 14px; padding: 22px 24px;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fcd34d; border-radius: 14px; padding: 22px 24px;
 }
-.wc-icon { font-size: 40px; color: #2563eb; flex-shrink: 0; line-height: 1; }
+.wc-icon { font-size: 40px; color: #d97706; flex-shrink: 0; line-height: 1; }
 .wc-body h5  { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
 .wc-body p   { font-size: 13px; color: #475569; margin-bottom: 12px; line-height: 1.6; }
 .wc-tips     { display: flex; flex-direction: column; gap: 5px; }
-.wc-tips span { font-size: 12px; color: #1d4ed8; display: flex; align-items: center; gap: 6px; }
+.wc-tips span { font-size: 12px; color: #92400e; display: flex; align-items: center; gap: 6px; }
 .wc-tips .bi-check-circle-fill { color: #22c55e; }
 @media (max-width: 576px) {
   .welcome-card { flex-direction: column; gap: 12px; padding: 16px; }
