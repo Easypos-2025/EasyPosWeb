@@ -80,8 +80,9 @@
     <!-- ── DERECHA: soporte + sitio web + usuario ── -->
     <div class="topbar-right">
 
-      <!-- Botón toggle sidebar derecho — siempre visible en topbar -->
+      <!-- Botón toggle sidebar derecho — solo si la empresa lo tiene habilitado -->
       <button
+        v-if="companyStore.selectedCompany?.show_sidebar_right !== 0"
         class="btn-icon btn-panel-right"
         :class="{ 'panel-active': sidebarRightOpen }"
         @click="emit('toggle-sidebar-right')"

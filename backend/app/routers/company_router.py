@@ -257,7 +257,8 @@ async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
             "ext_db_port":     company.ext_db_port or 3306,
             "ext_db_name":     company.ext_db_name,
             "ext_db_user":     company.ext_db_user,
-            "ext_db_has_password": bool(company.ext_db_password)}
+            "ext_db_has_password": bool(company.ext_db_password),
+            "show_sidebar_right": company.show_sidebar_right if company.show_sidebar_right is not None else 1}
 
 
 @router.put("/{company_id}")
@@ -310,6 +311,9 @@ async def update_company(company_id: int, data: dict, db: AsyncSession = Depends
         company.ext_db_user     = data.get("ext_db_user") or None
         if data.get("ext_db_password"):
             company.ext_db_password = data["ext_db_password"]
+    # Sidebar derecho (solo SYSADMIN lo envía; si no viene se ignora)
+    if "show_sidebar_right" in data:
+        company.show_sidebar_right = 1 if data["show_sidebar_right"] else 0
     await db.commit()
     return {"message": "Empresa actualizada correctamente"}
 
@@ -368,6 +372,7 @@ async def get_companies(db: AsyncSession = Depends(get_db)):
          "business_profile_name": profiles.get(c.business_profile_id, ""),
          "language_id": c.language_id, "country_id": c.country_id,
          "department_id": c.department_id, "municipality_id": c.municipality_id,
-         "type_currency_id": c.type_currency_id}
+         "type_currency_id": c.type_currency_id,
+         "show_sidebar_right": c.show_sidebar_right if c.show_sidebar_right is not None else 1}
         for c in companies
     ]

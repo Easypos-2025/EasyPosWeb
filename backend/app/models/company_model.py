@@ -163,3 +163,9 @@ class Company(Base):
     ext_db_name:     Mapped[str] = mapped_column(String(100), nullable=True)
     ext_db_user:     Mapped[str] = mapped_column(String(100), nullable=True)
     ext_db_password: Mapped[str] = mapped_column(String(255), nullable=True)
+
+    # =================================================
+    # UI PREFERENCES
+    # =================================================
+
+    show_sidebar_right: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

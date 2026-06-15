@@ -122,6 +122,30 @@
           </select>
         </div>
 
+        <!-- SIDEBAR DERECHO -->
+        <div>
+          <label class="form-label">Panel lateral derecho (publicidad)</label>
+          <div class="sidebar-toggle-wrap">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="form.show_sidebar_right ? 'stb--on' : 'stb--off'"
+              @click="form.show_sidebar_right = form.show_sidebar_right ? 0 : 1"
+            >
+              <span class="stb-track">
+                <span class="stb-thumb"></span>
+              </span>
+              <span class="stb-label">
+                <i class="bi" :class="form.show_sidebar_right ? 'bi-layout-sidebar-reverse' : 'bi-layout-sidebar-reverse'"></i>
+                {{ form.show_sidebar_right ? 'Visible' : 'Oculto para esta empresa' }}
+              </span>
+            </button>
+            <p class="sidebar-toggle-hint">
+              <i class="bi bi-info-circle"></i>
+              Si se desactiva, la empresa nunca verá el panel de publicidad ni el botón para abrirlo.
+            </p>
+          </div>
+        </div>
+
       </div>
 
       <!-- ── BD EXTERNA ─────────────────────────────────────────── -->
@@ -249,6 +273,8 @@ const form = ref({
   ext_db_user: "",
   ext_db_password: "",
   ext_db_has_password: false,
+  // UI
+  show_sidebar_right: 1,
 })
 
 const errors = ref({
@@ -493,4 +519,58 @@ onMounted(() => { loadAll() })
 }
 .test-result--ok  { background: #dcfce7; color: #15803d; }
 .test-result--err { background: #fee2e2; color: #dc2626; }
+
+/* ── Sidebar right toggle ── */
+.sidebar-toggle-wrap { display: flex; flex-direction: column; gap: 6px; }
+.sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: .85rem;
+  font-weight: 600;
+  transition: border-color .15s, background .15s;
+  width: 100%;
+}
+.sidebar-toggle-btn:hover { background: #f8fafc; }
+.stb-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.stb-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: left .2s;
+}
+.stb--on .stb-track { background: #22c55e; border-color: #22c55e; }
+.stb--on .stb-thumb { left: 19px; }
+.stb--on { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.stb--off .stb-track { background: #e2e8f0; }
+.stb--off { border-color: #e2e8f0; color: #94a3b8; }
+.stb-label { display: flex; align-items: center; gap: 5px; }
+.sidebar-toggle-hint {
+  font-size: .75rem;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.4;
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+@media (max-width: 576px) {
+  .sidebar-toggle-btn { font-size: .8rem; padding: 7px 10px; }
+}
 </style>

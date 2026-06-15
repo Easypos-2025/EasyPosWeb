@@ -48,7 +48,7 @@
       </main>
 
       <RightSidebar
-        v-show="sidebarRightOpen"
+        v-show="sidebarRightOpen && sidebarRightAllowed"
         class="sidebar-right"
         @close="sidebarRightOpen = false"
       />
@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from "vue"
+import { ref, computed, watch, onMounted, onUnmounted } from "vue"
 import { useRouter, useRoute } from "vue-router"
 import Topbar from "@/components/layout/Topbar.vue"
 import Sidebar from "@/components/layout/SidebarLeft.vue"
@@ -90,8 +90,12 @@ const isDesktop = ref(window.innerWidth >= 1024)
 
 const sidebarOpen      = ref(false)
 const sidebarCollapsed = ref(true)
-const sidebarRightOpen = ref(window.innerWidth >= 1024)
 const showUpgradeModal = ref(false)
+
+const sidebarRightAllowed = computed(() =>
+  companyStore.selectedCompany?.show_sidebar_right !== 0
+)
+const sidebarRightOpen = ref(window.innerWidth >= 1024)
 
 const paymentStatus  = ref("")
 const upgradeStatus  = ref("")
@@ -126,6 +130,7 @@ const toggleSidebar = () => {
   }
 }
 const toggleSidebarRight = () => {
+  if (!sidebarRightAllowed.value) return
   sidebarRightOpen.value = !sidebarRightOpen.value
   if (window.innerWidth < 1024 && sidebarRightOpen.value) sidebarOpen.value = false
 }
@@ -141,7 +146,7 @@ const handleResize = () => {
   if (!was && isDesktop.value) {
     // Al pasar a desktop (≥1024px): cerrar overlay izquierdo y abrir panel derecho
     sidebarOpen.value      = false
-    sidebarRightOpen.value = true
+    sidebarRightOpen.value = sidebarRightAllowed.value
   }
   if (was && !isDesktop.value) {
     // Al pasar a móvil/tablet (<1024px): cerrar ambos sidebars
@@ -153,6 +158,10 @@ const handleResize = () => {
 watch(() => route.path, () => {
   sidebarOpen.value = false
   if (window.innerWidth < 1024) sidebarRightOpen.value = false
+})
+
+watch(sidebarRightAllowed, (allowed) => {
+  if (!allowed) sidebarRightOpen.value = false
 })
 
 function checkFirstLogin() {
