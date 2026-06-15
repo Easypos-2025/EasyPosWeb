@@ -1,59 +1,54 @@
 <template>
   <div class="p-3">
 
-    <!-- FILTROS -->
-    <div class="card p-3 mt-3">
-      <div class="row g-2">
-        <div class="col-md-4 col-12">
-          <input type="text" class="form-control" placeholder="Buscar empresa..." v-model="search" />
-        </div>
-        <div class="col-md-3 col-6">
-          <select class="form-select" v-model="filterState">
-            <option value="">Todos</option>
-            <option value="1">Activos</option>
-            <option value="0">Inactivos</option>
-          </select>
-        </div>
-        <div class="col-md-3 col-6">
-          <select class="form-select" v-model="filterProfile">
-            <option value="">Todos los perfiles</option>
-            <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-        </div>
-      </div>
+    <!-- FILTROS (sticky) -->
+    <div class="filters-bar">
+      <input type="text" class="form-control fc-search" placeholder="Buscar empresa..." v-model="search" />
+      <select class="form-select fc-select" v-model="filterState">
+        <option value="">Todos los estados</option>
+        <option value="1">Activos</option>
+        <option value="0">Inactivos</option>
+      </select>
+      <select class="form-select fc-select" v-model="filterProfile">
+        <option value="">Todos los perfiles</option>
+        <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+      </select>
     </div>
 
     <!-- TABLA -->
-    <div class="card p-3 mt-3 table-responsive">
-      <table class="table table-hover">
-        <thead>
+    <div class="card mt-3 table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
           <tr>
             <th>Nombre</th>
             <th>NIT</th>
-            <th>Perfil</th>
-            <th>Email</th>
+            <th class="d-none d-md-table-cell">Perfil</th>
+            <th class="d-none d-lg-table-cell">Email</th>
             <th>Estado</th>
-            <th style="width:140px">Acciones</th>
+            <th class="col-acciones">Acciones</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="c in filteredCompanies" :key="c.id">
             <td>{{ c.name }}</td>
             <td>{{ c.identification_number }}</td>
-            <td>{{ c.business_profile_name || '—' }}</td>
-            <td>{{ c.email }}</td>
+            <td class="d-none d-md-table-cell">{{ c.business_profile_name || '—' }}</td>
+            <td class="d-none d-lg-table-cell">{{ c.email }}</td>
             <td>
               <span :class="Number(c.state) === 1 ? 'badge bg-success' : 'badge bg-secondary'">
                 {{ Number(c.state) === 1 ? 'Activo' : 'Inactivo' }}
               </span>
             </td>
             <td>
-              <button class="btn btn-warning btn-sm me-1" @click="openEdit(c)">
-                <i class="bi bi-pencil"></i> Editar
-              </button>
-              <button class="btn btn-danger btn-sm" @click="handleDelete(c)">
-                <i class="bi bi-trash"></i>
-              </button>
+              <div class="acciones-wrap">
+                <button class="btn btn-warning btn-sm btn-accion" @click="openEdit(c)" title="Editar">
+                  <i class="bi bi-pencil-fill"></i>
+                  <span class="d-none d-md-inline ms-1">Editar</span>
+                </button>
+                <button class="btn btn-danger btn-sm btn-accion" @click="handleDelete(c)" title="Eliminar">
+                  <i class="bi bi-trash-fill"></i>
+                </button>
+              </div>
             </td>
           </tr>
           <tr v-if="filteredCompanies.length === 0">
@@ -119,6 +114,21 @@
                 <option :value="0">Inactivo</option>
               </select>
             </div>
+          </div>
+
+          <!-- SIDEBAR DERECHO -->
+          <div class="fg">
+            <label>Panel lateral derecho (publicidad)</label>
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="editForm.show_sidebar_right ? 'stb--on' : 'stb--off'"
+              @click="editForm.show_sidebar_right = editForm.show_sidebar_right ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                {{ editForm.show_sidebar_right ? 'Visible para esta empresa' : 'Oculto — empresa no verá el panel de publicidad' }}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -190,7 +200,8 @@ function openEdit(c) {
     department_id:         c.department_id || 1,
     municipality_id:       c.municipality_id || 1,
     type_currency_id:      c.type_currency_id || 35,
-    state:                 c.state ?? 1
+    state:                 c.state ?? 1,
+    show_sidebar_right:    c.show_sidebar_right ?? 1
   }
   showEdit.value = true
 }
@@ -280,7 +291,42 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.modal-overlay   { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+/* ── Filtros sticky ── */
+.filters-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+.fc-search { flex: 1 1 200px; min-width: 140px; }
+.fc-select  { flex: 0 1 180px; min-width: 130px; }
+
+/* ── Tabla ── */
+.col-acciones { width: 110px; white-space: nowrap; }
+.acciones-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.btn-accion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+/* ── Modal editar ── */
+.modal-overlay   { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1050; }
 .modal-box       { background: #fff; border-radius: 16px; width: 620px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header-bar { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px 14px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0; }
 .modal-header-bar h2 { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0; }
@@ -291,4 +337,36 @@ onMounted(() => {
 .fg label { font-size: 13px; font-weight: 500; color: #374151; }
 .btn-close-sm { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; border-radius: 6px; padding: 4px 8px; }
 .btn-close-sm:hover { background: #f1f5f9; color: #1e293b; }
+
+/* ── Sidebar right toggle ── */
+.sidebar-toggle-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: none; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 7px 12px; cursor: pointer; font-size: .82rem; font-weight: 600;
+  transition: border-color .15s, background .15s; width: 100%;
+}
+.stb-track {
+  position: relative; width: 34px; height: 18px; border-radius: 9px;
+  background: #cbd5e1; flex-shrink: 0; transition: background .2s;
+}
+.stb-thumb {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: left .2s;
+}
+.stb--on .stb-track { background: #22c55e; }
+.stb--on .stb-thumb { left: 18px; }
+.stb--on { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.stb--off { border-color: #e2e8f0; color: #94a3b8; }
+.stb-label { display: flex; align-items: center; gap: 5px; }
+
+/* ── Responsive ── */
+@media (max-width: 576px) {
+  .filters-bar { padding: 8px 10px; gap: 8px; }
+  .fc-search, .fc-select { flex: 1 1 100%; }
+  .form-row2 { grid-template-columns: 1fr; }
+  .sidebar-toggle-btn { font-size: .78rem; }
+  .col-acciones { width: 80px; }
+  .btn-accion { padding: 0 7px; }
+}
 </style>

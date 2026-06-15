@@ -210,6 +210,7 @@ router = APIRouter(prefix="/companies", tags=["Companies"])
 
 @router.post("/")
 async def create_company(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    data.pop("ext_db_has_password", None)   # campo virtual del frontend, no es columna
     company = Company(**data)
     db.add(company)
     await db.flush()
