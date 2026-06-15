@@ -2277,6 +2277,7 @@ async def push_printers(
                     name       = VALUES(name),
                     ip         = VALUES(ip),
                     port       = VALUES(port),
+                    is_active  = VALUES(is_active),
                     synced     = 1,
                     updated_at = NOW()
             """), p.dict())
@@ -2391,12 +2392,13 @@ async def push_daily_menu(
                      description, group_by, selected, synced, updated_at)
                 VALUES
                     (:company_id, :menu_id, :item_id, :date, :category,
-                     :description, :group_by, 0, 1, NOW())
+                     :description, :group_by, :selected, 1, NOW())
                 ON DUPLICATE KEY UPDATE
                     date        = VALUES(date),
                     category    = VALUES(category),
                     description = VALUES(description),
                     group_by    = VALUES(group_by),
+                    selected    = VALUES(selected),
                     synced      = 1,
                     updated_at  = NOW()
             """), r.dict())
