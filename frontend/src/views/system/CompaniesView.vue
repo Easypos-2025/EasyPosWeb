@@ -1,10 +1,8 @@
 <template>
   <div class="p-3">
-    
 
     <!-- ================= FORM ================= -->
     <div class="card p-3 mt-3">
-      
 
       <div class="company-form-grid">
 
@@ -126,6 +124,84 @@
 
       </div>
 
+      <!-- ── BD EXTERNA ─────────────────────────────────────────── -->
+      <div class="ext-db-section mt-4">
+        <button type="button" class="ext-db-toggle" @click="showExtDb = !showExtDb">
+          <i class="bi" :class="showExtDb ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+          <i class="bi bi-database-gear ms-1"></i>
+          Base de datos externa
+          <span v-if="form.ext_db_host" class="ext-db-badge">Configurada</span>
+          <span v-else class="ext-db-badge ext-db-badge--none">Sin configurar · usa easyposweb</span>
+        </button>
+
+        <div v-if="showExtDb" class="ext-db-body">
+          <p class="ext-db-hint">
+            <i class="bi bi-info-circle"></i>
+            Dejar vacío para usar la base de datos principal (<strong>easyposweb</strong>).
+            Solo completar si este perfil tiene su propia DB (mismo servidor u otro).
+          </p>
+
+          <div class="ext-db-grid">
+            <div class="ext-field ext-field--host">
+              <label>Servidor (host / IP)</label>
+              <input v-model="form.ext_db_host" class="form-control form-control-sm"
+                placeholder="Ej: 192.168.1.100 o mi-servidor.com" />
+            </div>
+
+            <div class="ext-field ext-field--port">
+              <label>Puerto</label>
+              <input v-model.number="form.ext_db_port" type="number" class="form-control form-control-sm"
+                placeholder="3306" min="1" max="65535" />
+            </div>
+
+            <div class="ext-field ext-field--name">
+              <label>Nombre de la base de datos</label>
+              <input v-model="form.ext_db_name" class="form-control form-control-sm"
+                placeholder="Ej: compraventa_db" />
+            </div>
+
+            <div class="ext-field ext-field--user">
+              <label>Usuario</label>
+              <input v-model="form.ext_db_user" class="form-control form-control-sm"
+                placeholder="Ej: vb6user" />
+            </div>
+
+            <div class="ext-field ext-field--pass">
+              <label>Contraseña</label>
+              <div class="pass-wrap">
+                <input v-model="form.ext_db_password" :type="showPass ? 'text' : 'password'"
+                  class="form-control form-control-sm"
+                  :placeholder="form.ext_db_has_password ? '(guardada — dejar vacío para no cambiarla)' : 'Contraseña'" />
+                <button type="button" class="pass-eye" @click="showPass = !showPass" tabindex="-1">
+                  <i class="bi" :class="showPass ? 'bi-eye-slash' : 'bi-eye'"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Resultado del test -->
+          <div v-if="testResult" class="test-result"
+            :class="testResult.ok ? 'test-result--ok' : 'test-result--err'">
+            <i class="bi" :class="testResult.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+            {{ testResult.message }}
+          </div>
+
+          <div class="ext-db-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+              :disabled="testing" @click="clearExtDb">
+              <i class="bi bi-trash"></i> Limpiar
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary"
+              :disabled="testing || !form.ext_db_host" @click="testConnection">
+              <span v-if="testing" class="spinner-border spinner-border-sm me-1"></span>
+              <i v-else class="bi bi-plug-fill me-1"></i>
+              {{ testing ? 'Probando...' : 'Probar conexión' }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- ── /BD EXTERNA ─────────────────────────────────────────── -->
+
       <button class="btn btn-primary mt-3" @click="createCompany">
         Guardar
       </button>
@@ -139,12 +215,17 @@ import { ref, onMounted, nextTick } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
-const profiles = ref([])
-const languages = ref([])
-const countries = ref([])
-const departments = ref([])
+const profiles      = ref([])
+const languages     = ref([])
+const countries     = ref([])
+const departments   = ref([])
 const municipalities = ref([])
-const currencies = ref([])
+const currencies    = ref([])
+
+const showExtDb  = ref(false)
+const showPass   = ref(false)
+const testing    = ref(false)
+const testResult = ref(null)
 
 const form = ref({
   name: "",
@@ -160,7 +241,14 @@ const form = ref({
   country_id: "46",
   department_id: "",
   municipality_id: "",
-  type_currency_id: "35"
+  type_currency_id: "35",
+  // BD externa
+  ext_db_host: "",
+  ext_db_port: 3306,
+  ext_db_name: "",
+  ext_db_user: "",
+  ext_db_password: "",
+  ext_db_has_password: false,
 })
 
 const errors = ref({
@@ -175,94 +263,91 @@ const errors = ref({
   country_id: false,
   department_id: false,
   municipality_id: false,
-  type_currency_id: false
+  type_currency_id: false,
 })
 
-const nameRef = ref(null)
+const nameRef           = ref(null)
 const identificationRef = ref(null)
-const dvRef = ref(null)
-const addressRef = ref(null)
-const phoneRef = ref(null)
-const emailRef = ref(null)
+const dvRef             = ref(null)
+const addressRef        = ref(null)
+const phoneRef          = ref(null)
+const emailRef          = ref(null)
 
 const resetErrors = () => {
   Object.keys(errors.value).forEach(k => errors.value[k] = false)
 }
 
 const loadAll = async () => {
-  profiles.value = (await api.get("/business-profiles/")).data.data
-  languages.value = (await api.get("/languages/")).data
-  countries.value = (await api.get("/countries/")).data
-  departments.value = (await api.get("/departments/")).data
+  profiles.value      = (await api.get("/business-profiles/")).data.data
+  languages.value     = (await api.get("/languages/")).data
+  countries.value     = (await api.get("/countries/")).data
+  departments.value   = (await api.get("/departments/")).data
   municipalities.value = (await api.get("/municipalities/")).data
-  currencies.value = (await api.get("/type-currencies/")).data
+  currencies.value    = (await api.get("/type-currencies/")).data
+}
+
+const clearExtDb = () => {
+  form.value.ext_db_host     = ""
+  form.value.ext_db_port     = 3306
+  form.value.ext_db_name     = ""
+  form.value.ext_db_user     = ""
+  form.value.ext_db_password = ""
+  form.value.ext_db_has_password = false
+  testResult.value = null
+}
+
+const testConnection = async () => {
+  testing.value    = true
+  testResult.value = null
+  try {
+    const res = await api.post(`/companies/0/test-db`, {
+      ext_db_host:     form.value.ext_db_host,
+      ext_db_port:     form.value.ext_db_port,
+      ext_db_name:     form.value.ext_db_name,
+      ext_db_user:     form.value.ext_db_user,
+      ext_db_password: form.value.ext_db_password,
+    })
+    testResult.value = res.data
+  } catch (e) {
+    testResult.value = { ok: false, message: e.response?.data?.detail || "Error de conexión" }
+  } finally {
+    testing.value = false
+  }
 }
 
 const createCompany = async () => {
-
   resetErrors()
+  testResult.value = null
 
   let refFocus = null
-  let message = ""
+  let message  = ""
 
   if (!form.value.name) {
-    errors.value.name = true
-    refFocus = nameRef
-    message = "Nombre es obligatorio"
-  }
-  else if (!form.value.identification_number) {
-    errors.value.identification_number = true
-    refFocus = identificationRef
-    message = "Identificación es obligatoria"
-  }
-  else if (!form.value.dv) {
-    errors.value.dv = true
-    refFocus = dvRef
-    message = "DV es obligatorio"
-  }
-  else if (!form.value.address) {
-    errors.value.address = true
-    refFocus = addressRef
-    message = "Dirección es obligatoria"
-  }
-  else if (!form.value.phone) {
-    errors.value.phone = true
-    refFocus = phoneRef
-    message = "Teléfono es obligatorio"
-  }
-  else if (!form.value.email) {
-    errors.value.email = true
-    refFocus = emailRef
-    message = "Email es obligatorio"
-  }
-  else if (!isValidEmail(form.value.email)) {
-    errors.value.email = true
-    refFocus = emailRef
-    message = "Email no es válido"
-  }
-  else if (!form.value.business_profile_id) {
-    errors.value.business_profile_id = true
-    message = "Perfil es obligatorio"
-  }
-  else if (!form.value.language_id) {
-    errors.value.language_id = true
-    message = "Idioma es obligatorio"
-  }
-  else if (!form.value.country_id) {
-    errors.value.country_id = true
-    message = "País es obligatorio"
-  }
-  else if (!form.value.department_id) {
-    errors.value.department_id = true
-    message = "Departamento es obligatorio"
-  }
-  else if (!form.value.municipality_id) {
-    errors.value.municipality_id = true
-    message = "Municipio es obligatorio"
-  }
-  else if (!form.value.type_currency_id) {
-    errors.value.type_currency_id = true
-    message = "Moneda es obligatoria"
+    errors.value.name = true; refFocus = nameRef; message = "Nombre es obligatorio"
+  } else if (!form.value.identification_number) {
+    errors.value.identification_number = true; refFocus = identificationRef; message = "Identificación es obligatoria"
+  } else if (!form.value.dv) {
+    errors.value.dv = true; refFocus = dvRef; message = "DV es obligatorio"
+  } else if (!form.value.address) {
+    errors.value.address = true; refFocus = addressRef; message = "Dirección es obligatoria"
+  } else if (!form.value.phone) {
+    errors.value.phone = true; refFocus = phoneRef; message = "Teléfono es obligatorio"
+  } else if (!form.value.email) {
+    errors.value.email = true; refFocus = emailRef; message = "Email es obligatorio"
+  } else if (!isValidEmail(form.value.email)) {
+    errors.value.email = true; refFocus = emailRef; message = "Email no es válido"
+  } else if (!form.value.business_profile_id) {
+    errors.value.business_profile_id = true; message = "Perfil es obligatorio"
+  } else if (!form.value.language_id) {
+    errors.value.language_id = true; message = "Idioma es obligatorio"
+  } else if (!form.value.country_id) {
+    errors.value.country_id = true; message = "País es obligatorio"
+  } else if (!form.value.department_id) {
+    errors.value.department_id = true; message = "Departamento es obligatorio"
+  } else if (!form.value.municipality_id) {
+    errors.value.municipality_id = true; message = "Municipio es obligatorio"
+  } else if (!form.value.type_currency_id) {
+    errors.value.type_currency_id = true; message = "Moneda es obligatoria"
   }
 
   if (message) {
@@ -272,37 +357,25 @@ const createCompany = async () => {
   }
 
   try {
-
     await api.post("/companies/", form.value)
-
     showToast("Empresa creada correctamente", "success")
-
-    // limpiar form (manteniendo defaults)
     form.value = {
       ...form.value,
-      name: "",
-      identification_number: "",
-      dv: "",
-      address: "",
-      phone: "",
-      email: "",
-      description: ""
+      name: "", identification_number: "", dv: "", address: "",
+      phone: "", email: "", description: "",
+      ext_db_host: "", ext_db_port: 3306, ext_db_name: "",
+      ext_db_user: "", ext_db_password: "", ext_db_has_password: false,
     }
-
+    showExtDb.value = false
   } catch (error) {
     console.error(error)
     showToast("Error guardando empresa", "error")
   }
 }
 
-const isValidEmail = (email) => {
-  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return regex.test(email)
-}
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
-onMounted(() => {
-  loadAll()
-})
+onMounted(() => { loadAll() })
 </script>
 
 <style scoped>
@@ -311,16 +384,113 @@ onMounted(() => {
   grid-template-columns: 1fr;
   gap: 16px;
 }
-
-/* Desktop */
 @media (min-width: 768px) {
-  .company-form-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  .company-form-grid { grid-template-columns: 1fr 1fr; }
 }
+.full-width { grid-column: 1 / -1; }
 
-/* Campos que ocupan todo el ancho */
-.full-width {
-  grid-column: 1 / -1;
+/* ── BD Externa ── */
+.ext-db-section {
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
 }
+.ext-db-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: none;
+  padding: 10px 14px;
+  font-size: .88rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  text-align: left;
+}
+.ext-db-toggle:hover { background: #f1f5f9; }
+.ext-db-badge {
+  margin-left: auto;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #dcfce7;
+  color: #15803d;
+}
+.ext-db-badge--none {
+  background: #f1f5f9;
+  color: #94a3b8;
+  font-weight: 500;
+}
+.ext-db-body {
+  padding: 14px 16px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+.ext-db-hint {
+  font-size: .8rem;
+  color: #64748b;
+  margin-bottom: 14px;
+  background: #f8fafc;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.ext-db-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 576px) {
+  .ext-db-grid {
+    grid-template-columns: 3fr 1fr;
+  }
+  .ext-field--name  { grid-column: 1; }
+  .ext-field--port  { grid-column: 2; }
+  .ext-field--user  { grid-column: 1; }
+  .ext-field--pass  { grid-column: 1 / -1; }
+}
+@media (min-width: 768px) {
+  .ext-db-grid {
+    grid-template-columns: 3fr 1fr 2fr 2fr;
+  }
+  .ext-field--host { grid-column: 1 / 3; }
+  .ext-field--port { grid-column: 3; }
+  .ext-field--name { grid-column: 4; }
+  .ext-field--user { grid-column: 1 / 3; }
+  .ext-field--pass { grid-column: 3 / 5; }
+}
+.ext-field label {
+  display: block;
+  font-size: .78rem;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.pass-wrap { position: relative; }
+.pass-eye {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none;
+  color: #94a3b8; cursor: pointer;
+  padding: 0;
+}
+.ext-db-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.test-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: .82rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.test-result--ok  { background: #dcfce7; color: #15803d; }
+.test-result--err { background: #fee2e2; color: #dc2626; }
 </style>

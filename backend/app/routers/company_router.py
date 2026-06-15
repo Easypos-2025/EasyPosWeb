@@ -2,7 +2,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, or_
-from app.database import get_db
+from app.database import get_db, test_ext_connection, invalidate_ext_engine
 from app.auth.dependencies import get_current_user
 from app.models.business_profile_module import BusinessProfileModule
 from app.models.company_model import Company
@@ -252,7 +252,12 @@ async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
             "business_profile_id": company.business_profile_id,
             "language_id": company.language_id, "country_id": company.country_id,
             "department_id": company.department_id, "municipality_id": company.municipality_id,
-            "type_currency_id": company.type_currency_id}
+            "type_currency_id": company.type_currency_id,
+            "ext_db_host":     company.ext_db_host,
+            "ext_db_port":     company.ext_db_port or 3306,
+            "ext_db_name":     company.ext_db_name,
+            "ext_db_user":     company.ext_db_user,
+            "ext_db_has_password": bool(company.ext_db_password)}
 
 
 @router.put("/{company_id}")
@@ -294,8 +299,40 @@ async def update_company(company_id: int, data: dict, db: AsyncSession = Depends
         company.municipality_id = data["municipality_id"]
     if data.get("type_currency_id"):
         company.type_currency_id = data["type_currency_id"]
+    # DB externa (solo SYSADMIN la envía; si no viene en payload se ignora)
+    if "ext_db_host" in data:
+        new_host = data.get("ext_db_host") or None
+        if new_host != company.ext_db_host:
+            invalidate_ext_engine(company_id)
+        company.ext_db_host     = new_host
+        company.ext_db_port     = int(data.get("ext_db_port") or 3306)
+        company.ext_db_name     = data.get("ext_db_name") or None
+        company.ext_db_user     = data.get("ext_db_user") or None
+        if data.get("ext_db_password"):
+            company.ext_db_password = data["ext_db_password"]
     await db.commit()
     return {"message": "Empresa actualizada correctamente"}
+
+
+@router.post("/{company_id}/test-db")
+async def test_company_db(
+    company_id: int,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    role = await db.get(Role, current_user.role_id)
+    if not (role and role.is_system):
+        raise HTTPException(status_code=403, detail="Solo SYSADMIN puede probar conexiones")
+    host     = data.get("ext_db_host", "").strip()
+    port     = int(data.get("ext_db_port") or 3306)
+    db_name  = data.get("ext_db_name", "").strip()
+    user     = data.get("ext_db_user", "").strip()
+    password = data.get("ext_db_password", "")
+    if not all([host, db_name, user]):
+        raise HTTPException(status_code=400, detail="Servidor, base de datos y usuario son obligatorios")
+    result = await test_ext_connection(host, port, db_name, user, password)
+    return result
 
 
 @router.delete("/{company_id}")

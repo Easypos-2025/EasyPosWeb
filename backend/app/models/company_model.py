@@ -153,3 +153,13 @@ class Company(Base):
         server_default=func.now(),
         onupdate=func.now()
     )
+
+    # =================================================
+    # EXTERNAL DATABASE (opcional — NULL = usa easyposweb)
+    # =================================================
+
+    ext_db_host:     Mapped[str] = mapped_column(String(150), nullable=True)
+    ext_db_port:     Mapped[int] = mapped_column(Integer,     nullable=False, default=3306)
+    ext_db_name:     Mapped[str] = mapped_column(String(100), nullable=True)
+    ext_db_user:     Mapped[str] = mapped_column(String(100), nullable=True)
+    ext_db_password: Mapped[str] = mapped_column(String(255), nullable=True)
