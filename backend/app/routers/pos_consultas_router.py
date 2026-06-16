@@ -199,7 +199,6 @@ async def get_venta_detalle(
         if not hdr:
             raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-        # Items (solo principales — convención VB6: depends_on = item para el ítem maestro; sub-ítems tienen depends_on = item_padre)
         items = (await db.execute(text("""
             SELECT
                 od.dish_id,
@@ -216,7 +215,6 @@ async def get_venta_detalle(
             WHERE od.company_id    = :cid
               AND od.invoice_number = :numero
               AND od.date          = :fecha
-              AND od.depends_on   = od.item
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
@@ -272,7 +270,6 @@ async def get_venta_detalle(
             WHERE od.company_id     = :cid
               AND od.receipt_number  = :numero
               AND od.date           = :fecha
-              AND od.depends_on     = od.item
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
