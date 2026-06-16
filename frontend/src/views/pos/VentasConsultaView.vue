@@ -165,12 +165,12 @@
                 </div>
               </div>
 
-              <!-- Tabla ítems -->
+              <!-- Tabla ítems agrupados -->
               <div class="vc-det-items">
                 <table class="vc-table">
                   <thead>
                     <tr>
-                      <th>Plato</th>
+                      <th>Plato / Novedades</th>
                       <th class="text-center">Cant</th>
                       <th class="text-end">Precio</th>
                       <th class="text-end">Subtotal</th>
@@ -178,17 +178,24 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="item in detalle.items" :key="`${item.dish_id}-${item.item}`">
+                    <template v-for="group in groupedDetalle" :key="group.key">
                       <tr class="vc-item-row">
-                        <td>{{ item.plato }}</td>
-                        <td class="text-center">{{ item.quantity }}</td>
-                        <td class="text-end">{{ fmt(item.price) }}</td>
-                        <td class="text-end">{{ fmt(item.subtotal) }}</td>
+                        <td>
+                          <div class="vc-item-name">{{ group.plato }}</div>
+                          <div class="vc-item-tags" v-if="group.assembly?.length || group.notes || group.changes">
+                            <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
+                            <span v-if="group.notes" class="ci-tag ci-note">{{ group.notes }}</span>
+                            <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
+                          </div>
+                        </td>
+                        <td class="text-center">{{ group.qty }}</td>
+                        <td class="text-end">{{ fmt(group.price) }}</td>
+                        <td class="text-end">{{ fmt(group.subtotal) }}</td>
                         <td class="text-center">
-                          <button class="btn btn-sm btn-success vc-btn-ver" @click="verInsumos(item)">VER</button>
+                          <button class="btn btn-sm btn-success vc-btn-ver" @click="verInsumos(group)">VER</button>
                         </td>
                       </tr>
-                      <tr v-if="itemExpandido===`${item.dish_id}-${item.item}`" class="vc-insumos-row">
+                      <tr v-if="itemExpandido === group.key" class="vc-insumos-row">
                         <td colspan="5">
                           <div v-if="cargandoInsumos" class="text-center py-2">
                             <div class="spinner-border spinner-border-sm text-success"></div>
@@ -241,6 +248,43 @@ function fmtFecha(iso) {
   return `${d}/${m}/${y}`
 }
 
+// ── Agrupación de ítems (igual que Toma Pedido) ────────────────────────────
+function _assemblyKey(assembly) {
+  return JSON.stringify(
+    [...(assembly || [])].sort((a, b) => (a.category_code ?? 0) - (b.category_code ?? 0))
+  )
+}
+
+const groupedDetalle = computed(() => {
+  if (!detalle.value?.items?.length) return []
+  const groups = []
+  const map    = new Map()
+  for (const item of detalle.value.items) {
+    const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
+    if (map.has(k)) {
+      const g = map.get(k)
+      g.qty     += item.quantity
+      g.subtotal += item.subtotal
+    } else {
+      const g = {
+        key:      k,
+        dish_id:  item.dish_id,
+        plato:    item.plato,
+        qty:      item.quantity,
+        price:    item.price,
+        subtotal: item.subtotal,
+        notes:    item.notes,
+        changes:  item.changes,
+        assembly: item.assembly,
+        rep_item: item.item,
+      }
+      map.set(k, g)
+      groups.push(g)
+    }
+  }
+  return groups
+})
+
 const tipoOpts = [
   { value:'ambos',   label:'Ambos' },
   { value:'factura', label:'Facturas' },
@@ -274,7 +318,7 @@ async function buscar() {
       params:{ desde:filtro.value.desde, hasta:filtro.value.hasta, tipo:filtro.value.tipo, company_id:selectedCid.value }
     })
     lista.value = data
-    if (data.length) filtrosVisible.value = false   // colapsa auto tras buscar
+    if (data.length) filtrosVisible.value = false
   } catch(e) {
     console.error(e); lista.value = []
   } finally {
@@ -315,17 +359,17 @@ function volverLista() {
   itemExpandido.value = null
 }
 
-async function verInsumos(item) {
-  const key = `${item.dish_id}-${item.item}`
-  if (itemExpandido.value===key) { itemExpandido.value=null; return }
+async function verInsumos(group) {
+  const key = group.key
+  if (itemExpandido.value === key) { itemExpandido.value = null; return }
   itemExpandido.value   = key
   insumos.value         = []
   cargandoInsumos.value = true
   try {
     const { data } = await api.get('/api/pos-consultas/detalle-productos', {
       params:{ tipo:seleccionado.value.tipo, numero:seleccionado.value.numero,
-               fecha:detalle.value.header.date, dish_id:item.dish_id,
-               item:item.item, company_id:selectedCid.value }
+               fecha:detalle.value.header.date, dish_id:group.dish_id,
+               item:group.rep_item, company_id:selectedCid.value }
     })
     insumos.value = data
   } catch(e) { console.error(e); insumos.value=[] }
@@ -542,6 +586,22 @@ onMounted(() => buscar())
 .vc-table-insumos { width:100%; border-collapse:collapse; font-size:12px; }
 .vc-table-insumos th { padding:4px 8px; font-size:10px; font-weight:700; text-transform:uppercase; color:#166534; border-bottom:1px solid #bbf7d0; }
 .vc-table-insumos td { padding:3px 8px; border-bottom:1px solid #dcfce7; color:#15803d; }
+
+/* ── Pills de novedades ─────────────────────────────────────── */
+.vc-item-name { font-size:13px; }
+.vc-item-tags {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+}
+.ci-tag {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  background: #f1f5f9; color: #475569;
+  border-radius: 4px; padding: 1px 6px;
+  border: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+.ci-note   { background:#fefce8; color:#854d0e; border-color:#fde68a; }
+.ci-change { background:#fdf2f8; color:#86198f; border-color:#f0abfc; }
 
 /* ── RESPONSIVE TABLET ──────────────────────────────────── */
 @media (max-width: 768px) {

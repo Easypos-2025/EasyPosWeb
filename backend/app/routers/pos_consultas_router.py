@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
@@ -198,7 +199,7 @@ async def get_venta_detalle(
         if not hdr:
             raise HTTPException(status_code=404, detail="Factura no encontrada")
 
-        # Items
+        # Items (solo principales: depends_on = 0)
         items = (await db.execute(text("""
             SELECT
                 od.dish_id,
@@ -206,12 +207,16 @@ async def get_venta_detalle(
                 od.quantity,
                 COALESCE(d.price, 0)                      AS price,
                 COALESCE(od.amount, 0)                    AS subtotal,
-                od.item
+                od.item,
+                COALESCE(od.notes, '')                    AS notes,
+                COALESCE(od.changes, '')                  AS changes,
+                od.custom_product
             FROM pos_order_details od
             LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
             WHERE od.company_id    = :cid
               AND od.invoice_number = :numero
               AND od.date          = :fecha
+              AND od.depends_on   = 0
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
@@ -258,21 +263,38 @@ async def get_venta_detalle(
                 od.quantity,
                 COALESCE(d.price, 0)                      AS price,
                 COALESCE(od.amount, 0)                    AS subtotal,
-                od.item
+                od.item,
+                COALESCE(od.notes, '')                    AS notes,
+                COALESCE(od.changes, '')                  AS changes,
+                od.custom_product
             FROM pos_receipt_order_details od
             LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
             WHERE od.company_id     = :cid
               AND od.receipt_number  = :numero
               AND od.date           = :fecha
+              AND od.depends_on     = 0
             ORDER BY od.item
         """), {"cid": cid, "numero": numero, "fecha": dict(hdr)["date"]})).mappings().all()
 
     else:
         raise HTTPException(status_code=400, detail="tipo debe ser 'factura' o 'recibo'")
 
+    items_list = []
+    for r in items:
+        row = dict(r)
+        assembly = []
+        cp = row.pop("custom_product", None)
+        if cp:
+            try:
+                assembly = json.loads(cp).get("assembly", [])
+            except Exception:
+                pass
+        row["assembly"] = assembly
+        items_list.append(row)
+
     return {
         "header": dict(hdr),
-        "items": [dict(r) for r in items],
+        "items": items_list,
     }
 
 
