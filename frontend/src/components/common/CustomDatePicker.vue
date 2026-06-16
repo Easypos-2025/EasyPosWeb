@@ -76,7 +76,16 @@
             <button class="cdp-btn-hoy" @click="selectToday">
               <i class="bi bi-calendar-check me-1"></i>Hoy
             </button>
-            <button class="cdp-btn-cls" @click="open = false">Cerrar</button>
+            <div class="cdp-footer-right">
+              <button class="cdp-btn-cls" @click="open = false">Cerrar</button>
+              <button
+                class="cdp-btn-set"
+                :class="{ 'cdp-btn-set--active': hasPendingChange }"
+                @click="confirm"
+              >
+                <i class="bi bi-check-lg me-1"></i>Set
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -109,21 +118,22 @@ const wrapRef    = ref(null)
 const panelStyle = ref({ position: 'fixed', top: '0px', left: '0px' })
 const yearOffset = ref(0)
 
-// Mes y año visibles en el calendario
+// Selección pendiente — se confirma con "Set", NO al hacer click en el día
+const pending = ref(props.modelValue || '')
+
 const _initYear  = () => props.modelValue ? +props.modelValue.split('-')[0] : +TODAY.split('-')[0]
 const _initMonth = () => props.modelValue ? +props.modelValue.split('-')[1] - 1 : +TODAY.split('-')[1] - 1
 
 const vm = ref(_initMonth())
 const vy = ref(_initYear())
 
-// Valor mostrado en el trigger
 const displayValue = computed(() => {
   if (!props.modelValue) return props.placeholder
   const [y, m, d] = props.modelValue.split('-')
   return `${d}/${m}/${y}`
 })
 
-// Celdas del calendario
+// isSel compara contra pending (lo que el usuario ha tocado, no lo ya confirmado)
 const cells = computed(() => {
   const firstDow    = new Date(vy.value, vm.value, 1).getDay()
   const daysInMonth = new Date(vy.value, vm.value + 1, 0).getDate()
@@ -136,10 +146,9 @@ const cells = computed(() => {
     result.push({
       key: `d${d}`, day: d, y: vy.value, m: vm.value,
       isToday: ds === TODAY,
-      isSel:   ds === props.modelValue,
+      isSel:   ds === pending.value,
     })
   }
-  // Completar última fila hasta múltiplo de 7
   const total = firstDow + daysInMonth
   const rem   = total % 7
   if (rem) {
@@ -148,11 +157,13 @@ const cells = computed(() => {
   return result
 })
 
-// Rango de años para el selector
 const yearRange = computed(() => {
   const center = vy.value + yearOffset.value
   return Array.from({ length: 12 }, (_, i) => center - 5 + i)
 })
+
+// ¿La selección pendiente difiere del valor actual?
+const hasPendingChange = computed(() => pending.value && pending.value !== props.modelValue)
 
 function toggleMode(m) {
   mode.value     = mode.value === m ? 'cal' : m
@@ -166,16 +177,23 @@ function shift(dir) {
   vm.value = m; vy.value = y
 }
 
+// Click en día → solo actualiza pending, NO emite ni cierra
 function pick(y, m, d) {
-  const ds = `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
-  emit('update:modelValue', ds)
+  pending.value = `${y}-${String(m + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+}
+
+// Botón "Set" → confirma pending, emite y cierra
+function confirm() {
+  if (pending.value) emit('update:modelValue', pending.value)
   open.value = false
 }
 
+// Hoy → acción directa: selecciona, emite y cierra en un paso
 function selectToday() {
-  emit('update:modelValue', TODAY)
+  pending.value = TODAY
   const [y, m] = TODAY.split('-')
   vy.value = +y; vm.value = +m - 1
+  emit('update:modelValue', TODAY)
   open.value = false
 }
 
@@ -184,7 +202,6 @@ function positionPanel() {
   const rect = wrapRef.value.getBoundingClientRect()
   const winW = window.innerWidth
   const winH = window.innerHeight
-
   if (winW < 600) {
     panelStyle.value = { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)' }
     return
@@ -206,6 +223,7 @@ function toggle() {
     const [y, m] = TODAY.split('-')
     vy.value = +y; vm.value = +m - 1
   }
+  pending.value = props.modelValue || ''
   mode.value = 'cal'; yearOffset.value = 0
   open.value = true
   nextTick(positionPanel)
@@ -320,7 +338,9 @@ onUnmounted(() => { open.value = false })
 .cdp-footer {
   display: flex; justify-content: space-between; align-items: center;
   border-top: 1px solid #f3f4f6; padding-top: .5rem; margin-top: .25rem;
+  gap: .4rem;
 }
+.cdp-footer-right { display: flex; align-items: center; gap: .35rem; }
 .cdp-btn-hoy {
   background: none; border: 1px solid var(--primary-color, #2563eb);
   color: var(--primary-color, #2563eb); border-radius: .35rem;
@@ -334,6 +354,15 @@ onUnmounted(() => { open.value = false })
   transition: background .15s;
 }
 .cdp-btn-cls:hover { background: #f3f4f6; }
+.cdp-btn-set {
+  background: #e5e7eb; border: 1px solid #d1d5db; color: #9ca3af;
+  border-radius: .35rem; padding: .25rem .7rem; font-size: .8rem;
+  font-weight: 700; cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.cdp-btn-set--active {
+  background: #16a34a; border-color: #15803d; color: #fff;
+}
+.cdp-btn-set--active:hover { background: #15803d; }
 
 /* ── Mobile ──────────────────────────────────────────── */
 @media (max-width: 576px) {
