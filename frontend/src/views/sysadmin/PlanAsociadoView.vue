@@ -7,7 +7,17 @@
         <p class="page-subtitle">Visualiza y personaliza las cuotas de cada plan por empresa</p>
       </div>
       <div class="header-actions">
-        <input v-model="search" class="form-control" placeholder="Buscar empresa o plan..." style="max-width:240px" />
+        <input v-model="search" class="form-control" placeholder="Buscar empresa, plan o ID..." style="max-width:200px" />
+        <select v-model="filterPlan" class="form-control" style="max-width:160px">
+          <option value="">Todos los planes</option>
+          <option v-for="p in planOptions" :key="p" :value="p">{{ p }}</option>
+        </select>
+        <select v-model="filterStatus" class="form-control" style="max-width:150px">
+          <option value="">Todos los estados</option>
+          <option value="custom">Personalizado</option>
+          <option value="plan">Plan base</option>
+          <option value="none">Sin plan</option>
+        </select>
         <button class="btn btn-outline-secondary btn-sm" @click="load">
           <i class="bi bi-arrow-clockwise"></i> Actualizar
         </button>
@@ -20,6 +30,7 @@
       <span class="leg-item"><span class="dot dot-custom"></span>Límites personalizados</span>
       <span class="leg-item"><i class="bi bi-infinity me-1" style="color:#6366f1"></i>-1 = ilimitado</span>
       <span class="leg-item"><i class="bi bi-lock-fill me-1" style="color:#ef4444"></i>Tiene registros bloqueados</span>
+      <span class="leg-item"><span class="dot dot-noplan"></span>Sin plan asignado</span>
     </div>
 
     <!-- Tabla -->
@@ -29,6 +40,7 @@
         <table class="data-table">
           <thead>
             <tr>
+              <th class="th-c" title="ID Empresa">ID</th>
               <th>Empresa</th>
               <th>Plan base</th>
               <th class="th-c" title="Usuarios">Usrs</th>
@@ -49,33 +61,34 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in filtered" :key="row.company_id" :class="{ 'row-custom': row.is_custom }">
+            <tr v-for="row in filtered" :key="row.company_id" :class="{ 'row-custom': row.is_custom, 'row-noplan': !row.plan_id }">
+              <td class="th-c"><span class="id-badge">{{ row.company_id }}</span></td>
               <td><strong>{{ row.company_name }}</strong></td>
-              <td><span class="plan-badge">{{ row.plan_name }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_users) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_roles) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_waiters) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_workers) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_clients) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_products) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_categories) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_bodega_items) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_assets) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_tasks) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_invoices) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_receipts) }}</span></td>
-              <td class="th-c"><span class="lim-val">{{ fmt(row.max_daily_tasks) }}</span></td>
+              <td><span class="plan-badge" :class="{ 'plan-badge-none': !row.plan_id }">{{ row.plan_name }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_users === null }">{{ fmt(row.max_users) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_roles === null }">{{ fmt(row.max_roles) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_waiters === null }">{{ fmt(row.max_waiters) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_workers === null }">{{ fmt(row.max_workers) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_clients === null }">{{ fmt(row.max_clients) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_products === null }">{{ fmt(row.max_products) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_categories === null }">{{ fmt(row.max_categories) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_bodega_items === null }">{{ fmt(row.max_bodega_items) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_assets === null }">{{ fmt(row.max_assets) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_tasks === null }">{{ fmt(row.max_tasks) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_daily_invoices === null }">{{ fmt(row.max_daily_invoices) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_daily_receipts === null }">{{ fmt(row.max_daily_receipts) }}</span></td>
+              <td class="th-c"><span class="lim-val" :class="{ 'lim-null': row.max_daily_tasks === null }">{{ fmt(row.max_daily_tasks) }}</span></td>
               <td class="th-c">
-                <span class="status-badge" :class="row.is_custom ? 'st-custom' : 'st-plan'">
-                  {{ row.is_custom ? 'Personalizado' : 'Plan base' }}
+                <span class="status-badge" :class="!row.plan_id ? 'st-none' : row.is_custom ? 'st-custom' : 'st-plan'">
+                  {{ !row.plan_id ? 'Sin plan' : row.is_custom ? 'Personalizado' : 'Plan base' }}
                 </span>
               </td>
               <td class="th-c">
                 <div class="action-row">
-                  <button class="btn btn-sm btn-outline-primary" @click="openEdit(row)" title="Editar límites">
+                  <button class="btn btn-sm btn-outline-primary" @click="openEdit(row)" :disabled="!row.plan_id" title="Editar límites">
                     <i class="bi bi-pencil"></i>
                   </button>
-                  <button class="btn btn-sm btn-outline-danger" @click="openBlocked(row)" title="Ver registros bloqueados">
+                  <button class="btn btn-sm btn-outline-danger" @click="openBlocked(row)" :disabled="!row.plan_id" title="Ver registros bloqueados">
                     <i class="bi bi-lock-fill"></i>
                   </button>
                   <button v-if="row.is_custom" class="btn btn-sm btn-outline-secondary" @click="resetRow(row)" title="Restaurar a plan base">
@@ -85,7 +98,7 @@
               </td>
             </tr>
             <tr v-if="!loading && filtered.length === 0">
-              <td colspan="17" class="text-center text-muted py-4">No hay registros con estos filtros</td>
+              <td colspan="18" class="text-center text-muted py-4">No hay registros con estos filtros</td>
             </tr>
           </tbody>
         </table>
@@ -241,9 +254,11 @@ import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
-const rows    = ref([])
-const loading = ref(true)
-const search  = ref("")
+const rows       = ref([])
+const loading    = ref(true)
+const search     = ref("")
+const filterPlan   = ref("")
+const filterStatus = ref("")
 const showEdit = ref(false)
 const editRow  = ref(null)
 const editForm = ref({})
@@ -304,16 +319,34 @@ const blockedTotal = computed(() =>
   Object.values(blockedData.value.resources || {}).reduce((s, arr) => s + arr.length, 0)
 )
 
-function fmt(v) { return (v === -1 || v === undefined || v === null) ? "∞" : v }
+function fmt(v) {
+  if (v === null || v === undefined) return "—"
+  return v === -1 ? "∞" : v
+}
+
+const planOptions = computed(() => {
+  const set = new Set(rows.value.map(r => r.plan_name).filter(Boolean))
+  return [...set].sort()
+})
 
 const filtered = computed(() => {
-  const q = search.value.toLowerCase()
-  if (!q) return rows.value
-  return rows.value.filter(r =>
-    r.company_name.toLowerCase().includes(q) ||
-    r.plan_name.toLowerCase().includes(q) ||
-    (r.identification_number || "").toLowerCase().includes(q)
-  )
+  let list = rows.value
+  const q = search.value.toLowerCase().trim()
+  if (q) {
+    list = list.filter(r =>
+      r.company_name.toLowerCase().includes(q) ||
+      r.plan_name.toLowerCase().includes(q) ||
+      String(r.company_id).includes(q) ||
+      (r.identification_number || "").toLowerCase().includes(q)
+    )
+  }
+  if (filterPlan.value) {
+    list = list.filter(r => r.plan_name === filterPlan.value)
+  }
+  if (filterStatus.value === "custom") list = list.filter(r => r.is_custom)
+  else if (filterStatus.value === "plan")   list = list.filter(r => !r.is_custom && r.plan_id)
+  else if (filterStatus.value === "none")   list = list.filter(r => !r.plan_id)
+  return list
 })
 
 async function load() {
@@ -474,6 +507,7 @@ onMounted(load)
 .dot        { width: 10px; height: 10px; border-radius: 50%; }
 .dot-plan   { background: #e2e8f0; }
 .dot-custom { background: #fde68a; }
+.dot-noplan { background: #fecaca; }
 
 .table-card    { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow: hidden; }
 .table-scroll  { overflow-x: auto; }
@@ -490,12 +524,19 @@ onMounted(load)
 .text-muted  { color: #94a3b8; font-size: 12px; }
 .py-4        { padding: 32px 0; }
 
-.plan-badge { background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+.plan-badge      { background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+.plan-badge-none { background: #f1f5f9; color: #94a3b8; }
 .lim-val    { font-size: 13px; font-weight: 600; color: #1e293b; }
+.lim-null   { color: #cbd5e1; font-weight: 400; }
+
+.id-badge { font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 6px; font-family: monospace; }
 
 .status-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
 .st-plan      { background: #f1f5f9; color: #475569; }
 .st-custom    { background: #fef3c7; color: #92400e; }
+.st-none      { background: #fee2e2; color: #991b1b; }
+
+.row-noplan td { opacity: .75; }
 
 .action-row { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
 

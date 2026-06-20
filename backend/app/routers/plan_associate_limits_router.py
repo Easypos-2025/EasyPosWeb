@@ -46,7 +46,11 @@ async def list_limits(
     _: User = Depends(require_sysadmin),
     db: AsyncSession = Depends(get_db),
 ):
-    # Obtener todas las empresas con plan activo
+    # Todas las empresas del sistema
+    all_companies_res = await db.execute(select(Company).order_by(Company.id_company))
+    all_companies = {c.id_company: c for c in all_companies_res.scalars().all()}
+
+    # Planes activos por empresa
     all_cp = await db.execute(
         select(CompanyPlan)
         .where(CompanyPlan.is_active == True)
@@ -54,7 +58,7 @@ async def list_limits(
     )
     active_plans = {cp.company_id: cp.plan_id for cp in all_cp.scalars().all()}
 
-    # Auto-generar snapshots para empresas sin registro
+    # Auto-generar snapshots para empresas con plan pero sin registro
     existing_res = await db.execute(select(CompanyPlanLimits.company_id))
     existing_ids = {r[0] for r in existing_res.fetchall()}
 
@@ -65,14 +69,33 @@ async def list_limits(
     if set(active_plans.keys()) - existing_ids:
         await db.commit()
 
-    # Devolver todos los registros ordenados por empresa
+    # Mapa de snapshots
     result = await db.execute(select(CompanyPlanLimits).order_by(CompanyPlanLimits.company_id))
-    rows = result.scalars().all()
+    snapshot_map = {cpl.company_id: cpl for cpl in result.scalars().all()}
+
+    # Devolver TODAS las empresas (con o sin plan)
     out = []
-    for cpl in rows:
-        company = await db.get(Company, cpl.company_id)
-        plan    = await db.get(Plan,    cpl.plan_id)
-        out.append(_ser(cpl, company, plan))
+    for company_id, company in all_companies.items():
+        cpl = snapshot_map.get(company_id)
+        if cpl:
+            plan = await db.get(Plan, cpl.plan_id)
+            out.append(_ser(cpl, company, plan))
+        else:
+            row = {
+                "id":                    None,
+                "company_id":            company_id,
+                "company_name":          company.name,
+                "identification_number": company.identification_number or "",
+                "plan_id":               None,
+                "plan_name":             "Sin plan",
+                "is_custom":             False,
+                "notes":                 None,
+                "updated_at":            None,
+            }
+            for f in LIMIT_FIELDS:
+                row[f] = None
+            row["plan_base"] = {f: -1 for f in LIMIT_FIELDS}
+            out.append(row)
     return out
 
 
