@@ -1,27 +1,29 @@
 <template>
-  <div class="mtc-wrap" @click="$emit('click')">
+  <div class="mtc-card" :class="{ 'mtc-card--alerta': esAlerta }" @click="$emit('click')">
 
-    <!-- Chip superior: hora del pedido -->
-    <div class="mtc-chip" :class="{ 'mtc-chip--alerta': esAlerta }">
+    <!-- Badge de número de comanda -->
+    <span v-if="mesa.daily_seq" class="mtc-seq">#{{ mesa.daily_seq }}</span>
+
+    <!-- Chip hora -->
+    <div class="mtc-chip mtc-chip--hora" :class="{ 'mtc-chip--alerta': esAlerta }">
       <i class="bi bi-clock"></i>
-      <span class="mtc-chip-text">{{ horaDisplay }}</span>
+      <span>{{ horaDisplay }}</span>
     </div>
 
-    <!-- Tablón de madera (superficie de la mesa) -->
-    <div class="mtc-tablon" :class="{ 'mtc-tablon--alerta': esAlerta }">
-      <span v-if="mesa.daily_seq" class="mtc-seq">#{{ mesa.daily_seq }}</span>
+    <!-- Mesa oval (superficie de madera) -->
+    <div class="mtc-oval">
       <div class="mtc-nombre">{{ mesa.name }}</div>
       <div class="mtc-valor-label">Valor</div>
       <div class="mtc-valor">{{ fmt(mesa.amount) }}</div>
     </div>
 
-    <!-- Chip inferior: mesero -->
+    <!-- Chip mesero -->
     <div class="mtc-chip mtc-chip--mesero">
-      <i class="bi bi-person"></i>
+      <i class="bi bi-person-fill"></i>
       <span class="mtc-chip-text">{{ mesa.waiter_name || '—' }}</span>
     </div>
 
-    <!-- Botones de acción -->
+    <!-- Botones -->
     <div class="mtc-acciones" @click.stop>
       <button class="mtc-btn mtc-btn--del" @click.stop="$emit('eliminar')"
         title="Eliminar pedido (irreversible)">
@@ -65,149 +67,155 @@ const esAlerta = computed(() => {
     const now = new Date()
     const open = new Date(now)
     open.setHours(h, m, 0, 0)
-    if (open > now) open.setDate(open.getDate() - 1) // cruzó medianoche
+    if (open > now) open.setDate(open.getDate() - 1)
     return (now - open) > 60 * 60 * 1000
   } catch { return false }
 })
 </script>
 
 <style scoped>
-/* ── Contenedor ─────────────────────────────────────────────────────────── */
-.mtc-wrap {
+/* ── Tarjeta contenedora (da el efecto flotante oscuro) ─────────────────── */
+.mtc-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  background: #1a2535;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.07);
+  box-shadow:
+    0 8px 24px rgba(0,0,0,.55),
+    0 2px 8px rgba(0,0,0,.35);
   cursor: pointer;
-  transition: transform .2s;
+  transition: transform .2s, box-shadow .2s;
   flex: 0 0 auto;
-  width: 118px;   /* mobile-first: caben 3 por fila en 360px */
+  width: 148px;           /* 2 por fila en 360px: 2×148+10=306px */
 }
-.mtc-wrap:hover { transform: scale(1.04) translateY(-2px); }
+.mtc-card:hover {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow:
+    0 16px 36px rgba(0,0,0,.65),
+    0 4px 12px rgba(0,0,0,.4);
+}
+.mtc-card--alerta {
+  border-color: rgba(220,38,38,.35);
+  box-shadow:
+    0 8px 24px rgba(220,38,38,.3),
+    0 2px 8px rgba(0,0,0,.3);
+}
 
-/* ── Chips (sillas alrededor de la mesa) ────────────────────────────────── */
+/* Badge número de comanda */
+.mtc-seq {
+  position: absolute;
+  top: 8px; right: 10px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+/* ── Chips (hora / mesero) ───────────────────────────────────────────────── */
 .mtc-chip {
-  background: #1e293b;
-  color: #cbd5e1;
+  width: 100%;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 10px;
+  color: #94a3b8;
   font-size: 10px;
   font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.35);
-  border: 1px solid #334155;
-  z-index: 2;
-  position: relative;
-  margin-bottom: -10px;
+  padding: 4px 8px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  max-width: 110px;
+  justify-content: center;
+  gap: 5px;
 }
-.mtc-chip-text {
+.mtc-chip span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 80px;
 }
-.mtc-chip--mesero {
-  margin-bottom: 0;
-  margin-top: -10px;
-}
+.mtc-chip--hora { color: #cbd5e1; }
 .mtc-chip--alerta {
-  background: #450a0a;
+  background: rgba(220,38,38,.18);
+  border-color: rgba(220,38,38,.4);
   color: #fca5a5;
-  border-color: #ef4444;
   animation: mtc-pulse 1.5s ease-in-out infinite;
 }
 @keyframes mtc-pulse {
-  0%, 100% { box-shadow: 0 2px 6px rgba(220,38,38,.3); }
-  50%       { box-shadow: 0 2px 18px rgba(220,38,38,.75); }
+  0%, 100% { box-shadow: none; }
+  50%       { box-shadow: 0 0 10px rgba(220,38,38,.5); }
 }
+.mtc-chip--mesero { color: #94a3b8; }
 
-/* ── Tablón de madera (superficie) ──────────────────────────────────────── */
-.mtc-tablon {
-  width: 110px;
-  min-height: 95px;
-  background: radial-gradient(ellipse at 38% 32%, #d4925a 0%, #a65c20 55%, #7a3d0a 100%);
-  border: 4px solid #5a3008;
-  border-radius: 22px;
+/* ── Superficie oval de madera ───────────────────────────────────────────── */
+.mtc-oval {
+  width: 128px;
+  height: 96px;
+  border-radius: 50%;                      /* verdadero óvalo */
+  background: radial-gradient(
+    ellipse at 42% 35%,
+    #f5d090 0%,
+    #d4922c 45%,
+    #a05c14 80%,
+    #7a3d08 100%
+  );
+  border: 3px solid #6b3408;
   box-shadow:
-    0 10px 24px rgba(0,0,0,.45),
-    0 4px 8px rgba(0,0,0,.25),
-    inset 0 2px 10px rgba(255,255,255,.12);
+    0 8px 20px rgba(0,0,0,.5),
+    inset 0 3px 10px rgba(255,220,130,.25),
+    inset 0 -3px 8px rgba(0,0,0,.2);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  position: relative;
-  z-index: 1;
-  padding: 14px 8px;
   transition: box-shadow .2s;
 }
-.mtc-tablon--alerta {
-  border-color: #dc2626;
+.mtc-card:hover .mtc-oval {
   box-shadow:
-    0 10px 24px rgba(220,38,38,.4),
-    0 4px 8px rgba(0,0,0,.25),
-    inset 0 2px 10px rgba(255,255,255,.08);
-}
-.mtc-wrap:hover .mtc-tablon {
-  box-shadow:
-    0 14px 30px rgba(0,0,0,.5),
-    0 6px 12px rgba(0,0,0,.3),
-    inset 0 2px 12px rgba(255,255,255,.18);
-}
-
-/* Número de comanda */
-.mtc-seq {
-  position: absolute;
-  top: 8px; right: 9px;
-  background: rgba(0,0,0,.45);
-  color: #fde68a;
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 4px;
-  line-height: 1.4;
+    0 12px 28px rgba(0,0,0,.55),
+    inset 0 3px 12px rgba(255,220,130,.3),
+    inset 0 -3px 8px rgba(0,0,0,.2);
 }
 
 .mtc-nombre {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 900;
   color: #fff;
-  text-shadow: 0 2px 4px rgba(0,0,0,.6);
+  text-shadow: 0 2px 5px rgba(0,0,0,.7);
   text-align: center;
   line-height: 1.1;
+  padding: 0 10px;
   word-break: break-word;
-  max-width: 98px;
 }
-
 .mtc-valor-label {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   color: #fde68a;
   text-transform: uppercase;
   letter-spacing: .8px;
-  margin-top: 6px;
+  margin-top: 5px;
 }
-
 .mtc-valor {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   color: #86efac;
   text-shadow: 0 1px 3px rgba(0,0,0,.5);
-  margin-top: 1px;
   text-align: center;
+  padding: 0 6px;
 }
 
-/* ── Botones de acción ──────────────────────────────────────────────────── */
+/* ── Botones ─────────────────────────────────────────────────────────────── */
 .mtc-acciones {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
 }
 .mtc-btn {
-  width: 32px;
+  flex: 1;
   height: 28px;
   border-radius: 8px;
   border: 1.5px solid transparent;
@@ -218,27 +226,23 @@ const esAlerta = computed(() => {
   align-items: center;
   justify-content: center;
 }
-.mtc-btn--del { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.mtc-btn--del { background: rgba(220,38,38,.15); color: #f87171; border-color: rgba(220,38,38,.3); }
 .mtc-btn--del:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
-.mtc-btn--fac { background: #f0fdf4; color: #16a34a; border-color: #86efac; }
-.mtc-btn--fac:disabled { opacity: .45; cursor: not-allowed; }
+.mtc-btn--fac { background: rgba(22,163,74,.12); color: #4ade80; border-color: rgba(22,163,74,.25); }
+.mtc-btn--fac:disabled { opacity: .4; cursor: not-allowed; }
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
-/* Tablet: la tarjeta crece un poco */
 @media (min-width: 577px) and (max-width: 768px) {
-  .mtc-wrap { width: 135px; }
-  .mtc-tablon { width: 126px; min-height: 105px; border-radius: 24px; }
-  .mtc-nombre { font-size: 17px; }
-  .mtc-chip { max-width: 126px; }
-  .mtc-chip-text { max-width: 94px; }
+  .mtc-card { width: 158px; }
+  .mtc-oval { width: 138px; height: 106px; }
+  .mtc-nombre { font-size: 16px; }
 }
 
-/* Desktop: más grande */
 @media (min-width: 769px) {
-  .mtc-wrap { width: 155px; }
-  .mtc-tablon { width: 145px; min-height: 115px; border-radius: 26px; padding: 18px 10px; }
-  .mtc-nombre { font-size: 20px; max-width: 125px; }
-  .mtc-chip { font-size: 11px; padding: 5px 12px; max-width: 144px; }
-  .mtc-chip-text { max-width: 112px; }
+  .mtc-card { width: 170px; }
+  .mtc-oval { width: 150px; height: 114px; }
+  .mtc-nombre { font-size: 18px; }
+  .mtc-chip { font-size: 11px; padding: 5px 10px; }
+  .mtc-valor { font-size: 13px; }
 }
 </style>

@@ -917,7 +917,7 @@ async function guardarNuevoMesero() {
 .mesas-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;           /* móvil: 3 × 118px + 2 × 10px = 374px — OK en 390px */
+  gap: 10px;
   padding: 8px 0;
   position: relative;
   z-index: 1;
