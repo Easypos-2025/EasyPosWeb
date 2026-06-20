@@ -361,19 +361,37 @@ async def delete_company(company_id: int, db: AsyncSession = Depends(get_db), cu
 
 @router.get("/")
 async def get_companies(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company))
+    from app.models.company_plan_model import CompanyPlan
+    from app.models.plan_model import Plan
+
+    result = await db.execute(select(Company).order_by(Company.id_company))
     companies = result.scalars().all()
+
     result = await db.execute(select(BusinessProfile))
     profiles = {p.id: p.name for p in result.scalars().all()}
+
+    cp_res = await db.execute(select(CompanyPlan).where(CompanyPlan.is_active == True))
+    active_plans = {cp.company_id: cp for cp in cp_res.scalars().all()}
+
+    plan_res = await db.execute(select(Plan))
+    plan_names = {p.id: p.name for p in plan_res.scalars().all()}
+
     return [
-        {"id": c.id_company, "name": c.name, "identification_number": c.identification_number,
-         "dv": c.dv, "address": c.address, "phone": c.phone, "email": c.email,
-         "description": c.description, "state": c.state,
-         "business_profile_id": c.business_profile_id,
-         "business_profile_name": profiles.get(c.business_profile_id, ""),
-         "language_id": c.language_id, "country_id": c.country_id,
-         "department_id": c.department_id, "municipality_id": c.municipality_id,
-         "type_currency_id": c.type_currency_id,
-         "show_sidebar_right": c.show_sidebar_right if c.show_sidebar_right is not None else 1}
+        {
+            "id": c.id_company,
+            "name": c.name,
+            "identification_number": c.identification_number,
+            "dv": c.dv, "address": c.address, "phone": c.phone, "email": c.email,
+            "description": c.description, "state": c.state,
+            "business_profile_id": c.business_profile_id,
+            "business_profile_name": profiles.get(c.business_profile_id, ""),
+            "language_id": c.language_id, "country_id": c.country_id,
+            "department_id": c.department_id, "municipality_id": c.municipality_id,
+            "type_currency_id": c.type_currency_id,
+            "show_sidebar_right": c.show_sidebar_right if c.show_sidebar_right is not None else 1,
+            "plan_id":          active_plans[c.id_company].plan_id if c.id_company in active_plans else None,
+            "plan_name":        plan_names.get(active_plans[c.id_company].plan_id, "—") if c.id_company in active_plans else "Sin plan",
+            "expiration_date":  active_plans[c.id_company].expiration_date.isoformat() if c.id_company in active_plans and active_plans[c.id_company].expiration_date else None,
+        }
         for c in companies
     ]
