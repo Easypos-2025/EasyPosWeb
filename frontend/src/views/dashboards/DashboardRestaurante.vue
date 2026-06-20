@@ -55,14 +55,15 @@
 
     <!-- MESAS ABIERTAS -->
     <div class="mesas-section">
+      <div class="wm-icon" aria-hidden="true"><i class="bi bi-egg-fried"></i></div>
       <div v-if="mesasLoading" class="estado-carga">
         <div class="spinner-border spinner-border-sm text-primary"></div>
-        <span>Cargando mesas...</span>
+        <span>Cargando cuentas...</span>
       </div>
       <template v-else>
         <div v-if="!mesasOcupadas.length" class="estado-vacio">
           <i class="bi bi-check-circle"></i>
-          <p>No hay mesas abiertas en este momento.</p>
+          <p>No hay cuentas abiertas en este momento.</p>
         </div>
         <div v-else class="mesas-grid">
           <div
@@ -71,17 +72,13 @@
             class="mesa-card mesa-card--ocupada"
             @click="irAMesaExistente(mesa)"
           >
-            <div class="mesa-status-bar"></div>
-            <div class="mesa-icon">
-              <i class="bi bi-people-fill"></i>
+            <div class="mesa-circle-top">
+              <span v-if="mesa.daily_seq" class="mesa-seq-badge">#{{ mesa.daily_seq }}</span>
+              <div class="mesa-icon"><i class="bi bi-people-fill"></i></div>
+              <div class="mesa-nombre">{{ mesa.name }}</div>
+              <div class="mesa-mesero">{{ mesa.waiter_name || '—' }}</div>
+              <div class="mesa-monto">{{ fmt(mesa.amount) }}</div>
             </div>
-            <div class="mesa-nombre">{{ mesa.name }}</div>
-            <div class="mesa-info">
-              <span v-if="mesa.daily_seq" class="mesa-seq">#{{ mesa.daily_seq }}</span>
-              <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
-              <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
-            </div>
-            <div class="mesa-estado">Ocupada</div>
             <div class="mesa-acciones">
               <button class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
                 title="Eliminar pedido (irreversible)">
@@ -901,8 +898,21 @@ async function guardarNuevoMesero() {
 }
 .action-btn__badge--tv { background: #1d4ed8; }
 
-/* ── Sección mesas abiertas ───────────────────────────────────────────────── */
-.mesas-section { min-height: 200px; }
+/* ── Sección cuentas abiertas ────────────────────────────────────────────── */
+.mesas-section { min-height: 200px; position: relative; overflow: hidden; }
+
+.wm-icon {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 300px;
+  color: #1e3a5f;
+  opacity: .035;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  line-height: 1;
+}
 
 .estado-carga, .estado-vacio {
   display: flex;
@@ -914,56 +924,110 @@ async function guardarNuevoMesero() {
   color: #94a3b8;
   font-size: 14px;
   text-align: center;
+  position: relative;
+  z-index: 1;
 }
 .estado-vacio i { font-size: 40px; }
 
-/* ── Mesas grid ───────────────────────────────────────────────────────────── */
+/* ── Tarjetas de cuenta — forma mesa redonda ─────────────────────────────── */
 .mesas-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 4px 0;
+  position: relative;
+  z-index: 1;
 }
 
 .mesa-card {
-  border-radius: 12px;
-  border: 2px solid #e2e8f0;
-  overflow: hidden;
-  text-align: center;
+  border: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
-  transition: transform .15s, box-shadow .15s, border-color .15s;
-  background: #fff;
+  transition: transform .15s;
+  flex: 0 0 auto;
 }
-.mesa-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+.mesa-card:hover { transform: translateY(-4px); }
 
-.mesa-status-bar { height: 4px; background: #e2e8f0; }
-.mesa-card--ocupada .mesa-status-bar { background: #ef4444; }
-.mesa-card--cuenta  .mesa-status-bar { background: #f59e0b; }
-.mesa-card--ocupada { border-color: #fca5a5; background: #fff5f5; }
-.mesa-card--cuenta  { border-color: #fcd34d; background: #fffbeb; }
+.mesa-circle-top {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 3px solid #e2e8f0;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(0,0,0,.10);
+  overflow: hidden;
+  transition: box-shadow .15s, border-color .15s;
+}
+.mesa-card--ocupada .mesa-circle-top {
+  border-color: #ef4444;
+  background: #fff5f5;
+  box-shadow: 0 3px 16px rgba(239,68,68,.22);
+}
+.mesa-card--cuenta .mesa-circle-top {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: 0 3px 16px rgba(245,158,11,.22);
+}
+.mesa-card:hover .mesa-circle-top { box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 
-.mesa-icon { font-size: 24px; padding-top: 14px; margin-bottom: 4px; }
-.mesa-card--ocupada .mesa-icon { color: #ef4444; }
-.mesa-card--cuenta  .mesa-icon { color: #d97706; }
+.mesa-seq-badge {
+  position: absolute;
+  top: 10px; right: 8px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
 
-.mesa-nombre { font-weight: 700; font-size: 14px; color: #1e3a5f; padding: 0 8px 4px; }
-.mesa-info   { font-size: 11px; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 4px; }
-.mesa-seq    { color: #1d4ed8; font-weight: 700; font-size: 12px; }
-.mesa-mesero { color: #64748b; }
-.mesa-monto  { color: #1e3a5f; font-weight: 700; font-size: 12px; }
-.mesa-estado { font-size: 10px; font-weight: 700; padding: 4px 8px 10px; }
-.mesa-card--ocupada .mesa-estado { color: #ef4444; }
-.mesa-card--cuenta  .mesa-estado { color: #d97706; }
+.mesa-icon { font-size: 20px; margin-bottom: 2px; }
+.mesa-card--ocupada .mesa-circle-top .mesa-icon { color: #ef4444; }
+.mesa-card--cuenta  .mesa-circle-top .mesa-icon { color: #d97706; }
+
+.mesa-nombre {
+  font-weight: 800;
+  font-size: 13px;
+  color: #1e3a5f;
+  padding: 0 10px;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 112px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mesa-mesero {
+  font-size: 10px;
+  color: #64748b;
+  padding: 0 8px;
+  text-align: center;
+  max-width: 112px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mesa-monto { font-size: 12px; font-weight: 700; color: #1e3a5f; margin-top: 1px; }
 
 .mesa-acciones {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   justify-content: center;
-  padding: 0 8px 10px;
 }
 .mesa-btn {
-  flex: 1;
-  padding: 5px 0;
-  border-radius: 6px;
+  width: 34px;
+  height: 28px;
+  border-radius: 8px;
   border: 1.5px solid transparent;
   font-size: 13px;
   cursor: pointer;
@@ -1413,7 +1477,8 @@ async function guardarNuevoMesero() {
   .btn-tv { padding: 6px 10px; }
   .action-bar { gap: 8px; }
   .action-btn { padding: 10px 14px; font-size: 13px; }
-  .mesas-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .mesa-circle-top { width: 115px; height: 115px; }
+  .wm-icon { font-size: 240px; }
   .meseros-grid { grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); }
   .modal-panel { max-width: 100%; }
 }
@@ -1422,7 +1487,10 @@ async function guardarNuevoMesero() {
   .action-bar { gap: 6px; }
   .action-btn { padding: 10px 12px; font-size: 12px; gap: 5px; }
   .action-btn i { font-size: 1rem; }
-  .mesas-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mesas-grid { gap: 10px; justify-content: center; }
+  .mesa-circle-top { width: 100px; height: 100px; }
+  .mesa-nombre { font-size: 12px; }
+  .wm-icon { font-size: 180px; }
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal-panel { border-radius: 20px 20px 0 0; max-height: 88dvh; max-width: 100%; }
   .wizard-overlay { padding: 0; align-items: flex-end; }

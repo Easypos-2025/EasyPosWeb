@@ -55,14 +55,15 @@
 
     <!-- MESAS ABIERTAS -->
     <div class="mesas-section">
+      <div class="wm-icon" aria-hidden="true"><i class="bi bi-truck"></i></div>
       <div v-if="mesasLoading" class="estado-carga">
         <div class="spinner-border spinner-border-sm text-primary"></div>
-        <span>Cargando mesas...</span>
+        <span>Cargando cuentas...</span>
       </div>
       <template v-else>
         <div v-if="!mesasOcupadas.length" class="estado-vacio">
           <i class="bi bi-check-circle"></i>
-          <p>No hay mesas abiertas en este momento.</p>
+          <p>No hay cuentas abiertas en este momento.</p>
         </div>
         <div v-else class="mesas-grid">
           <div
@@ -766,11 +767,12 @@ async function guardarNuevoMesero() {
 .action-btn__badge { background: #dc2626; color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center; }
 .action-btn__badge--tv { background: #1d4ed8; }
 
-.mesas-section { min-height: 200px; }
-.estado-carga, .estado-vacio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: #94a3b8; font-size: 14px; text-align: center; }
+.mesas-section { min-height: 200px; position: relative; overflow: hidden; }
+.wm-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 300px; color: #1e3a5f; opacity: .035; pointer-events: none; user-select: none; z-index: 0; line-height: 1; }
+.estado-carga, .estado-vacio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: #94a3b8; font-size: 14px; text-align: center; position: relative; z-index: 1; }
 .estado-vacio i { font-size: 40px; }
 
-.mesas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.mesas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; position: relative; z-index: 1; }
 .mesa-card { border-radius: 12px; border: 2px solid #e2e8f0; overflow: hidden; text-align: center; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; background: #fff; }
 .mesa-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
 .mesa-status-bar { height: 4px; background: #e2e8f0; }
@@ -886,6 +888,7 @@ async function guardarNuevoMesero() {
   .action-bar { gap: 8px; }
   .action-btn { padding: 10px 14px; font-size: 13px; }
   .mesas-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .wm-icon { font-size: 240px; }
   .meseros-grid { grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); }
   .modal-panel { max-width: 100%; }
 }
@@ -894,6 +897,7 @@ async function guardarNuevoMesero() {
   .action-btn { padding: 10px 12px; font-size: 12px; gap: 5px; }
   .action-btn i { font-size: 1rem; }
   .mesas-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .wm-icon { font-size: 180px; }
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal-panel { border-radius: 20px 20px 0 0; max-height: 88dvh; max-width: 100%; }
   .wizard-overlay { padding: 0; align-items: flex-end; }
