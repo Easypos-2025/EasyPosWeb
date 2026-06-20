@@ -148,6 +148,33 @@
 
       </div>
 
+      <!-- ── PLAN ──────────────────────────────────────────── -->
+      <div class="plan-section mt-4">
+        <div class="plan-section-header">
+          <i class="bi bi-award me-1"></i>Plan a asignar
+          <span class="plan-section-hint">Opcional — se puede asignar después desde Lista Empresas</span>
+        </div>
+        <div class="plan-section-body">
+          <div class="plan-grid">
+            <div class="plan-fg">
+              <label>Plan</label>
+              <select v-model="planForm.plan_id" class="form-select">
+                <option value="">— Sin plan por ahora —</option>
+                <option v-for="p in plans" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+            <div class="plan-fg">
+              <label>Fecha de vencimiento <small class="text-muted">(vacío = indefinido)</small></label>
+              <CustomDatePicker v-model="planForm.expiration_date" />
+            </div>
+          </div>
+          <p v-if="planForm.plan_id" class="plan-preview-note">
+            <i class="bi bi-info-circle me-1"></i>
+            El plan <strong>{{ plans.find(p => p.id === planForm.plan_id)?.name }}</strong> se asignará automáticamente al crear la empresa.
+          </p>
+        </div>
+      </div>
+
       <!-- ── BD EXTERNA ─────────────────────────────────────────── -->
       <div class="ext-db-section mt-4">
         <button type="button" class="ext-db-toggle" @click="showExtDb = !showExtDb">
@@ -238,6 +265,7 @@
 import { ref, onMounted, nextTick } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 
 const profiles      = ref([])
 const languages     = ref([])
@@ -245,6 +273,8 @@ const countries     = ref([])
 const departments   = ref([])
 const municipalities = ref([])
 const currencies    = ref([])
+const plans         = ref([])
+const planForm      = ref({ plan_id: "", expiration_date: "" })
 
 const showExtDb  = ref(false)
 const showPass   = ref(false)
@@ -310,6 +340,8 @@ const loadAll = async () => {
   departments.value   = (await api.get("/departments/")).data
   municipalities.value = (await api.get("/municipalities/")).data
   currencies.value    = (await api.get("/type-currencies/")).data
+  const pRes = await api.get("/plans/")
+  plans.value = pRes.data.filter(p => p.is_active)
 }
 
 const clearExtDb = () => {
@@ -383,8 +415,25 @@ const createCompany = async () => {
   }
 
   try {
-    await api.post("/companies/", form.value)
-    showToast("Empresa creada correctamente", "success")
+    const res = await api.post("/companies/", form.value)
+    const newId = res.data?.id
+
+    // Asignar plan si fue seleccionado
+    if (newId && planForm.value.plan_id) {
+      try {
+        await api.post(`/company-plan/${newId}`, {
+          plan_id:         Number(planForm.value.plan_id),
+          expiration_date: planForm.value.expiration_date || null,
+        })
+        const planName = plans.value.find(p => p.id === planForm.value.plan_id)?.name || ""
+        showToast(`Empresa creada · Plan "${planName}" asignado`, "success")
+      } catch {
+        showToast("Empresa creada, pero hubo un error al asignar el plan. Asígnalo desde Lista Empresas.", "warning")
+      }
+    } else {
+      showToast("Empresa creada correctamente", "success")
+    }
+
     form.value = {
       ...form.value,
       name: "", identification_number: "", dv: "", address: "",
@@ -392,6 +441,7 @@ const createCompany = async () => {
       ext_db_host: "", ext_db_port: 3306, ext_db_name: "",
       ext_db_user: "", ext_db_password: "", ext_db_has_password: false,
     }
+    planForm.value = { plan_id: "", expiration_date: "" }
     showExtDb.value = false
   } catch (error) {
     console.error(error)
@@ -572,5 +622,55 @@ onMounted(() => { loadAll() })
 }
 @media (max-width: 576px) {
   .sidebar-toggle-btn { font-size: .8rem; padding: 7px 10px; }
+}
+
+/* ── Plan section ── */
+.plan-section {
+  border: 1.5px solid #bfdbfe;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.plan-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #eff6ff;
+  padding: 10px 14px;
+  font-size: .88rem;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+.plan-section-hint {
+  margin-left: auto;
+  font-size: .72rem;
+  font-weight: 400;
+  color: #64748b;
+}
+.plan-section-body {
+  padding: 14px 16px;
+  background: #fff;
+  border-top: 1px solid #dbeafe;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.plan-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.plan-fg { display: flex; flex-direction: column; gap: 4px; }
+.plan-fg label { font-size: 13px; font-weight: 500; color: #374151; }
+.plan-preview-note {
+  font-size: 12px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-radius: 6px;
+  padding: 7px 10px;
+  margin: 0;
+}
+@media (max-width: 576px) {
+  .plan-grid { grid-template-columns: 1fr; }
+  .plan-section-hint { display: none; }
 }
 </style>
