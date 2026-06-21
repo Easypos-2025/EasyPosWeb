@@ -498,11 +498,11 @@ async function guardarNuevoMesero() {
 .action-btn--tv:hover { background: #dbeafe; }
 .action-btn__badge { background: #dc2626; color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center; }
 .action-btn__badge--tv { background: #1d4ed8; }
-.mesas-section { min-height: 200px; position: relative; overflow: hidden; }
-.wm-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 300px; color: #1e3a5f; opacity: .035; pointer-events: none; user-select: none; z-index: 0; line-height: 1; }
-.estado-carga, .estado-vacio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: #94a3b8; font-size: 14px; text-align: center; position: relative; z-index: 1; }
+.mesas-section { min-height: 200px; position: relative; overflow: hidden; background: #0d1520; border-radius: 16px; padding: 16px; }
+.wm-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 300px; color: rgba(255,255,255,.03); pointer-events: none; user-select: none; z-index: 0; line-height: 1; }
+.estado-carga, .estado-vacio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: #475569; font-size: 14px; text-align: center; position: relative; z-index: 1; }
 .estado-vacio i { font-size: 40px; }
-.mesas-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 0; position: relative; z-index: 1; }
+.mesas-grid { display: flex; flex-wrap: wrap; gap: 20px; padding: 8px 4px; position: relative; z-index: 1; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1050; padding: 16px; }
 .modal-panel { background: #fff; border-radius: 16px; width: 100%; max-width: 480px; max-height: 85dvh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.22); overflow: hidden; }
 .modal-panel__header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-weight: 700; font-size: 14px; color: #1e3a5f; flex-shrink: 0; }

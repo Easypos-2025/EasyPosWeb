@@ -882,16 +882,22 @@ async function guardarNuevoMesero() {
 }
 .action-btn__badge--tv { background: #1d4ed8; }
 
-/* ── Sección cuentas abiertas ────────────────────────────────────────────── */
-.mesas-section { min-height: 200px; position: relative; overflow: hidden; }
+/* ── Sección cuentas — piso oscuro de restaurante ────────────────────────── */
+.mesas-section {
+  min-height: 200px;
+  position: relative;
+  overflow: hidden;
+  background: #0d1520;
+  border-radius: 16px;
+  padding: 16px;
+}
 
 .wm-icon {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   font-size: 300px;
-  color: #1e3a5f;
-  opacity: .035;
+  color: rgba(255,255,255,.03);
   pointer-events: none;
   user-select: none;
   z-index: 0;
@@ -905,7 +911,7 @@ async function guardarNuevoMesero() {
   justify-content: center;
   gap: 10px;
   min-height: 160px;
-  color: #94a3b8;
+  color: #475569;
   font-size: 14px;
   text-align: center;
   position: relative;
@@ -917,8 +923,8 @@ async function guardarNuevoMesero() {
 .mesas-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 8px 0;
+  gap: 20px;
+  padding: 8px 4px;
   position: relative;
   z-index: 1;
 }
