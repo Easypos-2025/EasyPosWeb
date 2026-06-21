@@ -882,14 +882,11 @@ async function guardarNuevoMesero() {
 }
 .action-btn__badge--tv { background: #1d4ed8; }
 
-/* ── Sección cuentas — piso oscuro de restaurante ────────────────────────── */
+/* ── Sección cuentas ─────────────────────────────────────────────────────── */
 .mesas-section {
   min-height: 200px;
   position: relative;
   overflow: hidden;
-  background: #0d1520;
-  border-radius: 16px;
-  padding: 16px;
 }
 
 .wm-icon {
@@ -897,7 +894,7 @@ async function guardarNuevoMesero() {
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   font-size: 300px;
-  color: rgba(255,255,255,.03);
+  color: rgba(0,0,0,.04);
   pointer-events: none;
   user-select: none;
   z-index: 0;
@@ -923,8 +920,8 @@ async function guardarNuevoMesero() {
 .mesas-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 20px;
-  padding: 8px 4px;
+  gap: 16px 10px;
+  padding: 16px 4px;
   position: relative;
   z-index: 1;
 }
@@ -1374,7 +1371,7 @@ async function guardarNuevoMesero() {
   .action-bar { gap: 6px; }
   .action-btn { padding: 10px 12px; font-size: 12px; gap: 5px; }
   .action-btn i { font-size: 1rem; }
-  .mesas-grid { gap: 12px; justify-content: center; }
+  .mesas-grid { gap: 12px 8px; justify-content: center; }
   .wm-icon { font-size: 180px; }
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal-panel { border-radius: 20px 20px 0 0; max-height: 88dvh; max-width: 100%; }

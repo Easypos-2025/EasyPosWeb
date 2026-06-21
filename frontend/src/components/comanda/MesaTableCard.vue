@@ -1,13 +1,21 @@
 <template>
-  <div class="mtc-wrap" @click="$emit('click')">
+  <!-- La escena contiene la mesa + las 4 sillas. El clic en cualquier parte la abre -->
+  <div class="mtc-scene" @click="$emit('click')">
 
-    <!-- Chip hora — flota encima del óvalo -->
-    <div class="mtc-chip mtc-chip--hora" :class="{ 'mtc-chip--alerta': esAlerta }">
+    <!-- Silla SUPERIOR: hora del pedido -->
+    <div class="mtc-silla mtc-silla--top" :class="{ 'mtc-silla--alerta': esAlerta }">
       <i class="bi bi-clock"></i>
       <span>{{ horaDisplay }}</span>
     </div>
 
-    <!-- Óvalo de madera flotante -->
+    <!-- Silla IZQUIERDA: eliminar -->
+    <button class="mtc-silla mtc-silla--left mtc-silla--del"
+      @click.stop="$emit('eliminar')"
+      title="Eliminar pedido (irreversible)">
+      <i class="bi bi-trash"></i>
+    </button>
+
+    <!-- MESA — óvalo de madera (centro) -->
     <div class="mtc-oval">
       <span v-if="mesa.daily_seq" class="mtc-seq">#{{ mesa.daily_seq }}</span>
       <div class="mtc-nombre">{{ mesa.name }}</div>
@@ -15,22 +23,18 @@
       <div class="mtc-valor">{{ fmt(mesa.amount) }}</div>
     </div>
 
-    <!-- Chip mesero — flota debajo del óvalo -->
-    <div class="mtc-chip mtc-chip--mesero">
+    <!-- Silla DERECHA: facturar -->
+    <button class="mtc-silla mtc-silla--right mtc-silla--fac"
+      disabled
+      title="Facturación próximamente"
+      @click.stop>
+      <i class="bi bi-receipt"></i>
+    </button>
+
+    <!-- Silla INFERIOR: mesero -->
+    <div class="mtc-silla mtc-silla--bottom">
       <i class="bi bi-person-fill"></i>
       <span class="mtc-chip-text">{{ mesa.waiter_name || '—' }}</span>
-    </div>
-
-    <!-- Botones acción -->
-    <div class="mtc-acciones" @click.stop>
-      <button class="mtc-btn mtc-btn--del" @click.stop="$emit('eliminar')"
-        title="Eliminar pedido (irreversible)">
-        <i class="bi bi-trash"></i>
-      </button>
-      <button class="mtc-btn mtc-btn--fac" disabled
-        title="Facturación próximamente">
-        <i class="bi bi-receipt"></i>
-      </button>
     </div>
 
   </div>
@@ -72,58 +76,34 @@ const esAlerta = computed(() => {
 </script>
 
 <style scoped>
-/* ── Wrapper: 100 % transparente — sin caja, sin borde ──────────────────── */
-.mtc-wrap {
-  background: transparent;
-  border: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
+/*
+  Dimensiones mobile-first (≤576px):
+    Óvalo:   116px × 88px
+    Sillas laterales (btn):  28px × 28px, gap 9px del borde del óvalo
+    Sillas verticales (chip): 24px alto,  gap 8px del borde del óvalo
+    Escena:  (28+9+116+9+28) × (24+8+88+8+24) = 190 × 152px
+    2 por fila en 390px: 2×190 + 10 = 390px ✓
+*/
+
+/* ── Escena (contenedor relativo sin fondo) ──────────────────────────────── */
+.mtc-scene {
+  position: relative;
+  width: 190px;
+  height: 152px;
   cursor: pointer;
-  transition: transform .2s;
   flex: 0 0 auto;
+  transition: transform .2s;
 }
-.mtc-wrap:hover { transform: translateY(-6px) scale(1.03); }
+.mtc-scene:hover { transform: translateY(-5px) scale(1.03); }
 
-/* ── Chips flotantes (hora / mesero) ─────────────────────────────────────── */
-.mtc-chip {
-  background: #1e293b;
-  color: #cbd5e1;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 5px 14px;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,.09);
-  box-shadow: 0 3px 10px rgba(0,0,0,.55);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-  max-width: 148px;
-}
-.mtc-chip span,
-.mtc-chip-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 112px;
-}
-.mtc-chip--alerta {
-  background: #450a0a;
-  color: #fca5a5;
-  border-color: rgba(220,38,38,.5);
-  animation: mtc-pulse 1.5s ease-in-out infinite;
-}
-@keyframes mtc-pulse {
-  0%, 100% { box-shadow: 0 3px 10px rgba(220,38,38,.3); }
-  50%       { box-shadow: 0 3px 22px rgba(220,38,38,.75); }
-}
-
-/* ── Óvalo de madera (la mesa) ───────────────────────────────────────────── */
+/* ── Óvalo central ───────────────────────────────────────────────────────── */
 .mtc-oval {
-  width: 148px;
-  height: 112px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 116px;
+  height: 88px;
   border-radius: 50%;
   background: radial-gradient(
     ellipse at 42% 36%,
@@ -134,103 +114,171 @@ const esAlerta = computed(() => {
   );
   border: 3px solid #5a3008;
   box-shadow:
-    0 20px 50px rgba(0,0,0,.75),
-    0 6px 16px rgba(0,0,0,.45),
-    inset 0 3px 12px rgba(255,220,120,.3),
-    inset 0 -2px 8px rgba(0,0,0,.25);
+    0 18px 45px rgba(0,0,0,.45),
+    0 5px 14px rgba(0,0,0,.25),
+    inset 0 3px 10px rgba(255,220,120,.3),
+    inset 0 -2px 7px rgba(0,0,0,.25);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  position: relative;
+  z-index: 1;
   transition: box-shadow .2s;
 }
-.mtc-wrap:hover .mtc-oval {
+.mtc-scene:hover .mtc-oval {
   box-shadow:
-    0 28px 60px rgba(0,0,0,.8),
-    0 8px 20px rgba(0,0,0,.5),
-    inset 0 4px 14px rgba(255,220,120,.35),
-    inset 0 -2px 8px rgba(0,0,0,.25);
+    0 26px 55px rgba(0,0,0,.55),
+    0 8px 18px rgba(0,0,0,.3),
+    inset 0 4px 12px rgba(255,220,120,.35),
+    inset 0 -2px 7px rgba(0,0,0,.25);
 }
 
 /* Número de comanda */
 .mtc-seq {
   position: absolute;
-  top: 12px; right: 14px;
+  top: 8px; right: 10px;
   background: rgba(0,0,0,.5);
   color: #fde68a;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 4px;
   line-height: 1.4;
 }
 
 .mtc-nombre {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 900;
   color: #fff;
-  text-shadow: 0 2px 6px rgba(0,0,0,.7);
+  text-shadow: 0 2px 5px rgba(0,0,0,.7);
   text-align: center;
   line-height: 1.1;
-  padding: 0 12px;
+  padding: 0 8px;
   word-break: break-word;
 }
 .mtc-valor-label {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   color: #fde68a;
   text-transform: uppercase;
-  letter-spacing: .8px;
-  margin-top: 5px;
+  letter-spacing: .7px;
+  margin-top: 4px;
 }
 .mtc-valor {
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 800;
   color: #86efac;
-  text-shadow: 0 1px 4px rgba(0,0,0,.6);
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
   text-align: center;
-  padding: 0 8px;
+  padding: 0 6px;
 }
 
-/* ── Botones ─────────────────────────────────────────────────────────────── */
-.mtc-acciones {
-  display: flex;
-  gap: 8px;
-}
-.mtc-btn {
-  width: 34px;
-  height: 30px;
-  border-radius: 8px;
-  border: 1.5px solid transparent;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background .15s, color .15s;
+/* ── Sillas — base compartida ────────────────────────────────────────────── */
+.mtc-silla {
+  position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  z-index: 2;
 }
-.mtc-btn--del { background: rgba(220,38,38,.2); color: #f87171; border-color: rgba(220,38,38,.35); }
-.mtc-btn--del:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
-.mtc-btn--fac { background: rgba(22,163,74,.15); color: #4ade80; border-color: rgba(22,163,74,.3); }
-.mtc-btn--fac:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Sillas INFO (chip oscuro — top y bottom) */
+.mtc-silla--top,
+.mtc-silla--bottom {
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 3px 10px rgba(0,0,0,.35);
+  white-space: nowrap;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.mtc-silla--top    { top: 0; }
+.mtc-silla--bottom { bottom: 0; }
+
+.mtc-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 88px;
+}
+
+/* Alerta en hora */
+.mtc-silla--alerta {
+  background: #450a0a;
+  color: #fca5a5;
+  border-color: rgba(220,38,38,.5);
+  animation: mtc-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mtc-pulse {
+  0%, 100% { box-shadow: 0 3px 8px rgba(220,38,38,.3); }
+  50%       { box-shadow: 0 3px 20px rgba(220,38,38,.75); }
+}
+
+/* Sillas ACCIÓN (botón circular — left y right) */
+.mtc-silla--left,
+.mtc-silla--right {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s, color .15s, transform .15s;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.mtc-silla--left  { left: 0; }
+.mtc-silla--right { right: 0; }
+
+.mtc-silla--del {
+  background: rgba(220,38,38,.15);
+  color: #ef4444;
+  border-color: rgba(220,38,38,.35);
+}
+.mtc-silla--del:hover {
+  background: #dc2626;
+  color: #fff;
+  transform: translateY(-50%) scale(1.15);
+}
+.mtc-silla--fac {
+  background: rgba(22,163,74,.12);
+  color: #22c55e;
+  border-color: rgba(22,163,74,.3);
+}
+.mtc-silla--fac:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
-@media (max-width: 576px) {
-  .mtc-oval { width: 118px; height: 90px; }
-  .mtc-nombre { font-size: 14px; }
-  .mtc-valor { font-size: 12px; }
-  .mtc-chip { font-size: 10px; padding: 4px 11px; max-width: 118px; }
-  .mtc-chip span, .mtc-chip-text { max-width: 86px; }
-  .mtc-wrap { gap: 6px; }
+
+/* Tablet */
+@media (min-width: 577px) and (max-width: 768px) {
+  /* Óvalo: 134×102  Escena: (32+10+134+10+32)×(26+9+102+9+26) = 218×172 */
+  .mtc-scene { width: 218px; height: 172px; }
+  .mtc-oval  { width: 134px; height: 102px; }
+  .mtc-nombre { font-size: 16px; }
+  .mtc-valor  { font-size: 12px; }
+  .mtc-silla--top, .mtc-silla--bottom { font-size: 11px; padding: 5px 13px; }
+  .mtc-silla--left, .mtc-silla--right { width: 32px; height: 32px; font-size: 13px; }
 }
 
+/* Desktop */
 @media (min-width: 769px) {
-  .mtc-oval { width: 168px; height: 126px; }
-  .mtc-nombre { font-size: 22px; }
-  .mtc-valor { font-size: 15px; }
-  .mtc-chip { font-size: 12px; padding: 6px 16px; max-width: 166px; }
-  .mtc-chip span, .mtc-chip-text { max-width: 130px; }
-  .mtc-wrap { gap: 9px; }
+  /* Óvalo: 154×116  Escena: (36+12+154+12+36)×(28+10+116+10+28) = 250×192 */
+  .mtc-scene { width: 250px; height: 192px; }
+  .mtc-oval  { width: 154px; height: 116px; }
+  .mtc-nombre { font-size: 20px; }
+  .mtc-valor  { font-size: 14px; }
+  .mtc-valor-label { font-size: 9px; margin-top: 5px; }
+  .mtc-silla--top, .mtc-silla--bottom { font-size: 12px; padding: 5px 15px; }
+  .mtc-chip-text { max-width: 110px; }
+  .mtc-silla--left, .mtc-silla--right { width: 36px; height: 36px; font-size: 14px; }
 }
 </style>
