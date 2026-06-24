@@ -69,7 +69,7 @@ Public Sub SincronizarFacturas(Var_Id_Company_Envio As Integer, Var_Limit_Regist
         json = json & """foreign_amount"":"      & Replace(CStr(Nz(rs("Valor_Extranjero"), 0)), ",", ".")     & ","
         json = json & """manual_invoice"":"      & CInt(Nz(rs("Factura_Manual"), 0))                          & ","
         json = json & """resolution_id"":"       & Nz(rs("Id_Resolucion"), 0)                                 & ","
-        json = json & """reservation_invoice"":"  & """" & Nz(rs("Reservacion"), "0")                         & ""","
+        json = json & """reservation_invoice"":"  & """" & EscapeJson(Nz(rs("Reservacion"), "0"))             & ""","
         json = json & """delivery_invoice"":"    & CInt(Nz(rs("Domicilio"), 0))
         json = json & "}"
         sep = ","

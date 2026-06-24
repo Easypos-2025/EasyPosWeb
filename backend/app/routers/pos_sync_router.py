@@ -1411,7 +1411,7 @@ async def push_receipt_payments(
 # ═════════════════════════════════════════
 
 class DeliveryFeeIn(BaseModel):
-    id_registro:    int
+    id_registro:    Optional[int]   = 0  # versiones antiguas VB6 pueden no enviarlo
     invoice_number: str
     company_id:     int
     amount:         Optional[float] = 0
