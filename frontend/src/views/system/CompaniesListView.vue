@@ -183,6 +183,78 @@
             </div>
           </div>
 
+          <!-- BD EXTERNA -->
+          <div class="ext-db-section">
+            <button type="button" class="ext-db-toggle" @click="showExtDb = !showExtDb">
+              <i class="bi" :class="showExtDb ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+              <i class="bi bi-database-gear ms-1"></i>
+              Base de datos externa
+              <span v-if="editForm.ext_db_host" class="ext-db-badge">Configurada</span>
+              <span v-else class="ext-db-badge ext-db-badge--none">Sin configurar · usa easyposweb</span>
+            </button>
+
+            <div v-if="showExtDb" class="ext-db-body">
+              <p class="ext-db-hint">
+                <i class="bi bi-info-circle"></i>
+                Dejar vacío para usar la base de datos principal (<strong>easyposweb</strong>).
+                Solo completar si este perfil tiene su propia DB (mismo servidor u otro).
+              </p>
+
+              <div class="ext-db-grid">
+                <div class="ext-field ext-field--host">
+                  <label>Servidor (host / IP)</label>
+                  <input v-model="editForm.ext_db_host" class="form-control form-control-sm"
+                    placeholder="Ej: 192.168.1.100 o mi-servidor.com" />
+                </div>
+                <div class="ext-field ext-field--port">
+                  <label>Puerto</label>
+                  <input v-model.number="editForm.ext_db_port" type="number" class="form-control form-control-sm"
+                    placeholder="3306" min="1" max="65535" />
+                </div>
+                <div class="ext-field ext-field--name">
+                  <label>Nombre de la base de datos</label>
+                  <input v-model="editForm.ext_db_name" class="form-control form-control-sm"
+                    placeholder="Ej: compraventa_db" />
+                </div>
+                <div class="ext-field ext-field--user">
+                  <label>Usuario</label>
+                  <input v-model="editForm.ext_db_user" class="form-control form-control-sm"
+                    placeholder="Ej: vb6user" />
+                </div>
+                <div class="ext-field ext-field--pass">
+                  <label>Contraseña</label>
+                  <div class="pass-wrap">
+                    <input v-model="editForm.ext_db_password" :type="showPass ? 'text' : 'password'"
+                      class="form-control form-control-sm"
+                      :placeholder="editForm.ext_db_has_password ? '(guardada — dejar vacío para no cambiarla)' : 'Contraseña'" />
+                    <button type="button" class="pass-eye" @click="showPass = !showPass" tabindex="-1">
+                      <i class="bi" :class="showPass ? 'bi-eye-slash' : 'bi-eye'"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="testResult" class="test-result"
+                :class="testResult.ok ? 'test-result--ok' : 'test-result--err'">
+                <i class="bi" :class="testResult.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+                {{ testResult.message }}
+              </div>
+
+              <div class="ext-db-actions">
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                  :disabled="testing" @click="clearExtDb">
+                  <i class="bi bi-trash"></i> Limpiar
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                  :disabled="testing || !editForm.ext_db_host" @click="testConnection">
+                  <span v-if="testing" class="spinner-border spinner-border-sm me-1"></span>
+                  <i v-else class="bi bi-plug-fill me-1"></i>
+                  {{ testing ? 'Probando...' : 'Probar conexión' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <div class="modal-footer-bar">
@@ -216,6 +288,10 @@ const showEdit      = ref(false)
 const saving        = ref(false)
 const editForm      = ref({})
 const planForm      = ref({ plan_id: "", expiration_date: "" })
+const showExtDb     = ref(false)
+const testing       = ref(false)
+const testResult    = ref(null)
+const showPass      = ref(false)
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -288,9 +364,18 @@ function openEdit(c) {
     plan_id:               c.plan_id || null,
     plan_name:             c.plan_name || "Sin plan",
     expiration_date:       c.expiration_date || null,
+    ext_db_host:           c.ext_db_host     || "",
+    ext_db_port:           c.ext_db_port     || 3306,
+    ext_db_name:           c.ext_db_name     || "",
+    ext_db_user:           c.ext_db_user     || "",
+    ext_db_password:       "",
+    ext_db_has_password:   c.ext_db_has_password || false,
   }
-  planForm.value = { plan_id: "", expiration_date: c.expiration_date || "" }
-  showEdit.value = true
+  planForm.value   = { plan_id: "", expiration_date: c.expiration_date || "" }
+  showExtDb.value  = false
+  testResult.value = null
+  showPass.value   = false
+  showEdit.value   = true
 }
 
 function closeEdit() {
@@ -300,6 +385,36 @@ function closeEdit() {
 
 function clearError(e) {
   e.target.classList.remove("field-invalid")
+}
+
+function clearExtDb() {
+  editForm.value.ext_db_host         = ""
+  editForm.value.ext_db_port         = 3306
+  editForm.value.ext_db_name         = ""
+  editForm.value.ext_db_user         = ""
+  editForm.value.ext_db_password     = ""
+  editForm.value.ext_db_has_password = false
+  testResult.value = null
+}
+
+async function testConnection() {
+  testing.value    = true
+  testResult.value = null
+  try {
+    const f   = editForm.value
+    const res = await api.post(`/companies/0/test-db`, {
+      ext_db_host:     f.ext_db_host,
+      ext_db_port:     f.ext_db_port,
+      ext_db_name:     f.ext_db_name,
+      ext_db_user:     f.ext_db_user,
+      ext_db_password: f.ext_db_password,
+    })
+    testResult.value = res.data
+  } catch (e) {
+    testResult.value = { ok: false, message: e.response?.data?.detail || "Error de conexión" }
+  } finally {
+    testing.value = false
+  }
 }
 
 async function saveEdit() {
@@ -531,6 +646,99 @@ onMounted(() => {
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+
+/* ── BD Externa ── */
+.ext-db-section {
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ext-db-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: none;
+  padding: 10px 14px;
+  font-size: .83rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  text-align: left;
+}
+.ext-db-toggle:hover { background: #f1f5f9; }
+.ext-db-badge {
+  margin-left: auto;
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #dcfce7;
+  color: #15803d;
+}
+.ext-db-badge--none {
+  background: #f1f5f9;
+  color: #94a3b8;
+  font-weight: 500;
+}
+.ext-db-body {
+  padding: 14px 16px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+.ext-db-hint {
+  font-size: .8rem;
+  color: #64748b;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: #f8fafc;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+.ext-db-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 576px) {
+  .ext-db-grid { grid-template-columns: 3fr 1fr; }
+  .ext-field--name { grid-column: 1; }
+  .ext-field--user { grid-column: 2; grid-row: 2; }
+  .ext-field--pass { grid-column: 1 / -1; }
+}
+@media (min-width: 768px) {
+  .ext-db-grid { grid-template-columns: 3fr 1fr 2fr 2fr; }
+  .ext-field--host { grid-column: 1; }
+  .ext-field--port { grid-column: 2; }
+  .ext-field--name { grid-column: 3; grid-row: 1; }
+  .ext-field--user { grid-column: 4; grid-row: 1; }
+  .ext-field--pass { grid-column: 1 / -1; grid-row: 2; }
+}
+.ext-field label { font-size: .78rem; font-weight: 500; color: #374151; margin-bottom: 4px; display: block; }
+.pass-wrap { position: relative; }
+.pass-eye {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none;
+  color: #94a3b8; cursor: pointer;
+  padding: 0;
+}
+.ext-db-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.test-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  font-size: .82rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.test-result--ok  { background: #dcfce7; color: #15803d; }
+.test-result--err { background: #fee2e2; color: #dc2626; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
