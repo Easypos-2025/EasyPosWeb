@@ -1,5 +1,6 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from datetime import datetime
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from app.database import get_db, get_ext_session
@@ -162,6 +163,39 @@ async def get_contrato(
         "remate":    remate,
         "abonos":    abonos,
     }
+
+
+# ── Guardar observación (prepend) ────────────────────────────────────────────
+
+@router.put("/contrato/observacion")
+async def guardar_observacion(
+    company_id: int   = Query(...),
+    nro_contrato: str = Query(...),
+    data: dict        = Body(...),
+    db: AsyncSession  = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    nueva = (data.get("observacion") or "").strip()
+    if not nueva:
+        raise HTTPException(status_code=400, detail="Observación vacía")
+
+    ext = await _get_ext(company_id, db)
+    async with ext as session:
+        row = await session.execute(text(
+            "SELECT Observaciones FROM contratos WHERE nro_contrato = :nro LIMIT 1"
+        ), {"nro": nro_contrato.strip()})
+        actual = row.scalar_one_or_none() or ""
+
+        ts      = datetime.now().strftime("%d/%m/%Y %H:%M")
+        entrada = f"[{ts}] {nueva}"
+        nuevo_valor = f"{entrada}\n{actual}".strip() if actual else entrada
+
+        await session.execute(text(
+            "UPDATE contratos SET Observaciones = :obs WHERE nro_contrato = :nro"
+        ), {"obs": nuevo_valor, "nro": nro_contrato.strip()})
+        await session.commit()
+
+    return {"ok": True, "observaciones": nuevo_valor}
 
 
 # ── Fotos del contrato ────────────────────────────────────────────────────────

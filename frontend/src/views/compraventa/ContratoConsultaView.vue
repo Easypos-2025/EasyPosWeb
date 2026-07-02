@@ -130,13 +130,13 @@
               <span class="rf-label">Días Deuda</span>
               <span class="rf-val rf-dias">{{ resumen.diasDeuda }} días</span>
             </div>
+            <div class="rf-row">
+              <span class="rf-label">Prorrogas (meses)</span>
+              <span class="rf-val">{{ resumen.sumaMesesProrrogados }}</span>
+            </div>
             <div class="rf-row rf-row--total">
               <span class="rf-label">Total Meses</span>
               <span class="rf-val">{{ resumen.totalMeses }}</span>
-            </div>
-            <div class="rf-row">
-              <span class="rf-label">Prorrogas</span>
-              <span class="rf-val">{{ detalle.prorrogas.length }}</span>
             </div>
             <div class="rf-row">
               <span class="rf-label">Abonos Registrados</span>
@@ -230,12 +230,38 @@
             </div>
           </div>
 
+          <!-- Campo Observación -->
+          <div class="obs-card">
+            <div class="seccion-titulo"><i class="bi bi-chat-left-text"></i> Agregar Observación</div>
+            <div class="obs-body">
+              <textarea v-model="nuevaObs" class="obs-textarea"
+                placeholder="Ej: Cliente solicita plazo hasta el 15/08/2026, extravío de artículo, acuerdo especial..."
+                rows="3"></textarea>
+              <div class="obs-footer">
+                <span v-if="detalle.contrato.Observaciones" class="obs-existente">
+                  <i class="bi bi-info-circle"></i> Ya tiene observaciones — se anexará al inicio
+                </span>
+                <button class="btn-guardar-obs" @click="guardarObs" :disabled="savingObs || !nuevaObs.trim()">
+                  <span v-if="savingObs" class="spinner-border spinner-border-sm me-1"></span>
+                  <i v-else class="bi bi-floppy me-1"></i>
+                  {{ savingObs ? 'Guardando...' : 'Guardar observación' }}
+                </button>
+              </div>
+              <div v-if="detalle.contrato.Observaciones" class="obs-actual">
+                <label>Observaciones actuales:</label>
+                <pre class="obs-pre">{{ detalle.contrato.Observaciones }}</pre>
+              </div>
+            </div>
+          </div>
+
           <!-- Tarjeta Prorrogas (siempre visible) -->
           <div class="tarjeta-estado" :class="detalle.prorrogas.length ? 'tc-info' : 'tc-vacio'">
             <div class="tc-header">
               <i class="bi bi-arrow-repeat"></i>
               Prorrogas
-              <span class="tc-badge">{{ detalle.prorrogas.length }}</span>
+              <span class="tc-badge" :title="`${detalle.prorrogas.length} registros`">
+                {{ resumen?.sumaMesesProrrogados ?? 0 }} meses
+              </span>
             </div>
             <div v-if="detalle.prorrogas.length" class="tc-body">
               <div class="tabla-wrap">
@@ -395,10 +421,14 @@ const nroSeleccionado = ref('')
 const detalle         = ref(null)
 
 // Fotos
-const fotos       = ref([])
-const uploading   = ref(false)
-const uploaderKey = ref(0)
+const fotos        = ref([])
+const uploading    = ref(false)
+const uploaderKey  = ref(0)
 const fotoAmpliada = ref(null)
+
+// Observación
+const nuevaObs  = ref('')
+const savingObs = ref(false)
 
 // ── Búsqueda por Nro. Contrato ───────────────────────────────────────────────
 
@@ -479,6 +509,24 @@ function resetAll() {
 
 // ── Fotos ────────────────────────────────────────────────────────────────────
 
+async function guardarObs() {
+  if (!nuevaObs.value.trim() || !detalle.value || !cid.value) return
+  savingObs.value = true
+  try {
+    const res = await api.put('/api/compraventa/contrato/observacion',
+      { observacion: nuevaObs.value.trim() },
+      { params: { company_id: cid.value, nro_contrato: detalle.value.contrato.nro_contrato } }
+    )
+    // Actualizar observaciones en el detalle local sin recargar todo
+    detalle.value.contrato.Observaciones = res.data.observaciones
+    nuevaObs.value = ''
+  } catch (e) {
+    errorMsg.value = e.response?.data?.detail || 'Error guardando observación'
+  } finally {
+    savingObs.value = false
+  }
+}
+
 async function onFotoChange(blob) {
   if (!detalle.value || !cid.value) return
   uploading.value = true
@@ -556,9 +604,12 @@ const resumen = computed(() => {
     diasRestantes += diasUltimoMes
   }
 
-  const mesesDeuda = mesesCompletos          // meses completos (mostrado)
-  const diasDeuda  = diasRestantes           // días sobrantes  (mostrado)
-  const totalMeses = mesesDeuda + (diasDeuda > 0 ? 1 : 0)  // incluye fracción → usado para cálculo
+  const mesesDeuda = mesesCompletos
+  const diasDeuda  = diasRestantes
+
+  // Suma de meses prorrogados (se descuenta del total)
+  const sumaMesesProrrogados = prorrogas.reduce((s, p) => s + (Number(p.meses_prorrogados) || 0), 0)
+  const totalMeses = mesesDeuda + (diasDeuda > 0 ? 1 : 0) - sumaMesesProrrogados
 
   // Cálculos financieros
   const porcentaje    = Number(contrato.porcentaje)     || 0
@@ -574,8 +625,8 @@ const resumen = computed(() => {
                        prorrogas[0].fecha_prorroga)
     : null
 
-  return { mesesDeuda, diasDeuda, totalMeses, cuotaMes, sobrecosto,
-           totalAbonos, deudaActual, fechaUltimaAmpliacion }
+  return { mesesDeuda, diasDeuda, totalMeses, sumaMesesProrrogados,
+           cuotaMes, sobrecosto, totalAbonos, deudaActual, fechaUltimaAmpliacion }
 })
 
 // ── Export ───────────────────────────────────────────────────────────────────
@@ -767,6 +818,28 @@ const exportData = computed(() => {
 .rf-dias  { color: #d97706; }
 .rf-row--highlight .rf-val { color: #92400e; }
 .rf-row--deuda .rf-val     { color: #991b1b; font-size: 14px; }
+
+/* Observación */
+.obs-card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+.obs-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.obs-textarea {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 12px; font-size: 13px; color: #1e293b; resize: vertical;
+  font-family: inherit; outline: none; transition: border-color .15s;
+}
+.obs-textarea:focus { border-color: #1e40af; }
+.obs-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.obs-existente { font-size: 11.5px; color: #d97706; display: flex; align-items: center; gap: 4px; }
+.btn-guardar-obs {
+  background: #1e3a5f; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; transition: background .15s;
+}
+.btn-guardar-obs:hover:not(:disabled) { background: #1e40af; }
+.btn-guardar-obs:disabled { opacity: .55; cursor: default; }
+.obs-actual { border-top: 1px solid #f1f5f9; padding-top: 10px; }
+.obs-actual label { font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 6px; }
+.obs-pre { font-size: 12px; color: #475569; white-space: pre-wrap; word-break: break-word; margin: 0; background: #f8fafc; border-radius: 6px; padding: 8px 10px; font-family: inherit; }
 
 /* Abonos tarjeta */
 .tc-abono { border-color: #6ee7b7; }
