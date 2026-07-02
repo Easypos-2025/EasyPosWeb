@@ -24,26 +24,32 @@
       </div>
     </div>
 
+    <!-- Vista restringida para Mostrador -->
+    <div v-if="esMostrador" class="estado-mostrador">
+      <i class="bi bi-lock-fill"></i>
+      <p>Panel de movimientos disponible solo para administradores.</p>
+    </div>
+
     <!-- Sin BD externa configurada -->
-    <div v-if="errorMsg" class="estado-aviso">
+    <div v-if="!esMostrador && errorMsg" class="estado-aviso">
       <i class="bi bi-database-exclamation"></i>
       <p>{{ errorMsg }}</p>
     </div>
 
     <!-- Loading -->
-    <div v-else-if="loading" class="estado-loading">
+    <div v-else-if="!esMostrador && loading" class="estado-loading">
       <div class="spinner-border text-primary" role="status"></div>
       <span>Cargando movimientos...</span>
     </div>
 
     <!-- Sin datos -->
-    <div v-else-if="grupos.length === 0" class="estado-vacio">
+    <div v-else-if="!esMostrador && grupos.length === 0" class="estado-vacio">
       <i class="bi bi-inbox"></i>
       <p>Sin movimientos para el {{ fechaFormateada }}</p>
     </div>
 
     <!-- KPIs por grupo -->
-    <div v-else class="kpi-bar">
+    <div v-else-if="!esMostrador" class="kpi-bar">
       <div v-for="grupo in grupos" :key="'kpi-'+grupo.descripcion" class="kpi-card">
         <span class="kpi-label">{{ grupo.descripcion }}</span>
         <span class="kpi-value">{{ formatCurrency(grupo.total) }}</span>
@@ -52,7 +58,7 @@
     </div>
 
     <!-- Tarjetas por grupo -->
-    <div v-if="grupos.length > 0" class="grupos-grid">
+    <div v-if="!esMostrador && grupos.length > 0" class="grupos-grid">
       <div v-for="grupo in grupos" :key="grupo.descripcion" class="grupo-card">
         <div class="grupo-header">
           <i class="bi bi-tag-fill"></i>
@@ -81,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import api from '@/services/apis'
@@ -91,6 +97,12 @@ const empresa  = computed(() => companyStore.selectedCompany?.name ?? '')
 const loading  = ref(false)
 const errorMsg = ref('')
 const movimientos = ref([])
+
+// Verificar si el usuario es perfil "Mostrador" (ocultar datos financieros)
+const _storedUser  = JSON.parse(localStorage.getItem('user') || '{}')
+const esMostrador  = computed(() =>
+  (_storedUser.role || '').toLowerCase().includes('mostrador')
+)
 
 const hoy = () => {
   const d = new Date()
@@ -143,8 +155,26 @@ async function cargar() {
   }
 }
 
-watch(fecha, cargar)
-onMounted(cargar)
+// Auto-refresh cada 15 segundos (igual que restaurante)
+let _timer = null
+function _startRefresh() { _stopRefresh(); _timer = setInterval(cargar, 15000) }
+function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } }
+function _onVisible()    { if (!document.hidden) cargar() }
+
+watch(fecha, () => { cargar(); _startRefresh() })
+
+onMounted(() => {
+  if (!esMostrador.value) {
+    cargar()
+    _startRefresh()
+    document.addEventListener('visibilitychange', _onVisible)
+  }
+})
+
+onUnmounted(() => {
+  _stopRefresh()
+  document.removeEventListener('visibilitychange', _onVisible)
+})
 </script>
 
 <style scoped>
@@ -185,6 +215,15 @@ onMounted(cargar)
   transition: border-color .15s;
 }
 .btn-reload:hover { border-color: #1e40af; color: #1e40af; }
+
+/* Mostrador restringido */
+.estado-mostrador {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 48px 20px; color: #94a3b8; text-align: center;
+}
+.estado-mostrador .bi { font-size: 36px; color: #cbd5e1; }
+.estado-mostrador p  { font-size: 14px; margin: 0; }
 
 /* Estados */
 .estado-aviso, .estado-loading, .estado-vacio {
