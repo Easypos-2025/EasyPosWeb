@@ -137,29 +137,28 @@ function formatFecha(val) {
     .format(new Date(val))
 }
 
-async function cargar() {
+async function cargar(silente = false) {
   const cid = companyStore.selectedCompany?.id
   if (!cid) return
-  loading.value  = true
-  errorMsg.value = ''
-  movimientos.value = []
+  if (!silente) { loading.value = true; errorMsg.value = ''; movimientos.value = [] }
   try {
     const res = await api.get('/api/compraventa/movimientos', {
       params: { company_id: cid, fecha: fecha.value }
     })
     movimientos.value = res.data.movimientos || []
+    if (silente) errorMsg.value = ''
   } catch (e) {
-    errorMsg.value = e.response?.data?.detail || 'Error cargando movimientos'
+    if (!silente) errorMsg.value = e.response?.data?.detail || 'Error cargando movimientos'
   } finally {
-    loading.value = false
+    if (!silente) loading.value = false
   }
 }
 
-// Auto-refresh cada 15 segundos (igual que restaurante)
+// Auto-refresh silencioso cada 15 segundos (sin limpiar la vista)
 let _timer = null
-function _startRefresh() { _stopRefresh(); _timer = setInterval(cargar, 15000) }
+function _startRefresh() { _stopRefresh(); _timer = setInterval(() => cargar(true), 15000) }
 function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } }
-function _onVisible()    { if (!document.hidden) cargar() }
+function _onVisible()    { if (!document.hidden) cargar(true) }
 
 watch(fecha, () => { cargar(); _startRefresh() })
 
