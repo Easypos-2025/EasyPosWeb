@@ -336,6 +336,12 @@ async def test_company_db(
     password = data.get("ext_db_password", "")
     if not all([host, db_name, user]):
         raise HTTPException(status_code=400, detail="Servidor, base de datos y usuario son obligatorios")
+    # Si no se envió contraseña nueva, usar la guardada en BD
+    if not password and company_id > 0:
+        res = await db.execute(select(Company).where(Company.id_company == company_id))
+        saved = res.scalar_one_or_none()
+        if saved and saved.ext_db_password:
+            password = saved.ext_db_password
     result = await test_ext_connection(host, port, db_name, user, password)
     return result
 

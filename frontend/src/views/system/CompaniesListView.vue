@@ -415,7 +415,7 @@ async function testConnection() {
   testResult.value = null
   try {
     const f   = editForm.value
-    const res = await api.post(`/companies/0/test-db`, {
+    const res = await api.post(`/companies/${editForm.value.id}/test-db`, {
       ext_db_host:     f.ext_db_host,
       ext_db_port:     f.ext_db_port,
       ext_db_name:     f.ext_db_name,

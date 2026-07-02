@@ -92,7 +92,10 @@ const loading  = ref(false)
 const errorMsg = ref('')
 const movimientos = ref([])
 
-const hoy = () => new Date().toISOString().slice(0, 10)
+const hoy = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 const fecha = ref(hoy())
 
 const fechaFormateada = computed(() =>
