@@ -71,6 +71,81 @@
         </div>
       </div>
 
+      <!-- ── TARJETA RESUMEN FINANCIERO ── -->
+      <div class="resumen-card" v-if="resumen">
+        <div class="resumen-titulo">
+          <i class="bi bi-calculator-fill"></i> Resumen Financiero
+        </div>
+        <div class="resumen-body">
+          <!-- Columna izquierda -->
+          <div class="resumen-col">
+            <div class="rf-row">
+              <span class="rf-label">Fecha Inicio</span>
+              <span class="rf-val">{{ formatFecha(detalle.contrato.fecha_inicio) }}</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Valor Contrato</span>
+              <span class="rf-val">{{ formatCurrency(detalle.contrato.valor_contrato) }}</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Interés</span>
+              <span class="rf-val">{{ detalle.contrato.porcentaje }}%</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Cuota / Mes</span>
+              <span class="rf-val">{{ formatCurrency(resumen.cuotaMes) }}</span>
+            </div>
+            <div class="rf-row rf-row--highlight">
+              <span class="rf-label">Sobrecosto</span>
+              <span class="rf-val">{{ formatCurrency(resumen.sobrecosto) }}</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Abonos</span>
+              <span class="rf-val rf-abono">− {{ formatCurrency(resumen.totalAbonos) }}</span>
+            </div>
+            <div class="rf-row rf-row--deuda">
+              <span class="rf-label">Deuda Actual</span>
+              <span class="rf-val">{{ formatCurrency(resumen.deudaActual) }}</span>
+            </div>
+            <div class="rf-row" v-if="resumen.fechaUltimaAmpliacion">
+              <span class="rf-label">Últ. Ampliación</span>
+              <span class="rf-val">{{ formatFecha(resumen.fechaUltimaAmpliacion) }}</span>
+            </div>
+          </div>
+
+          <!-- Divisor -->
+          <div class="resumen-div"></div>
+
+          <!-- Columna derecha -->
+          <div class="resumen-col resumen-col--right">
+            <div class="rf-row">
+              <span class="rf-label">Plazo Pactado</span>
+              <span class="rf-val">{{ detalle.contrato.nro_meses }} meses</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Meses Deuda</span>
+              <span class="rf-val">{{ resumen.mesesDeuda }}</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Días Deuda</span>
+              <span class="rf-val rf-dias">{{ resumen.diasDeuda }} días</span>
+            </div>
+            <div class="rf-row rf-row--total">
+              <span class="rf-label">Total Meses</span>
+              <span class="rf-val">{{ resumen.totalMeses }}</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Prorrogas</span>
+              <span class="rf-val">{{ detalle.prorrogas.length }}</span>
+            </div>
+            <div class="rf-row">
+              <span class="rf-label">Abonos Registrados</span>
+              <span class="rf-val">{{ detalle.abonos?.length ?? 0 }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Layout 2 columnas -->
       <div class="layout-cols">
 
@@ -227,6 +302,49 @@
             </div>
             <div v-else class="tc-vacio-msg">
               <i class="bi bi-dash-circle"></i> Sin remate registrado
+            </div>
+          </div>
+
+          <!-- Tarjeta Abonos (siempre visible) -->
+          <div class="tarjeta-estado" :class="detalle.abonos?.length ? 'tc-abono' : 'tc-vacio'">
+            <div class="tc-header">
+              <i class="bi bi-cash-coin"></i>
+              Abonos a Capital
+              <span class="tc-badge">{{ detalle.abonos?.length ?? 0 }}</span>
+            </div>
+            <div v-if="detalle.abonos?.length" class="tc-body">
+              <div class="tabla-wrap">
+                <table class="tabla-cv">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Fecha</th>
+                      <th>Tipo</th>
+                      <th class="text-end">Valor Abono</th>
+                      <th>Empleado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(a, i) in detalle.abonos" :key="i">
+                      <td>{{ i + 1 }}</td>
+                      <td>{{ formatFecha(a.Fecha_Abono) }}</td>
+                      <td>{{ a.Cod_Tipo }}</td>
+                      <td class="text-end">{{ formatCurrency(a.Valor_Abono) }}</td>
+                      <td>{{ a.Cod_Empleado }}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr class="tf-total">
+                      <td colspan="3"><strong>Total Abonado</strong></td>
+                      <td class="text-end"><strong>{{ formatCurrency(resumen?.totalAbonos) }}</strong></td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+            <div v-else class="tc-vacio-msg">
+              <i class="bi bi-dash-circle"></i> Sin abonos registrados
             </div>
           </div>
 
@@ -418,6 +536,48 @@ function estadoClass(e) {
   return e === 'V' ? 'banner-v' : e === 'R' ? 'banner-r' : e === 'D' ? 'banner-d' : ''
 }
 
+// ── Resumen financiero ────────────────────────────────────────────────────────
+
+const resumen = computed(() => {
+  if (!detalle.value) return null
+  const { contrato, prorrogas, abonos } = detalle.value
+
+  // Fechas en hora local (evitar desfase UTC)
+  const inicio = new Date(String(contrato.fecha_inicio).slice(0, 10) + 'T12:00:00')
+  const hoy    = new Date(); hoy.setHours(12, 0, 0, 0)
+
+  // Meses completos transcurridos
+  let mesesCompletos = (hoy.getFullYear() - inicio.getFullYear()) * 12
+                     + (hoy.getMonth()    - inicio.getMonth())
+  let diasRestantes  = hoy.getDate() - inicio.getDate()
+  if (diasRestantes < 0) {
+    mesesCompletos--
+    const diasUltimoMes = new Date(hoy.getFullYear(), hoy.getMonth(), 0).getDate()
+    diasRestantes += diasUltimoMes
+  }
+
+  const mesesDeuda = mesesCompletos          // meses completos (mostrado)
+  const diasDeuda  = diasRestantes           // días sobrantes  (mostrado)
+  const totalMeses = mesesDeuda + (diasDeuda > 0 ? 1 : 0)  // incluye fracción → usado para cálculo
+
+  // Cálculos financieros
+  const porcentaje    = Number(contrato.porcentaje)     || 0
+  const valorContrato = Number(contrato.valor_contrato) || 0
+  const cuotaMes      = valorContrato * (porcentaje / 100)
+  const sobrecosto    = totalMeses * cuotaMes
+  const totalAbonos   = (abonos || []).reduce((s, a) => s + (Number(a.Valor_Abono) || 0), 0)
+  const deudaActual   = valorContrato + sobrecosto - totalAbonos
+
+  // Última ampliación (prorroga más reciente)
+  const fechaUltimaAmpliacion = prorrogas.length
+    ? prorrogas.reduce((max, p) => p.fecha_prorroga > max ? p.fecha_prorroga : max,
+                       prorrogas[0].fecha_prorroga)
+    : null
+
+  return { mesesDeuda, diasDeuda, totalMeses, cuotaMes, sobrecosto,
+           totalAbonos, deudaActual, fechaUltimaAmpliacion }
+})
+
 // ── Export ───────────────────────────────────────────────────────────────────
 
 const exportColumns = [
@@ -475,6 +635,27 @@ const exportData = computed(() => {
     rows.push({ c1: 'Fecha Remate', c2: formatFecha(remate.fecha_remate), c3: 'Valor', c4: formatCurrency(remate.valor_contrato) })
   } else {
     rows.push({ c1: 'Sin remate registrado', c2: '', c3: '', c4: '' })
+  }
+
+  const { abonos } = detalle.value
+  rows.push({ _sectionHeader: true, _title: `ABONOS A CAPITAL (${abonos?.length ?? 0})` })
+  if (abonos?.length) {
+    abonos.forEach((a, i) => rows.push({
+      c1: i + 1, c2: formatFecha(a.Fecha_Abono),
+      c3: a.Cod_Tipo, c4: formatCurrency(a.Valor_Abono)
+    }))
+    rows.push({ c1: 'TOTAL ABONADO', c2: formatCurrency(resumen.value?.totalAbonos), c3: '', c4: '' })
+  } else {
+    rows.push({ c1: 'Sin abonos registrados', c2: '', c3: '', c4: '' })
+  }
+
+  if (resumen.value) {
+    const r = resumen.value
+    rows.push({ _sectionHeader: true, _title: 'RESUMEN FINANCIERO' })
+    rows.push({ c1: 'Meses Deuda', c2: r.mesesDeuda, c3: 'Días Deuda', c4: r.diasDeuda })
+    rows.push({ c1: 'Total Meses', c2: r.totalMeses, c3: 'Cuota/Mes', c4: formatCurrency(r.cuotaMes) })
+    rows.push({ c1: 'Sobrecosto', c2: formatCurrency(r.sobrecosto), c3: 'Abonos', c4: formatCurrency(r.totalAbonos) })
+    rows.push({ c1: 'DEUDA ACTUAL', c2: formatCurrency(r.deudaActual), c3: '', c4: '' })
   }
 
   return rows
@@ -554,6 +735,44 @@ const exportData = computed(() => {
 .banner-v { background: #dcfce7; color: #166534; border: 2px solid #86efac; }
 .banner-r { background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; }
 .banner-d { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
+
+/* ── Resumen financiero ───────────────────────────────────────────────────── */
+.resumen-card {
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+.resumen-titulo {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: #475569; padding: 11px 18px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+}
+.resumen-titulo .bi { color: #1e40af; font-size: 14px; }
+.resumen-body {
+  display: grid; grid-template-columns: 1fr 1px 1fr;
+  padding: 14px 18px; gap: 0;
+}
+.resumen-div { background: #e2e8f0; margin: 0 16px; }
+.resumen-col { display: flex; flex-direction: column; gap: 6px; }
+.resumen-col--right { padding-left: 4px; }
+.rf-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 3px 6px; border-radius: 6px; }
+.rf-row--highlight { background: #fef3c7; }
+.rf-row--deuda     { background: #fee2e2; }
+.rf-row--total     { background: #eff6ff; }
+.rf-label { font-size: 11.5px; color: #64748b; font-weight: 500; white-space: nowrap; }
+.rf-val   { font-size: 13px; font-weight: 700; color: #1e293b; text-align: right; }
+.rf-abono { color: #059669; }
+.rf-dias  { color: #d97706; }
+.rf-row--highlight .rf-val { color: #92400e; }
+.rf-row--deuda .rf-val     { color: #991b1b; font-size: 14px; }
+
+/* Abonos tarjeta */
+.tc-abono { border-color: #6ee7b7; }
+.tc-abono .tc-header { background: #d1fae5; color: #065f46; }
+.tc-abono .tc-header .bi { color: #059669; }
+.tf-total td { padding: 8px 12px; font-size: 13px; background: #f0fdf4; border-top: 2px solid #6ee7b7; }
 
 /* ── Layout 2 columnas ────────────────────────────────────────────────────── */
 .layout-cols {

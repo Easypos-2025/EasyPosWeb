@@ -144,12 +144,23 @@ async def get_contrato(
         remate_row = rem.mappings().first()
         remate = dict(remate_row) if remate_row else None
 
+        # Abonos
+        abn = await session.execute(text("""
+            SELECT Nro_Abono, Fecha_Abono, Valor_Abono, Cod_Tipo,
+                   Nro_Movimiento, Cod_Empleado
+            FROM abono_contratos
+            WHERE Nro_Contrato = :nro
+            ORDER BY Fecha_Abono ASC
+        """), {"nro": nro})
+        abonos = [dict(r) for r in abn.mappings()]
+
     return {
         "contrato":  contrato,
         "articulos": articulos,
         "prorrogas": prorrogas,
         "retiro":    retiro,
         "remate":    remate,
+        "abonos":    abonos,
     }
 
 
