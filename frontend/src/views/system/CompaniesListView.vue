@@ -84,7 +84,7 @@
           <button class="btn-close-sm" @click="closeEdit"><i class="bi bi-x-lg"></i></button>
         </div>
 
-        <div class="modal-body-area">
+        <div class="modal-body-area" ref="modalBodyRef">
 
           <!-- Datos generales -->
           <div class="section-title"><i class="bi bi-building me-1"></i>Datos generales</div>
@@ -271,7 +271,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
+import { ref, onMounted, computed, nextTick } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
@@ -292,6 +292,7 @@ const showExtDb     = ref(false)
 const testing       = ref(false)
 const testResult    = ref(null)
 const showPass      = ref(false)
+const modalBodyRef  = ref(null)
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -376,6 +377,11 @@ function openEdit(c) {
   testResult.value = null
   showPass.value   = false
   showEdit.value   = true
+  nextTick(() => {
+    if (modalBodyRef.value) {
+      modalBodyRef.value.scrollTop = modalBodyRef.value.scrollHeight
+    }
+  })
 }
 
 function closeEdit() {
@@ -574,7 +580,7 @@ onMounted(() => {
 
 /* ── Modal ── */
 .modal-overlay   { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1050; padding: 12px; }
-.modal-box       { background: #fff; border-radius: 16px; width: 640px; max-width: 100%; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal-box       { background: #fff; border-radius: 16px; width: 700px; max-width: 100%; max-height: 96vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header-bar {
   display: flex; align-items: flex-start; justify-content: space-between;
   padding: 16px 22px 12px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0; gap: 8px;
