@@ -24,6 +24,12 @@
           <i class="bi bi-person"></i>
           <input v-model="queryCedula" class="search-input" placeholder="Ej: 12345678"
             @keyup.enter="buscarPorCedula" />
+          <select v-model="filtroEstado" class="filtro-estado-select" title="Filtrar por estado">
+            <option value="">Todos</option>
+            <option value="V">Vigentes</option>
+            <option value="R">Retirados</option>
+            <option value="D">Vencidos</option>
+          </select>
           <button class="btn-buscar" @click="buscarPorCedula" :disabled="loadingCedula || !queryCedula.trim()">
             <span v-if="loadingCedula" class="spinner-border spinner-border-sm"></span>
             <span v-else>Buscar</span>
@@ -415,6 +421,7 @@ const cid = computed(() => companyStore.selectedCompany?.id)
 // Búsqueda
 const queryNro       = ref('')
 const queryCedula    = ref('')
+const filtroEstado   = ref('')
 const loadingNro     = ref(false)
 const loadingCedula  = ref(false)
 const loadingDetalle = ref(false)
@@ -457,9 +464,9 @@ async function buscarPorCedula() {
   resetAll()
   loadingCedula.value = true
   try {
-    const res = await api.get('/api/compraventa/contratos-por-cedula', {
-      params: { company_id: cid.value, cedula: queryCedula.value.trim() }
-    })
+    const params = { company_id: cid.value, cedula: queryCedula.value.trim() }
+    if (filtroEstado.value) params.estado = filtroEstado.value
+    const res = await api.get('/api/compraventa/contratos-por-cedula', { params })
     listaContratos.value = res.data.contratos || []
     if (listaContratos.value.length === 1) {
       nroSeleccionado.value = listaContratos.value[0].nro_contrato
@@ -755,6 +762,13 @@ const exportData = computed(() => {
 .btn-buscar:hover:not(:disabled) { background: #1e40af; }
 .btn-buscar:disabled { opacity: .55; cursor: default; }
 .selector-contrato { font-size: 12.5px; flex: 2; min-width: 220px; }
+.filtro-estado-select {
+  border: 1.5px solid #e2e8f0; border-radius: 7px; background: #fff;
+  font-size: 12px; font-weight: 600; color: #475569;
+  padding: 4px 8px; cursor: pointer; outline: none; flex-shrink: 0;
+  transition: border-color .15s;
+}
+.filtro-estado-select:focus { border-color: #1e40af; }
 
 /* ── Alerta error ─────────────────────────────────────────────────────────── */
 .alerta-error {

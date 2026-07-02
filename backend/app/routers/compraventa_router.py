@@ -56,14 +56,20 @@ async def get_movimientos(
 
 @router.get("/contratos-por-cedula")
 async def contratos_por_cedula(
-    company_id: int = Query(...),
-    cedula: str     = Query(...),
-    db: AsyncSession = Depends(get_db),
+    company_id: int       = Query(...),
+    cedula: str           = Query(...),
+    estado: str           = Query(None, description="V, R o D — vacío = todos"),
+    db: AsyncSession      = Depends(get_db),
     _=Depends(get_current_user),
 ):
     ext = await _get_ext(company_id, db)
+    filtro_estado = f"AND c.estado = :estado" if estado else ""
+    params = {"cedula": cedula.strip()}
+    if estado:
+        params["estado"] = estado.strip()
+
     async with ext as session:
-        rows = await session.execute(text("""
+        rows = await session.execute(text(f"""
             SELECT c.nro_contrato, c.cedula, c.fecha_inicio, c.fecha_final,
                    c.valor_contrato, c.estado,
                    COALESCE(ec.descripcion, c.estado) AS estado_descripcion,
@@ -71,12 +77,12 @@ async def contratos_por_cedula(
             FROM contratos c
             LEFT JOIN clientes cl ON cl.cedula = c.cedula
             LEFT JOIN estado_contratos ec ON ec.estado = c.estado
-            WHERE c.cedula = :cedula
+            WHERE c.cedula = :cedula {filtro_estado}
             ORDER BY c.fecha_inicio DESC
-        """), {"cedula": cedula.strip()})
+        """), params)
         contratos = [dict(r) for r in rows.mappings()]
     if not contratos:
-        raise HTTPException(status_code=404, detail="No se encontraron contratos para esa cédula")
+        raise HTTPException(status_code=404, detail="No se encontraron contratos para esa cédula con ese filtro")
     return {"total": len(contratos), "contratos": contratos}
 
 
