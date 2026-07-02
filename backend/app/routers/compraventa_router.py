@@ -11,7 +11,7 @@ from app.auth.dependencies import get_current_user
 router = APIRouter(prefix="/api/compraventa", tags=["compraventa"])
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helper: obtener sesión BD externa ────────────────────────────────────────
 
 async def _get_ext(company_id: int, db: AsyncSession):
     result = await db.execute(select(Company).where(Company.id_company == company_id))
@@ -35,7 +35,7 @@ async def _get_ext(company_id: int, db: AsyncSession):
 @router.get("/movimientos")
 async def get_movimientos(
     company_id: int = Query(...),
-    fecha: str   = Query(...),
+    fecha: str      = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
     ext = await _get_ext(company_id, db)
@@ -51,93 +51,106 @@ async def get_movimientos(
     return {"fecha": fecha, "total": len(records), "movimientos": records}
 
 
-# ── Consulta contrato ─────────────────────────────────────────────────────────
+# ── Contratos por cédula (para selector) ─────────────────────────────────────
 
-@router.get("/contrato")
-async def get_contrato(
+@router.get("/contratos-por-cedula")
+async def contratos_por_cedula(
     company_id: int = Query(...),
-    q: str         = Query(..., description="Nro. contrato o cédula"),
+    cedula: str     = Query(...),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     ext = await _get_ext(company_id, db)
-    q   = q.strip()
-
     async with ext as session:
-        # Buscar contratos por nro_contrato exacto o cédula
         rows = await session.execute(text("""
-            SELECT nro_contrato, cedula, fecha_inicio, nro_meses, fecha_final,
-                   porcentaje, valor_contrato, estado, cod_empleado, hora,
-                   Observaciones, nro_movimiento, Marca_Prorrogas, Fecha_Prorroga,
-                   Marca_Retiros, Fecha_Retiro, Fecha_Registro
-            FROM contratos
-            WHERE nro_contrato = :q OR cedula = :q
-            ORDER BY fecha_inicio DESC
-        """), {"q": q})
+            SELECT c.nro_contrato, c.cedula, c.fecha_inicio, c.fecha_final,
+                   c.valor_contrato, c.estado,
+                   COALESCE(ec.descripcion, c.estado) AS estado_descripcion,
+                   CONCAT(COALESCE(cl.nombres,''), ' ', COALESCE(cl.apellidos,'')) AS cliente_nombre
+            FROM contratos c
+            LEFT JOIN clientes cl ON cl.cedula = c.cedula
+            LEFT JOIN estado_contratos ec ON ec.estado = c.estado
+            WHERE c.cedula = :cedula
+            ORDER BY c.fecha_inicio DESC
+        """), {"cedula": cedula.strip()})
         contratos = [dict(r) for r in rows.mappings()]
-
     if not contratos:
-        return {"contratos": [], "total": 0}
+        raise HTTPException(status_code=404, detail="No se encontraron contratos para esa cédula")
+    return {"total": len(contratos), "contratos": contratos}
 
-    result = []
+
+# ── Detalle completo de un contrato ──────────────────────────────────────────
+
+@router.get("/contrato")
+async def get_contrato(
+    company_id: int    = Query(...),
+    nro_contrato: str  = Query(...),
+    db: AsyncSession   = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    ext = await _get_ext(company_id, db)
+    nro = nro_contrato.strip()
+
     async with ext as session:
-        for c in contratos:
-            nro = c["nro_contrato"]
+        # Contrato + cliente + estado
+        row = await session.execute(text("""
+            SELECT c.*,
+                   COALESCE(ec.descripcion, c.estado) AS estado_descripcion,
+                   cl.nombres, cl.apellidos, cl.direccion, cl.telefono
+            FROM contratos c
+            LEFT JOIN clientes cl ON cl.cedula = c.cedula
+            LEFT JOIN estado_contratos ec ON ec.estado = c.estado
+            WHERE c.nro_contrato = :nro
+            LIMIT 1
+        """), {"nro": nro})
+        contrato_row = row.mappings().first()
 
-            # Artículos del contrato
-            arts_rows = await session.execute(text("""
-                SELECT cod_categoria, Item_articulo, detalle, kilate,
-                       ROUND(peso, 1) AS peso, Cantidad
-                FROM articulos
-                WHERE nro_cont_comp = :nro
-                ORDER BY Item_articulo
-            """), {"nro": nro})
-            articulos = [dict(r) for r in arts_rows.mappings()]
+    if not contrato_row:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
-            # Prorrogas
-            prorr_rows = await session.execute(text("""
-                SELECT nro_prorroga, fecha_prorroga, valor_prorroga,
-                       meses_prorrogados, cod_tipo, nro_movimiento, Cod_Empleado
-                FROM prorrogas
-                WHERE nro_contrato = :nro
-                ORDER BY fecha_prorroga ASC
-            """), {"nro": nro})
-            prorrogas = [dict(r) for r in prorr_rows.mappings()]
+    contrato = dict(contrato_row)
 
-            # Retiro (solo si estado = R)
-            retiro = None
-            if c.get("estado") == "R":
-                ret = await session.execute(text("""
-                    SELECT nro_retiro, fecha_retiro, valor_retiro, sobre_costo,
-                           descuento, cod_tipo, nro_movimiento, Cod_Empleado, Autorizado
-                    FROM retiros
-                    WHERE nro_contrato = :nro
-                    LIMIT 1
-                """), {"nro": nro})
-                row = ret.mappings().first()
-                retiro = dict(row) if row else None
+    async with ext as session:
+        # Artículos
+        arts = await session.execute(text("""
+            SELECT cod_categoria, Item_articulo, detalle, kilate,
+                   ROUND(peso, 1) AS peso, Cantidad
+            FROM articulos WHERE nro_cont_comp = :nro ORDER BY Item_articulo
+        """), {"nro": nro})
+        articulos = [dict(r) for r in arts.mappings()]
 
-            # Remate (solo si estado = D)
-            remate = None
-            if c.get("estado") == "D":
-                rem = await session.execute(text("""
-                    SELECT nro_remate, fecha_remate, valor_contrato, Cod_Empleado
-                    FROM remates
-                    WHERE nro_contrato = :nro
-                    LIMIT 1
-                """), {"nro": nro})
-                row = rem.mappings().first()
-                remate = dict(row) if row else None
+        # Prorrogas
+        prorr = await session.execute(text("""
+            SELECT nro_prorroga, fecha_prorroga, valor_prorroga,
+                   meses_prorrogados, cod_tipo, nro_movimiento, Cod_Empleado
+            FROM prorrogas WHERE nro_contrato = :nro ORDER BY fecha_prorroga ASC
+        """), {"nro": nro})
+        prorrogas = [dict(r) for r in prorr.mappings()]
 
-            result.append({
-                "contrato": c,
-                "articulos": articulos,
-                "prorrogas": prorrogas,
-                "retiro": retiro,
-                "remate": remate,
-            })
+        # Retiro
+        ret = await session.execute(text("""
+            SELECT nro_retiro, fecha_retiro, valor_retiro, sobre_costo,
+                   descuento, cod_tipo, nro_movimiento, Cod_Empleado, Autorizado
+            FROM retiros WHERE nro_contrato = :nro LIMIT 1
+        """), {"nro": nro})
+        retiro_row = ret.mappings().first()
+        retiro = dict(retiro_row) if retiro_row else None
 
-    return {"contratos": result, "total": len(result)}
+        # Remate
+        rem = await session.execute(text("""
+            SELECT nro_remate, fecha_remate, valor_contrato, Cod_Empleado
+            FROM remates WHERE nro_contrato = :nro LIMIT 1
+        """), {"nro": nro})
+        remate_row = rem.mappings().first()
+        remate = dict(remate_row) if remate_row else None
+
+    return {
+        "contrato":  contrato,
+        "articulos": articulos,
+        "prorrogas": prorrogas,
+        "retiro":    retiro,
+        "remate":    remate,
+    }
 
 
 # ── Fotos del contrato ────────────────────────────────────────────────────────
@@ -168,21 +181,14 @@ async def upload_foto(
 ):
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="Solo se permiten imágenes")
-
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Imagen demasiado grande (máx 10 MB)")
-
     ext  = (file.filename or "foto.jpg").rsplit(".", 1)[-1].lower()
     path = f"compraventa/{company_id}/{nro_contrato}/{uuid.uuid4().hex}.{ext}"
     url  = await upload_file(content, path)
-
-    foto = CompraventaFoto(
-        company_id=company_id,
-        nro_contrato=nro_contrato,
-        file_url=url,
-        file_name=file.filename,
-    )
+    foto = CompraventaFoto(company_id=company_id, nro_contrato=nro_contrato,
+                           file_url=url, file_name=file.filename)
     db.add(foto)
     await db.commit()
     await db.refresh(foto)

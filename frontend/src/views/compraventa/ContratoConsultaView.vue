@@ -1,19 +1,46 @@
 <template>
   <div class="cv-consulta">
 
-    <!-- Buscador -->
-    <div class="search-bar">
-      <i class="bi bi-search search-icon"></i>
-      <input
-        v-model="query"
-        class="search-input"
-        placeholder="Buscar por Nro. Contrato o Cédula..."
-        @keyup.enter="buscar"
-      />
-      <button class="btn-buscar" @click="buscar" :disabled="loading || !query.trim()">
-        <span v-if="loading" class="spinner-border spinner-border-sm"></span>
-        <span v-else>Buscar</span>
-      </button>
+    <!-- ── BÚSQUEDA ─────────────────────────────────────────────── -->
+    <div class="search-panel">
+      <!-- Por Nro. Contrato -->
+      <div class="search-row">
+        <label class="search-label">Nro. Contrato</label>
+        <div class="search-input-wrap">
+          <i class="bi bi-file-earmark-text"></i>
+          <input v-model="queryNro" class="search-input" placeholder="Ej: A57944"
+            @keyup.enter="buscarPorNro" />
+          <button class="btn-buscar" @click="buscarPorNro" :disabled="loadingNro || !queryNro.trim()">
+            <span v-if="loadingNro" class="spinner-border spinner-border-sm"></span>
+            <span v-else>Buscar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Por Cédula -->
+      <div class="search-row">
+        <label class="search-label">Cédula del Cliente</label>
+        <div class="search-input-wrap">
+          <i class="bi bi-person"></i>
+          <input v-model="queryCedula" class="search-input" placeholder="Ej: 12345678"
+            @keyup.enter="buscarPorCedula" />
+          <button class="btn-buscar" @click="buscarPorCedula" :disabled="loadingCedula || !queryCedula.trim()">
+            <span v-if="loadingCedula" class="spinner-border spinner-border-sm"></span>
+            <span v-else>Buscar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Selector de contrato (cuando cedula tiene varios) -->
+      <div class="selector-wrap" v-if="listaContratos.length">
+        <label class="search-label">Seleccionar contrato</label>
+        <select class="form-select selector-contrato" v-model="nroSeleccionado" @change="cargarDetalle">
+          <option value="">— Seleccionar —</option>
+          <option v-for="c in listaContratos" :key="c.nro_contrato" :value="c.nro_contrato">
+            {{ c.nro_contrato }} · {{ formatFecha(c.fecha_inicio) }} · {{ formatCurrency(c.valor_contrato) }} · {{ c.estado_descripcion }}
+          </option>
+        </select>
+      </div>
     </div>
 
     <!-- Error -->
@@ -21,187 +48,208 @@
       <i class="bi bi-exclamation-triangle-fill"></i> {{ errorMsg }}
     </div>
 
-    <!-- Lista de resultados (cuando hay múltiples) -->
-    <div v-if="!selectedIdx && resultados.length > 1" class="resultados-lista">
-      <p class="resultados-titulo">{{ resultados.length }} contratos encontrados — selecciona uno:</p>
-      <div v-for="(r, i) in resultados" :key="i" class="resultado-item" @click="selectedIdx = i">
-        <div class="ri-nro">{{ r.contrato.nro_contrato }}</div>
-        <div class="ri-info">
-          Cédula: {{ r.contrato.cedula }} ·
-          Inicio: {{ formatFecha(r.contrato.fecha_inicio) }} ·
-          Valor: {{ formatCurrency(r.contrato.valor_contrato) }}
-        </div>
-        <span class="ri-estado" :class="estadoClass(r.contrato.estado)">
-          {{ estadoLabel(r.contrato.estado) }}
-        </span>
-      </div>
+    <!-- Loading detalle -->
+    <div v-if="loadingDetalle" class="estado-loading">
+      <div class="spinner-border text-primary"></div>
+      <span>Cargando contrato...</span>
     </div>
 
-    <!-- Detalle del contrato -->
-    <template v-if="detalle">
+    <!-- ── DETALLE ────────────────────────────────────────────────── -->
+    <template v-if="detalle && !loadingDetalle">
 
-      <!-- Botón volver (si había múltiples) -->
-      <button v-if="resultados.length > 1" class="btn-volver" @click="selectedIdx = null">
-        <i class="bi bi-arrow-left"></i> Volver a resultados
-      </button>
+      <!-- Estado grande parpadeante -->
+      <div class="estado-banner" :class="estadoClass(detalle.contrato.estado)">
+        <i class="bi estado-icon" :class="estadoIcon(detalle.contrato.estado)"></i>
+        <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
+      </div>
 
-      <!-- === ENCABEZADO CONTRATO === -->
-      <div class="card-contrato">
-        <div class="card-contrato-header">
-          <div>
-            <span class="cc-nro">Contrato {{ detalle.contrato.nro_contrato }}</span>
-            <span class="cc-cedula">Cédula: {{ detalle.contrato.cedula }}</span>
+      <!-- Info cliente -->
+      <div class="cliente-card">
+        <div class="cliente-nombre">
+          {{ detalle.contrato.nombres }} {{ detalle.contrato.apellidos }}
+        </div>
+        <div class="cliente-datos">
+          <span><i class="bi bi-person-badge"></i> {{ detalle.contrato.cedula }}</span>
+          <span v-if="detalle.contrato.telefono"><i class="bi bi-telephone"></i> {{ detalle.contrato.telefono }}</span>
+          <span v-if="detalle.contrato.direccion"><i class="bi bi-geo-alt"></i> {{ detalle.contrato.direccion }}</span>
+        </div>
+      </div>
+
+      <!-- Layout 2 columnas -->
+      <div class="layout-cols">
+
+        <!-- ── COLUMNA IZQUIERDA: FOTOS ── -->
+        <div class="col-fotos">
+          <div class="seccion-titulo"><i class="bi bi-images"></i> Fotos del Contrato</div>
+
+          <div class="fotos-grid" v-if="fotos.length">
+            <div v-for="foto in fotos" :key="foto.id" class="foto-item">
+              <img :src="fotoUrl(foto.url)" :alt="foto.name" @click="fotoAmpliada = foto" />
+              <button class="btn-del-foto" @click="eliminarFoto(foto)">
+                <i class="bi bi-trash-fill"></i>
+              </button>
+            </div>
           </div>
-          <span class="estado-badge" :class="estadoClass(detalle.contrato.estado)">
-            <i class="bi" :class="estadoIcon(detalle.contrato.estado)"></i>
-            {{ estadoLabel(detalle.contrato.estado) }}
-          </span>
-        </div>
-        <div class="cc-grid">
-          <div class="cc-field"><label>Fecha Inicio</label><span>{{ formatFecha(detalle.contrato.fecha_inicio) }}</span></div>
-          <div class="cc-field"><label>Fecha Final</label><span>{{ formatFecha(detalle.contrato.fecha_final) }}</span></div>
-          <div class="cc-field"><label>Meses</label><span>{{ detalle.contrato.nro_meses }}</span></div>
-          <div class="cc-field"><label>Porcentaje</label><span>{{ detalle.contrato.porcentaje }}%</span></div>
-          <div class="cc-field"><label>Valor Contrato</label><span class="val-destacado">{{ formatCurrency(detalle.contrato.valor_contrato) }}</span></div>
-          <div class="cc-field"><label>Empleado</label><span>{{ detalle.contrato.cod_empleado }}</span></div>
-          <div class="cc-field"><label>Hora Registro</label><span>{{ detalle.contrato.hora }}</span></div>
-          <div class="cc-field"><label>Fecha Registro</label><span>{{ formatFecha(detalle.contrato.Fecha_Registro) }}</span></div>
-          <div v-if="detalle.contrato.Observaciones" class="cc-field cc-field--full">
-            <label>Observaciones</label><span>{{ detalle.contrato.Observaciones }}</span>
-          </div>
-        </div>
-        <div class="cc-prorrogas-badge" v-if="detalle.prorrogas.length">
-          <i class="bi bi-arrow-repeat"></i>
-          {{ detalle.prorrogas.length }} prórroga{{ detalle.prorrogas.length > 1 ? 's' : '' }} registrada{{ detalle.prorrogas.length > 1 ? 's' : '' }}
-        </div>
-      </div>
+          <p v-else class="sin-fotos">Sin fotos registradas.</p>
 
-      <!-- === ARTÍCULOS === -->
-      <div class="seccion" v-if="detalle.articulos.length">
-        <div class="seccion-titulo"><i class="bi bi-gem"></i> Artículos del Contrato</div>
-        <div class="tabla-wrap">
-          <table class="tabla-cv">
-            <thead>
-              <tr>
-                <th>Categoría</th>
-                <th>Item</th>
-                <th>Detalle</th>
-                <th>Kilate</th>
-                <th class="text-end">Peso</th>
-                <th class="text-end">Cantidad</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(a, i) in detalle.articulos" :key="i">
-                <td>{{ a.cod_categoria }}</td>
-                <td>{{ a.Item_articulo }}</td>
-                <td>{{ a.detalle }}</td>
-                <td>{{ a.kilate }}</td>
-                <td class="text-end">{{ Number(a.peso).toFixed(1) }}</td>
-                <td class="text-end">{{ a.Cantidad }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- === PRORROGAS === -->
-      <div class="seccion" v-if="detalle.prorrogas.length">
-        <div class="seccion-titulo"><i class="bi bi-arrow-repeat"></i> Prorrogas ({{ detalle.prorrogas.length }})</div>
-        <div class="tabla-wrap">
-          <table class="tabla-cv">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Fecha</th>
-                <th>Meses</th>
-                <th class="text-end">Valor Prórroga</th>
-                <th>Tipo</th>
-                <th>Empleado</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(p, i) in detalle.prorrogas" :key="i">
-                <td>{{ i + 1 }}</td>
-                <td>{{ formatFecha(p.fecha_prorroga) }}</td>
-                <td>{{ p.meses_prorrogados }}</td>
-                <td class="text-end">{{ formatCurrency(p.valor_prorroga) }}</td>
-                <td>{{ p.cod_tipo }}</td>
-                <td>{{ p.Cod_Empleado }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- === RETIRO === -->
-      <div class="seccion seccion--retiro" v-if="detalle.retiro">
-        <div class="seccion-titulo"><i class="bi bi-box-arrow-left"></i> Información de Retiro</div>
-        <div class="cc-grid">
-          <div class="cc-field"><label>Fecha Retiro</label><span>{{ formatFecha(detalle.retiro.fecha_retiro) }}</span></div>
-          <div class="cc-field"><label>Valor Retiro</label><span class="val-destacado">{{ formatCurrency(detalle.retiro.valor_retiro) }}</span></div>
-          <div class="cc-field"><label>Sobre Costo</label><span>{{ formatCurrency(detalle.retiro.sobre_costo) }}</span></div>
-          <div class="cc-field"><label>Descuento</label><span>{{ formatCurrency(detalle.retiro.descuento) }}</span></div>
-          <div class="cc-field"><label>Tipo</label><span>{{ detalle.retiro.cod_tipo }}</span></div>
-          <div class="cc-field"><label>Empleado</label><span>{{ detalle.retiro.Cod_Empleado }}</span></div>
-          <div class="cc-field"><label>Autorizado</label><span>{{ detalle.retiro.Autorizado }}</span></div>
-        </div>
-      </div>
-
-      <!-- === REMATE === -->
-      <div class="seccion seccion--remate" v-if="detalle.remate">
-        <div class="seccion-titulo"><i class="bi bi-hammer"></i> Información de Remate</div>
-        <div class="cc-grid">
-          <div class="cc-field"><label>Fecha Remate</label><span>{{ formatFecha(detalle.remate.fecha_remate) }}</span></div>
-          <div class="cc-field"><label>Valor</label><span class="val-destacado">{{ formatCurrency(detalle.remate.valor_contrato) }}</span></div>
-          <div class="cc-field"><label>Empleado</label><span>{{ detalle.remate.Cod_Empleado }}</span></div>
-        </div>
-      </div>
-
-      <!-- === FOTOS === -->
-      <div class="seccion">
-        <div class="seccion-titulo"><i class="bi bi-images"></i> Fotos del Contrato</div>
-
-        <!-- Grid fotos existentes -->
-        <div class="fotos-grid" v-if="fotos.length">
-          <div v-for="foto in fotos" :key="foto.id" class="foto-item">
-            <img :src="fotoUrl(foto.url)" :alt="foto.name" @click="verFoto(foto)" />
-            <button class="btn-del-foto" @click="eliminarFoto(foto)" title="Eliminar">
-              <i class="bi bi-trash-fill"></i>
-            </button>
+          <div class="foto-uploader">
+            <p class="foto-uploader-label"><i class="bi bi-plus-circle"></i> Agregar foto</p>
+            <ImageUploaderPro
+              :key="uploaderKey"
+              label="Seleccionar foto"
+              :showRemove="false"
+              :outputWidth="1200"
+              outputFormat="jpeg"
+              :outputQuality="0.85"
+              @change="onFotoChange"
+            />
+            <p v-if="uploading" class="foto-hint">
+              <span class="spinner-border spinner-border-sm me-1"></span> Subiendo...
+            </p>
           </div>
         </div>
-        <p v-else class="sin-fotos">Sin fotos registradas para este contrato.</p>
 
-        <!-- Uploader -->
-        <div class="foto-uploader">
-          <ImageUploaderPro
-            :key="uploaderKey"
-            label="Agregar foto"
-            :showRemove="false"
-            :outputWidth="1200"
-            outputFormat="jpeg"
-            :outputQuality="0.85"
-            @change="onFotoChange"
-          />
-          <p class="foto-hint" v-if="uploading"><span class="spinner-border spinner-border-sm me-1"></span> Subiendo foto...</p>
+        <!-- ── COLUMNA DERECHA: INFO ── -->
+        <div class="col-info">
+
+          <!-- Datos del contrato -->
+          <div class="seccion">
+            <div class="seccion-titulo"><i class="bi bi-file-earmark-text"></i> Datos del Contrato</div>
+            <div class="cc-grid">
+              <div class="cc-field"><label>Nro. Contrato</label><span>{{ detalle.contrato.nro_contrato }}</span></div>
+              <div class="cc-field"><label>Fecha Inicio</label><span>{{ formatFecha(detalle.contrato.fecha_inicio) }}</span></div>
+              <div class="cc-field"><label>Fecha Final</label><span>{{ formatFecha(detalle.contrato.fecha_final) }}</span></div>
+              <div class="cc-field"><label>Meses</label><span>{{ detalle.contrato.nro_meses }}</span></div>
+              <div class="cc-field"><label>Porcentaje</label><span>{{ detalle.contrato.porcentaje }}%</span></div>
+              <div class="cc-field"><label>Valor Contrato</label><span class="val-destacado">{{ formatCurrency(detalle.contrato.valor_contrato) }}</span></div>
+              <div class="cc-field"><label>Empleado</label><span>{{ detalle.contrato.cod_empleado }}</span></div>
+              <div class="cc-field"><label>Fecha Registro</label><span>{{ formatFecha(detalle.contrato.Fecha_Registro) }}</span></div>
+              <div v-if="detalle.contrato.Observaciones" class="cc-field cc-field--full">
+                <label>Observaciones</label><span>{{ detalle.contrato.Observaciones }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Artículos -->
+          <div class="seccion" v-if="detalle.articulos.length">
+            <div class="seccion-titulo"><i class="bi bi-gem"></i> Artículos</div>
+            <div class="tabla-wrap">
+              <table class="tabla-cv">
+                <thead>
+                  <tr>
+                    <th>Categoría</th>
+                    <th>Item</th>
+                    <th>Detalle</th>
+                    <th>Kilate</th>
+                    <th class="text-end">Peso</th>
+                    <th class="text-end">Cant.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(a, i) in detalle.articulos" :key="i">
+                    <td>{{ a.cod_categoria }}</td>
+                    <td>{{ a.Item_articulo }}</td>
+                    <td>{{ a.detalle }}</td>
+                    <td>{{ a.kilate }}</td>
+                    <td class="text-end">{{ Number(a.peso).toFixed(1) }}</td>
+                    <td class="text-end">{{ a.Cantidad }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tarjeta Prorrogas (siempre visible) -->
+          <div class="tarjeta-estado" :class="detalle.prorrogas.length ? 'tc-info' : 'tc-vacio'">
+            <div class="tc-header">
+              <i class="bi bi-arrow-repeat"></i>
+              Prorrogas
+              <span class="tc-badge">{{ detalle.prorrogas.length }}</span>
+            </div>
+            <div v-if="detalle.prorrogas.length" class="tc-body">
+              <div class="tabla-wrap">
+                <table class="tabla-cv">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Fecha</th>
+                      <th>Meses</th>
+                      <th class="text-end">Valor</th>
+                      <th>Empleado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(p, i) in detalle.prorrogas" :key="i">
+                      <td>{{ i + 1 }}</td>
+                      <td>{{ formatFecha(p.fecha_prorroga) }}</td>
+                      <td>{{ p.meses_prorrogados }}</td>
+                      <td class="text-end">{{ formatCurrency(p.valor_prorroga) }}</td>
+                      <td>{{ p.Cod_Empleado }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div v-else class="tc-vacio-msg">
+              <i class="bi bi-dash-circle"></i> Sin prorrogas registradas
+            </div>
+          </div>
+
+          <!-- Tarjeta Retiro (siempre visible) -->
+          <div class="tarjeta-estado" :class="detalle.retiro ? 'tc-retiro' : 'tc-vacio'">
+            <div class="tc-header">
+              <i class="bi bi-box-arrow-left"></i>
+              Retiro
+            </div>
+            <div v-if="detalle.retiro" class="tc-body">
+              <div class="cc-grid">
+                <div class="cc-field"><label>Fecha Retiro</label><span>{{ formatFecha(detalle.retiro.fecha_retiro) }}</span></div>
+                <div class="cc-field"><label>Valor Retiro</label><span class="val-destacado">{{ formatCurrency(detalle.retiro.valor_retiro) }}</span></div>
+                <div class="cc-field"><label>Sobre Costo</label><span>{{ formatCurrency(detalle.retiro.sobre_costo) }}</span></div>
+                <div class="cc-field"><label>Descuento</label><span>{{ formatCurrency(detalle.retiro.descuento) }}</span></div>
+                <div class="cc-field"><label>Empleado</label><span>{{ detalle.retiro.Cod_Empleado }}</span></div>
+                <div class="cc-field"><label>Autorizado</label><span>{{ detalle.retiro.Autorizado }}</span></div>
+              </div>
+            </div>
+            <div v-else class="tc-vacio-msg">
+              <i class="bi bi-dash-circle"></i> Sin retiro registrado — contrato activo o rematado
+            </div>
+          </div>
+
+          <!-- Tarjeta Remate (siempre visible) -->
+          <div class="tarjeta-estado" :class="detalle.remate ? 'tc-remate' : 'tc-vacio'">
+            <div class="tc-header">
+              <i class="bi bi-hammer"></i>
+              Remate
+            </div>
+            <div v-if="detalle.remate" class="tc-body">
+              <div class="cc-grid">
+                <div class="cc-field"><label>Fecha Remate</label><span>{{ formatFecha(detalle.remate.fecha_remate) }}</span></div>
+                <div class="cc-field"><label>Valor</label><span class="val-destacado">{{ formatCurrency(detalle.remate.valor_contrato) }}</span></div>
+                <div class="cc-field"><label>Empleado</label><span>{{ detalle.remate.Cod_Empleado }}</span></div>
+              </div>
+            </div>
+            <div v-else class="tc-vacio-msg">
+              <i class="bi bi-dash-circle"></i> Sin remate registrado
+            </div>
+          </div>
+
+          <!-- Exportar -->
+          <div class="seccion">
+            <div class="seccion-titulo"><i class="bi bi-printer"></i> Estado de Cuenta</div>
+            <ExportToolbar
+              :data="exportData"
+              :columns="exportColumns"
+              :filename="`contrato-${detalle.contrato.nro_contrato}`"
+              :title="`Estado de Cuenta — Contrato ${detalle.contrato.nro_contrato}`"
+            />
+          </div>
+
         </div>
       </div>
-
-      <!-- === IMPRIMIR / EXPORTAR === -->
-      <div class="seccion">
-        <div class="seccion-titulo"><i class="bi bi-printer"></i> Estado de Cuenta</div>
-        <ExportToolbar
-          :data="exportData"
-          :columns="exportColumns"
-          :filename="`contrato-${detalle.contrato.nro_contrato}`"
-          :title="`Estado de Cuenta — Contrato ${detalle.contrato.nro_contrato}`"
-        />
-      </div>
-
     </template>
 
-    <!-- Lightbox foto -->
+    <!-- Lightbox -->
     <div v-if="fotoAmpliada" class="lightbox" @click="fotoAmpliada = null">
       <img :src="fotoUrl(fotoAmpliada.url)" />
     </div>
@@ -219,59 +267,103 @@ import ExportToolbar from '@/components/common/ExportToolbar.vue'
 const companyStore = useCompanyStore()
 const cid = computed(() => companyStore.selectedCompany?.id)
 
-const query       = ref('')
-const loading     = ref(false)
-const errorMsg    = ref('')
-const resultados  = ref([])
-const selectedIdx = ref(null)
+// Búsqueda
+const queryNro       = ref('')
+const queryCedula    = ref('')
+const loadingNro     = ref(false)
+const loadingCedula  = ref(false)
+const loadingDetalle = ref(false)
+const errorMsg       = ref('')
+
+// Resultados
+const listaContratos  = ref([])
+const nroSeleccionado = ref('')
+const detalle         = ref(null)
+
+// Fotos
 const fotos       = ref([])
 const uploading   = ref(false)
 const uploaderKey = ref(0)
 const fotoAmpliada = ref(null)
 
-const detalle = computed(() => {
-  if (resultados.value.length === 0) return null
-  if (resultados.value.length === 1) return resultados.value[0]
-  if (selectedIdx.value !== null)    return resultados.value[selectedIdx.value]
-  return null
-})
+// ── Búsqueda por Nro. Contrato ───────────────────────────────────────────────
 
-// ── Búsqueda ────────────────────────────────────────────────────────────────
-
-async function buscar() {
-  if (!query.value.trim() || !cid.value) return
-  loading.value   = true
-  errorMsg.value  = ''
-  resultados.value = []
-  selectedIdx.value = null
-  fotos.value     = []
+async function buscarPorNro() {
+  if (!queryNro.value.trim() || !cid.value) return
+  resetAll()
+  loadingNro.value = true
   try {
-    const res = await api.get('/api/compraventa/contrato', {
-      params: { company_id: cid.value, q: query.value.trim() }
-    })
-    resultados.value = res.data.contratos || []
-    if (resultados.value.length === 0) errorMsg.value = 'No se encontraron contratos para esa búsqueda.'
+    await cargarDetalleNro(queryNro.value.trim())
   } catch (e) {
-    errorMsg.value = e.response?.data?.detail || 'Error al consultar'
+    errorMsg.value = e.response?.data?.detail || 'Contrato no encontrado'
   } finally {
-    loading.value = false
+    loadingNro.value = false
   }
 }
 
-// ── Cargar fotos cuando cambia el detalle ────────────────────────────────────
+// ── Búsqueda por Cédula ──────────────────────────────────────────────────────
 
-watch(detalle, async (d) => {
-  fotos.value = []
-  if (!d || !cid.value) return
+async function buscarPorCedula() {
+  if (!queryCedula.value.trim() || !cid.value) return
+  resetAll()
+  loadingCedula.value = true
+  try {
+    const res = await api.get('/api/compraventa/contratos-por-cedula', {
+      params: { company_id: cid.value, cedula: queryCedula.value.trim() }
+    })
+    listaContratos.value = res.data.contratos || []
+    if (listaContratos.value.length === 1) {
+      nroSeleccionado.value = listaContratos.value[0].nro_contrato
+      await cargarDetalle()
+    }
+  } catch (e) {
+    errorMsg.value = e.response?.data?.detail || 'No se encontraron contratos para esa cédula'
+  } finally {
+    loadingCedula.value = false
+  }
+}
+
+// ── Cargar detalle de un contrato ────────────────────────────────────────────
+
+async function cargarDetalle() {
+  if (!nroSeleccionado.value) return
+  await cargarDetalleNro(nroSeleccionado.value)
+}
+
+async function cargarDetalleNro(nro) {
+  loadingDetalle.value = true
+  errorMsg.value       = ''
+  detalle.value        = null
+  fotos.value          = []
+  try {
+    const res = await api.get('/api/compraventa/contrato', {
+      params: { company_id: cid.value, nro_contrato: nro }
+    })
+    detalle.value = res.data
+    await cargarFotos(nro)
+  } finally {
+    loadingDetalle.value = false
+  }
+}
+
+async function cargarFotos(nro) {
   try {
     const res = await api.get('/api/compraventa/contrato/fotos', {
-      params: { company_id: cid.value, nro_contrato: d.contrato.nro_contrato }
+      params: { company_id: cid.value, nro_contrato: nro }
     })
     fotos.value = res.data
   } catch {}
-})
+}
 
-// ── Upload foto ───────────────────────────────────────────────────────────────
+function resetAll() {
+  errorMsg.value       = ''
+  listaContratos.value = []
+  nroSeleccionado.value = ''
+  detalle.value        = null
+  fotos.value          = []
+}
+
+// ── Fotos ────────────────────────────────────────────────────────────────────
 
 async function onFotoChange(blob) {
   if (!detalle.value || !cid.value) return
@@ -299,15 +391,13 @@ async function eliminarFoto(foto) {
   } catch {}
 }
 
-function verFoto(foto) { fotoAmpliada.value = foto }
-
 function fotoUrl(url) {
   if (!url) return ''
   if (url.startsWith('http') || url.startsWith('blob:')) return url
   return (import.meta.env.VITE_API_URL || '') + url
 }
 
-// ── Helpers de formato ────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatCurrency(val) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
@@ -329,10 +419,10 @@ function estadoIcon(e) {
 }
 
 function estadoClass(e) {
-  return e === 'V' ? 'estado-v' : e === 'R' ? 'estado-r' : e === 'D' ? 'estado-d' : ''
+  return e === 'V' ? 'banner-v' : e === 'R' ? 'banner-r' : e === 'D' ? 'banner-d' : ''
 }
 
-// ── Export / Impresión ────────────────────────────────────────────────────────
+// ── Export ───────────────────────────────────────────────────────────────────
 
 const exportColumns = [
   { key: 'c1', label: 'Campo / Detalle' },
@@ -346,44 +436,49 @@ const exportData = computed(() => {
   const { contrato, articulos, prorrogas, retiro, remate } = detalle.value
   const rows = []
 
-  rows.push({ _sectionHeader: true, _title: 'INFORMACIÓN DEL CONTRATO' })
-  rows.push({ c1: 'Nro. Contrato', c2: contrato.nro_contrato, c3: 'Cédula', c4: contrato.cedula })
-  rows.push({ c1: 'Fecha Inicio',  c2: formatFecha(contrato.fecha_inicio), c3: 'Fecha Final', c4: formatFecha(contrato.fecha_final) })
-  rows.push({ c1: 'Meses',         c2: contrato.nro_meses, c3: 'Porcentaje', c4: `${contrato.porcentaje}%` })
-  rows.push({ c1: 'Valor Contrato',c2: formatCurrency(contrato.valor_contrato), c3: 'Estado', c4: estadoLabel(contrato.estado) })
-  rows.push({ c1: 'Empleado',      c2: contrato.cod_empleado, c3: 'Fecha Registro', c4: formatFecha(contrato.Fecha_Registro) })
+  rows.push({ _sectionHeader: true, _title: 'CLIENTE' })
+  rows.push({ c1: 'Nombre', c2: `${contrato.nombres || ''} ${contrato.apellidos || ''}`.trim(), c3: 'Cédula', c4: contrato.cedula })
+  rows.push({ c1: 'Teléfono', c2: contrato.telefono || '—', c3: 'Dirección', c4: contrato.direccion || '—' })
+
+  rows.push({ _sectionHeader: true, _title: 'CONTRATO' })
+  rows.push({ c1: 'Nro. Contrato', c2: contrato.nro_contrato, c3: 'Estado', c4: contrato.estado_descripcion || estadoLabel(contrato.estado) })
+  rows.push({ c1: 'Fecha Inicio', c2: formatFecha(contrato.fecha_inicio), c3: 'Fecha Final', c4: formatFecha(contrato.fecha_final) })
+  rows.push({ c1: 'Meses', c2: contrato.nro_meses, c3: 'Porcentaje', c4: `${contrato.porcentaje}%` })
+  rows.push({ c1: 'Valor Contrato', c2: formatCurrency(contrato.valor_contrato), c3: 'Empleado', c4: contrato.cod_empleado })
   if (contrato.Observaciones) rows.push({ c1: 'Observaciones', c2: contrato.Observaciones, c3: '', c4: '' })
 
   if (articulos.length) {
-    rows.push({ _sectionHeader: true, _title: 'ARTÍCULOS DEL CONTRATO' })
+    rows.push({ _sectionHeader: true, _title: 'ARTÍCULOS' })
     rows.push({ c1: 'Categoría', c2: 'Item', c3: 'Detalle', c4: 'Kilate / Peso / Cant.' })
-    for (const a of articulos) {
-      rows.push({
-        c1: a.cod_categoria,
-        c2: a.Item_articulo,
-        c3: a.detalle,
-        c4: `${a.kilate || ''} / ${Number(a.peso).toFixed(1)} / ${a.Cantidad}`
-      })
-    }
+    articulos.forEach(a => rows.push({
+      c1: a.cod_categoria, c2: a.Item_articulo, c3: a.detalle,
+      c4: `${a.kilate || ''} / ${Number(a.peso).toFixed(1)} / ${a.Cantidad}`
+    }))
   }
 
+  rows.push({ _sectionHeader: true, _title: `PRORROGAS (${prorrogas.length})` })
   if (prorrogas.length) {
-    rows.push({ _sectionHeader: true, _title: `PRORROGAS (${prorrogas.length})` })
-    rows.push({ c1: '#', c2: 'Fecha', c3: 'Meses', c4: 'Valor Prórroga' })
-    prorrogas.forEach((p, i) => {
-      rows.push({ c1: i + 1, c2: formatFecha(p.fecha_prorroga), c3: p.meses_prorrogados, c4: formatCurrency(p.valor_prorroga) })
-    })
+    prorrogas.forEach((p, i) => rows.push({
+      c1: i + 1, c2: formatFecha(p.fecha_prorroga),
+      c3: `${p.meses_prorrogados} mes(es)`, c4: formatCurrency(p.valor_prorroga)
+    }))
+  } else {
+    rows.push({ c1: 'Sin prorrogas registradas', c2: '', c3: '', c4: '' })
   }
 
+  rows.push({ _sectionHeader: true, _title: 'RETIRO' })
   if (retiro) {
-    rows.push({ _sectionHeader: true, _title: 'INFORMACIÓN DE RETIRO' })
     rows.push({ c1: 'Fecha Retiro', c2: formatFecha(retiro.fecha_retiro), c3: 'Valor Retiro', c4: formatCurrency(retiro.valor_retiro) })
-    rows.push({ c1: 'Sobre Costo',  c2: formatCurrency(retiro.sobre_costo), c3: 'Descuento', c4: formatCurrency(retiro.descuento) })
+    rows.push({ c1: 'Sobre Costo', c2: formatCurrency(retiro.sobre_costo), c3: 'Descuento', c4: formatCurrency(retiro.descuento) })
+  } else {
+    rows.push({ c1: 'Sin retiro registrado', c2: '', c3: '', c4: '' })
   }
 
+  rows.push({ _sectionHeader: true, _title: 'REMATE' })
   if (remate) {
-    rows.push({ _sectionHeader: true, _title: 'INFORMACIÓN DE REMATE' })
     rows.push({ c1: 'Fecha Remate', c2: formatFecha(remate.fecha_remate), c3: 'Valor', c4: formatCurrency(remate.valor_contrato) })
+  } else {
+    rows.push({ c1: 'Sin remate registrado', c2: '', c3: '', c4: '' })
   }
 
   return rows
@@ -392,159 +487,189 @@ const exportData = computed(() => {
 
 <style scoped>
 .cv-consulta {
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 20px 20px 60px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
-/* Buscador */
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* ── Búsqueda ─────────────────────────────────────────────────────────────── */
+.search-panel {
   background: #fff;
   border: 1.5px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 10px 16px;
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,.05);
 }
-.search-icon { font-size: 18px; color: #94a3b8; flex-shrink: 0; }
-.search-input { flex: 1; border: none; outline: none; font-size: 15px; background: transparent; color: #1e293b; }
+.search-row { display: flex; align-items: center; gap: 12px; }
+.search-label { font-size: 12px; font-weight: 700; color: #64748b; white-space: nowrap; min-width: 120px; }
+.search-input-wrap {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  border: 1.5px solid #e2e8f0; border-radius: 10px;
+  padding: 6px 12px; background: #f8fafc;
+}
+.search-input-wrap .bi { color: #94a3b8; font-size: 16px; flex-shrink: 0; }
+.search-input { flex: 1; border: none; outline: none; background: transparent; font-size: 14px; color: #1e293b; }
 .search-input::placeholder { color: #94a3b8; }
 .btn-buscar {
   background: #1e3a5f; color: #fff; border: none; border-radius: 8px;
-  padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
-  white-space: nowrap; transition: background .15s;
+  padding: 7px 18px; font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; transition: background .15s;
 }
 .btn-buscar:hover:not(:disabled) { background: #1e40af; }
-.btn-buscar:disabled { opacity: .6; cursor: default; }
+.btn-buscar:disabled { opacity: .55; cursor: default; }
+.selector-wrap { display: flex; align-items: center; gap: 12px; }
+.selector-contrato { flex: 1; font-size: 13px; }
 
-/* Error */
+/* ── Alerta error ─────────────────────────────────────────────────────────── */
 .alerta-error {
   background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5;
-  border-radius: 10px; padding: 12px 16px; font-size: 13.5px; font-weight: 500;
+  border-radius: 10px; padding: 12px 16px; font-size: 13.5px;
   display: flex; gap: 8px; align-items: center;
 }
+.estado-loading { display: flex; align-items: center; gap: 12px; padding: 30px; color: #64748b; font-size: 14px; }
 
-/* Lista resultados */
-.resultados-titulo { font-size: 13px; color: #64748b; margin: 0 0 10px; font-weight: 600; }
-.resultados-lista { display: flex; flex-direction: column; gap: 8px; }
-.resultado-item {
-  display: flex; align-items: center; gap: 12px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  padding: 12px 16px; cursor: pointer; transition: border-color .15s, box-shadow .15s;
+/* ── Estado parpadeante ───────────────────────────────────────────────────── */
+.estado-banner {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; border-radius: 14px; padding: 16px 24px;
+  font-size: 22px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
 }
-.resultado-item:hover { border-color: #1e40af; box-shadow: 0 2px 8px rgba(30,64,175,.12); }
-.ri-nro { font-size: 15px; font-weight: 700; color: #1e3a5f; min-width: 80px; }
-.ri-info { font-size: 12.5px; color: #64748b; flex: 1; }
+.estado-icon { font-size: 28px; animation: pulso 1.4s ease-in-out infinite; }
+.estado-texto { animation: pulso 1.4s ease-in-out infinite; }
+@keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
-/* Botón volver */
-.btn-volver {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: none; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 6px 14px; font-size: 13px; font-weight: 600; color: #475569;
-  cursor: pointer; transition: border-color .15s;
-}
-.btn-volver:hover { border-color: #64748b; }
+.banner-v { background: #dcfce7; color: #166534; border: 2px solid #86efac; }
+.banner-r { background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; }
+.banner-d { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
 
-/* Estado badges */
-.estado-badge, .ri-estado {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
-  text-transform: uppercase; letter-spacing: .5px; white-space: nowrap;
-}
-.estado-v { background: #dcfce7; color: #166534; }
-.estado-r { background: #fef3c7; color: #92400e; }
-.estado-d { background: #fee2e2; color: #991b1b; }
-
-/* Card contrato */
-.card-contrato {
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.06);
-}
-.card-contrato-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+/* ── Cliente ──────────────────────────────────────────────────────────────── */
+.cliente-card {
   background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
-  padding: 16px 20px;
+  border-radius: 14px; padding: 18px 22px;
 }
-.cc-nro { font-size: 18px; font-weight: 800; color: #fff; display: block; }
-.cc-cedula { font-size: 12px; color: #bfdbfe; }
-.cc-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 0; padding: 16px 20px;
-}
-.cc-field { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; }
-.cc-field--full { grid-column: 1 / -1; }
-.cc-field label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
-.cc-field span { font-size: 13.5px; color: #1e293b; font-weight: 500; }
-.val-destacado { font-size: 15px !important; font-weight: 800 !important; color: #1e3a5f !important; }
-.cc-prorrogas-badge {
-  display: flex; align-items: center; gap: 6px;
-  margin: 0 20px 14px; padding: 8px 12px;
-  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
-  font-size: 12.5px; font-weight: 600; color: #1d4ed8;
+.cliente-nombre { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+.cliente-datos { display: flex; flex-wrap: wrap; gap: 16px; }
+.cliente-datos span { font-size: 13px; color: #bfdbfe; display: flex; align-items: center; gap: 5px; }
+.cliente-datos .bi { color: #93c5fd; }
+
+/* ── Layout 2 columnas ────────────────────────────────────────────────────── */
+.layout-cols {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 18px;
+  align-items: start;
 }
 
-/* Secciones */
-.seccion { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
-.seccion-titulo {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
-  color: #475569; padding: 12px 18px;
-  background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+/* ── Columna fotos ────────────────────────────────────────────────────────── */
+.col-fotos {
+  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
+  padding: 0; overflow: hidden; position: sticky; top: 16px;
 }
-.seccion-titulo .bi { color: #1e40af; font-size: 14px; }
-.seccion--retiro .seccion-titulo .bi { color: #d97706; }
-.seccion--remate .seccion-titulo .bi { color: #dc2626; }
-.seccion--retiro { border-color: #fde68a; }
-.seccion--remate { border-color: #fca5a5; }
-
-/* Tabla */
-.tabla-wrap { overflow-x: auto; }
-.tabla-cv { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tabla-cv thead tr { background: #f8fafc; }
-.tabla-cv th { padding: 9px 14px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; border-bottom: 1px solid #e2e8f0; text-align: left; }
-.tabla-cv td { padding: 8px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
-.tabla-cv tbody tr:last-child td { border-bottom: none; }
-.tabla-cv tbody tr:hover td { background: #f8fafc; }
-.text-end { text-align: right !important; }
-
-/* Fotos */
-.fotos-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 18px 0; }
-.foto-item { position: relative; width: 120px; height: 120px; border-radius: 10px; overflow: hidden; border: 1.5px solid #e2e8f0; }
+.col-fotos > .seccion-titulo { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.fotos-grid { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.foto-item { position: relative; border-radius: 8px; overflow: hidden; border: 1.5px solid #e2e8f0; aspect-ratio: 4/3; }
 .foto-item img { width: 100%; height: 100%; object-fit: cover; cursor: pointer; transition: opacity .15s; }
 .foto-item img:hover { opacity: .85; }
 .btn-del-foto {
   position: absolute; top: 4px; right: 4px;
   background: rgba(220,38,38,.85); color: #fff; border: none; border-radius: 5px;
-  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
-  cursor: pointer; font-size: 11px;
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 12px;
 }
-.sin-fotos { font-size: 13px; color: #94a3b8; padding: 16px 18px; margin: 0; }
-.foto-uploader { padding: 16px 18px; max-width: 260px; }
-.foto-hint { font-size: 12px; color: #64748b; margin: 8px 0 0; }
+.sin-fotos { font-size: 12.5px; color: #94a3b8; padding: 12px 16px; margin: 0; }
+.foto-uploader { padding: 12px 16px; border-top: 1px solid #f1f5f9; }
+.foto-uploader-label { font-size: 12px; font-weight: 600; color: #475569; margin: 0 0 8px; display: flex; align-items: center; gap: 5px; }
+.foto-hint { font-size: 11.5px; color: #64748b; margin: 6px 0 0; }
 
-/* Lightbox */
+/* ── Columna info ─────────────────────────────────────────────────────────── */
+.col-info { display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Secciones ────────────────────────────────────────────────────────────── */
+.seccion { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+.seccion-titulo {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: #475569; padding: 11px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+}
+.seccion-titulo .bi { color: #1e40af; font-size: 13px; }
+
+/* ── Grid campos ──────────────────────────────────────────────────────────── */
+.cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); padding: 14px 16px; gap: 4px; }
+.cc-field { display: flex; flex-direction: column; gap: 2px; padding: 5px 6px; }
+.cc-field--full { grid-column: 1 / -1; }
+.cc-field label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; }
+.cc-field span { font-size: 13px; color: #1e293b; font-weight: 500; }
+.val-destacado { font-size: 15px !important; font-weight: 800 !important; color: #1e3a5f !important; }
+
+/* ── Tabla ────────────────────────────────────────────────────────────────── */
+.tabla-wrap { overflow-x: auto; }
+.tabla-cv { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tabla-cv thead tr { background: #f8fafc; }
+.tabla-cv th { padding: 8px 12px; font-size: 10.5px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }
+.tabla-cv td { padding: 7px 12px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+.tabla-cv tbody tr:last-child td { border-bottom: none; }
+.tabla-cv tbody tr:hover td { background: #f8fafc; }
+.text-end { text-align: right !important; }
+
+/* ── Tarjetas estado ──────────────────────────────────────────────────────── */
+.tarjeta-estado { border-radius: 14px; overflow: hidden; border: 1.5px solid #e2e8f0; }
+.tc-header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  padding: 11px 16px;
+}
+.tc-badge {
+  margin-left: auto; background: rgba(0,0,0,.1);
+  border-radius: 20px; padding: 1px 8px; font-size: 11px;
+}
+.tc-body { padding: 0; background: #fff; }
+.tc-vacio-msg {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 16px; font-size: 13px; color: #94a3b8; background: #fff;
+}
+
+.tc-info { border-color: #bfdbfe; }
+.tc-info .tc-header { background: #eff6ff; color: #1d4ed8; }
+.tc-info .tc-header .bi { color: #3b82f6; }
+
+.tc-retiro { border-color: #fde68a; }
+.tc-retiro .tc-header { background: #fef3c7; color: #92400e; }
+.tc-retiro .tc-header .bi { color: #d97706; }
+
+.tc-remate { border-color: #fca5a5; }
+.tc-remate .tc-header { background: #fee2e2; color: #991b1b; }
+.tc-remate .tc-header .bi { color: #ef4444; }
+
+.tc-vacio { border-color: #e2e8f0; }
+.tc-vacio .tc-header { background: #f8fafc; color: #94a3b8; }
+
+/* ── Lightbox ─────────────────────────────────────────────────────────────── */
 .lightbox {
-  position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 2000;
+  position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 2000;
   display: flex; align-items: center; justify-content: center; cursor: zoom-out;
 }
-.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
 
-/* Responsive */
+/* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .cv-consulta { padding: 14px 14px 50px; gap: 14px; }
-  .cc-grid { grid-template-columns: repeat(2, 1fr); }
-  .foto-item { width: 100px; height: 100px; }
+  .layout-cols { grid-template-columns: 1fr; }
+  .col-fotos { position: static; }
+  .fotos-grid { flex-direction: row; flex-wrap: wrap; }
+  .foto-item { width: 110px; height: 82px; }
+  .search-row { flex-direction: column; align-items: stretch; }
+  .search-label { min-width: unset; }
 }
 @media (max-width: 576px) {
   .cc-grid { grid-template-columns: 1fr 1fr; }
-  .tabla-cv th, .tabla-cv td { padding: 7px 10px; font-size: 12px; }
-  .foto-item { width: 80px; height: 80px; }
-  .search-bar { flex-wrap: wrap; }
-  .btn-buscar { width: 100%; }
+  .tabla-cv th, .tabla-cv td { padding: 6px 8px; font-size: 11.5px; }
+  .foto-item { width: 90px; height: 68px; }
+  .estado-banner { font-size: 17px; padding: 12px 16px; }
 }
 </style>
