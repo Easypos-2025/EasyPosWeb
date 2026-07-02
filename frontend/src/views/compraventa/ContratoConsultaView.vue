@@ -205,10 +205,16 @@
           <div class="seccion" v-if="detalle.articulos.length">
             <div class="seccion-titulo"><i class="bi bi-gem"></i> Artículos</div>
             <div class="tabla-wrap">
-              <table class="tabla-cv">
+              <table class="tabla-cv tabla-articulos">
+                <colgroup>
+                  <col style="width:8%">
+                  <col style="width:50%">
+                  <col style="width:14%">
+                  <col style="width:14%">
+                  <col style="width:14%">
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Categoría</th>
                     <th>Item</th>
                     <th>Detalle</th>
                     <th>Kilate</th>
@@ -218,9 +224,8 @@
                 </thead>
                 <tbody>
                   <tr v-for="(a, i) in detalle.articulos" :key="i">
-                    <td>{{ a.cod_categoria }}</td>
                     <td>{{ a.Item_articulo }}</td>
-                    <td>{{ a.detalle }}</td>
+                    <td class="td-detalle">{{ a.detalle }}</td>
                     <td>{{ a.kilate }}</td>
                     <td class="text-end">{{ Number(a.peso).toFixed(1) }}</td>
                     <td class="text-end">{{ a.Cantidad }}</td>
@@ -905,6 +910,7 @@ const exportData = computed(() => {
 .tabla-cv tbody tr:last-child td { border-bottom: none; }
 .tabla-cv tbody tr:hover td { background: #f8fafc; }
 .text-end { text-align: right !important; }
+.tabla-articulos .td-detalle { white-space: normal; word-break: break-word; line-height: 1.4; }
 
 /* ── Tarjetas estado ──────────────────────────────────────────────────────── */
 .tarjeta-estado { border-radius: 14px; overflow: hidden; border: 1.5px solid #e2e8f0; }
@@ -952,10 +958,16 @@ const exportData = computed(() => {
   .col-fotos { position: static; }
   .fotos-grid { flex-direction: row; flex-wrap: wrap; }
   .foto-item { width: 110px; height: 82px; }
-  .search-line { flex-direction: column; }
+  .search-line { flex-direction: column; gap: 8px; }
   .search-sep { display: none; }
+  .search-lbl { display: none; }
+  .search-input-wrap { min-width: unset; width: 100%; }
+  .selector-contrato { min-width: unset; width: 100%; }
   .cliente-estado-row { flex-direction: column; }
   .estado-banner { flex-direction: row; min-width: unset; padding: 12px 16px; font-size: 16px; }
+  .resumen-body { grid-template-columns: 1fr; }
+  .resumen-div { display: none; }
+  .resumen-col--right { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 4px; }
 }
 @media (max-width: 576px) {
   .cc-grid { grid-template-columns: 1fr 1fr; }
