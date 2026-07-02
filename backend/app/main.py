@@ -83,6 +83,7 @@ from app.routers.pos_apidian_sync_router import router as pos_apidian_sync_route
 from app.routers.pos_temp_router import router as pos_temp_router
 from app.routers.pos_dashboard_router import router as pos_dashboard_router
 from app.routers.compraventa_router import router as compraventa_router
+from app.routers.hipotecas_router import router as hipotecas_router
 from app.routers.pos_consultas_router import router as pos_consultas_router
 from app.routers.pos_categorias_router import router as pos_categorias_router
 from app.routers.pos_printers_router import router as pos_printers_router
@@ -1596,6 +1597,7 @@ routers = [
     pos_temp_router,
     pos_dashboard_router,
     compraventa_router,
+    hipotecas_router,
     pos_consultas_router,
     pos_categorias_router,
     pos_printers_router,
