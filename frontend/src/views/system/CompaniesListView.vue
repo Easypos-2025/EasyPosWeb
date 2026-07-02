@@ -255,14 +255,15 @@
             </div>
           </div>
 
-        </div>
+          <!-- BOTONES -->
+          <div class="modal-btns">
+            <button class="btn btn-secondary" @click="closeEdit">Cancelar</button>
+            <button class="btn btn-primary" @click="saveEdit" :disabled="saving">
+              <i v-if="saving" class="bi bi-arrow-repeat spin me-1"></i>
+              {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+            </button>
+          </div>
 
-        <div class="modal-footer-bar">
-          <button class="btn btn-secondary" @click="closeEdit">Cancelar</button>
-          <button class="btn btn-primary" @click="saveEdit" :disabled="saving">
-            <i v-if="saving" class="bi bi-arrow-repeat spin me-1"></i>
-            {{ saving ? 'Guardando...' : 'Guardar cambios' }}
-          </button>
         </div>
       </div>
     </div>
@@ -378,9 +379,6 @@ function openEdit(c) {
   testResult.value = null
   showPass.value   = false
   showEdit.value   = true
-  nextTick(() => {
-    extDbRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
 }
 
 function closeEdit() {
@@ -587,7 +585,7 @@ onMounted(() => {
 .modal-header-bar h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0 0 3px; }
 .modal-id-tag { font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 1px 7px; border-radius: 20px; font-family: monospace; }
 .modal-body-area { padding: 16px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.modal-footer-bar { padding: 12px 22px 16px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
+.modal-btns { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; border-top: 1px solid #f1f5f9; margin-top: 4px; }
 .form-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .fg { display: flex; flex-direction: column; gap: 4px; }
 .fg label { font-size: 13px; font-weight: 500; color: #374151; }
