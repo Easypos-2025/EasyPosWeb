@@ -247,7 +247,7 @@
               <label>Contraseña</label>
               <div class="pass-wrap">
                 <input v-model="editForm.ext_db_password" :type="showPass ? 'text' : 'password'"
-                  class="form-control form-control-sm"
+                  class="form-control form-control-sm" autocomplete="new-password"
                   :placeholder="editForm.ext_db_has_password ? '(guardada — dejar vacío para no cambiarla)' : 'Contraseña'" />
                 <button type="button" class="pass-eye" @click="showPass = !showPass" tabindex="-1">
                   <i class="bi" :class="showPass ? 'bi-eye-slash' : 'bi-eye'"></i>
@@ -596,7 +596,7 @@ onMounted(() => {
 .modal-id-tag { font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 1px 7px; border-radius: 20px; font-family: monospace; }
 .modal-body-area { padding: 16px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .modal-footer-bar { padding: 12px 22px 16px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
-.modal-box--sm { width: 480px; }
+.modal-box--sm { width: 700px; }
 
 .btn-extdb {
   width: 100%;
