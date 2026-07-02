@@ -183,87 +183,97 @@
             </div>
           </div>
 
-          <!-- BD EXTERNA -->
-          <div class="ext-db-section" ref="extDbRef">
-            <button type="button" class="ext-db-toggle" @click="showExtDb = !showExtDb">
-              <i class="bi" :class="showExtDb ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-              <i class="bi bi-database-gear ms-1"></i>
-              Base de datos externa
-              <span v-if="editForm.ext_db_host" class="ext-db-badge">Configurada</span>
-              <span v-else class="ext-db-badge ext-db-badge--none">Sin configurar · usa easyposweb</span>
-            </button>
+          <!-- BD EXTERNA — botón que abre modal separado -->
+          <button type="button" class="btn-extdb" @click="showExtDbModal = true">
+            <i class="bi bi-database-gear"></i>
+            Base de datos externa
+            <span v-if="editForm.ext_db_host" class="ext-db-badge">Configurada</span>
+            <span v-else class="ext-db-badge ext-db-badge--none">Sin configurar · usa easyposweb</span>
+            <i class="bi bi-chevron-right ms-auto"></i>
+          </button>
 
-            <div v-if="showExtDb" class="ext-db-body">
-              <p class="ext-db-hint">
-                <i class="bi bi-info-circle"></i>
-                Dejar vacío para usar la base de datos principal (<strong>easyposweb</strong>).
-                Solo completar si este perfil tiene su propia DB (mismo servidor u otro).
-              </p>
+        </div>
 
-              <div class="ext-db-grid">
-                <div class="ext-field ext-field--host">
-                  <label>Servidor (host / IP)</label>
-                  <input v-model="editForm.ext_db_host" class="form-control form-control-sm"
-                    placeholder="Ej: 192.168.1.100 o mi-servidor.com" />
-                </div>
-                <div class="ext-field ext-field--port">
-                  <label>Puerto</label>
-                  <input v-model.number="editForm.ext_db_port" type="number" class="form-control form-control-sm"
-                    placeholder="3306" min="1" max="65535" />
-                </div>
-                <div class="ext-field ext-field--name">
-                  <label>Nombre de la base de datos</label>
-                  <input v-model="editForm.ext_db_name" class="form-control form-control-sm"
-                    placeholder="Ej: compraventa_db" />
-                </div>
-                <div class="ext-field ext-field--user">
-                  <label>Usuario</label>
-                  <input v-model="editForm.ext_db_user" class="form-control form-control-sm"
-                    placeholder="Ej: vb6user" />
-                </div>
-                <div class="ext-field ext-field--pass">
-                  <label>Contraseña</label>
-                  <div class="pass-wrap">
-                    <input v-model="editForm.ext_db_password" :type="showPass ? 'text' : 'password'"
-                      class="form-control form-control-sm"
-                      :placeholder="editForm.ext_db_has_password ? '(guardada — dejar vacío para no cambiarla)' : 'Contraseña'" />
-                    <button type="button" class="pass-eye" @click="showPass = !showPass" tabindex="-1">
-                      <i class="bi" :class="showPass ? 'bi-eye-slash' : 'bi-eye'"></i>
-                    </button>
-                  </div>
-                </div>
-              </div>
+        <div class="modal-footer-bar">
+          <button class="btn btn-secondary" @click="closeEdit">Cancelar</button>
+          <button class="btn btn-primary" @click="saveEdit" :disabled="saving">
+            <i v-if="saving" class="bi bi-arrow-repeat spin me-1"></i>
+            {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
-              <div v-if="testResult" class="test-result"
-                :class="testResult.ok ? 'test-result--ok' : 'test-result--err'">
-                <i class="bi" :class="testResult.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
-                {{ testResult.message }}
-              </div>
+    <!-- MODAL BD EXTERNA -->
+    <div v-if="showExtDbModal" class="modal-overlay" @click.self="showExtDbModal = false">
+      <div class="modal-box modal-box--sm">
+        <div class="modal-header-bar">
+          <div>
+            <h2><i class="bi bi-database-gear me-2"></i>Base de datos externa</h2>
+            <span class="modal-id-tag">Empresa ID {{ editForm.id }}</span>
+          </div>
+          <button class="btn-close-sm" @click="showExtDbModal = false"><i class="bi bi-x-lg"></i></button>
+        </div>
 
-              <div class="ext-db-actions">
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                  :disabled="testing" @click="clearExtDb">
-                  <i class="bi bi-trash"></i> Limpiar
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-primary"
-                  :disabled="testing || !editForm.ext_db_host" @click="testConnection">
-                  <span v-if="testing" class="spinner-border spinner-border-sm me-1"></span>
-                  <i v-else class="bi bi-plug-fill me-1"></i>
-                  {{ testing ? 'Probando...' : 'Probar conexión' }}
+        <div class="modal-body-area">
+          <p class="ext-db-hint">
+            <i class="bi bi-info-circle"></i>
+            Dejar vacío para usar la base de datos principal (<strong>easyposweb</strong>).
+            Solo completar si este perfil tiene su propia DB.
+          </p>
+
+          <div class="ext-db-grid">
+            <div class="ext-field ext-field--host">
+              <label>Servidor (host / IP)</label>
+              <input v-model="editForm.ext_db_host" class="form-control form-control-sm"
+                placeholder="Ej: 192.168.1.100 o mi-servidor.com" />
+            </div>
+            <div class="ext-field ext-field--port">
+              <label>Puerto</label>
+              <input v-model.number="editForm.ext_db_port" type="number" class="form-control form-control-sm"
+                placeholder="3306" min="1" max="65535" />
+            </div>
+            <div class="ext-field ext-field--name">
+              <label>Nombre de la base de datos</label>
+              <input v-model="editForm.ext_db_name" class="form-control form-control-sm"
+                placeholder="Ej: compraventa_db" />
+            </div>
+            <div class="ext-field ext-field--user">
+              <label>Usuario</label>
+              <input v-model="editForm.ext_db_user" class="form-control form-control-sm"
+                placeholder="Ej: vb6user" />
+            </div>
+            <div class="ext-field ext-field--pass">
+              <label>Contraseña</label>
+              <div class="pass-wrap">
+                <input v-model="editForm.ext_db_password" :type="showPass ? 'text' : 'password'"
+                  class="form-control form-control-sm"
+                  :placeholder="editForm.ext_db_has_password ? '(guardada — dejar vacío para no cambiarla)' : 'Contraseña'" />
+                <button type="button" class="pass-eye" @click="showPass = !showPass" tabindex="-1">
+                  <i class="bi" :class="showPass ? 'bi-eye-slash' : 'bi-eye'"></i>
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- BOTONES -->
-          <div class="modal-btns">
-            <button class="btn btn-secondary" @click="closeEdit">Cancelar</button>
-            <button class="btn btn-primary" @click="saveEdit" :disabled="saving">
-              <i v-if="saving" class="bi bi-arrow-repeat spin me-1"></i>
-              {{ saving ? 'Guardando...' : 'Guardar cambios' }}
-            </button>
+          <div v-if="testResult" class="test-result"
+            :class="testResult.ok ? 'test-result--ok' : 'test-result--err'">
+            <i class="bi" :class="testResult.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
+            {{ testResult.message }}
           </div>
+        </div>
 
+        <div class="modal-footer-bar">
+          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="testing" @click="clearExtDb">
+            <i class="bi bi-trash"></i> Limpiar
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-primary"
+            :disabled="testing || !editForm.ext_db_host" @click="testConnection">
+            <span v-if="testing" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-plug-fill me-1"></i>
+            {{ testing ? 'Probando...' : 'Probar conexión' }}
+          </button>
+          <button class="btn btn-primary btn-sm" @click="showExtDbModal = false">Aceptar</button>
         </div>
       </div>
     </div>
@@ -293,8 +303,8 @@ const showExtDb     = ref(false)
 const testing       = ref(false)
 const testResult    = ref(null)
 const showPass      = ref(false)
-const modalBodyRef  = ref(null)
-const extDbRef      = ref(null)
+const modalBodyRef    = ref(null)
+const showExtDbModal  = ref(false)
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -585,7 +595,26 @@ onMounted(() => {
 .modal-header-bar h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0 0 3px; }
 .modal-id-tag { font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 1px 7px; border-radius: 20px; font-family: monospace; }
 .modal-body-area { padding: 16px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.modal-btns { display: flex; justify-content: flex-end; gap: 10px; padding-top: 8px; border-top: 1px solid #f1f5f9; margin-top: 4px; }
+.modal-footer-bar { padding: 12px 22px 16px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #f1f5f9; flex-shrink: 0; }
+.modal-box--sm { width: 480px; }
+
+.btn-extdb {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  text-align: left;
+}
+.btn-extdb:hover { background: #f1f5f9; border-color: #94a3b8; }
 .form-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .fg { display: flex; flex-direction: column; gap: 4px; }
 .fg label { font-size: 13px; font-weight: 500; color: #374151; }
