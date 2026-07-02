@@ -689,6 +689,15 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Kardex de Insumos" }
       },
+      // ── Compraventa ──────────────────────────────────────────────────────
+      {
+        path: "/compraventa/contrato",
+        name: "ContratoConsultaView",
+        component: () => import("@/views/compraventa/ContratoConsultaView.vue"),
+        requiresAuth: true,
+        meta: { title: "Consulta Contrato" }
+      },
+
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",

@@ -80,5 +80,6 @@ from app.models.bodega_item_model import BodegaItem
 from app.models.loan_model import Loan
 from app.models.company_plan_limits_model import CompanyPlanLimits
 from app.models.advertisement_model import Advertisement, AdPiece, AdPayment
+from app.models.compraventa_foto_model import CompraventaFoto
 
 
