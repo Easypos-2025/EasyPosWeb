@@ -3,10 +3,10 @@
 
     <!-- ── BÚSQUEDA ─────────────────────────────────────────────── -->
     <div class="search-panel">
-      <!-- Por Nro. Contrato -->
-      <div class="search-row">
-        <label class="search-label">Nro. Contrato</label>
+      <div class="search-line">
+        <!-- Por Nro. Contrato -->
         <div class="search-input-wrap">
+          <span class="search-lbl">Nro. Contrato</span>
           <i class="bi bi-file-earmark-text"></i>
           <input v-model="queryNro" class="search-input" placeholder="Ej: A57944"
             @keyup.enter="buscarPorNro" />
@@ -15,12 +15,12 @@
             <span v-else>Buscar</span>
           </button>
         </div>
-      </div>
 
-      <!-- Por Cédula -->
-      <div class="search-row">
-        <label class="search-label">Cédula del Cliente</label>
+        <div class="search-sep"></div>
+
+        <!-- Por Cédula -->
         <div class="search-input-wrap">
+          <span class="search-lbl">Cédula</span>
           <i class="bi bi-person"></i>
           <input v-model="queryCedula" class="search-input" placeholder="Ej: 12345678"
             @keyup.enter="buscarPorCedula" />
@@ -29,13 +29,11 @@
             <span v-else>Buscar</span>
           </button>
         </div>
-      </div>
 
-      <!-- Selector de contrato (cuando cedula tiene varios) -->
-      <div class="selector-wrap" v-if="listaContratos.length">
-        <label class="search-label">Seleccionar contrato</label>
-        <select class="form-select selector-contrato" v-model="nroSeleccionado" @change="cargarDetalle">
-          <option value="">— Seleccionar —</option>
+        <!-- Selector inline cuando hay varios contratos -->
+        <select v-if="listaContratos.length" class="form-select selector-contrato"
+          v-model="nroSeleccionado" @change="cargarDetalle">
+          <option value="">— Seleccionar contrato —</option>
           <option v-for="c in listaContratos" :key="c.nro_contrato" :value="c.nro_contrato">
             {{ c.nro_contrato }} · {{ formatFecha(c.fecha_inicio) }} · {{ formatCurrency(c.valor_contrato) }} · {{ c.estado_descripcion }}
           </option>
@@ -57,21 +55,19 @@
     <!-- ── DETALLE ────────────────────────────────────────────────── -->
     <template v-if="detalle && !loadingDetalle">
 
-      <!-- Estado grande parpadeante -->
-      <div class="estado-banner" :class="estadoClass(detalle.contrato.estado)">
-        <i class="bi estado-icon" :class="estadoIcon(detalle.contrato.estado)"></i>
-        <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
-      </div>
-
-      <!-- Info cliente -->
-      <div class="cliente-card">
-        <div class="cliente-nombre">
-          {{ detalle.contrato.nombres }} {{ detalle.contrato.apellidos }}
+      <!-- Cliente + Estado en una sola línea -->
+      <div class="cliente-estado-row">
+        <div class="cliente-card">
+          <div class="cliente-nombre">{{ detalle.contrato.nombres }} {{ detalle.contrato.apellidos }}</div>
+          <div class="cliente-datos">
+            <span><i class="bi bi-person-badge"></i> {{ detalle.contrato.cedula }}</span>
+            <span v-if="detalle.contrato.telefono"><i class="bi bi-telephone"></i> {{ detalle.contrato.telefono }}</span>
+            <span v-if="detalle.contrato.direccion"><i class="bi bi-geo-alt"></i> {{ detalle.contrato.direccion }}</span>
+          </div>
         </div>
-        <div class="cliente-datos">
-          <span><i class="bi bi-person-badge"></i> {{ detalle.contrato.cedula }}</span>
-          <span v-if="detalle.contrato.telefono"><i class="bi bi-telephone"></i> {{ detalle.contrato.telefono }}</span>
-          <span v-if="detalle.contrato.direccion"><i class="bi bi-geo-alt"></i> {{ detalle.contrato.direccion }}</span>
+        <div class="estado-banner" :class="estadoClass(detalle.contrato.estado)">
+          <i class="bi estado-icon" :class="estadoIcon(detalle.contrato.estado)"></i>
+          <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
         </div>
       </div>
 
@@ -500,31 +496,28 @@ const exportData = computed(() => {
   background: #fff;
   border: 1.5px solid #e2e8f0;
   border-radius: 14px;
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 12px 16px;
   box-shadow: 0 2px 8px rgba(0,0,0,.05);
 }
-.search-row { display: flex; align-items: center; gap: 12px; }
-.search-label { font-size: 12px; font-weight: 700; color: #64748b; white-space: nowrap; min-width: 120px; }
+.search-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.search-sep { width: 1px; height: 28px; background: #e2e8f0; flex-shrink: 0; }
+.search-lbl { font-size: 11px; font-weight: 700; color: #94a3b8; white-space: nowrap; text-transform: uppercase; letter-spacing: .4px; }
 .search-input-wrap {
-  flex: 1; display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
   border: 1.5px solid #e2e8f0; border-radius: 10px;
-  padding: 6px 12px; background: #f8fafc;
+  padding: 5px 10px; background: #f8fafc; flex: 1; min-width: 200px;
 }
-.search-input-wrap .bi { color: #94a3b8; font-size: 16px; flex-shrink: 0; }
-.search-input { flex: 1; border: none; outline: none; background: transparent; font-size: 14px; color: #1e293b; }
+.search-input-wrap .bi { color: #94a3b8; font-size: 14px; flex-shrink: 0; }
+.search-input { flex: 1; border: none; outline: none; background: transparent; font-size: 13px; color: #1e293b; min-width: 80px; }
 .search-input::placeholder { color: #94a3b8; }
 .btn-buscar {
-  background: #1e3a5f; color: #fff; border: none; border-radius: 8px;
-  padding: 7px 18px; font-size: 13px; font-weight: 600;
-  cursor: pointer; white-space: nowrap; transition: background .15s;
+  background: #1e3a5f; color: #fff; border: none; border-radius: 7px;
+  padding: 5px 14px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; transition: background .15s; flex-shrink: 0;
 }
 .btn-buscar:hover:not(:disabled) { background: #1e40af; }
 .btn-buscar:disabled { opacity: .55; cursor: default; }
-.selector-wrap { display: flex; align-items: center; gap: 12px; }
-.selector-contrato { flex: 1; font-size: 13px; }
+.selector-contrato { font-size: 12.5px; flex: 2; min-width: 220px; }
 
 /* ── Alerta error ─────────────────────────────────────────────────────────── */
 .alerta-error {
@@ -534,29 +527,33 @@ const exportData = computed(() => {
 }
 .estado-loading { display: flex; align-items: center; gap: 12px; padding: 30px; color: #64748b; font-size: 14px; }
 
-/* ── Estado parpadeante ───────────────────────────────────────────────────── */
-.estado-banner {
-  display: flex; align-items: center; justify-content: center;
-  gap: 12px; border-radius: 14px; padding: 16px 24px;
-  font-size: 22px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+/* ── Cliente + Estado en una línea ────────────────────────────────────────── */
+.cliente-estado-row {
+  display: flex; align-items: stretch; gap: 14px;
 }
-.estado-icon { font-size: 28px; animation: pulso 1.4s ease-in-out infinite; }
+.cliente-card {
+  flex: 1;
+  background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+  border-radius: 14px; padding: 14px 20px;
+}
+.cliente-nombre { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+.cliente-datos { display: flex; flex-wrap: wrap; gap: 14px; }
+.cliente-datos span { font-size: 12.5px; color: #bfdbfe; display: flex; align-items: center; gap: 5px; }
+.cliente-datos .bi { color: #93c5fd; }
+
+/* Estado parpadeante */
+.estado-banner {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; border-radius: 14px; padding: 14px 28px;
+  font-size: 18px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  min-width: 160px; flex-shrink: 0;
+}
+.estado-icon { font-size: 26px; animation: pulso 1.4s ease-in-out infinite; }
 .estado-texto { animation: pulso 1.4s ease-in-out infinite; }
 @keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-
 .banner-v { background: #dcfce7; color: #166534; border: 2px solid #86efac; }
 .banner-r { background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; }
 .banner-d { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
-
-/* ── Cliente ──────────────────────────────────────────────────────────────── */
-.cliente-card {
-  background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
-  border-radius: 14px; padding: 18px 22px;
-}
-.cliente-nombre { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px; }
-.cliente-datos { display: flex; flex-wrap: wrap; gap: 16px; }
-.cliente-datos span { font-size: 13px; color: #bfdbfe; display: flex; align-items: center; gap: 5px; }
-.cliente-datos .bi { color: #93c5fd; }
 
 /* ── Layout 2 columnas ────────────────────────────────────────────────────── */
 .layout-cols {
@@ -663,13 +660,14 @@ const exportData = computed(() => {
   .col-fotos { position: static; }
   .fotos-grid { flex-direction: row; flex-wrap: wrap; }
   .foto-item { width: 110px; height: 82px; }
-  .search-row { flex-direction: column; align-items: stretch; }
-  .search-label { min-width: unset; }
+  .search-line { flex-direction: column; }
+  .search-sep { display: none; }
+  .cliente-estado-row { flex-direction: column; }
+  .estado-banner { flex-direction: row; min-width: unset; padding: 12px 16px; font-size: 16px; }
 }
 @media (max-width: 576px) {
   .cc-grid { grid-template-columns: 1fr 1fr; }
   .tabla-cv th, .tabla-cv td { padding: 6px 8px; font-size: 11.5px; }
   .foto-item { width: 90px; height: 68px; }
-  .estado-banner { font-size: 17px; padding: 12px 16px; }
 }
 </style>
