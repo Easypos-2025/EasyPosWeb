@@ -78,7 +78,7 @@ async def get_kpis(
     r_fact = (await db.execute(text("""
         SELECT
             COALESCE(SUM(cash_amount + credit_card_amount + debit_card_amount
-                        + adjustment - discount - tip - extra_tip), 0) AS total,
+                        - discount - tip - extra_tip), 0) AS total,
             COUNT(*) AS cnt
         FROM pos_invoices
         WHERE company_id = :cid AND date = :fecha AND voided = 0
@@ -88,7 +88,7 @@ async def get_kpis(
     r_rec = (await db.execute(text("""
         SELECT
             COALESCE(SUM(cash_amount + credit_card_amount + debit_card_amount
-                        + adjustment - discount - tip - extra_tip), 0) AS total,
+                        - discount - tip - extra_tip), 0) AS total,
             COUNT(*) AS cnt
         FROM pos_receipts
         WHERE company_id = :cid AND date = :fecha AND voided = 0
@@ -530,7 +530,7 @@ async def ultimas_transacciones(
             SELECT 'Factura' AS tipo,
                    invoice_number AS numero,
                    time AS hora,
-                   (cash_amount + credit_card_amount + debit_card_amount + adjustment - discount) AS total,
+                   (cash_amount + credit_card_amount + debit_card_amount - discount) AS total,
                    customer_id AS cliente
             FROM pos_invoices
             WHERE company_id=:cid AND date=:fecha AND voided=0
@@ -538,7 +538,7 @@ async def ultimas_transacciones(
             SELECT 'Recibo' AS tipo,
                    receipt_number AS numero,
                    time AS hora,
-                   (cash_amount + credit_card_amount + debit_card_amount + adjustment - discount) AS total,
+                   (cash_amount + credit_card_amount + debit_card_amount - discount) AS total,
                    customer_id AS cliente
             FROM pos_receipts
             WHERE company_id=:cid AND date=:fecha AND voided=0
