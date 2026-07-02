@@ -36,9 +36,12 @@
           </button>
         </div>
 
-        <!-- Selector inline cuando hay varios contratos -->
-        <select v-if="listaContratos.length" class="form-select selector-contrato"
-          v-model="nroSeleccionado" @change="cargarDetalle">
+      </div>
+
+      <!-- Selector en fila separada -->
+      <div v-if="listaContratos.length" class="selector-row">
+        <i class="bi bi-list-ul"></i>
+        <select class="form-select selector-contrato" v-model="nroSeleccionado" @change="cargarDetalle">
           <option value="">— Seleccionar contrato —</option>
           <option v-for="c in listaContratos" :key="c.nro_contrato" :value="c.nro_contrato">
             {{ c.nro_contrato }} · {{ formatFecha(c.fecha_inicio) }} · {{ formatCurrency(c.valor_contrato) }} · {{ c.estado_descripcion }}
@@ -761,7 +764,12 @@ const exportData = computed(() => {
 }
 .btn-buscar:hover:not(:disabled) { background: #1e40af; }
 .btn-buscar:disabled { opacity: .55; cursor: default; }
-.selector-contrato { font-size: 12.5px; flex: 2; min-width: 220px; }
+.selector-row {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 8px; border-top: 1px solid #f1f5f9; margin-top: 4px;
+}
+.selector-row .bi { color: #94a3b8; font-size: 15px; flex-shrink: 0; }
+.selector-contrato { font-size: 13px; flex: 1; }
 .filtro-estado-select {
   border: 1.5px solid #e2e8f0; border-radius: 7px; background: #fff;
   font-size: 12px; font-weight: 600; color: #475569;
