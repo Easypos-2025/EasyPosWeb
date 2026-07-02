@@ -1,0 +1,1 @@
+import{t as e}from"./axios-C1khWGOh.js";var t=e.create({baseURL:`http://127.0.0.1:8000`});t.interceptors.request.use(e=>{let t=localStorage.getItem(`waiter_token`)||localStorage.getItem(`token`);t&&(e.headers.Authorization=`Bearer ${t}`);let n=localStorage.getItem(`waiter_company_id`);return n&&(e.headers[`X-Company-Id`]=n),e});export{t};

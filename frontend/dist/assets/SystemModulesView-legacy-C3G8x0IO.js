@@ -1,0 +1,1 @@
+System.register(["./vue.runtime.esm-bundler-legacy-Bq9X0Q4q.js","./apis-legacy-C0nNvOrE.js","./toast-legacy-BmR70hTR.js","./vuedraggable.umd-legacy-BJmKI3Di.js","./index-legacy-Dp0E7oS3.js"],function(e,n){var t;return{setters:[function(e){},function(e){},function(e){},function(e){},function(e){t=e.a}],execute:function(){e("default",t)}}});

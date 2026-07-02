@@ -184,7 +184,7 @@
           </div>
 
           <!-- BD EXTERNA -->
-          <div class="ext-db-section">
+          <div class="ext-db-section" ref="extDbRef">
             <button type="button" class="ext-db-toggle" @click="showExtDb = !showExtDb">
               <i class="bi" :class="showExtDb ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
               <i class="bi bi-database-gear ms-1"></i>
@@ -293,6 +293,7 @@ const testing       = ref(false)
 const testResult    = ref(null)
 const showPass      = ref(false)
 const modalBodyRef  = ref(null)
+const extDbRef      = ref(null)
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -373,14 +374,12 @@ function openEdit(c) {
     ext_db_has_password:   c.ext_db_has_password || false,
   }
   planForm.value   = { plan_id: "", expiration_date: c.expiration_date || "" }
-  showExtDb.value  = false
+  showExtDb.value  = true
   testResult.value = null
   showPass.value   = false
   showEdit.value   = true
   nextTick(() => {
-    if (modalBodyRef.value) {
-      modalBodyRef.value.scrollTop = modalBodyRef.value.scrollHeight
-    }
+    extDbRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 }
 
