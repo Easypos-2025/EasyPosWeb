@@ -186,13 +186,15 @@ async def detalle_creditos_atrasados(
     return {"total": len(data), "meses_filtro": meses, "items": data}
 
 
-# ── Consulta Crédito: buscar por nombre ──────────────────────────────────────
+# ── Consulta Crédito: buscar ──────────────────────────────────────────────────
 
 @router.get("/creditos/buscar")
 async def buscar_creditos(
     company_id: int  = Query(...),
     nombre: str      = Query("", description="Búsqueda por nombre cliente"),
     nro: str         = Query("", description="Búsqueda por Nro_Credito"),
+    ref: str         = Query("", description="Búsqueda por Ref_Adicional"),
+    juridico: str    = Query("", description="Búsqueda por Nro_Juridico"),
     vigentes: bool   = Query(True),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
@@ -201,32 +203,32 @@ async def buscar_creditos(
     filtro_vigente = "AND c.Cancelado=0 AND c.Anulado=0 AND c.Inactivo=0" if vigentes else ""
 
     async with ext as session:
+        base_select = """
+            SELECT c.Nro_Credito, c.Cliente AS cedula,
+                   COALESCE(cl.nombres, c.Cliente) AS cliente_nombre,
+                   c.Valor_Actual, c.Pago_Hasta,
+                   TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) AS meses_mora,
+                   c.Cancelado, c.Anulado, c.Inactivo,
+                   COALESCE(ca.Ref_Adicional, '') AS ref_adicional,
+                   COALESCE(ca.Nro_Juridico, '')  AS nro_juridico
+            FROM creditos c
+            LEFT JOIN clientes cl ON cl.cedula = c.Cliente
+            LEFT JOIN creditos_adicional ca ON ca.Nro_Credito = c.Nro_Credito
+        """
         if nro.strip():
-            rows = await session.execute(text(f"""
-                SELECT c.Nro_Credito, c.Cliente AS cedula,
-                       COALESCE(cl.nombres, c.Cliente) AS cliente_nombre,
-                       c.Valor_Actual, c.Pago_Hasta,
-                       TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) AS meses_mora,
-                       c.Cancelado, c.Anulado, c.Inactivo
-                FROM creditos c
-                LEFT JOIN clientes cl ON cl.cedula = c.Cliente
-                WHERE c.Nro_Credito LIKE :nro {filtro_vigente}
-                ORDER BY c.Nro_Credito
-                LIMIT 50
-            """), {"nro": f"%{nro.strip()}%"})
+            sql = f"{base_select} WHERE c.Nro_Credito LIKE :q {filtro_vigente} ORDER BY c.Nro_Credito LIMIT 50"
+            params = {"q": f"%{nro.strip()}%"}
+        elif ref.strip():
+            sql = f"{base_select} WHERE ca.Ref_Adicional LIKE :q {filtro_vigente} ORDER BY c.Nro_Credito LIMIT 50"
+            params = {"q": f"%{ref.strip()}%"}
+        elif juridico.strip():
+            sql = f"{base_select} WHERE ca.Nro_Juridico LIKE :q {filtro_vigente} ORDER BY c.Nro_Credito LIMIT 50"
+            params = {"q": f"%{juridico.strip()}%"}
         else:
-            rows = await session.execute(text(f"""
-                SELECT c.Nro_Credito, c.Cliente AS cedula,
-                       COALESCE(cl.nombres, c.Cliente) AS cliente_nombre,
-                       c.Valor_Actual, c.Pago_Hasta,
-                       TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) AS meses_mora,
-                       c.Cancelado, c.Anulado, c.Inactivo
-                FROM creditos c
-                LEFT JOIN clientes cl ON cl.cedula = c.Cliente
-                WHERE cl.nombres LIKE :nombre {filtro_vigente}
-                ORDER BY cl.nombres
-                LIMIT 80
-            """), {"nombre": f"%{nombre.strip()}%"})
+            sql = f"{base_select} WHERE cl.nombres LIKE :q {filtro_vigente} ORDER BY cl.nombres LIMIT 80"
+            params = {"q": f"%{nombre.strip()}%"}
+
+        rows = await session.execute(text(sql), params)
         data = [dict(r) for r in rows.mappings()]
     return {"total": len(data), "creditos": data}
 
@@ -364,4 +366,121 @@ async def detalle_credito(
         "aumentos_capital": aumentos,
         "novedades":        novedades,
         "otros_deudores":   otros_deudores,
+    }
+
+
+# ── Consulta Arriendo: buscar ─────────────────────────────────────────────────
+
+@router.get("/arriendos/buscar")
+async def buscar_arriendos(
+    company_id: int  = Query(...),
+    codigo: str      = Query("", description="Código lista propiedad"),
+    id_arr: str      = Query("", description="Id_Arriendo exacto"),
+    propietario: str = Query("", description="Nombre propietario"),
+    cliente: str     = Query("", description="Nombre cliente arrendatario"),
+    solo_activos: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    ext = await _get_ext(company_id, db)
+    filtro_activo = "AND a.Activo = 1" if solo_activos else ""
+
+    async with ext as session:
+        base_select = f"""
+            SELECT
+                a.Id_Arriendo,
+                a.Cliente AS cedula_cliente,
+                COALESCE(ca.nombres, a.Cliente) AS cliente_nombre,
+                COALESCE(p.NombreCorto, p.Direccion, '') AS propiedad_nombre,
+                p.Direccion AS propiedad_dir,
+                COALESCE(p.Codigo_Lista, '') AS codigo_lista,
+                p.NombrePropietario,
+                COALESCE(s.Descripcion, '') AS sector,
+                a.Valor AS canon,
+                a.Pago_Hasta,
+                a.Vence,
+                a.Avisar,
+                a.Fecha_Inicio,
+                a.Plazo_Meses,
+                a.Activo,
+                a.Deposito
+            FROM arriendos a
+            LEFT JOIN clientes_arriendos ca ON ca.cedula = a.Cliente
+            LEFT JOIN propiedades p ON p.Id_Propiedad = a.Id_Propiedad
+            LEFT JOIN sectores s ON s.Id_Sector = p.Id_Sector
+            WHERE 1=1 {filtro_activo}
+        """
+        if id_arr.strip():
+            sql = base_select + " AND a.Id_Arriendo = :q ORDER BY a.Id_Arriendo LIMIT 1"
+            params = {"q": id_arr.strip()}
+        elif codigo.strip():
+            sql = base_select + " AND p.Codigo_Lista LIKE :q ORDER BY a.Id_Arriendo LIMIT 50"
+            params = {"q": f"%{codigo.strip()}%"}
+        elif propietario.strip():
+            sql = base_select + " AND p.NombrePropietario LIKE :q ORDER BY p.NombrePropietario LIMIT 50"
+            params = {"q": f"%{propietario.strip()}%"}
+        else:
+            sql = base_select + " AND ca.nombres LIKE :q ORDER BY ca.nombres LIMIT 80"
+            params = {"q": f"%{cliente.strip()}%"}
+
+        rows = await session.execute(text(sql), params)
+        data = [dict(r) for r in rows.mappings()]
+    return {"total": len(data), "arriendos": data}
+
+
+# ── Consulta Arriendo: detalle completo ───────────────────────────────────────
+
+@router.get("/arriendo/{id_arriendo}")
+async def detalle_arriendo(
+    id_arriendo: int,
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    ext = await _get_ext(company_id, db)
+
+    async with ext as session:
+
+        # ── Contrato + propiedad + cliente ────────────────────────────────────
+        row = await session.execute(text("""
+            SELECT
+                a.*,
+                COALESCE(ca.nombres,  a.Cliente) AS cliente_nombre,
+                ca.Telefono AS cliente_tel,
+                COALESCE(p.NombreCorto, p.Direccion, '') AS propiedad_nombre,
+                p.Direccion  AS propiedad_dir,
+                p.NombrePropietario,
+                COALESCE(p.Codigo_Lista, '') AS codigo_lista,
+                COALESCE(s.Descripcion, '') AS sector,
+                p.Valor_Canon  AS valor_canon_propietad,
+                COALESCE(e.nombres, '') AS asesor_nombre,
+                TIMESTAMPDIFF(MONTH, a.Pago_Hasta, CURDATE()) AS meses_mora
+            FROM arriendos a
+            LEFT JOIN clientes_arriendos ca ON ca.cedula = a.Cliente
+            LEFT JOIN propiedades p ON p.Id_Propiedad = a.Id_Propiedad
+            LEFT JOIN sectores s ON s.Id_Sector = p.Id_Sector
+            LEFT JOIN empleados e ON e.cod_empleado = a.Cod_Empleado
+            WHERE a.Id_Arriendo = :id
+            LIMIT 1
+        """), {"id": id_arriendo})
+        arriendo_row = row.mappings().first()
+        if not arriendo_row:
+            raise HTTPException(status_code=404, detail="Arriendo no encontrado")
+        arriendo = dict(arriendo_row)
+
+        # ── Pagos realizados ──────────────────────────────────────────────────
+        pagos_r = await session.execute(text("""
+            SELECT pa.Nro_Pago, pa.Fecha_Pago, pa.Valor_Pago,
+                   pa.Meses_Pagados, pa.Anulado,
+                   COALESCE(f.Descripcion_Forma, '') AS forma_pago_desc
+            FROM pago_arriendos pa
+            LEFT JOIN forma_pago f ON f.Forma_Pago = pa.Forma_Pago
+            WHERE pa.Id_Arriendo = :id AND pa.Anulado = 0
+            ORDER BY pa.Fecha_Pago DESC
+        """), {"id": id_arriendo})
+        pagos = [dict(r) for r in pagos_r.mappings()]
+
+    return {
+        "arriendo": arriendo,
+        "pagos":    pagos,
     }

@@ -37,7 +37,7 @@
     </div>
 
     <!-- ─── KPI Bar ─────────────────────────────────────────── -->
-    <p class="section-label" style="margin-top:24px">
+    <p class="section-label" style="margin-top:14px">
       <i class="bi bi-bar-chart-line-fill"></i> Indicadores del mes
       <span class="refresh-badge" :class="{ spin: loadingKpi }">
         <i class="bi bi-arrow-clockwise"></i>
@@ -85,10 +85,10 @@
           </span>
           <span class="kpi-sub-selector">
             Más de
-            <select v-model="mesesFiltro" class="mes-select" @change.stop="recargarKpi" @click.stop>
+            <select v-model="mesesFiltro" class="mes-select" @change.stop="recargarSoloCreditos" @click.stop>
               <option v-for="m in opcionesMeses" :key="m" :value="m">{{ m }} mes{{ m > 1 ? 'es' : '' }}</option>
             </select>
-            de mora
+            de mora ≥
           </span>
         </div>
         <i class="bi bi-chevron-right kpi-arrow"></i>
@@ -245,7 +245,15 @@ async function cargarKpi(silencioso = false) {
   }
 }
 
-function recargarKpi() { cargarKpi() }
+async function recargarSoloCreditos() {
+  if (!companyId.value) return
+  try {
+    const { data } = await api.get('/api/hipotecas/kpi', {
+      params: { company_id: companyId.value, meses: mesesFiltro.value }
+    })
+    kpi.value.creditos_atrasados = data.creditos_atrasados
+  } catch { /* silencioso */ }
+}
 
 // ── Auto-refresh 15s ───────────────────────────────────────────────────────
 let _timer = null
@@ -358,7 +366,7 @@ function fmtFecha(v) {
 .dash-header {
   position: relative; z-index: 1;
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-  padding: 24px 0 16px; border-bottom: 1px solid #e2e8f0; margin-bottom: 24px;
+  padding: 16px 0 12px; border-bottom: 1px solid #e2e8f0; margin-bottom: 14px;
 }
 .dash-empresa { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: #0f2448; line-height: 1.2; }
 .dash-perfil-tag {
@@ -372,8 +380,8 @@ function fmtFecha(v) {
 /* ───────────────── section label ───────────────── */
 .section-label {
   position: relative; z-index: 1;
-  font-size: 12px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.8px; color: #64748b; margin: 0 0 14px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: #64748b; margin: 0 0 8px;
   display: flex; align-items: center; gap: 6px;
 }
 .section-label .bi { color: #10b981; font-size: 13px; }
@@ -383,42 +391,42 @@ function fmtFecha(v) {
 /* ───────────────── Accesos directos ───────────────── */
 .accesos-grid {
   position: relative; z-index: 1;
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  display: flex; gap: 10px; flex-wrap: wrap;
   margin-bottom: 0;
 }
 .acceso-card {
-  display: flex; align-items: center; gap: 14px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  padding: 18px 16px; cursor: pointer; text-align: left;
-  transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  width: 100%;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
+  padding: 8px 14px; cursor: pointer; text-align: left;
+  transition: all 0.18s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  flex: 1; min-width: 140px;
 }
-.acceso-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.10); border-color: #0f2448; }
+.acceso-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.10); border-color: #0f2448; }
 .ac-icon {
-  flex-shrink: 0; width: 46px; height: 46px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center; font-size: 20px;
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
 }
 .ac-icon.green { background: #d1fae5; color: #065f46; }
 .ac-icon.blue  { background: #dbeafe; color: #1d4ed8; }
-.ac-label { flex: 1; font-size: 13px; font-weight: 700; color: #0f2448; line-height: 1.4; }
-.ac-arrow { font-size: 12px; color: #cbd5e1; flex-shrink: 0; }
+.ac-label { flex: 1; font-size: 13px; font-weight: 700; color: #0f2448; line-height: 1.2; white-space: nowrap; }
+.ac-arrow { font-size: 11px; color: #cbd5e1; flex-shrink: 0; }
 
 /* ───────────────── KPI grid ───────────────── */
 .kpi-grid {
   position: relative; z-index: 1;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
 }
 .kpi-card {
-  display: flex; align-items: center; gap: 14px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 16px;
-  padding: 18px 14px; cursor: pointer; text-align: left;
-  transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.05); width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px;
+  padding: 12px 10px; cursor: pointer; text-align: left;
+  transition: all 0.2s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.05); width: 100%;
 }
-.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.10); }
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.10); }
 .kpi-card:disabled { cursor: default; transform: none; }
 .kpi-icon {
-  flex-shrink: 0; width: 48px; height: 48px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; font-size: 17px;
 }
 .kpi-amber .kpi-icon { background: #fef3c7; color: #d97706; }
 .kpi-orange .kpi-icon { background: #ffedd5; color: #ea580c; }
@@ -429,10 +437,10 @@ function fmtFecha(v) {
 .kpi-amber:hover  { border-color: #f59e0b; box-shadow: 0 6px 20px rgba(245,158,11,0.18); }
 .kpi-orange:hover { border-color: #f97316; box-shadow: 0 6px 20px rgba(249,115,22,0.18); }
 .kpi-red:hover    { border-color: #ef4444; box-shadow: 0 6px 20px rgba(239,68,68,0.18); }
-.kpi-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.kpi-label { font-size: 11.5px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.3; }
-.kpi-value { font-size: 30px; font-weight: 800; color: #0f172a; line-height: 1.1; }
-.kpi-sub   { font-size: 11px; color: #94a3b8; }
+.kpi-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.kpi-label { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; line-height: 1.3; }
+.kpi-value { font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1.1; }
+.kpi-sub   { font-size: 10px; color: #94a3b8; }
 .kpi-sub-selector { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; color: #94a3b8; }
 .mes-select {
   font-size: 11px; color: #0f2448; font-weight: 700;
@@ -504,11 +512,12 @@ function fmtFecha(v) {
 /* ───────────────── responsive ───────────────── */
 @media (max-width: 768px) {
   .dash-hip { padding: 0 16px 40px; }
-  .kpi-grid { grid-template-columns: 1fr; gap: 10px; }
-  .kpi-card { padding: 14px 12px; }
-  .kpi-value { font-size: 26px; }
-  .accesos-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .dash-header { flex-direction: column; gap: 6px; }
+  .kpi-grid { grid-template-columns: 1fr; gap: 8px; }
+  .kpi-card { padding: 10px 10px; }
+  .kpi-value { font-size: 20px; }
+  .accesos-grid { gap: 8px; }
+  .acceso-card { min-width: 120px; }
+  .dash-header { flex-direction: column; gap: 4px; }
   .dash-fecha { font-size: 12px; }
   .wm-icon-1 { font-size: 280px; }
   .wm-icon-2 { font-size: 110px; }
@@ -518,11 +527,11 @@ function fmtFecha(v) {
 
 @media (max-width: 576px) {
   .dash-hip { padding: 0 12px 32px; }
-  .kpi-grid { grid-template-columns: 1fr; gap: 10px; }
-  .accesos-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .kpi-icon { width: 42px; height: 42px; font-size: 18px; }
-  .kpi-value { font-size: 24px; }
-  .kpi-label { font-size: 10.5px; }
+  .kpi-grid { grid-template-columns: 1fr; gap: 8px; }
+  .accesos-grid { gap: 8px; }
+  .kpi-icon { width: 32px; height: 32px; font-size: 15px; }
+  .kpi-value { font-size: 19px; }
+  .kpi-label { font-size: 9.5px; }
   .dash-empresa { font-size: 17px; }
   .wm-icon-1 { font-size: 200px; bottom: -40px; right: -20px; }
   .wm-icon-2 { font-size: 80px; }
@@ -535,7 +544,7 @@ function fmtFecha(v) {
   .modal-overlay { align-items: center; justify-content: center; }
   .modal-panel { width: 92%; max-width: 1100px; max-height: 82vh; border-radius: 16px; animation: fadeScale 0.2s ease; }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
-  .kpi-value { font-size: 34px; }
+  .kpi-value { font-size: 26px; }
   .btn-print-txt { display: inline; }
 }
 @keyframes fadeScale { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }

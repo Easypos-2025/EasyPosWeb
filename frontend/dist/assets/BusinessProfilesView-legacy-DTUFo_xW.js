@@ -1,1 +1,0 @@
-System.register(["./vue.runtime.esm-bundler-legacy-Bq9X0Q4q.js","./apis-legacy-C0nNvOrE.js","./index-legacy-Dp0E7oS3.js"],function(e,n){var t;return{setters:[function(e){},function(e){},function(e){t=e.i}],execute:function(){e("default",t)}}});

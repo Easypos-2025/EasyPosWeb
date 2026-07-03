@@ -706,6 +706,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Consulta Crédito" }
       },
+      {
+        path: "/cobros/consulta-arriendo",
+        name: "ConsultaArriendoView",
+        component: () => import("@/views/compraventa/ConsultaArriendoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Consulta Arriendo" }
+      },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {

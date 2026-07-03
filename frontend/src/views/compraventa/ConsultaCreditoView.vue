@@ -38,6 +38,35 @@
         </div>
       </div>
 
+      <!-- Fila 2: Ref. Adicional / Nro. Jurídico -->
+      <div class="search-row search-row-2">
+        <div class="search-box">
+          <label class="search-lbl"><i class="bi bi-tag"></i> Ref. Adicional</label>
+          <div class="search-input-wrap">
+            <input v-model="queryRef" class="search-input" placeholder="Referencia adicional..."
+              @keyup.enter="buscarPorRef" />
+            <button class="btn-buscar" @click="buscarPorRef" :disabled="loadingRef || !queryRef.trim()">
+              <span v-if="loadingRef" class="spin-sm"></span>
+              <span v-else><i class="bi bi-search"></i></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="search-sep"><span>ó</span></div>
+
+        <div class="search-box">
+          <label class="search-lbl"><i class="bi bi-building"></i> Nro. Jurídico</label>
+          <div class="search-input-wrap">
+            <input v-model="queryJuridico" class="search-input" placeholder="Número jurídico..."
+              @keyup.enter="buscarPorJuridico" />
+            <button class="btn-buscar" @click="buscarPorJuridico" :disabled="loadingJuridico || !queryJuridico.trim()">
+              <span v-if="loadingJuridico" class="spin-sm"></span>
+              <span v-else><i class="bi bi-search"></i></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Lista resultados -->
       <div v-if="listaCreditos.length" class="selector-row">
         <i class="bi bi-list-ul"></i>
@@ -297,13 +326,17 @@ const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 // ── Búsqueda ────────────────────────────────────────────────────────────────
-const queryNro     = ref('')
-const queryNombre  = ref('')
-const soloVigentes = ref(true)
-const loadingNro   = ref(false)
-const loadingNombre= ref(false)
-const errorMsg     = ref('')
-const listaCreditos= ref([])
+const queryNro      = ref('')
+const queryNombre   = ref('')
+const queryRef      = ref('')
+const queryJuridico = ref('')
+const soloVigentes  = ref(true)
+const loadingNro    = ref(false)
+const loadingNombre = ref(false)
+const loadingRef    = ref(false)
+const loadingJuridico = ref(false)
+const errorMsg      = ref('')
+const listaCreditos = ref([])
 const nroSeleccionado = ref('')
 
 async function buscarPorNro() {
@@ -341,6 +374,36 @@ async function buscarPorNombre() {
     }
   } catch { errorMsg.value = 'Error al buscar.' }
   finally { loadingNombre.value = false }
+}
+
+async function buscarPorRef() {
+  if (!queryRef.value.trim()) return
+  loadingRef.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
+  detalle.value = null
+  try {
+    const { data } = await api.get('/api/hipotecas/creditos/buscar', {
+      params: { company_id: companyId.value, ref: queryRef.value.trim(), vigentes: soloVigentes.value }
+    })
+    if (!data.creditos.length) { errorMsg.value = 'No se encontró crédito con esa referencia.'; return }
+    listaCreditos.value = data.creditos
+    if (data.creditos.length === 1) { nroSeleccionado.value = data.creditos[0].Nro_Credito; await cargarDetalle() }
+  } catch { errorMsg.value = 'Error al buscar.' }
+  finally { loadingRef.value = false }
+}
+
+async function buscarPorJuridico() {
+  if (!queryJuridico.value.trim()) return
+  loadingJuridico.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
+  detalle.value = null
+  try {
+    const { data } = await api.get('/api/hipotecas/creditos/buscar', {
+      params: { company_id: companyId.value, juridico: queryJuridico.value.trim(), vigentes: soloVigentes.value }
+    })
+    if (!data.creditos.length) { errorMsg.value = 'No se encontró crédito con ese nro. jurídico.'; return }
+    listaCreditos.value = data.creditos
+    if (data.creditos.length === 1) { nroSeleccionado.value = data.creditos[0].Nro_Credito; await cargarDetalle() }
+  } catch { errorMsg.value = 'Error al buscar.' }
+  finally { loadingJuridico.value = false }
 }
 
 // ── Detalle ─────────────────────────────────────────────────────────────────
@@ -433,8 +496,9 @@ function fmtFecha(v) {
 .cc-wrap { padding: 0 20px 48px; max-width: 1200px; margin: 0 auto; }
 
 /* ── Search panel ── */
-.search-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin-bottom: 20px; }
+.search-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; }
 .search-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.search-row-2 { border-top: 1px dashed #e2e8f0; padding-top: 14px; }
 .search-box { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
 .search-lbl { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 5px; }
 .search-input-wrap { display: flex; gap: 6px; }
