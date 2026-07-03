@@ -4,71 +4,38 @@
     <!-- ── Panel de búsqueda ─────────────────────────────────── -->
     <div class="search-panel">
 
-      <div class="search-row">
-        <!-- Por Nro. Crédito -->
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-file-earmark-text"></i> Nro. Crédito</label>
-          <div class="search-input-wrap">
-            <input v-model="queryNro" class="search-input" placeholder="Ej: 1-423"
-              @keyup.enter="buscarPorNro" />
-            <button class="btn-buscar" @click="buscarPorNro" :disabled="loadingNro || !queryNro.trim()">
-              <span v-if="loadingNro" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
-
-        <div class="search-sep"><span>ó</span></div>
-
-        <!-- Por Nombre -->
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-person"></i> Nombre Cliente</label>
-          <div class="search-input-wrap">
-            <input v-model="queryNombre" class="search-input" placeholder="Buscar por nombre..."
-              @keyup.enter="buscarPorNombre" />
-            <label class="toggle-vigentes" title="Solo vigentes">
-              <input type="checkbox" v-model="soloVigentes" @change="buscarPorNombre" />
-              <span>Vig.</span>
-            </label>
-            <button class="btn-buscar" @click="buscarPorNombre" :disabled="loadingNombre || !queryNombre.trim()">
-              <span v-if="loadingNombre" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
+      <!-- Chips de modo -->
+      <div class="mode-chips">
+        <button
+          v-for="m in MODOS" :key="m.id"
+          class="mode-chip" :class="{ active: modoActivo === m.id }"
+          @click="setModo(m.id)"
+        >
+          <i :class="m.icono"></i>
+          <span class="chip-lbl">{{ m.label }}</span>
+        </button>
       </div>
 
-      <!-- Fila 2: Ref. Adicional / Nro. Jurídico -->
-      <div class="search-row search-row-2">
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-tag"></i> Ref. Adicional</label>
-          <div class="search-input-wrap">
-            <input v-model="queryRef" class="search-input" placeholder="Referencia adicional..."
-              @keyup.enter="buscarPorRef" />
-            <button class="btn-buscar" @click="buscarPorRef" :disabled="loadingRef || !queryRef.trim()">
-              <span v-if="loadingRef" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
-
-        <div class="search-sep"><span>ó</span></div>
-
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-building"></i> Nro. Jurídico</label>
-          <div class="search-input-wrap">
-            <input v-model="queryJuridico" class="search-input" placeholder="Número jurídico..."
-              @keyup.enter="buscarPorJuridico" />
-            <button class="btn-buscar" @click="buscarPorJuridico" :disabled="loadingJuridico || !queryJuridico.trim()">
-              <span v-if="loadingJuridico" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
+      <!-- Campo único -->
+      <div class="search-input-row">
+        <input
+          v-model="queryActual"
+          class="search-input"
+          :placeholder="modoInfo.placeholder"
+          @keyup.enter="buscar"
+        />
+        <label v-if="modoActivo === 'nombre'" class="toggle-vigentes" title="Solo vigentes">
+          <input type="checkbox" v-model="soloVigentes" />
+          <span>Vig.</span>
+        </label>
+        <button class="btn-buscar" @click="buscar" :disabled="loading || !queryActual.trim()">
+          <span v-if="loading" class="spin-sm"></span>
+          <span v-else><i class="bi bi-search"></i></span>
+        </button>
       </div>
 
-      <!-- Lista resultados -->
-      <div v-if="listaCreditos.length" class="selector-row">
+      <!-- Lista resultados múltiples -->
+      <div v-if="listaCreditos.length > 1" class="selector-row">
         <i class="bi bi-list-ul"></i>
         <select class="sel-credito" v-model="nroSeleccionado" @change="cargarDetalle">
           <option value="">— Seleccionar crédito —</option>
@@ -325,85 +292,49 @@ import api from '@/services/apis'
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 
-// ── Búsqueda ────────────────────────────────────────────────────────────────
-const queryNro      = ref('')
-const queryNombre   = ref('')
-const queryRef      = ref('')
-const queryJuridico = ref('')
-const soloVigentes  = ref(true)
-const loadingNro    = ref(false)
-const loadingNombre = ref(false)
-const loadingRef    = ref(false)
-const loadingJuridico = ref(false)
-const errorMsg      = ref('')
-const listaCreditos = ref([])
+// ── Búsqueda con chips ───────────────────────────────────────────────────────
+const MODOS = [
+  { id: 'nro',      label: 'Nro. Crédito',  icono: 'bi-file-earmark-text', placeholder: 'Ej: 1-423...' },
+  { id: 'nombre',   label: 'Nombre',         icono: 'bi-person',             placeholder: 'Nombre del cliente...' },
+  { id: 'ref',      label: 'Ref. Adicional', icono: 'bi-tag',                placeholder: 'Ej: P-171...' },
+  { id: 'juridico', label: 'Nro. Jurídico',  icono: 'bi-building',           placeholder: 'Ej: L-145...' },
+]
+const modoActivo      = ref('nro')
+const queryActual     = ref('')
+const soloVigentes    = ref(true)
+const loading         = ref(false)
+const errorMsg        = ref('')
+const listaCreditos   = ref([])
 const nroSeleccionado = ref('')
 
-async function buscarPorNro() {
-  if (!queryNro.value.trim()) return
-  loadingNro.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
-  detalle.value = null
-  try {
-    const { data } = await api.get('/api/hipotecas/creditos/buscar', {
-      params: { company_id: companyId.value, nro: queryNro.value.trim(), vigentes: false }
-    })
-    if (!data.creditos.length) { errorMsg.value = 'No se encontró el crédito.'; return }
-    if (data.creditos.length === 1) {
-      nroSeleccionado.value = data.creditos[0].Nro_Credito
-      await cargarDetalle()
-    } else {
-      listaCreditos.value = data.creditos
-    }
-  } catch { errorMsg.value = 'Error al buscar.' }
-  finally { loadingNro.value = false }
+const modoInfo = computed(() => MODOS.find(m => m.id === modoActivo.value))
+
+function setModo(id) {
+  modoActivo.value = id; queryActual.value = ''
+  listaCreditos.value = []; nroSeleccionado.value = ''
+  errorMsg.value = ''; detalle.value = null
 }
 
-async function buscarPorNombre() {
-  if (!queryNombre.value.trim()) return
-  loadingNombre.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
+async function buscar() {
+  const q = queryActual.value.trim()
+  if (!q) return
+  loading.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
   detalle.value = null
+  const params = { company_id: companyId.value }
+  if      (modoActivo.value === 'nro')      params.nro      = q
+  else if (modoActivo.value === 'ref')      params.ref      = q
+  else if (modoActivo.value === 'juridico') params.juridico = q
+  else { params.nombre = q; params.vigentes = soloVigentes.value }
   try {
-    const { data } = await api.get('/api/hipotecas/creditos/buscar', {
-      params: { company_id: companyId.value, nombre: queryNombre.value.trim(), vigentes: soloVigentes.value }
-    })
-    if (!data.creditos.length) { errorMsg.value = 'No se encontraron créditos para ese nombre.'; return }
+    const { data } = await api.get('/api/hipotecas/creditos/buscar', { params })
+    if (!data.creditos.length) { errorMsg.value = 'No se encontraron resultados.'; return }
     listaCreditos.value = data.creditos
     if (data.creditos.length === 1) {
       nroSeleccionado.value = data.creditos[0].Nro_Credito
       await cargarDetalle()
     }
   } catch { errorMsg.value = 'Error al buscar.' }
-  finally { loadingNombre.value = false }
-}
-
-async function buscarPorRef() {
-  if (!queryRef.value.trim()) return
-  loadingRef.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
-  detalle.value = null
-  try {
-    const { data } = await api.get('/api/hipotecas/creditos/buscar', {
-      params: { company_id: companyId.value, ref: queryRef.value.trim(), vigentes: soloVigentes.value }
-    })
-    if (!data.creditos.length) { errorMsg.value = 'No se encontró crédito con esa referencia.'; return }
-    listaCreditos.value = data.creditos
-    if (data.creditos.length === 1) { nroSeleccionado.value = data.creditos[0].Nro_Credito; await cargarDetalle() }
-  } catch { errorMsg.value = 'Error al buscar.' }
-  finally { loadingRef.value = false }
-}
-
-async function buscarPorJuridico() {
-  if (!queryJuridico.value.trim()) return
-  loadingJuridico.value = true; errorMsg.value = ''; listaCreditos.value = []; nroSeleccionado.value = ''
-  detalle.value = null
-  try {
-    const { data } = await api.get('/api/hipotecas/creditos/buscar', {
-      params: { company_id: companyId.value, juridico: queryJuridico.value.trim(), vigentes: soloVigentes.value }
-    })
-    if (!data.creditos.length) { errorMsg.value = 'No se encontró crédito con ese nro. jurídico.'; return }
-    listaCreditos.value = data.creditos
-    if (data.creditos.length === 1) { nroSeleccionado.value = data.creditos[0].Nro_Credito; await cargarDetalle() }
-  } catch { errorMsg.value = 'Error al buscar.' }
-  finally { loadingJuridico.value = false }
+  finally { loading.value = false }
 }
 
 // ── Detalle ─────────────────────────────────────────────────────────────────
@@ -496,25 +427,24 @@ function fmtFecha(v) {
 .cc-wrap { padding: 0 20px 48px; max-width: 1200px; margin: 0 auto; }
 
 /* ── Search panel ── */
-.search-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; }
-.search-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.search-row-2 { border-top: 1px dashed #e2e8f0; padding-top: 14px; }
-.search-box { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
-.search-lbl { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 5px; }
-.search-input-wrap { display: flex; gap: 6px; }
-.search-input { flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 14px; outline: none; }
+.search-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.mode-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.mode-chip { display: flex; align-items: center; gap: 5px; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.mode-chip:hover { background: #e2e8f0; }
+.mode-chip.active { background: #0f2448; color: #fff; border-color: #0f2448; }
+.mode-chip .bi { font-size: 12px; }
+.search-input-row { display: flex; gap: 8px; align-items: center; }
+.search-input { flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; outline: none; transition: border-color 0.2s; }
 .search-input:focus { border-color: #0f2448; }
-.btn-buscar { background: #0f2448; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+.btn-buscar { background: #0f2448; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; flex-shrink: 0; }
 .btn-buscar:hover:not(:disabled) { background: #1e3a6e; }
 .btn-buscar:disabled { opacity: 0.5; cursor: not-allowed; }
-.search-sep { display: flex; align-items: center; padding-bottom: 4px; }
-.search-sep span { font-size: 12px; font-weight: 700; color: #94a3b8; padding: 4px 8px; background: #f1f5f9; border-radius: 20px; }
-.toggle-vigentes { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: #065f46; background: #d1fae5; border-radius: 8px; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.toggle-vigentes { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: #065f46; background: #d1fae5; border-radius: 8px; padding: 7px 10px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 .toggle-vigentes input { accent-color: #065f46; }
-.selector-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; border-top: 1px solid #f1f5f9; padding-top: 12px; }
+.selector-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 10px; }
 .selector-row .bi { color: #64748b; }
 .sel-credito { flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; }
-.alerta-error { margin-top: 10px; background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 10px 14px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.alerta-error { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 10px 14px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 
 /* ── Loading ── */
 .estado-loading { display: flex; align-items: center; gap: 12px; justify-content: center; padding: 40px; color: #64748b; font-size: 14px; }
@@ -596,8 +526,9 @@ function fmtFecha(v) {
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .cc-wrap { padding: 0 12px 40px; }
-  .search-row { flex-direction: column; gap: 12px; }
-  .search-sep { display: none; }
+  .mode-chips { gap: 4px; }
+  .chip-lbl { display: none; }
+  .mode-chip { padding: 6px 10px; }
   .info-grid { grid-template-columns: 1fr; gap: 0; }
   .cliente-nombre { font-size: 17px; }
   .tab-btn span:first-of-type { display: none; }

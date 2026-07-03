@@ -215,16 +215,18 @@ async def buscar_creditos(
             LEFT JOIN clientes cl ON cl.cedula = c.Cliente
             LEFT JOIN creditos_adicional ca ON ca.Nro_Credito = c.Nro_Credito
         """
+        # Búsquedas por identificador específico: ignoran siempre el filtro de estado
         if nro.strip():
-            sql = f"{base_select} WHERE c.Nro_Credito LIKE :q {filtro_vigente} ORDER BY c.Nro_Credito LIMIT 50"
+            sql = f"{base_select} WHERE c.Nro_Credito LIKE :q ORDER BY c.Nro_Credito LIMIT 50"
             params = {"q": f"%{nro.strip()}%"}
         elif ref.strip():
-            sql = f"{base_select} WHERE ca.Ref_Adicional LIKE :q {filtro_vigente} ORDER BY c.Nro_Credito LIMIT 50"
+            sql = f"{base_select} WHERE ca.Ref_Adicional LIKE :q ORDER BY c.Nro_Credito LIMIT 50"
             params = {"q": f"%{ref.strip()}%"}
         elif juridico.strip():
-            sql = f"{base_select} WHERE ca.Nro_Juridico LIKE :q {filtro_vigente} ORDER BY c.Nro_Credito LIMIT 50"
+            sql = f"{base_select} WHERE ca.Nro_Juridico LIKE :q ORDER BY c.Nro_Credito LIMIT 50"
             params = {"q": f"%{juridico.strip()}%"}
         else:
+            # Búsqueda por nombre: respeta el filtro vigentes
             sql = f"{base_select} WHERE cl.nombres LIKE :q {filtro_vigente} ORDER BY cl.nombres LIMIT 80"
             params = {"q": f"%{nombre.strip()}%"}
 
@@ -386,41 +388,46 @@ async def buscar_arriendos(
     filtro_activo = "AND a.Activo = 1" if solo_activos else ""
 
     async with ext as session:
-        base_select = f"""
-            SELECT
-                a.Id_Arriendo,
-                a.Cliente AS cedula_cliente,
-                COALESCE(ca.nombres, a.Cliente) AS cliente_nombre,
-                COALESCE(p.NombreCorto, p.Direccion, '') AS propiedad_nombre,
-                p.Direccion AS propiedad_dir,
-                COALESCE(p.Codigo_Lista, '') AS codigo_lista,
-                p.NombrePropietario,
-                COALESCE(s.Descripcion, '') AS sector,
-                a.Valor AS canon,
-                a.Pago_Hasta,
-                a.Vence,
-                a.Avisar,
-                a.Fecha_Inicio,
-                a.Plazo_Meses,
-                a.Activo,
-                a.Deposito
-            FROM arriendos a
-            LEFT JOIN clientes_arriendos ca ON ca.cedula = a.Cliente
-            LEFT JOIN propiedades p ON p.Id_Propiedad = a.Id_Propiedad
-            LEFT JOIN sectores s ON s.Id_Sector = p.Id_Sector
-            WHERE 1=1 {filtro_activo}
-        """
+        def make_base(apply_filter: bool) -> str:
+            f = filtro_activo if apply_filter else ""
+            return f"""
+                SELECT
+                    a.Id_Arriendo,
+                    a.Cliente AS cedula_cliente,
+                    COALESCE(ca.nombres, a.Cliente) AS cliente_nombre,
+                    COALESCE(p.NombreCorto, p.Direccion, '') AS propiedad_nombre,
+                    p.Direccion AS propiedad_dir,
+                    COALESCE(p.Codigo_Lista, '') AS codigo_lista,
+                    p.NombrePropietario,
+                    COALESCE(s.Descripcion, '') AS sector,
+                    a.Valor AS canon,
+                    a.Pago_Hasta,
+                    a.Vence,
+                    a.Avisar,
+                    a.Fecha_Inicio,
+                    a.Plazo_Meses,
+                    a.Activo,
+                    a.Deposito
+                FROM arriendos a
+                LEFT JOIN clientes_arriendos ca ON ca.cedula = a.Cliente
+                LEFT JOIN propiedades p ON p.Id_Propiedad = a.Id_Propiedad
+                LEFT JOIN sectores s ON s.Id_Sector = p.Id_Sector
+                WHERE 1=1 {f}
+            """
+
+        # Búsquedas por identificador específico: ignoran siempre el filtro de estado
         if id_arr.strip():
-            sql = base_select + " AND a.Id_Arriendo = :q ORDER BY a.Id_Arriendo LIMIT 1"
+            sql = make_base(False) + " AND a.Id_Arriendo = :q ORDER BY a.Id_Arriendo LIMIT 1"
             params = {"q": id_arr.strip()}
         elif codigo.strip():
-            sql = base_select + " AND p.Codigo_Lista LIKE :q ORDER BY a.Id_Arriendo LIMIT 50"
+            sql = make_base(False) + " AND p.Codigo_Lista LIKE :q ORDER BY a.Id_Arriendo LIMIT 50"
             params = {"q": f"%{codigo.strip()}%"}
+        # Búsquedas por nombre: respetan el filtro solo_activos
         elif propietario.strip():
-            sql = base_select + " AND p.NombrePropietario LIKE :q ORDER BY p.NombrePropietario LIMIT 50"
+            sql = make_base(True) + " AND p.NombrePropietario LIKE :q ORDER BY p.NombrePropietario LIMIT 50"
             params = {"q": f"%{propietario.strip()}%"}
         else:
-            sql = base_select + " AND ca.nombres LIKE :q ORDER BY ca.nombres LIMIT 80"
+            sql = make_base(True) + " AND ca.nombres LIKE :q ORDER BY ca.nombres LIMIT 80"
             params = {"q": f"%{cliente.strip()}%"}
 
         rows = await session.execute(text(sql), params)

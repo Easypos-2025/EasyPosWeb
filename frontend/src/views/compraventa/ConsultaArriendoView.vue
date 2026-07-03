@@ -4,70 +4,37 @@
     <!-- ── Panel de búsqueda ─────────────────────────────────── -->
     <div class="search-panel">
 
-      <div class="search-row">
-        <!-- Por Código Lista -->
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-tag"></i> Código Lista</label>
-          <div class="search-input-wrap">
-            <input v-model="queryCodigo" class="search-input" placeholder="Ej: A-001"
-              @keyup.enter="buscarPorCodigo" />
-            <button class="btn-buscar" @click="buscarPorCodigo" :disabled="loadingCodigo || !queryCodigo.trim()">
-              <span v-if="loadingCodigo" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
-
-        <div class="search-sep"><span>ó</span></div>
-
-        <!-- Por Id Arriendo -->
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-hash"></i> Id Arriendo</label>
-          <div class="search-input-wrap">
-            <input v-model="queryId" class="search-input" placeholder="Ej: 42"
-              @keyup.enter="buscarPorId" />
-            <button class="btn-buscar" @click="buscarPorId" :disabled="loadingId || !queryId.trim()">
-              <span v-if="loadingId" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
+      <!-- Chips de modo -->
+      <div class="mode-chips">
+        <button
+          v-for="m in MODOS" :key="m.id"
+          class="mode-chip" :class="{ active: modoActivo === m.id }"
+          @click="setModo(m.id)"
+        >
+          <i :class="m.icono"></i>
+          <span class="chip-lbl">{{ m.label }}</span>
+        </button>
       </div>
 
-      <!-- Fila 2: Propietario / Cliente -->
-      <div class="search-row search-row-2">
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-house-door"></i> Nombre Propietario</label>
-          <div class="search-input-wrap">
-            <input v-model="queryPropietario" class="search-input" placeholder="Buscar por propietario..."
-              @keyup.enter="buscarPorPropietario" />
-            <button class="btn-buscar" @click="buscarPorPropietario" :disabled="loadingProp || !queryPropietario.trim()">
-              <span v-if="loadingProp" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
-
-        <div class="search-sep"><span>ó</span></div>
-
-        <div class="search-box">
-          <label class="search-lbl"><i class="bi bi-person"></i> Cliente Arrendatario</label>
-          <div class="search-input-wrap">
-            <input v-model="queryCliente" class="search-input" placeholder="Buscar por nombre..."
-              @keyup.enter="buscarPorCliente" />
-            <label class="toggle-activos" title="Solo activos">
-              <input type="checkbox" v-model="soloActivos" />
-              <span>Act.</span>
-            </label>
-            <button class="btn-buscar" @click="buscarPorCliente" :disabled="loadingCliente || !queryCliente.trim()">
-              <span v-if="loadingCliente" class="spin-sm"></span>
-              <span v-else><i class="bi bi-search"></i></span>
-            </button>
-          </div>
-        </div>
+      <!-- Campo único -->
+      <div class="search-input-row">
+        <input
+          v-model="queryActual"
+          class="search-input"
+          :placeholder="modoInfo.placeholder"
+          @keyup.enter="buscar"
+        />
+        <label v-if="modoActivo === 'propietario' || modoActivo === 'cliente'" class="toggle-activos" title="Solo activos">
+          <input type="checkbox" v-model="soloActivos" />
+          <span>Act.</span>
+        </label>
+        <button class="btn-buscar" @click="buscar" :disabled="loading || !queryActual.trim()">
+          <span v-if="loading" class="spin-sm"></span>
+          <span v-else><i class="bi bi-search"></i></span>
+        </button>
       </div>
 
-      <!-- Selector de resultados -->
+      <!-- Selector de resultados múltiples -->
       <div v-if="listaArriendos.length > 1" class="selector-row">
         <i class="bi bi-list-ul"></i>
         <select class="sel-arriendo" v-model="idSeleccionado" @change="cargarDetalle">
@@ -252,28 +219,43 @@ import api from '@/services/apis'
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 
-// ── Búsqueda ────────────────────────────────────────────────────────────────
-const queryCodigo     = ref('')
-const queryId         = ref('')
-const queryPropietario= ref('')
-const queryCliente    = ref('')
-const soloActivos     = ref(true)
-const loadingCodigo   = ref(false)
-const loadingId       = ref(false)
-const loadingProp     = ref(false)
-const loadingCliente  = ref(false)
-const errorMsg        = ref('')
-const listaArriendos  = ref([])
-const idSeleccionado  = ref('')
+// ── Búsqueda con chips ───────────────────────────────────────────────────────
+const MODOS = [
+  { id: 'codigo',      label: 'Código Lista', icono: 'bi-tag',        placeholder: 'Ej: A-001...' },
+  { id: 'id_arr',      label: 'Id Arriendo',  icono: 'bi-hash',       placeholder: 'Ej: 42...' },
+  { id: 'propietario', label: 'Propietario',  icono: 'bi-house-door', placeholder: 'Nombre del propietario...' },
+  { id: 'cliente',     label: 'Cliente',      icono: 'bi-person',     placeholder: 'Nombre del arrendatario...' },
+]
+const modoActivo     = ref('codigo')
+const queryActual    = ref('')
+const soloActivos    = ref(true)
+const loading        = ref(false)
+const errorMsg       = ref('')
+const listaArriendos = ref([])
+const idSeleccionado = ref('')
 
-async function _buscar(params, loadingRef) {
-  loadingRef.value = true
-  errorMsg.value = ''; listaArriendos.value = []; idSeleccionado.value = ''
+const modoInfo = computed(() => MODOS.find(m => m.id === modoActivo.value))
+
+function setModo(id) {
+  modoActivo.value = id; queryActual.value = ''
+  listaArriendos.value = []; idSeleccionado.value = ''
+  errorMsg.value = ''; detalle.value = null
+}
+
+async function buscar() {
+  const q = queryActual.value.trim()
+  if (!q) return
+  loading.value = true; errorMsg.value = ''; listaArriendos.value = []; idSeleccionado.value = ''
   detalle.value = null
+  const params = { company_id: companyId.value }
+  // Búsquedas por ID: sin filtro de estado (el backend lo ignora)
+  if      (modoActivo.value === 'codigo')      params.codigo      = q
+  else if (modoActivo.value === 'id_arr')      params.id_arr      = q
+  // Búsquedas por nombre: respetan filtro activos
+  else if (modoActivo.value === 'propietario') { params.propietario = q; params.solo_activos = soloActivos.value }
+  else                                          { params.cliente     = q; params.solo_activos = soloActivos.value }
   try {
-    const { data } = await api.get('/api/hipotecas/arriendos/buscar', {
-      params: { company_id: companyId.value, solo_activos: soloActivos.value, ...params }
-    })
+    const { data } = await api.get('/api/hipotecas/arriendos/buscar', { params })
     if (!data.arriendos.length) { errorMsg.value = 'No se encontraron arriendos.'; return }
     listaArriendos.value = data.arriendos
     if (data.arriendos.length === 1) {
@@ -281,13 +263,8 @@ async function _buscar(params, loadingRef) {
       await cargarDetalle()
     }
   } catch { errorMsg.value = 'Error al buscar.' }
-  finally { loadingRef.value = false }
+  finally { loading.value = false }
 }
-
-function buscarPorCodigo()     { if (queryCodigo.value.trim())      _buscar({ codigo: queryCodigo.value.trim() },      loadingCodigo) }
-function buscarPorId()         { if (queryId.value.trim())           _buscar({ id_arr: queryId.value.trim() },          loadingId) }
-function buscarPorPropietario(){ if (queryPropietario.value.trim())  _buscar({ propietario: queryPropietario.value.trim() }, loadingProp) }
-function buscarPorCliente()    { if (queryCliente.value.trim())      _buscar({ cliente: queryCliente.value.trim() },    loadingCliente) }
 
 // ── Detalle ─────────────────────────────────────────────────────────────────
 const detalle        = ref(null)
@@ -358,42 +335,35 @@ const fmtFecha = (d) => {
 /* ── Panel búsqueda ── */
 .search-panel {
   background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
-  padding: 18px 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px;
+  padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px;
 }
-.search-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.search-row-2 { border-top: 1px dashed #e2e8f0; padding-top: 14px; }
-.search-box { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
-.search-lbl { font-size: 12px; font-weight: 600; color: #64748b; display: flex; align-items: center; gap: 5px; }
-.search-input-wrap { display: flex; gap: 6px; }
+.mode-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.mode-chip { display: flex; align-items: center; gap: 5px; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.mode-chip:hover { background: #e2e8f0; }
+.mode-chip.active { background: #0f2448; color: #fff; border-color: #0f2448; }
+.mode-chip .bi { font-size: 12px; }
+.search-input-row { display: flex; gap: 8px; align-items: center; }
 .search-input {
   flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.2s;
+  padding: 9px 12px; font-size: 14px; outline: none; transition: border-color 0.2s;
 }
 .search-input:focus { border-color: #0f2448; }
-.search-sep { display: flex; align-items: center; padding-bottom: 2px; }
-.search-sep span {
-  font-size: 11px; font-weight: 700; color: #94a3b8; background: #f8fafc;
-  border: 1px solid #e2e8f0; border-radius: 20px; padding: 2px 8px;
-}
 .toggle-activos {
   display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700;
-  color: #065f46; background: #d1fae5; border-radius: 8px; padding: 6px 10px;
-  cursor: pointer; white-space: nowrap;
+  color: #065f46; background: #d1fae5; border-radius: 8px; padding: 7px 10px;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
 }
 .toggle-activos input { accent-color: #065f46; }
 .btn-buscar {
   background: #0f2448; color: #fff; border: none; border-radius: 8px;
-  padding: 8px 14px; cursor: pointer; font-size: 14px; transition: background 0.2s;
+  padding: 9px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; flex-shrink: 0;
 }
 .btn-buscar:hover:not(:disabled) { background: #1e3a6e; }
 .btn-buscar:disabled { opacity: 0.5; cursor: not-allowed; }
-.selector-row {
-  display: flex; align-items: center; gap: 8px;
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px;
-}
+.selector-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid #f1f5f9; padding-top: 10px; }
 .sel-arriendo {
   flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 7px 10px; font-size: 13px; outline: none; background: #fff;
+  padding: 8px 12px; font-size: 13px; outline: none; background: #fff;
 }
 .alerta-error {
   background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
@@ -500,8 +470,9 @@ const fmtFecha = (d) => {
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .search-row { flex-direction: column; gap: 12px; }
-  .search-sep { display: none; }
+  .mode-chips { gap: 4px; }
+  .chip-lbl { display: none; }
+  .mode-chip { padding: 6px 10px; }
   .info-grid { grid-template-columns: repeat(2, 1fr); }
   .det-header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .det-valor { margin-left: 0; }
