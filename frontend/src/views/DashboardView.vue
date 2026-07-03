@@ -26,6 +26,7 @@ import DashboardCompraventa   from "@/views/dashboards/DashboardCompraventa.vue"
 import DashboardHipotecas     from "@/views/dashboards/DashboardHipotecas.vue"
 import DashboardPanaderia     from "@/views/dashboards/DashboardPanaderia.vue"
 import DashboardServicecar    from "@/views/dashboards/DashboardServicecar.vue"
+import DashboardFerreterias   from "@/views/dashboards/DashboardFerreterias.vue"
 
 // business_profile_id → componente de dashboard
 const DASHBOARD_MAP = {
@@ -45,6 +46,7 @@ const DASHBOARD_MAP = {
   16: DashboardPanaderia,      // Panaderías - Pastelerías
   17: DashboardHipotecas,      // Hipotecas - Cobros
   19: DashboardCompraventa,    // Compraventas - Joyerías
+  20: DashboardFerreterias,    // Ferreterías
 }
 
 const companyStore = useCompanyStore()
