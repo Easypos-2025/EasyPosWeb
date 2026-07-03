@@ -45,7 +45,6 @@ const fechaHoy = computed(() =>
   position: relative;
   min-height: 80vh;
   padding: 0 24px 48px;
-  overflow: hidden;
 }
 
 /* ── Marca de agua ── */
