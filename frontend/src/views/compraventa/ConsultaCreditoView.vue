@@ -50,6 +50,12 @@
       </div>
     </div>
 
+    <!-- ── Banner parpadeante de Observaciones ── -->
+    <div v-if="detalle && detalle.credito.Observaciones" class="obs-banner">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>{{ detalle.credito.Observaciones }}</span>
+    </div>
+
     <!-- Loading detalle -->
     <div v-if="loadingDetalle" class="estado-loading">
       <div class="spin-lg"></div> Cargando crédito...
@@ -58,7 +64,7 @@
     <!-- ── Detalle ──────────────────────────────────────────────── -->
     <template v-if="detalle && !loadingDetalle">
 
-      <!-- Cabecera: estado + cliente -->
+      <!-- Cabecera: estado + cliente + botones impresión -->
       <div class="cliente-estado-row">
         <div class="cliente-card">
           <div class="cliente-nombre">{{ detalle.credito.cliente_nombre }}</div>
@@ -69,8 +75,20 @@
             <span v-if="detalle.credito.cliente_dir"><i class="bi bi-geo-alt"></i> {{ detalle.credito.cliente_dir }}</span>
           </div>
         </div>
-        <div class="estado-badge" :class="estadoClass">
-          <i class="bi" :class="estadoIcon"></i> {{ estadoLabel }}
+        <div class="header-right">
+          <div class="estado-badge" :class="estadoClass">
+            <i class="bi" :class="estadoIcon"></i> {{ estadoLabel }}
+          </div>
+          <div class="print-btns">
+            <button class="btn-print" @click="imprimirResumen" title="Estado Cuenta Resumen">
+              <i class="bi bi-printer"></i>
+              <span class="print-lbl">Resumen</span>
+            </button>
+            <button class="btn-print btn-print-det" @click="imprimirDetalle" title="Estado Cuenta Con Detalle Pagos">
+              <i class="bi bi-file-earmark-text"></i>
+              <span class="print-lbl">Detalle Pagos</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -125,27 +143,44 @@
       <!-- ══ TAB: Pagos ══ -->
       <div v-if="tabActivo === 'pagos'" class="tab-content">
         <div v-if="!detalle.pagos.length" class="tab-empty"><i class="bi bi-inbox"></i> Sin pagos registrados</div>
-        <div v-else class="table-wrap">
-          <div class="table-summary">
-            Total pagado: <strong>{{ fmt(totalPagado) }}</strong> · {{ detalle.pagos.length }} registros
+        <div v-else>
+          <!-- Filtro por año -->
+          <div class="pagos-toolbar">
+            <div class="year-filter">
+              <i class="bi bi-calendar3"></i>
+              <select class="sel-anio" v-model="anioSeleccionado">
+                <option value="">Todos los años</option>
+                <option v-for="a in aniosPagos" :key="a" :value="a">{{ a }}</option>
+              </select>
+            </div>
+            <div class="table-summary">
+              Total pagado: <strong>{{ fmt(totalPagadoFiltrado) }}</strong>
+              · {{ pagosFiltrados.length }} registro{{ pagosFiltrados.length !== 1 ? 's' : '' }}
+              <span v-if="anioSeleccionado" class="anio-tag">año {{ anioSeleccionado }}</span>
+            </div>
           </div>
-          <table class="det-table">
-            <thead><tr>
-              <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado hasta</th><th>Forma pago</th><th>Empleado</th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="p in detalle.pagos" :key="p.Nro_Pago">
-                <td class="td-nro">{{ p.Nro_Pago }}</td>
-                <td>{{ fmtFecha(p.Fecha) }}</td>
-                <td class="td-center">{{ p.Meses_Pagos }}</td>
-                <td class="td-money">{{ fmt(p.Valor_pago) }}</td>
-                <td class="td-money">{{ p.Descuento ? fmt(p.Descuento) : '—' }}</td>
-                <td>{{ p.Mes_Pago_Hasta || '—' }}</td>
-                <td>{{ p.forma_pago_desc }}</td>
-                <td>{{ p.empleado_nombre }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-wrap">
+            <table class="det-table">
+              <thead><tr>
+                <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado hasta</th><th>Forma pago</th><th>Empleado</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="p in pagosFiltrados" :key="p.Nro_Pago">
+                  <td class="td-nro">{{ p.Nro_Pago }}</td>
+                  <td>{{ fmtFecha(p.Fecha) }}</td>
+                  <td class="td-center">{{ p.Meses_Pagos }}</td>
+                  <td class="td-money">{{ fmt(p.Valor_pago) }}</td>
+                  <td class="td-money">{{ p.Descuento ? fmt(p.Descuento) : '—' }}</td>
+                  <td>{{ p.Mes_Pago_Hasta || '—' }}</td>
+                  <td>{{ p.forma_pago_desc }}</td>
+                  <td>{{ p.empleado_nombre }}</td>
+                </tr>
+                <tr v-if="!pagosFiltrados.length">
+                  <td colspan="8" class="td-empty-year">Sin pagos en el año {{ anioSeleccionado }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -338,36 +373,38 @@ async function buscar() {
 }
 
 // ── Detalle ─────────────────────────────────────────────────────────────────
-const detalle       = ref(null)
-const loadingDetalle= ref(false)
-const tabActivo     = ref('general')
-const subTab        = ref('capital')
+const detalle        = ref(null)
+const loadingDetalle = ref(false)
+const tabActivo      = ref('general')
+const subTab         = ref('capital')
+const anioSeleccionado = ref('')
 
 const TABS = [
-  { id: 'general',   label: 'Info General',     icono: 'bi-file-earmark-text', badge: false },
-  { id: 'pagos',     label: 'Pagos',             icono: 'bi-cash-coin',         badge: true  },
-  { id: 'abonos',    label: 'Abonos',            icono: 'bi-piggy-bank',        badge: true  },
-  { id: 'aumentos',  label: 'Aumento Capital',   icono: 'bi-graph-up-arrow',    badge: true  },
-  { id: 'novedades', label: 'Novedades',         icono: 'bi-chat-left-text',    badge: true  },
-  { id: 'deudores',  label: 'Codeudores',        icono: 'bi-people',            badge: true  },
-  { id: 'escritura', label: 'Escritura',         icono: 'bi-file-earmark-richtext', badge: false },
+  { id: 'general',   label: 'Info General',     icono: 'bi-file-earmark-text',    badge: false },
+  { id: 'pagos',     label: 'Pagos',             icono: 'bi-cash-coin',            badge: true  },
+  { id: 'abonos',    label: 'Abonos',            icono: 'bi-piggy-bank',           badge: true  },
+  { id: 'aumentos',  label: 'Aumento Capital',   icono: 'bi-graph-up-arrow',       badge: true  },
+  { id: 'novedades', label: 'Novedades',         icono: 'bi-chat-left-text',       badge: true  },
+  { id: 'deudores',  label: 'Codeudores',        icono: 'bi-people',               badge: true  },
+  { id: 'escritura', label: 'Escritura',         icono: 'bi-file-earmark-richtext',badge: false },
 ]
 
 function contadorTab(id) {
   if (!detalle.value) return 0
   const map = {
-    pagos: detalle.value.pagos?.length,
-    abonos: (detalle.value.abonos_capital?.length ?? 0) + (detalle.value.abonos_parciales?.length ?? 0),
-    aumentos: detalle.value.aumentos_capital?.length,
+    pagos:     detalle.value.pagos?.length,
+    abonos:    (detalle.value.abonos_capital?.length ?? 0) + (detalle.value.abonos_parciales?.length ?? 0),
+    aumentos:  detalle.value.aumentos_capital?.length,
     novedades: detalle.value.novedades?.length,
-    deudores: detalle.value.otros_deudores?.length,
+    deudores:  detalle.value.otros_deudores?.length,
   }
   return map[id] ?? 0
 }
 
 async function cargarDetalle() {
   if (!nroSeleccionado.value) return
-  loadingDetalle.value = true; errorMsg.value = ''; tabActivo.value = 'general'; subTab.value = 'capital'
+  loadingDetalle.value = true; errorMsg.value = ''
+  tabActivo.value = 'general'; subTab.value = 'capital'; anioSeleccionado.value = ''
   try {
     const { data } = await api.get(`/api/hipotecas/credito/${encodeURIComponent(nroSeleccionado.value)}`, {
       params: { company_id: companyId.value }
@@ -380,6 +417,26 @@ async function cargarDetalle() {
     loadingDetalle.value = false
   }
 }
+
+// ── Filtro años en Pagos ─────────────────────────────────────────────────────
+const aniosPagos = computed(() => {
+  if (!detalle.value?.pagos.length) return []
+  const set = new Set(
+    detalle.value.pagos
+      .map(p => p.Fecha ? new Date(p.Fecha + 'T00:00:00').getFullYear() : null)
+      .filter(Boolean)
+  )
+  return [...set].sort((a, b) => b - a)
+})
+
+const pagosFiltrados = computed(() => {
+  if (!detalle.value?.pagos.length) return []
+  if (!anioSeleccionado.value) return detalle.value.pagos
+  return detalle.value.pagos.filter(p => {
+    if (!p.Fecha) return false
+    return new Date(p.Fecha + 'T00:00:00').getFullYear() == anioSeleccionado.value
+  })
+})
 
 // ── Estado ──────────────────────────────────────────────────────────────────
 const estadoClass = computed(() => {
@@ -407,9 +464,15 @@ const estadoIcon = computed(() => {
 })
 
 // ── Totales ─────────────────────────────────────────────────────────────────
-const totalPagado       = computed(() => detalle.value?.pagos.reduce((s, p) => s + (p.Valor_pago || 0), 0) ?? 0)
-const totalAbonosCapital= computed(() => detalle.value?.abonos_capital.reduce((s, a) => s + (a.Valor_Abono || 0), 0) ?? 0)
-const totalAumentos     = computed(() => detalle.value?.aumentos_capital.reduce((s, a) => s + (a.Valor_Abono || 0), 0) ?? 0)
+const totalPagadoFiltrado = computed(() =>
+  pagosFiltrados.value.reduce((s, p) => s + (p.Valor_pago || 0), 0)
+)
+const totalAbonosCapital = computed(() =>
+  detalle.value?.abonos_capital.reduce((s, a) => s + (a.Valor_Abono || 0), 0) ?? 0
+)
+const totalAumentos = computed(() =>
+  detalle.value?.aumentos_capital.reduce((s, a) => s + (a.Valor_Abono || 0), 0) ?? 0
+)
 
 // ── Formateo ─────────────────────────────────────────────────────────────────
 function fmt(v) {
@@ -421,13 +484,156 @@ function fmtFecha(v) {
   const d = new Date(v + 'T00:00:00')
   return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
 }
+
+// ── Impresión ────────────────────────────────────────────────────────────────
+function buildPrintBase() {
+  const c   = detalle.value.credito
+  const hoy = new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date())
+  return { c, hoy }
+}
+
+function printStyles() {
+  return `
+    body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:20px}
+    h1{font-size:16px;margin:0 0 4px;text-align:center}
+    h2{font-size:13px;margin:0 0 12px;text-align:center;color:#444}
+    .fecha{text-align:right;font-size:11px;color:#666;margin-bottom:12px}
+    .seccion{font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;
+             color:#0f2448;border-bottom:2px solid #0f2448;padding-bottom:2px;margin:14px 0 8px}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px}
+    th{background:#0f2448;color:#fff;padding:6px 8px;font-size:11px;text-align:left}
+    td{padding:5px 8px;border-bottom:1px solid #e5e5e5;font-size:11px}
+    tr:nth-child(even) td{background:#f9f9f9}
+    .kv-table td:first-child{width:40%;font-weight:600;color:#555}
+    .kv-table td:last-child{color:#111}
+    .total{font-size:12px;font-weight:bold;text-align:right;margin-top:6px}
+    .obs{background:#fff8e1;border-left:4px solid #f59e0b;padding:8px 12px;margin:10px 0;font-size:12px}
+    @media print{body{margin:0}}
+  `
+}
+
+function imprimirResumen() {
+  if (!detalle.value) return
+  const { c, hoy } = buildPrintBase()
+  const empresa = companyStore.selectedCompany?.name || ''
+
+  const html = `<!DOCTYPE html><html><head>
+    <meta charset="utf-8"><title>Estado Cuenta Resumen - ${c.Nro_Credito}</title>
+    <style>${printStyles()}</style></head><body>
+    <h1>${empresa}</h1>
+    <h2>ESTADO DE CUENTA — RESUMEN</h2>
+    <div class="fecha">Generado: ${hoy}</div>
+    ${c.Observaciones ? `<div class="obs"><strong>Nota:</strong> ${c.Observaciones}</div>` : ''}
+    <div class="seccion">Datos del Cliente</div>
+    <table class="kv-table"><tbody>
+      <tr><td>Nombre</td><td>${c.cliente_nombre}</td></tr>
+      <tr><td>Cédula</td><td>${c.Cliente}</td></tr>
+      ${c.cliente_tel ? `<tr><td>Teléfono</td><td>${c.cliente_tel}</td></tr>` : ''}
+      ${c.cliente_mail ? `<tr><td>Email</td><td>${c.cliente_mail}</td></tr>` : ''}
+      ${c.cliente_dir ? `<tr><td>Dirección</td><td>${c.cliente_dir}</td></tr>` : ''}
+    </tbody></table>
+    <div class="seccion">Datos del Crédito</div>
+    <table class="kv-table"><tbody>
+      <tr><td>Nro. Crédito</td><td><strong>${c.Nro_Credito}</strong></td></tr>
+      <tr><td>Fecha Inicio</td><td>${fmtFecha(c.Fecha)}</td></tr>
+      <tr><td>Valor Inicial</td><td>${fmt(c.Valor)}</td></tr>
+      <tr><td>Valor Actual</td><td><strong>${fmt(c.Valor_Actual)}</strong></td></tr>
+      <tr><td>% Interés Casa</td><td>${c.Interes}%</td></tr>
+      <tr><td>% Interés Socio</td><td>${c.Interes_Socio}%</td></tr>
+      <tr><td>Cuota / Mes</td><td>${fmt(c.cuota_mes)}</td></tr>
+      <tr><td>Día de Vencimiento</td><td>${c.Dia_Vence}</td></tr>
+    </tbody></table>
+    <div class="seccion">Estado Financiero</div>
+    <table class="kv-table"><tbody>
+      <tr><td>Pago Hasta</td><td>${fmtFecha(c.Pago_Hasta)}</td></tr>
+      <tr><td>Meses en Mora</td><td><strong>${c.meses_mora}</strong></td></tr>
+      <tr><td>Valor Deuda</td><td><strong>${fmt(c.valor_deuda)}</strong></td></tr>
+      <tr><td>Estado</td><td>${estadoLabel.value}</td></tr>
+      ${c.Nro_Juridico ? `<tr><td>Ref. Jurídica</td><td>${c.Nro_Juridico}</td></tr>` : ''}
+      ${c.Ref_Adicional ? `<tr><td>Ref. Adicional</td><td>${c.Ref_Adicional}</td></tr>` : ''}
+    </tbody></table>
+    <div class="seccion">Totales</div>
+    <table class="kv-table"><tbody>
+      <tr><td>Total Intereses Pagados</td><td>${fmt(detalle.value.pagos.reduce((s,p) => s+(p.Valor_pago||0),0))}</td></tr>
+      <tr><td>Total Abonos a Capital</td><td>${fmt(totalAbonosCapital.value)}</td></tr>
+      <tr><td>Total Aumentos Capital</td><td>${fmt(totalAumentos.value)}</td></tr>
+    </tbody></table>
+  </body></html>`
+
+  const w = window.open('', '_blank', 'width=800,height=600')
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => w.print(), 400)
+}
+
+function imprimirDetalle() {
+  if (!detalle.value) return
+  const { c, hoy } = buildPrintBase()
+  const empresa = companyStore.selectedCompany?.name || ''
+  const pagos = pagosFiltrados.value
+  const periodoLabel = anioSeleccionado.value ? `Año ${anioSeleccionado.value}` : 'Todos los años'
+  const totalPagos = pagos.reduce((s, p) => s + (p.Valor_pago || 0), 0)
+
+  const filasPagos = pagos.map(p => `
+    <tr>
+      <td>${p.Nro_Pago}</td>
+      <td>${fmtFecha(p.Fecha)}</td>
+      <td style="text-align:center">${p.Meses_Pagos}</td>
+      <td>${fmt(p.Valor_pago)}</td>
+      <td>${p.Descuento ? fmt(p.Descuento) : '—'}</td>
+      <td>${p.Mes_Pago_Hasta || '—'}</td>
+      <td>${p.forma_pago_desc}</td>
+    </tr>`).join('')
+
+  const html = `<!DOCTYPE html><html><head>
+    <meta charset="utf-8"><title>Estado Cuenta Detalle - ${c.Nro_Credito}</title>
+    <style>${printStyles()}</style></head><body>
+    <h1>${empresa}</h1>
+    <h2>ESTADO DE CUENTA CON DETALLE DE PAGOS</h2>
+    <div class="fecha">Generado: ${hoy}</div>
+    ${c.Observaciones ? `<div class="obs"><strong>Nota:</strong> ${c.Observaciones}</div>` : ''}
+    <div class="seccion">Datos del Cliente</div>
+    <table class="kv-table"><tbody>
+      <tr><td>Nombre</td><td>${c.cliente_nombre}</td></tr>
+      <tr><td>Cédula</td><td>${c.Cliente}</td></tr>
+      ${c.cliente_tel ? `<tr><td>Teléfono</td><td>${c.cliente_tel}</td></tr>` : ''}
+    </tbody></table>
+    <div class="seccion">Estado del Crédito</div>
+    <table class="kv-table"><tbody>
+      <tr><td>Nro. Crédito</td><td><strong>${c.Nro_Credito}</strong></td></tr>
+      <tr><td>Valor Actual</td><td><strong>${fmt(c.Valor_Actual)}</strong></td></tr>
+      <tr><td>Cuota / Mes</td><td>${fmt(c.cuota_mes)}</td></tr>
+      <tr><td>Pago Hasta</td><td>${fmtFecha(c.Pago_Hasta)}</td></tr>
+      <tr><td>Meses en Mora</td><td><strong>${c.meses_mora}</strong></td></tr>
+      <tr><td>Valor Deuda</td><td><strong>${fmt(c.valor_deuda)}</strong></td></tr>
+      <tr><td>Estado</td><td>${estadoLabel.value}</td></tr>
+    </tbody></table>
+    <div class="seccion">Pagos Realizados — ${periodoLabel}</div>
+    ${pagos.length ? `
+    <table>
+      <thead><tr>
+        <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado Hasta</th><th>Forma Pago</th>
+      </tr></thead>
+      <tbody>${filasPagos}</tbody>
+    </table>
+    <div class="total">Total pagado (${periodoLabel}): ${fmt(totalPagos)} — ${pagos.length} registros</div>
+    ` : '<p style="color:#888;font-size:11px">Sin pagos en el período seleccionado.</p>'}
+  </body></html>`
+
+  const w = window.open('', '_blank', 'width=900,height=700')
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => w.print(), 400)
+}
 </script>
 
 <style scoped>
 .cc-wrap { padding: 0 20px 48px; max-width: 1200px; margin: 0 auto; }
 
 /* ── Search panel ── */
-.search-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.search-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; }
 .mode-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .mode-chip { display: flex; align-items: center; gap: 5px; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .mode-chip:hover { background: #e2e8f0; }
@@ -446,6 +652,20 @@ function fmtFecha(v) {
 .sel-credito { flex: 1; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; }
 .alerta-error { background: #fee2e2; color: #991b1b; border-radius: 8px; padding: 10px 14px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 
+/* ── Banner Observaciones parpadeante ── */
+.obs-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: #fef3c7; border: 1.5px solid #f59e0b; border-radius: 10px;
+  padding: 10px 16px; margin-bottom: 12px;
+  font-size: 13px; font-weight: 600; color: #92400e;
+  animation: parpadeo 1.6s ease-in-out infinite;
+}
+.obs-banner .bi { font-size: 16px; flex-shrink: 0; color: #d97706; }
+@keyframes parpadeo {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
 /* ── Loading ── */
 .estado-loading { display: flex; align-items: center; gap: 12px; justify-content: center; padding: 40px; color: #64748b; font-size: 14px; }
 .spin-sm { width: 16px; height: 16px; border: 2px solid #e2e8f0; border-top-color: #0f2448; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
@@ -454,17 +674,30 @@ function fmtFecha(v) {
 
 /* ── Cliente + estado ── */
 .cliente-estado-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.cliente-card { flex: 1; }
+.cliente-card { flex: 1; min-width: 0; }
 .cliente-nombre { font-size: 20px; font-weight: 800; color: #0f2448; margin-bottom: 6px; }
 .cliente-datos { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; color: #64748b; }
 .cliente-datos span { display: flex; align-items: center; gap: 5px; }
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
 .estado-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; border-radius: 20px; padding: 6px 16px; white-space: nowrap; }
 .estado-vigente   { background: #d1fae5; color: #065f46; }
 .estado-cancelado { background: #dbeafe; color: #1d4ed8; }
 .estado-anulado, .estado-inactivo { background: #fee2e2; color: #991b1b; }
 
+/* ── Botones impresión ── */
+.print-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.btn-print {
+  display: flex; align-items: center; gap: 5px;
+  background: #fff; border: 1.5px solid #0f2448; color: #0f2448;
+  border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn-print:hover { background: #0f2448; color: #fff; }
+.btn-print-det { border-color: #065f46; color: #065f46; }
+.btn-print-det:hover { background: #065f46; color: #fff; }
+
 /* ── Tabs ── */
-.tabs-bar { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 0; scrollbar-width: none; }
+.tabs-bar { display: flex; gap: 4px; overflow-x: auto; border-bottom: 2px solid #e2e8f0; scrollbar-width: none; }
 .tabs-bar::-webkit-scrollbar { display: none; }
 .tab-btn { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #64748b; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
 .tab-btn:hover { color: #0f2448; }
@@ -475,6 +708,15 @@ function fmtFecha(v) {
 .tab-content { background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 20px; }
 .tab-empty { display: flex; align-items: center; gap: 10px; color: #94a3b8; font-size: 14px; padding: 30px; justify-content: center; }
 .tab-empty .bi { font-size: 22px; }
+
+/* ── Filtro año en Pagos ── */
+.pagos-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.year-filter { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64748b; }
+.year-filter .bi { color: #0f2448; }
+.sel-anio { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; color: #0f2448; outline: none; cursor: pointer; }
+.sel-anio:focus { border-color: #0f2448; }
+.anio-tag { background: #dbeafe; color: #1d4ed8; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 2px 8px; margin-left: 6px; }
+.td-empty-year { text-align: center; color: #94a3b8; padding: 24px; font-size: 13px; }
 
 /* ── Info grid ── */
 .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
@@ -497,7 +739,7 @@ function fmtFecha(v) {
 
 /* ── Tables ── */
 .table-wrap { overflow-x: auto; }
-.table-summary { font-size: 12.5px; color: #64748b; margin-bottom: 10px; padding: 8px 12px; background: #f8fafc; border-radius: 8px; }
+.table-summary { font-size: 12.5px; color: #64748b; padding: 8px 12px; background: #f8fafc; border-radius: 8px; }
 .det-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 520px; }
 .det-table th { background: #0f2448; color: #fff; padding: 9px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; text-align: left; }
 .det-table td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: top; }
@@ -532,6 +774,9 @@ function fmtFecha(v) {
   .info-grid { grid-template-columns: 1fr; gap: 0; }
   .cliente-nombre { font-size: 17px; }
   .tab-btn span:first-of-type { display: none; }
+  .header-right { align-items: flex-start; }
+  .print-lbl { display: none; }
+  .pagos-toolbar { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 
 @media (max-width: 576px) {
@@ -539,5 +784,7 @@ function fmtFecha(v) {
   .tab-btn { padding: 10px 10px; font-size: 12px; gap: 4px; }
   .tab-content { padding: 14px 10px; }
   .cliente-estado-row { flex-direction: column; }
+  .header-right { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+  .print-btns { flex-direction: row; }
 }
 </style>
