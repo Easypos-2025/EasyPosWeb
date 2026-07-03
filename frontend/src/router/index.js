@@ -698,6 +698,15 @@ const routes = [
         meta: { title: "Consulta Contrato" }
       },
 
+      // ── Hipotecas / Cobros ────────────────────────────────────────────────
+      {
+        path: "/cobros/consulta-credito",
+        name: "ConsultaCreditoView",
+        component: () => import("@/views/compraventa/ConsultaCreditoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Consulta Crédito" }
+      },
+
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",
