@@ -422,12 +422,11 @@ async def buscar_arriendos(
         elif codigo.strip():
             sql = make_base(False) + " AND p.Codigo_Lista LIKE :q ORDER BY a.Id_Arriendo LIMIT 50"
             params = {"q": f"%{codigo.strip()}%"}
-        # Búsquedas por nombre: respetan el filtro solo_activos
         elif propietario.strip():
-            sql = make_base(True) + " AND p.NombrePropietario LIKE :q ORDER BY p.NombrePropietario LIMIT 50"
+            sql = make_base(False) + " AND p.NombreCorto LIKE :q ORDER BY p.NombreCorto LIMIT 50"
             params = {"q": f"%{propietario.strip()}%"}
         else:
-            sql = make_base(True) + " AND ca.nombres LIKE :q ORDER BY ca.nombres LIMIT 80"
+            sql = make_base(False) + " AND ca.nombres LIKE :q ORDER BY ca.nombres LIMIT 80"
             params = {"q": f"%{cliente.strip()}%"}
 
         rows = await session.execute(text(sql), params)

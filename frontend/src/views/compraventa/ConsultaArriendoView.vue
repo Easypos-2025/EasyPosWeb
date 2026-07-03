@@ -24,10 +24,6 @@
           :placeholder="modoInfo.placeholder"
           @keyup.enter="buscar"
         />
-        <label v-if="modoActivo === 'propietario' || modoActivo === 'cliente'" class="toggle-activos" title="Solo activos">
-          <input type="checkbox" v-model="soloActivos" />
-          <span>Act.</span>
-        </label>
         <button class="btn-buscar" @click="buscar" :disabled="loading || !queryActual.trim()">
           <span v-if="loading" class="spin-sm"></span>
           <span v-else><i class="bi bi-search"></i></span>
@@ -223,8 +219,8 @@ const companyId    = computed(() => companyStore.selectedCompany?.id)
 const MODOS = [
   { id: 'codigo',      label: 'Código Lista', icono: 'bi-tag',        placeholder: 'Ej: A-001...' },
   { id: 'id_arr',      label: 'Id Arriendo',  icono: 'bi-hash',       placeholder: 'Ej: 42...' },
-  { id: 'propietario', label: 'Propietario',  icono: 'bi-house-door', placeholder: 'Nombre del propietario...' },
-  { id: 'cliente',     label: 'Cliente',      icono: 'bi-person',     placeholder: 'Nombre del arrendatario...' },
+  { id: 'propietario', label: 'Propiedad',    icono: 'bi-house-door', placeholder: 'Nombre corto de la propiedad...' },
+  { id: 'cliente',     label: 'Arrendatario', icono: 'bi-person',     placeholder: 'Nombre del arrendatario...' },
 ]
 const modoActivo     = ref('codigo')
 const queryActual    = ref('')
