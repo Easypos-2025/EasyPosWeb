@@ -208,14 +208,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 
 const companyStore = useCompanyStore()
 
 const empresa = computed(() => companyStore.selectedCompany?.name ?? '')
-const companyId = computed(() => companyStore.selectedCompany?.id_company)
+const companyId = computed(() => companyStore.selectedCompany?.id)
 
 const fechaHoy = computed(() =>
   new Intl.DateTimeFormat('es-CO', {
@@ -247,6 +247,7 @@ async function cargarKpi() {
 function recargarKpi() { cargarKpi() }
 
 onMounted(cargarKpi)
+watch(companyId, (val) => { if (val) cargarKpi() })
 
 // ── Modal ──────────────────────────────────────────────────────────────────
 const modal = ref({

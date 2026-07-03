@@ -56,8 +56,9 @@ async def get_kpi(
 
         r3 = await session.execute(text("""
             SELECT COUNT(*) AS total FROM creditos
-            WHERE Anulado  = 0
-              AND Inactivo = 0
+            WHERE Anulado   = 0
+              AND Inactivo  = 0
+              AND Cancelado = 0
               AND TIMESTAMPDIFF(MONTH, Pago_Hasta, CURDATE()) >= :meses
         """), {"meses": meses})
         creditos_atr = r3.scalar() or 0
@@ -175,8 +176,9 @@ async def detalle_creditos_atrasados(
             LEFT JOIN clientes cl ON cl.cedula = c.Cliente
             LEFT JOIN empleados e ON e.cod_empleado = c.Acreedor
             LEFT JOIN creditos_adicional ca ON ca.Nro_Credito = c.Nro_Credito
-            WHERE c.Anulado  = 0
-              AND c.Inactivo = 0
+            WHERE c.Anulado   = 0
+              AND c.Inactivo  = 0
+              AND c.Cancelado = 0
               AND TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) >= :meses
             ORDER BY meses_deuda DESC
         """), {"meses": meses})
