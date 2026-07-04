@@ -773,6 +773,7 @@ async function selectCompanyMobile(company) {
   companyDropOpen.value = false
   await companyStore.setCompany(company)
   await loadPlan(company.id)
+  router.push('/dashboard')
 }
 
 // ── Heartbeat (cada 3 min) ──────────────────────────
@@ -793,6 +794,7 @@ async function onCompanyChange(e) {
   if (company) {
     await companyStore.setCompany(company)
     await loadPlan(company.id)
+    router.push('/dashboard')
   }
 }
 
