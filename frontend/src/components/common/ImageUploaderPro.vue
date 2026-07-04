@@ -229,16 +229,20 @@ function removePhoto() {
 /* ── Overlay ────────────────────────────────────────────────────────────────── */
 .iup-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.72);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   z-index: 9999; padding: 16px;
+  overflow-y: auto;
 }
 
 /* ── Modal ──────────────────────────────────────────────────────────────────── */
 .iup-modal {
   background: #1e293b; border-radius: 16px; overflow: hidden;
-  width: 100%; max-width: 680px; max-height: 92vh;
+  width: 100%; max-width: 680px;
+  max-height: 92vh;
+  max-height: calc(100svh - 32px);
   display: flex; flex-direction: column;
   box-shadow: 0 24px 80px rgba(0,0,0,.6);
+  margin: auto;
 }
 
 .iup-modal__header {
@@ -313,5 +317,6 @@ function removePhoto() {
   .iup-modal__footer { flex-wrap: wrap; }
   .iup-ratio-btns { flex-wrap: wrap; }
   .iup-footer-spacer { display: none; }
+  .iup-modal__area { min-height: 180px; max-height: 40svh; max-height: 40vh; }
 }
 </style>

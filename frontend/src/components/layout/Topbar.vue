@@ -1449,12 +1449,14 @@ onUnmounted(() => {
   .plan-exp      { display: none; }
 }
 
-/* <768px: ocultar botón EasyPosWeb para evitar solapamiento */
+/* <768px: mobile pequeño — ocultar nombre empresa, dejar solo icono selector */
 @media (max-width: 767px) {
-  .btn-website   { display: none; }
-  .topbar-right  { gap: 3px; }
-  .btn-support   { padding: 4px 7px; }
-  .btn-user-drop { padding: 4px 7px; }
+  .btn-website        { display: none; }
+  .topbar-right       { gap: 3px; }
+  .btn-support        { padding: 4px 7px; }
+  .btn-user-drop      { padding: 4px 7px; }
+  .brand-company-name { display: none; }
+  .brand-block        { flex-direction: row; align-items: center; gap: 4px; }
 }
 
 /* ── NOTIFICACIONES DE TAREA - panel inline ── */

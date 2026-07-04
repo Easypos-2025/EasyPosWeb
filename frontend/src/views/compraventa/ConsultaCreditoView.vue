@@ -72,6 +72,14 @@
           <div class="estado-badge" :class="estadoClass">
             <i class="bi" :class="estadoIcon"></i> {{ estadoLabel }}
           </div>
+          <div class="action-btns">
+            <button class="btn-action btn-fotos" @click="abrirCargaFotos" title="Cargar fotos de la propiedad">
+              <i class="bi bi-camera-fill"></i><span class="action-lbl"> Fotos</span>
+            </button>
+            <button class="btn-action btn-docs" @click="abrirCargaDocs" title="Cargar documentos del crédito">
+              <i class="bi bi-file-earmark-arrow-up-fill"></i><span class="action-lbl"> Documentos</span>
+            </button>
+          </div>
           <div class="print-btns">
             <button class="btn-print" @click="imprimirResumen" title="Estado Cuenta Resumen">
               <i class="bi bi-printer"></i><span class="print-lbl"> Resumen</span>
@@ -328,16 +336,36 @@
       </div>
 
     </template>
+
+    <!-- Modales de adjuntos (Teleport to body — fuera del v-if) -->
+    <MultiAttachUploader
+      v-model:open="fotosOpen"
+      :nro-credito="detalle?.credito.Nro_Credito"
+      :company-id="companyId"
+      tipo="foto"
+    />
+    <MultiAttachUploader
+      v-model:open="docsOpen"
+      :nro-credito="detalle?.credito.Nro_Credito"
+      :company-id="companyId"
+      tipo="documento"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
+import MultiAttachUploader from '@/components/common/MultiAttachUploader.vue'
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
+
+// Modales de adjuntos
+const fotosOpen = ref(false)
+const docsOpen  = ref(false)
 
 // ── Búsqueda ─────────────────────────────────────────────────────────────────
 const MODOS = [
@@ -391,6 +419,17 @@ const tabActivo        = ref('general')
 const subTab           = ref('capital')
 const anioSeleccionado = ref('')
 
+// Al cambiar de empresa, limpiar estado para evitar 500 en hipotecas endpoint
+watch(companyId, () => {
+  listaCreditos.value   = []
+  detalle.value         = null
+  nroSeleccionado.value = ''
+  queryActual.value     = ''
+  errorMsg.value        = ''
+  fotosOpen.value       = false
+  docsOpen.value        = false
+})
+
 const TABS = [
   { id: 'general',   label: 'Info General',  icono: 'bi-file-earmark-text',    badge: false },
   { id: 'cliente',   label: 'Info Cliente',  icono: 'bi-person-vcard',         badge: false },
@@ -417,7 +456,8 @@ function contadorTab(id) {
 async function cargarDetalle() {
   if (!nroSeleccionado.value) return
   loadingDetalle.value = true; errorMsg.value = ''
-  tabActivo.value = 'general'; subTab.value = 'capital'; anioSeleccionado.value = ''
+  tabActivo.value = 'general'; subTab.value = 'capital'
+  anioSeleccionado.value = new Date().getFullYear()
   try {
     const { data } = await api.get(`/api/hipotecas/credito/${encodeURIComponent(nroSeleccionado.value)}`, {
       params: { company_id: companyId.value }
@@ -533,6 +573,9 @@ function fmtFecha(v) {
   const d = new Date(v + 'T00:00:00')
   return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
 }
+
+function abrirCargaFotos() { fotosOpen.value = true }
+function abrirCargaDocs()  { docsOpen.value  = true }
 
 // ── Impresión ─────────────────────────────────────────────────────────────────
 function printStyles() {
@@ -696,6 +739,12 @@ function imprimirDetalle() {
 .estado-vigente   { background: #d1fae5; color: #065f46; }
 .estado-cancelado { background: #dbeafe; color: #1d4ed8; }
 .estado-anulado, .estado-inactivo { background: #fee2e2; color: #991b1b; }
+.action-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.btn-action { display: flex; align-items: center; gap: 5px; border: 1.5px solid; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.btn-fotos { background: #fff; border-color: #7c3aed; color: #7c3aed; }
+.btn-fotos:hover { background: #7c3aed; color: #fff; }
+.btn-docs  { background: #fff; border-color: #0369a1; color: #0369a1; }
+.btn-docs:hover  { background: #0369a1; color: #fff; }
 .print-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .btn-print { display: flex; align-items: center; gap: 5px; background: #fff; border: 1.5px solid #0f2448; color: #0f2448; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .btn-print:hover { background: #0f2448; color: #fff; }
@@ -703,11 +752,11 @@ function imprimirDetalle() {
 .btn-print-det:hover { background: #065f46; color: #fff; }
 
 /* ── Tabs ── */
-.tabs-bar { display: flex; gap: 4px; overflow-x: auto; border-bottom: 2px solid #e2e8f0; scrollbar-width: none; }
+.tabs-bar { display: flex; gap: 2px; overflow-x: auto; border-bottom: 2px solid #e2e8f0; scrollbar-width: none; padding: 0 4px; }
 .tabs-bar::-webkit-scrollbar { display: none; }
-.tab-btn { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #64748b; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
-.tab-btn:hover { color: #0f2448; }
-.tab-btn.active { color: #0f2448; border-bottom-color: #0f2448; }
+.tab-btn { display: flex; align-items: center; gap: 6px; padding: 9px 14px; border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #64748b; white-space: nowrap; border-bottom: 3px solid transparent; margin-bottom: -2px; border-radius: 8px 8px 0 0; transition: all 0.18s; }
+.tab-btn:hover { color: #0f2448; background: #f1f5f9; }
+.tab-btn.active { color: #0f2448; border-bottom-color: #0f2448; background: #e8eef7; font-weight: 700; }
 .tab-badge { background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 6px; }
 
 /* ── Tab content ── */
@@ -779,6 +828,7 @@ function imprimirDetalle() {
   .tab-btn span:first-of-type { display: none; }
   .header-right { align-items: flex-start; }
   .print-lbl { display: none; }
+  .action-lbl { display: none; }
   .banners-row { flex-direction: column; }
   .pagos-toolbar { flex-direction: column; align-items: flex-start; }
 }

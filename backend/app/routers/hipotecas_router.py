@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from app.database import get_db, get_ext_session
 from app.models.company_model import Company
+from app.models.credit_attachment_model import CreditAttachment
 from app.auth.dependencies import get_current_user
+from app.utils.storage import upload_file, delete_file
 
 router = APIRouter(prefix="/api/hipotecas", tags=["hipotecas"])
 
@@ -498,3 +502,90 @@ async def detalle_arriendo(
         "arriendo": arriendo,
         "pagos":    pagos,
     }
+
+
+# ── Adjuntos de crédito (fotos / documentos) ─────────────────────────────────
+
+@router.get("/credito/{nro}/adjuntos")
+async def listar_adjuntos(
+    nro:        str          = None,
+    company_id: int          = Query(...),
+    tipo:       str          = Query("foto"),
+    db:         AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    q = await db.execute(
+        select(CreditAttachment)
+        .where(CreditAttachment.company_id  == company_id)
+        .where(CreditAttachment.nro_credito == nro)
+        .where(CreditAttachment.tipo        == tipo)
+        .order_by(CreditAttachment.created_at.asc())
+    )
+    items = q.scalars().all()
+    return [
+        {
+            "id":         a.id,
+            "filename":   a.filename,
+            "url":        a.url,
+            "file_size":  a.file_size,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in items
+    ]
+
+
+@router.post("/credito/{nro}/adjuntos")
+async def subir_adjunto(
+    nro:        str          = None,
+    company_id: int          = Form(...),
+    tipo:       str          = Form("foto"),
+    file:       UploadFile   = File(...),
+    db:         AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    content = await file.read()
+    size    = len(content)
+    ext     = os.path.splitext(file.filename or "")[-1].lower() or ".jpg"
+    path    = f"creditos/{company_id}/{nro}/{tipo}/{uuid.uuid4().hex}{ext}"
+    url     = await upload_file(content, path)
+
+    adj = CreditAttachment(
+        company_id  = company_id,
+        nro_credito = nro,
+        tipo        = tipo,
+        filename    = file.filename or "archivo",
+        url         = url,
+        file_size   = size,
+    )
+    db.add(adj)
+    await db.commit()
+    await db.refresh(adj)
+    return {
+        "id":        adj.id,
+        "filename":  adj.filename,
+        "url":       adj.url,
+        "file_size": adj.file_size,
+    }
+
+
+@router.delete("/credito/adjunto/{adj_id}")
+async def eliminar_adjunto(
+    adj_id:     int,
+    company_id: int          = Query(...),
+    db:         AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    q   = await db.execute(
+        select(CreditAttachment)
+        .where(CreditAttachment.id         == adj_id)
+        .where(CreditAttachment.company_id == company_id)
+    )
+    adj = q.scalar_one_or_none()
+    if not adj:
+        raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+
+    url = adj.url
+    await db.delete(adj)
+    await db.commit()
+    await delete_file(url)
+    return {"ok": True}

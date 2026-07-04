@@ -1440,6 +1440,25 @@ async def _init_db_data():
         except Exception:
             await db.rollback()
 
+        # ── HIPOTECAS: adjuntos de crédito ───────────────────────────────────
+        try:
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS credit_attachments (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    company_id  INT NOT NULL,
+                    nro_credito VARCHAR(100) NOT NULL,
+                    tipo        VARCHAR(20) NOT NULL DEFAULT 'foto',
+                    filename    VARCHAR(255) NOT NULL,
+                    url         VARCHAR(500) NOT NULL,
+                    file_size   INT NOT NULL DEFAULT 0,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_ca_company_nro (company_id, nro_credito, tipo)
+                )
+            """))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
 
 # ===============================
 # RATE LIMITER (in-memory, single server)
