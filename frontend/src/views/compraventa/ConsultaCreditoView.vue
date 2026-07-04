@@ -463,6 +463,19 @@ async function cargarDetalle() {
       params: { company_id: companyId.value }
     })
     detalle.value = data
+    // Si el año actual no tiene pagos, seleccionar el año más reciente con registros
+    const currentYear = new Date().getFullYear()
+    const pagosCurrentYear = (data.pagos || []).filter(p =>
+      p.Fecha && new Date(p.Fecha + 'T00:00:00').getFullYear() === currentYear
+    )
+    if (!pagosCurrentYear.length) {
+      const aniosConPagos = [...new Set(
+        (data.pagos || [])
+          .map(p => p.Fecha ? new Date(p.Fecha + 'T00:00:00').getFullYear() : null)
+          .filter(Boolean)
+      )].sort((a, b) => b - a)
+      anioSeleccionado.value = aniosConPagos.length ? aniosConPagos[0] : ''
+    }
   } catch (e) {
     errorMsg.value = e.response?.data?.detail || 'Error al cargar el crédito.'
     detalle.value = null
@@ -639,46 +652,167 @@ function imprimirResumen() {
 
 function imprimirDetalle() {
   if (!detalle.value) return
-  const c   = detalle.value.credito
-  const hoy = new Intl.DateTimeFormat('es-CO', { day:'2-digit', month:'long', year:'numeric' }).format(new Date())
+  const c      = detalle.value.credito
+  const hoy    = new Intl.DateTimeFormat('es-CO', { day:'2-digit', month:'long', year:'numeric' }).format(new Date())
   const empresa = companyStore.selectedCompany?.name || ''
-  const pagos = pagosFiltrados.value
-  const periodo = anioSeleccionado.value ? `Año ${anioSeleccionado.value}` : 'Todos los años'
-  const totalPagos = pagos.reduce((s, p) => s + (p.Valor_pago || 0), 0)
-  const filas = pagos.map(p => `<tr>
+
+  const todosPagos       = detalle.value.pagos || []
+  const abonosCapital    = detalle.value.abonos_capital || []
+  const abonosCruzados   = (detalle.value.abonos_parciales || []).filter(a => !a.Pendiente)
+  const aumentosCapital  = detalle.value.aumentos_capital || []
+  const novedades        = detalle.value.novedades || []
+  const codeudores       = detalle.value.codeudores || []
+
+  const seccion = (titulo) =>
+    `<div class="sec">${titulo}</div>`
+
+  const tablaVacia = (msg) =>
+    `<p style="color:#888;font-size:11px;padding:6px 0">${msg}</p>`
+
+  // ── Pagos ──────────────────────────────────────────────────────────────────
+  const totalPagos = todosPagos.reduce((s, p) => s + (p.Valor_pago || 0), 0)
+  const filasPagos = todosPagos.map(p => `<tr>
     <td>${p.Nro_Pago}</td><td>${fmtFecha(p.Fecha)}</td>
     <td style="text-align:center">${p.Meses_Pagos}</td>
     <td>${fmt(p.Valor_pago)}</td><td>${p.Descuento ? fmt(p.Descuento) : '—'}</td>
-    <td>${p.Mes_Pago_Hasta||'—'}</td><td>${p.forma_pago_desc}</td></tr>`).join('')
+    <td>${p.Mes_Pago_Hasta||'—'}</td><td>${p.forma_pago_desc||'—'}</td>
+    <td>${p.empleado_nombre||'—'}</td></tr>`).join('')
+
+  // ── Abonos Capital ─────────────────────────────────────────────────────────
+  const totalAbonosC = abonosCapital.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
+  const filasAbonos  = abonosCapital.map(a => `<tr>
+    <td>${a.Nro_Abono}</td><td>${fmtFecha(a.Fecha)}</td>
+    <td>${fmt(a.Valor_Abono)}</td><td>${a.forma_pago_desc||'—'}</td>
+    <td>${a.empleado_nombre||'—'}</td></tr>`).join('')
+
+  // ── Abonos Cruzados ────────────────────────────────────────────────────────
+  const totalCruzados = abonosCruzados.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
+  const filasCruzados = abonosCruzados.map(a => `<tr>
+    <td>${a.Nro_Abono}</td><td>${fmtFecha(a.Fecha)}</td>
+    <td>${fmt(a.Valor_Abono)}</td><td>${fmtFecha(a.Fecha_Cruce)}</td>
+    <td>${a.forma_pago_desc||'—'}</td><td>${a.Observacion||'—'}</td></tr>`).join('')
+
+  // ── Aumentos Capital ───────────────────────────────────────────────────────
+  const totalAum   = aumentosCapital.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
+  const filasAum   = aumentosCapital.map(a => `<tr>
+    <td>${a.Nro_Abono}</td><td>${fmtFecha(a.Fecha)}</td>
+    <td>${fmt(a.Valor_Abono)}</td><td>${a.Nro_Pagare||'—'}</td>
+    <td>${a.Unifica_En||'—'}</td><td>${a.forma_pago_desc||'—'}</td>
+    <td>${a.empleado_nombre||'—'}</td><td>${a.Observaciones||'—'}</td></tr>`).join('')
+
+  // ── Novedades ──────────────────────────────────────────────────────────────
+  const filasNov = novedades.map(n => `<tr>
+    <td>${fmtFecha(n.Fecha)}</td><td>${n.Hora||'—'}</td>
+    <td>${n.empleado_nombre||'—'}</td><td>${n.Observacion||'—'}</td></tr>`).join('')
+
+  // ── Codeudores ─────────────────────────────────────────────────────────────
+  const filasCod = codeudores.map(d => `<tr>
+    <td>${d.Cedula}</td><td>${d.nombres}</td>
+    <td>${d.Telefono||'—'}</td><td>${d.Mail||'—'}</td>
+    <td>${d.direccion||'—'}</td></tr>`).join('')
+
+  // ── Datos escritura / catastro (opcionales) ────────────────────────────────
+  const tieneEscritura = c.Escritura || c.Nro_Juridico || c.Matricula_Inmobiliaria
+  const tieneCatastro  = c.Numero_Predio || c.Avaluo_Catastral || c.Avaluo_Comercial
+
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Estado Cuenta Detalle - ${c.Nro_Credito}</title>
     <style>${printStyles()}</style></head><body>
-    <h1>${empresa}</h1><h2>ESTADO DE CUENTA CON DETALLE DE PAGOS</h2>
+    <h1>${empresa}</h1><h2>ESTADO DE CUENTA — DETALLE COMPLETO</h2>
     <div class="fecha">Generado: ${hoy}</div>
     ${c.Nota_Tipo_Pago ? `<div class="obs"><strong>Nota:</strong> ${c.Nota_Tipo_Pago}</div>` : ''}
-    <div class="sec">Datos del Cliente</div>
+
+    ${seccion('Datos del Cliente')}
     <table class="kv"><tbody>
       <tr><td>Nombre</td><td>${c.cliente_nombre}</td></tr>
       <tr><td>Cédula</td><td>${c.Cliente}</td></tr>
+      ${c.cliente_tel  ? `<tr><td>Teléfono</td><td>${c.cliente_tel}</td></tr>` : ''}
+      ${c.cliente_mail ? `<tr><td>Email</td><td>${c.cliente_mail}</td></tr>` : ''}
+      ${c.cliente_dir  ? `<tr><td>Dirección</td><td>${c.cliente_dir}</td></tr>` : ''}
     </tbody></table>
-    <div class="sec">Estado del Crédito</div>
+
+    ${seccion('Estado del Crédito')}
     <table class="kv"><tbody>
       <tr><td>Nro. Crédito</td><td><strong>${c.Nro_Credito}</strong></td></tr>
+      ${c.Ref_Adicional ? `<tr><td>Ref. Adicional</td><td>${c.Ref_Adicional}</td></tr>` : ''}
+      <tr><td>Valor Inicial</td><td>${fmt(c.Valor)}</td></tr>
       <tr><td>Valor Actual</td><td><strong>${fmt(c.Valor_Actual)}</strong></td></tr>
+      <tr><td>% Interés Casa</td><td>${c.Interes}%</td></tr>
+      <tr><td>% Interés Socio</td><td>${c.Interes_Socio}%</td></tr>
       <tr><td>Cuota / Mes</td><td>${fmt(c.cuota_mes)}</td></tr>
       <tr><td>Pago Hasta</td><td>${fmtFecha(c.Pago_Hasta)}</td></tr>
       <tr><td>Meses en Mora</td><td><strong>${c.meses_mora}</strong></td></tr>
       <tr><td>Valor Deuda</td><td><strong>${fmt(c.valor_deuda)}</strong></td></tr>
       <tr><td>Estado</td><td>${estadoLabel.value}</td></tr>
     </tbody></table>
-    <div class="sec">Pagos Realizados — ${periodo}</div>
-    ${pagos.length ? `<table><thead><tr>
-      <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado Hasta</th><th>Forma Pago</th>
-    </tr></thead><tbody>${filas}</tbody></table>
-    <div class="total">Total (${periodo}): ${fmt(totalPagos)} — ${pagos.length} registros</div>`
-    : '<p style="color:#888;font-size:11px">Sin pagos en el período.</p>'}
+
+    ${tieneEscritura ? `${seccion('Datos Jurídicos / Escritura')}
+    <table class="kv"><tbody>
+      ${c.Nro_Juridico    ? `<tr><td>Nro. Jurídico</td><td>${c.Nro_Juridico}</td></tr>` : ''}
+      ${c.Escritura       ? `<tr><td>Escritura</td><td>${c.Escritura}</td></tr>` : ''}
+      ${c.Fecha_Escritura ? `<tr><td>Fecha Escritura</td><td>${fmtFecha(c.Fecha_Escritura)}</td></tr>` : ''}
+      ${c.Matricula_Inmobiliaria ? `<tr><td>Matrícula Inmobiliaria</td><td>${c.Matricula_Inmobiliaria}</td></tr>` : ''}
+      ${c.Observaciones_Juridico ? `<tr><td>Obs. Jurídico</td><td>${c.Observaciones_Juridico}</td></tr>` : ''}
+    </tbody></table>` : ''}
+
+    ${tieneCatastro ? `${seccion('Datos del Predio')}
+    <table class="kv"><tbody>
+      ${c.Numero_Predio      ? `<tr><td>Nro. Predio</td><td>${c.Numero_Predio}</td></tr>` : ''}
+      ${c.Urbano_Rural       ? `<tr><td>Urbano / Rural</td><td>${c.Urbano_Rural}</td></tr>` : ''}
+      ${c.Direccion_Predio   ? `<tr><td>Dirección Predio</td><td>${c.Direccion_Predio}</td></tr>` : ''}
+      ${c.Area_Predio        ? `<tr><td>Área</td><td>${c.Area_Predio}</td></tr>` : ''}
+      ${c.Ano_Avaluo_Catastral ? `<tr><td>Año Avalúo Catastral</td><td>${c.Ano_Avaluo_Catastral}</td></tr>` : ''}
+      ${c.Avaluo_Catastral   ? `<tr><td>Avalúo Catastral</td><td>${fmt(c.Avaluo_Catastral)}</td></tr>` : ''}
+      ${c.Avaluo_Comercial   ? `<tr><td>Avalúo Comercial</td><td>${fmt(c.Avaluo_Comercial)}</td></tr>` : ''}
+    </tbody></table>` : ''}
+
+    ${codeudores.length ? `${seccion(`Codeudores (${codeudores.length})`)}
+    <table><thead><tr>
+      <th>Cédula</th><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Dirección</th>
+    </tr></thead><tbody>${filasCod}</tbody></table>` : ''}
+
+    ${seccion(`Pagos de Intereses — Todos (${todosPagos.length})`)}
+    ${todosPagos.length
+      ? `<table><thead><tr>
+          <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado Hasta</th><th>Forma Pago</th><th>Asesor</th>
+        </tr></thead><tbody>${filasPagos}</tbody></table>
+        <div class="total">Total intereses: ${fmt(totalPagos)} — ${todosPagos.length} registro(s)</div>`
+      : tablaVacia('Sin pagos registrados.')}
+
+    ${seccion(`Abonos a Capital (${abonosCapital.length})`)}
+    ${abonosCapital.length
+      ? `<table><thead><tr>
+          <th>#Abono</th><th>Fecha</th><th>Valor</th><th>Forma Pago</th><th>Asesor</th>
+        </tr></thead><tbody>${filasAbonos}</tbody></table>
+        <div class="total">Total abonos capital: ${fmt(totalAbonosC)} — ${abonosCapital.length} registro(s)</div>`
+      : tablaVacia('Sin abonos a capital.')}
+
+    ${seccion(`Abonos Cruzados (${abonosCruzados.length})`)}
+    ${abonosCruzados.length
+      ? `<table><thead><tr>
+          <th>#Abono</th><th>Fecha</th><th>Valor</th><th>Fecha Cruce</th><th>Forma Pago</th><th>Observación</th>
+        </tr></thead><tbody>${filasCruzados}</tbody></table>
+        <div class="total">Total cruzados: ${fmt(totalCruzados)} — ${abonosCruzados.length} registro(s)</div>`
+      : tablaVacia('Sin abonos cruzados.')}
+
+    ${seccion(`Aumentos de Capital (${aumentosCapital.length})`)}
+    ${aumentosCapital.length
+      ? `<table><thead><tr>
+          <th>#</th><th>Fecha</th><th>Valor</th><th>Nro. Pagaré</th><th>Unifica En</th><th>Forma Pago</th><th>Asesor</th><th>Observaciones</th>
+        </tr></thead><tbody>${filasAum}</tbody></table>
+        <div class="total">Total aumentos: ${fmt(totalAum)} — ${aumentosCapital.length} registro(s)</div>`
+      : tablaVacia('Sin aumentos de capital.')}
+
+    ${seccion(`Novedades (${novedades.length})`)}
+    ${novedades.length
+      ? `<table><thead><tr>
+          <th>Fecha</th><th>Hora</th><th>Asesor</th><th>Observación</th>
+        </tr></thead><tbody>${filasNov}</tbody></table>`
+      : tablaVacia('Sin novedades registradas.')}
+
   </body></html>`
-  const w = window.open('', '_blank', 'width=900,height=700')
+
+  const w = window.open('', '_blank', 'width=1000,height=750')
   w.document.write(html); w.document.close(); w.focus()
   setTimeout(() => w.print(), 400)
 }
