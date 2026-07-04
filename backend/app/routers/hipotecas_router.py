@@ -360,8 +360,16 @@ async def detalle_credito(
         """), {"nro": nro})
         otros_deudores = [dict(r) for r in deudores_r.mappings()]
 
+        # ── Todos los campos del cliente ──────────────────────────────────────
+        cli_r = await session.execute(text("""
+            SELECT cl.* FROM clientes cl WHERE cl.cedula = :ced LIMIT 1
+        """), {"ced": credito["Cliente"]})
+        cli_row = cli_r.mappings().first()
+        cliente_detalle = dict(cli_row) if cli_row else {}
+
     return {
         "credito":          credito,
+        "cliente_detalle":  cliente_detalle,
         "pagos":            pagos,
         "abonos_capital":   abonos_capital,
         "abonos_parciales": abonos_parciales,
