@@ -63,7 +63,7 @@ async def get_kpi(
             WHERE Anulado   = 0
               AND Inactivo  = 0
               AND Cancelado = 0
-              AND TIMESTAMPDIFF(MONTH, Pago_Hasta, CURDATE()) >= :meses
+              AND (TIMESTAMPDIFF(MONTH, Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(Pago_Hasta), 1, 0)) >= :meses
         """), {"meses": meses})
         creditos_atr = r3.scalar() or 0
 
@@ -165,10 +165,10 @@ async def detalle_creditos_atrasados(
                 COALESCE(cl.nombres, c.Cliente) AS cliente_nombre,
                 c.Valor_Actual,
                 ROUND(c.Valor_Actual * (c.Interes + c.Interes_Socio) / 100, 0) AS cuota_mes,
-                TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) AS meses_deuda,
+                (TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(c.Pago_Hasta), 1, 0)) AS meses_deuda,
                 ROUND(
                     c.Valor_Actual * (c.Interes + c.Interes_Socio) / 100
-                    * TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()),
+                    * (TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(c.Pago_Hasta), 1, 0)),
                 0) AS total_deuda,
                 c.Pago_Hasta,
                 c.Interes,
@@ -183,7 +183,7 @@ async def detalle_creditos_atrasados(
             WHERE c.Anulado   = 0
               AND c.Inactivo  = 0
               AND c.Cancelado = 0
-              AND TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) >= :meses
+              AND (TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(c.Pago_Hasta), 1, 0)) >= :meses
             ORDER BY meses_deuda DESC
         """), {"meses": meses})
         data = [dict(r) for r in rows.mappings()]
@@ -211,7 +211,7 @@ async def buscar_creditos(
             SELECT c.Nro_Credito, c.Cliente AS cedula,
                    COALESCE(cl.nombres, c.Cliente) AS cliente_nombre,
                    c.Valor_Actual, c.Pago_Hasta,
-                   TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) AS meses_mora,
+                   (TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(c.Pago_Hasta), 1, 0)) AS meses_mora,
                    c.Cancelado, c.Anulado, c.Inactivo,
                    COALESCE(ca.Ref_Adicional, '') AS ref_adicional,
                    COALESCE(ca.Nro_Juridico, '')  AS nro_juridico
@@ -272,10 +272,10 @@ async def detalle_credito(
                 ca.Dificil_Cobro,
                 ca.Fecha_Cancelado,
                 ROUND(c.Valor_Actual * (c.Interes + c.Interes_Socio) / 100, 0) AS cuota_mes,
-                TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) AS meses_mora,
+                (TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(c.Pago_Hasta), 1, 0)) AS meses_mora,
                 ROUND(
                     c.Valor_Actual * (c.Interes + c.Interes_Socio) / 100
-                    * TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()),
+                    * (TIMESTAMPDIFF(MONTH, c.Pago_Hasta, CURDATE()) + IF(DAY(CURDATE()) < DAY(c.Pago_Hasta), 1, 0)),
                 0) AS valor_deuda
             FROM creditos c
             LEFT JOIN clientes cl ON cl.cedula = c.Cliente

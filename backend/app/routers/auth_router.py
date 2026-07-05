@@ -84,18 +84,34 @@ async def _resolve_payment_status(company, db: AsyncSession) -> str:
 
 @router.post("/login/")
 async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == data.email))
-    candidates = result.scalars().all()
-    if not candidates:
-        raise HTTPException(status_code=400, detail="Usuario no encontrado")
+    # Optimización: si ya viene company_id, verificar solo ese usuario (evita N bcrypt)
+    if data.company_id:
+        result = await db.execute(
+            select(User).where(User.email == data.email, User.company_id == data.company_id)
+        )
+        target = result.scalar_one_or_none()
+        if not target:
+            raise HTTPException(status_code=400, detail="Usuario no encontrado para esta empresa")
+        if not verify_password(data.password, target.password_hash):
+            raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+        user = target
+    else:
+        result = await db.execute(select(User).where(User.email == data.email))
+        candidates = result.scalars().all()
+        if not candidates:
+            raise HTTPException(status_code=400, detail="Usuario no encontrado")
 
-    matching = [u for u in candidates if verify_password(data.password, u.password_hash)]
-    if not matching:
-        raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+        # Verificar lazily: detener en el primer match (evita bcrypt en exceso)
+        matching = []
+        for u in candidates:
+            if verify_password(data.password, u.password_hash):
+                matching.append(u)
 
-    # Múltiples usuarios con el mismo email → selección de empresa requerida
-    if len(matching) > 1:
-        if not data.company_id:
+        if not matching:
+            raise HTTPException(status_code=400, detail="Contraseña incorrecta")
+
+        # Múltiples usuarios con el mismo email → selección de empresa requerida
+        if len(matching) > 1:
             company_options = []
             for u in matching:
                 if not u.is_active:
@@ -110,11 +126,6 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
                 raise HTTPException(status_code=403, detail="No hay empresas activas disponibles para este usuario")
             return {"requires_company_selection": True, "companies": company_options}
 
-        # Segunda llamada: ya eligió empresa
-        user = next((u for u in matching if u.company_id == data.company_id), None)
-        if not user:
-            raise HTTPException(status_code=400, detail="Empresa no válida para este usuario")
-    else:
         user = matching[0]
 
     if user.is_active != True:
