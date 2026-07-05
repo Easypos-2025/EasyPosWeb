@@ -307,6 +307,7 @@ async def detalle_credito(
         # ── Abonos a capital ──────────────────────────────────────────────────
         abonos_cap = await session.execute(text("""
             SELECT ac.Nro_Abono, ac.Fecha, ac.Valor_Abono,
+                   COALESCE(ac.Descripcion_Forma, '') AS descripcion_forma,
                    COALESCE(f.Descripcion_Forma, '') AS forma_pago_desc,
                    COALESCE(e.nombres, '') AS empleado_nombre
             FROM abonos_capital ac
@@ -321,6 +322,7 @@ async def detalle_credito(
         abonos_par = await session.execute(text("""
             SELECT ap.Nro_Abono, ap.Fecha, ap.Valor_Abono, ap.Pendiente,
                    ap.Fecha_Cruce, ap.Observacion,
+                   COALESCE(ap.Descripcion_Forma, '') AS descripcion_forma,
                    COALESCE(f.Descripcion_Forma, '') AS forma_pago_desc
             FROM abonos_parciales_creditos ap
             LEFT JOIN forma_pago f ON f.Forma_Pago = ap.Forma_pago

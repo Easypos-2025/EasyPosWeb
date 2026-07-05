@@ -219,14 +219,13 @@
           <div v-else class="table-wrap">
             <div class="table-summary">Total abonado al capital: <strong>{{ fmt(totalAbonosCapital) }}</strong></div>
             <table class="det-table">
-              <thead><tr><th>#</th><th>Fecha</th><th>Valor Abono</th><th>Forma pago</th><th>Empleado</th></tr></thead>
+              <thead><tr><th>#</th><th>Fecha</th><th>Valor Abono</th><th>Descripción</th></tr></thead>
               <tbody>
                 <tr v-for="a in detalle.abonos_capital" :key="a.Nro_Abono">
                   <td class="td-nro">{{ a.Nro_Abono }}</td>
                   <td>{{ fmtFecha(a.Fecha) }}</td>
                   <td class="td-money">{{ fmt(a.Valor_Abono) }}</td>
-                  <td>{{ a.forma_pago_desc }}</td>
-                  <td>{{ a.empleado_nombre }}</td>
+                  <td>{{ a.descripcion_forma || '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -238,14 +237,14 @@
           <div v-else class="table-wrap">
             <div class="table-summary">{{ abonosCruzados.length }} abono{{ abonosCruzados.length !== 1 ? 's' : '' }} cruzado{{ abonosCruzados.length !== 1 ? 's' : '' }}</div>
             <table class="det-table">
-              <thead><tr><th>#</th><th>Fecha</th><th>Valor</th><th>Fecha Cruce</th><th>Forma pago</th><th>Observación</th></tr></thead>
+              <thead><tr><th>#</th><th>Fecha</th><th>Valor</th><th>Fecha Cruce</th><th>Descripción</th><th>Observación</th></tr></thead>
               <tbody>
                 <tr v-for="a in abonosCruzados" :key="a.Nro_Abono">
                   <td class="td-nro">{{ a.Nro_Abono }}</td>
                   <td>{{ fmtFecha(a.Fecha) }}</td>
                   <td class="td-money">{{ fmt(a.Valor_Abono) }}</td>
                   <td>{{ fmtFecha(a.Fecha_Cruce) }}</td>
-                  <td>{{ a.forma_pago_desc }}</td>
+                  <td>{{ a.descripcion_forma || '—' }}</td>
                   <td class="td-obs">{{ a.Observacion || '—' }}</td>
                 </tr>
               </tbody>
@@ -680,15 +679,14 @@ function imprimirDetalle() {
   const totalAbonosC = abonosCapital.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
   const filasAbonos  = abonosCapital.map(a => `<tr>
     <td>${a.Nro_Abono}</td><td>${fmtFecha(a.Fecha)}</td>
-    <td>${fmt(a.Valor_Abono)}</td><td>${a.forma_pago_desc||'—'}</td>
-    <td>${a.empleado_nombre||'—'}</td></tr>`).join('')
+    <td>${fmt(a.Valor_Abono)}</td><td>${a.descripcion_forma||'—'}</td></tr>`).join('')
 
   // ── Abonos Cruzados ────────────────────────────────────────────────────────
   const totalCruzados = abonosCruzados.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
   const filasCruzados = abonosCruzados.map(a => `<tr>
     <td>${a.Nro_Abono}</td><td>${fmtFecha(a.Fecha)}</td>
     <td>${fmt(a.Valor_Abono)}</td><td>${fmtFecha(a.Fecha_Cruce)}</td>
-    <td>${a.forma_pago_desc||'—'}</td><td>${a.Observacion||'—'}</td></tr>`).join('')
+    <td>${a.descripcion_forma||'—'}</td><td>${a.Observacion||'—'}</td></tr>`).join('')
 
   // ── Aumentos Capital ───────────────────────────────────────────────────────
   const totalAum   = aumentosCapital.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
@@ -780,7 +778,7 @@ function imprimirDetalle() {
     ${seccion(`Abonos a Capital (${abonosCapital.length})`)}
     ${abonosCapital.length
       ? `<table><thead><tr>
-          <th>#Abono</th><th>Fecha</th><th>Valor</th><th>Forma Pago</th><th>Asesor</th>
+          <th>#Abono</th><th>Fecha</th><th>Valor</th><th>Descripción</th>
         </tr></thead><tbody>${filasAbonos}</tbody></table>
         <div class="total">Total abonos capital: ${fmt(totalAbonosC)} — ${abonosCapital.length} registro(s)</div>`
       : tablaVacia('Sin abonos a capital.')}
@@ -788,7 +786,7 @@ function imprimirDetalle() {
     ${seccion(`Abonos Cruzados (${abonosCruzados.length})`)}
     ${abonosCruzados.length
       ? `<table><thead><tr>
-          <th>#Abono</th><th>Fecha</th><th>Valor</th><th>Fecha Cruce</th><th>Forma Pago</th><th>Observación</th>
+          <th>#Abono</th><th>Fecha</th><th>Valor</th><th>Fecha Cruce</th><th>Descripción</th><th>Observación</th>
         </tr></thead><tbody>${filasCruzados}</tbody></table>
         <div class="total">Total cruzados: ${fmt(totalCruzados)} — ${abonosCruzados.length} registro(s)</div>`
       : tablaVacia('Sin abonos cruzados.')}
