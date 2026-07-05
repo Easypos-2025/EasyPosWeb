@@ -182,7 +182,7 @@
           <div class="table-wrap">
             <table class="det-table">
               <thead><tr>
-                <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado hasta</th><th>Forma pago</th><th>Empleado</th>
+                <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado hasta</th><th>Descripción</th>
               </tr></thead>
               <tbody>
                 <tr v-for="p in pagosFiltrados" :key="p.Nro_Pago">
@@ -192,8 +192,7 @@
                   <td class="td-money">{{ fmt(p.Valor_pago) }}</td>
                   <td class="td-money">{{ p.Descuento ? fmt(p.Descuento) : '—' }}</td>
                   <td>{{ p.Mes_Pago_Hasta || '—' }}</td>
-                  <td>{{ p.forma_pago_desc }}</td>
-                  <td>{{ p.empleado_nombre }}</td>
+                  <td>{{ p.descripcion_forma || '—' }}</td>
                 </tr>
                 <tr v-if="!pagosFiltrados.length">
                   <td colspan="8" class="td-empty-year">Sin pagos en el año {{ anioSeleccionado }}</td>
@@ -675,8 +674,7 @@ function imprimirDetalle() {
     <td>${p.Nro_Pago}</td><td>${fmtFecha(p.Fecha)}</td>
     <td style="text-align:center">${p.Meses_Pagos}</td>
     <td>${fmt(p.Valor_pago)}</td><td>${p.Descuento ? fmt(p.Descuento) : '—'}</td>
-    <td>${p.Mes_Pago_Hasta||'—'}</td><td>${p.forma_pago_desc||'—'}</td>
-    <td>${p.empleado_nombre||'—'}</td></tr>`).join('')
+    <td>${p.Mes_Pago_Hasta||'—'}</td><td>${p.descripcion_forma||'—'}</td></tr>`).join('')
 
   // ── Abonos Capital ─────────────────────────────────────────────────────────
   const totalAbonosC = abonosCapital.reduce((s, a) => s + (a.Valor_Abono || 0), 0)
@@ -774,7 +772,7 @@ function imprimirDetalle() {
     ${seccion(`Pagos de Intereses — Todos (${todosPagos.length})`)}
     ${todosPagos.length
       ? `<table><thead><tr>
-          <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado Hasta</th><th>Forma Pago</th><th>Asesor</th>
+          <th>#Pago</th><th>Fecha</th><th>Meses</th><th>Valor</th><th>Descuento</th><th>Pagado Hasta</th><th>Descripción</th>
         </tr></thead><tbody>${filasPagos}</tbody></table>
         <div class="total">Total intereses: ${fmt(totalPagos)} — ${todosPagos.length} registro(s)</div>`
       : tablaVacia('Sin pagos registrados.')}

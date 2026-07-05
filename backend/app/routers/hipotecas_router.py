@@ -293,6 +293,7 @@ async def detalle_credito(
         pagos_rows = await session.execute(text("""
             SELECT p.Nro_Pago, p.Fecha, p.Meses_Pagos, p.Valor_pago,
                    p.Descuento, p.Mes_Pago_Hasta,
+                   COALESCE(p.Descripcion_Forma, '') AS descripcion_forma,
                    COALESCE(f.Descripcion_Forma, '') AS forma_pago_desc,
                    COALESCE(e.nombres, '') AS empleado_nombre
             FROM pagos_creditos p
