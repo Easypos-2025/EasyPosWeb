@@ -46,35 +46,7 @@
 
     <div class="kpi-grid">
 
-      <!-- KPI 1: Arriendos x Avisar -->
-      <button class="kpi-card kpi-amber" :disabled="loadingKpi" @click="abrirModal('avisar')">
-        <div class="kpi-icon"><i class="bi bi-bell-fill"></i></div>
-        <div class="kpi-body">
-          <span class="kpi-label">Arriendos x Avisar</span>
-          <span class="kpi-value">
-            <template v-if="loadingKpi"><i class="bi bi-hourglass-split spin"></i></template>
-            <template v-else>{{ kpi.arriendos_avisar }}</template>
-          </span>
-          <span class="kpi-sub">Este mes</span>
-        </div>
-        <i class="bi bi-chevron-right kpi-arrow"></i>
-      </button>
-
-      <!-- KPI 2: Arriendos x Vencer -->
-      <button class="kpi-card kpi-orange" :disabled="loadingKpi" @click="abrirModal('vencer')">
-        <div class="kpi-icon"><i class="bi bi-calendar-x-fill"></i></div>
-        <div class="kpi-body">
-          <span class="kpi-label">Arriendos x Vencer</span>
-          <span class="kpi-value">
-            <template v-if="loadingKpi"><i class="bi bi-hourglass-split spin"></i></template>
-            <template v-else>{{ kpi.arriendos_vencer }}</template>
-          </span>
-          <span class="kpi-sub">Este mes</span>
-        </div>
-        <i class="bi bi-chevron-right kpi-arrow"></i>
-      </button>
-
-      <!-- KPI 3: Créditos Atrasados -->
+      <!-- KPI: Créditos Atrasados -->
       <button class="kpi-card kpi-red" :disabled="loadingKpi" @click="abrirModal('creditos')">
         <div class="kpi-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
         <div class="kpi-body">
@@ -127,41 +99,8 @@
             <i class="bi bi-check-circle"></i> Sin registros para este período
           </div>
 
-          <!-- Tabla Arriendos -->
-          <div v-else-if="modal.tipo !== 'creditos'" class="modal-scroll" id="print-area">
-            <table class="det-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Cliente</th>
-                  <th>Propiedad</th>
-                  <th>Sector</th>
-                  <th>Canon</th>
-                  <th>Pagado hasta</th>
-                  <th>{{ modal.tipo === 'avisar' ? 'Avisar' : 'Vence' }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(it, i) in modal.items" :key="it.Id_Arriendo">
-                  <td>{{ i + 1 }}</td>
-                  <td>
-                    <span class="det-nombre">{{ it.cliente_nombre }}</span>
-                    <span class="det-cedula">{{ it.cedula }}</span>
-                  </td>
-                  <td>{{ it.propiedad || it.propiedad_direccion }}</td>
-                  <td>{{ it.sector }}</td>
-                  <td class="det-money">{{ fmt(it.canon) }}</td>
-                  <td>{{ fmtFecha(it.Pago_Hasta) }}</td>
-                  <td :class="modal.tipo === 'avisar' ? 'det-amber' : 'det-orange'">
-                    {{ fmtFecha(modal.tipo === 'avisar' ? it.Avisar : it.Vence) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
           <!-- Tabla Créditos -->
-          <div v-else class="modal-scroll" id="print-area">
+          <div v-if="!modal.loading && modal.items.length > 0" class="modal-scroll" id="print-area">
             <table class="det-table">
               <thead>
                 <tr>
@@ -276,9 +215,7 @@ watch(companyId, (val) => { if (val) { cargarKpi(); _startRefresh() } })
 const modal = ref({ visible: false, tipo: '', titulo: '', icono: '', loading: false, items: [] })
 
 const CONFIG_MODAL = {
-  avisar:   { titulo: 'Arriendos x Avisar — Este mes',  icono: 'bi bi-bell-fill',                endpoint: '/api/hipotecas/kpi/arriendos-avisar' },
-  vencer:   { titulo: 'Arriendos x Vencer — Este mes',  icono: 'bi bi-calendar-x-fill',           endpoint: '/api/hipotecas/kpi/arriendos-vencer' },
-  creditos: { titulo: 'Créditos Atrasados',              icono: 'bi bi-exclamation-triangle-fill', endpoint: '/api/hipotecas/kpi/creditos-atrasados' },
+  creditos: { titulo: 'Créditos Atrasados', icono: 'bi bi-exclamation-triangle-fill', endpoint: '/api/hipotecas/kpi/creditos-atrasados' },
 }
 
 async function abrirModal(tipo) {
@@ -414,7 +351,7 @@ function fmtFecha(v) {
 /* ───────────────── KPI grid ───────────────── */
 .kpi-grid {
   position: relative; z-index: 1;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  display: grid; grid-template-columns: 1fr; gap: 10px;
 }
 .kpi-card {
   display: flex; align-items: center; gap: 10px;
@@ -543,7 +480,7 @@ function fmtFecha(v) {
 @media (min-width: 900px) {
   .modal-overlay { align-items: center; justify-content: center; }
   .modal-panel { width: 92%; max-width: 1100px; max-height: 82vh; border-radius: 16px; animation: fadeScale 0.2s ease; }
-  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .kpi-grid { grid-template-columns: 1fr; max-width: 480px; }
   .kpi-value { font-size: 26px; }
   .btn-print-txt { display: inline; }
 }

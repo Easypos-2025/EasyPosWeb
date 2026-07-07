@@ -713,6 +713,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Consulta Arriendo" }
       },
+      {
+        path: "/cobros/arriendos",
+        name: "ArriendosView",
+        component: () => import("@/views/compraventa/ArriendosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Arriendos" }
+      },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
