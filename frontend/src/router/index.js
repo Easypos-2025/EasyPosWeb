@@ -721,6 +721,26 @@ const routes = [
         meta: { title: "Arriendos" }
       },
 
+      // ── Talleres Mecánica / Lavaderos / Latonería ────────────────────────
+      {
+        path: "/talleres/ordenes",
+        name: "TalleresOrdenesView",
+        component: () => import("@/views/talleres/TalleresOrdenesView.vue"),
+        meta: { requiresAuth: true, title: "Órdenes de Servicio" }
+      },
+      {
+        path: "/talleres/convenios",
+        name: "TalleresConveniosView",
+        component: () => import("@/views/talleres/TalleresConveniosView.vue"),
+        meta: { requiresAuth: true, title: "Convenios Empresariales" }
+      },
+      {
+        path: "/talleres/liquidacion",
+        name: "TalleresLiquidacionView",
+        component: () => import("@/views/talleres/TalleresLiquidacionView.vue"),
+        meta: { requiresAuth: true, title: "Liquidación de Operarios" }
+      },
+
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",

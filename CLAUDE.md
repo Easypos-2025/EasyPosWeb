@@ -1,12 +1,13 @@
-# CLAUDE.md — Perfil 1: Restaurantes
-# business_profile_id = 1
+# CLAUDE.md — Perfil 15: Talleres Mecánica - Lavaderos - Latonería y Pintura
+# business_profile_id = 15
 
 Nota: Actúa como un Arquitecto de Software Senior. Antes de tocar el código, analiza el problema y dame la informacion para poder proceder con el arreglo y recuerda que todo debe seguir con todos los standares de seguridad, anti robots y todo posible ataque debe estar controlado
 
-## 1. OBJETIVO
-Sistema de Gestión Gastronómica Integral (POS & ERP).
+---
 
-Este sistema es un ecosistema de software para restaurantes enfocado en la omnicanalidad (Mesa, Llevar, Web Propia) y el control hiperpreciso de inventarios a través de recetas y configuraciones híbridas. Interactúa directamente con la estructura de datos existente del software de escritorio y añade interfaces web dinámicas tanto para la toma de pedidos como para la visualización en cocina.
+## 1. OBJETIVO
+
+Sistema ERP integral para el taller mecánico, centro de estética automotriz y centro de colisión **"Perfil Serví-Cars"**. Gestiona servicios para autos y motos, venta de repuestos, taller mecánico, lavado/aspirado, y latonería y pintura. Soporta flujos de trabajo con roles específicos, gestión de convenios empresariales con reglas contables especiales, pago diario de mano de obra a operarios y venta cruzada mediante combos de servicios.
 
 ---
 
@@ -25,7 +26,8 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
   - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
 - Todos los campos donde se describa un valor de pesos debe tener el formato de moneda correspondiente al país del Asociado.
--la apliacion esta enfocada todo se haga en un 80% desde movil, entonces siempre tener en cuenta los dos media querys, para los dos tamaños de movil, para tablet y para pc
+- La aplicación está enfocada a que todo se haga en un 80% desde móvil; siempre tener en cuenta los dos media queries: dos tamaños de móvil, tablet y PC.
+
 ---
 
 ## 3. REGLAS TÉCNICAS
@@ -71,42 +73,114 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
 
 ---
 
-## 7. HOJA DE RUTA
+## 7. NO HACER COMMIT + DEPLOY SIN APROBACIÓN EXPLÍCITA
 
-### 7.1 Origen y Estado de los Pedidos (Canales)
-- **Servicio a la Mesa**: Comandado por meseros desde su interfaz web móvil. Vinculado a zonas y mesas.
-- **Para Llevar (Takeout)**: Facturado o comandado directamente desde caja.
-- **Compra Online (Web Propia)**: Los pedidos ingresan al sistema en estado "Pendiente". El sistema debe emitir una notificación/alerta en pantalla. No se envían a producción hasta que el pago sea confirmado y el pedido sea explícitamente "Aceptado" por el administrador.
-- Nota: No se contempla integración nativa con plataformas externas (Rappi, etc.) en esta etapa.
+Presentar siempre una propuesta de diseño antes de hacer cualquier cambio. No inventar ni suponer nada; siempre preguntar.
 
-### 7.2 Control de Inventario y Recetas (Lógica de Descuento)
-El motor de inventario descuenta insumos del almacén basándose en el costo y cantidad de la receta. Un producto descuenta existencias según dos posibles orígenes:
-- **Insumos Fijos**: Ingredientes obligatorios predefinidos en la receta (Ej: El pan y la carne de una hamburguesa).
-- **Insumos Dinámicos (Opciones de Armado / Modificadores)**: Opciones que el cliente elige al momento (Ej: Tamaño de pizza, ingredientes extra, adiciones). Cada opción suma/resta sus respectivos insumos.
+---
 
-**Menú Ejecutivo / Diario (Estructura Híbrida):**
-- **Regla de Bloqueo**: Si el administrador no "arma" el menú del día por la mañana (asignando qué sopa, qué principio y qué proteína aplican para la fecha), el producto queda bloqueado y no se puede comandar.
-- **Descuento Combinado**: Al venderse, descuenta los insumos fijos (Ej: Arroz, jugo) MÁS los insumos de las opciones seleccionadas por el cliente en la mesa para ese día específico.
-- **Validación de Captura**: Si el artículo está tipificado para requerir Peso exacto o Cantidad, la interfaz de la comanda exige obligatoriamente esta información antes de permitir el guardado.
-- **Stocks**: Control estricto de stocks mínimos por insumo (asociados a sus unidades de medida).
+## 8. ROLES Y ACTORES DEL SISTEMA
 
-### 7.3 Listas de Precios Contextuales
-Un mismo artículo de venta debe soportar múltiples precios simultáneos. El sistema aplica el precio correcto de forma automática según la tipificación del pedido:
-- **Lista 1**: Consumo en Mesa (Local).
-- **Lista 2**: Para Llevar (Takeout).
-- **Lista 3**: Compra por Plataforma Web Propia.
+| Rol | Responsabilidades |
+|---|---|
+| **Administrador / Caja** | Gestión de inventarios, facturación, CxC, egresos de nómina diaria y reportes financieros |
+| **Jefe de Taller** | Apertura de órdenes, asignación de mecánicos y control de calidad en taller |
+| **Jefe de Patio** | Apertura de órdenes, asignación de lavadores y control de calidad en lavado |
+| **Jefe de Latonería** | Diagnóstico de colisiones, preparación, pintura y ensamble de piezas |
+| **Mecánico** | Operario de ejecución en órdenes de trabajo mecánico |
+| **Lavador** | Operario de ejecución en órdenes de lavado y aspirado |
+| **Latonero** | Operario de reparación de piezas de carrocería |
+| **Pintor** | Operario de preparación y acabado (pintura, fondo, transparente) |
+| **Cliente Convenio** | Empresa aliada con condiciones de pago diferido (crédito / acumulación de órdenes) |
 
-### 7.4 Sistema Multimpresión de Comandas
-Los productos no están limitados a una sola tiquetera. Al crearse o editarse un producto, el administrador puede seleccionar una o múltiples impresoras de destino.
-- **Regla de Ruteo**: Al confirmar una comanda, el sistema fragmenta el pedido y envía las copias en paralelo a todas las impresoras seleccionadas (Ej: Un combo de hamburguesa con cerveza imprime simultáneamente el pedido completo en la tiquetera de Cocina y solo la bebida en la tiquetera de la Barra).
+---
 
-### 7.5 Monitor Web de Cocina / Producción (Pantalla de TV)
-- **Vista de Producción**: Interfaz web optimizada para pantallas de TV en cocina que muestra en tiempo real los pedidos aceptados y pendientes de preparación.
-- **Flujo de Salida**: Los pedidos se listan de forma cronológica o por prioridad. En el momento en que un pedido es facturado o marcado como despachado en el sistema central, sale automáticamente de la pantalla del televisor.
+## 9. REGLAS DE NEGOCIO CRÍTICAS
 
-### 7.6 Integración de Datos y Conectividad
-- **Estructura de Base de Datos**: No diseñar un esquema nuevo. El sistema debe acoplarse, leer y escribir respetando estrictamente la estructura de datos preexistente en el software de escritorio actual.
-- **Sincronización**: Toda transacción hecha en la web de meseros, caja o plataforma web debe actualizar el inventario, los estados de mesas y las colas de impresión de la base de datos unificada del software de escritorio.
+### 9.1 Gestión de Convenios Empresariales (Flujo de Crédito Colectivo)
+- **Operación sin Pago Inmediato:** Los vehículos vinculados a un convenio empresarial ingresan al servicio, se les genera una Orden de Servicio (OS) normal, pero se retiran **sin liquidar pago** en el momento.
+- **Acumulación de Órdenes:** El sistema agrupa y mantiene en estado "Pendiente por Facturar" todas las órdenes asociadas a una misma empresa/convenio.
+- **Facturación Consolidada:** El administrador puede seleccionar múltiples órdenes acumuladas (mezclando lavados, mecánicas, latonería, repuestos, etc.) y unificarlas en **una única factura o relación de cobro** detallada.
 
-### 7.7 No hacer commit + deploy hasta que no se diga o acepte con un Ok
-presentar siempre una propuesta de diseño antes de hacer cualqueier cambio, no inventr ni suponer nada siempre preguntar. 
+### 9.2 Lógica Contable de Caja: Convenios vs. Flujo de Efectivo Diario
+- **Reconocimiento de la Venta:** Los servicios de convenios o créditos **ingresan y se registran como venta del día** (ingreso operativo / contabilidad de devengo).
+- **Control de Caja Chica:** Estas ventas por convenio **NO suman en el dinero físico/efectivo del día** ni alteran el saldo real de la caja del turno; se marcan como "Cuenta por Cobrar (CxC) de Convenio".
+- **Egreso por Pago Diario a Operarios:** El personal (lavadores, mecánicos, latoneros, pintores) recibe su pago por mano de obra **de forma diaria**, independientemente de si el vehículo era de convenio o particular. El sistema registra salidas de dinero diarias bajo el concepto *"Egreso: Pago de Mano de Obra Diaria"*, descontando el efectivo real de la caja del día.
+
+### 9.3 Módulo Dinámico de Combos (Paquetes de Servicios)
+Paquetes comerciales parametrizables que unifiquen mano de obra, repuestos, latonería y estética:
+
+| Combo | Servicios incluidos |
+|---|---|
+| **Lavado** | Lavado sencillo + Aspirado + Polichado |
+| **Revisión** | Revisión General Mecánica + Lavado Especial |
+| **Mantenimiento** | Cambio de Aceite + Filtros + Lavado Sencillo |
+| **Estético** | Pintura de Pieza + Lavado Especial |
+
+---
+
+## 10. ARQUITECTURA DE MÓDULOS
+
+### 10.1 Módulo de Clientes, Vehículos e Historial (Core)
+- **Ficha Única por Placa:** El vehículo es la entidad central. Al digitar la placa se despliega el expediente completo.
+- **Datos del Vehículo:** Tipo (Auto / Moto), Modelo, Año, Kilometraje, Color, Propietario (Nombre, Documento, Teléfono, Vínculo a Convenio).
+- **Historial Clínico Integral:** Trazabilidad intermodular: qué se le hizo (Mecánica / Lavado / Latonería), repuestos instalados, operario asignado, jefe responsable, fecha/hora de entrada y salida.
+- **Métrica de Frecuencia:** Indicadores automáticos de comportamiento (ej. "Este vehículo asiste cada 3 meses" / "Última visita: 15/03/2026").
+- **Motor de Búsqueda Global:** Filtros por Placa, Nombre del cliente, Documento, Mecánico, Lavador, Latonero/Pintor, Jefe de patio, Jefe de taller, Rango de fechas o Mes específico.
+
+### 10.2 Módulo de Órdenes de Trabajo — Taller Mecánico
+- **Apertura de Orden:** Registro mandatorio mediante Placa del vehículo.
+- **Evidencia Gráfica:** Captura obligatoria de fotografías del estado del vehículo al ingresar (registro visual de daños previos).
+- **Asignación de Personal:** Mecánico ejecutor + Jefe de Taller supervisor.
+- **Detalle Operativo:** Diagnóstico inicial, trabajo realizado, mano de obra aplicada y repuestos utilizados.
+- **Línea de Tiempo:** Fecha/Hora de Entrada, Promesa de Entrega y Entrega Real.
+- **Salida Documental:** Impresión de Orden de Trabajo (física/digital) y pre-factura.
+
+### 10.3 Módulo de Lavado y Aspirado — Centro de Estética
+- **Apertura de Orden:** Registro inicial mediante Placa del vehículo.
+- **Evidencia Gráfica:** Captura de fotos de ingreso para control de reclamaciones.
+- **Asignación de Personal:** Jefe de Patio supervisor + Lavador ejecutor.
+- **Selección de Servicios / Combos:** Catálogo parametrizado (Lavado sencillo, lavado especial, combos).
+- **Tiempos:** Control de Fecha/Hora de Entrada y de Entrega.
+- **Salida Documental:** Comprobante de servicio o factura directa.
+
+### 10.4 Módulo de Latonería y Pintura — Centro de Colisión
+- **Apertura de Orden:** Registro mandatorio mediante Placa + toma de kilometraje.
+- **Evidencia Gráfica Rigurosa:** Fotos obligatorias de ingreso (latas, rayones, abolladuras) y registro visual **Antes / Durante / Después**.
+- **Asignación de Personal:** Jefe de Latonería + Latonero (reparación de piezas) + Pintor (preparación y acabado).
+- **Detalle del Servicio:** Inventario de piezas a reparar / cambiar, tipo de pintura (general, por piezas, retoque), materiales e insumos (masilla, fondo, pintura, transparente).
+- **Tiempos de Proceso:** Fecha/Hora de Entrada, tiempo de preparación, tiempo de cabina/secado y Entrega Real.
+- **Salida Documental:** Orden de servicio técnica y presupuesto/factura detallada.
+
+### 10.5 Módulo de Inventario de Auto Repuestos
+- **Control por Codificación:** Catálogo con Código único, Marca, Precio de Compra y Precio de Venta (Correas, filtros, aceites, insumos de pintura, etc.).
+- **Descuento de Stock en Tiempo Real:** Resta automática del inventario al añadir a cualquier orden (Mecánica o Latonería) o vender por mostrador.
+- **Sistema de Alertas:** Notificaciones visuales de Stock Mínimo (ej. "Quedan 2 tarros de transparente, reponer mercancía").
+- **Auditoría de Inventario:** Interfaz para cuadre físico vs. sistema.
+- **Módulo de Compras:** Registro formal de entrada de mercancía e insumos indexados por proveedor.
+
+### 10.6 Reportes Financieros y Gestión de Caja
+- **Cierre de Caja Diario:** Resumen dividido en: Total Ventas del Día (Efectivo + Convenios) vs. Total Dinero Real Recaudado (solo Efectivo/Transferencias).
+- **Módulo de Egresos Diarios:** Panel para registrar pagos en efectivo del día a operarios (Mecánicos, Lavadores, Latoneros), restando el valor del saldo neto de la caja física.
+- **Productividad de Personal:** Reporte de rendimiento por operario (mano de obra / servicios en el mes) para cálculo de comisiones o destajo diario.
+- **Trazabilidad Financiera por Placa:** Reporte consolidado de todo el dinero facturado a un vehículo específico.
+- **Cartera (CxC):** Panel de seguimiento de saldos acumulados de Convenios Empresariales y alertas de facturación masiva.
+
+---
+
+## 11. REQUERIMIENTOS TÉCNICOS Y USABILIDAD
+
+- **Módulo de Alertas de Fidelización:** Recordatorios automáticos de mantenimiento preventivo (ej. "Cambio de aceite en 5,000 km") para estrategias de telemercadeo.
+- **Gestión Multimedia:** Soporte para almacenamiento local/nube de fotos de inspección (Antes / Durante / Después).
+- **Arquitectura Híbrida (Offline First):** El sistema debe garantizar operatividad local (apertura de órdenes, consulta de fichas e inventario) aun sin conexión a internet.
+- **Respaldos:** Automatización de copias de seguridad en la nube para contingencias de hardware.
+
+---
+
+## 12. REGLA CONTABLE FORMAL DE CAJA
+
+Se define formalmente la separación contable entre:
+- **Ingreso Devengado**: venta del día de convenios (registrada, no cobrada en efectivo).
+- **Flujo de Caja Real**: dinero físico disponible en caja.
+
+El sistema registra los egresos en efectivo para el pago diario de mano de obra de latoneros y lavadores **sin descuadrar la caja principal**.

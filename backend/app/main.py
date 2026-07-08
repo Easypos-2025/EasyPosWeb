@@ -84,6 +84,7 @@ from app.routers.pos_temp_router import router as pos_temp_router
 from app.routers.pos_dashboard_router import router as pos_dashboard_router
 from app.routers.compraventa_router import router as compraventa_router
 from app.routers.hipotecas_router import router as hipotecas_router
+from app.routers.talleres_router import router as talleres_router
 from app.routers.pos_consultas_router import router as pos_consultas_router
 from app.routers.pos_categorias_router import router as pos_categorias_router
 from app.routers.pos_printers_router import router as pos_printers_router
@@ -562,6 +563,216 @@ async def _init_db_data():
             await db.commit()
         except Exception:
             await db.rollback()
+
+        # ── TABLAS PERFIL TALLERES MECÁNICA (business_profile_id=15) ─────────
+        _talleres_tables = [
+            """CREATE TABLE IF NOT EXISTS talleres_vehiculo_ext (
+                id         INT AUTO_INCREMENT PRIMARY KEY,
+                asset_id   INT NOT NULL,
+                company_id INT NOT NULL,
+                placa      VARCHAR(20) NOT NULL,
+                tipo       ENUM('auto','moto','camion','otro') DEFAULT 'auto',
+                marca      VARCHAR(80)  NULL,
+                modelo     VARCHAR(80)  NULL,
+                anio       SMALLINT     NULL,
+                color      VARCHAR(40)  NULL,
+                km_actual  INT NOT NULL DEFAULT 0,
+                FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_tve_asset (asset_id),
+                INDEX idx_tve_placa (company_id, placa)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_convenios (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                company_id       INT NOT NULL,
+                nombre_empresa   VARCHAR(150) NOT NULL,
+                nit              VARCHAR(30)  NULL,
+                contacto         VARCHAR(100) NULL,
+                telefono         VARCHAR(30)  NULL,
+                email            VARCHAR(100) NULL,
+                tipo_facturacion ENUM('mensual','quincenal','semanal') DEFAULT 'mensual',
+                limite_credito   DECIMAL(12,2) NOT NULL DEFAULT 0,
+                activo           TINYINT NOT NULL DEFAULT 1,
+                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sc_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_orders (
+                id                  INT AUTO_INCREMENT PRIMARY KEY,
+                company_id          INT NOT NULL,
+                created_by          INT NOT NULL,
+                numero_orden        VARCHAR(30) NOT NULL,
+                vehicle_id          INT  NULL,
+                placa_vehiculo      VARCHAR(20) NULL,
+                client_id           INT  NULL,
+                convenio_id         INT  NULL,
+                km_ingreso          INT  NULL,
+                fecha_ingreso       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                jefe_responsable_id INT  NULL,
+                estado              ENUM('abierta','en_proceso','terminada','entregada','cancelada') NOT NULL DEFAULT 'abierta',
+                estado_facturacion  ENUM('particular','convenio_pendiente','facturado') NOT NULL DEFAULT 'particular',
+                diagnostico         TEXT NULL,
+                trabajo_realizado   TEXT NULL,
+                fecha_entrega_real  DATETIME NULL,
+                km_salida           INT  NULL,
+                created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id)  REFERENCES companies(id_company),
+                FOREIGN KEY (created_by)  REFERENCES users(id),
+                FOREIGN KEY (vehicle_id)  REFERENCES assets(id),
+                FOREIGN KEY (client_id)   REFERENCES clients(id),
+                FOREIGN KEY (convenio_id) REFERENCES service_convenios(id),
+                FOREIGN KEY (jefe_responsable_id) REFERENCES users(id),
+                INDEX idx_so_empresa_fecha (company_id, fecha_ingreso),
+                INDEX idx_so_placa         (company_id, placa_vehiculo),
+                INDEX idx_so_estado        (company_id, estado),
+                INDEX idx_so_convenio      (convenio_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_order_details (
+                id                 INT AUTO_INCREMENT PRIMARY KEY,
+                order_id           INT NOT NULL,
+                tipo_item          ENUM('mecanica','lavado','latoneria','pintura','repuesto') NOT NULL,
+                product_id         INT  NULL,
+                nombre             VARCHAR(200) NOT NULL,
+                worker_id          INT  NULL,
+                modified_by        INT  NULL,
+                cantidad           DECIMAL(10,2) NOT NULL DEFAULT 1,
+                precio_unitario    DECIMAL(12,2) NOT NULL DEFAULT 0,
+                descuento          DECIMAL(12,2) NOT NULL DEFAULT 0,
+                subtotal           DECIMAL(12,2) NOT NULL DEFAULT 0,
+                mano_obra_operario DECIMAL(12,2) NOT NULL DEFAULT 0,
+                profession_id      INT  NULL,
+                combo_id           INT  NULL,
+                liq_estado         ENUM('pendiente','liquidado') NOT NULL DEFAULT 'pendiente',
+                liq_id             INT  NULL,
+                created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id)    REFERENCES service_orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id)  REFERENCES products(id),
+                FOREIGN KEY (worker_id)   REFERENCES workers(id),
+                FOREIGN KEY (modified_by) REFERENCES users(id),
+                INDEX idx_sod_order      (order_id),
+                INDEX idx_sod_worker_liq (worker_id, liq_estado)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_order_workers (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                order_id     INT NOT NULL,
+                worker_id    INT NOT NULL,
+                rol_en_orden VARCHAR(50) NULL,
+                FOREIGN KEY (order_id)  REFERENCES service_orders(id) ON DELETE CASCADE,
+                FOREIGN KEY (worker_id) REFERENCES workers(id),
+                UNIQUE KEY uq_sow_orden_worker (order_id, worker_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS profession_payment_config (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                profession_id INT NOT NULL,
+                company_id    INT NOT NULL,
+                pct_operario  DECIMAL(5,2) NOT NULL DEFAULT 0,
+                pct_jefe      DECIMAL(5,2) NOT NULL DEFAULT 0,
+                pct_negocio   DECIMAL(5,2) NOT NULL DEFAULT 100,
+                FOREIGN KEY (profession_id) REFERENCES professions(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_ppc_prof_company (profession_id, company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS product_service_ext (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                product_id    INT NOT NULL,
+                service_type  ENUM('mecanica','lavado','latoneria','pintura','otro') NULL,
+                profession_id INT  NULL,
+                FOREIGN KEY (product_id)    REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY (profession_id) REFERENCES professions(id),
+                UNIQUE KEY uq_pse_product (product_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_combos (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                company_id   INT NOT NULL,
+                nombre       VARCHAR(100) NOT NULL,
+                descripcion  TEXT NULL,
+                precio_combo DECIMAL(12,2) NOT NULL DEFAULT 0,
+                precio_normal DECIMAL(12,2) NULL,
+                activo       TINYINT NOT NULL DEFAULT 1,
+                INDEX idx_combo_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_combo_items (
+                id          INT AUTO_INCREMENT PRIMARY KEY,
+                combo_id    INT NOT NULL,
+                product_id  INT NOT NULL,
+                precio_item DECIMAL(12,2) NOT NULL DEFAULT 0,
+                FOREIGN KEY (combo_id)   REFERENCES service_combos(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS worker_liquidaciones (
+                id             INT AUTO_INCREMENT PRIMARY KEY,
+                company_id     INT NOT NULL,
+                worker_id      INT NOT NULL,
+                fecha_inicio   DATE NOT NULL,
+                fecha_fin      DATE NOT NULL,
+                total_bruto    DECIMAL(12,2) NOT NULL DEFAULT 0,
+                pct_aplicado   DECIMAL(5,2)  NOT NULL DEFAULT 0,
+                monto_operario DECIMAL(12,2) NOT NULL DEFAULT 0,
+                estado         ENUM('pendiente','pagado') NOT NULL DEFAULT 'pendiente',
+                fecha_pago     DATE NULL,
+                forma_pago     ENUM('efectivo','transferencia','otro') NULL,
+                observaciones  TEXT NULL,
+                registrado_por INT NOT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id)      REFERENCES workers(id),
+                FOREIGN KEY (registrado_por) REFERENCES users(id),
+                INDEX idx_wl_worker_estado (company_id, worker_id, estado)
+            )""",
+            """CREATE TABLE IF NOT EXISTS worker_liquidacion_details (
+                id           INT AUTO_INCREMENT PRIMARY KEY,
+                liq_id       INT NOT NULL,
+                detail_id    INT NOT NULL,
+                subtotal     DECIMAL(12,2) NOT NULL DEFAULT 0,
+                monto_pagado DECIMAL(12,2) NOT NULL DEFAULT 0,
+                FOREIGN KEY (liq_id)    REFERENCES worker_liquidaciones(id) ON DELETE CASCADE,
+                FOREIGN KEY (detail_id) REFERENCES service_order_details(id)
+            )""",
+        ]
+        for _sql in _talleres_tables:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── SEED welcome steps perfil Talleres Mecánica (id=15) ──────────────
+        from app.models.profile_welcome_step_model import ProfileWelcomeStep as _PWS
+        _existing_talleres = (await db.execute(
+            select(_PWS).where(_PWS.business_profile_id == 15)
+        )).scalars().all()
+        if not _existing_talleres:
+            _talleres_steps = [
+                (1, "bi-car-front-fill",    "Registra tus vehículos",
+                 "Ingresa cada vehículo que ingrese al taller por su placa. "
+                 "El sistema crea una ficha única con historial de servicios, "
+                 "kilometraje y propietario.",
+                 "/talleres/ordenes"),
+                (2, "bi-clipboard2-check-fill", "Abre tu primera Orden de Servicio",
+                 "Busca el vehículo por placa, selecciona el tipo de servicio "
+                 "(Mecánica, Lavado o Latonería), asigna el operario y registra "
+                 "el diagnóstico inicial.",
+                 "/talleres/ordenes"),
+                (3, "bi-people-fill",       "Configura tus operarios",
+                 "Crea los perfiles de mecánicos, lavadores y latoneros con su "
+                 "porcentaje de pago por servicio. El sistema calculará automáticamente "
+                 "la mano de obra de cada uno al cerrar la orden.",
+                 "/configuration/workers"),
+                (4, "bi-box-seam-fill",     "Carga tu catálogo de servicios y repuestos",
+                 "Agrega los servicios que prestas (Lavado sencillo, Cambio de aceite, etc.) "
+                 "y los repuestos o insumos que manejas en inventario. "
+                 "Todo desde el mismo catálogo de productos.",
+                 "/configuration/products"),
+                (5, "bi-building-fill",     "Configura tus convenios empresariales",
+                 "Si tienes empresas con flota de vehículos, crea el convenio para "
+                 "acumular sus órdenes y facturarlas de forma consolidada al cierre "
+                 "del período acordado.",
+                 "/talleres/convenios"),
+            ]
+            for _sn, _ic, _ti, _de, _ro in _talleres_steps:
+                db.add(_PWS(
+                    business_profile_id=15,
+                    step_number=_sn, icon=_ic,
+                    title=_ti, description=_de, route_hint=_ro
+                ))
+            await db.commit()
 
         # ── SEED pasos bienvenida Perfil Administrativo (id=2) ───────────────
         from app.models.profile_welcome_step_model import ProfileWelcomeStep
@@ -1617,6 +1828,7 @@ routers = [
     pos_dashboard_router,
     compraventa_router,
     hipotecas_router,
+    talleres_router,
     pos_consultas_router,
     pos_categorias_router,
     pos_printers_router,
