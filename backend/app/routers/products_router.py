@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -13,7 +13,7 @@ from app.auth.dependencies import get_current_user
 from app.models.user_model import User
 
 router = APIRouter(prefix="/products", tags=["Products"])
-VALID_BEHAVIORS = ("recipe", "presentation", "serialized", "weight", "direct")
+VALID_BEHAVIORS = ("recipe", "presentation", "serialized", "weight", "direct", "decrement")
 
 
 async def _ser(p: Product, db: AsyncSession) -> dict:
@@ -21,6 +21,7 @@ async def _ser(p: Product, db: AsyncSession) -> dict:
     ref = await db.get(ProductReference, p.reference_id) if p.reference_id else None
     return {"id": p.id, "company_id": p.company_id, "code": p.code, "name": p.name,
             "description": p.description, "photo_url": p.photo_url,
+            "item_type": p.item_type,
             "category_id": p.category_id, "category_name": cat.name if cat else None,
             "reference_id": p.reference_id, "reference_name": ref.name if ref else None,
             "inventory_behavior": p.inventory_behavior, "base_price": float(p.base_price),
@@ -31,8 +32,16 @@ async def _ser(p: Product, db: AsyncSession) -> dict:
 
 
 @router.get("/")
-async def list_products(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Product).where(Product.company_id == current_user.company_id).order_by(Product.name))
+async def list_products(
+    item_type: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    q = select(Product).where(Product.company_id == current_user.company_id)
+    if item_type in ("producto", "servicio"):
+        q = q.where(Product.item_type == item_type)
+    q = q.order_by(Product.name)
+    result = await db.execute(q)
     return [await _ser(p, db) for p in result.scalars().all()]
 
 
@@ -45,10 +54,17 @@ async def create_product(data: dict = Body(...), current_user: User = Depends(ge
     behavior = data.get("inventory_behavior", "direct")
     if behavior not in VALID_BEHAVIORS:
         raise HTTPException(status_code=400, detail=f"Comportamiento inválido. Válidos: {VALID_BEHAVIORS}")
+    item_type_val = data.get("item_type", "producto")
+    if item_type_val not in ("producto", "servicio"):
+        item_type_val = "producto"
+    # Los servicios siempre usan behavior 'direct'
+    if item_type_val == "servicio":
+        behavior = "direct"
     p = Product(company_id=current_user.company_id, code=(data.get("code") or "").strip() or None,
                 name=data["name"].strip(), description=(data.get("description") or "").strip() or None,
                 photo_url=(data.get("photo_url") or "").strip() or None,
                 category_id=data.get("category_id"), reference_id=data.get("reference_id"),
+                item_type=item_type_val,
                 inventory_behavior=behavior, base_price=float(data.get("base_price") or 0),
                 cost_price=float(data.get("cost_price") or 0), tax_rate=float(data.get("tax_rate") or 0),
                 min_stock=float(data.get("min_stock") or 0), ask_price=int(data.get("ask_price", 0)),
@@ -78,6 +94,10 @@ async def update_product(pid: int, data: dict = Body(...), current_user: User = 
     if "ask_price"          in data: p.ask_price          = int(data["ask_price"])
     if "ask_description"    in data: p.ask_description    = int(data["ask_description"])
     if "is_active"          in data: p.is_active          = int(data["is_active"])
+    if "item_type"          in data and data["item_type"] in ("producto", "servicio"):
+        p.item_type = data["item_type"]
+        if data["item_type"] == "servicio":
+            p.inventory_behavior = "direct"
     if "inventory_behavior" in data:
         if data["inventory_behavior"] not in VALID_BEHAVIORS:
             raise HTTPException(status_code=400, detail="Comportamiento inválido")

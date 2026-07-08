@@ -68,10 +68,9 @@
             <div class="form-group">
               <label>Tipo *</label>
               <select v-model="nuevoVehiculo.tipo" class="form-ctrl">
-                <option value="auto">Automóvil</option>
-                <option value="moto">Moto</option>
-                <option value="camion">Camión / Furgón</option>
-                <option value="otro">Otro</option>
+                <option v-for="t in tiposVehiculo" :key="t.id" :value="String(t.id)">
+                  {{ t.nombre }}
+                </option>
               </select>
             </div>
             <div class="form-group">
@@ -380,7 +379,7 @@ function limpiarBusqueda() {
 
 // ── Formulario nuevo vehículo ─────────────────────────────────────────────
 const anioActual = new Date().getFullYear()
-const NV_DEFAULT = { tipo: 'auto', marca: '', modelo: '', anio: '', color: '', km_actual: 0, cliente_nombre: '', cliente_documento: '', cliente_telefono: '' }
+const NV_DEFAULT = { tipo: '', marca: '', modelo: '', anio: '', color: '', km_actual: 0, cliente_nombre: '', cliente_documento: '', cliente_telefono: '' }
 const nuevoVehiculo = ref({ ...NV_DEFAULT })
 
 // ── Formulario orden ──────────────────────────────────────────────────────
@@ -482,21 +481,28 @@ function verOrden(o) {
 }
 
 // ── Datos auxiliares ──────────────────────────────────────────────────────
-const usuarios  = ref([])
-const workers   = ref([])
-const convenios = ref([])
+const usuarios       = ref([])
+const workers        = ref([])
+const convenios      = ref([])
+const tiposVehiculo  = ref([])
 
 async function cargarAuxiliares() {
   if (!companyId.value) return
   try {
-    const [ru, rw, rc] = await Promise.all([
+    const [ru, rw, rc, rt] = await Promise.all([
       api.get('/users/',    { params: { company_id: companyId.value } }),
       api.get('/workers/',  { params: { company_id: companyId.value } }),
-      api.get('/api/talleres/convenios', { params: { company_id: companyId.value } }),
+      api.get('/api/talleres/convenios',     { params: { company_id: companyId.value } }),
+      api.get('/api/talleres/tipos-vehiculo', { params: { company_id: companyId.value } }),
     ])
-    usuarios.value  = ru.data?.items ?? ru.data ?? []
-    workers.value   = rw.data?.items ?? rw.data ?? []
-    convenios.value = rc.data ?? []
+    usuarios.value      = ru.data?.items ?? ru.data ?? []
+    workers.value       = rw.data?.items ?? rw.data ?? []
+    convenios.value     = rc.data ?? []
+    tiposVehiculo.value = rt.data ?? []
+    // Pre-seleccionar el primero disponible
+    if (tiposVehiculo.value.length && !nuevoVehiculo.value.tipo) {
+      nuevoVehiculo.value.tipo = String(tiposVehiculo.value[0].id)
+    }
   } catch { /* silencioso */ }
 }
 
@@ -510,9 +516,13 @@ function mostrarToast(msg, tipo = 'ok') {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-const TIPOS_VEHICULO = { auto: 'Automóvil', moto: 'Moto', camion: 'Camión', otro: 'Otro' }
 const LABELS_ESTADO  = { abierta: 'Abierta', en_proceso: 'En proceso', terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada' }
-function labelTipo(v)   { return TIPOS_VEHICULO[v] ?? v }
+function labelTipo(v) {
+  if (!v) return '—'
+  // Si es un id numérico, buscar en la lista dinámica
+  const found = tiposVehiculo.value.find(t => String(t.id) === String(v) || t.nombre === v)
+  return found ? found.nombre : v
+}
 function labelEstado(v) { return LABELS_ESTADO[v] ?? v }
 
 function fmt(v) {

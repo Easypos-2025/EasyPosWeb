@@ -368,7 +368,9 @@ async def agregar_detalle(
         "combo": payload.get("combo_id"),
     })
     await db.commit()
-    return {"ok": True, "subtotal": subtotal, "mano_obra_operario": mano_obra}
+    r_id = await db.execute(text("SELECT LAST_INSERT_ID()"))
+    new_det_id = r_id.scalar()
+    return {"id": new_det_id, "ok": True, "subtotal": subtotal, "mano_obra_operario": mano_obra}
 
 
 # ── Cambiar estado de la orden ────────────────────────────────────────────────
@@ -430,6 +432,430 @@ async def listar_convenios(
         ORDER BY sc.nombre_empresa
     """), {"cid": company_id})
     return [dict(r) for r in rows.mappings()]
+
+
+# ── Tipos de Vehículo ─────────────────────────────────────────────────────────
+
+_VEHICLE_TYPES_DEFAULT = [
+    ("Automóvil / Carro",    "bi-car-front",      1),
+    ("Camioneta / SUV",      "bi-truck",           2),
+    ("Motocicleta",          "bi-bicycle",         3),
+    ("Cuadrimoto / ATV",     "bi-car-front-fill",  4),
+    ("Camión / Furgón",      "bi-truck",           5),
+    ("Bus / Buseta / Van",   "bi-bus-front-fill",  6),
+    ("Tractomula / Volqueta","bi-truck",           7),
+    ("Otro",                 "bi-tools",           8),
+]
+
+@router.get("/tipos-vehiculo")
+async def get_tipos_vehiculo(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT * FROM vehicle_types WHERE company_id = :cid ORDER BY orden, nombre
+    """), {"cid": company_id})
+    tipos = [dict(r) for r in rows.mappings()]
+    if not tipos:
+        # Lazy seed: primeros tipos por defecto
+        for nombre, icono, orden in _VEHICLE_TYPES_DEFAULT:
+            await db.execute(text("""
+                INSERT INTO vehicle_types (company_id, nombre, icono, activo, orden)
+                VALUES (:cid, :nom, :ico, 1, :ord)
+            """), {"cid": company_id, "nom": nombre, "ico": icono, "ord": orden})
+        await db.commit()
+        rows2 = await db.execute(text("""
+            SELECT * FROM vehicle_types WHERE company_id = :cid ORDER BY orden
+        """), {"cid": company_id})
+        tipos = [dict(r) for r in rows2.mappings()]
+    return tipos
+
+
+@router.post("/tipos-vehiculo")
+async def crear_tipo_vehiculo(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    company_id = payload.get("company_id")
+    nombre = (payload.get("nombre") or "").strip()
+    if not company_id or not nombre:
+        raise HTTPException(status_code=400, detail="company_id y nombre son requeridos")
+    r_ord = await db.execute(text(
+        "SELECT COALESCE(MAX(orden),0)+1 FROM vehicle_types WHERE company_id=:cid"
+    ), {"cid": company_id})
+    nuevo_orden = r_ord.scalar() or 1
+    await db.execute(text("""
+        INSERT INTO vehicle_types (company_id, nombre, icono, activo, orden)
+        VALUES (:cid, :nom, :ico, 1, :ord)
+    """), {"cid": company_id, "nom": nombre, "ico": payload.get("icono","bi-car-front"), "ord": nuevo_orden})
+    await db.commit()
+    r_id = await db.execute(text("SELECT LAST_INSERT_ID()"))
+    return {"id": r_id.scalar(), "ok": True}
+
+
+@router.put("/tipos-vehiculo/{tipo_id}")
+async def actualizar_tipo_vehiculo(
+    tipo_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    await db.execute(text("""
+        UPDATE vehicle_types SET nombre=:nom, icono=:ico, activo=:act
+        WHERE id=:id AND company_id=:cid
+    """), {
+        "id": tipo_id, "cid": payload.get("company_id"),
+        "nom": (payload.get("nombre") or "").strip(),
+        "ico": payload.get("icono", "bi-car-front"),
+        "act": payload.get("activo", 1),
+    })
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/tipos-vehiculo/{tipo_id}")
+async def eliminar_tipo_vehiculo(
+    tipo_id: int,
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    await db.execute(text(
+        "UPDATE vehicle_types SET activo=0 WHERE id=:id AND company_id=:cid"
+    ), {"id": tipo_id, "cid": company_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── Participantes de Servicio ──────────────────────────────────────────────────
+
+@router.get("/servicios/{product_id}/participantes")
+async def get_participantes(
+    product_id: int,
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT sp.*, p.name AS profession_nombre
+        FROM service_participants sp
+        JOIN professions p ON p.id = sp.profession_id
+        WHERE sp.product_id = :pid AND sp.company_id = :cid
+        ORDER BY sp.pct_pago DESC
+    """), {"pid": product_id, "cid": company_id})
+    participantes = [dict(r) for r in rows.mappings()]
+    # Total asignado y % para el negocio
+    total_asignado = sum(float(x["pct_pago"]) for x in participantes)
+    negocio_pct    = round(100 - total_asignado, 2)
+    return {"participantes": participantes, "total_asignado": total_asignado, "negocio_pct": negocio_pct}
+
+
+@router.post("/servicios/{product_id}/participantes")
+async def agregar_participante(
+    product_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    company_id    = payload.get("company_id")
+    profession_id = payload.get("profession_id")
+    pct           = round(float(payload.get("pct_pago", 0)), 2)
+    if not company_id or not profession_id:
+        raise HTTPException(status_code=400, detail="company_id y profession_id son requeridos")
+    if pct <= 0 or pct > 100:
+        raise HTTPException(status_code=400, detail="pct_pago debe estar entre 0.01 y 100")
+
+    # Validar que no supere 100% junto con los existentes
+    r_total = await db.execute(text("""
+        SELECT COALESCE(SUM(pct_pago),0) FROM service_participants
+        WHERE product_id=:pid AND company_id=:cid AND profession_id != :prof
+    """), {"pid": product_id, "cid": company_id, "prof": profession_id})
+    total_otros = float(r_total.scalar() or 0)
+    if total_otros + pct > 100:
+        raise HTTPException(status_code=400,
+            detail=f"La suma de participantes superaría 100%. Disponible: {round(100-total_otros,2)}%")
+
+    await db.execute(text("""
+        INSERT INTO service_participants (company_id, product_id, profession_id, rol_display, pct_pago)
+        VALUES (:cid, :pid, :prof, :rol, :pct)
+        ON DUPLICATE KEY UPDATE rol_display=:rol, pct_pago=:pct
+    """), {
+        "cid": company_id, "pid": product_id, "prof": profession_id,
+        "rol": payload.get("rol_display"), "pct": pct,
+    })
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/servicios/participantes/{participante_id}")
+async def eliminar_participante(
+    participante_id: int,
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    await db.execute(text("""
+        DELETE FROM service_participants WHERE id=:id AND company_id=:cid
+    """), {"id": participante_id, "cid": company_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── CRUD Convenios Empresariales ─────────────────────────────────────────────
+
+@router.post("/convenios")
+async def crear_convenio(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    company_id = payload.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="company_id requerido")
+    nombre = (payload.get("nombre_empresa") or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre de la empresa es requerido")
+
+    await db.execute(text("""
+        INSERT INTO service_convenios (
+            company_id, nombre_empresa, nit_empresa,
+            contacto_nombre, contacto_telefono, contacto_email,
+            periodicidad_facturacion, condicion_pago, dias_credito,
+            observaciones, activo
+        ) VALUES (
+            :cid, :nombre, :nit,
+            :contacto, :tel, :email,
+            :periodi, :cond, :dias,
+            :obs, 1
+        )
+    """), {
+        "cid":     company_id,
+        "nombre":  nombre,
+        "nit":     payload.get("nit_empresa"),
+        "contacto":payload.get("contacto_nombre"),
+        "tel":     payload.get("contacto_telefono"),
+        "email":   payload.get("contacto_email"),
+        "periodi": payload.get("periodicidad_facturacion", "mensual"),
+        "cond":    payload.get("condicion_pago", "credito"),
+        "dias":    payload.get("dias_credito", 30),
+        "obs":     payload.get("observaciones"),
+    })
+    await db.commit()
+    r = await db.execute(text("SELECT LAST_INSERT_ID()"))
+    return {"id": r.scalar(), "ok": True}
+
+
+@router.put("/convenios/{convenio_id}")
+async def actualizar_convenio(
+    convenio_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    company_id = payload.get("company_id")
+    nombre = (payload.get("nombre_empresa") or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre de la empresa es requerido")
+
+    await db.execute(text("""
+        UPDATE service_convenios SET
+            nombre_empresa           = :nombre,
+            nit_empresa              = :nit,
+            contacto_nombre          = :contacto,
+            contacto_telefono        = :tel,
+            contacto_email           = :email,
+            periodicidad_facturacion = :periodi,
+            condicion_pago           = :cond,
+            dias_credito             = :dias,
+            observaciones            = :obs
+        WHERE id = :id AND company_id = :cid
+    """), {
+        "id":      convenio_id,
+        "cid":     company_id,
+        "nombre":  nombre,
+        "nit":     payload.get("nit_empresa"),
+        "contacto":payload.get("contacto_nombre"),
+        "tel":     payload.get("contacto_telefono"),
+        "email":   payload.get("contacto_email"),
+        "periodi": payload.get("periodicidad_facturacion", "mensual"),
+        "cond":    payload.get("condicion_pago", "credito"),
+        "dias":    payload.get("dias_credito", 30),
+        "obs":     payload.get("observaciones"),
+    })
+    await db.commit()
+    return {"ok": True}
+
+
+@router.patch("/convenios/{convenio_id}/activo")
+async def toggle_convenio(
+    convenio_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    await db.execute(text("""
+        UPDATE service_convenios SET activo = :activo
+        WHERE id = :id AND company_id = :cid
+    """), {"id": convenio_id, "activo": payload.get("activo", 1), "cid": payload.get("company_id")})
+    await db.commit()
+    return {"ok": True}
+
+
+# ── Sprint 3: Configuración de porcentajes por profesión ─────────────────
+
+@router.get("/profession-config")
+async def get_profession_config(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Lista todas las profesiones de la empresa con su configuración de pagos."""
+    rows = await db.execute(text("""
+        SELECT
+            p.id, p.name, p.description,
+            COALESCE(pc.id, 0)            AS config_id,
+            COALESCE(pc.pct_operario, 0)  AS pct_operario,
+            COALESCE(pc.pct_jefe,     0)  AS pct_jefe,
+            COALESCE(pc.pct_negocio, 100) AS pct_negocio,
+            (SELECT COUNT(*) FROM workers w
+             WHERE w.profession_id = p.id AND w.company_id = :cid) AS total_workers
+        FROM professions p
+        LEFT JOIN profession_payment_config pc
+               ON pc.profession_id = p.id AND pc.company_id = :cid
+        WHERE p.company_id = :cid
+        ORDER BY p.name
+    """), {"cid": company_id})
+    return [dict(r) for r in rows.mappings()]
+
+
+@router.put("/profession-config/{profession_id}")
+async def upsert_profession_config(
+    profession_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    company_id   = payload.get("company_id")
+    pct_operario = round(float(payload.get("pct_operario", 0)), 2)
+    pct_jefe     = round(float(payload.get("pct_jefe",     0)), 2)
+    pct_negocio  = round(float(payload.get("pct_negocio", 100)), 2)
+
+    if abs(pct_operario + pct_jefe + pct_negocio - 100) > 0.05:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Los porcentajes deben sumar 100%. Suma actual: {pct_operario + pct_jefe + pct_negocio}"
+        )
+
+    await db.execute(text("""
+        INSERT INTO profession_payment_config
+            (profession_id, company_id, pct_operario, pct_jefe, pct_negocio)
+        VALUES (:pid, :cid, :po, :pj, :pn)
+        ON DUPLICATE KEY UPDATE
+            pct_operario = :po,
+            pct_jefe     = :pj,
+            pct_negocio  = :pn
+    """), {
+        "pid": profession_id, "cid": company_id,
+        "po": pct_operario, "pj": pct_jefe, "pn": pct_negocio,
+    })
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/workers-con-config")
+async def get_workers_con_config(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Workers de la empresa con su profesión y % de pago configurado."""
+    rows = await db.execute(text("""
+        SELECT
+            w.id, w.name, w.phone,
+            p.id   AS profession_id,
+            p.name AS profession_nombre,
+            COALESCE(pc.pct_operario, 0)  AS pct_operario,
+            COALESCE(pc.pct_jefe,     0)  AS pct_jefe,
+            COALESCE(pc.pct_negocio, 100) AS pct_negocio,
+            (SELECT COUNT(*) FROM service_order_details d
+             WHERE d.worker_id = w.id AND d.liq_estado = 'pendiente') AS items_pendientes,
+            (SELECT COALESCE(SUM(d.mano_obra_operario), 0)
+             FROM service_order_details d
+             WHERE d.worker_id = w.id AND d.liq_estado = 'pendiente') AS monto_pendiente
+        FROM workers w
+        LEFT JOIN professions p
+               ON p.id = w.profession_id
+        LEFT JOIN profession_payment_config pc
+               ON pc.profession_id = p.id AND pc.company_id = :cid
+        WHERE w.company_id = :cid
+        ORDER BY p.name, w.name
+    """), {"cid": company_id})
+    return [dict(r) for r in rows.mappings()]
+
+
+# ── Sprint 4: Búsqueda de productos para el detalle de la orden ───────────
+
+@router.get("/productos-buscar")
+async def buscar_productos(
+    company_id: int  = Query(...),
+    q: str           = Query("", max_length=100),
+    item_type: str   = Query(None),  # 'servicio' | 'producto' | None (ambos)
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Busca productos y servicios del catálogo por nombre o código."""
+    like = f"%{q}%"
+    tipo_filter = ""
+    params: dict = {"cid": company_id, "q": like}
+    if item_type in ("servicio", "producto"):
+        tipo_filter = "AND p.item_type = :itype"
+        params["itype"] = item_type
+
+    rows = await db.execute(text(f"""
+        SELECT
+            p.id, p.code, p.name, p.base_price, p.cost_price,
+            p.item_type, p.inventory_behavior,
+            cat.name AS categoria,
+            (SELECT COUNT(*) FROM service_participants sp
+             WHERE sp.product_id = p.id AND sp.company_id = p.company_id) AS num_participantes
+        FROM products p
+        LEFT JOIN product_categories cat ON cat.id = p.category_id
+        WHERE p.company_id = :cid AND p.is_active = 1
+          AND (p.name LIKE :q OR p.code LIKE :q)
+          {tipo_filter}
+        ORDER BY p.item_type, p.name
+        LIMIT 40
+    """), params)
+    return [dict(r) for r in rows.mappings()]
+
+
+@router.delete("/ordenes/{orden_id}/detalle/{detalle_id}")
+async def eliminar_detalle(
+    orden_id: int,
+    detalle_id: int,
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    # Verificar que el ítem existe, pertenece a la empresa y está pendiente
+    chk = await db.execute(text("""
+        SELECT d.id, d.liq_estado FROM service_order_details d
+        JOIN service_orders so ON so.id = d.order_id
+        WHERE d.id = :did AND d.order_id = :oid AND so.company_id = :cid
+    """), {"did": detalle_id, "oid": orden_id, "cid": company_id})
+    row = chk.mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+    if row["liq_estado"] and row["liq_estado"] != "pendiente":
+        raise HTTPException(status_code=409, detail="El ítem ya fue liquidado y no puede eliminarse")
+
+    await db.execute(text("""
+        DELETE FROM service_order_details WHERE id = :did
+    """), {"did": detalle_id})
+    await db.commit()
+    return {"ok": True}
 
 
 # ── Registrar / actualizar vehículo ──────────────────────────────────────────

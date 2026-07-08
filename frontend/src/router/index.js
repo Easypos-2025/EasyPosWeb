@@ -208,6 +208,9 @@ const routes = [
         meta: { title: "RolesView" }
       },
 
+      // Alias para rutas antiguas de productos (venían de profile_welcome_steps con ruta incorrecta)
+      { path: "/configuration/products", redirect: "/inventory/products" },
+
       {
         path: "/configuration/tasks",
         name: "tasks",
@@ -723,6 +726,18 @@ const routes = [
 
       // ── Talleres Mecánica / Lavaderos / Latonería ────────────────────────
       {
+        path: "/talleres/orden/:id",
+        name: "TalleresOrdenDetalleView",
+        component: () => import("@/views/talleres/TalleresOrdenDetalleView.vue"),
+        meta: { requiresAuth: true, title: "Detalle de Orden" }
+      },
+      {
+        path: "/talleres/operarios",
+        name: "TalleresOperariosView",
+        component: () => import("@/views/talleres/TalleresOperariosView.vue"),
+        meta: { requiresAuth: true, title: "Operarios y Porcentajes" }
+      },
+      {
         path: "/talleres/ordenes",
         name: "TalleresOrdenesView",
         component: () => import("@/views/talleres/TalleresOrdenesView.vue"),
@@ -739,6 +754,12 @@ const routes = [
         name: "TalleresLiquidacionView",
         component: () => import("@/views/talleres/TalleresLiquidacionView.vue"),
         meta: { requiresAuth: true, title: "Liquidación de Operarios" }
+      },
+      {
+        path: "/talleres/tipos-vehiculo",
+        name: "TalleresTiposVehiculoView",
+        component: () => import("@/views/talleres/TalleresTiposVehiculoView.vue"),
+        meta: { requiresAuth: true, title: "Tipos de Vehículo" }
       },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────

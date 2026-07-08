@@ -3,7 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, Text, SmallInteger, ForeignKey, TIMESTAMP, DECIMAL, DateTime, func
 from app.database import Base
 
-INVENTORY_BEHAVIORS = ("recipe", "presentation", "serialized", "weight", "direct")
+INVENTORY_BEHAVIORS = ("recipe", "presentation", "serialized", "weight", "direct", "decrement")
 
 
 class Product(Base):
@@ -17,6 +17,7 @@ class Product(Base):
     photo_url:           Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     category_id:         Mapped[Optional[int]] = mapped_column(ForeignKey("product_categories.id"), nullable=True)
     reference_id:        Mapped[Optional[int]] = mapped_column(ForeignKey("product_references.id"), nullable=True)
+    item_type:           Mapped[str]           = mapped_column(String(20), nullable=False, default="producto")
     inventory_behavior:  Mapped[str]           = mapped_column(String(20), nullable=False, default="direct")
     base_price:          Mapped[object]        = mapped_column(DECIMAL(14, 2), default=0)
     cost_price:          Mapped[object]        = mapped_column(DECIMAL(14, 2), default=0)

@@ -582,17 +582,19 @@ async def _init_db_data():
                 INDEX idx_tve_placa (company_id, placa)
             )""",
             """CREATE TABLE IF NOT EXISTS service_convenios (
-                id               INT AUTO_INCREMENT PRIMARY KEY,
-                company_id       INT NOT NULL,
-                nombre_empresa   VARCHAR(150) NOT NULL,
-                nit              VARCHAR(30)  NULL,
-                contacto         VARCHAR(100) NULL,
-                telefono         VARCHAR(30)  NULL,
-                email            VARCHAR(100) NULL,
-                tipo_facturacion ENUM('mensual','quincenal','semanal') DEFAULT 'mensual',
-                limite_credito   DECIMAL(12,2) NOT NULL DEFAULT 0,
-                activo           TINYINT NOT NULL DEFAULT 1,
-                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                id                       INT AUTO_INCREMENT PRIMARY KEY,
+                company_id               INT NOT NULL,
+                nombre_empresa           VARCHAR(150) NOT NULL,
+                nit_empresa              VARCHAR(30)  NULL,
+                contacto_nombre          VARCHAR(100) NULL,
+                contacto_telefono        VARCHAR(30)  NULL,
+                contacto_email           VARCHAR(100) NULL,
+                periodicidad_facturacion ENUM('mensual','quincenal','semanal','por_solicitud') DEFAULT 'mensual',
+                condicion_pago           ENUM('credito','contado_diferido') DEFAULT 'credito',
+                dias_credito             SMALLINT NOT NULL DEFAULT 30,
+                observaciones            TEXT NULL,
+                activo                   TINYINT NOT NULL DEFAULT 1,
+                created_at               DATETIME DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_sc_company (company_id)
             )""",
             """CREATE TABLE IF NOT EXISTS service_orders (
@@ -773,6 +775,136 @@ async def _init_db_data():
                     title=_ti, description=_de, route_hint=_ro
                 ))
             await db.commit()
+
+        # ── Agregar pasos 6 y 7 si faltan (guía de inicio talleres) ──────────
+        _step6 = (await db.execute(
+            select(_PWS).where(_PWS.business_profile_id == 15, _PWS.step_number == 6)
+        )).scalars().first()
+        if not _step6:
+            db.add(_PWS(
+                business_profile_id=15, step_number=6,
+                icon="bi-car-front-fill",
+                title="Configura los tipos de vehículo",
+                description=(
+                    "Personaliza los tipos de vehículo que recibes en el taller: Automóvil, "
+                    "Camioneta, Moto, Bus, Tractomula, etc. Puedes agregar o desactivar tipos "
+                    "según tu operación."
+                ),
+                route_hint="/talleres/tipos-vehiculo"
+            ))
+            await db.commit()
+
+        _step7 = (await db.execute(
+            select(_PWS).where(_PWS.business_profile_id == 15, _PWS.step_number == 7)
+        )).scalars().first()
+        if not _step7:
+            db.add(_PWS(
+                business_profile_id=15, step_number=7,
+                icon="bi-person-lines-fill",
+                title="Asigna participantes a cada servicio",
+                description=(
+                    "Para cada servicio de tu catálogo (Lavado, Cambio de aceite, Latonería…), "
+                    "define quién participa y qué porcentaje recibe: Lavador, Jefe de Patio, "
+                    "Mecánico, etc. El sistema calculará automáticamente la mano de obra al registrar la orden."
+                ),
+                route_hint="/inventory/products"
+            ))
+            await db.commit()
+
+        # ── Migración: item_type en products ─────────────────────────────────
+        try:
+            await db.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) NOT NULL DEFAULT 'producto'"))
+            # Auto-clasificar: los que tenían behavior=direct pasan a servicio
+            await db.execute(text("UPDATE products SET item_type = 'servicio' WHERE inventory_behavior = 'direct' AND item_type = 'producto'"))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+        # ── Nuevas tablas: vehicle_types + service_participants ───────────────
+        _new_tables = [
+            """CREATE TABLE IF NOT EXISTS vehicle_types (
+                id         INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                nombre     VARCHAR(80) NOT NULL,
+                icono      VARCHAR(50) NOT NULL DEFAULT 'bi-car-front',
+                activo     TINYINT NOT NULL DEFAULT 1,
+                orden      INT NOT NULL DEFAULT 0,
+                INDEX idx_vt_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS service_participants (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                company_id    INT NOT NULL,
+                product_id    INT NOT NULL,
+                profession_id INT NOT NULL,
+                rol_display   VARCHAR(100) NULL,
+                pct_pago      DECIMAL(5,2) NOT NULL DEFAULT 0,
+                FOREIGN KEY (product_id)    REFERENCES products(id)    ON DELETE CASCADE,
+                FOREIGN KEY (profession_id) REFERENCES professions(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_sp (company_id, product_id, profession_id),
+                INDEX idx_sp_product (product_id)
+            )""",
+        ]
+        for _sql in _new_tables:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── Migrar service_convenios: renombrar columnas antiguas si existen ───
+        _convenio_migrations = [
+            # Renombrar columnas antiguas (solo ejecuta si la columna antigua existe)
+            "ALTER TABLE service_convenios CHANGE COLUMN IF EXISTS nit nit_empresa VARCHAR(30) NULL",
+            "ALTER TABLE service_convenios CHANGE COLUMN IF EXISTS contacto contacto_nombre VARCHAR(100) NULL",
+            "ALTER TABLE service_convenios CHANGE COLUMN IF EXISTS telefono contacto_telefono VARCHAR(30) NULL",
+            "ALTER TABLE service_convenios CHANGE COLUMN IF EXISTS email contacto_email VARCHAR(100) NULL",
+            "ALTER TABLE service_convenios CHANGE COLUMN IF EXISTS tipo_facturacion periodicidad_facturacion ENUM('mensual','quincenal','semanal','por_solicitud') DEFAULT 'mensual'",
+            # Agregar columnas nuevas si no existen
+            "ALTER TABLE service_convenios ADD COLUMN IF NOT EXISTS condicion_pago ENUM('credito','contado_diferido') DEFAULT 'credito'",
+            "ALTER TABLE service_convenios ADD COLUMN IF NOT EXISTS dias_credito SMALLINT NOT NULL DEFAULT 30",
+            "ALTER TABLE service_convenios ADD COLUMN IF NOT EXISTS observaciones TEXT NULL",
+            # Eliminar columna antigua que ya no se usa
+            "ALTER TABLE service_convenios DROP COLUMN IF EXISTS limite_credito",
+            # Tipo de vehículo: ampliar ENUM
+            "ALTER TABLE talleres_vehiculo_ext MODIFY COLUMN tipo ENUM('auto','camioneta','moto','cuadrimoto','camion','bus','tractomula','otro') DEFAULT 'auto'",
+        ]
+        for _mig in _convenio_migrations:
+            try:
+                await db.execute(text(_mig))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+        # ── Corregir URL rota en profile_welcome_steps perfil 15 ─────────────
+        try:
+            await db.execute(text("""
+                UPDATE profile_welcome_steps
+                SET route_hint = '/inventory/products'
+                WHERE business_profile_id = 15 AND route_hint = '/configuration/products'
+            """))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+        # ── Registrar módulos del perfil Talleres en system_modules ──────────
+        _talleres_modules = [
+            ("/talleres/ordenes",        "Órdenes de Servicio",       "bi-clipboard2-pulse-fill"),
+            ("/talleres/operarios",      "Operarios",                 "bi-people-fill"),
+            ("/talleres/convenios",      "Convenios Empresariales",   "bi-building-fill"),
+            ("/talleres/liquidacion",    "Liquidación de Operarios",  "bi-cash-coin"),
+            ("/talleres/tipos-vehiculo", "Tipos de Vehículo",         "bi-car-front-fill"),
+        ]
+        for _route, _name, _icon in _talleres_modules:
+            _res = await db.execute(select(SystemModule).where(SystemModule.route == _route))
+            if not _res.scalars().first():
+                db.add(SystemModule(
+                    name=_name, route=_route, icon=_icon,
+                    parent_id=None, is_active=True, order_index=0, is_sysadmin=False
+                ))
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
 
         # ── SEED pasos bienvenida Perfil Administrativo (id=2) ───────────────
         from app.models.profile_welcome_step_model import ProfileWelcomeStep
