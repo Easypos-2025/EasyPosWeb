@@ -867,6 +867,10 @@ async def _init_db_data():
             "ALTER TABLE service_convenios DROP COLUMN IF EXISTS limite_credito",
             # Tipo de vehículo: ampliar ENUM
             "ALTER TABLE talleres_vehiculo_ext MODIFY COLUMN tipo ENUM('auto','camioneta','moto','cuadrimoto','camion','bus','tractomula','otro') DEFAULT 'auto'",
+            # Columna is_active en workers (no existía originalmente)
+            "ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_active TINYINT NOT NULL DEFAULT 1",
+            # Promesa de entrega en órdenes de servicio
+            "ALTER TABLE service_orders ADD COLUMN IF NOT EXISTS promesa_entrega DATETIME NULL",
         ]
         for _mig in _convenio_migrations:
             try:
