@@ -900,9 +900,11 @@ async def registrar_vehiculo(
     # Crear extensión vehículo
     await db.execute(text("""
         INSERT INTO talleres_vehiculo_ext
-            (asset_id, company_id, placa, tipo, marca, modelo, anio, color, km_actual)
+            (asset_id, company_id, placa, tipo, marca, modelo, anio, color, km_actual,
+             cliente_nombre, cliente_documento, cliente_telefono)
         VALUES
-            (:aid, :cid, :placa, :tipo, :marca, :modelo, :anio, :color, :km)
+            (:aid, :cid, :placa, :tipo, :marca, :modelo, :anio, :color, :km,
+             :cli_nom, :cli_doc, :cli_tel)
     """), {
         "aid":    asset_id,
         "cid":    company_id,
@@ -913,6 +915,320 @@ async def registrar_vehiculo(
         "anio":   payload.get("anio"),
         "color":  payload.get("color"),
         "km":     payload.get("km_actual", 0),
+        "cli_nom": payload.get("cliente_nombre"),
+        "cli_doc": payload.get("cliente_documento"),
+        "cli_tel": payload.get("cliente_telefono"),
     })
     await db.commit()
     return {"asset_id": asset_id, "placa": placa}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EDITAR VEHÍCULO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.put("/vehiculo/{asset_id}")
+async def editar_vehiculo(
+    asset_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Actualiza datos del vehículo y su propietario. Solo admin."""
+    company_id = payload.get("company_id") or current_user.company_id
+
+    chk = await db.execute(text(
+        "SELECT id FROM talleres_vehiculo_ext WHERE asset_id=:aid AND company_id=:cid"
+    ), {"aid": asset_id, "cid": company_id})
+    if not chk.scalar():
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
+
+    sets, params = [], {"aid": asset_id}
+    for col in ("tipo", "marca", "modelo", "color", "cliente_nombre", "cliente_documento", "cliente_telefono"):
+        if col in payload:
+            sets.append(f"{col} = :{col}")
+            params[col] = payload[col]
+    if "anio" in payload:
+        sets.append("anio = :anio")
+        params["anio"] = payload["anio"] or None
+    if "km_actual" in payload:
+        sets.append("km_actual = :km_actual")
+        params["km_actual"] = payload["km_actual"] or 0
+
+    if sets:
+        await db.execute(text(
+            f"UPDATE talleres_vehiculo_ext SET {', '.join(sets)} WHERE asset_id = :aid"
+        ), params)
+        await db.commit()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FOTOS DEL VEHÍCULO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/vehiculo/{asset_id}/fotos")
+async def listar_fotos(
+    asset_id: int,
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT id, photo_url, tipo, created_at
+        FROM vehicle_photos
+        WHERE asset_id = :aid AND company_id = :cid
+        ORDER BY created_at DESC
+    """), {"aid": asset_id, "cid": company_id})
+    return [dict(r) for r in rows.mappings()]
+
+
+@router.post("/vehiculo/{asset_id}/fotos")
+async def agregar_foto(
+    asset_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    company_id = payload.get("company_id")
+    photo_url  = (payload.get("photo_url") or "").strip()
+    tipo       = payload.get("tipo", "ingreso")
+    if not company_id or not photo_url:
+        raise HTTPException(status_code=400, detail="company_id y photo_url son requeridos")
+    if tipo not in ("ingreso", "proceso", "salida", "general"):
+        tipo = "ingreso"
+
+    await db.execute(text("""
+        INSERT INTO vehicle_photos (company_id, asset_id, photo_url, tipo)
+        VALUES (:cid, :aid, :url, :tipo)
+    """), {"cid": company_id, "aid": asset_id, "url": photo_url, "tipo": tipo})
+    await db.commit()
+    r = await db.execute(text("SELECT LAST_INSERT_ID()"))
+    return {"id": r.scalar(), "ok": True, "photo_url": photo_url, "tipo": tipo}
+
+
+@router.delete("/vehiculo/fotos/{foto_id}")
+async def eliminar_foto(
+    foto_id: int,
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    chk = await db.execute(text(
+        "SELECT id FROM vehicle_photos WHERE id=:fid AND company_id=:cid"
+    ), {"fid": foto_id, "cid": company_id})
+    if not chk.scalar():
+        raise HTTPException(status_code=404, detail="Foto no encontrada")
+    await db.execute(text("DELETE FROM vehicle_photos WHERE id=:fid"), {"fid": foto_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BÚSQUEDA AVANZADA DE ÓRDENES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/ordenes/buscar")
+async def buscar_ordenes_avanzado(
+    company_id: int  = Query(...),
+    q: str           = Query("", max_length=100),
+    estado: str      = Query(None),
+    mes: int         = Query(None),
+    anio: int        = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Búsqueda avanzada: por placa, cliente, número de orden, estado, mes/año."""
+    where = ["so.company_id = :cid"]
+    params: dict = {"cid": company_id}
+
+    if q:
+        where.append("(so.placa_vehiculo LIKE :q OR so.numero_orden LIKE :q OR c.name LIKE :q)")
+        params["q"] = f"%{q}%"
+    if estado:
+        where.append("so.estado = :estado")
+        params["estado"] = estado
+    if mes:
+        where.append("MONTH(so.fecha_ingreso) = :mes")
+        params["mes"] = mes
+    if anio:
+        where.append("YEAR(so.fecha_ingreso) = :anio")
+        params["anio"] = anio
+
+    sql = f"""
+        SELECT
+            so.id, so.numero_orden, so.placa_vehiculo, so.fecha_ingreso,
+            so.estado, so.estado_facturacion,
+            c.name AS cliente_nombre,
+            u.nombre AS jefe_nombre,
+            (SELECT COALESCE(SUM(d.subtotal),0) FROM service_order_details d
+             WHERE d.order_id = so.id) AS total_orden,
+            (SELECT COUNT(*) FROM service_order_details d
+             WHERE d.order_id = so.id) AS cant_items,
+            cv.nombre_empresa AS convenio_nombre
+        FROM service_orders so
+        LEFT JOIN clients c    ON c.id  = so.client_id
+        LEFT JOIN users u      ON u.id  = so.jefe_responsable_id
+        LEFT JOIN service_convenios cv ON cv.id = so.convenio_id
+        WHERE {' AND '.join(where)}
+        ORDER BY so.fecha_ingreso DESC
+        LIMIT 60
+    """
+    rows = await db.execute(text(sql), params)
+    return [dict(r) for r in rows.mappings()]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CIERRE DE CAJA DIARIO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/caja/resumen")
+async def resumen_caja(
+    company_id: int = Query(...),
+    fecha: str      = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Resumen financiero del día: ingresos, mano de obra liquidada, gastos."""
+    from datetime import date as ddate
+    fecha_q = fecha or str(ddate.today())
+
+    # Ingresos del día por tipo de orden
+    ing = await db.execute(text("""
+        SELECT
+            COALESCE(SUM(CASE WHEN so.estado_facturacion='particular'
+                         THEN sod.subtotal ELSE 0 END), 0)       AS ingresos_efectivo,
+            COALESCE(SUM(CASE WHEN so.estado_facturacion='convenio_pendiente'
+                         THEN sod.subtotal ELSE 0 END), 0)       AS ingresos_convenio,
+            COALESCE(SUM(sod.subtotal), 0)                        AS ingresos_total,
+            COUNT(DISTINCT so.id)                                 AS num_ordenes
+        FROM service_orders so
+        JOIN service_order_details sod ON sod.order_id = so.id
+        WHERE so.company_id = :cid AND DATE(so.fecha_ingreso) = :fecha
+    """), {"cid": company_id, "fecha": fecha_q})
+    ingresos = dict(ing.mappings().first() or {})
+
+    # Detalle de órdenes del día
+    det = await db.execute(text("""
+        SELECT
+            so.id, so.numero_orden, so.placa_vehiculo,
+            so.estado, so.estado_facturacion, so.fecha_ingreso,
+            c.name AS cliente_nombre,
+            cv.nombre_empresa AS convenio_nombre,
+            COALESCE(SUM(sod.subtotal), 0) AS total_orden
+        FROM service_orders so
+        LEFT JOIN clients c  ON c.id = so.client_id
+        LEFT JOIN service_convenios cv ON cv.id = so.convenio_id
+        LEFT JOIN service_order_details sod ON sod.order_id = so.id
+        WHERE so.company_id = :cid AND DATE(so.fecha_ingreso) = :fecha
+        GROUP BY so.id
+        ORDER BY so.fecha_ingreso
+    """), {"cid": company_id, "fecha": fecha_q})
+    ordenes_dia = [dict(r) for r in det.mappings()]
+
+    # Mano de obra liquidada (pagos a workers del día)
+    liq = await db.execute(text("""
+        SELECT
+            COALESCE(SUM(wl.monto_operario), 0) AS total_mano_obra,
+            COUNT(*)                             AS num_liquidaciones
+        FROM worker_liquidaciones wl
+        WHERE wl.company_id = :cid AND wl.fecha_pago = :fecha AND wl.estado = 'pagado'
+    """), {"cid": company_id, "fecha": fecha_q})
+    liquidaciones = dict(liq.mappings().first() or {})
+
+    # Detalle liquidaciones
+    liq_det = await db.execute(text("""
+        SELECT
+            wl.id, wl.monto_operario, wl.forma_pago, wl.fecha_pago,
+            w.name AS worker_nombre,
+            p.name AS profession_nombre
+        FROM worker_liquidaciones wl
+        JOIN workers w    ON w.id = wl.worker_id
+        LEFT JOIN professions p ON p.id = w.profession_id
+        WHERE wl.company_id = :cid AND wl.fecha_pago = :fecha AND wl.estado = 'pagado'
+        ORDER BY wl.created_at
+    """), {"cid": company_id, "fecha": fecha_q})
+    liquidaciones_det = [dict(r) for r in liq_det.mappings()]
+
+    # Egresos manuales del día
+    eg = await db.execute(text("""
+        SELECT COALESCE(SUM(monto), 0) AS total_egresos, COUNT(*) AS num_egresos
+        FROM caja_egresos
+        WHERE company_id = :cid AND fecha = :fecha
+    """), {"cid": company_id, "fecha": fecha_q})
+    egresos_sum = dict(eg.mappings().first() or {})
+
+    eg_det = await db.execute(text("""
+        SELECT id, concepto, categoria, monto, forma_pago, created_at
+        FROM caja_egresos
+        WHERE company_id = :cid AND fecha = :fecha
+        ORDER BY created_at
+    """), {"cid": company_id, "fecha": fecha_q})
+    egresos_det = [dict(r) for r in eg_det.mappings()]
+
+    total_egresos = float(liquidaciones.get("total_mano_obra") or 0) + float(egresos_sum.get("total_egresos") or 0)
+    saldo_neto    = float(ingresos.get("ingresos_efectivo") or 0) - total_egresos
+
+    return {
+        "fecha":             fecha_q,
+        "ingresos":          {k: float(v or 0) for k, v in ingresos.items()},
+        "ordenes_dia":       ordenes_dia,
+        "liquidaciones":     {k: float(v or 0) if isinstance(v, (int, float)) else v
+                              for k, v in liquidaciones.items()},
+        "liquidaciones_det": liquidaciones_det,
+        "egresos":           {k: float(v or 0) if isinstance(v, (int, float)) else v
+                              for k, v in egresos_sum.items()},
+        "egresos_det":       egresos_det,
+        "saldo_neto":        saldo_neto,
+        "total_egresos":     total_egresos,
+    }
+
+
+@router.post("/caja/egresos")
+async def crear_egreso_caja(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    from datetime import date as ddate
+    company_id = payload.get("company_id") or current_user.company_id
+    concepto   = (payload.get("concepto") or "").strip()
+    if not concepto:
+        raise HTTPException(status_code=400, detail="El concepto es requerido")
+    monto = float(payload.get("monto") or 0)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+    categoria  = payload.get("categoria", "gasto")
+    if categoria not in ("gasto", "compra", "nomina", "otro"):
+        categoria = "gasto"
+    forma_pago = payload.get("forma_pago", "efectivo")
+    fecha      = payload.get("fecha") or str(ddate.today())
+
+    await db.execute(text("""
+        INSERT INTO caja_egresos (company_id, fecha, concepto, categoria, monto, forma_pago, registrado_por)
+        VALUES (:cid, :fecha, :concepto, :cat, :monto, :fp, :usr)
+    """), {
+        "cid": company_id, "fecha": fecha, "concepto": concepto,
+        "cat": categoria, "monto": monto, "fp": forma_pago,
+        "usr": current_user.id,
+    })
+    await db.commit()
+    r = await db.execute(text("SELECT LAST_INSERT_ID()"))
+    return {"id": r.scalar(), "ok": True}
+
+
+@router.delete("/caja/egresos/{egreso_id}")
+async def eliminar_egreso_caja(
+    egreso_id: int,
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    chk = await db.execute(text(
+        "SELECT id FROM caja_egresos WHERE id=:eid AND company_id=:cid"
+    ), {"eid": egreso_id, "cid": company_id})
+    if not chk.scalar():
+        raise HTTPException(status_code=404, detail="Egreso no encontrado")
+    await db.execute(text("DELETE FROM caja_egresos WHERE id=:eid"), {"eid": egreso_id})
+    await db.commit()
+    return {"ok": True}

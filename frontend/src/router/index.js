@@ -761,6 +761,12 @@ const routes = [
         component: () => import("@/views/talleres/TalleresTiposVehiculoView.vue"),
         meta: { requiresAuth: true, title: "Tipos de Vehículo" }
       },
+      {
+        path: "/talleres/caja",
+        name: "TalleresCajaView",
+        component: () => import("@/views/talleres/TalleresCajaView.vue"),
+        meta: { requiresAuth: true, title: "Cierre de Caja" }
+      },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {

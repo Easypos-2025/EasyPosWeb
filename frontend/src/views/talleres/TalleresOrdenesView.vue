@@ -1,315 +1,386 @@
 <template>
-  <div class="ordenes-wrap">
+  <div class="ordenes-page">
 
-    <!-- ══════════════ PANEL IZQUIERDO: Búsqueda + Formulario ══════════════ -->
-    <div class="panel-left">
-
-      <!-- Buscador de placa -->
-      <div class="buscar-card">
-        <div class="buscar-header">
-          <i class="bi bi-car-front-fill buscar-icon"></i>
-          <div>
-            <h5 class="buscar-title">Buscar vehículo por placa</h5>
-            <p class="buscar-sub">Ingresa la placa para cargar el historial o abrir una nueva orden</p>
-          </div>
-        </div>
-        <div class="buscar-row">
-          <input
-            v-model="placaInput"
-            class="placa-input"
-            placeholder="Ej: ABC123"
-            maxlength="10"
-            @keyup.enter="buscarVehiculo"
-            @input="placaInput = placaInput.toUpperCase()"
-          />
-          <button class="btn-buscar" :disabled="loadingBuscar || placaInput.length < 3" @click="buscarVehiculo">
-            <i v-if="loadingBuscar" class="bi bi-hourglass-split spin"></i>
-            <i v-else class="bi bi-search"></i>
-            Buscar
-          </button>
+    <!-- ══ PASO 0: Buscador de placa ══════════════════════════════════════ -->
+    <div class="buscar-card">
+      <div class="buscar-inner">
+        <div class="buscar-icon-wrap"><i class="bi bi-car-front-fill"></i></div>
+        <div class="buscar-texts">
+          <h5>Buscar vehículo por placa</h5>
+          <p>Ingresa la placa para cargar el historial o abrir una nueva orden</p>
         </div>
       </div>
+      <div class="buscar-row">
+        <input
+          v-model="placaInput"
+          class="placa-input"
+          placeholder="Ej: ABC123"
+          maxlength="10"
+          ref="inputRef"
+          @keyup.enter="buscarVehiculo"
+          @input="placaInput = placaInput.toUpperCase()"
+        />
+        <button class="btn-buscar" :disabled="loadingBuscar || placaInput.length < 3" @click="buscarVehiculo">
+          <i v-if="loadingBuscar" class="bi bi-hourglass-split spin"></i>
+          <i v-else class="bi bi-search"></i>
+          Buscar
+        </button>
+        <button v-if="buscado" class="btn-limpiar" @click="limpiarBusqueda" title="Nueva búsqueda">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+    </div>
 
-      <!-- Tarjeta del vehículo encontrado / formulario registro -->
-      <template v-if="buscado">
+    <!-- ══ VEHÍCULO ENCONTRADO ══════════════════════════════════════════════ -->
+    <template v-if="buscado && vehiculo">
 
-        <!-- Vehículo encontrado -->
-        <div v-if="vehiculo" class="vehiculo-card found">
-          <div class="vc-header">
-            <i class="bi bi-check-circle-fill vc-ok"></i>
-            <div>
+      <!-- Tarjeta del vehículo -->
+      <div class="vehiculo-card found">
+        <div class="vc-top">
+          <div class="vc-avatar"><i class="bi bi-car-front-fill"></i></div>
+          <div class="vc-datos">
+            <div class="vc-placa-row">
               <span class="vc-placa">{{ vehiculo.placa }}</span>
-              <span class="vc-tipo">{{ labelTipo(vehiculo.tipo) }}</span>
+              <span class="vc-tipo-badge">{{ vehiculo.tipo || '—' }}</span>
             </div>
-            <button class="btn-icon" title="Cambiar vehículo" @click="limpiarBusqueda">
-              <i class="bi bi-x-circle"></i>
-            </button>
-          </div>
-          <div class="vc-grid">
-            <div class="vc-field"><span class="vc-lbl">Marca / Modelo</span><span class="vc-val">{{ [vehiculo.marca, vehiculo.modelo].filter(Boolean).join(' ') || '—' }}</span></div>
-            <div class="vc-field"><span class="vc-lbl">Año</span><span class="vc-val">{{ vehiculo.anio || '—' }}</span></div>
-            <div class="vc-field"><span class="vc-lbl">Color</span><span class="vc-val">{{ vehiculo.color || '—' }}</span></div>
-            <div class="vc-field"><span class="vc-lbl">Km actual</span><span class="vc-val">{{ vehiculo.km_actual ? fmt0(vehiculo.km_actual) + ' km' : '—' }}</span></div>
-            <div class="vc-field span2"><span class="vc-lbl">Propietario</span><span class="vc-val">{{ vehiculo.cliente_nombre || '—' }} <span class="vc-cedula">{{ vehiculo.cliente_documento }}</span></span></div>
-            <div class="vc-field"><span class="vc-lbl">Teléfono</span><span class="vc-val">{{ vehiculo.cliente_telefono || '—' }}</span></div>
-          </div>
-        </div>
-
-        <!-- Vehículo no encontrado → formulario de registro rápido -->
-        <div v-else class="vehiculo-card new">
-          <div class="vc-header">
-            <i class="bi bi-plus-circle-fill vc-new"></i>
-            <div>
-              <span class="vc-placa">{{ placaInput }}</span>
-              <span class="vc-tipo nuevo">Vehículo nuevo — completar datos</span>
+            <div class="vc-desc">{{ [vehiculo.marca, vehiculo.modelo, vehiculo.anio].filter(Boolean).join(' · ') || '—' }}</div>
+            <div class="vc-meta">
+              <span v-if="vehiculo.color"><i class="bi bi-circle-fill" style="font-size:9px"></i> {{ vehiculo.color }}</span>
+              <span v-if="vehiculo.km_actual"><i class="bi bi-speedometer2"></i> {{ fmt0(vehiculo.km_actual) }} km</span>
             </div>
           </div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Tipo *</label>
-              <select v-model="nuevoVehiculo.tipo" class="form-ctrl">
-                <option v-for="t in tiposVehiculo" :key="t.id" :value="String(t.id)">
-                  {{ t.nombre }}
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Marca</label>
-              <input v-model="nuevoVehiculo.marca" class="form-ctrl" placeholder="Toyota, Chevrolet…" />
-            </div>
-            <div class="form-group">
-              <label>Modelo</label>
-              <input v-model="nuevoVehiculo.modelo" class="form-ctrl" placeholder="Corolla, Spark…" />
-            </div>
-            <div class="form-group">
-              <label>Año</label>
-              <input v-model="nuevoVehiculo.anio" type="number" class="form-ctrl" placeholder="2022" min="1950" :max="anioActual" />
-            </div>
-            <div class="form-group">
-              <label>Color</label>
-              <input v-model="nuevoVehiculo.color" class="form-ctrl" placeholder="Blanco, Negro…" />
-            </div>
-            <div class="form-group">
-              <label>Km actual</label>
-              <input v-model="nuevoVehiculo.km_actual" type="number" class="form-ctrl" placeholder="45000" min="0" />
-            </div>
-            <div class="form-group span2">
-              <label>Nombre del propietario *</label>
-              <input v-model="nuevoVehiculo.cliente_nombre" class="form-ctrl" placeholder="Nombre completo" />
-            </div>
-            <div class="form-group">
-              <label>Documento</label>
-              <input v-model="nuevoVehiculo.cliente_documento" class="form-ctrl" placeholder="Cédula / NIT" />
-            </div>
-            <div class="form-group">
-              <label>Teléfono</label>
-              <input v-model="nuevoVehiculo.cliente_telefono" class="form-ctrl" placeholder="3001234567" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Formulario apertura de orden -->
-        <div class="orden-form-card">
-          <h6 class="form-section-title">
-            <i class="bi bi-clipboard2-plus-fill"></i> Datos de la orden
-          </h6>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Tipo de servicio *</label>
-              <select v-model="orden.tipo_item" class="form-ctrl">
-                <option value="mecanica">🔧 Mecánica</option>
-                <option value="lavado">🚿 Lavado / Estética</option>
-                <option value="latoneria">🔨 Latonería</option>
-                <option value="pintura">🎨 Pintura</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Km al ingreso</label>
-              <input v-model="orden.km_ingreso" type="number" class="form-ctrl" placeholder="45200" min="0" />
-            </div>
-            <div class="form-group span2">
-              <label>Diagnóstico inicial / Descripción del trabajo</label>
-              <textarea v-model="orden.diagnostico" class="form-ctrl" rows="3"
-                placeholder="Describe el problema reportado o el servicio solicitado…"></textarea>
-            </div>
-          </div>
-
-          <!-- Asignación de personal -->
-          <h6 class="form-section-title mt">
-            <i class="bi bi-people-fill"></i> Asignación de personal
-          </h6>
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Jefe responsable</label>
-              <select v-model="orden.jefe_responsable_id" class="form-ctrl">
-                <option value="">— Sin asignar —</option>
-                <option v-for="u in usuarios" :key="u.id" :value="u.id">{{ u.full_name }}</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Operario principal</label>
-              <select v-model="orden.operario_id" class="form-ctrl">
-                <option value="">— Sin asignar —</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">
-                  {{ w.name }} <template v-if="w.profession_nombre">— {{ w.profession_nombre }}</template>
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>¿Convenio empresarial?</label>
-              <select v-model="orden.convenio_id" class="form-ctrl">
-                <option value="">— Particular —</option>
-                <option v-for="cv in convenios" :key="cv.id" :value="cv.id">{{ cv.nombre_empresa }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button class="btn-cancel-form" @click="limpiarBusqueda">
-              <i class="bi bi-x"></i> Cancelar
-            </button>
-            <button class="btn-abrir" :disabled="loadingGuardar || !puedeGuardar" @click="abrirOrden">
-              <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
-              <i v-else class="bi bi-clipboard2-check-fill"></i>
-              Abrir Orden de Servicio
+          <div class="vc-actions">
+            <button v-if="isAdmin" class="btn-edit-v" @click="abrirEditarVehiculo" title="Editar vehículo">
+              <i class="bi bi-pencil-fill"></i>
             </button>
           </div>
         </div>
+        <div v-if="vehiculo.cliente_nombre" class="vc-propietario">
+          <i class="bi bi-person-fill"></i>
+          <span>{{ vehiculo.cliente_nombre }}</span>
+          <span v-if="vehiculo.cliente_documento" class="vc-doc">CC {{ vehiculo.cliente_documento }}</span>
+          <span v-if="vehiculo.cliente_telefono" class="vc-tel"><i class="bi bi-telephone-fill"></i> {{ vehiculo.cliente_telefono }}</span>
+        </div>
 
-      </template>
-
-      <!-- Estado inicial (sin búsqueda) -->
-      <div v-else class="empty-state">
-        <i class="bi bi-car-front empty-icon"></i>
-        <p>Ingresa la placa del vehículo para comenzar</p>
+        <!-- Fotos del vehículo -->
+        <div class="vc-fotos">
+          <div v-for="f in fotosVehiculo" :key="f.id" class="foto-thumb">
+            <img :src="f.photo_url" :alt="f.tipo" />
+            <span class="foto-tipo-badge">{{ f.tipo }}</span>
+            <button v-if="isAdmin" class="foto-del" @click="eliminarFoto(f)" title="Eliminar foto">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+          <label class="foto-add" title="Agregar foto de ingreso">
+            <i class="bi bi-camera-fill"></i>
+            <span>Foto</span>
+            <input type="file" accept="image/*" class="foto-file-input" @change="subirFoto" />
+          </label>
+        </div>
       </div>
 
-    </div>
+      <!-- Tabs: Nueva Orden | Historial -->
+      <div class="tabs-bar">
+        <button :class="['tab-btn', { active: tabActivo === 'nueva' }]" @click="tabActivo = 'nueva'">
+          <i class="bi bi-clipboard2-plus-fill"></i> Nueva Orden
+        </button>
+        <button :class="['tab-btn', { active: tabActivo === 'historial' }]" @click="tabActivo = 'historial'">
+          <i class="bi bi-clock-history"></i> Historial
+          <span v-if="historial.length" class="tab-count">{{ historial.length }}</span>
+        </button>
+      </div>
 
-    <!-- ══════════════ PANEL DERECHO: Historial del vehículo / Lista de órdenes ══════════════ -->
-    <div class="panel-right">
-
-      <!-- Historial del vehículo buscado -->
-      <template v-if="vehiculo && historial.length > 0">
-        <div class="historial-header">
-          <h6 class="historial-title">
-            <i class="bi bi-clock-history"></i>
-            Historial de {{ vehiculo.placa }}
-          </h6>
-          <span class="hist-count">{{ historial.length }} visita{{ historial.length !== 1 ? 's' : '' }}</span>
-        </div>
-
-        <!-- Métricas de frecuencia -->
-        <div v-if="metricas" class="metricas-row">
-          <div class="metrica-chip">
-            <i class="bi bi-calendar-check"></i>
-            Última visita: <strong>{{ fmtFecha(metricas.ultima_visita) }}</strong>
+      <!-- TAB NUEVA ORDEN -->
+      <div v-if="tabActivo === 'nueva'" class="form-card">
+        <div class="form-grid">
+          <div class="fg">
+            <label>Tipo de servicio *</label>
+            <select v-model="orden.tipo_item" class="form-ctrl">
+              <option value="mecanica">🔧 Mecánica</option>
+              <option value="lavado">🚿 Lavado / Estética</option>
+              <option value="latoneria">🔨 Latonería</option>
+              <option value="pintura">🎨 Pintura</option>
+              <option value="diagnostico">🔍 Diagnóstico</option>
+            </select>
           </div>
-          <div v-if="metricas.dias_desde" class="metrica-chip">
-            <i class="bi bi-clock"></i>
-            Hace {{ metricas.dias_desde }} días
+          <div class="fg">
+            <label>Km al ingreso</label>
+            <input v-model.number="orden.km_ingreso" type="number" class="form-ctrl" placeholder="220000" />
+          </div>
+          <div class="fg span2">
+            <label>Diagnóstico / Descripción del trabajo</label>
+            <textarea v-model="orden.diagnostico" class="form-ctrl" rows="3"
+              placeholder="Describe el problema reportado o el servicio solicitado…"></textarea>
+          </div>
+          <div class="fg">
+            <label>Jefe responsable</label>
+            <select v-model="orden.jefe_responsable_id" class="form-ctrl">
+              <option value="">— Sin asignar —</option>
+              <option v-for="u in usuarios" :key="u.id" :value="u.id">{{ u.nombre || u.name }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Operario principal</label>
+            <select v-model="orden.operario_id" class="form-ctrl">
+              <option value="">— Sin asignar —</option>
+              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>¿Convenio empresarial?</label>
+            <select v-model="orden.convenio_id" class="form-ctrl">
+              <option value="">— Particular —</option>
+              <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Promesa de entrega</label>
+            <CustomDatePicker v-model="orden.promesa_entrega" />
           </div>
         </div>
-
-        <div class="historial-list">
-          <div
-            v-for="h in historial" :key="h.id"
-            class="hist-item"
-            :class="`hs-${h.estado}`"
-          >
-            <div class="hist-top">
-              <span class="hist-num">{{ h.numero_orden }}</span>
-              <span :class="['hist-badge', `hb-${h.estado}`]">{{ labelEstado(h.estado) }}</span>
-              <span class="hist-fecha">{{ fmtFecha(h.fecha_ingreso) }}</span>
-            </div>
-            <div class="hist-body">
-              <p v-if="h.trabajo_realizado" class="hist-trabajo">{{ h.trabajo_realizado }}</p>
-              <p v-else-if="h.diagnostico" class="hist-trabajo text-muted">{{ h.diagnostico }}</p>
-            </div>
-            <div class="hist-foot">
-              <span v-if="h.km_ingreso" class="hist-meta"><i class="bi bi-speedometer2"></i> {{ fmt0(h.km_ingreso) }} km</span>
-              <span v-if="h.jefe_nombre" class="hist-meta"><i class="bi bi-person-fill"></i> {{ h.jefe_nombre }}</span>
-              <span v-if="h.total_orden" class="hist-total">{{ fmt(h.total_orden) }}</span>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <!-- Sin historial -->
-      <template v-else-if="vehiculo && historial.length === 0">
-        <div class="historial-header">
-          <h6 class="historial-title"><i class="bi bi-clock-history"></i> Historial</h6>
-        </div>
-        <div class="no-hist">
-          <i class="bi bi-clipboard2-x"></i>
-          <p>Primera visita de este vehículo</p>
-        </div>
-      </template>
-
-      <!-- Lista general de órdenes del día -->
-      <template v-else>
-        <div class="historial-header">
-          <h6 class="historial-title">
-            <i class="bi bi-list-check"></i> Órdenes del día
-          </h6>
-          <button class="btn-icon" @click="cargarOrdenes" :disabled="loadingOrdenes">
-            <i :class="['bi bi-arrow-clockwise', { spin: loadingOrdenes }]"></i>
+        <div class="form-actions">
+          <button class="btn btn-secondary" @click="limpiarBusqueda">Cancelar</button>
+          <button class="btn btn-primary" @click="abrirOrden" :disabled="loadingGuardar">
+            <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
+            <i v-else class="bi bi-clipboard2-check-fill"></i>
+            Abrir Orden de Servicio
           </button>
         </div>
+      </div>
 
-        <!-- Filtro de estado -->
-        <div class="filtro-estados">
+      <!-- TAB HISTORIAL -->
+      <div v-if="tabActivo === 'historial'" class="historial-section">
+        <div class="hist-filtros">
           <button
-            v-for="f in FILTROS"
-            :key="f.valor"
-            :class="['filtro-btn', { active: filtroEstado === f.valor }]"
-            @click="filtroEstado = f.valor; cargarOrdenes()"
-          >
-            {{ f.label }}
-            <span v-if="f.valor && conteos[f.valor]" class="filtro-count">{{ conteos[f.valor] }}</span>
-          </button>
+            v-for="f in FILTROS_HIST"
+            :key="f.val"
+            :class="['hf-btn', { active: filtroHist === f.val }]"
+            @click="filtroHist = f.val"
+          >{{ f.label }}</button>
         </div>
-
-        <div v-if="loadingOrdenes" class="loading-row">
-          <i class="bi bi-hourglass-split spin"></i> Cargando...
-        </div>
-
-        <div v-else-if="ordenes.length === 0" class="no-hist">
-          <i class="bi bi-clipboard2-x"></i>
-          <p>Sin órdenes {{ filtroEstado ? 'con ese estado' : 'hoy' }}</p>
-        </div>
-
-        <div v-else class="historial-list">
+        <div class="hist-list">
           <div
-            v-for="o in ordenes" :key="o.id"
-            class="hist-item clickable"
+            v-for="o in historialFiltrado"
+            :key="o.id"
+            class="hist-item"
             :class="`hs-${o.estado}`"
-            @click="verOrden(o)"
           >
-            <div class="hist-top">
-              <span class="hist-num">{{ o.numero_orden }}</span>
-              <span :class="['hist-badge', `hb-${o.estado}`]">{{ labelEstado(o.estado) }}</span>
-              <span class="hist-fecha">{{ fmtHora(o.fecha_ingreso) }}</span>
+            <div class="hi-left">
+              <span class="hi-num">{{ o.numero_orden }}</span>
+              <span :class="['hi-badge', `hb-${o.estado}`]">{{ LABELS_ESTADO[o.estado] || o.estado }}</span>
+              <span class="hi-fecha">{{ fmtFecha(o.fecha_ingreso) }}</span>
             </div>
-            <div class="hist-body">
-              <strong class="hist-placa">{{ o.placa_vehiculo }}</strong>
-              <span class="hist-cliente"> — {{ o.cliente_nombre || 'Sin cliente' }}</span>
+            <div class="hi-center">
+              <span v-if="o.jefe_nombre" class="hi-meta"><i class="bi bi-person-fill"></i> {{ o.jefe_nombre }}</span>
+              <span v-if="o.total_orden" class="hi-total">{{ fmt(o.total_orden) }}</span>
             </div>
-            <div class="hist-foot">
-              <span v-if="o.jefe_nombre" class="hist-meta"><i class="bi bi-person-fill"></i> {{ o.jefe_nombre }}</span>
-              <span v-if="o.cant_items" class="hist-meta"><i class="bi bi-list-ul"></i> {{ o.cant_items }} ítems</span>
-              <span v-if="o.total_orden" class="hist-total">{{ fmt(o.total_orden) }}</span>
-              <span v-if="o.convenio_nombre" class="hist-convenio">
-                <i class="bi bi-building-fill"></i> {{ o.convenio_nombre }}
-              </span>
+            <div class="hi-actions">
+              <button
+                v-if="['abierta','en_proceso'].includes(o.estado)"
+                class="btn-hist-edit"
+                @click="irAOrden(o.id)"
+                title="Editar orden"
+              ><i class="bi bi-pencil-fill"></i> Editar</button>
+              <button class="btn-hist-print" @click="imprimirOrden(o)" title="Imprimir">
+                <i class="bi bi-printer-fill"></i>
+              </button>
             </div>
           </div>
+          <div v-if="historialFiltrado.length === 0" class="hist-empty">
+            <i class="bi bi-inbox"></i>
+            <p>No hay órdenes {{ filtroHist === 'abiertas' ? 'abiertas' : filtroHist === 'cerradas' ? 'cerradas' : '' }} para este vehículo.</p>
+          </div>
         </div>
-      </template>
+      </div>
+    </template>
 
-    </div>
+    <!-- ══ VEHÍCULO NO ENCONTRADO: WIZARD ══════════════════════════════════ -->
+    <template v-if="buscado && !vehiculo">
 
-    <!-- Toast de confirmación -->
+      <!-- Indicador de pasos -->
+      <div class="wizard-steps">
+        <div :class="['wstep', { active: wizardStep === 1, done: wizardStep > 1 }]">
+          <span class="ws-num">1</span>
+          <span class="ws-label">Datos del vehículo</span>
+        </div>
+        <div class="ws-line"></div>
+        <div :class="['wstep', { active: wizardStep === 2, done: wizardStep > 2 }]">
+          <span class="ws-num">2</span>
+          <span class="ws-label">Nueva orden</span>
+        </div>
+      </div>
+
+      <!-- WIZARD PASO 1: Registro del vehículo -->
+      <div v-if="wizardStep === 1" class="form-card">
+        <div class="form-section-title"><i class="bi bi-car-front-fill"></i> Nuevo vehículo — {{ placaInput }}</div>
+        <div class="form-grid">
+          <div class="fg">
+            <label>Tipo de vehículo *</label>
+            <select v-model="nuevoVehiculo.tipo" class="form-ctrl">
+              <option v-for="t in tiposVehiculo" :key="t.id" :value="t.nombre">{{ t.nombre }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Marca</label>
+            <input v-model="nuevoVehiculo.marca" class="form-ctrl" placeholder="Toyota, Chevrolet…" />
+          </div>
+          <div class="fg">
+            <label>Modelo</label>
+            <input v-model="nuevoVehiculo.modelo" class="form-ctrl" placeholder="Corolla, Spark…" />
+          </div>
+          <div class="fg">
+            <label>Año</label>
+            <input v-model.number="nuevoVehiculo.anio" type="number" min="1950" :max="anioActual + 1" class="form-ctrl" placeholder="2020" />
+          </div>
+          <div class="fg">
+            <label>Color</label>
+            <input v-model="nuevoVehiculo.color" class="form-ctrl" placeholder="Negro, Blanco…" />
+          </div>
+          <div class="fg">
+            <label>Km actual</label>
+            <input v-model.number="nuevoVehiculo.km_actual" type="number" min="0" class="form-ctrl" placeholder="0" />
+          </div>
+        </div>
+
+        <div class="form-section-title" style="margin-top:16px"><i class="bi bi-person-fill"></i> Propietario</div>
+        <div class="form-grid">
+          <div class="fg span2">
+            <label>Nombre completo *</label>
+            <input v-model="nuevoVehiculo.cliente_nombre" class="form-ctrl" placeholder="Nombre del propietario" />
+          </div>
+          <div class="fg">
+            <label>Documento (CC / NIT)</label>
+            <input v-model="nuevoVehiculo.cliente_documento" class="form-ctrl" placeholder="123456789" />
+          </div>
+          <div class="fg">
+            <label>Teléfono</label>
+            <input v-model="nuevoVehiculo.cliente_telefono" class="form-ctrl" placeholder="300 000 0000" />
+          </div>
+        </div>
+
+        <!-- Fotos de ingreso -->
+        <div class="form-section-title" style="margin-top:16px"><i class="bi bi-camera-fill"></i> Fotos del vehículo al ingreso</div>
+        <div class="fotos-upload-area">
+          <div v-for="(f, i) in fotosNuevas" :key="i" class="foto-preview">
+            <img :src="f.preview" alt="foto" />
+            <button class="foto-del" @click="fotosNuevas.splice(i,1)"><i class="bi bi-x"></i></button>
+          </div>
+          <label class="foto-add-btn">
+            <i class="bi bi-camera-fill"></i>
+            <span>Agregar foto</span>
+            <input type="file" accept="image/*" multiple class="foto-file-input" @change="agregarFotoNueva" />
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-secondary" @click="limpiarBusqueda">Cancelar</button>
+          <button class="btn btn-primary" @click="registrarVehiculo" :disabled="loadingGuardar">
+            <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
+            <i v-else class="bi bi-check-lg"></i>
+            Registrar vehículo
+          </button>
+        </div>
+      </div>
+
+      <!-- WIZARD PASO 2: Nueva orden (vehículo recién registrado) -->
+      <div v-if="wizardStep === 2" class="form-card">
+        <div class="form-section-title"><i class="bi bi-clipboard2-plus-fill"></i> Abrir Orden de Servicio</div>
+        <div class="form-grid">
+          <div class="fg">
+            <label>Tipo de servicio *</label>
+            <select v-model="orden.tipo_item" class="form-ctrl">
+              <option value="mecanica">🔧 Mecánica</option>
+              <option value="lavado">🚿 Lavado / Estética</option>
+              <option value="latoneria">🔨 Latonería</option>
+              <option value="pintura">🎨 Pintura</option>
+              <option value="diagnostico">🔍 Diagnóstico</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Km al ingreso</label>
+            <input v-model.number="orden.km_ingreso" type="number" class="form-ctrl" />
+          </div>
+          <div class="fg span2">
+            <label>Diagnóstico / Descripción</label>
+            <textarea v-model="orden.diagnostico" class="form-ctrl" rows="3"
+              placeholder="Describe el problema o servicio solicitado…"></textarea>
+          </div>
+          <div class="fg">
+            <label>Jefe responsable</label>
+            <select v-model="orden.jefe_responsable_id" class="form-ctrl">
+              <option value="">— Sin asignar —</option>
+              <option v-for="u in usuarios" :key="u.id" :value="u.id">{{ u.nombre || u.name }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Operario principal</label>
+            <select v-model="orden.operario_id" class="form-ctrl">
+              <option value="">— Sin asignar —</option>
+              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>¿Convenio empresarial?</label>
+            <select v-model="orden.convenio_id" class="form-ctrl">
+              <option value="">— Particular —</option>
+              <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Promesa de entrega</label>
+            <CustomDatePicker v-model="orden.promesa_entrega" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" @click="wizardStep = 1">Atrás</button>
+          <button class="btn btn-primary" @click="abrirOrden" :disabled="loadingGuardar">
+            <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
+            <i v-else class="bi bi-clipboard2-check-fill"></i>
+            Abrir Orden de Servicio
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- ══ MODAL EDITAR VEHÍCULO ══════════════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="showEditVehiculo" class="modal-overlay" @click.self="showEditVehiculo = false">
+        <div class="modal-box">
+          <div class="mh">
+            <h3><i class="bi bi-pencil-fill"></i> Editar vehículo — {{ vehiculo?.placa }}</h3>
+            <button class="btn-x" @click="showEditVehiculo = false"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="mb-area">
+            <div class="form-grid">
+              <div class="fg">
+                <label>Tipo</label>
+                <select v-model="editForm.tipo" class="form-ctrl">
+                  <option v-for="t in tiposVehiculo" :key="t.id" :value="t.nombre">{{ t.nombre }}</option>
+                </select>
+              </div>
+              <div class="fg"><label>Marca</label><input v-model="editForm.marca" class="form-ctrl" /></div>
+              <div class="fg"><label>Modelo</label><input v-model="editForm.modelo" class="form-ctrl" /></div>
+              <div class="fg"><label>Año</label><input v-model.number="editForm.anio" type="number" class="form-ctrl" /></div>
+              <div class="fg"><label>Color</label><input v-model="editForm.color" class="form-ctrl" /></div>
+              <div class="fg"><label>Km actual</label><input v-model.number="editForm.km_actual" type="number" class="form-ctrl" /></div>
+              <div class="form-section-title span2"><i class="bi bi-person-fill"></i> Propietario</div>
+              <div class="fg span2"><label>Nombre</label><input v-model="editForm.cliente_nombre" class="form-ctrl" /></div>
+              <div class="fg"><label>Documento</label><input v-model="editForm.cliente_documento" class="form-ctrl" /></div>
+              <div class="fg"><label>Teléfono</label><input v-model="editForm.cliente_telefono" class="form-ctrl" /></div>
+            </div>
+          </div>
+          <div class="mf">
+            <button class="btn btn-secondary btn-sm" @click="showEditVehiculo = false">Cancelar</button>
+            <button class="btn btn-primary btn-sm" @click="guardarVehiculo" :disabled="loadingGuardar">
+              <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
+              Guardar cambios
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Toast -->
     <Teleport to="body">
       <div v-if="toast.visible" :class="['toast-msg', `toast-${toast.tipo}`]">
         <i :class="toast.tipo === 'ok' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-triangle-fill'"></i>
@@ -321,192 +392,249 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
+const router       = useRouter()
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
+const isAdmin      = computed(() => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user') || '{}')
+    const rol = (u?.role || '').toLowerCase()
+    return rol.includes('admin') || rol.includes('sysadmin')
+  } catch { return false }
+})
 
-// ── Estado búsqueda ───────────────────────────────────────────────────────
+// ── Búsqueda ──────────────────────────────────────────────────────────────
 const placaInput    = ref('')
 const loadingBuscar = ref(false)
 const buscado       = ref(false)
 const vehiculo      = ref(null)
 const historial     = ref([])
-
-const metricas = computed(() => {
-  if (!historial.value.length) return null
-  const ultima = historial.value[0]?.fecha_ingreso
-  if (!ultima) return null
-  const dias = Math.floor((Date.now() - new Date(ultima)) / 86400000)
-  return { ultima_visita: ultima, dias_desde: dias }
-})
+const fotosVehiculo = ref([])
+const inputRef      = ref(null)
 
 async function buscarVehiculo() {
   if (!placaInput.value || placaInput.value.length < 3) return
   loadingBuscar.value = true
-  buscado.value       = false
-  vehiculo.value      = null
-  historial.value     = []
+  buscado.value = false; vehiculo.value = null; historial.value = []; fotosVehiculo.value = []
   try {
     const { data } = await api.get('/api/talleres/vehiculo', {
       params: { company_id: companyId.value, placa: placaInput.value }
     })
     vehiculo.value  = data.vehiculo
-    historial.value = data.historial
+    historial.value = data.historial || []
     buscado.value   = true
     if (vehiculo.value) {
-      // Pre-llenar km ingreso con el km actual del vehículo
       orden.value.km_ingreso = vehiculo.value.km_actual || ''
+      cargarFotos()
     }
-  } catch {
-    mostrarToast('Error al buscar el vehículo', 'error')
-  } finally {
-    loadingBuscar.value = false
-  }
+  } catch { mostrarToast('Error al buscar el vehículo', 'error') }
+  finally { loadingBuscar.value = false }
+}
+
+async function cargarFotos() {
+  if (!vehiculo.value?.asset_id) return
+  try {
+    const { data } = await api.get(`/api/talleres/vehiculo/${vehiculo.value.asset_id}/fotos`, {
+      params: { company_id: companyId.value }
+    })
+    fotosVehiculo.value = data
+  } catch { /* silencioso */ }
 }
 
 function limpiarBusqueda() {
-  placaInput.value = ''
-  buscado.value    = false
-  vehiculo.value   = null
-  historial.value  = []
-  orden.value      = { ...ORDEN_DEFAULT }
-  nuevoVehiculo.value = { ...NV_DEFAULT }
-  cargarOrdenes()
+  placaInput.value = ''; buscado.value = false; vehiculo.value = null
+  historial.value = []; fotosVehiculo.value = []; wizardStep.value = 1
+  orden.value = { ...ORDEN_DEFAULT }; nuevoVehiculo.value = { ...NV_DEFAULT }
+  nextTick(() => inputRef.value?.focus())
 }
 
-// ── Formulario nuevo vehículo ─────────────────────────────────────────────
-const anioActual = new Date().getFullYear()
-const NV_DEFAULT = { tipo: '', marca: '', modelo: '', anio: '', color: '', km_actual: 0, cliente_nombre: '', cliente_documento: '', cliente_telefono: '' }
-const nuevoVehiculo = ref({ ...NV_DEFAULT })
+// ── Fotos (vehículo existente) ────────────────────────────────────────────
+async function subirFoto(e) {
+  const file = e.target.files?.[0]
+  if (!file || !vehiculo.value?.asset_id) return
+  const fd = new FormData(); fd.append('file', file)
+  try {
+    const up = await api.post('/upload-image/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const url = up.data?.url || up.data?.photo_url
+    if (!url) { mostrarToast('Error al subir imagen', 'error'); return }
+    await api.post(`/api/talleres/vehiculo/${vehiculo.value.asset_id}/fotos`, {
+      company_id: companyId.value, photo_url: url, tipo: 'ingreso'
+    })
+    await cargarFotos()
+  } catch { mostrarToast('Error al guardar foto', 'error') }
+  e.target.value = ''
+}
 
-// ── Formulario orden ──────────────────────────────────────────────────────
-const ORDEN_DEFAULT = { tipo_item: 'mecanica', km_ingreso: '', diagnostico: '', jefe_responsable_id: '', operario_id: '', convenio_id: '' }
-const orden          = ref({ ...ORDEN_DEFAULT })
-const loadingGuardar = ref(false)
+async function eliminarFoto(f) {
+  if (!confirm('¿Eliminar esta foto?')) return
+  try {
+    await api.delete(`/api/talleres/vehiculo/fotos/${f.id}`, { params: { company_id: companyId.value } })
+    fotosVehiculo.value = fotosVehiculo.value.filter(x => x.id !== f.id)
+  } catch { mostrarToast('Error al eliminar', 'error') }
+}
 
-const puedeGuardar = computed(() => {
-  if (!placaInput.value) return false
-  if (!vehiculo.value && !nuevoVehiculo.value.cliente_nombre) return false
-  return true
+// ── Tabs historial ────────────────────────────────────────────────────────
+const tabActivo   = ref('nueva')
+const filtroHist  = ref('todas')
+const FILTROS_HIST = [
+  { val: 'todas',   label: 'Todas' },
+  { val: 'abiertas', label: 'Abiertas' },
+  { val: 'cerradas', label: 'Cerradas' },
+]
+const LABELS_ESTADO = { abierta: 'Abierta', en_proceso: 'En proceso', terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada' }
+const historialFiltrado = computed(() => {
+  if (filtroHist.value === 'abiertas')
+    return historial.value.filter(o => ['abierta','en_proceso','terminada'].includes(o.estado))
+  if (filtroHist.value === 'cerradas')
+    return historial.value.filter(o => ['entregada','cancelada'].includes(o.estado))
+  return historial.value
 })
 
-async function abrirOrden() {
-  if (!puedeGuardar.value) return
+function irAOrden(id) { router.push(`/talleres/orden/${id}`) }
+function imprimirOrden(o) {
+  window.open(`/talleres/orden/${o.id}?print=1`, '_blank')
+}
+
+// ── Wizard nuevo vehículo ─────────────────────────────────────────────────
+const wizardStep   = ref(1)
+const anioActual   = new Date().getFullYear()
+const NV_DEFAULT   = { tipo: '', marca: '', modelo: '', anio: '', color: '', km_actual: 0,
+                       cliente_nombre: '', cliente_documento: '', cliente_telefono: '' }
+const nuevoVehiculo = ref({ ...NV_DEFAULT })
+const fotosNuevas   = ref([])
+const loadingGuardar = ref(false)
+
+function agregarFotoNueva(e) {
+  for (const f of e.target.files) {
+    const reader = new FileReader()
+    reader.onload = ev => fotosNuevas.value.push({ file: f, preview: ev.target.result })
+    reader.readAsDataURL(f)
+  }
+  e.target.value = ''
+}
+
+async function registrarVehiculo() {
+  if (!nuevoVehiculo.value.cliente_nombre?.trim()) {
+    mostrarToast('El nombre del propietario es requerido', 'error'); return
+  }
   loadingGuardar.value = true
   try {
-    let vehicleId  = vehiculo.value?.asset_id ?? null
-    let clienteId  = vehiculo.value?.client_id ?? null
+    const rv = await api.post('/api/talleres/vehiculo', {
+      company_id:         companyId.value,
+      placa:              placaInput.value,
+      tipo:               nuevoVehiculo.value.tipo || tiposVehiculo.value[0]?.nombre || 'auto',
+      marca:              nuevoVehiculo.value.marca,
+      modelo:             nuevoVehiculo.value.modelo,
+      anio:               nuevoVehiculo.value.anio || null,
+      color:              nuevoVehiculo.value.color,
+      km_actual:          nuevoVehiculo.value.km_actual || 0,
+      cliente_nombre:     nuevoVehiculo.value.cliente_nombre,
+      cliente_documento:  nuevoVehiculo.value.cliente_documento,
+      cliente_telefono:   nuevoVehiculo.value.cliente_telefono,
+    })
+    const assetId = rv.data.asset_id
 
-    // Si el vehículo es nuevo → registrar primero
-    if (!vehiculo.value) {
-      const rv = await api.post('/api/talleres/vehiculo', {
-        company_id:      companyId.value,
-        placa:           placaInput.value,
-        tipo:            nuevoVehiculo.value.tipo,
-        marca:           nuevoVehiculo.value.marca,
-        modelo:          nuevoVehiculo.value.modelo,
-        anio:            nuevoVehiculo.value.anio || null,
-        color:           nuevoVehiculo.value.color,
-        km_actual:       nuevoVehiculo.value.km_actual || 0,
-        // TODO: crear cliente si no existe (implementar en sprint siguiente)
-        client_id:       null,
-      })
-      vehicleId = rv.data.asset_id
+    // Subir fotos nuevas
+    for (const f of fotosNuevas.value) {
+      try {
+        const fd = new FormData(); fd.append('file', f.file)
+        const up = await api.post('/upload-image/', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+        const url = up.data?.url || up.data?.photo_url
+        if (url) {
+          await api.post(`/api/talleres/vehiculo/${assetId}/fotos`, {
+            company_id: companyId.value, photo_url: url, tipo: 'ingreso'
+          })
+        }
+      } catch { /* continua con las demás fotos */ }
     }
 
-    const workers = []
-    if (orden.value.operario_id) {
-      workers.push({ worker_id: orden.value.operario_id, rol: orden.value.tipo_item })
-    }
+    vehiculo.value = { asset_id: assetId, placa: placaInput.value, ...nuevoVehiculo.value }
+    orden.value.km_ingreso = nuevoVehiculo.value.km_actual || ''
+    wizardStep.value = 2
+    mostrarToast('Vehículo registrado', 'ok')
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al registrar', 'error') }
+  finally { loadingGuardar.value = false }
+}
+
+// ── Editar vehículo ───────────────────────────────────────────────────────
+const showEditVehiculo = ref(false)
+const editForm = ref({})
+function abrirEditarVehiculo() {
+  editForm.value = { ...vehiculo.value }
+  showEditVehiculo.value = true
+}
+async function guardarVehiculo() {
+  loadingGuardar.value = true
+  try {
+    await api.put(`/api/talleres/vehiculo/${vehiculo.value.asset_id}`, {
+      company_id: companyId.value, ...editForm.value
+    })
+    vehiculo.value = { ...vehiculo.value, ...editForm.value }
+    showEditVehiculo.value = false
+    mostrarToast('Vehículo actualizado', 'ok')
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error', 'error') }
+  finally { loadingGuardar.value = false }
+}
+
+// ── Formulario orden ──────────────────────────────────────────────────────
+const ORDEN_DEFAULT = { tipo_item: 'mecanica', km_ingreso: '', diagnostico: '',
+                        jefe_responsable_id: '', operario_id: '', convenio_id: '', promesa_entrega: '' }
+const orden = ref({ ...ORDEN_DEFAULT })
+
+async function abrirOrden() {
+  if (!vehiculo.value?.asset_id) { mostrarToast('Primero registra el vehículo', 'error'); return }
+  loadingGuardar.value = true
+  try {
+    const workers_payload = []
+    if (orden.value.operario_id)
+      workers_payload.push({ worker_id: orden.value.operario_id, rol: orden.value.tipo_item })
 
     const { data } = await api.post('/api/talleres/ordenes', {
       company_id:          companyId.value,
       placa_vehiculo:      placaInput.value,
-      vehicle_id:          vehicleId,
-      client_id:           clienteId,
+      vehicle_id:          vehiculo.value.asset_id,
+      client_id:           vehiculo.value.client_id || null,
       convenio_id:         orden.value.convenio_id || null,
-      km_ingreso:          orden.value.km_ingreso  || null,
+      km_ingreso:          orden.value.km_ingreso || null,
       jefe_responsable_id: orden.value.jefe_responsable_id || null,
       diagnostico:         orden.value.diagnostico,
-      workers,
+      promesa_entrega:     orden.value.promesa_entrega || null,
+      workers:             workers_payload,
     })
-
-    mostrarToast(`Orden ${data.numero_orden} creada exitosamente`, 'ok')
-    limpiarBusqueda()
-  } catch (e) {
-    mostrarToast(e?.response?.data?.detail ?? 'Error al crear la orden', 'error')
-  } finally {
-    loadingGuardar.value = false
-  }
-}
-
-// ── Lista de órdenes del día ──────────────────────────────────────────────
-const FILTROS = [
-  { valor: '',           label: 'Todas' },
-  { valor: 'abierta',    label: 'Abiertas' },
-  { valor: 'en_proceso', label: 'En proceso' },
-  { valor: 'terminada',  label: 'Terminadas' },
-  { valor: 'entregada',  label: 'Entregadas' },
-]
-
-const filtroEstado  = ref('')
-const ordenes       = ref([])
-const loadingOrdenes= ref(false)
-const conteos       = ref({})
-
-async function cargarOrdenes() {
-  if (!companyId.value) return
-  loadingOrdenes.value = true
-  try {
-    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
-    const params = { company_id: companyId.value, fecha_desde: hoy, fecha_hasta: hoy, page_size: 50 }
-    if (filtroEstado.value) params.estado = filtroEstado.value
-
-    const { data } = await api.get('/api/talleres/ordenes', { params })
-    ordenes.value = data.items
-  } catch {
-    ordenes.value = []
-  } finally {
-    loadingOrdenes.value = false
-  }
-}
-
-function verOrden(o) {
-  // Por ahora muestra la placa en el buscador para ver el historial
-  placaInput.value = o.placa_vehiculo
-  buscarVehiculo()
+    mostrarToast(`Orden ${data.numero_orden} creada`, 'ok')
+    setTimeout(() => router.push(`/talleres/orden/${data.orden_id}`), 700)
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al crear la orden', 'error') }
+  finally { loadingGuardar.value = false }
 }
 
 // ── Datos auxiliares ──────────────────────────────────────────────────────
-const usuarios       = ref([])
-const workers        = ref([])
-const convenios      = ref([])
-const tiposVehiculo  = ref([])
+const usuarios      = ref([])
+const workers       = ref([])
+const convenios     = ref([])
+const tiposVehiculo = ref([])
 
 async function cargarAuxiliares() {
   if (!companyId.value) return
   try {
     const [ru, rw, rc, rt] = await Promise.all([
-      api.get('/users/',    { params: { company_id: companyId.value } }),
-      api.get('/workers/',  { params: { company_id: companyId.value } }),
-      api.get('/api/talleres/convenios',     { params: { company_id: companyId.value } }),
+      api.get('/users/', { params: { company_id: companyId.value } }),
+      api.get('/workers/', { params: { company_id: companyId.value } }),
+      api.get('/api/talleres/convenios', { params: { company_id: companyId.value } }),
       api.get('/api/talleres/tipos-vehiculo', { params: { company_id: companyId.value } }),
     ])
     usuarios.value      = ru.data?.items ?? ru.data ?? []
     workers.value       = rw.data?.items ?? rw.data ?? []
     convenios.value     = rc.data ?? []
     tiposVehiculo.value = rt.data ?? []
-    // Pre-seleccionar el primero disponible
-    if (tiposVehiculo.value.length && !nuevoVehiculo.value.tipo) {
-      nuevoVehiculo.value.tipo = String(tiposVehiculo.value[0].id)
-    }
+    if (tiposVehiculo.value.length) nuevoVehiculo.value.tipo = tiposVehiculo.value[0].nombre
   } catch { /* silencioso */ }
 }
-
-onMounted(() => { cargarOrdenes(); cargarAuxiliares() })
 
 // ── Toast ─────────────────────────────────────────────────────────────────
 const toast = ref({ visible: false, msg: '', tipo: 'ok' })
@@ -516,261 +644,161 @@ function mostrarToast(msg, tipo = 'ok') {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-const LABELS_ESTADO  = { abierta: 'Abierta', en_proceso: 'En proceso', terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada' }
-function labelTipo(v) {
-  if (!v) return '—'
-  // Si es un id numérico, buscar en la lista dinámica
-  const found = tiposVehiculo.value.find(t => String(t.id) === String(v) || t.nombre === v)
-  return found ? found.nombre : v
-}
-function labelEstado(v) { return LABELS_ESTADO[v] ?? v }
-
 function fmt(v) {
-  if (v == null) return '—'
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v)
+  return Number(v||0).toLocaleString('es-CO', { style:'currency', currency:'COP', minimumFractionDigits:0 })
 }
-function fmt0(v) { return v ? new Intl.NumberFormat('es-CO').format(v) : '—' }
+function fmt0(v) { return Number(v||0).toLocaleString('es-CO') }
 function fmtFecha(v) {
   if (!v) return '—'
-  return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(v))
+  return new Date(v).toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' })
 }
-function fmtHora(v) {
-  if (!v) return '—'
-  return new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit' }).format(new Date(v))
-}
+
+onMounted(() => { cargarAuxiliares(); nextTick(() => inputRef.value?.focus()) })
 </script>
 
 <style scoped>
-/* ── Layout ── */
-.ordenes-wrap {
-  display: grid;
-  grid-template-columns: 420px 1fr;
-  gap: 20px;
-  min-height: calc(100vh - 120px);
-  align-items: start;
-}
+.ordenes-page { padding: 20px; max-width: 780px; display: flex; flex-direction: column; gap: 16px; }
 
-/* ── Panel izquierdo ── */
-.panel-left { display: flex; flex-direction: column; gap: 14px; }
+/* Buscador */
+.buscar-card { background:#fff; border-radius:16px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.07); }
+.buscar-inner { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+.buscar-icon-wrap { width:46px; height:46px; background:#eff6ff; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#3b82f6; flex-shrink:0; }
+.buscar-texts h5 { font-size:15px; font-weight:700; color:#1e293b; margin:0 0 2px; }
+.buscar-texts p  { font-size:12px; color:#64748b; margin:0; }
+.buscar-row { display:flex; gap:8px; align-items:center; }
+.placa-input { flex:1; font-size:18px; font-weight:800; letter-spacing:3px; text-transform:uppercase; padding:10px 14px; border:2px solid #e2e8f0; border-radius:10px; outline:none; color:#1e293b; }
+.placa-input:focus { border-color:#3b82f6; }
+.btn-buscar  { display:inline-flex; align-items:center; gap:6px; padding:10px 20px; background:#3b82f6; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+.btn-buscar:hover:not(:disabled) { background:#2563eb; }
+.btn-buscar:disabled { opacity:.5; cursor:not-allowed; }
+.btn-limpiar { width:40px; height:40px; border:1.5px solid #e2e8f0; background:#f8fafc; border-radius:9px; cursor:pointer; color:#64748b; font-size:14px; display:flex; align-items:center; justify-content:center; }
+.btn-limpiar:hover { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
 
-/* ── Buscador ── */
-.buscar-card {
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-.buscar-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.buscar-icon   { font-size: 28px; color: #1e3a5f; flex-shrink: 0; }
-.buscar-title  { margin: 0; font-size: 15px; font-weight: 700; color: #1e3a5f; }
-.buscar-sub    { margin: 2px 0 0; font-size: 12px; color: #64748b; }
-.buscar-row    { display: flex; gap: 8px; }
-.placa-input {
-  flex: 1; border: 2px solid #e2e8f0; border-radius: 10px;
-  padding: 10px 14px; font-size: 18px; font-weight: 800; color: #1e3a5f;
-  letter-spacing: 2px; text-transform: uppercase; outline: none;
-  transition: border-color 0.2s;
-}
-.placa-input:focus { border-color: #1e3a5f; }
-.btn-buscar {
-  display: flex; align-items: center; gap: 6px;
-  background: #1e3a5f; color: #fff; border: none; border-radius: 10px;
-  padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
-  white-space: nowrap; transition: background 0.2s;
-}
-.btn-buscar:hover:not(:disabled) { background: #2d4f80; }
-.btn-buscar:disabled { opacity: 0.5; cursor: default; }
+/* Vehículo encontrado */
+.vehiculo-card.found { background:#fff; border-radius:14px; border:2px solid #86efac; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.vc-top   { display:flex; align-items:flex-start; gap:12px; }
+.vc-avatar { width:44px; height:44px; background:#dcfce7; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#16a34a; flex-shrink:0; }
+.vc-datos { flex:1; }
+.vc-placa-row { display:flex; align-items:center; gap:8px; }
+.vc-placa  { font-size:20px; font-weight:900; letter-spacing:2px; color:#1e293b; }
+.vc-tipo-badge { background:#eff6ff; color:#1d4ed8; font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; }
+.vc-desc   { font-size:13px; color:#475569; margin-top:3px; }
+.vc-meta   { display:flex; gap:10px; font-size:12px; color:#94a3b8; margin-top:3px; }
+.vc-propietario { display:flex; align-items:center; gap:8px; margin-top:10px; padding-top:10px; border-top:1px solid #f0fdf4; font-size:13px; color:#374151; flex-wrap:wrap; }
+.vc-doc, .vc-tel { color:#94a3b8; }
+.vc-actions { flex-shrink:0; }
+.btn-edit-v { width:34px; height:34px; border:1.5px solid #e2e8f0; background:#f8fafc; border-radius:8px; cursor:pointer; color:#3b82f6; font-size:13px; display:flex; align-items:center; justify-content:center; }
+.btn-edit-v:hover { background:#eff6ff; border-color:#bfdbfe; }
 
-/* ── Tarjeta vehículo ── */
-.vehiculo-card {
-  background: #fff; border-radius: 14px; padding: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-.vehiculo-card.found { border: 2px solid #22c55e; }
-.vehiculo-card.new   { border: 2px solid #f59e0b; }
-.vc-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.vc-ok   { font-size: 22px; color: #22c55e; }
-.vc-new  { font-size: 22px; color: #f59e0b; }
-.vc-placa { font-size: 20px; font-weight: 900; color: #1e3a5f; letter-spacing: 1px; display: block; }
-.vc-tipo  { font-size: 11px; color: #64748b; }
-.vc-tipo.nuevo { color: #d97706; font-weight: 600; }
-.btn-icon {
-  margin-left: auto; background: #f1f5f9; border: none; border-radius: 8px;
-  width: 30px; height: 30px; cursor: pointer; color: #64748b; font-size: 16px;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.btn-icon:hover { background: #e2e8f0; color: #1e3a5f; }
-.vc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.vc-field { display: flex; flex-direction: column; gap: 2px; }
-.vc-field.span2 { grid-column: 1 / -1; }
-.vc-lbl   { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
-.vc-val   { font-size: 13px; font-weight: 600; color: #1e3a5f; }
-.vc-cedula{ font-size: 11px; color: #94a3b8; font-weight: 400; margin-left: 4px; }
+/* Fotos vehículo */
+.vc-fotos { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid #f0fdf4; }
+.foto-thumb { position:relative; width:70px; height:70px; border-radius:8px; overflow:hidden; border:1.5px solid #e2e8f0; }
+.foto-thumb img { width:100%; height:100%; object-fit:cover; }
+.foto-tipo-badge { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,.5); color:#fff; font-size:9px; text-align:center; padding:2px; }
+.foto-del { position:absolute; top:2px; right:2px; width:18px; height:18px; background:rgba(220,38,38,.8); border:none; border-radius:50%; color:#fff; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.foto-add { display:flex; flex-direction:column; align-items:center; justify-content:center; width:70px; height:70px; border-radius:8px; border:2px dashed #bfdbfe; background:#f0f9ff; color:#3b82f6; font-size:11px; gap:3px; cursor:pointer; }
+.foto-add i { font-size:18px; }
+.foto-file-input { display:none; }
 
-/* ── Formulario orden ── */
-.orden-form-card {
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-.form-section-title {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 13px; font-weight: 700; color: #1e3a5f; margin: 0 0 12px;
-}
-.form-section-title.mt { margin-top: 14px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.form-group { display: flex; flex-direction: column; gap: 4px; }
-.form-group.span2 { grid-column: 1 / -1; }
-.form-group label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-.form-ctrl {
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 8px 10px; font-size: 13px; color: #1e3a5f; outline: none;
-  transition: border-color 0.2s; background: #fff;
-  width: 100%; box-sizing: border-box;
-}
-.form-ctrl:focus { border-color: #1e3a5f; }
-textarea.form-ctrl { resize: vertical; min-height: 72px; }
+/* Tabs */
+.tabs-bar  { display:flex; gap:4px; border-bottom:2px solid #e2e8f0; }
+.tab-btn   { display:flex; align-items:center; gap:7px; padding:10px 18px; font-size:13px; font-weight:700; background:none; border:none; cursor:pointer; color:#64748b; border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s; }
+.tab-btn:hover  { color:#1e3a5f; background:#f8fafc; border-radius:8px 8px 0 0; }
+.tab-btn.active { color:#1e3a5f; border-bottom-color:#1e3a5f; }
+.tab-count { background:#1e3a5f; color:#fff; border-radius:20px; font-size:10px; padding:1px 6px; }
 
-.form-actions {
-  display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;
-  padding-top: 14px; border-top: 1px solid #f1f5f9;
-}
-.btn-cancel-form {
-  display: flex; align-items: center; gap: 6px;
-  background: #f1f5f9; color: #64748b; border: none; border-radius: 8px;
-  padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
-}
-.btn-cancel-form:hover { background: #e2e8f0; }
-.btn-abrir {
-  display: flex; align-items: center; gap: 7px;
-  background: #ea580c; color: #fff; border: none; border-radius: 10px;
-  padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer;
-  transition: background 0.2s;
-}
-.btn-abrir:hover:not(:disabled) { background: #c2410c; }
-.btn-abrir:disabled { opacity: 0.5; cursor: default; }
+/* Form card */
+.form-card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.07); }
+.form-section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#64748b; display:flex; align-items:center; gap:6px; padding-bottom:8px; border-bottom:1px solid #f1f5f9; margin-bottom:12px; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.fg        { display:flex; flex-direction:column; gap:4px; }
+.fg label  { font-size:12px; font-weight:600; color:#374151; }
+.span2     { grid-column: span 2; }
+.form-ctrl { border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px; color:#1e293b; outline:none; background:#fff; width:100%; box-sizing:border-box; }
+.form-ctrl:focus { border-color:#3b82f6; }
+textarea.form-ctrl { resize:vertical; }
+.form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid #f1f5f9; }
 
-/* ── Empty state ── */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; padding: 48px 24px; color: #94a3b8; text-align: center;
-}
-.empty-icon { font-size: 56px; color: #cbd5e1; }
-.empty-state p { font-size: 14px; margin: 0; }
+/* Fotos upload (nuevo vehículo) */
+.fotos-upload-area { display:flex; gap:8px; flex-wrap:wrap; }
+.foto-preview { position:relative; width:80px; height:80px; border-radius:8px; overflow:hidden; border:1.5px solid #e2e8f0; }
+.foto-preview img { width:100%; height:100%; object-fit:cover; }
+.foto-add-btn { display:flex; flex-direction:column; align-items:center; justify-content:center; width:80px; height:80px; border-radius:8px; border:2px dashed #bfdbfe; background:#f0f9ff; color:#3b82f6; font-size:11px; gap:4px; cursor:pointer; }
+.foto-add-btn i { font-size:20px; }
 
-/* ── Panel derecho ── */
-.panel-right {
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  max-height: calc(100vh - 120px); overflow-y: auto; position: sticky; top: 20px;
-}
+/* Historial */
+.historial-section { background:#fff; border-radius:14px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,.07); }
+.hist-filtros { display:flex; gap:6px; margin-bottom:12px; }
+.hf-btn { padding:5px 14px; border-radius:20px; border:1.5px solid #e2e8f0; background:#f8fafc; font-size:12px; font-weight:600; color:#64748b; cursor:pointer; }
+.hf-btn.active { background:#1e3a5f; color:#fff; border-color:#1e3a5f; }
+.hist-list { display:flex; flex-direction:column; gap:8px; }
+.hist-item { display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px; border:1.5px solid #e2e8f0; background:#f8fafc; flex-wrap:wrap; }
+.hist-item.hs-abierta    { border-left:4px solid #3b82f6; }
+.hist-item.hs-en_proceso { border-left:4px solid #f59e0b; }
+.hist-item.hs-terminada  { border-left:4px solid #22c55e; }
+.hist-item.hs-entregada  { border-left:4px solid #94a3b8; }
+.hist-item.hs-cancelada  { border-left:4px solid #ef4444; opacity:.6; }
+.hi-left   { display:flex; align-items:center; gap:8px; flex:1; min-width:150px; }
+.hi-num    { font-size:13px; font-weight:800; color:#1e293b; }
+.hi-badge  { font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; }
+.hb-abierta    { background:#dbeafe; color:#1d4ed8; } .hb-en_proceso { background:#fef3c7; color:#92400e; }
+.hb-terminada  { background:#dcfce7; color:#16a34a; } .hb-entregada  { background:#f1f5f9; color:#64748b; }
+.hb-cancelada  { background:#fee2e2; color:#b91c1c; }
+.hi-fecha  { font-size:11px; color:#94a3b8; }
+.hi-center { display:flex; align-items:center; gap:10px; flex:1; font-size:12px; color:#64748b; }
+.hi-total  { font-weight:700; color:#1e293b; }
+.hi-actions { display:flex; gap:6px; }
+.btn-hist-edit  { display:inline-flex; align-items:center; gap:4px; padding:5px 12px; background:#eff6ff; color:#1d4ed8; border:1.5px solid #bfdbfe; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; }
+.btn-hist-print { width:30px; height:30px; background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:7px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#64748b; font-size:13px; }
+.btn-hist-print:hover { background:#f0fdf4; color:#16a34a; border-color:#bbf7d0; }
+.hist-empty { display:flex; flex-direction:column; align-items:center; gap:6px; padding:28px; color:#94a3b8; text-align:center; }
+.hist-empty .bi { font-size:32px; color:#e2e8f0; }
+.hist-empty p { font-size:13px; margin:0; }
 
-.historial-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;
-}
-.historial-title { margin: 0; font-size: 14px; font-weight: 700; color: #1e3a5f; display: flex; align-items: center; gap: 7px; }
-.hist-count { font-size: 12px; color: #94a3b8; }
+/* Wizard pasos */
+.wizard-steps { display:flex; align-items:center; gap:0; background:#fff; border-radius:12px; padding:14px 20px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.wstep { display:flex; align-items:center; gap:8px; }
+.ws-num { width:28px; height:28px; border-radius:50%; background:#e2e8f0; color:#64748b; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+.ws-label { font-size:13px; font-weight:600; color:#64748b; }
+.wstep.active .ws-num  { background:#3b82f6; color:#fff; }
+.wstep.active .ws-label { color:#1e293b; }
+.wstep.done .ws-num  { background:#22c55e; color:#fff; }
+.ws-line { flex:1; height:2px; background:#e2e8f0; margin:0 12px; }
 
-/* Métricas frecuencia */
-.metricas-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.metrica-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: #f1f5f9; border-radius: 20px; padding: 3px 10px;
-  font-size: 12px; color: #475569;
-}
-.metrica-chip .bi { color: #1e3a5f; }
+/* Modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:2000; padding:16px; }
+.modal-box { background:#fff; border-radius:16px; width:100%; max-width:540px; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+.mh  { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #f1f5f9; }
+.mh h3 { font-size:14px; font-weight:700; color:#1e293b; margin:0; display:flex; align-items:center; gap:7px; }
+.btn-x { background:none; border:none; font-size:16px; cursor:pointer; color:#94a3b8; }
+.mb-area { padding:18px 20px; overflow-y:auto; }
+.mf { padding:12px 20px 16px; display:flex; justify-content:flex-end; gap:8px; border-top:1px solid #f1f5f9; }
 
-/* Filtros estado */
-.filtro-estados { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.filtro-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: #f1f5f9; border: 1.5px solid transparent; border-radius: 20px;
-  padding: 4px 12px; font-size: 12px; font-weight: 600; color: #64748b;
-  cursor: pointer; transition: all 0.18s;
-}
-.filtro-btn:hover  { border-color: #1e3a5f; color: #1e3a5f; }
-.filtro-btn.active { background: #1e3a5f; color: #fff; }
-.filtro-count { background: rgba(255,255,255,0.25); border-radius: 10px; padding: 0 5px; font-size: 10px; }
+/* Btn */
+.btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; border:none; }
+.btn-primary   { background:#3b82f6; color:#fff; } .btn-primary:hover { background:#2563eb; }
+.btn-primary:disabled { opacity:.6; cursor:not-allowed; }
+.btn-secondary { border:1.5px solid #e2e8f0; background:#fff; color:#64748b; }
+.btn-sm { padding:6px 12px; font-size:12px; }
+.spin { display:inline-block; animation:spin .8s linear infinite; }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
-.loading-row { display: flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 14px; padding: 24px; justify-content: center; }
+/* Toast */
+.toast-msg { position:fixed; bottom:24px; right:24px; z-index:9999; display:flex; align-items:center; gap:8px; padding:12px 20px; border-radius:12px; font-size:13px; font-weight:600; box-shadow:0 8px 24px rgba(0,0,0,.15); }
+.toast-ok    { background:#1e293b; color:#fff; }
+.toast-error { background:#dc2626; color:#fff; }
 
-/* Lista de historial / órdenes */
-.historial-list { display: flex; flex-direction: column; gap: 8px; }
-
-.hist-item {
-  border: 1.5px solid #f1f5f9; border-radius: 10px; padding: 10px 12px;
-  border-left-width: 4px;
-}
-.hist-item.clickable { cursor: pointer; transition: all 0.18s; }
-.hist-item.clickable:hover { background: #f8fafc; transform: translateX(2px); }
-.hs-abierta    { border-left-color: #3b82f6; }
-.hs-en_proceso { border-left-color: #f97316; }
-.hs-terminada  { border-left-color: #22c55e; }
-.hs-entregada  { border-left-color: #94a3b8; }
-.hs-cancelada  { border-left-color: #ef4444; opacity: 0.6; }
-
-.hist-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.hist-num { font-size: 12px; font-weight: 800; color: #1e3a5f; }
-.hist-badge { padding: 1px 7px; border-radius: 20px; font-size: 10px; font-weight: 700; }
-.hb-abierta    { background: #dbeafe; color: #1d4ed8; }
-.hb-en_proceso { background: #ffedd5; color: #ea580c; }
-.hb-terminada  { background: #dcfce7; color: #16a34a; }
-.hb-entregada  { background: #f1f5f9; color: #64748b; }
-.hb-cancelada  { background: #fee2e2; color: #dc2626; }
-.hist-fecha  { margin-left: auto; font-size: 11px; color: #94a3b8; white-space: nowrap; }
-
-.hist-body { margin-bottom: 4px; }
-.hist-trabajo { font-size: 12px; color: #475569; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hist-placa  { font-size: 14px; font-weight: 800; color: #1e3a5f; letter-spacing: 0.5px; }
-.hist-cliente{ font-size: 13px; color: #64748b; }
-
-.hist-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.hist-meta { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 3px; }
-.hist-total { margin-left: auto; font-size: 13px; font-weight: 700; color: #16a34a; }
-.hist-convenio { font-size: 11px; color: #d97706; display: flex; align-items: center; gap: 3px; font-weight: 600; }
-
-.no-hist {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; padding: 40px 20px; color: #94a3b8; text-align: center;
-}
-.no-hist .bi { font-size: 36px; }
-.no-hist p   { font-size: 13px; margin: 0; }
-
-/* ── Toast ── */
-.toast-msg {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 20px; border-radius: 10px;
-  font-size: 14px; font-weight: 600; z-index: 9999;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  animation: slideInUp 0.3s ease;
-}
-.toast-ok    { background: #1e3a5f; color: #fff; }
-.toast-error { background: #dc2626; color: #fff; }
-@keyframes slideInUp { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-
-/* ── Spinner ── */
-.spin { display: inline-block; animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Responsive ── */
-@media (max-width: 1024px) {
-  .ordenes-wrap { grid-template-columns: 1fr; }
-  .panel-right  { max-height: none; position: static; }
-}
-
+/* Responsive */
 @media (max-width: 768px) {
-  .form-grid   { grid-template-columns: 1fr; }
-  .form-group.span2 { grid-column: 1; }
-  .vc-grid     { grid-template-columns: 1fr; }
-  .vc-field.span2   { grid-column: 1; }
-  .buscar-row  { flex-direction: column; }
-  .placa-input { font-size: 16px; }
-  .form-actions { flex-direction: column; }
-  .btn-abrir, .btn-cancel-form { width: 100%; justify-content: center; }
+  .ordenes-page { padding: 12px; }
+  .form-grid    { grid-template-columns: 1fr; }
+  .span2        { grid-column: span 1; }
+  .hist-item    { flex-direction: column; align-items: flex-start; gap: 6px; }
 }
-
-@media (max-width: 576px) {
-  .filtro-estados { gap: 4px; }
-  .filtro-btn     { padding: 3px 9px; font-size: 11px; }
-  .historial-title{ font-size: 13px; }
+@media (max-width: 480px) {
+  .buscar-row   { flex-wrap: wrap; }
+  .placa-input  { font-size: 15px; letter-spacing: 2px; }
+  .wizard-steps { padding: 10px 12px; }
+  .ws-label     { display: none; }
 }
 </style>

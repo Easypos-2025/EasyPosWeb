@@ -29,9 +29,14 @@
         <span class="ac-label">Nueva<br>Orden</span>
         <i class="bi bi-chevron-right ac-arrow"></i>
       </button>
-      <button class="acceso-card" @click="ir('/talleres/ordenes')">
+      <button class="acceso-card" @click="showSearch = true">
         <div class="ac-icon blue"><i class="bi bi-search"></i></div>
-        <span class="ac-label">Buscar<br>por Placa</span>
+        <span class="ac-label">Buscar<br>Órdenes</span>
+        <i class="bi bi-chevron-right ac-arrow"></i>
+      </button>
+      <button class="acceso-card" @click="ir('/talleres/caja')">
+        <div class="ac-icon purple"><i class="bi bi-cash-stack"></i></div>
+        <span class="ac-label">Cierre<br>de Caja</span>
         <i class="bi bi-chevron-right ac-arrow"></i>
       </button>
       <button class="acceso-card" @click="ir('/talleres/convenios')">
@@ -192,6 +197,9 @@
       </div>
     </Teleport>
 
+    <!-- Modal búsqueda de órdenes -->
+    <SearchOrdenesModal v-if="showSearch" @close="showSearch = false" />
+
   </div>
 </template>
 
@@ -200,6 +208,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
+import SearchOrdenesModal from '@/components/talleres/SearchOrdenesModal.vue'
 
 const companyStore = useCompanyStore()
 const router       = useRouter()
@@ -212,6 +221,8 @@ const fechaHoy = computed(() =>
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   }).format(new Date())
 )
+
+const showSearch = ref(false)
 
 function ir(ruta)     { router.push(ruta) }
 function irOrden(id)  { cerrarModal(); router.push(`/talleres/ordenes?id=${id}`) }
@@ -391,6 +402,7 @@ function imprimirModal() {
 .ac-icon.blue   { background: #dbeafe; color: #1d4ed8; }
 .ac-icon.green  { background: #d1fae5; color: #065f46; }
 .ac-icon.amber  { background: #fef3c7; color: #d97706; }
+.ac-icon.purple { background: #f3e8ff; color: #7c3aed; }
 .ac-label  { flex: 1; font-size: 13px; font-weight: 700; color: #1e3a5f; line-height: 1.2; }
 .ac-arrow  { font-size: 11px; color: #cbd5e1; flex-shrink: 0; }
 
