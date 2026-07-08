@@ -770,25 +770,30 @@ async def get_workers_con_config(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Workers de la empresa con su profesión y % de pago configurado."""
+    """Directorio del equipo: workers con profesión, saldo pendiente y actividad del mes."""
     rows = await db.execute(text("""
         SELECT
             w.id, w.name, w.phone,
+            COALESCE(w.is_active, 1)  AS is_active,
             p.id   AS profession_id,
             p.name AS profession_nombre,
-            COALESCE(pc.pct_operario, 0)  AS pct_operario,
-            COALESCE(pc.pct_jefe,     0)  AS pct_jefe,
-            COALESCE(pc.pct_negocio, 100) AS pct_negocio,
-            (SELECT COUNT(*) FROM service_order_details d
-             WHERE d.worker_id = w.id AND d.liq_estado = 'pendiente') AS items_pendientes,
+            (SELECT COUNT(DISTINCT d.order_id)
+             FROM service_order_details d
+             WHERE d.worker_id = w.id
+               AND d.liq_estado = 'pendiente') AS items_pendientes,
             (SELECT COALESCE(SUM(d.mano_obra_operario), 0)
              FROM service_order_details d
-             WHERE d.worker_id = w.id AND d.liq_estado = 'pendiente') AS monto_pendiente
+             WHERE d.worker_id = w.id
+               AND d.liq_estado = 'pendiente') AS monto_pendiente,
+            (SELECT COUNT(DISTINCT d.order_id)
+             FROM service_order_details d
+             JOIN service_orders so ON so.id = d.order_id
+             WHERE d.worker_id = w.id
+               AND so.company_id = :cid
+               AND MONTH(so.fecha_ingreso) = MONTH(CURDATE())
+               AND YEAR(so.fecha_ingreso)  = YEAR(CURDATE())) AS ordenes_mes
         FROM workers w
-        LEFT JOIN professions p
-               ON p.id = w.profession_id
-        LEFT JOIN profession_payment_config pc
-               ON pc.profession_id = p.id AND pc.company_id = :cid
+        LEFT JOIN professions p ON p.id = w.profession_id
         WHERE w.company_id = :cid
         ORDER BY p.name, w.name
     """), {"cid": company_id})
