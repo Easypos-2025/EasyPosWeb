@@ -100,7 +100,7 @@ async def buscar_vehiculo(
                 so.estado, so.estado_facturacion,
                 so.km_ingreso, so.trabajo_realizado,
                 so.diagnostico,
-                u.full_name AS jefe_nombre,
+                u.nombre AS jefe_nombre,
                 (SELECT SUM(d.subtotal) FROM service_order_details d
                  WHERE d.order_id = so.id) AS total_orden
             FROM service_orders so
@@ -163,8 +163,8 @@ async def listar_ordenes(
             so.estado_facturacion, so.km_ingreso,
             c.name  AS cliente_nombre,
             c.phone AS cliente_telefono,
-            u.full_name AS jefe_nombre,
-            uc.full_name AS creado_por,
+            u.nombre AS jefe_nombre,
+            uc.nombre AS creado_por,
             (SELECT SUM(d.subtotal) FROM service_order_details d
              WHERE d.order_id = so.id) AS total_orden,
             (SELECT COUNT(*) FROM service_order_details d
@@ -269,8 +269,8 @@ async def get_orden(
             so.*,
             c.name  AS cliente_nombre, c.phone AS cliente_telefono,
             c.document_number AS cliente_documento,
-            u.full_name  AS jefe_nombre,
-            uc.full_name AS creado_por_nombre,
+            u.nombre  AS jefe_nombre,
+            uc.nombre AS creado_por_nombre,
             cv.nombre_empresa AS convenio_nombre,
             v.marca, v.modelo, v.anio, v.color, v.tipo AS tipo_vehiculo
         FROM service_orders so
@@ -290,7 +290,7 @@ async def get_orden(
             d.*,
             w.name AS operario_nombre,
             p.name AS profession_nombre,
-            mu.full_name AS modificado_por_nombre
+            mu.nombre AS modificado_por_nombre
         FROM service_order_details d
         LEFT JOIN workers w    ON w.id = d.worker_id
         LEFT JOIN professions p ON p.id = d.profession_id
