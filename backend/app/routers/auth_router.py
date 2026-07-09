@@ -96,37 +96,33 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
             raise HTTPException(status_code=400, detail="Contraseña incorrecta")
         user = target
     else:
-        result = await db.execute(select(User).where(User.email == data.email))
-        candidates = result.scalars().all()
-        if not candidates:
+        # Un solo JOIN: usuarios activos + empresas activas para este email
+        stmt = (
+            select(User, Company)
+            .join(Company, User.company_id == Company.id_company)
+            .where(
+                User.email == data.email,
+                User.is_active == True,
+                Company.state == True,
+            )
+            .order_by(Company.name)
+        )
+        rows = (await db.execute(stmt)).all()
+        if not rows:
             raise HTTPException(status_code=400, detail="Usuario no encontrado")
 
-        # Verificar lazily: detener en el primer match (evita bcrypt en exceso)
-        matching = []
-        for u in candidates:
-            if verify_password(data.password, u.password_hash):
-                matching.append(u)
-
-        if not matching:
+        first_user = rows[0][0]
+        if not verify_password(data.password, first_user.password_hash):
             raise HTTPException(status_code=400, detail="Contraseña incorrecta")
 
-        # Múltiples usuarios con el mismo email → selección de empresa requerida
-        if len(matching) > 1:
-            company_options = []
-            for u in matching:
-                if not u.is_active:
-                    continue
-                comp = await db.get(Company, u.company_id)
-                if comp and comp.state:
-                    company_options.append({
-                        "company_id": comp.id_company,
-                        "company_name": comp.name,
-                    })
-            if not company_options:
-                raise HTTPException(status_code=403, detail="No hay empresas activas disponibles para este usuario")
+        if len(rows) > 1:
+            company_options = [
+                {"company_id": row[1].id_company, "company_name": row[1].name}
+                for row in rows
+            ]
             return {"requires_company_selection": True, "companies": company_options}
 
-        user = matching[0]
+        user = first_user
 
     if user.is_active != True:
         raise HTTPException(status_code=403, detail="Usuario inactivo. Contacta al administrador")
