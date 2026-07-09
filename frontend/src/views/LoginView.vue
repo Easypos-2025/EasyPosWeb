@@ -11,21 +11,44 @@
           <span>←</span> Volver
         </button>
         <h2>Selecciona una empresa</h2>
-        <p class="company-select-sub">Cuenta de prueba · elige con cuál empresa ingresar</p>
+        <p class="company-select-sub">
+          Cuenta de prueba · {{ filteredCompanies.length }} de {{ companyList.length }} empresas
+        </p>
       </div>
 
-      <div class="company-list">
-        <button
-          v-for="c in companyList"
-          :key="c.company_id"
-          class="company-option"
-          :disabled="loadingCompany === c.company_id"
-          @click="loginWithCompany(c.company_id)"
+      <div class="company-selector-wrap">
+        <input
+          v-model="companySearch"
+          class="company-search-input"
+          type="text"
+          placeholder="Buscar empresa..."
+          autocomplete="off"
+        />
+
+        <select
+          v-model="selectedCompanyId"
+          class="company-select-dropdown"
+          size="7"
         >
-          <span class="company-icon">🏢</span>
-          <span class="company-name">{{ c.company_name }}</span>
-          <span v-if="loadingCompany === c.company_id" class="company-loading">...</span>
-          <span v-else class="company-arrow">→</span>
+          <option
+            v-for="c in filteredCompanies"
+            :key="c.company_id"
+            :value="c.company_id"
+          >
+            {{ c.company_name }}
+          </option>
+        </select>
+
+        <div v-if="errorMsg" class="alert-box alert-box--compact">
+          <span>❌</span> {{ errorMsg }}
+        </div>
+
+        <button
+          class="btn-company-enter"
+          :disabled="!selectedCompanyId || loadingCompany !== null"
+          @click="loginWithCompany(selectedCompanyId)"
+        >
+          {{ loadingCompany ? 'Ingresando...' : 'Ingresar →' }}
         </button>
       </div>
     </div>
@@ -91,17 +114,27 @@
 
 <script setup>
 
-import { ref, onMounted } from "vue"
+import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "../services/apis"
 
-const email        = ref(localStorage.getItem("lastUser") || "")
-const password     = ref("")
-const errorMsg     = ref("")
-const showPassword = ref(false)
-const loading      = ref(false)
-const companyList  = ref([])   // empresas para selección (cuentas de prueba)
-const loadingCompany = ref(null)
+const email            = ref(localStorage.getItem("lastUser") || "")
+const password         = ref("")
+const errorMsg         = ref("")
+const showPassword     = ref(false)
+const loading          = ref(false)
+const companyList      = ref([])
+const loadingCompany   = ref(null)
+const companySearch    = ref("")
+const selectedCompanyId = ref(null)
+
+const filteredCompanies = computed(() => {
+  const q = companySearch.value.toLowerCase().trim()
+  const sorted = [...companyList.value].sort((a, b) =>
+    a.company_name.localeCompare(b.company_name, "es", { sensitivity: "base" })
+  )
+  return q ? sorted.filter(c => c.company_name.toLowerCase().includes(q)) : sorted
+})
 
 const router = useRouter()
 
@@ -118,7 +151,12 @@ onMounted(() => {
 
 const togglePassword = () => { showPassword.value = !showPassword.value }
 const goToForgotPassword = () => { router.push("/forgot-password") }
-const backToLogin = () => { companyList.value = []; errorMsg.value = "" }
+const backToLogin = () => {
+  companyList.value = []
+  errorMsg.value = ""
+  companySearch.value = ""
+  selectedCompanyId.value = null
+}
 
 async function _completeLogin(token) {
   localStorage.setItem("token", token)
@@ -344,7 +382,7 @@ SELECTOR DE EMPRESA
 ================================================= */
 
 .company-select-header {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .btn-back {
@@ -375,54 +413,74 @@ SELECTOR DE EMPRESA
   margin: 0;
 }
 
-.company-list {
+.company-selector-wrap {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.company-option {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: #0f172a;
+.company-search-input {
+  padding: 10px 12px;
   border: 1px solid #334155;
-  border-radius: 8px;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+  font-size: 14px;
+}
+
+.company-search-input::placeholder { color: #777; }
+
+.company-select-dropdown {
+  width: 100%;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
   color: #fff;
   font-size: 14px;
+  padding: 4px 0;
+  outline: none;
   cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s, background 0.15s;
-  width: 100%;
 }
 
-.company-option:hover:not(:disabled) {
+.company-select-dropdown option {
+  padding: 8px 12px;
+  background: #0f172a;
+  color: #fff;
+}
+
+.company-select-dropdown option:checked,
+.company-select-dropdown option:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+.company-select-dropdown:focus {
   border-color: #2563eb;
-  background: #1e3a5f;
 }
 
-.company-option:disabled {
-  opacity: 0.6;
-  cursor: default;
+.btn-company-enter {
+  padding: 12px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.15s;
 }
 
-.company-icon { font-size: 20px; flex-shrink: 0; }
+.btn-company-enter:hover:not(:disabled) { background: #1d4ed8; }
+.btn-company-enter:disabled { opacity: 0.5; cursor: default; }
 
-.company-name {
-  flex: 1;
-  font-weight: 500;
-}
-
-.company-arrow {
-  color: #60a5fa;
-  font-size: 16px;
-}
-
-.company-loading {
-  color: #94a3b8;
+.alert-box--compact {
+  padding: 10px 12px;
   font-size: 13px;
-  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 
 /* Spinner en botón submit */
