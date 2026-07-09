@@ -136,8 +136,17 @@ async def listar_ordenes(
     where   = ["so.company_id = :cid"]
 
     if estado:
-        where.append("so.estado = :estado")
-        filtros["estado"] = estado
+        estados_lista = [e.strip() for e in estado.split(",") if e.strip()]
+        ESTADOS_VALIDOS = {"abierta", "en_proceso", "terminada", "entregada", "cancelada"}
+        estados_lista = [e for e in estados_lista if e in ESTADOS_VALIDOS]
+        if len(estados_lista) == 1:
+            where.append("so.estado = :estado")
+            filtros["estado"] = estados_lista[0]
+        elif len(estados_lista) > 1:
+            placeholders = ", ".join(f":est{i}" for i in range(len(estados_lista)))
+            where.append(f"so.estado IN ({placeholders})")
+            for i, e in enumerate(estados_lista):
+                filtros[f"est{i}"] = e
     if fecha_desde:
         where.append("DATE(so.fecha_ingreso) >= :fd")
         filtros["fd"] = fecha_desde

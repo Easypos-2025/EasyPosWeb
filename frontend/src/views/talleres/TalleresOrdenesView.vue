@@ -31,6 +31,73 @@
       </div>
     </div>
 
+    <!-- ══ ÓRDENES ACTIVAS (visible cuando no se ha buscado placa) ═════════ -->
+    <div v-if="!buscado" class="ordenes-activas-card">
+      <div class="oa-head">
+        <div class="oa-titulo">
+          <i class="bi bi-list-check"></i>
+          <span>Órdenes Activas</span>
+          <span class="oa-badge">{{ ordenesActivas.total }}</span>
+        </div>
+        <div class="oa-filtros">
+          <button v-for="f in FILTROS_OA" :key="f.val"
+            :class="['oa-flt', { active: filtroOA === f.val }]"
+            @click="filtroOA = f.val; cargarOrdenes()">
+            {{ f.label }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="loadingOrdenes" class="oa-loading">
+        <i class="bi bi-arrow-repeat spin"></i> Cargando órdenes…
+      </div>
+      <div v-else-if="ordenesActivas.items.length === 0" class="oa-empty">
+        <i class="bi bi-inbox"></i>
+        <p>No hay órdenes {{ filtroOA !== 'activas' ? 'con ese estado' : 'activas' }}</p>
+      </div>
+      <div v-else class="oa-table-wrap">
+        <table class="oa-table">
+          <thead>
+            <tr>
+              <th>Orden</th>
+              <th>Placa</th>
+              <th>Estado</th>
+              <th>Fecha</th>
+              <th>Jefe</th>
+              <th class="ta-r">Total</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="o in ordenesActivas.items" :key="o.id" class="oa-row" @click="abrirPorPlaca(o.placa_vehiculo)">
+              <td class="oa-num">{{ o.numero_orden }}</td>
+              <td class="oa-placa">{{ o.placa_vehiculo }}</td>
+              <td><span :class="['estado-badge', `es-${o.estado}`]">{{ LABELS_ESTADO[o.estado] || o.estado }}</span></td>
+              <td class="oa-fecha">{{ fmtFecha(o.fecha_ingreso) }}</td>
+              <td class="oa-jefe">{{ o.jefe_nombre || '—' }}</td>
+              <td class="ta-r oa-total">{{ fmt(o.total_orden) }}</td>
+              <td @click.stop>
+                <button class="oa-btn-open" @click="abrirPorPlaca(o.placa_vehiculo)" title="Ver orden">
+                  <i class="bi bi-arrow-right-circle-fill"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Paginación -->
+      <div v-if="ordenesActivas.total > paginaSize" class="oa-paginacion">
+        <button :disabled="paginaActual <= 1" @click="paginaActual--; cargarOrdenes()" class="pag-btn">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <span class="pag-info">{{ paginaActual }} / {{ Math.ceil(ordenesActivas.total / paginaSize) }}</span>
+        <button :disabled="paginaActual >= Math.ceil(ordenesActivas.total / paginaSize)" @click="paginaActual++; cargarOrdenes()" class="pag-btn">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+
     <!-- ══ VEHÍCULO ENCONTRADO ══════════════════════════════════════════════ -->
     <template v-if="buscado && vehiculo">
 
@@ -409,6 +476,42 @@ const isAdmin      = computed(() => {
   } catch { return false }
 })
 
+// ── Órdenes activas (lista general) ───────────────────────────────────────
+const ordenesActivas = ref({ items: [], total: 0 })
+const loadingOrdenes = ref(false)
+const filtroOA       = ref('activas')
+const paginaActual   = ref(1)
+const paginaSize     = 15
+
+const FILTROS_OA = [
+  { val: 'activas',    label: 'Activas' },
+  { val: 'abierta',    label: 'Abiertas' },
+  { val: 'en_proceso', label: 'En proceso' },
+  { val: 'terminada',  label: 'Terminadas' },
+  { val: 'todas',      label: 'Todas' },
+]
+
+async function cargarOrdenes() {
+  loadingOrdenes.value = true
+  try {
+    const params = { company_id: companyId.value, page: paginaActual.value, page_size: paginaSize }
+    if (filtroOA.value === 'activas') {
+      params.estado = 'abierta,en_proceso,terminada'
+    } else if (filtroOA.value !== 'todas') {
+      params.estado = filtroOA.value
+    }
+    const { data } = await api.get('/api/talleres/ordenes', { params })
+    ordenesActivas.value = data
+  } catch { ordenesActivas.value = { items: [], total: 0 } }
+  finally { loadingOrdenes.value = false }
+}
+
+async function abrirPorPlaca(placa) {
+  if (!placa) return
+  placaInput.value = placa.toUpperCase()
+  await buscarVehiculo()
+}
+
 // ── Búsqueda ──────────────────────────────────────────────────────────────
 const placaInput    = ref('')
 const loadingBuscar = ref(false)
@@ -451,6 +554,7 @@ function limpiarBusqueda() {
   placaInput.value = ''; buscado.value = false; vehiculo.value = null
   historial.value = []; fotosVehiculo.value = []; wizardStep.value = 1
   orden.value = { ...ORDEN_DEFAULT }; nuevoVehiculo.value = { ...NV_DEFAULT }
+  cargarOrdenes()
   nextTick(() => inputRef.value?.focus())
 }
 
@@ -653,11 +757,52 @@ function fmtFecha(v) {
   return new Date(v).toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' })
 }
 
-onMounted(() => { cargarAuxiliares(); nextTick(() => inputRef.value?.focus()) })
+onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.value?.focus()) })
 </script>
 
 <style scoped>
-.ordenes-page { padding: 20px; max-width: 780px; display: flex; flex-direction: column; gap: 16px; }
+.ordenes-page { padding: 20px; max-width: 960px; display: flex; flex-direction: column; gap: 16px; }
+
+/* ── Órdenes activas ──────────────────────────────────────────────────── */
+.ordenes-activas-card { background:#fff; border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,.07); overflow:hidden; }
+.oa-head   { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1.5px solid #f1f5f9; flex-wrap:wrap; gap:10px; }
+.oa-titulo { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:700; color:#1e293b; }
+.oa-titulo .bi { color:#3b82f6; font-size:16px; }
+.oa-badge  { background:#1e3a5f; color:#fff; border-radius:20px; font-size:11px; padding:2px 8px; font-weight:700; }
+.oa-filtros { display:flex; gap:4px; flex-wrap:wrap; }
+.oa-flt    { padding:5px 11px; border-radius:20px; border:1.5px solid #e2e8f0; background:#f8fafc; color:#475569; font-size:12px; font-weight:600; cursor:pointer; transition:all .12s; }
+.oa-flt.active { background:#1e3a5f; color:#fff; border-color:#1e3a5f; }
+.oa-flt:hover:not(.active) { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.oa-loading { display:flex; align-items:center; gap:8px; padding:30px; justify-content:center; color:#94a3b8; font-size:14px; }
+.oa-empty  { display:flex; flex-direction:column; align-items:center; gap:8px; padding:40px; color:#94a3b8; }
+.oa-empty .bi { font-size:36px; color:#e2e8f0; }
+.oa-empty p   { font-size:13px; margin:0; }
+.oa-table-wrap { overflow-x:auto; }
+.oa-table  { width:100%; border-collapse:collapse; font-size:13px; }
+.oa-table thead tr { background:#f8fafc; }
+.oa-table th { padding:10px 14px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.4px; border-bottom:1.5px solid #e2e8f0; white-space:nowrap; }
+.oa-table td { padding:10px 14px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+.oa-row    { cursor:pointer; transition:background .1s; }
+.oa-row:hover { background:#f0f9ff; }
+.oa-num    { font-family:monospace; font-size:12px; color:#64748b; font-weight:600; white-space:nowrap; }
+.oa-placa  { font-size:15px; font-weight:900; letter-spacing:2px; color:#1e293b; }
+.oa-fecha  { font-size:12px; color:#94a3b8; white-space:nowrap; }
+.oa-jefe   { font-size:12px; color:#475569; }
+.oa-total  { font-weight:700; color:#1e293b; white-space:nowrap; }
+.ta-r      { text-align:right; }
+.oa-btn-open { width:30px; height:30px; border-radius:7px; border:none; background:#eff6ff; color:#1d4ed8; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.oa-btn-open:hover { background:#1d4ed8; color:#fff; }
+.estado-badge { font-size:10px; font-weight:700; padding:3px 8px; border-radius:20px; white-space:nowrap; }
+.es-abierta    { background:#dbeafe; color:#1d4ed8; }
+.es-en_proceso { background:#fef3c7; color:#92400e; }
+.es-terminada  { background:#dcfce7; color:#166534; }
+.es-entregada  { background:#f1f5f9; color:#64748b; }
+.es-cancelada  { background:#fee2e2; color:#b91c1c; }
+.oa-paginacion { display:flex; align-items:center; justify-content:center; gap:12px; padding:12px; border-top:1px solid #f1f5f9; }
+.pag-btn  { width:32px; height:32px; border-radius:8px; border:1.5px solid #e2e8f0; background:#f8fafc; cursor:pointer; color:#475569; display:flex; align-items:center; justify-content:center; }
+.pag-btn:hover:not(:disabled) { background:#eff6ff; color:#1d4ed8; }
+.pag-btn:disabled { opacity:.4; cursor:not-allowed; }
+.pag-info { font-size:13px; font-weight:600; color:#475569; }
 
 /* Buscador */
 .buscar-card { background:#fff; border-radius:16px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.07); }
