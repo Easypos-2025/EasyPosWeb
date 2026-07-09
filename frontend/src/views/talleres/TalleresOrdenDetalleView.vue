@@ -385,7 +385,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
@@ -510,6 +510,7 @@ const convenios = ref([])
 const clientes  = ref([])
 
 async function cargarAuxiliares() {
+  if (!companyId.value) return
   try {
     const [wRes, cRes, clRes] = await Promise.all([
       api.get('/api/talleres/workers-con-config', { params: { company_id: companyId.value } }),
@@ -735,7 +736,14 @@ function mostrarToast(msg, tipo = 'ok') {
   setTimeout(() => { toast.value.visible = false }, 3500)
 }
 
-onMounted(() => { cargarOrden(); cargarAuxiliares() })
+function init() {
+  if (!companyId.value) return
+  cargarOrden()
+  cargarAuxiliares()
+}
+
+watch(companyId, (v) => { if (v) { cargarOrden(); cargarAuxiliares() } })
+onMounted(init)
 </script>
 
 <style scoped>
