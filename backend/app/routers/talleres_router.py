@@ -278,13 +278,13 @@ async def get_orden(
             so.*,
             c.name  AS cliente_nombre, c.phone AS cliente_telefono,
             c.document_number AS cliente_documento,
-            u.nombre  AS jefe_nombre,
+            wj.name   AS jefe_nombre,
             uc.nombre AS creado_por_nombre,
             cv.nombre_empresa AS convenio_nombre,
             v.marca, v.modelo, v.anio, v.color, v.tipo AS tipo_vehiculo
         FROM service_orders so
         LEFT JOIN clients c            ON c.id  = so.client_id
-        LEFT JOIN users u              ON u.id  = so.jefe_responsable_id
+        LEFT JOIN workers wj           ON wj.id = so.jefe_responsable_id
         LEFT JOIN users uc             ON uc.id = so.created_by
         LEFT JOIN service_convenios cv ON cv.id = so.convenio_id
         LEFT JOIN talleres_vehiculo_ext v ON v.asset_id = so.vehicle_id
@@ -316,10 +316,19 @@ async def get_orden(
         WHERE sow.order_id = :oid
     """), {"oid": orden_id})
 
+    fotos = await db.execute(text("""
+        SELECT id, file_url, file_type, file_name
+        FROM asset_media
+        WHERE asset_id = :aid
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 20
+    """), {"aid": dict(orden).get("vehicle_id")}) if dict(orden).get("vehicle_id") else None
+
     return {
         "orden":    dict(orden),
         "detalles": [dict(r) for r in det.mappings()],
         "workers":  [dict(r) for r in wks.mappings()],
+        "fotos":    [dict(r) for r in fotos.mappings()] if fotos else [],
     }
 
 

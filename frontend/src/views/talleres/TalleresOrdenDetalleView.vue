@@ -13,7 +13,7 @@
       </div>
       <div class="od-totales-mini" v-if="orden">
         <span class="tot-mini"><i class="bi bi-currency-dollar"></i>{{ fmt(totales.total) }}</span>
-        <button class="btn-imprimir" @click="$el.ownerDocument.defaultView.print()" title="Imprimir">
+        <button class="btn-imprimir" onclick="window.print()" title="Imprimir">
           <i class="bi bi-printer"></i>
         </button>
       </div>
@@ -41,9 +41,21 @@
         <div class="acord-block">
           <button class="acord-head" @click="toggle('vehiculo')">
             <div class="acord-title"><i class="bi bi-car-front-fill"></i> Datos del Vehículo</div>
-            <i :class="open.has('vehiculo') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+            <div class="acord-actions">
+              <button class="acord-btn-add" @click.stop="router.push('/configuration/assets')" title="Gestionar vehículos">
+                <i class="bi bi-plus-lg"></i>
+              </button>
+              <i :class="open.has('vehiculo') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'" style="flex-shrink:0"></i>
+            </div>
           </button>
           <div v-if="open.has('vehiculo')" class="acord-body">
+            <!-- Fotos del vehículo -->
+            <div v-if="fotos.length" class="fotos-strip">
+              <div v-for="f in fotos" :key="f.id" class="foto-thumb" @click="fotoZoom = f.file_url">
+                <img v-if="f.file_type === 'image'" :src="f.file_url" :alt="f.file_name" />
+                <div v-else class="foto-video"><i class="bi bi-play-circle-fill"></i></div>
+              </div>
+            </div>
             <div class="form-grid">
               <div class="fg"><label>Placa</label>
                 <div class="fc-display">{{ editForm.placa_vehiculo || '—' }}</div></div>
@@ -72,7 +84,12 @@
               <i class="bi bi-person-fill"></i> Datos del Cliente
               <span v-if="clienteSeleccionado" class="acord-sub">{{ clienteSeleccionado.name }}</span>
             </div>
-            <i :class="open.has('cliente') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+            <div class="acord-actions">
+              <button class="acord-btn-add" @click.stop="router.push('/configuration/clients')" title="Gestionar clientes">
+                <i class="bi bi-plus-lg"></i>
+              </button>
+              <i :class="open.has('cliente') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'" style="flex-shrink:0"></i>
+            </div>
           </button>
           <div v-if="open.has('cliente')" class="acord-body">
             <!-- Buscador de cliente -->
@@ -127,7 +144,9 @@
               <div class="fg"><label>Jefe Responsable</label>
                 <select v-model="editForm.jefe_responsable_id" class="fc">
                   <option :value="null">— Sin asignar —</option>
-                  <option v-for="u in jefes" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                    {{ w.name }}{{ w.profession_nombre ? ' · ' + w.profession_nombre : '' }}
+                  </option>
                 </select></div>
               <div class="fg"><label>Convenio</label>
                 <select v-model="editForm.convenio_id" class="fc">
@@ -156,18 +175,20 @@
             <!-- Totales bar -->
             <div class="totales-row">
               <div class="tc"><span class="tc-l">Servicios</span><span class="tc-v">{{ fmt(totales.servicios) }}</span></div>
-              <div class="tc"><span class="tc-l">Repuestos</span><span class="tc-v">{{ fmt(totales.repuestos) }}</span></div>
+              <div class="tc"><span class="tc-l">Productos</span><span class="tc-v">{{ fmt(totales.repuestos) }}</span></div>
               <div class="tc hl"><span class="tc-l">TOTAL</span><span class="tc-v">{{ fmt(totales.total) }}</span></div>
               <div class="tc mo"><span class="tc-l">Mano de Obra</span><span class="tc-v">{{ fmt(totales.mano_obra) }}</span></div>
             </div>
 
             <!-- Lista de ítems -->
             <div v-if="detalles.length === 0" class="det-empty">
-              <i class="bi bi-inbox"></i> Sin ítems. Agrega servicios o repuestos abajo.
+              <i class="bi bi-inbox"></i> Sin ítems. Agrega servicios o productos abajo.
             </div>
             <div v-else class="detalles-list">
-              <div v-for="d in detalles" :key="d.id" :class="['dr', `dr-${d.tipo_item}`]">
-                <span :class="['dr-tipo', `dt-${d.tipo_item}`]">{{ tipoLabel(d.tipo_item) }}</span>
+              <div v-for="d in detalles" :key="d.id" :class="['dr', d.tipo_item === 'repuesto' ? 'dr-producto' : 'dr-servicio']">
+                <span :class="['dr-tipo', d.tipo_item === 'repuesto' ? 'dt-repuesto' : 'dt-servicio']">
+                  {{ d.tipo_item === 'repuesto' ? 'Producto' : 'Servicio' }}
+                </span>
                 <div class="dr-names">
                   <span class="dr-name">{{ d.nombre }}</span>
                   <span v-if="d.worker_nombre || d.operario_nombre" class="dr-worker">
@@ -192,26 +213,26 @@
 
             <!-- Formulario agregar ítem -->
             <div class="add-item-form">
-              <div class="aif-title"><i class="bi bi-plus-circle-fill"></i> Agregar Servicio / Repuesto</div>
+              <div class="aif-title"><i class="bi bi-plus-circle-fill"></i> Agregar Servicio / Producto</div>
 
-              <!-- Selector de tipo -->
-              <div class="fg">
-                <label>Tipo de ítem</label>
-                <div class="tipo-btns">
-                  <button v-for="t in tiposItem" :key="t.value"
-                    :class="['tipo-btn', { active: itemForm.tipo_item === t.value }]"
-                    @click="itemForm.tipo_item = t.value; limpiarProducto()">
-                    {{ t.label }}
-                  </button>
-                </div>
+              <!-- Solo 2 opciones: SERVICIOS / PRODUCTOS -->
+              <div class="tipo-btns">
+                <button :class="['tipo-btn', { active: modoTipo === 'servicio' }]"
+                  @click="modoTipo='servicio'; limpiarProducto()">
+                  <i class="bi bi-tools"></i> Servicios
+                </button>
+                <button :class="['tipo-btn', { active: modoTipo === 'producto' }]"
+                  @click="modoTipo='producto'; limpiarProducto()">
+                  <i class="bi bi-box-seam"></i> Productos
+                </button>
               </div>
 
               <!-- Buscador -->
               <div class="search-wrap mt8">
                 <input v-model="busqueda" class="fc"
-                  :placeholder="itemForm.tipo_item === 'repuesto'
-                    ? 'Buscar repuesto por nombre o código…'
-                    : 'Buscar servicio por nombre o código…'"
+                  :placeholder="modoTipo === 'servicio'
+                    ? 'Buscar servicio por nombre o código…'
+                    : 'Buscar producto por nombre o código…'"
                   @input="buscarProductos" @keydown.esc="resultados=[]" />
                 <i v-if="buscando" class="bi bi-hourglass-split spin abs-spin"></i>
               </div>
@@ -223,7 +244,7 @@
                 </div>
               </div>
 
-              <!-- Producto seleccionado -->
+              <!-- Ítem seleccionado -->
               <div v-if="itemForm.producto_id" class="prod-sel">
                 <div class="ps-info">
                   <span class="ps-name">{{ itemForm.producto_nombre }}</span>
@@ -233,20 +254,20 @@
               </div>
 
               <div v-if="itemForm.producto_id" class="form-grid mt8">
-                <!-- Cantidad: solo repuestos -->
-                <div class="fg" v-if="itemForm.tipo_item === 'repuesto'">
+                <!-- Cantidad: solo productos -->
+                <div class="fg" v-if="modoTipo === 'producto'">
                   <label>Cantidad</label>
                   <input v-model.number="itemForm.cantidad" type="number" min="1" step="1" class="fc" />
                 </div>
 
                 <!-- Subtotal / valor -->
                 <div class="fg">
-                  <label>{{ itemForm.tipo_item === 'repuesto' ? 'Subtotal' : 'Valor del servicio' }}</label>
+                  <label>{{ modoTipo === 'producto' ? 'Subtotal' : 'Valor del servicio' }}</label>
                   <div class="fc-display green">{{ fmt(subtotalItem) }}</div>
                 </div>
 
                 <!-- Operario: solo servicios -->
-                <div class="fg span2" v-if="itemForm.tipo_item !== 'repuesto'">
+                <div class="fg span2" v-if="modoTipo === 'servicio'">
                   <label>Operario responsable</label>
                   <select v-model="itemForm.worker_id" class="fc">
                     <option :value="null">— Sin asignar —</option>
@@ -344,6 +365,14 @@
 
     </template>
 
+    <!-- Zoom foto -->
+    <Teleport to="body">
+      <div v-if="fotoZoom" class="foto-overlay" @click="fotoZoom=null">
+        <img :src="fotoZoom" class="foto-zoom-img" />
+        <button class="foto-close" @click="fotoZoom=null"><i class="bi bi-x-lg"></i></button>
+      </div>
+    </Teleport>
+
     <!-- Toast -->
     <Teleport to="body">
       <div v-if="toast.visible" :class="['toast-msg', `toast-${toast.tipo}`]">
@@ -384,7 +413,9 @@ const subTab = ref('placa')
 const orden        = ref(null)
 const vehiculoExt  = ref({})
 const detalles     = ref([])
+const fotos        = ref([])
 const loadingOrden = ref(false)
+const fotoZoom     = ref(null)
 
 const editForm = ref({
   km_ingreso: null, km_salida: null,
@@ -402,6 +433,7 @@ async function cargarOrden() {
     })
     orden.value    = data.orden ?? data
     detalles.value = data.detalles ?? []
+    fotos.value    = data.fotos ?? []
     vehiculoExt.value = {
       tipo:   orden.value.tipo_vehiculo || '',
       marca:  orden.value.marca  || '',
@@ -474,25 +506,20 @@ async function cancelarOrden() {
 
 // ── Auxiliares ────────────────────────────────────────────────────────────────
 const workers   = ref([])
-const jefes     = ref([])
 const convenios = ref([])
 const clientes  = ref([])
 
 async function cargarAuxiliares() {
   try {
-    const [wRes, jRes, cRes, clRes] = await Promise.all([
+    const [wRes, cRes, clRes] = await Promise.all([
       api.get('/api/talleres/workers-con-config', { params: { company_id: companyId.value } }),
-      api.get('/users/',                           { params: { company_id: companyId.value } }),
       api.get('/api/talleres/convenios',           { params: { company_id: companyId.value } }),
       api.get('/clients'),
     ])
     workers.value   = wRes.data  ?? []
-    jefes.value     = Array.isArray(jRes.data) ? jRes.data : (jRes.data?.items ?? [])
     convenios.value = cRes.data  ?? []
     clientes.value  = clRes.data ?? []
-  } catch (e) {
-    console.error('Error cargando auxiliares:', e)
-  }
+  } catch (e) { console.error('Error cargando auxiliares:', e) }
 }
 
 // ── Buscador de cliente ───────────────────────────────────────────────────────
@@ -519,6 +546,9 @@ function seleccionarCliente(c) {
   editForm.value.client_id  = c.id
 }
 
+// ── Modo tipo (Servicios / Productos) ─────────────────────────────────────────
+const modoTipo = ref('servicio')
+
 // ── Búsqueda de productos ─────────────────────────────────────────────────────
 const busqueda   = ref('')
 const resultados = ref([])
@@ -531,9 +561,13 @@ function buscarProductos() {
   searchTimer = setTimeout(async () => {
     buscando.value = true
     try {
-      const itemType = itemForm.value.tipo_item === 'repuesto' ? 'producto' : 'servicio'
       const { data } = await api.get('/api/talleres/productos-buscar', {
-        params: { company_id: companyId.value, q: busqueda.value, item_type: itemType, limit: 10 }
+        params: {
+          company_id: companyId.value,
+          q:          busqueda.value,
+          item_type:  modoTipo.value,
+          limit:      10,
+        }
       })
       resultados.value = data
     } catch { resultados.value = [] }
@@ -545,6 +579,8 @@ function seleccionarProducto(p) {
   itemForm.value.producto_id     = p.id
   itemForm.value.producto_nombre = p.name
   itemForm.value.precio_unitario = p.base_price ?? 0
+  // tipo_item: si es producto/repuesto → 'repuesto', si es servicio → 'servicio'
+  itemForm.value.tipo_item = modoTipo.value === 'producto' ? 'repuesto' : 'servicio'
   busqueda.value   = ''
   resultados.value = []
 }
@@ -553,22 +589,15 @@ function limpiarProducto() {
   itemForm.value.producto_id     = null
   itemForm.value.producto_nombre = ''
   itemForm.value.precio_unitario = 0
-  busqueda.value = ''
+  itemForm.value.tipo_item       = modoTipo.value === 'producto' ? 'repuesto' : 'servicio'
+  busqueda.value   = ''
   resultados.value = []
 }
 
 // ── Formulario de ítem ────────────────────────────────────────────────────────
-const tiposItem = [
-  { value: 'mecanica',  label: 'Mecánica'  },
-  { value: 'lavado',    label: 'Lavado'     },
-  { value: 'latoneria', label: 'Latonería'  },
-  { value: 'pintura',   label: 'Pintura'    },
-  { value: 'repuesto',  label: 'Repuesto'   },
-]
-
 const itemFormDef = () => ({
   producto_id: null, producto_nombre: '',
-  tipo_item: 'mecanica', cantidad: 1, precio_unitario: 0, worker_id: null,
+  tipo_item: 'servicio', cantidad: 1, precio_unitario: 0, worker_id: null,
 })
 const itemForm     = ref(itemFormDef())
 const agregando    = ref(false)
@@ -583,8 +612,8 @@ async function agregarDetalle() {
   if (!puedeAgregar.value) return
   agregando.value = true
   try {
-    const esServicio = itemForm.value.tipo_item !== 'repuesto'
-    const cantidad   = esServicio ? 1 : (itemForm.value.cantidad || 1)
+    const esProducto = modoTipo.value === 'producto'
+    const cantidad   = esProducto ? (itemForm.value.cantidad || 1) : 1
     const workerSel  = workers.value.find(x => x.id === itemForm.value.worker_id)
 
     const { data } = await api.post(`/api/talleres/ordenes/${ordenId.value}/detalle`, {
@@ -650,8 +679,8 @@ async function cargarHistorial() {
 }
 
 function switchSubTab(st) {
-  subTab.value    = st
-  histItems.value = []
+  subTab.value      = st
+  histItems.value   = []
   histCargado.value = { placa: false, cliente: false }
   cargarHistorial()
 }
@@ -688,12 +717,6 @@ function estadoLabel(e) {
     abierta: 'Abierta', en_proceso: 'En Proceso',
     terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada',
   }[e] ?? e ?? '—'
-}
-function tipoLabel(t) {
-  return {
-    mecanica: 'Mecánica', lavado: 'Lavado',
-    latoneria: 'Latonería', pintura: 'Pintura', repuesto: 'Repuesto',
-  }[t] ?? t
 }
 function fmtFecha(v) {
   if (!v) return '—'
@@ -747,14 +770,27 @@ onMounted(() => { cargarOrden(); cargarAuxiliares() })
 .tab-body { display:flex; flex-direction:column; gap:10px; }
 
 /* ── Acordeón ────────────────────────────────────────────────────────── */
-.acord-block { border-radius:12px; border:1.5px solid #e2e8f0; background:#fff; overflow:hidden; }
-.acord-head  { display:flex; align-items:center; justify-content:space-between; width:100%; padding:13px 16px; background:none; border:none; cursor:pointer; font-size:13px; font-weight:700; color:#1e293b; transition:background .1s; }
+.acord-block    { border-radius:12px; border:1.5px solid #e2e8f0; background:#fff; overflow:hidden; }
+.acord-head     { display:flex; align-items:center; justify-content:space-between; width:100%; padding:13px 16px; background:none; border:none; cursor:pointer; font-size:13px; font-weight:700; color:#1e293b; transition:background .1s; gap:8px; }
 .acord-head:hover { background:#f8fafc; }
-.acord-title { display:flex; align-items:center; gap:8px; color:#1e293b; }
-.acord-title .bi { color:#3b82f6; font-size:15px; }
-.acord-sub   { font-size:11px; font-weight:600; color:#64748b; background:#f1f5f9; padding:2px 8px; border-radius:20px; margin-left:6px; }
-.acord-body  { padding:14px 16px; border-top:1px solid #f1f5f9; }
-.det-cnt     { font-size:11px; font-weight:600; color:#64748b; background:#f1f5f9; padding:2px 8px; border-radius:20px; margin-left:8px; }
+.acord-title    { display:flex; align-items:center; gap:8px; color:#1e293b; flex:1; min-width:0; }
+.acord-title .bi { color:#3b82f6; font-size:15px; flex-shrink:0; }
+.acord-sub      { font-size:11px; font-weight:600; color:#64748b; background:#f1f5f9; padding:2px 8px; border-radius:20px; margin-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.acord-actions  { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.acord-btn-add  { width:28px; height:28px; border-radius:7px; border:1.5px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; transition:all .12s; }
+.acord-btn-add:hover { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
+.acord-body     { padding:14px 16px; border-top:1px solid #f1f5f9; }
+.det-cnt        { font-size:11px; font-weight:600; color:#64748b; background:#f1f5f9; padding:2px 8px; border-radius:20px; margin-left:8px; }
+
+/* ── Fotos del vehículo ──────────────────────────────────────────────── */
+.fotos-strip { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.foto-thumb  { width:80px; height:80px; border-radius:10px; overflow:hidden; cursor:pointer; border:1.5px solid #e2e8f0; flex-shrink:0; position:relative; }
+.foto-thumb img { width:100%; height:100%; object-fit:cover; }
+.foto-thumb:hover { border-color:#3b82f6; transform:scale(1.03); transition:all .15s; }
+.foto-video  { width:100%; height:100%; background:#1e293b; display:flex; align-items:center; justify-content:center; color:#fff; font-size:24px; }
+.foto-overlay { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:9999; display:flex; align-items:center; justify-content:center; }
+.foto-zoom-img { max-width:92vw; max-height:88vh; border-radius:12px; object-fit:contain; }
+.foto-close { position:fixed; top:20px; right:20px; width:40px; height:40px; border-radius:50%; background:#fff; border:none; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
 
 /* ── Form grid ───────────────────────────────────────────────────────── */
 .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -794,10 +830,7 @@ textarea.fc { resize:vertical; }
 .detalles-list { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
 .dr          { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:9px; background:#f8fafc; border:1px solid #f1f5f9; flex-wrap:wrap; }
 .dr-tipo     { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; flex-shrink:0; }
-.dt-mecanica  { background:#dbeafe; color:#1d4ed8; }
-.dt-lavado    { background:#cffafe; color:#0e7490; }
-.dt-latoneria { background:#fef3c7; color:#92400e; }
-.dt-pintura   { background:#ede9fe; color:#6d28d9; }
+.dt-servicio  { background:#dbeafe; color:#1d4ed8; }
 .dt-repuesto  { background:#f1f5f9; color:#475569; }
 .dr-names    { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
 .dr-name     { font-size:13px; font-weight:600; color:#1e293b; }
@@ -813,10 +846,10 @@ textarea.fc { resize:vertical; }
 .add-item-form { border-top:1.5px dashed #e2e8f0; padding-top:14px; display:flex; flex-direction:column; gap:10px; }
 .aif-title     { font-size:13px; font-weight:700; color:#374151; display:flex; align-items:center; gap:7px; }
 .aif-title .bi { color:#10b981; }
-.tipo-btns     { display:flex; flex-wrap:wrap; gap:6px; }
-.tipo-btn      { padding:6px 14px; border-radius:20px; border:1.5px solid #e2e8f0; background:#f8fafc; font-size:12px; font-weight:600; color:#475569; cursor:pointer; transition:all .12s; }
-.tipo-btn.active  { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
-.tipo-btn:hover:not(.active) { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.tipo-btns     { display:flex; gap:8px; }
+.tipo-btn      { display:flex; align-items:center; gap:7px; padding:10px 20px; border-radius:10px; border:2px solid #e2e8f0; background:#f8fafc; font-size:13px; font-weight:700; color:#475569; cursor:pointer; transition:all .15s; flex:1; justify-content:center; }
+.tipo-btn.active { border-color:#1d4ed8; background:#1d4ed8; color:#fff; }
+.tipo-btn:hover:not(.active) { border-color:#93c5fd; background:#eff6ff; color:#1d4ed8; }
 .prod-sel      { display:flex; align-items:center; justify-content:space-between; background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:8px; padding:8px 12px; }
 .ps-info       { display:flex; flex-direction:column; gap:2px; }
 .ps-name       { font-size:13px; font-weight:600; color:#1e293b; }
@@ -882,8 +915,7 @@ textarea.fc { resize:vertical; }
   .btn-cancelar { margin-left: 0; }
   .totales-row  { gap: 6px; }
   .tc           { min-width: 70px; }
-  .tipo-btns    { gap: 4px; }
-  .tipo-btn     { font-size: 11px; padding: 5px 10px; }
+  .tipo-btns    { gap: 6px; }
 }
 
 /* ── Responsive 576px ────────────────────────────────────────────────── */
@@ -892,5 +924,6 @@ textarea.fc { resize:vertical; }
   .od-totales-mini { margin-left: 0; }
   .dr           { flex-direction: column; align-items: flex-start; }
   .hist-table th:nth-child(5), .hist-table td:nth-child(5) { display: none; }
+  .foto-thumb   { width: 64px; height: 64px; }
 }
 </style>
