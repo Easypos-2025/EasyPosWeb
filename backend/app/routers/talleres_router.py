@@ -440,6 +440,7 @@ async def editar_orden(
         "promesa_entrega":     "promesa_entrega",
         "jefe_responsable_id": "jefe_responsable_id",
         "convenio_id":         "convenio_id",
+        "client_id":           "client_id",
     }
     for campo, col in campos.items():
         if campo in payload:
