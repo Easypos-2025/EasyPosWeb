@@ -1232,3 +1232,319 @@ async def eliminar_egreso_caja(
     await db.execute(text("DELETE FROM caja_egresos WHERE id=:eid"), {"eid": egreso_id})
     await db.commit()
     return {"ok": True}
+
+
+# ── Liquidación de Operarios ───────────────────────────────────────────────────
+
+@router.get("/liquidacion/dia")
+async def liquidacion_dia(
+    company_id: int = Query(...),
+    fecha: str      = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    from datetime import date as ddate
+    fecha_sel = fecha or str(ddate.today())
+
+    res_workers = await db.execute(text("""
+        SELECT
+            w.id                  AS worker_id,
+            w.nombre              AS worker_nombre,
+            pr.name               AS profesion,
+            COUNT(DISTINCT so.id) AS num_ordenes,
+            COUNT(sod.id)         AS num_items,
+            SUM(COALESCE(
+                NULLIF(sod.mano_obra_operario, 0),
+                sod.subtotal * COALESCE(
+                    (SELECT sp.pct_pago / 100
+                     FROM service_participants sp
+                     WHERE sp.product_id   = sod.product_id
+                       AND sp.profession_id = w.profession_id
+                     LIMIT 1), 0)
+            ))                    AS total_pendiente
+        FROM service_order_details sod
+        JOIN service_orders so   ON sod.order_id  = so.id
+        JOIN workers w           ON sod.worker_id = w.id
+        LEFT JOIN professions pr ON w.profession_id = pr.id
+        WHERE so.company_id          = :cid
+          AND DATE(so.fecha_ingreso) = :fecha
+          AND sod.liq_estado         = 'pendiente'
+          AND sod.worker_id IS NOT NULL
+        GROUP BY w.id, w.nombre, pr.name
+        ORDER BY total_pendiente DESC
+    """), {"cid": company_id, "fecha": fecha_sel})
+    workers_rows = [dict(r._mapping) for r in res_workers]
+
+    res_det = await db.execute(text("""
+        SELECT
+            sod.id                    AS detail_id,
+            sod.nombre                AS servicio,
+            sod.tipo_item,
+            sod.subtotal,
+            COALESCE(
+                NULLIF(sod.mano_obra_operario, 0),
+                sod.subtotal * COALESCE(
+                    (SELECT sp.pct_pago / 100
+                     FROM service_participants sp
+                     WHERE sp.product_id   = sod.product_id
+                       AND sp.profession_id = w2.profession_id
+                     LIMIT 1), 0)
+            )                         AS monto_operario,
+            so.numero_orden,
+            so.placa_vehiculo,
+            so.fecha_ingreso,
+            sod.worker_id
+        FROM service_order_details sod
+        JOIN service_orders so ON sod.order_id  = so.id
+        JOIN workers w2        ON w2.id          = sod.worker_id
+        WHERE so.company_id          = :cid
+          AND DATE(so.fecha_ingreso) = :fecha
+          AND sod.liq_estado         = 'pendiente'
+          AND sod.worker_id IS NOT NULL
+        ORDER BY so.fecha_ingreso, sod.worker_id
+    """), {"cid": company_id, "fecha": fecha_sel})
+
+    det_map: dict = {}
+    for d in res_det:
+        dm    = dict(d._mapping)
+        wid   = dm["worker_id"]
+        if wid not in det_map:
+            det_map[wid] = []
+        det_map[wid].append({
+            "detail_id":    dm["detail_id"],
+            "servicio":     dm["servicio"],
+            "tipo_item":    dm["tipo_item"],
+            "subtotal":     float(dm["subtotal"]       or 0),
+            "monto_operario": float(dm["monto_operario"] or 0),
+            "numero_orden": dm["numero_orden"],
+            "placa":        dm["placa_vehiculo"],
+            "fecha_ingreso": str(dm["fecha_ingreso"]) if dm["fecha_ingreso"] else None,
+        })
+
+    workers = []
+    for w in workers_rows:
+        wid = w["worker_id"]
+        workers.append({
+            "worker_id":       wid,
+            "worker_nombre":   w["worker_nombre"],
+            "profesion":       w["profesion"] or "",
+            "num_ordenes":     int(w["num_ordenes"] or 0),
+            "num_items":       int(w["num_items"]   or 0),
+            "total_pendiente": float(w["total_pendiente"] or 0),
+            "detalles":        det_map.get(wid, []),
+        })
+
+    return {
+        "fecha":           fecha_sel,
+        "workers":         workers,
+        "total_workers":   len(workers),
+        "total_mano_obra": sum(r["total_pendiente"] for r in workers),
+    }
+
+
+@router.post("/liquidacion/registrar")
+async def registrar_liquidacion(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    company_id    = int(payload.get("company_id") or current_user.company_id)
+    worker_id     = int(payload.get("worker_id")  or 0)
+    fecha         = payload.get("fecha", "")
+    monto         = float(payload.get("monto_operario") or 0)
+    total_bruto   = float(payload.get("total_bruto")    or monto)
+    forma_pago    = payload.get("forma_pago", "efectivo")
+    if forma_pago not in ("efectivo", "transferencia", "otro"):
+        forma_pago = "efectivo"
+    observaciones = (payload.get("observaciones") or "").strip()
+    detail_ids    = [int(d) for d in (payload.get("detail_ids") or []) if str(d).isdigit()]
+
+    if not worker_id or monto <= 0:
+        raise HTTPException(status_code=400, detail="Datos incompletos")
+
+    await db.execute(text("""
+        INSERT INTO worker_liquidaciones
+            (company_id, worker_id, fecha_inicio, fecha_fin, total_bruto, pct_aplicado,
+             monto_operario, estado, fecha_pago, forma_pago, observaciones, registrado_por)
+        VALUES (:cid, :wid, :fi, :ff, :tb, 0, :mo, 'pagado', :fpd, :fp, :obs, :usr)
+    """), {
+        "cid": company_id, "wid": worker_id,
+        "fi": fecha, "ff": fecha,
+        "tb": total_bruto, "mo": monto,
+        "fpd": fecha, "fp": forma_pago,
+        "obs": observaciones, "usr": current_user.id,
+    })
+    await db.commit()
+    r     = await db.execute(text("SELECT LAST_INSERT_ID()"))
+    liq_id = r.scalar()
+
+    for did in detail_ids:
+        try:
+            await db.execute(text("""
+                INSERT INTO worker_liquidacion_details (liq_id, detail_id, subtotal, monto_pagado)
+                SELECT :lid, sod.id, sod.subtotal, sod.mano_obra_operario
+                FROM service_order_details sod WHERE sod.id = :did
+            """), {"lid": liq_id, "did": did})
+            await db.execute(text("""
+                UPDATE service_order_details
+                SET liq_estado = 'liquidado', liq_id = :lid
+                WHERE id = :did
+            """), {"lid": liq_id, "did": did})
+        except Exception:
+            pass
+    if detail_ids:
+        await db.commit()
+
+    return {"ok": True, "liq_id": liq_id}
+
+
+@router.get("/liquidacion/historial")
+async def liquidacion_historial(
+    company_id: int  = Query(...),
+    fecha_ini: str   = Query(...),
+    fecha_fin: str   = Query(...),
+    worker_id: int   = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    params: dict = {"cid": company_id, "fi": fecha_ini, "ff": fecha_fin}
+    w_filter = ""
+    if worker_id:
+        w_filter = " AND wl.worker_id = :wid"
+        params["wid"] = worker_id
+
+    res = await db.execute(text(f"""
+        SELECT
+            wl.id, wl.worker_id,
+            wl.fecha_inicio, wl.fecha_fin,
+            wl.total_bruto, wl.monto_operario,
+            wl.estado, wl.fecha_pago, wl.forma_pago,
+            wl.observaciones, wl.created_at,
+            w.nombre     AS worker_nombre,
+            pr.name      AS profesion,
+            u.nombre     AS registrado_por_nombre,
+            COUNT(wld.id) AS num_items
+        FROM worker_liquidaciones wl
+        JOIN workers w       ON wl.worker_id     = w.id
+        LEFT JOIN professions pr ON w.profession_id = pr.id
+        LEFT JOIN users u    ON wl.registrado_por = u.id
+        LEFT JOIN worker_liquidacion_details wld ON wld.liq_id = wl.id
+        WHERE wl.company_id   = :cid
+          AND wl.fecha_inicio >= :fi
+          AND wl.fecha_fin   <= :ff
+          {w_filter}
+        GROUP BY wl.id, wl.worker_id, wl.fecha_inicio, wl.fecha_fin,
+                 wl.total_bruto, wl.monto_operario, wl.estado,
+                 wl.fecha_pago, wl.forma_pago, wl.observaciones, wl.created_at,
+                 w.nombre, pr.name, u.nombre
+        ORDER BY wl.created_at DESC
+        LIMIT 500
+    """), params)
+
+    result = []
+    for row in res:
+        rm = dict(row._mapping)
+        result.append({
+            "id":              rm["id"],
+            "worker_id":       rm["worker_id"],
+            "worker_nombre":   rm["worker_nombre"],
+            "profesion":       rm["profesion"] or "",
+            "fecha_inicio":    str(rm["fecha_inicio"]) if rm["fecha_inicio"] else None,
+            "fecha_fin":       str(rm["fecha_fin"])    if rm["fecha_fin"]    else None,
+            "total_bruto":     float(rm["total_bruto"]    or 0),
+            "monto_operario":  float(rm["monto_operario"] or 0),
+            "estado":          rm["estado"],
+            "fecha_pago":      str(rm["fecha_pago"]) if rm["fecha_pago"] else None,
+            "forma_pago":      rm["forma_pago"],
+            "observaciones":   rm["observaciones"],
+            "registrado_por":  rm["registrado_por_nombre"],
+            "num_items":       int(rm["num_items"] or 0),
+            "created_at":      str(rm["created_at"]) if rm["created_at"] else None,
+        })
+
+    return {
+        "liquidaciones": result,
+        "total":         sum(r["monto_operario"] for r in result),
+        "count":         len(result),
+    }
+
+
+@router.get("/ventas/resumen")
+async def ventas_resumen(
+    company_id: int  = Query(...),
+    fecha_ini: str   = Query(...),
+    fecha_fin: str   = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    params: dict = {"cid": company_id, "fi": fecha_ini, "ff": fecha_fin}
+
+    res_svc = await db.execute(text("""
+        SELECT
+            sod.tipo_item,
+            sod.nombre,
+            COUNT(*)                      AS cantidad,
+            SUM(sod.subtotal)             AS total,
+            SUM(sod.mano_obra_operario)   AS total_mano_obra
+        FROM service_order_details sod
+        JOIN service_orders so ON sod.order_id = so.id
+        WHERE so.company_id          = :cid
+          AND DATE(so.fecha_ingreso) BETWEEN :fi AND :ff
+          AND sod.tipo_item         != 'repuesto'
+        GROUP BY sod.tipo_item, sod.nombre
+        ORDER BY sod.tipo_item, total DESC
+    """), params)
+
+    res_prod = await db.execute(text("""
+        SELECT
+            sod.nombre,
+            SUM(sod.cantidad)  AS cantidad,
+            SUM(sod.subtotal)  AS total
+        FROM service_order_details sod
+        JOIN service_orders so ON sod.order_id = so.id
+        WHERE so.company_id          = :cid
+          AND DATE(so.fecha_ingreso) BETWEEN :fi AND :ff
+          AND sod.tipo_item          = 'repuesto'
+        GROUP BY sod.product_id, sod.nombre
+        ORDER BY total DESC
+    """), params)
+
+    res_tot = await db.execute(text("""
+        SELECT
+            COUNT(DISTINCT so.id) AS num_ordenes,
+            SUM(sod.subtotal)     AS total_venta
+        FROM service_orders so
+        JOIN service_order_details sod ON sod.order_id = so.id
+        WHERE so.company_id          = :cid
+          AND DATE(so.fecha_ingreso) BETWEEN :fi AND :ff
+    """), params)
+    tot = dict(res_tot.first()._mapping)
+
+    servicios = []
+    for row in res_svc:
+        rm = dict(row._mapping)
+        servicios.append({
+            "tipo_item":      rm["tipo_item"],
+            "nombre":         rm["nombre"],
+            "cantidad":       int(rm["cantidad"] or 0),
+            "total":          float(rm["total"]          or 0),
+            "total_mano_obra": float(rm["total_mano_obra"] or 0),
+        })
+
+    productos = []
+    for row in res_prod:
+        rm = dict(row._mapping)
+        productos.append({
+            "nombre":   rm["nombre"],
+            "cantidad": float(rm["cantidad"] or 0),
+            "total":    float(rm["total"]    or 0),
+        })
+
+    return {
+        "servicios":        servicios,
+        "productos":        productos,
+        "num_ordenes":      int(tot["num_ordenes"]  or 0),
+        "total_venta":      float(tot["total_venta"] or 0),
+        "total_servicios":  sum(s["total"] for s in servicios),
+        "total_productos":  sum(p["total"] for p in productos),
+    }
