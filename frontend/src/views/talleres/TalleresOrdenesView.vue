@@ -69,7 +69,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="o in ordenesActivas.items" :key="o.id" class="oa-row" @click="abrirPorPlaca(o.placa_vehiculo)">
+            <tr v-for="o in ordenesActivas.items" :key="o.id" class="oa-row" @click="router.push(`/talleres/orden/${o.id}`)">
               <td class="oa-num">{{ o.numero_orden }}</td>
               <td class="oa-placa">{{ o.placa_vehiculo }}</td>
               <td><span :class="['estado-badge', `es-${o.estado}`]">{{ LABELS_ESTADO[o.estado] || o.estado }}</span></td>
@@ -77,8 +77,8 @@
               <td class="oa-jefe">{{ o.jefe_nombre || '—' }}</td>
               <td class="ta-r oa-total">{{ fmt(o.total_orden) }}</td>
               <td @click.stop>
-                <button class="oa-btn-open" @click="abrirPorPlaca(o.placa_vehiculo)" title="Ver orden">
-                  <i class="bi bi-arrow-right-circle-fill"></i>
+                <button class="oa-btn-open" @click="router.push(`/talleres/orden/${o.id}`)" title="Editar orden">
+                  <i class="bi bi-pencil-fill"></i>
                 </button>
               </td>
             </tr>

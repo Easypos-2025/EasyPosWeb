@@ -416,6 +416,101 @@ async def cambiar_estado(
     return {"ok": True}
 
 
+# ── Editar encabezado de la orden ────────────────────────────────────────────
+
+@router.patch("/ordenes/{orden_id}/editar")
+async def editar_orden(
+    orden_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    chk = await db.execute(text(
+        "SELECT id FROM service_orders WHERE id=:oid AND company_id=:cid"
+    ), {"oid": orden_id, "cid": payload.get("company_id")})
+    if not chk.scalar():
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+
+    sets, vals = [], {"oid": orden_id}
+    campos = {
+        "km_ingreso":          "km_ingreso",
+        "km_salida":           "km_salida",
+        "diagnostico":         "diagnostico",
+        "trabajo_realizado":   "trabajo_realizado",
+        "promesa_entrega":     "promesa_entrega",
+        "jefe_responsable_id": "jefe_responsable_id",
+        "convenio_id":         "convenio_id",
+    }
+    for campo, col in campos.items():
+        if campo in payload:
+            sets.append(f"{col} = :{campo}")
+            vals[campo] = payload[campo] or None
+
+    if not sets:
+        return {"ok": True, "msg": "Sin cambios"}
+
+    await db.execute(text(
+        f"UPDATE service_orders SET {', '.join(sets)}, updated_at=NOW() WHERE id=:oid"
+    ), vals)
+    await db.commit()
+    return {"ok": True}
+
+
+# ── Historial por placa ───────────────────────────────────────────────────────
+
+@router.get("/historial/placa")
+async def historial_por_placa(
+    placa: str       = Query(...),
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT
+            so.id, so.numero_orden, so.fecha_ingreso, so.fecha_entrega_real,
+            so.estado, so.estado_facturacion, so.km_ingreso, so.km_salida,
+            so.diagnostico, so.trabajo_realizado,
+            u.nombre   AS jefe_nombre,
+            uc.nombre  AS creado_por,
+            (SELECT SUM(d.subtotal) FROM service_order_details d WHERE d.order_id=so.id) AS total_orden,
+            (SELECT COUNT(*) FROM service_order_details d WHERE d.order_id=so.id) AS cant_items
+        FROM service_orders so
+        LEFT JOIN users u  ON u.id  = so.jefe_responsable_id
+        LEFT JOIN users uc ON uc.id = so.created_by
+        WHERE so.company_id = :cid AND so.placa_vehiculo = :placa
+        ORDER BY so.fecha_ingreso DESC
+        LIMIT 100
+    """), {"cid": company_id, "placa": placa.strip().upper()})
+    return [dict(r._mapping) for r in rows]
+
+
+# ── Historial por cliente ─────────────────────────────────────────────────────
+
+@router.get("/historial/cliente")
+async def historial_por_cliente(
+    client_id: int   = Query(...),
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT
+            so.id, so.numero_orden, so.placa_vehiculo,
+            so.fecha_ingreso, so.fecha_entrega_real,
+            so.estado, so.estado_facturacion,
+            so.diagnostico, so.trabajo_realizado,
+            u.nombre  AS jefe_nombre,
+            (SELECT SUM(d.subtotal) FROM service_order_details d WHERE d.order_id=so.id) AS total_orden,
+            (SELECT COUNT(*) FROM service_order_details d WHERE d.order_id=so.id) AS cant_items
+        FROM service_orders so
+        LEFT JOIN users u ON u.id = so.jefe_responsable_id
+        WHERE so.company_id = :cid AND so.client_id = :clt
+        ORDER BY so.fecha_ingreso DESC
+        LIMIT 150
+    """), {"cid": company_id, "clt": client_id})
+    return [dict(r._mapping) for r in rows]
+
+
 # ── Convenios de la empresa ───────────────────────────────────────────────────
 
 @router.get("/convenios")

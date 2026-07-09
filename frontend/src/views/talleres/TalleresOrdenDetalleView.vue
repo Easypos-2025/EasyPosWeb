@@ -1,275 +1,295 @@
 <template>
-  <div class="orden-detalle-wrap">
+  <div class="od-page">
 
-    <!-- ══ HEADER ORDEN ══ -->
-    <div class="orden-header-card">
-      <div class="oh-left">
-        <div class="oh-numero">{{ orden?.numero_orden ?? '...' }}</div>
-        <div class="oh-info">
-          <span :class="['estado-badge', `estado-${orden?.estado}`]">
-            {{ estadoLabel(orden?.estado) }}
-          </span>
-          <span class="oh-fecha">
-            <i class="bi bi-calendar3"></i>
-            {{ fmtFecha(orden?.fecha_ingreso) }}
-          </span>
-          <span v-if="orden?.promesa_entrega" class="oh-promesa">
-            <i class="bi bi-clock-history"></i>
-            Promesa: {{ fmtFecha(orden?.promesa_entrega) }}
-          </span>
-        </div>
+    <!-- ── Header fijo ───────────────────────────────────────────────── -->
+    <div class="od-header">
+      <button class="btn-back" @click="router.push('/talleres/ordenes')" title="Volver al listado">
+        <i class="bi bi-arrow-left"></i>
+      </button>
+      <div class="od-titulo">
+        <span class="od-num">{{ orden?.numero_orden ?? '...' }}</span>
+        <span :class="['es-badge', `es-${orden?.estado}`]">{{ estadoLabel(orden?.estado) }}</span>
+        <span v-if="orden?.placa_vehiculo" class="od-placa">{{ orden.placa_vehiculo }}</span>
+      </div>
+      <div class="od-totales-mini" v-if="orden">
+        <span class="tot-mini"><i class="bi bi-currency-dollar"></i> {{ fmt(totales.total) }}</span>
+        <button class="btn-imprimir" @click="imprimir" title="Imprimir"><i class="bi bi-printer"></i></button>
+      </div>
+    </div>
+
+    <div v-if="loadingOrden" class="od-loading">
+      <i class="bi bi-arrow-repeat spin"></i> Cargando orden…
+    </div>
+
+    <template v-else-if="orden">
+      <!-- ── Tabs ───────────────────────────────────────────────────── -->
+      <div class="od-tabs">
+        <button :class="['od-tab', { active: tab === 'editar' }]" @click="tab='editar'">
+          <i class="bi bi-pencil-square"></i> Editar Orden
+        </button>
+        <button :class="['od-tab', { active: tab === 'historial' }]" @click="tab='historial'; cargarHistorial()">
+          <i class="bi bi-clock-history"></i> Historial
+        </button>
       </div>
 
-      <div class="oh-vehicle">
-        <div class="oh-placa">
-          <i class="bi bi-car-front-fill"></i>
-          {{ orden?.placa ?? '—' }}
-        </div>
-        <div class="oh-vehicle-info">
-          <span>{{ [orden?.marca, orden?.modelo, orden?.anio_modelo].filter(Boolean).join(' ') || '—' }}</span>
-          <span v-if="orden?.color" class="oh-color">{{ orden.color }}</span>
-          <span v-if="orden?.km_ingreso" class="oh-km">
-            <i class="bi bi-speedometer2"></i> {{ orden.km_ingreso.toLocaleString() }} km
-          </span>
-        </div>
-      </div>
+      <!-- ════════════ TAB: EDITAR ORDEN ════════════════════════════ -->
+      <div v-if="tab === 'editar'" class="tab-body">
 
-      <div class="oh-right">
-        <div v-if="orden?.cliente_nombre" class="oh-cliente">
-          <i class="bi bi-person-fill"></i> {{ orden.cliente_nombre }}
-        </div>
-        <div class="oh-acciones">
-          <!-- Cambio de estado -->
-          <template v-if="orden?.estado === 'abierta'">
-            <button class="btn-estado en_proceso" @click="cambiarEstado('en_proceso')">
-              <i class="bi bi-play-fill"></i> Iniciar
-            </button>
-          </template>
-          <template v-else-if="orden?.estado === 'en_proceso'">
-            <button class="btn-estado terminada" @click="cambiarEstado('terminada')">
-              <i class="bi bi-check2-circle"></i> Terminar
-            </button>
-          </template>
-          <template v-else-if="orden?.estado === 'terminada'">
-            <button class="btn-estado entregada" @click="cambiarEstado('entregada')">
-              <i class="bi bi-box-arrow-right"></i> Entregar
-            </button>
-          </template>
-          <button class="btn-print" @click="imprimir">
-            <i class="bi bi-printer"></i>
+        <!-- ▸ Acordeón: Datos del Vehículo -->
+        <div class="acord-block">
+          <button class="acord-head" @click="toggle('vehiculo')">
+            <div class="acord-title"><i class="bi bi-car-front-fill"></i> Datos del Vehículo</div>
+            <i :class="open.has('vehiculo') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
           </button>
+          <div v-if="open.has('vehiculo')" class="acord-body">
+            <div class="form-grid">
+              <div class="fg"><label>Placa</label>
+                <input v-model="editForm.placa_vehiculo" class="fc" readonly /></div>
+              <div class="fg"><label>Tipo</label>
+                <input v-model="vehiculoExt.tipo" class="fc" readonly /></div>
+              <div class="fg"><label>Marca</label>
+                <input v-model="vehiculoExt.marca" class="fc" readonly /></div>
+              <div class="fg"><label>Modelo</label>
+                <input v-model="vehiculoExt.modelo" class="fc" readonly /></div>
+              <div class="fg"><label>Año</label>
+                <input v-model="vehiculoExt.anio" class="fc" readonly /></div>
+              <div class="fg"><label>Color</label>
+                <input v-model="vehiculoExt.color" class="fc" readonly /></div>
+              <div class="fg"><label>Km Ingreso</label>
+                <input v-model.number="editForm.km_ingreso" type="number" class="fc" /></div>
+              <div class="fg"><label>Km Salida</label>
+                <input v-model.number="editForm.km_salida" type="number" class="fc" /></div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Diagnóstico / observaciones -->
-    <div v-if="orden?.diagnostico" class="diagnostico-bar">
-      <i class="bi bi-card-text"></i>
-      <strong>Diagnóstico:</strong> {{ orden.diagnostico }}
-    </div>
-
-    <!-- ══ TOTALES ══ -->
-    <div class="totales-bar">
-      <div class="total-chip">
-        <span class="total-lbl">Servicios</span>
-        <span class="total-val">{{ fmt(totales.servicios) }}</span>
-      </div>
-      <div class="total-chip">
-        <span class="total-lbl">Repuestos</span>
-        <span class="total-val">{{ fmt(totales.repuestos) }}</span>
-      </div>
-      <div class="total-chip highlight">
-        <span class="total-lbl">TOTAL</span>
-        <span class="total-val">{{ fmt(totales.total) }}</span>
-      </div>
-      <div class="total-chip mano-obra">
-        <span class="total-lbl">Mano de obra operarios</span>
-        <span class="total-val">{{ fmt(totales.mano_obra) }}</span>
-      </div>
-    </div>
-
-    <!-- ══ LAYOUT DOS COLUMNAS ══ -->
-    <div class="orden-body">
-
-      <!-- ── Columna izquierda: Agregar ítem ── -->
-      <div class="col-form">
-        <div class="form-card">
-          <h6 class="form-title"><i class="bi bi-plus-circle-fill"></i> Agregar Servicio / Repuesto</h6>
-
-          <!-- Búsqueda de producto -->
-          <div class="field-group">
-            <label>Producto / Servicio</label>
-            <div class="search-wrap">
-              <input
-                v-model="busqueda"
-                placeholder="Buscar por nombre o código..."
-                class="form-inp"
-                @input="buscarProductos"
-                @keydown.esc="resultados = []"
-              />
-              <i v-if="buscando" class="bi bi-hourglass-split spin abs-icon"></i>
-            </div>
-            <div v-if="resultados.length > 0" class="search-results">
-              <div
-                v-for="r in resultados" :key="r.id"
-                class="result-item"
-                @click="seleccionarProducto(r)"
-              >
-                <span class="r-name">{{ r.name }}</span>
-                <span class="r-code">{{ r.code }}</span>
-                <span :class="['r-tipo', r.tipo_servicio ?? 'repuesto']">
-                  {{ r.tipo_display ?? r.tipo_servicio ?? 'repuesto' }}
-                </span>
-                <span class="r-price">{{ fmt(r.base_price) }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Producto seleccionado -->
-          <div v-if="itemForm.producto_id" class="producto-sel">
-            <div class="ps-info">
-              <span class="ps-name">{{ itemForm.producto_nombre }}</span>
-              <span class="ps-code">{{ itemForm.producto_code }}</span>
-            </div>
-            <button class="ps-clear" @click="limpiarProducto">
-              <i class="bi bi-x-lg"></i>
-            </button>
-          </div>
-
-          <div class="form-row">
-            <div class="field-group">
-              <label>Tipo</label>
-              <select v-model="itemForm.tipo_item" class="form-inp form-sel">
-                <option value="servicio">Servicio</option>
-                <option value="repuesto">Repuesto</option>
-                <option value="insumo">Insumo</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label>Cantidad</label>
-              <input v-model.number="itemForm.cantidad" type="number" min="0.01" step="0.01" class="form-inp" />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="field-group">
-              <label>Precio unitario</label>
-              <input v-model.number="itemForm.precio_unitario" type="number" min="0" class="form-inp" />
-            </div>
-            <div class="field-group">
-              <label>Subtotal</label>
-              <div class="subtotal-display">{{ fmt(subtotalItem) }}</div>
-            </div>
-          </div>
-
-          <!-- Operario (solo servicios) -->
-          <div v-if="itemForm.tipo_item === 'servicio'" class="field-group">
-            <label>Operario responsable</label>
-            <select v-model="itemForm.worker_id" class="form-inp form-sel">
-              <option :value="null">— Sin asignar —</option>
-              <option v-for="w in workers" :key="w.id" :value="w.id">
-                {{ w.name }} · {{ w.profession_nombre ?? '' }}
-                <template v-if="w.pct_operario"> ({{ w.pct_operario }}%)</template>
-              </option>
-            </select>
-            <div v-if="itemForm.worker_id && itemForm.pct_operario > 0" class="mano-obra-preview">
-              Mano de obra operario:
-              <strong>{{ fmt(subtotalItem * itemForm.pct_operario / 100) }}</strong>
-              · {{ itemForm.pct_operario }}%
-            </div>
-          </div>
-
-          <!-- Descripción -->
-          <div class="field-group">
-            <label>Descripción / observación</label>
-            <textarea v-model="itemForm.descripcion" class="form-inp form-ta" rows="2" placeholder="Opcional..."></textarea>
-          </div>
-
-          <button
-            class="btn-agregar"
-            :disabled="!puedeAgregar || agregando"
-            @click="agregarDetalle"
-          >
-            <i v-if="agregando" class="bi bi-hourglass-split spin"></i>
-            <i v-else class="bi bi-plus-lg"></i>
-            Agregar al detalle
+        <!-- ▸ Acordeón: Datos del Cliente -->
+        <div class="acord-block">
+          <button class="acord-head" @click="toggle('cliente')">
+            <div class="acord-title"><i class="bi bi-person-fill"></i> Datos del Cliente</div>
+            <i :class="open.has('cliente') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
           </button>
-        </div>
-
-        <!-- Operarios asignados -->
-        <div v-if="ordenWorkers.length" class="workers-card">
-          <h6 class="form-title"><i class="bi bi-people-fill"></i> Operarios en esta orden</h6>
-          <div class="worker-chips">
-            <div v-for="w in ordenWorkers" :key="w.worker_id" class="worker-chip">
-              <div class="wc-avatar">{{ initials(w.worker_nombre) }}</div>
-              <div class="wc-info">
-                <span class="wc-name">{{ w.worker_nombre }}</span>
-                <span class="wc-role">{{ w.profession_nombre ?? '' }}</span>
-              </div>
+          <div v-if="open.has('cliente')" class="acord-body">
+            <div class="form-grid">
+              <div class="fg span2"><label>Nombre</label>
+                <input :value="orden.cliente_nombre || '—'" class="fc" readonly /></div>
+              <div class="fg"><label>Documento</label>
+                <input :value="orden.cliente_documento || '—'" class="fc" readonly /></div>
+              <div class="fg"><label>Teléfono</label>
+                <input :value="orden.cliente_telefono || '—'" class="fc" readonly /></div>
+              <div class="fg span2" v-if="orden.convenio_nombre"><label>Convenio empresarial</label>
+                <input :value="orden.convenio_nombre" class="fc" readonly /></div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- ── Columna derecha: Detalle de la orden ── -->
-      <div class="col-detalle">
-        <div class="detalle-card">
-          <h6 class="form-title">
-            <i class="bi bi-list-check"></i> Detalle de la Orden
-            <span class="detalle-count">{{ detalles.length }} ítem{{ detalles.length !== 1 ? 's' : '' }}</span>
-          </h6>
+        <!-- ▸ Acordeón: Encabezado de la Orden -->
+        <div class="acord-block">
+          <button class="acord-head" @click="toggle('encabezado')">
+            <div class="acord-title"><i class="bi bi-clipboard2-fill"></i> Encabezado de la Orden</div>
+            <i :class="open.has('encabezado') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+          </button>
+          <div v-if="open.has('encabezado')" class="acord-body">
+            <div class="form-grid">
+              <div class="fg"><label>Fecha Ingreso</label>
+                <input :value="fmtFecha(orden.fecha_ingreso)" class="fc" readonly /></div>
+              <div class="fg"><label>Promesa de Entrega</label>
+                <CustomDatePicker v-model="editForm.promesa_entrega" /></div>
+              <div class="fg"><label>Jefe Responsable</label>
+                <select v-model="editForm.jefe_responsable_id" class="fc">
+                  <option :value="null">— Sin asignar —</option>
+                  <option v-for="u in jefes" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                </select></div>
+              <div class="fg"><label>Convenio</label>
+                <select v-model="editForm.convenio_id" class="fc">
+                  <option :value="null">— Particular —</option>
+                  <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+                </select></div>
+              <div class="fg span2"><label>Diagnóstico / Descripción del servicio</label>
+                <textarea v-model="editForm.diagnostico" class="fc" rows="3"></textarea></div>
+              <div class="fg span2"><label>Trabajo realizado</label>
+                <textarea v-model="editForm.trabajo_realizado" class="fc" rows="3"></textarea></div>
+            </div>
+          </div>
+        </div>
 
-          <div v-if="loadingDetalles" class="loading-center">
-            <i class="bi bi-hourglass-split spin"></i>
-          </div>
-          <div v-else-if="detalles.length === 0" class="empty-detalle">
-            <i class="bi bi-inbox"></i>
-            <p>Sin ítems. Agrega servicios o repuestos.</p>
-          </div>
-          <div v-else class="detalles-list">
-            <div
-              v-for="d in detalles" :key="d.id"
-              :class="['detalle-row', `tipo-${d.tipo_item}`]"
-            >
-              <div class="dr-left">
-                <span :class="['dr-tipo', `tipo-${d.tipo_item}`]">{{ d.tipo_item }}</span>
+        <!-- ▸ Acordeón: Detalle de la Orden (siempre abierto) -->
+        <div class="acord-block">
+          <button class="acord-head" @click="toggle('detalle')">
+            <div class="acord-title">
+              <i class="bi bi-list-check"></i> Detalle de la Orden
+              <span class="det-cnt">{{ detalles.length }} ítems · {{ fmt(totales.total) }}</span>
+            </div>
+            <i :class="open.has('detalle') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+          </button>
+          <div v-if="open.has('detalle')" class="acord-body">
+
+            <!-- Totales bar -->
+            <div class="totales-row">
+              <div class="tc"><span class="tc-l">Servicios</span><span class="tc-v">{{ fmt(totales.servicios) }}</span></div>
+              <div class="tc"><span class="tc-l">Repuestos</span><span class="tc-v">{{ fmt(totales.repuestos) }}</span></div>
+              <div class="tc hl"><span class="tc-l">TOTAL</span><span class="tc-v">{{ fmt(totales.total) }}</span></div>
+              <div class="tc mo"><span class="tc-l">Mano de Obra</span><span class="tc-v">{{ fmt(totales.mano_obra) }}</span></div>
+            </div>
+
+            <!-- Lista de ítems -->
+            <div v-if="detalles.length === 0" class="det-empty">
+              <i class="bi bi-inbox"></i> Sin ítems. Agrega servicios o repuestos abajo.
+            </div>
+            <div v-else class="detalles-list">
+              <div v-for="d in detalles" :key="d.id" :class="['dr', `dr-${d.tipo_item}`]">
+                <span :class="['dr-tipo', `dt-${d.tipo_item}`]">{{ tipoLabel(d.tipo_item) }}</span>
                 <div class="dr-names">
-                  <span class="dr-name">{{ d.nombre_display ?? d.producto_nombre ?? '—' }}</span>
-                  <span v-if="d.descripcion" class="dr-desc">{{ d.descripcion }}</span>
+                  <span class="dr-name">{{ d.nombre }}</span>
+                  <span v-if="d.worker_nombre || d.operario_nombre" class="dr-worker">
+                    <i class="bi bi-person-badge"></i> {{ d.worker_nombre ?? d.operario_nombre }}
+                  </span>
+                </div>
+                <div class="dr-nums">
+                  <span>{{ d.cantidad }} u</span>
+                  <span>{{ fmt(d.precio_unitario) }}</span>
+                  <span class="dr-sub">{{ fmt(d.subtotal) }}</span>
+                  <span v-if="d.mano_obra_operario > 0" class="dr-mo"><i class="bi bi-person-fill"></i> {{ fmt(d.mano_obra_operario) }}</span>
+                </div>
+                <button v-if="!d.liq_estado || d.liq_estado === 'pendiente'"
+                  class="dr-del" @click="eliminarDetalle(d)" :disabled="eliminandoId===d.id">
+                  <i v-if="eliminandoId===d.id" class="bi bi-hourglass-split spin"></i>
+                  <i v-else class="bi bi-trash3"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Formulario agregar ítem -->
+            <div class="add-item-form">
+              <div class="aif-title"><i class="bi bi-plus-circle-fill"></i> Agregar Servicio / Repuesto</div>
+              <div class="search-wrap">
+                <input v-model="busqueda" class="fc" placeholder="Buscar por nombre o código…"
+                  @input="buscarProductos" @keydown.esc="resultados=[]" />
+                <i v-if="buscando" class="bi bi-hourglass-split spin abs-spin"></i>
+              </div>
+              <div v-if="resultados.length" class="search-results">
+                <div v-for="r in resultados" :key="r.id" class="sr-item" @click="seleccionarProducto(r)">
+                  <span class="sr-name">{{ r.name }}</span>
+                  <span class="sr-code">{{ r.code }}</span>
+                  <span class="sr-price">{{ fmt(r.base_price) }}</span>
                 </div>
               </div>
-              <div class="dr-numbers">
-                <span class="dr-qty">{{ d.cantidad }} u</span>
-                <span class="dr-price">{{ fmt(d.precio_cobrado) }}</span>
-                <span class="dr-sub">{{ fmt(d.subtotal) }}</span>
-                <span v-if="d.mano_obra_operario > 0" class="dr-mo">
-                  <i class="bi bi-person-fill"></i> {{ fmt(d.mano_obra_operario) }}
-                </span>
+              <div v-if="itemForm.producto_id" class="prod-sel">
+                <span>{{ itemForm.producto_nombre }}</span>
+                <button @click="limpiarProducto"><i class="bi bi-x-lg"></i></button>
               </div>
-              <div class="dr-worker" v-if="d.worker_nombre || d.operario_nombre">
-                <i class="bi bi-person-badge"></i> {{ d.worker_nombre ?? d.operario_nombre }}
+              <div class="form-grid mt8">
+                <div class="fg"><label>Tipo</label>
+                  <select v-model="itemForm.tipo_item" class="fc">
+                    <option value="mecanica">Mecánica</option>
+                    <option value="lavado">Lavado</option>
+                    <option value="latoneria">Latonería</option>
+                    <option value="pintura">Pintura</option>
+                    <option value="repuesto">Repuesto</option>
+                  </select></div>
+                <div class="fg"><label>Cantidad</label>
+                  <input v-model.number="itemForm.cantidad" type="number" min="0.01" step="0.01" class="fc" /></div>
+                <div class="fg"><label>Precio unitario</label>
+                  <input v-model.number="itemForm.precio_unitario" type="number" min="0" class="fc" /></div>
+                <div class="fg"><label>Subtotal</label>
+                  <div class="fc-display">{{ fmt(subtotalItem) }}</div></div>
+                <div class="fg span2" v-if="itemForm.tipo_item !== 'repuesto'"><label>Operario responsable</label>
+                  <select v-model="itemForm.worker_id" class="fc">
+                    <option :value="null">— Sin asignar —</option>
+                    <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.nombre }} · {{ w.profesion ?? '' }}</option>
+                  </select></div>
               </div>
-              <button
-                v-if="d.liq_estado === 'pendiente' || !d.liq_estado"
-                class="dr-delete"
-                @click="eliminarDetalle(d)"
-                :disabled="eliminandoId === d.id"
-                title="Eliminar ítem"
-              >
-                <i v-if="eliminandoId === d.id" class="bi bi-hourglass-split spin"></i>
-                <i v-else class="bi bi-trash3"></i>
+              <button class="btn-agregar" :disabled="!puedeAgregar || agregando" @click="agregarDetalle">
+                <i v-if="agregando" class="bi bi-hourglass-split spin"></i>
+                <i v-else class="bi bi-plus-lg"></i>
+                Agregar al detalle
               </button>
             </div>
+
           </div>
         </div>
-      </div>
 
-    </div><!-- /orden-body -->
+        <!-- ── Botones de acción ──────────────────────────────────── -->
+        <div class="action-bar" v-if="orden.estado !== 'cancelada'">
+          <button class="btn-save" :disabled="guardando" @click="guardarCambios">
+            <i v-if="guardando" class="bi bi-hourglass-split spin"></i>
+            <i v-else class="bi bi-floppy-fill"></i>
+            Guardar Cambios
+          </button>
+          <button class="btn-facturar" v-if="orden.estado !== 'entregada'" @click="facturar">
+            <i class="bi bi-receipt-cutoff"></i>
+            Facturar / Entregar
+          </button>
+          <button class="btn-cancelar" @click="cancelarOrden">
+            <i class="bi bi-x-circle-fill"></i>
+            Eliminar Orden
+          </button>
+        </div>
+        <div class="action-bar" v-else>
+          <div class="orden-cancelada-msg"><i class="bi bi-x-circle-fill"></i> Orden cancelada</div>
+        </div>
+
+      </div><!-- /tab editar -->
+
+      <!-- ════════════ TAB: HISTORIAL ════════════════════════════════ -->
+      <div v-if="tab === 'historial'" class="tab-body">
+        <div class="hist-subtabs">
+          <button :class="['hs-tab', { active: subTab==='placa' }]" @click="subTab='placa'; cargarHistPlaca()">
+            <i class="bi bi-car-front-fill"></i> Esta Placa ({{ orden.placa_vehiculo }})
+          </button>
+          <button :class="['hs-tab', { active: subTab==='cliente' }]"
+            :disabled="!orden.client_id"
+            @click="subTab='cliente'; cargarHistCliente()">
+            <i class="bi bi-person-fill"></i> Este Cliente
+            <span v-if="!orden.client_id" class="hs-nodato">(sin cliente)</span>
+          </button>
+        </div>
+
+        <div v-if="loadingHist" class="od-loading"><i class="bi bi-arrow-repeat spin"></i> Cargando…</div>
+        <div v-else-if="histItems.length === 0" class="od-empty">
+          <i class="bi bi-inbox"></i>
+          <p>Sin historial</p>
+        </div>
+        <div v-else class="hist-table-wrap">
+          <table class="hist-table">
+            <thead>
+              <tr>
+                <th v-if="subTab==='cliente'">Placa</th>
+                <th>Orden</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th>Jefe</th>
+                <th class="ta-r">Total</th>
+                <th>Ítems</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="h in histItems" :key="h.id" class="hist-row">
+                <td v-if="subTab==='cliente'" class="h-placa">{{ h.placa_vehiculo }}</td>
+                <td class="h-num">{{ h.numero_orden }}</td>
+                <td class="h-fecha">{{ fmtFecha(h.fecha_ingreso) }}</td>
+                <td><span :class="['es-badge', `es-${h.estado}`]">{{ estadoLabel(h.estado) }}</span></td>
+                <td class="h-jefe">{{ h.jefe_nombre || '—' }}</td>
+                <td class="ta-r h-tot">{{ fmt(h.total_orden) }}</td>
+                <td class="ta-c h-cnt">{{ h.cant_items }}</td>
+                <td>
+                  <button class="h-btn" @click="router.push(`/talleres/orden/${h.id}`)" title="Ver/Editar">
+                    <i class="bi bi-arrow-right-circle-fill"></i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /tab historial -->
+
+    </template>
 
     <!-- Toast -->
     <Teleport to="body">
       <div v-if="toast.visible" :class="['toast-msg', `toast-${toast.tipo}`]">
-        <i :class="toast.tipo === 'ok' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-triangle-fill'"></i>
+        <i :class="toast.tipo==='ok' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-triangle-fill'"></i>
         {{ toast.msg }}
       </div>
     </Teleport>
@@ -282,6 +302,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const route        = useRoute()
 const router       = useRouter()
@@ -289,59 +310,126 @@ const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 const ordenId      = computed(() => route.params.id)
 
-// ── Orden ─────────────────────────────────────────────────────────────────
-const orden           = ref(null)
-const detalles        = ref([])
-const loadingDetalles = ref(false)
+// ── Estado de acordeón ────────────────────────────────────────────────────────
+const open = ref(new Set(['detalle', 'encabezado']))
+function toggle(sec) {
+  const s = new Set(open.value)
+  s.has(sec) ? s.delete(sec) : s.add(sec)
+  open.value = s
+}
 
-// workers asignados a la orden
-const ordenWorkers = ref([])
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+const tab    = ref('editar')
+const subTab = ref('placa')
+
+// ── Carga de la orden ─────────────────────────────────────────────────────────
+const orden          = ref(null)
+const vehiculoExt    = ref({})
+const detalles       = ref([])
+const loadingOrden   = ref(false)
+
+const editForm = ref({
+  km_ingreso: null, km_salida: null,
+  diagnostico: '', trabajo_realizado: '',
+  promesa_entrega: null, jefe_responsable_id: null, convenio_id: null,
+  placa_vehiculo: '',
+})
 
 async function cargarOrden() {
   if (!ordenId.value || !companyId.value) return
-  loadingDetalles.value = true
+  loadingOrden.value = true
   try {
     const { data } = await api.get(`/api/talleres/ordenes/${ordenId.value}`, {
       params: { company_id: companyId.value }
     })
-    orden.value        = data.orden ?? data   // compat: si llega flat o estructurado
-    detalles.value     = data.detalles ?? []
-    ordenWorkers.value = data.workers ?? []
-  } catch (e) {
-    mostrarToast('Error al cargar la orden', 'error')
-  } finally { loadingDetalles.value = false }
+    orden.value     = data.orden ?? data
+    detalles.value  = data.detalles ?? []
+    vehiculoExt.value = {
+      tipo:   orden.value.tipo_vehiculo || '',
+      marca:  orden.value.marca || '',
+      modelo: orden.value.modelo || '',
+      anio:   orden.value.anio  || '',
+      color:  orden.value.color || '',
+    }
+    editForm.value = {
+      km_ingreso:          orden.value.km_ingreso ?? null,
+      km_salida:           orden.value.km_salida  ?? null,
+      diagnostico:         orden.value.diagnostico || '',
+      trabajo_realizado:   orden.value.trabajo_realizado || '',
+      promesa_entrega:     orden.value.promesa_entrega ? orden.value.promesa_entrega.split('T')[0] : null,
+      jefe_responsable_id: orden.value.jefe_responsable_id ?? null,
+      convenio_id:         orden.value.convenio_id ?? null,
+      placa_vehiculo:      orden.value.placa_vehiculo || '',
+    }
+  } catch { mostrarToast('Error al cargar la orden', 'error') }
+  finally  { loadingOrden.value = false }
 }
 
-// ── Cambiar estado ────────────────────────────────────────────────────────
-async function cambiarEstado(nuevoEstado) {
+// ── Guardar cambios ───────────────────────────────────────────────────────────
+const guardando = ref(false)
+async function guardarCambios() {
+  guardando.value = true
+  try {
+    await api.patch(`/api/talleres/ordenes/${ordenId.value}/editar`, {
+      company_id: companyId.value,
+      ...editForm.value,
+    })
+    if (orden.value) {
+      Object.assign(orden.value, editForm.value)
+    }
+    mostrarToast('Cambios guardados', 'ok')
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al guardar', 'error') }
+  finally { guardando.value = false }
+}
+
+// ── Facturar / Entregar ────────────────────────────────────────────────────────
+async function facturar() {
+  if (!confirm('¿Marcar esta orden como entregada/facturada?')) return
   try {
     await api.patch(`/api/talleres/ordenes/${ordenId.value}/estado`, {
-      company_id: companyId.value,
-      estado: nuevoEstado
+      company_id: companyId.value, estado: 'entregada',
+      trabajo_realizado: editForm.value.trabajo_realizado,
+      km_salida: editForm.value.km_salida,
     })
-    if (orden.value) orden.value.estado = nuevoEstado
-    mostrarToast(`Orden marcada como "${estadoLabel(nuevoEstado)}"`, 'ok')
-  } catch (e) {
-    mostrarToast(e?.response?.data?.detail ?? 'Error al cambiar estado', 'error')
-  }
+    if (orden.value) orden.value.estado = 'entregada'
+    mostrarToast('Orden marcada como Entregada', 'ok')
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error', 'error') }
 }
 
-// ── Workers (para el select de operario) ──────────────────────────────────
-const workers = ref([])
-async function cargarWorkers() {
-  if (!companyId.value) return
+// ── Cancelar / Eliminar orden ─────────────────────────────────────────────────
+async function cancelarOrden() {
+  if (!confirm('¿Eliminar (cancelar) esta orden? Esta acción no se puede deshacer.')) return
   try {
-    const { data } = await api.get('/api/talleres/workers-con-config', {
-      params: { company_id: companyId.value }
+    await api.patch(`/api/talleres/ordenes/${ordenId.value}/estado`, {
+      company_id: companyId.value, estado: 'cancelada',
     })
-    workers.value = data
-  } catch { workers.value = [] }
+    mostrarToast('Orden cancelada', 'ok')
+    setTimeout(() => router.push('/talleres/ordenes'), 1000)
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error', 'error') }
 }
 
-// ── Búsqueda de productos ─────────────────────────────────────────────────
-const busqueda  = ref('')
+// ── Workers y jefes ───────────────────────────────────────────────────────────
+const workers   = ref([])
+const jefes     = ref([])
+const convenios = ref([])
+
+async function cargarAuxiliares() {
+  try {
+    const [wRes, jRes, cRes] = await Promise.all([
+      api.get('/api/talleres/workers-con-config',    { params: { company_id: companyId.value } }),
+      api.get('/api/users/',                          { params: { company_id: companyId.value } }),
+      api.get('/api/talleres/convenios',             { params: { company_id: companyId.value } }),
+    ])
+    workers.value   = wRes.data ?? []
+    jefes.value     = (jRes.data?.items ?? jRes.data ?? [])
+    convenios.value = cRes.data ?? []
+  } catch { /* silencioso */ }
+}
+
+// ── Búsqueda de productos ─────────────────────────────────────────────────────
+const busqueda   = ref('')
 const resultados = ref([])
-const buscando  = ref(false)
+const buscando   = ref(false)
 let searchTimer  = null
 
 function buscarProductos() {
@@ -354,143 +442,149 @@ function buscarProductos() {
         params: { company_id: companyId.value, q: busqueda.value, limit: 10 }
       })
       resultados.value = data
-    } catch { resultados.value = [] } finally { buscando.value = false }
+    } catch { resultados.value = [] }
+    finally { buscando.value = false }
   }, 300)
 }
-
 function seleccionarProducto(p) {
-  itemForm.value.producto_id            = p.id
-  itemForm.value.producto_nombre        = p.name
-  itemForm.value.producto_code          = p.code
-  itemForm.value.precio_unitario        = p.base_price ?? 0
-  itemForm.value.producto_profession_id = p.profession_id ?? null
-  if (p.pct_operario) itemForm.value.pct_operario = p.pct_operario
-  if (p.service_type) itemForm.value.tipo_item = 'servicio'
+  itemForm.value.producto_id     = p.id
+  itemForm.value.producto_nombre = p.name
+  itemForm.value.precio_unitario = p.base_price ?? 0
+  if (p.service_type) itemForm.value.tipo_item = p.service_type
   else if (p.inventory_behavior === 'decrement') itemForm.value.tipo_item = 'repuesto'
   busqueda.value  = ''
   resultados.value = []
 }
-
 function limpiarProducto() {
-  itemForm.value.producto_id     = null
+  itemForm.value.producto_id = null
   itemForm.value.producto_nombre = ''
-  itemForm.value.producto_code   = ''
 }
 
-// ── Formulario de ítem ────────────────────────────────────────────────────
-const itemFormDefault = () => ({
-  producto_id:       null,
-  producto_nombre:   '',
-  producto_code:     '',
-  producto_profession_id: null,
-  tipo_item:         'servicio',
-  cantidad:          1,
-  precio_unitario:   0,
-  worker_id:         null,
-  pct_operario:      0,
-  descripcion:       '',
+// ── Formulario de ítem ────────────────────────────────────────────────────────
+const itemFormDef = () => ({
+  producto_id: null, producto_nombre: '',
+  tipo_item: 'mecanica', cantidad: 1, precio_unitario: 0, worker_id: null,
 })
-const itemForm = ref(itemFormDefault())
+const itemForm = ref(itemFormDef())
 const agregando = ref(false)
+const eliminandoId = ref(null)
 
-watch(() => itemForm.value.worker_id, (wid) => {
-  const w = workers.value.find(x => x.id === wid)
-  itemForm.value.pct_operario = w?.pct_operario ?? 0
-})
-
-const subtotalItem = computed(() =>
-  (itemForm.value.cantidad || 0) * (itemForm.value.precio_unitario || 0)
-)
-const puedeAgregar = computed(() =>
-  itemForm.value.producto_id &&
-  itemForm.value.cantidad > 0 &&
-  itemForm.value.precio_cobrado >= 0
-)
+const subtotalItem = computed(() => (itemForm.value.cantidad || 0) * (itemForm.value.precio_unitario || 0))
+const puedeAgregar = computed(() => !!itemForm.value.producto_id && itemForm.value.cantidad > 0 && itemForm.value.precio_unitario >= 0)
 
 async function agregarDetalle() {
   if (!puedeAgregar.value) return
   agregando.value = true
   try {
     const workerSel = workers.value.find(x => x.id === itemForm.value.worker_id)
-    const payload = {
-      company_id:    companyId.value,
-      product_id:    itemForm.value.producto_id,
-      nombre:        itemForm.value.producto_nombre,
-      tipo_item:     itemForm.value.tipo_item,
-      cantidad:      itemForm.value.cantidad,
+    const { data } = await api.post(`/api/talleres/ordenes/${ordenId.value}/detalle`, {
+      company_id:     companyId.value,
+      product_id:     itemForm.value.producto_id,
+      nombre:         itemForm.value.producto_nombre,
+      tipo_item:      itemForm.value.tipo_item,
+      cantidad:       itemForm.value.cantidad,
       precio_unitario: itemForm.value.precio_unitario,
-      worker_id:     itemForm.value.worker_id || null,
-      profession_id: itemForm.value.producto_profession_id || workerSel?.profession_id || null,
-      descripcion:   itemForm.value.descripcion || null,
-    }
-    const { data } = await api.post(`/api/talleres/ordenes/${ordenId.value}/detalle`, payload)
-    // Enriquecer la fila para display inmediato sin recargar toda la orden
+      worker_id:      itemForm.value.worker_id || null,
+      profession_id:  workerSel?.profession_id || null,
+    })
     detalles.value.push({
-      id:                 data.id ?? Date.now(),
+      id: data.id ?? Date.now(),
       tipo_item:          itemForm.value.tipo_item,
       nombre:             itemForm.value.producto_nombre,
-      nombre_display:     itemForm.value.producto_nombre,
-      descripcion:        itemForm.value.descripcion,
       cantidad:           itemForm.value.cantidad,
-      precio_cobrado:     itemForm.value.precio_unitario,
-      subtotal:           data.subtotal,
+      precio_unitario:    itemForm.value.precio_unitario,
+      subtotal:           data.subtotal ?? subtotalItem.value,
       mano_obra_operario: data.mano_obra_operario ?? 0,
-      worker_nombre:      workerSel?.name ?? null,
+      worker_nombre:      workerSel?.nombre ?? null,
       liq_estado:         'pendiente',
     })
-    itemForm.value = itemFormDefault()
+    itemForm.value = itemFormDef()
     mostrarToast('Ítem agregado', 'ok')
-  } catch (e) {
-    mostrarToast(e?.response?.data?.detail ?? 'Error al agregar', 'error')
-  } finally { agregando.value = false }
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al agregar', 'error') }
+  finally { agregando.value = false }
 }
 
-// ── Eliminar detalle ──────────────────────────────────────────────────────
-const eliminandoId = ref(null)
 async function eliminarDetalle(d) {
-  if (!confirm(`¿Eliminar "${d.nombre_display ?? d.producto_nombre}"?`)) return
+  if (!confirm(`¿Eliminar "${d.nombre}"?`)) return
   eliminandoId.value = d.id
   try {
-    await api.delete(
-      `/api/talleres/ordenes/${ordenId.value}/detalle/${d.id}`,
-      { params: { company_id: companyId.value } }
-    )
+    await api.delete(`/api/talleres/ordenes/${ordenId.value}/detalle/${d.id}`, {
+      params: { company_id: companyId.value }
+    })
     detalles.value = detalles.value.filter(x => x.id !== d.id)
     mostrarToast('Ítem eliminado', 'ok')
-  } catch (e) {
-    mostrarToast(e?.response?.data?.detail ?? 'Error al eliminar', 'error')
-  } finally { eliminandoId.value = null }
+  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error', 'error') }
+  finally { eliminandoId.value = null }
 }
 
-// ── Totales ───────────────────────────────────────────────────────────────
+// ── Totales ───────────────────────────────────────────────────────────────────
 const totales = computed(() => {
   let servicios = 0, repuestos = 0, mano_obra = 0
   for (const d of detalles.value) {
-    if (d.tipo_item === 'servicio') servicios += d.subtotal ?? 0
-    else repuestos += d.subtotal ?? 0
+    if (d.tipo_item === 'repuesto') repuestos += d.subtotal ?? 0
+    else servicios += d.subtotal ?? 0
     mano_obra += d.mano_obra_operario ?? 0
   }
   return { servicios, repuestos, total: servicios + repuestos, mano_obra }
 })
 
-// ── Imprimir ──────────────────────────────────────────────────────────────
+// ── Historial ─────────────────────────────────────────────────────────────────
+const histItems  = ref([])
+const loadingHist = ref(false)
+let histPlacaCargado   = false
+let histClienteCargado = false
+
+async function cargarHistorial() {
+  if (subTab.value === 'placa') cargarHistPlaca()
+}
+async function cargarHistPlaca() {
+  if (histPlacaCargado) return
+  loadingHist.value = true
+  try {
+    const { data } = await api.get('/api/talleres/historial/placa', {
+      params: { company_id: companyId.value, placa: orden.value?.placa_vehiculo }
+    })
+    histItems.value  = data
+    histPlacaCargado = true
+  } catch { histItems.value = [] }
+  finally { loadingHist.value = false }
+}
+async function cargarHistCliente() {
+  if (histClienteCargado || !orden.value?.client_id) return
+  loadingHist.value = true
+  try {
+    const { data } = await api.get('/api/talleres/historial/cliente', {
+      params: { company_id: companyId.value, client_id: orden.value.client_id }
+    })
+    histItems.value    = data
+    histClienteCargado = true
+  } catch { histItems.value = [] }
+  finally { loadingHist.value = false }
+}
+
+watch(subTab, (val) => {
+  histItems.value = []
+  if (val === 'placa')   { histPlacaCargado = false;   cargarHistPlaca() }
+  if (val === 'cliente') { histClienteCargado = false; cargarHistCliente() }
+})
+
+// ── Imprimir ──────────────────────────────────────────────────────────────────
 function imprimir() { window.print() }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function estadoLabel(e) {
-  const m = { abierta: 'Abierta', en_proceso: 'En Proceso', terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada' }
-  return m[e] ?? e ?? '—'
+  return { abierta:'Abierta', en_proceso:'En Proceso', terminada:'Terminada', entregada:'Entregada', cancelada:'Cancelada' }[e] ?? e ?? '—'
+}
+function tipoLabel(t) {
+  return { mecanica:'Mecánica', lavado:'Lavado', latoneria:'Latonería', pintura:'Pintura', repuesto:'Repuesto' }[t] ?? t
 }
 function fmtFecha(v) {
   if (!v) return '—'
-  return new Date(v).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return new Date(v).toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' })
 }
 function fmt(v) {
   if (v == null || v === '') return '—'
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v)
-}
-function initials(name) {
-  return (name || '?').split(' ').slice(0, 2).map(s => s[0]).join('').toUpperCase()
+  return new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 }).format(v)
 }
 
 const toast = ref({ visible: false, msg: '', tipo: 'ok' })
@@ -499,262 +593,170 @@ function mostrarToast(msg, tipo = 'ok') {
   setTimeout(() => { toast.value.visible = false }, 3500)
 }
 
-onMounted(() => {
-  cargarOrden()
-  cargarWorkers()
-})
+onMounted(() => { cargarOrden(); cargarAuxiliares() })
 </script>
 
 <style scoped>
-/* ── Layout wrap ── */
-.orden-detalle-wrap {
-  display: flex; flex-direction: column; gap: 16px;
-}
+.od-page { padding: 16px; max-width: 900px; display: flex; flex-direction: column; gap: 14px; }
 
-/* ── Header card ── */
-.orden-header-card {
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  padding: 16px 20px; display: flex; align-items: center; gap: 20px;
-  flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-.oh-left      { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
-.oh-numero    { font-size: 18px; font-weight: 800; color: #1e3a5f; }
-.oh-info      { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.oh-fecha, .oh-promesa { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
-.oh-vehicle   { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.oh-placa     { font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; }
-.oh-placa .bi { color: #1e3a5f; }
-.oh-vehicle-info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
-.oh-color     { background: #f1f5f9; border-radius: 20px; padding: 1px 8px; font-size: 12px; }
-.oh-km        { display: flex; align-items: center; gap: 3px; font-size: 12px; color: #64748b; }
-.oh-right     { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
-.oh-cliente   { font-size: 13px; color: #475569; display: flex; align-items: center; gap: 6px; font-weight: 600; }
-.oh-acciones  { display: flex; align-items: center; gap: 8px; }
+/* ── Header ─────────────────────────────────────────────────────────── */
+.od-header { display:flex; align-items:center; gap:12px; background:#fff; border-radius:12px; padding:12px 16px; box-shadow:0 2px 8px rgba(0,0,0,.07); flex-wrap:wrap; }
+.btn-back  { width:36px; height:36px; border-radius:9px; border:1.5px solid #e2e8f0; background:#f8fafc; cursor:pointer; color:#475569; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+.btn-back:hover { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.od-titulo { display:flex; align-items:center; gap:8px; flex:1; flex-wrap:wrap; min-width:0; }
+.od-num    { font-size:17px; font-weight:800; font-family:monospace; color:#1e293b; }
+.od-placa  { font-size:16px; font-weight:900; letter-spacing:2px; color:#1e293b; background:#f1f5f9; padding:3px 10px; border-radius:6px; }
+.od-totales-mini { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.tot-mini  { font-size:16px; font-weight:700; color:#059669; display:flex; align-items:center; gap:5px; }
+.btn-imprimir { width:34px; height:34px; border-radius:8px; border:1.5px solid #e2e8f0; background:#f8fafc; cursor:pointer; color:#475569; display:flex; align-items:center; justify-content:center; }
+.btn-imprimir:hover { background:#f0fdf4; color:#059669; }
 
-/* ── Estado badges ── */
-.estado-badge {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.5px; border-radius: 20px; padding: 3px 10px;
-}
-.estado-abierta   { background: #dbeafe; color: #1d4ed8; }
-.estado-en_proceso { background: #fef3c7; color: #d97706; }
-.estado-terminada { background: #dcfce7; color: #15803d; }
-.estado-entregada { background: #e0e7ff; color: #4338ca; }
-.estado-cancelada { background: #fee2e2; color: #dc2626; }
+/* ── Estado badge ────────────────────────────────────────────────────── */
+.es-badge  { font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; }
+.es-abierta    { background:#dbeafe; color:#1d4ed8; }
+.es-en_proceso { background:#fef3c7; color:#92400e; }
+.es-terminada  { background:#dcfce7; color:#166534; }
+.es-entregada  { background:#f1f5f9; color:#64748b; }
+.es-cancelada  { background:#fee2e2; color:#b91c1c; }
 
-/* ── Botones de estado ── */
-.btn-estado {
-  display: flex; align-items: center; gap: 6px;
-  border: none; border-radius: 8px; padding: 8px 16px;
-  font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity .2s;
-}
-.btn-estado:hover { opacity: .85; }
-.btn-estado.en_proceso { background: #f59e0b; color: #fff; }
-.btn-estado.terminada  { background: #22c55e; color: #fff; }
-.btn-estado.entregada  { background: #6366f1; color: #fff; }
-.btn-print {
-  background: #f1f5f9; border: none; border-radius: 8px; width: 36px; height: 36px;
-  cursor: pointer; color: #64748b; font-size: 16px; display: flex; align-items: center; justify-content: center;
-}
-.btn-print:hover { background: #e2e8f0; }
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.od-tabs { display:flex; gap:4px; background:#f1f5f9; border-radius:10px; padding:4px; }
+.od-tab  { display:flex; align-items:center; gap:7px; flex:1; padding:10px 14px; font-size:13px; font-weight:700; border:none; background:none; border-radius:7px; cursor:pointer; color:#64748b; justify-content:center; transition:all .12s; }
+.od-tab.active { background:#fff; color:#1d4ed8; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+.od-tab:hover:not(.active) { background:#e2e8f0; }
 
-/* ── Diagnóstico ── */
-.diagnostico-bar {
-  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
-  padding: 10px 14px; font-size: 13px; color: #78350f;
-  display: flex; align-items: flex-start; gap: 8px;
-}
-.diagnostico-bar .bi { margin-top: 2px; color: #d97706; flex-shrink: 0; }
+.tab-body { display:flex; flex-direction:column; gap:10px; }
 
-/* ── Totales bar ── */
-.totales-bar {
-  display: flex; flex-wrap: wrap; gap: 10px;
-}
-.total-chip {
-  display: flex; flex-direction: column; gap: 2px;
-  background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  padding: 8px 14px; min-width: 100px;
-}
-.total-chip.highlight { background: #1e3a5f; border-color: #1e3a5f; }
-.total-chip.mano-obra { background: #eff6ff; border-color: #bfdbfe; }
-.total-lbl { font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; letter-spacing: 0.4px; }
-.total-chip.highlight .total-lbl { color: #93c5fd; }
-.total-chip.mano-obra .total-lbl { color: #3b82f6; }
-.total-val { font-size: 16px; font-weight: 800; color: #1e3a5f; }
-.total-chip.highlight .total-val { color: #fff; font-size: 18px; }
-.total-chip.mano-obra .total-val { color: #1d4ed8; }
+/* ── Acordeón ────────────────────────────────────────────────────────── */
+.acord-block { border-radius:12px; border:1.5px solid #e2e8f0; background:#fff; overflow:hidden; }
+.acord-head  { display:flex; align-items:center; justify-content:space-between; width:100%; padding:13px 16px; background:none; border:none; cursor:pointer; font-size:13px; font-weight:700; color:#1e293b; transition:background .1s; }
+.acord-head:hover { background:#f8fafc; }
+.acord-title { display:flex; align-items:center; gap:8px; color:#1e293b; }
+.acord-title .bi { color:#3b82f6; font-size:15px; }
+.acord-body  { padding:14px 16px; border-top:1px solid #f1f5f9; }
+.det-cnt     { font-size:11px; font-weight:600; color:#64748b; background:#f1f5f9; padding:2px 8px; border-radius:20px; margin-left:8px; }
 
-/* ── Body ── */
-.orden-body {
-  display: grid; grid-template-columns: 380px 1fr; gap: 16px; align-items: start;
-}
+/* ── Form grid ───────────────────────────────────────────────────────── */
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.fg        { display:flex; flex-direction:column; gap:5px; }
+.fg label  { font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.4px; }
+.span2     { grid-column:span 2; }
+.mt8       { margin-top:8px; }
+.fc        { border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px; color:#1e293b; outline:none; background:#fff; width:100%; box-sizing:border-box; }
+.fc:focus  { border-color:#3b82f6; }
+.fc[readonly] { background:#f8fafc; color:#64748b; cursor:default; }
+textarea.fc { resize:vertical; }
+.fc-display { border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px; color:#059669; font-weight:700; background:#f0fdf4; }
 
-/* ── Cards comunes ── */
-.form-card, .detalle-card, .workers-card {
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px;
-  padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-.workers-card { margin-top: 14px; }
-.form-title {
-  margin: 0 0 14px; font-size: 13px; font-weight: 700; color: #1e3a5f;
-  display: flex; align-items: center; gap: 7px; padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
-}
-.detalle-count { margin-left: auto; font-size: 12px; font-weight: 600; color: #94a3b8; }
+/* ── Totales row ─────────────────────────────────────────────────────── */
+.totales-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.tc    { display:flex; flex-direction:column; gap:3px; padding:10px 14px; border-radius:10px; background:#f8fafc; border:1.5px solid #e2e8f0; flex:1; min-width:80px; }
+.tc-l  { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; }
+.tc-v  { font-size:15px; font-weight:800; color:#1e293b; }
+.tc.hl { background:#f0fdf4; border-color:#bbf7d0; } .tc.hl .tc-v { color:#059669; }
+.tc.mo { background:#fffbeb; border-color:#fde68a; } .tc.mo .tc-v { color:#d97706; }
 
-/* ── Form fields ── */
-.field-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
-.field-group label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
-.form-inp {
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 8px 12px; font-size: 14px; color: #1e3a5f; outline: none;
-  transition: border-color .2s; background: #fff;
-}
-.form-inp:focus { border-color: #1e3a5f; }
-.form-sel { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
-.form-ta { resize: vertical; min-height: 60px; font-family: inherit; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* ── Detalles list ───────────────────────────────────────────────────── */
+.det-empty   { display:flex; align-items:center; gap:8px; color:#94a3b8; font-size:13px; padding:16px; }
+.detalles-list { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+.dr          { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:9px; background:#f8fafc; border:1px solid #f1f5f9; flex-wrap:wrap; }
+.dr-tipo     { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; flex-shrink:0; }
+.dt-mecanica  { background:#dbeafe; color:#1d4ed8; }
+.dt-lavado    { background:#cffafe; color:#0e7490; }
+.dt-latoneria { background:#fef3c7; color:#92400e; }
+.dt-pintura   { background:#ede9fe; color:#6d28d9; }
+.dt-repuesto  { background:#f1f5f9; color:#475569; }
+.dr-names    { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.dr-name     { font-size:13px; font-weight:600; color:#1e293b; }
+.dr-worker   { font-size:11px; color:#94a3b8; display:flex; align-items:center; gap:4px; }
+.dr-nums     { display:flex; align-items:center; gap:10px; font-size:12px; color:#64748b; flex-wrap:wrap; }
+.dr-sub      { font-weight:700; color:#1e293b; }
+.dr-mo       { color:#d97706; font-weight:600; display:flex; align-items:center; gap:3px; }
+.dr-del      { width:28px; height:28px; border-radius:7px; border:1.5px solid #fca5a5; background:#fff0f0; color:#dc2626; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; }
+.dr-del:hover:not(:disabled) { background:#dc2626; color:#fff; }
+.dr-del:disabled { opacity:.5; cursor:not-allowed; }
 
-/* ── Búsqueda ── */
-.search-wrap { position: relative; }
-.abs-icon { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
-.search-results {
-  position: absolute; left: 0; right: 0; top: calc(100% + 4px);
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 200; max-height: 240px; overflow-y: auto;
-}
-.result-item {
-  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  cursor: pointer; transition: background .15s; font-size: 13px;
-  border-bottom: 1px solid #f1f5f9;
-}
-.result-item:last-child { border-bottom: none; }
-.result-item:hover { background: #f8fafc; }
-.r-name  { flex: 1; font-weight: 600; color: #1e3a5f; }
-.r-code  { font-size: 11px; color: #94a3b8; }
-.r-tipo  { font-size: 10px; font-weight: 700; border-radius: 20px; padding: 1px 8px; background: #dbeafe; color: #1d4ed8; }
-.r-tipo.repuesto { background: #fef3c7; color: #92400e; }
-.r-price { font-size: 12px; font-weight: 700; color: #15803d; white-space: nowrap; }
+/* ── Agregar ítem ────────────────────────────────────────────────────── */
+.add-item-form { border-top:1.5px dashed #e2e8f0; padding-top:14px; display:flex; flex-direction:column; gap:10px; }
+.aif-title     { font-size:13px; font-weight:700; color:#374151; display:flex; align-items:center; gap:7px; }
+.aif-title .bi { color:#10b981; }
+.search-wrap   { position:relative; }
+.abs-spin      { position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#94a3b8; }
+.search-results { border:1.5px solid #e2e8f0; border-radius:8px; background:#fff; max-height:200px; overflow-y:auto; }
+.sr-item       { display:flex; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; }
+.sr-item:hover { background:#f0f9ff; }
+.sr-name       { flex:1; font-size:13px; font-weight:600; color:#1e293b; }
+.sr-code       { font-size:11px; color:#94a3b8; font-family:monospace; }
+.sr-price      { font-size:12px; font-weight:700; color:#059669; }
+.prod-sel      { display:flex; align-items:center; justify-content:space-between; background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; color:#1e293b; }
+.prod-sel button { background:none; border:none; cursor:pointer; color:#94a3b8; font-size:13px; }
+.btn-agregar   { display:flex; align-items:center; gap:7px; padding:10px 18px; background:#3b82f6; color:#fff; border:none; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; }
+.btn-agregar:hover:not(:disabled) { background:#2563eb; }
+.btn-agregar:disabled { opacity:.5; cursor:not-allowed; }
 
-/* ── Producto seleccionado ── */
-.producto-sel {
-  display: flex; align-items: center; gap: 10px;
-  background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px;
-  padding: 8px 12px; margin-bottom: 12px;
-}
-.ps-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
-.ps-name { font-size: 13px; font-weight: 700; color: #15803d; }
-.ps-code { font-size: 11px; color: #64748b; }
-.ps-clear {
-  background: none; border: none; color: #94a3b8; cursor: pointer;
-  font-size: 14px; padding: 2px; display: flex;
-}
-.ps-clear:hover { color: #dc2626; }
+/* ── Action bar ──────────────────────────────────────────────────────── */
+.action-bar     { display:flex; gap:10px; flex-wrap:wrap; padding:14px 0; border-top:2px solid #f1f5f9; }
+.btn-save       { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+.btn-save:hover:not(:disabled) { background:#1e40af; }
+.btn-save:disabled { opacity:.6; cursor:not-allowed; }
+.btn-facturar   { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#059669; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+.btn-facturar:hover { background:#047857; }
+.btn-cancelar   { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#fff; color:#dc2626; border:2px solid #fca5a5; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; margin-left:auto; }
+.btn-cancelar:hover { background:#fee2e2; }
+.orden-cancelada-msg { display:flex; align-items:center; gap:8px; color:#b91c1c; font-size:14px; font-weight:700; padding:12px 0; }
 
-/* ── Subtotal display ── */
-.subtotal-display {
-  border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px 12px;
-  font-size: 16px; font-weight: 800; color: #1e3a5f; background: #f8fafc;
-}
+/* ── Historial ───────────────────────────────────────────────────────── */
+.hist-subtabs { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+.hs-tab  { display:flex; align-items:center; gap:7px; padding:9px 16px; border-radius:9px; border:1.5px solid #e2e8f0; background:#f8fafc; font-size:13px; font-weight:600; color:#475569; cursor:pointer; transition:all .12s; }
+.hs-tab.active { background:#1e3a5f; color:#fff; border-color:#1e3a5f; }
+.hs-tab:disabled { opacity:.45; cursor:not-allowed; }
+.hs-nodato { font-size:11px; opacity:.7; }
+.hist-table-wrap { overflow-x:auto; border-radius:12px; border:1.5px solid #e2e8f0; }
+.hist-table  { width:100%; border-collapse:collapse; font-size:13px; }
+.hist-table thead tr { background:#f8fafc; }
+.hist-table th { padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; border-bottom:1.5px solid #e2e8f0; }
+.hist-table td { padding:10px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+.hist-row:hover td { background:#f0f9ff; }
+.h-placa { font-weight:800; font-size:14px; letter-spacing:1px; }
+.h-num   { font-family:monospace; font-size:12px; color:#64748b; }
+.h-fecha { font-size:12px; color:#94a3b8; }
+.h-jefe  { font-size:12px; color:#475569; }
+.h-tot   { font-weight:700; color:#1e293b; }
+.h-cnt   { color:#64748b; }
+.ta-r    { text-align:right; }
+.ta-c    { text-align:center; }
+.h-btn   { width:30px; height:30px; border:none; border-radius:7px; background:#eff6ff; color:#1d4ed8; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; }
+.h-btn:hover { background:#1d4ed8; color:#fff; }
 
-/* ── Mano de obra preview ── */
-.mano-obra-preview {
-  font-size: 12px; color: #1d4ed8; background: #eff6ff;
-  border-radius: 6px; padding: 5px 10px; margin-top: 4px;
-}
+/* ── Loading / Empty ─────────────────────────────────────────────────── */
+.od-loading { display:flex; align-items:center; justify-content:center; gap:10px; padding:60px; color:#94a3b8; font-size:14px; }
+.od-empty   { display:flex; flex-direction:column; align-items:center; gap:8px; padding:50px; color:#94a3b8; }
+.od-empty .bi { font-size:36px; color:#e2e8f0; }
+.od-empty p   { font-size:13px; margin:0; }
+.spin { display:inline-block; animation:spin .8s linear infinite; }
+@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
-/* ── Btn agregar ── */
-.btn-agregar {
-  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: #1e3a5f; color: #fff; border: none; border-radius: 10px;
-  padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer;
-  transition: background .2s;
-}
-.btn-agregar:hover:not(:disabled) { background: #2d4f80; }
-.btn-agregar:disabled { opacity: .5; cursor: default; }
+/* ── Toast ───────────────────────────────────────────────────────────── */
+.toast-msg { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); padding:12px 24px; border-radius:12px; font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; z-index:9999; box-shadow:0 8px 24px rgba(0,0,0,.18); animation:slideUp .2s ease; }
+.toast-ok    { background:#059669; color:#fff; }
+.toast-error { background:#dc2626; color:#fff; }
+@keyframes slideUp { from{opacity:0;transform:translateX(-50%) translateY(12px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
 
-/* ── Workers chips ── */
-.worker-chips { display: flex; flex-direction: column; gap: 8px; }
-.worker-chip  { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-.wc-avatar {
-  width: 32px; height: 32px; border-radius: 50%; background: #1e3a5f; color: #fff;
-  font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.wc-info   { display: flex; flex-direction: column; gap: 1px; }
-.wc-name   { font-size: 13px; font-weight: 600; color: #1e3a5f; }
-.wc-role   { font-size: 11px; color: #64748b; }
-
-/* ── Detalles list ── */
-.loading-center { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 32px; color: #94a3b8; }
-.empty-detalle  { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px; color: #94a3b8; text-align: center; }
-.empty-detalle .bi { font-size: 40px; color: #cbd5e1; }
-.empty-detalle p { font-size: 13px; margin: 0; }
-.detalles-list { display: flex; flex-direction: column; gap: 8px; }
-
-.detalle-row {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  border: 1.5px solid #f1f5f9; border-radius: 10px; padding: 10px 12px;
-  border-left: 4px solid transparent;
-}
-.detalle-row.tipo-servicio { border-left-color: #3b82f6; }
-.detalle-row.tipo-repuesto { border-left-color: #f59e0b; }
-.detalle-row.tipo-insumo   { border-left-color: #94a3b8; }
-
-.dr-left  { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 150px; }
-.dr-tipo  {
-  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
-  border-radius: 20px; padding: 2px 7px; white-space: nowrap; flex-shrink: 0;
-}
-.dr-tipo.tipo-servicio { background: #dbeafe; color: #1d4ed8; }
-.dr-tipo.tipo-repuesto { background: #fef3c7; color: #92400e; }
-.dr-tipo.tipo-insumo   { background: #f1f5f9; color: #64748b; }
-.dr-names { display: flex; flex-direction: column; gap: 1px; }
-.dr-name  { font-size: 13px; font-weight: 600; color: #1e3a5f; }
-.dr-desc  { font-size: 11px; color: #64748b; }
-.dr-worker { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-.dr-numbers { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.dr-qty   { font-size: 12px; color: #94a3b8; white-space: nowrap; }
-.dr-price { font-size: 12px; color: #64748b; white-space: nowrap; }
-.dr-sub   { font-size: 15px; font-weight: 700; color: #1e3a5f; white-space: nowrap; }
-.dr-mo    { font-size: 11px; color: #1d4ed8; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
-.dr-delete {
-  background: #fee2e2; border: none; border-radius: 7px; width: 30px; height: 30px;
-  cursor: pointer; color: #dc2626; font-size: 13px; display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
-.dr-delete:hover:not(:disabled) { background: #fecaca; }
-.dr-delete:disabled { opacity: .5; cursor: default; }
-
-/* ── Toast ── */
-.toast-msg {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; padding: 12px 20px;
-  border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 9999;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15); animation: slideInUp 0.3s ease;
-}
-.toast-ok    { background: #1e3a5f; color: #fff; }
-.toast-error { background: #dc2626; color: #fff; }
-@keyframes slideInUp { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-
-.spin { display: inline-block; animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Responsive ── */
-@media (max-width: 1024px) {
-  .orden-body { grid-template-columns: 1fr; }
-}
+/* ── Responsive 768px ────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .orden-header-card { gap: 12px; }
-  .oh-left, .oh-vehicle, .oh-right { width: 100%; }
-  .oh-right { align-items: flex-start; }
-  .totales-bar { gap: 8px; }
-  .total-chip { min-width: 80px; }
-  .form-row { grid-template-columns: 1fr; }
+  .form-grid   { grid-template-columns: 1fr; }
+  .span2       { grid-column: span 1; }
+  .action-bar  { flex-direction: column; }
+  .btn-cancelar { margin-left: 0; }
+  .totales-row { gap: 6px; }
+  .tc          { min-width: 70px; }
 }
+
+/* ── Responsive 576px ────────────────────────────────────────────────── */
 @media (max-width: 576px) {
-  .oh-numero { font-size: 15px; }
-  .oh-placa  { font-size: 16px; }
-  .detalle-row { flex-direction: column; align-items: flex-start; }
-  .dr-numbers  { justify-content: flex-start; }
+  .od-header   { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .od-totales-mini { margin-left: 0; }
+  .dr          { flex-direction: column; align-items: flex-start; }
+  .hist-table th:nth-child(5), .hist-table td:nth-child(5) { display: none; }
 }
 </style>

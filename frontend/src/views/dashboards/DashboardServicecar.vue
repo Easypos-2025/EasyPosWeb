@@ -29,9 +29,9 @@
         <span class="ac-label">Nueva<br>Orden</span>
         <i class="bi bi-chevron-right ac-arrow"></i>
       </button>
-      <button class="acceso-card" @click="showSearch = true">
-        <div class="ac-icon blue"><i class="bi bi-search"></i></div>
-        <span class="ac-label">Buscar<br>Órdenes</span>
+      <button class="acceso-card" @click="ir('/talleres/ordenes')">
+        <div class="ac-icon blue"><i class="bi bi-list-check"></i></div>
+        <span class="ac-label">Ver<br>Órdenes</span>
         <i class="bi bi-chevron-right ac-arrow"></i>
       </button>
       <button class="acceso-card" @click="ir('/talleres/caja')">
