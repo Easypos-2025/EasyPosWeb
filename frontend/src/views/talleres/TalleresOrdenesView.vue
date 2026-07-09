@@ -712,7 +712,7 @@ async function abrirOrden() {
       workers:             workers_payload,
     })
     mostrarToast(`Orden ${data.numero_orden} creada`, 'ok')
-    setTimeout(() => router.push(`/talleres/orden/${data.orden_id}`), 700)
+    setTimeout(() => router.push(`/talleres/orden/${data.id}`), 700)
   } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al crear la orden', 'error') }
   finally { loadingGuardar.value = false }
 }
