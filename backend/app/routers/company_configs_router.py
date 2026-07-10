@@ -165,19 +165,36 @@ async def get_pe_facturas(
     else:
         d1 = d2 = target
 
-    rows = (await db.execute(text("""
-        SELECT
-            DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
-            Prefix                         AS prefijo,
-            Nro_Factura                    AS nro_folio,
-            Valor                          AS valor,
-            Nro_Caja                       AS cuenta,
-            Cedula                         AS cliente
-        FROM apidian_facturas_cufe
-        WHERE company_id = :cid
-          AND FEExitosa  = :fe
-          AND Fecha BETWEEN :d1 AND :d2
-        ORDER BY Fecha, Nro_Factura
-        LIMIT 500
-    """), {"cid": company_id, "fe": fe, "d1": d1, "d2": d2})).mappings().all()
+    if fe == 0:
+        # Pendientes: mostrar todos sin importar fecha
+        rows = (await db.execute(text("""
+            SELECT
+                DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
+                Prefix                         AS prefijo,
+                Nro_Factura                    AS nro_folio,
+                Valor                          AS valor,
+                Nro_Caja                       AS cuenta,
+                Cedula                         AS cliente
+            FROM apidian_facturas_cufe
+            WHERE company_id = :cid
+              AND FEExitosa  = 0
+            ORDER BY Fecha, Nro_Factura
+            LIMIT 1000
+        """), {"cid": company_id})).mappings().all()
+    else:
+        rows = (await db.execute(text("""
+            SELECT
+                DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
+                Prefix                         AS prefijo,
+                Nro_Factura                    AS nro_folio,
+                Valor                          AS valor,
+                Nro_Caja                       AS cuenta,
+                Cedula                         AS cliente
+            FROM apidian_facturas_cufe
+            WHERE company_id = :cid
+              AND FEExitosa  = 1
+              AND Fecha BETWEEN :d1 AND :d2
+            ORDER BY Fecha, Nro_Factura
+            LIMIT 500
+        """), {"cid": company_id, "d1": d1, "d2": d2})).mappings().all()
     return [dict(r) for r in rows]
