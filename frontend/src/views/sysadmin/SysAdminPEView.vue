@@ -68,7 +68,7 @@
               <button :class="['btn-mode', billMode === 'day' && 'active']" @click="setBillMode('day')">Día</button>
               <button :class="['btn-mode', billMode === 'month' && 'active']" @click="setBillMode('month')">Mes</button>
             </div>
-            <CustomDatePicker v-model="billDate" variant="dark" @update:modelValue="loadFacturas" />
+            <CustomDatePicker v-model="billDate" @update:modelValue="loadFacturas" />
             <span v-if="billLoading" class="bill-spinner">⏳</span>
           </div>
         </div>
