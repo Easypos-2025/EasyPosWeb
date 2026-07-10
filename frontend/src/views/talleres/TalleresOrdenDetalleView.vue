@@ -13,7 +13,7 @@
       </div>
       <div class="od-totales-mini" v-if="orden">
         <span class="tot-mini"><i class="bi bi-currency-dollar"></i>{{ fmt(totales.total) }}</span>
-        <button class="btn-imprimir" onclick="window.print()" title="Imprimir">
+        <button class="btn-imprimir" @click="abrirImprimirOrden()" title="Imprimir">
           <i class="bi bi-printer"></i>
         </button>
       </div>
@@ -566,7 +566,30 @@ function onReciboSuccess(data) {
 
 function onImprimirClose() {
   showImprimirRecibo.value = false
-  router.push('/talleres/ordenes')
+  if (orden.value?.estado === 'entregada') {
+    router.push('/talleres/ordenes')
+  }
+}
+
+function abrirImprimirOrden() {
+  if (!orden.value) return
+  const now = new Date()
+  reciboData.value = {
+    receipt_number: orden.value.numero_orden,
+    ordenNumero:    orden.value.numero_orden,
+    fecha: now.toLocaleDateString('es-CO', { timeZone: 'America/Bogota' }),
+    hora:  now.toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }),
+    items: detalles.value.map(d => ({
+      nombre:   d.nombre,
+      cantidad: d.cantidad ?? 1,
+      precio:   d.precio_unitario ?? 0,
+    })),
+    subtotal: totales.value.total,
+    tip:      0,
+    total:    totales.value.total,
+    pagos:    [],
+  }
+  showImprimirRecibo.value = true
 }
 
 // ── Anular orden ──────────────────────────────────────────────────────────────
