@@ -2,13 +2,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from typing import Optional
-from app.database import get_db
+from datetime import datetime, timezone, timedelta
+import calendar
+from app.database import get_db, get_ext_session
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.models.role_model import Role
 from app.models.company_model import Company
 from app.models.company_config_model import CompanyConfig
+
+_BOG = timezone(timedelta(hours=-5))
 
 router = APIRouter(prefix="/company-configs", tags=["Company Configs"])
 
@@ -66,7 +70,10 @@ async def list_company_configs(
             c.id_company,
             c.name,
             c.state,
-            bp.name  AS profile_name,
+            c.business_profile_id,
+            bp.name             AS profile_name,
+            bp.name             AS business_profile_name,
+            c.ext_db_host,
             COALESCE(cc.has_pos_electronico, 0)  AS has_pos_electronico,
             cc.pos_electronico_token
         FROM companies c
@@ -133,3 +140,58 @@ async def upsert_company_config(
     await db.commit()
     await db.refresh(cfg)
     return _config_dict(cfg)
+
+
+# ─── GET facturas DIAN de la BD externa de la empresa ────────────────────────
+
+@router.get("/{company_id}/pe-facturas")
+async def get_pe_facturas(
+    company_id: int,
+    date: Optional[str] = None,
+    mode: Optional[str] = "day",
+    fe: int = 0,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_sysadmin(authorization, db)
+
+    company = await db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if not company.ext_db_host:
+        raise HTTPException(status_code=400, detail="Esta empresa no tiene base de datos externa configurada")
+
+    target = date or datetime.now(_BOG).date().isoformat()
+
+    if mode == "month":
+        ym  = target[:7]
+        y, m = int(ym[:4]), int(ym[5:7])
+        d1  = f"{ym}-01"
+        d2  = f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
+    else:
+        d1 = d2 = target
+
+    ext = get_ext_session(
+        company_id, company.ext_db_host, company.ext_db_port or 3306,
+        company.ext_db_name, company.ext_db_user, company.ext_db_password or "",
+    )
+    try:
+        rows = (await ext.execute(text("""
+            SELECT
+                DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
+                Prefijo                         AS prefijo,
+                Nro_Factura                     AS nro_folio,
+                Valor                           AS valor,
+                Cuenta                          AS cuenta,
+                Cliente                         AS cliente
+            FROM apidian_facturas_cufe
+            WHERE FEExitosa = :fe
+              AND Fecha BETWEEN :d1 AND :d2
+            ORDER BY Fecha, Nro_Factura
+            LIMIT 500
+        """), {"fe": fe, "d1": d1, "d2": d2})).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error consultando BD externa: {str(e)}")
+    finally:
+        await ext.close()

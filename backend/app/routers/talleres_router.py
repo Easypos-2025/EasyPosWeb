@@ -346,6 +346,10 @@ async def agregar_detalle(
     descuento = float(payload.get("descuento", 0))
     subtotal  = round((precio * cantidad) - descuento, 2)
 
+    _tipos_validos = {"mecanica", "lavado", "latoneria", "pintura", "repuesto"}
+    tipo_item_raw  = payload.get("tipo_item", "mecanica")
+    tipo_item      = tipo_item_raw if tipo_item_raw in _tipos_validos else "mecanica"
+
     # Calcular mano de obra del operario según % del rol
     mano_obra = 0.0
     profession_id = payload.get("profession_id")
@@ -372,7 +376,7 @@ async def agregar_detalle(
         )
     """), {
         "oid":   orden_id,
-        "tipo":  payload.get("tipo_item", "mecanica"),
+        "tipo":  tipo_item,
         "pid":   payload.get("product_id"),
         "nom":   payload.get("nombre", ""),
         "wid":   payload.get("worker_id"),
@@ -937,10 +941,12 @@ async def buscar_productos(
             p.id, p.code, p.name, p.base_price, p.cost_price,
             p.item_type, p.inventory_behavior,
             cat.name AS categoria,
+            COALESCE(pse.service_type, 'mecanica') AS service_type,
             (SELECT COUNT(*) FROM service_participants sp
              WHERE sp.product_id = p.id AND sp.company_id = p.company_id) AS num_participantes
         FROM products p
         LEFT JOIN product_categories cat ON cat.id = p.category_id
+        LEFT JOIN product_service_ext pse ON pse.product_id = p.id
         WHERE p.company_id = :cid AND p.is_active = 1
           AND (p.name LIKE :q OR p.code LIKE :q)
           {tipo_filter}

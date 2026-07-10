@@ -580,8 +580,7 @@ function seleccionarProducto(p) {
   itemForm.value.producto_id     = p.id
   itemForm.value.producto_nombre = p.name
   itemForm.value.precio_unitario = p.base_price ?? 0
-  // tipo_item: si es producto/repuesto → 'repuesto', si es servicio → 'servicio'
-  itemForm.value.tipo_item = modoTipo.value === 'producto' ? 'repuesto' : 'servicio'
+  itemForm.value.tipo_item = modoTipo.value === 'producto' ? 'repuesto' : (p.service_type || 'mecanica')
   busqueda.value   = ''
   resultados.value = []
 }
@@ -590,7 +589,7 @@ function limpiarProducto() {
   itemForm.value.producto_id     = null
   itemForm.value.producto_nombre = ''
   itemForm.value.precio_unitario = 0
-  itemForm.value.tipo_item       = modoTipo.value === 'producto' ? 'repuesto' : 'servicio'
+  itemForm.value.tipo_item       = modoTipo.value === 'producto' ? 'repuesto' : 'mecanica'
   busqueda.value   = ''
   resultados.value = []
 }
@@ -598,7 +597,7 @@ function limpiarProducto() {
 // ── Formulario de ítem ────────────────────────────────────────────────────────
 const itemFormDef = () => ({
   producto_id: null, producto_nombre: '',
-  tipo_item: 'servicio', cantidad: 1, precio_unitario: 0, worker_id: null,
+  tipo_item: 'mecanica', cantidad: 1, precio_unitario: 0, worker_id: null,
 })
 const itemForm     = ref(itemFormDef())
 const agregando    = ref(false)

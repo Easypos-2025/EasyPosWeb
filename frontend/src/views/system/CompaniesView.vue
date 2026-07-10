@@ -253,6 +253,36 @@
       </div>
       <!-- ── /BD EXTERNA ─────────────────────────────────────────── -->
 
+      <!-- ── POS ELECTRÓNICO ─────────────────────────────────────── -->
+      <div class="pe-section mt-4">
+        <div class="pe-section-header">
+          <i class="bi bi-lightning-charge-fill" style="color:#f59e0b"></i>
+          POS Electrónico (Facturación Electrónica DIAN)
+        </div>
+        <div class="pe-section-body">
+          <div class="pe-toggle-row">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="peForm.has_pos_electronico ? 'stb--on' : 'stb--off'"
+              @click="peForm.has_pos_electronico = peForm.has_pos_electronico ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                <i class="bi bi-lightning-charge-fill"></i>
+                {{ peForm.has_pos_electronico ? 'Módulo PE activo para esta empresa' : 'Módulo PE inactivo' }}
+              </span>
+            </button>
+          </div>
+          <div v-if="peForm.has_pos_electronico" class="pe-token-row mt-2">
+            <label class="form-label mb-1">Token / Clave de integración DIAN</label>
+            <input v-model="peForm.pos_electronico_token" class="form-control form-control-sm"
+              placeholder="Token de integración con Apidian u otro proveedor..."
+              style="font-family:monospace" />
+          </div>
+        </div>
+      </div>
+      <!-- ── /POS ELECTRÓNICO ────────────────────────────────────── -->
+
       <button class="btn btn-primary mt-3" @click="createCompany">
         Guardar
       </button>
@@ -280,6 +310,7 @@ const showExtDb  = ref(false)
 const showPass   = ref(false)
 const testing    = ref(false)
 const testResult = ref(null)
+const peForm     = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
 
 const form = ref({
   name: "",
@@ -434,6 +465,16 @@ const createCompany = async () => {
       showToast("Empresa creada correctamente", "success")
     }
 
+    // Guardar config PE si fue habilitado
+    if (newId && peForm.value.has_pos_electronico) {
+      try {
+        await api.put(`/company-configs/${newId}`, {
+          has_pos_electronico:  peForm.value.has_pos_electronico,
+          pos_electronico_token: peForm.value.pos_electronico_token || null,
+        })
+      } catch {}
+    }
+
     form.value = {
       ...form.value,
       name: "", identification_number: "", dv: "", address: "",
@@ -442,6 +483,7 @@ const createCompany = async () => {
       ext_db_user: "", ext_db_password: "", ext_db_has_password: false,
     }
     planForm.value = { plan_id: "", expiration_date: "" }
+    peForm.value   = { has_pos_electronico: 0, pos_electronico_token: "" }
     showExtDb.value = false
   } catch (error) {
     console.error(error)
@@ -673,4 +715,28 @@ onMounted(() => { loadAll() })
   .plan-grid { grid-template-columns: 1fr; }
   .plan-section-hint { display: none; }
 }
+
+/* ── POS Electrónico ── */
+.pe-section {
+  border: 1.5px solid #fcd34d;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.pe-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fffbeb;
+  padding: 10px 14px;
+  font-size: .88rem;
+  font-weight: 700;
+  color: #92400e;
+  border-bottom: 1px solid #fde68a;
+}
+.pe-section-body {
+  padding: 14px 16px;
+  background: #fff;
+}
+.pe-toggle-row { display: flex; }
+.pe-token-row { display: flex; flex-direction: column; }
 </style>

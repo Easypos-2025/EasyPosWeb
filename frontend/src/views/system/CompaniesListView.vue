@@ -192,6 +192,32 @@
             <i class="bi bi-chevron-right ms-auto"></i>
           </button>
 
+          <!-- POS ELECTRÓNICO -->
+          <div class="section-title mt-3">
+            <i class="bi bi-lightning-charge-fill" style="color:#f59e0b"></i> POS Electrónico
+          </div>
+          <div class="pe-edit-wrap">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="peEditForm.has_pos_electronico ? 'stb--on' : 'stb--off'"
+              :disabled="peEditLoading"
+              @click="peEditForm.has_pos_electronico = peEditForm.has_pos_electronico ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                <i class="bi bi-lightning-charge-fill"></i>
+                {{ peEditForm.has_pos_electronico ? 'Módulo PE activo' : 'Módulo PE inactivo' }}
+              </span>
+            </button>
+            <div v-if="peEditForm.has_pos_electronico" class="fg mt-2">
+              <label>Token / Clave de integración DIAN</label>
+              <input v-model="peEditForm.pos_electronico_token" class="form-control form-control-sm"
+                placeholder="Token Apidian u otro proveedor..."
+                style="font-family:monospace" />
+            </div>
+          </div>
+          <!-- /POS ELECTRÓNICO -->
+
         </div>
 
         <div class="modal-footer-bar">
@@ -305,6 +331,8 @@ const testResult    = ref(null)
 const showPass      = ref(false)
 const modalBodyRef    = ref(null)
 const showExtDbModal  = ref(false)
+const peEditForm    = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
+const peEditLoading = ref(false)
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -388,7 +416,16 @@ function openEdit(c) {
   showExtDb.value  = true
   testResult.value = null
   showPass.value   = false
+  peEditForm.value = { has_pos_electronico: 0, pos_electronico_token: "" }
   showEdit.value   = true
+  // Cargar config PE en background
+  peEditLoading.value = true
+  api.get(`/company-configs/${c.id}`).then(r => {
+    peEditForm.value = {
+      has_pos_electronico:   r.data.has_pos_electronico ?? 0,
+      pos_electronico_token: r.data.pos_electronico_token || "",
+    }
+  }).catch(() => {}).finally(() => { peEditLoading.value = false })
 }
 
 function closeEdit() {
@@ -470,7 +507,15 @@ async function saveEdit() {
     // 1. Guardar datos de la empresa
     await api.put(`/companies/${f.id}`, f)
 
-    // 2. Si se seleccionó un plan nuevo, asignarlo
+    // 2. Guardar config PE
+    try {
+      await api.put(`/company-configs/${f.id}`, {
+        has_pos_electronico:   peEditForm.value.has_pos_electronico,
+        pos_electronico_token: peEditForm.value.pos_electronico_token || null,
+      })
+    } catch {}
+
+    // 3. Si se seleccionó un plan nuevo, asignarlo
     if (planForm.value.plan_id) {
       const planPayload = {
         plan_id: Number(planForm.value.plan_id),
@@ -675,6 +720,7 @@ onMounted(() => {
 .stb--on  { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
 .stb--off { border-color: #e2e8f0; color: #94a3b8; }
 .stb-label { display: flex; align-items: center; gap: 5px; }
+.pe-edit-wrap { display: flex; flex-direction: column; gap: 6px; }
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
