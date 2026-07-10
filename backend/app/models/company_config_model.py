@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, DateTime, ForeignKey, func
+from sqlalchemy import Integer, String, DateTime, Float, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from app.database import Base
@@ -20,6 +20,11 @@ class CompanyConfig(Base):
     # ── POS Electrónico ──────────────────────────────────────────────────────
     has_pos_electronico: Mapped[int] = mapped_column(Integer, default=0)
     pos_electronico_token: Mapped[str] = mapped_column(String(255), nullable=True)
+
+    # ── Facturación / Propina ────────────────────────────────────────────────
+    has_tip: Mapped[int] = mapped_column(Integer, default=0)
+    tip_percentage: Mapped[float] = mapped_column(Float, default=0.0)
+    tip_label: Mapped[str] = mapped_column(String(50), nullable=True, default="Propina")
 
     # ── (Futuros módulos se agregan aquí agrupados por sección) ─────────────
 

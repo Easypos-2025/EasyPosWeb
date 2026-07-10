@@ -1854,6 +1854,9 @@ async def _init_db_data():
                     company_id              INT NOT NULL,
                     has_pos_electronico     TINYINT(1) NOT NULL DEFAULT 0,
                     pos_electronico_token   VARCHAR(255) NULL,
+                    has_tip                 TINYINT(1) NOT NULL DEFAULT 0,
+                    tip_percentage          DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+                    tip_label               VARCHAR(50) NULL DEFAULT 'Propina',
                     created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at              DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     UNIQUE KEY uq_cc_company (company_id),
@@ -1863,6 +1866,18 @@ async def _init_db_data():
             await db.commit()
         except Exception:
             await db.rollback()
+
+        # ── Migración: columnas de propina en company_configs ─────────────────
+        for col_sql in [
+            "ALTER TABLE company_configs ADD COLUMN has_tip        TINYINT(1)    NOT NULL DEFAULT 0",
+            "ALTER TABLE company_configs ADD COLUMN tip_percentage  DECIMAL(5,2)  NOT NULL DEFAULT 0.00",
+            "ALTER TABLE company_configs ADD COLUMN tip_label       VARCHAR(50)   NULL DEFAULT 'Propina'",
+        ]:
+            try:
+                await db.execute(text(col_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
 
 # ===============================

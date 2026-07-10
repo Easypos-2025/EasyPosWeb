@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
 from app.auth.dependencies import get_current_user
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter(prefix="/api/talleres", tags=["talleres"])
 
@@ -1668,3 +1669,177 @@ async def ventas_resumen(
         "total_servicios":  sum(s["total"] for s in servicios),
         "total_productos":  sum(p["total"] for p in productos),
     }
+
+
+# ─── Billing config pública (formas de pago + propina) ───────────────────────
+
+_BOG = timezone(timedelta(hours=-5))
+
+
+@router.get("/billing-config")
+async def get_billing_config(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    row = (await db.execute(text("""
+        SELECT has_pos_electronico,
+               COALESCE(has_tip, 0)          AS has_tip,
+               COALESCE(tip_percentage, 0)   AS tip_percentage,
+               COALESCE(tip_label, 'Propina') AS tip_label
+        FROM company_configs
+        WHERE company_id = :cid
+    """), {"cid": company_id})).mappings().first()
+
+    if not row:
+        return {"has_pos_electronico": 0, "has_tip": 0, "tip_percentage": 0.0, "tip_label": "Propina"}
+    return dict(row)
+
+
+# ─── Formas de pago activas ───────────────────────────────────────────────────
+
+@router.get("/payment-types")
+async def get_payment_types(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = (await db.execute(text("""
+        SELECT id, name, adds_to_cash, is_default, ask_notes
+        FROM pos_payment_types
+        WHERE company_id = :cid AND is_active = 1
+        ORDER BY is_default DESC, name
+    """), {"cid": company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+# ─── Registrar Recibo ─────────────────────────────────────────────────────────
+
+@router.post("/ordenes/{orden_id}/recibo")
+async def registrar_recibo(
+    orden_id: int,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    company_id = body.get("company_id")
+    pagos      = body.get("pagos", [])   # [{payment_method_id, amount, notes?}]
+
+    if not company_id or not pagos:
+        raise HTTPException(status_code=422, detail="company_id y pagos son requeridos")
+
+    # ── Verificar orden ───────────────────────────────────────────────────────
+    orden = (await db.execute(text("""
+        SELECT id, estado FROM service_orders
+        WHERE id = :oid AND company_id = :cid
+    """), {"oid": orden_id, "cid": company_id})).mappings().first()
+
+    if not orden:
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+    if orden["estado"] == "entregada":
+        raise HTTPException(status_code=400, detail="La orden ya fue entregada/facturada")
+
+    # ── Ítems de la orden ─────────────────────────────────────────────────────
+    items = (await db.execute(text("""
+        SELECT id, nombre, cantidad, precio_unitario AS precio,
+               COALESCE(producto_id, 0) AS producto_id
+        FROM talleres_ordenes_detalle
+        WHERE orden_id = :oid AND company_id = :cid
+    """), {"oid": orden_id, "cid": company_id})).mappings().all()
+
+    subtotal = sum(float(it["precio"]) * float(it["cantidad"]) for it in items)
+
+    # ── Config propina ────────────────────────────────────────────────────────
+    cfg = (await db.execute(text("""
+        SELECT COALESCE(has_tip, 0) AS has_tip,
+               COALESCE(tip_percentage, 0) AS tip_percentage
+        FROM company_configs WHERE company_id = :cid
+    """), {"cid": company_id})).mappings().first()
+
+    tip_amount = 0.0
+    if cfg and cfg["has_tip"]:
+        # Recibo: propina sobre el total de la cuenta (sin impuesto)
+        tip_amount = round(subtotal * float(cfg["tip_percentage"]) / 100, 0)
+
+    grand_total = subtotal + tip_amount
+
+    # ── Validar suma de pagos ─────────────────────────────────────────────────
+    total_pagado = sum(float(p.get("amount", 0)) for p in pagos)
+    if abs(total_pagado - grand_total) > 1:   # tolerancia $1 por redondeo
+        raise HTTPException(
+            status_code=422,
+            detail=f"La suma de pagos ({total_pagado}) no coincide con el total ({grand_total})"
+        )
+
+    # ── Generar número de recibo ──────────────────────────────────────────────
+    rn_row = (await db.execute(text("""
+        SELECT COALESCE(MAX(CAST(receipt_number AS UNSIGNED)), 0) + 1 AS next_rn
+        FROM pos_receipts WHERE company_id = :cid
+    """), {"cid": company_id})).mappings().first()
+    receipt_number = str(int(rn_row["next_rn"]))
+
+    now_bog = datetime.now(_BOG)
+    fecha   = now_bog.date().isoformat()
+    hora    = now_bog.strftime("%H:%M:%S")
+
+    # ── Insertar pos_receipts ─────────────────────────────────────────────────
+    await db.execute(text("""
+        INSERT INTO pos_receipts
+            (receipt_number, date, company_id, cash_amount, tip,
+             amount_without_tip, employee_id, shift, time, time_text, voided, synced)
+        VALUES
+            (:rn, :fecha, :cid, :total, :tip,
+             :subtotal, :uid, 1, :hora, :hora, 0, 0)
+    """), {
+        "rn": receipt_number, "fecha": fecha, "cid": company_id,
+        "total": int(grand_total), "tip": int(tip_amount),
+        "subtotal": int(subtotal),
+        "uid": current_user.id if hasattr(current_user, "id") else 0,
+        "hora": hora,
+    })
+
+    # ── Insertar pos_receipt_order_details ────────────────────────────────────
+    for idx, it in enumerate(items, start=1):
+        await db.execute(text("""
+            INSERT INTO pos_receipt_order_details
+                (order_number, date, receipt_number, dish_id, item,
+                 quantity, amount, notes, complimentary, depends_on, synced, company_id)
+            VALUES
+                (:orden, :fecha, :rn, :dish_id, :item,
+                 :qty, :amount, :notes, 0, 0, 0, :cid)
+        """), {
+            "orden": str(orden_id), "fecha": fecha, "rn": receipt_number,
+            "dish_id": int(it["producto_id"] or 0), "item": idx,
+            "qty": float(it["cantidad"]), "amount": int(it["precio"]),
+            "notes": it["nombre"], "cid": company_id,
+        })
+
+    # ── Insertar pos_receipt_payment_methods ──────────────────────────────────
+    for idx, pago in enumerate(pagos, start=1):
+        await db.execute(text("""
+            INSERT INTO pos_receipt_payment_methods
+                (item, payment_method_id, card_id, invoice_number,
+                 amount, date, order_number, notes, synced, company_id)
+            VALUES
+                (:item, :pm_id, 0, :rn,
+                 :amount, :fecha, :orden, :notes, 0, :cid)
+        """), {
+            "item": idx,
+            "pm_id": int(pago["payment_method_id"]),
+            "rn": receipt_number,
+            "amount": float(pago["amount"]),
+            "fecha": fecha,
+            "orden": str(orden_id),
+            "notes": pago.get("notes", "") or "",
+            "cid": company_id,
+        })
+
+    # ── Marcar orden como entregada ───────────────────────────────────────────
+    await db.execute(text("""
+        UPDATE service_orders
+        SET estado = 'entregada'
+        WHERE id = :oid AND company_id = :cid
+    """), {"oid": orden_id, "cid": company_id})
+
+    await db.commit()
+    return {"receipt_number": receipt_number, "total": grand_total, "tip": tip_amount}

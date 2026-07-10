@@ -7,6 +7,12 @@ export const useCompanyStore = defineStore("company", () => {
   const selectedCompany = ref(null)   // { id, name, business_profile_id, business_profile_name }
   const companies       = ref([])
   const isSystem        = ref(false)
+  const billingConfig   = ref({        // config de facturación de la empresa activa
+    has_pos_electronico: 0,
+    has_tip: 0,
+    tip_percentage: 0,
+    tip_label: "Propina",
+  })
 
   async function loadTheme(companyId) {
     if (!companyId) return
@@ -22,16 +28,28 @@ export const useCompanyStore = defineStore("company", () => {
     } catch {}
   }
 
+  async function loadBillingConfig(companyId) {
+    if (!companyId) return
+    try {
+      const res = await api.get(`/api/talleres/billing-config`, { params: { company_id: companyId } })
+      billingConfig.value = { ...billingConfig.value, ...res.data }
+    } catch {}
+  }
+
   async function setCompany(company) {
     selectedCompany.value = company
     localStorage.setItem("selected_company", JSON.stringify(company))
-    if (company?.id) await loadTheme(company.id)
+    if (company?.id) {
+      await loadTheme(company.id)
+      loadBillingConfig(company.id)
+    }
   }
 
   function reset() {
-    isSystem.value      = false
+    isSystem.value        = false
     selectedCompany.value = null
-    companies.value     = []
+    companies.value       = []
+    billingConfig.value   = { has_pos_electronico: 0, has_tip: 0, tip_percentage: 0, tip_label: "Propina" }
   }
 
   async function init(userFromStorage) {
@@ -103,8 +121,9 @@ export const useCompanyStore = defineStore("company", () => {
     if (selectedCompany.value?.id) {
       localStorage.setItem("selected_company", JSON.stringify(selectedCompany.value))
       await loadTheme(selectedCompany.value.id)
+      loadBillingConfig(selectedCompany.value.id)
     }
   }
 
-  return { selectedCompany, companies, isSystem, setCompany, init, reset }
+  return { selectedCompany, companies, isSystem, billingConfig, setCompany, init, reset }
 })

@@ -47,10 +47,16 @@ def _config_dict(cfg: Optional[CompanyConfig]) -> dict:
         return {
             "has_pos_electronico": 0,
             "pos_electronico_token": None,
+            "has_tip": 0,
+            "tip_percentage": 0.0,
+            "tip_label": "Propina",
         }
     return {
         "has_pos_electronico": cfg.has_pos_electronico or 0,
         "pos_electronico_token": cfg.pos_electronico_token,
+        "has_tip": cfg.has_tip or 0,
+        "tip_percentage": float(cfg.tip_percentage or 0),
+        "tip_label": cfg.tip_label or "Propina",
     }
 
 
@@ -136,6 +142,14 @@ async def upsert_company_config(
         cfg.has_pos_electronico = int(bool(body["has_pos_electronico"]))
     if "pos_electronico_token" in body:
         cfg.pos_electronico_token = body["pos_electronico_token"] or None
+
+    # Campos Facturación / Propina
+    if "has_tip" in body:
+        cfg.has_tip = int(bool(body["has_tip"]))
+    if "tip_percentage" in body:
+        cfg.tip_percentage = float(body["tip_percentage"] or 0)
+    if "tip_label" in body:
+        cfg.tip_label = (body["tip_label"] or "Propina")[:50]
 
     await db.commit()
     await db.refresh(cfg)

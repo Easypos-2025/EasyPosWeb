@@ -296,10 +296,27 @@
             <i v-else class="bi bi-floppy-fill"></i>
             Guardar Cambios
           </button>
-          <button class="btn-facturar" v-if="orden.estado !== 'entregada'" @click="facturar">
-            <i class="bi bi-receipt-cutoff"></i>
-            Facturar / Entregar
-          </button>
+
+          <template v-if="orden.estado !== 'entregada'">
+            <!-- Recibo (siempre disponible) -->
+            <button class="btn-recibo" @click="showFacturarRecibo = true" :disabled="!detalles.length">
+              <i class="bi bi-receipt-cutoff"></i>
+              Recibo
+            </button>
+
+            <!-- PE: solo si tiene PE habilitado (disabled - próximamente) -->
+            <button v-if="billingConfig.has_pos_electronico"
+              class="btn-facturar-pe"
+              disabled
+              title="Facturación electrónica — Próximamente">
+              <i class="bi bi-file-earmark-text-fill"></i>
+              Factura PE
+            </button>
+          </template>
+          <div v-else class="badge-entregada">
+            <i class="bi bi-check-circle-fill"></i> Entregada
+          </div>
+
           <button class="btn-cancelar" @click="cancelarOrden">
             <i class="bi bi-x-circle-fill"></i>
             Eliminar Orden
@@ -365,6 +382,17 @@
 
     </template>
 
+    <!-- Modal: Registrar Recibo -->
+    <FacturarRecibo
+      v-if="showFacturarRecibo && orden"
+      :orden-id="Number(ordenId)"
+      :orden-numero="orden.numero_orden"
+      :items="itemsParaFacturar"
+      :company-id="companyId"
+      @success="onReciboSuccess"
+      @close="showFacturarRecibo = false"
+    />
+
     <!-- Zoom foto -->
     <Teleport to="body">
       <div v-if="fotoZoom" class="foto-overlay" @click="fotoZoom=null">
@@ -390,12 +418,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import FacturarRecibo from '@/components/billing/FacturarRecibo.vue'
 import { showConfirm } from '@/utils/toast'
 
 const route        = useRoute()
 const router       = useRouter()
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
+const billingConfig = computed(() => companyStore.billingConfig)
+const showFacturarRecibo = ref(false)
 const ordenId      = computed(() => route.params.id)
 
 // ── Acordeón ─────────────────────────────────────────────────────────────────
@@ -479,18 +510,20 @@ async function guardarCambios() {
   finally { guardando.value = false }
 }
 
-// ── Facturar / Entregar ────────────────────────────────────────────────────────
-async function facturar() {
-  if (!(await showConfirm('¿Marcar esta orden como entregada/facturada?', 'Sí, entregar'))) return
-  try {
-    await api.patch(`/api/talleres/ordenes/${ordenId.value}/estado`, {
-      company_id: companyId.value, estado: 'entregada',
-      trabajo_realizado: editForm.value.trabajo_realizado,
-      km_salida: editForm.value.km_salida,
-    })
-    if (orden.value) orden.value.estado = 'entregada'
-    mostrarToast('Orden marcada como Entregada', 'ok')
-  } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error', 'error') }
+// ── Recibo: items para facturar ───────────────────────────────────────────────
+const itemsParaFacturar = computed(() =>
+  detalles.value.map(d => ({
+    id:       d.id,
+    nombre:   d.nombre,
+    cantidad: d.cantidad ?? 1,
+    precio:   d.precio_unitario ?? 0,
+  }))
+)
+
+function onReciboSuccess(data) {
+  showFacturarRecibo.value = false
+  if (orden.value) orden.value.estado = 'entregada'
+  mostrarToast(`Recibo #${data.receipt_number} registrado. Orden entregada.`, 'ok')
 }
 
 // ── Cancelar orden ────────────────────────────────────────────────────────────
@@ -872,8 +905,11 @@ textarea.fc { resize:vertical; }
 .btn-save     { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
 .btn-save:hover:not(:disabled) { background:#1e40af; }
 .btn-save:disabled { opacity:.6; cursor:not-allowed; }
-.btn-facturar { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#059669; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
-.btn-facturar:hover { background:#047857; }
+.btn-recibo { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#059669; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+.btn-recibo:hover:not(:disabled) { background:#047857; }
+.btn-recibo:disabled { opacity:.5; cursor:not-allowed; }
+.btn-facturar-pe { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#e2e8f0; color:#94a3b8; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:not-allowed; }
+.badge-entregada { display:flex; align-items:center; gap:6px; background:#dcfce7; color:#166534; font-size:13px; font-weight:700; padding:10px 18px; border-radius:10px; }
 .btn-cancelar { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#fff; color:#dc2626; border:2px solid #fca5a5; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; margin-left:auto; }
 .btn-cancelar:hover { background:#fee2e2; }
 .orden-cancelada-msg { display:flex; align-items:center; gap:8px; color:#b91c1c; font-size:14px; font-weight:700; padding:12px 0; }
