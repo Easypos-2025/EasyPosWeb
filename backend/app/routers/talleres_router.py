@@ -1210,44 +1210,72 @@ async def resumen_caja(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Resumen financiero del día: ingresos, mano de obra liquidada, gastos."""
-    from datetime import date as ddate
-    fecha_q = fecha or str(ddate.today())
+    """Resumen financiero del día: ingresos facturados (pos_receipts), mano de obra, egresos."""
+    fecha_q = fecha or datetime.now(_BOG).date().isoformat()
 
-    # Ingresos del día por tipo de orden
+    # ── Ingresos facturados del día (pos_receipts) ────────────────────────────
+    # Agrupado por forma de pago para separar efectivo de otros medios
     ing = await db.execute(text("""
         SELECT
-            COALESCE(SUM(CASE WHEN so.estado_facturacion='particular'
-                         THEN sod.subtotal ELSE 0 END), 0)       AS ingresos_efectivo,
-            COALESCE(SUM(CASE WHEN so.estado_facturacion='convenio_pendiente'
-                         THEN sod.subtotal ELSE 0 END), 0)       AS ingresos_convenio,
-            COALESCE(SUM(sod.subtotal), 0)                        AS ingresos_total,
-            COUNT(DISTINCT so.id)                                 AS num_ordenes
-        FROM service_orders so
-        JOIN service_order_details sod ON sod.order_id = so.id
-        WHERE so.company_id = :cid AND DATE(so.fecha_ingreso) = :fecha
+            COALESCE(SUM(r.amount_without_tip), 0)                          AS ingresos_subtotal,
+            COALESCE(SUM(r.tip), 0)                                         AS ingresos_propina,
+            COALESCE(SUM(r.cash_amount), 0)                                 AS ingresos_total,
+            COUNT(*)                                                         AS num_recibos,
+            -- Efectivo: pagos con forma adds_to_cash=1
+            COALESCE(SUM(
+                CASE WHEN EXISTS(
+                    SELECT 1 FROM pos_receipt_payment_methods pm
+                    JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
+                    WHERE pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
+                      AND pt.adds_to_cash = 1
+                ) THEN r.cash_amount ELSE 0 END
+            ), 0)                                                            AS ingresos_efectivo,
+            -- Convenio / crédito: el resto
+            COALESCE(SUM(
+                CASE WHEN NOT EXISTS(
+                    SELECT 1 FROM pos_receipt_payment_methods pm
+                    JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
+                    WHERE pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
+                      AND pt.adds_to_cash = 1
+                ) THEN r.cash_amount ELSE 0 END
+            ), 0)                                                            AS ingresos_convenio
+        FROM pos_receipts r
+        WHERE r.company_id = :cid AND r.date = :fecha AND r.voided = 0
     """), {"cid": company_id, "fecha": fecha_q})
     ingresos = dict(ing.mappings().first() or {})
 
-    # Detalle de órdenes del día
+    # ── Detalle de recibos del día ────────────────────────────────────────────
     det = await db.execute(text("""
         SELECT
-            so.id, so.numero_orden, so.placa_vehiculo,
-            so.estado, so.estado_facturacion, so.fecha_ingreso,
-            c.name AS cliente_nombre,
-            cv.nombre_empresa AS convenio_nombre,
-            COALESCE(SUM(sod.subtotal), 0) AS total_orden
-        FROM service_orders so
-        LEFT JOIN clients c  ON c.id = so.client_id
+            r.receipt_number,
+            r.time,
+            r.cash_amount          AS total_orden,
+            r.amount_without_tip   AS subtotal,
+            r.tip,
+            so.numero_orden,
+            so.placa_vehiculo,
+            so.estado_facturacion,
+            c.name                 AS cliente_nombre,
+            cv.nombre_empresa      AS convenio_nombre,
+            -- Formas de pago concatenadas
+            GROUP_CONCAT(pt.name ORDER BY pm.item SEPARATOR ' / ') AS formas_pago
+        FROM pos_receipts r
+        LEFT JOIN pos_receipt_payment_methods pm
+               ON pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
+        LEFT JOIN pos_payment_types pt
+               ON pt.id = pm.payment_method_id AND pt.company_id = r.company_id
+        LEFT JOIN service_orders so
+               ON so.id = CAST(pm.order_number AS UNSIGNED) AND so.company_id = r.company_id
+        LEFT JOIN clients c ON c.id = so.client_id
         LEFT JOIN service_convenios cv ON cv.id = so.convenio_id
-        LEFT JOIN service_order_details sod ON sod.order_id = so.id
-        WHERE so.company_id = :cid AND DATE(so.fecha_ingreso) = :fecha
-        GROUP BY so.id
-        ORDER BY so.fecha_ingreso
+        WHERE r.company_id = :cid AND r.date = :fecha AND r.voided = 0
+        GROUP BY r.receipt_number, r.company_id, r.time, r.cash_amount, r.amount_without_tip, r.tip,
+                 so.numero_orden, so.placa_vehiculo, so.estado_facturacion, c.name, cv.nombre_empresa
+        ORDER BY r.time
     """), {"cid": company_id, "fecha": fecha_q})
     ordenes_dia = [dict(r) for r in det.mappings()]
 
-    # Mano de obra liquidada (pagos a workers del día)
+    # ── Mano de obra liquidada (pagos a workers del día) ──────────────────────
     liq = await db.execute(text("""
         SELECT
             COALESCE(SUM(wl.monto_operario), 0) AS total_mano_obra,
@@ -1271,19 +1299,16 @@ async def resumen_caja(
     """), {"cid": company_id, "fecha": fecha_q})
     liquidaciones_det = [dict(r) for r in liq_det.mappings()]
 
-    # Egresos manuales del día
+    # ── Egresos manuales del día ──────────────────────────────────────────────
     eg = await db.execute(text("""
         SELECT COALESCE(SUM(monto), 0) AS total_egresos, COUNT(*) AS num_egresos
-        FROM caja_egresos
-        WHERE company_id = :cid AND fecha = :fecha
+        FROM caja_egresos WHERE company_id = :cid AND fecha = :fecha
     """), {"cid": company_id, "fecha": fecha_q})
     egresos_sum = dict(eg.mappings().first() or {})
 
     eg_det = await db.execute(text("""
         SELECT id, concepto, categoria, monto, forma_pago, created_at
-        FROM caja_egresos
-        WHERE company_id = :cid AND fecha = :fecha
-        ORDER BY created_at
+        FROM caja_egresos WHERE company_id = :cid AND fecha = :fecha ORDER BY created_at
     """), {"cid": company_id, "fecha": fecha_q})
     egresos_det = [dict(r) for r in eg_det.mappings()]
 
@@ -1364,13 +1389,14 @@ async def liquidacion_dia(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    from datetime import date as ddate
-    fecha_sel = fecha or str(ddate.today())
+    fecha_sel = fecha or datetime.now(_BOG).date().isoformat()
 
+    # Filtra por fecha del RECIBO (pos_receipts.date), no fecha_ingreso
+    # Muestra lo que se facturó hoy y aún está pendiente de pago al operario
     res_workers = await db.execute(text("""
         SELECT
             w.id                  AS worker_id,
-            w.nombre              AS worker_nombre,
+            w.name                AS worker_nombre,
             pr.name               AS profesion,
             COUNT(DISTINCT so.id) AS num_ordenes,
             COUNT(sod.id)         AS num_items,
@@ -1379,19 +1405,24 @@ async def liquidacion_dia(
                 sod.subtotal * COALESCE(
                     (SELECT sp.pct_pago / 100
                      FROM service_participants sp
-                     WHERE sp.product_id   = sod.product_id
+                     WHERE sp.product_id    = sod.product_id
                        AND sp.profession_id = w.profession_id
                      LIMIT 1), 0)
             ))                    AS total_pendiente
         FROM service_order_details sod
-        JOIN service_orders so   ON sod.order_id  = so.id
-        JOIN workers w           ON sod.worker_id = w.id
+        JOIN service_orders so ON sod.order_id = so.id
+        JOIN workers w         ON sod.worker_id = w.id
         LEFT JOIN professions pr ON w.profession_id = pr.id
-        WHERE so.company_id          = :cid
-          AND DATE(so.fecha_ingreso) = :fecha
-          AND sod.liq_estado         = 'pendiente'
+        JOIN pos_receipt_order_details rod
+             ON rod.order_number = CAST(so.id AS CHAR) AND rod.company_id = so.company_id
+        JOIN pos_receipts r
+             ON r.receipt_number = rod.receipt_number AND r.company_id = rod.company_id
+        WHERE so.company_id    = :cid
+          AND r.date           = :fecha
+          AND r.voided         = 0
+          AND sod.liq_estado   = 'pendiente'
           AND sod.worker_id IS NOT NULL
-        GROUP BY w.id, w.nombre, pr.name
+        GROUP BY w.id, w.name, pr.name
         ORDER BY total_pendiente DESC
     """), {"cid": company_id, "fecha": fecha_sel})
     workers_rows = [dict(r._mapping) for r in res_workers]
@@ -1407,7 +1438,7 @@ async def liquidacion_dia(
                 sod.subtotal * COALESCE(
                     (SELECT sp.pct_pago / 100
                      FROM service_participants sp
-                     WHERE sp.product_id   = sod.product_id
+                     WHERE sp.product_id    = sod.product_id
                        AND sp.profession_id = w2.profession_id
                      LIMIT 1), 0)
             )                         AS monto_operario,
@@ -1418,9 +1449,14 @@ async def liquidacion_dia(
         FROM service_order_details sod
         JOIN service_orders so ON sod.order_id  = so.id
         JOIN workers w2        ON w2.id          = sod.worker_id
-        WHERE so.company_id          = :cid
-          AND DATE(so.fecha_ingreso) = :fecha
-          AND sod.liq_estado         = 'pendiente'
+        JOIN pos_receipt_order_details rod
+             ON rod.order_number = CAST(so.id AS CHAR) AND rod.company_id = so.company_id
+        JOIN pos_receipts r
+             ON r.receipt_number = rod.receipt_number AND r.company_id = rod.company_id
+        WHERE so.company_id    = :cid
+          AND r.date           = :fecha
+          AND r.voided         = 0
+          AND sod.liq_estado   = 'pendiente'
           AND sod.worker_id IS NOT NULL
         ORDER BY so.fecha_ingreso, sod.worker_id
     """), {"cid": company_id, "fecha": fecha_sel})
@@ -1541,7 +1577,7 @@ async def liquidacion_historial(
             wl.total_bruto, wl.monto_operario,
             wl.estado, wl.fecha_pago, wl.forma_pago,
             wl.observaciones, wl.created_at,
-            w.nombre     AS worker_nombre,
+            w.name       AS worker_nombre,
             pr.name      AS profesion,
             u.nombre     AS registrado_por_nombre,
             COUNT(wld.id) AS num_items
@@ -1557,7 +1593,7 @@ async def liquidacion_historial(
         GROUP BY wl.id, wl.worker_id, wl.fecha_inicio, wl.fecha_fin,
                  wl.total_bruto, wl.monto_operario, wl.estado,
                  wl.fecha_pago, wl.forma_pago, wl.observaciones, wl.created_at,
-                 w.nombre, pr.name, u.nombre
+                 w.name, pr.name, u.nombre
         ORDER BY wl.created_at DESC
         LIMIT 500
     """), params)

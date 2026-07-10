@@ -71,6 +71,15 @@
       </span>
     </div>
 
+    <!-- ImprimirRecibo -->
+    <ImprimirRecibo
+      v-if="showImprimir && reciboImprimir"
+      :receiptData="reciboImprimir"
+      :placa="placaImprimir"
+      :companyId="selectedCid"
+      @close="showImprimir = false"
+    />
+
     <!-- ── Cuerpo ────────────────────────────────────────────── -->
     <div class="vc-body" :class="{ 'vc-has-selection': !!seleccionado }">
 
@@ -142,11 +151,22 @@
             <div class="vc-det-scroll">
               <!-- Header -->
               <div class="vc-det-header">
-                <div class="vc-det-title">
-                  <span class="badge" :class="seleccionado.tipo==='factura'?'bg-primary':'bg-secondary'">
-                    {{ seleccionado.tipo==='factura'?'Factura':'Recibo' }}
-                  </span>
-                  <strong class="ms-2">{{ detalle.header.numero }}</strong>
+                <div class="vc-det-title-row">
+                  <div class="vc-det-title">
+                    <span class="badge" :class="seleccionado.tipo==='factura'?'bg-primary':'bg-secondary'">
+                      {{ seleccionado.tipo==='factura'?'Factura':'Recibo' }}
+                    </span>
+                    <strong class="ms-2">{{ detalle.header.numero }}</strong>
+                  </div>
+                  <!-- Botón imprimir recibo (solo recibos con ordenes_servicio) -->
+                  <button
+                    v-if="seleccionado.tipo==='recibo'"
+                    class="vc-btn-imprimir"
+                    @click="showImprimir = true"
+                    title="Imprimir recibo"
+                  >
+                    <i class="bi bi-printer-fill"></i> Imprimir
+                  </button>
                 </div>
                 <div class="vc-det-meta">
                   <span><i class="bi bi-calendar3"></i> {{ detalle.header.date }}</span>
@@ -155,12 +175,40 @@
                   <span v-if="detalle.header.mesero"><i class="bi bi-person"></i> {{ detalle.header.mesero }}</span>
                   <span v-if="detalle.header.comensales"><i class="bi bi-people"></i> {{ detalle.header.comensales }}</span>
                 </div>
+
+                <!-- Órdenes de servicio vinculadas -->
+                <div v-if="detalle.ordenes_servicio?.length" class="vc-ordenes-vinc">
+                  <div class="vc-ov-label"><i class="bi bi-clipboard-check-fill"></i> Órdenes de Servicio</div>
+                  <div class="vc-ov-list">
+                    <button
+                      v-for="so in detalle.ordenes_servicio"
+                      :key="so.id"
+                      class="vc-ov-btn"
+                      @click="router.push(`/talleres/orden/${so.id}`)"
+                    >
+                      <span class="vc-ov-num">{{ so.numero_orden }}</span>
+                      <span class="vc-ov-placa">{{ so.placa_vehiculo }}</span>
+                      <span class="vc-ov-cliente text-muted">{{ so.cliente_nombre }}</span>
+                      <span :class="['vc-ov-estado', `so-${so.estado}`]">{{ ESTADO_LABELS[so.estado] || so.estado }}</span>
+                      <i class="bi bi-arrow-right-circle ms-auto"></i>
+                    </button>
+                  </div>
+                </div>
+
                 <div class="vc-det-pagos">
-                  <div v-if="detalle.header.efectivo>0"       class="vc-pago-row"><span>Efectivo</span><span>{{ fmt(detalle.header.efectivo) }}</span></div>
-                  <div v-if="detalle.header.tarjeta_credito>0" class="vc-pago-row"><span>T. Crédito</span><span>{{ fmt(detalle.header.tarjeta_credito) }}</span></div>
-                  <div v-if="detalle.header.tarjeta_debito>0"  class="vc-pago-row"><span>T. Débito</span><span>{{ fmt(detalle.header.tarjeta_debito) }}</span></div>
-                  <div v-if="detalle.header.ajuste!=0"         class="vc-pago-row"><span>Ajuste</span><span>{{ fmt(detalle.header.ajuste) }}</span></div>
-                  <div v-if="detalle.header.descuento>0"       class="vc-pago-row text-danger"><span>Descuento</span><span>-{{ fmt(detalle.header.descuento) }}</span></div>
+                  <!-- Pagos detallados (recibo con payment_methods) -->
+                  <template v-if="detalle.pagos?.length">
+                    <div v-for="p in detalle.pagos" :key="p.name" class="vc-pago-row">
+                      <span>{{ p.name }}</span><span>{{ fmt(p.amount) }}</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div v-if="detalle.header.efectivo>0"        class="vc-pago-row"><span>Efectivo</span><span>{{ fmt(detalle.header.efectivo) }}</span></div>
+                    <div v-if="detalle.header.tarjeta_credito>0" class="vc-pago-row"><span>T. Crédito</span><span>{{ fmt(detalle.header.tarjeta_credito) }}</span></div>
+                    <div v-if="detalle.header.tarjeta_debito>0"  class="vc-pago-row"><span>T. Débito</span><span>{{ fmt(detalle.header.tarjeta_debito) }}</span></div>
+                    <div v-if="detalle.header.ajuste!=0"         class="vc-pago-row"><span>Ajuste</span><span>{{ fmt(detalle.header.ajuste) }}</span></div>
+                    <div v-if="detalle.header.descuento>0"       class="vc-pago-row text-danger"><span>Descuento</span><span>-{{ fmt(detalle.header.descuento) }}</span></div>
+                  </template>
                   <div class="vc-pago-row vc-pago-total"><span>Total</span><span>{{ fmt(detalle.header.total) }}</span></div>
                 </div>
               </div>
@@ -227,10 +275,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 
+const router       = useRouter()
 const companyStore = useCompanyStore()
 const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
 
@@ -285,6 +336,11 @@ const groupedDetalle = computed(() => {
   return groups
 })
 
+const ESTADO_LABELS = {
+  abierta: 'Abierta', en_proceso: 'En proceso', terminada: 'Terminada',
+  entregada: 'Entregada', cancelada: 'Cancelada', anulada: 'Anulada',
+}
+
 const tipoOpts = [
   { value:'ambos',   label:'Ambos' },
   { value:'factura', label:'Facturas' },
@@ -302,6 +358,34 @@ const cargandoDetalle = ref(false)
 const itemExpandido   = ref(null)
 const insumos         = ref([])
 const cargandoInsumos = ref(false)
+
+// ImprimirRecibo
+const showImprimir    = ref(false)
+const reciboImprimir  = computed(() => {
+  if (!detalle.value || seleccionado.value?.tipo !== 'recibo') return null
+  const h = detalle.value.header
+  const ordenes = detalle.value.ordenes_servicio || []
+  return {
+    receipt_number: h.numero,
+    fecha:          h.date,
+    hora:           h.hora,
+    subtotal:       (h.total || 0) - (h.propina || 0),
+    tip:            h.propina || 0,
+    total:          h.total || 0,
+    items:          (detalle.value.items || []).map(i => ({
+      nombre:   i.plato,
+      cantidad: i.quantity,
+      precio:   i.price,
+    })),
+    pagos:          (detalle.value.pagos || []).map(p => ({ name: p.name, amount: p.amount })),
+    tipLabel:       'Propina',
+    ordenNumero:    ordenes.map(o => o.numero_orden).filter(Boolean).join(', '),
+  }
+})
+const placaImprimir = computed(() => {
+  const ordenes = detalle.value?.ordenes_servicio || []
+  return ordenes.map(o => o.placa_vehiculo).filter(Boolean).join(', ')
+})
 
 const ventaReal       = r => (r.valor||0)-(r.propina||0)-(r.domicilio||0)
 const totalVentaReal  = computed(() => lista.value.reduce((s,r)=>s+ventaReal(r),0))
@@ -559,13 +643,47 @@ onMounted(() => buscar())
 .vc-det-header {
   padding: 14px 16px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;
 }
-.vc-det-title  { font-size:16px; margin-bottom:8px; }
+.vc-det-title-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.vc-det-title  { font-size:16px; }
 .vc-det-meta {
   display:flex; flex-wrap:wrap; gap:10px;
   font-size:12px; color:#475569; margin-bottom:10px;
 }
 .vc-det-meta span { display:flex; align-items:center; gap:4px; }
 .vc-det-pagos { max-width: 280px; }
+
+.vc-btn-imprimir {
+  display:flex; align-items:center; gap:6px; padding:6px 14px;
+  background:#1e3a5f; color:#fff; border:none; border-radius:8px;
+  font-size:12px; font-weight:700; cursor:pointer;
+}
+.vc-btn-imprimir:hover { background:#1e4d8c; }
+
+/* Órdenes de servicio vinculadas */
+.vc-ordenes-vinc { margin:10px 0; }
+.vc-ov-label {
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px;
+  color:#64748b; display:flex; align-items:center; gap:6px; margin-bottom:6px;
+}
+.vc-ov-list { display:flex; flex-direction:column; gap:5px; }
+.vc-ov-btn {
+  display:flex; align-items:center; gap:8px; padding:9px 12px;
+  background:#f0f9ff; border:1.5px solid #bfdbfe; border-radius:9px;
+  cursor:pointer; text-align:left; font-size:12px; color:#1e293b;
+  transition:all .12s; width:100%;
+}
+.vc-ov-btn:hover { background:#dbeafe; border-color:#3b82f6; }
+.vc-ov-num   { font-family:monospace; font-weight:800; font-size:13px; color:#1e3a5f; flex-shrink:0; }
+.vc-ov-placa { font-weight:900; letter-spacing:1.5px; font-size:13px; color:#1e293b; flex-shrink:0; }
+.vc-ov-cliente { font-size:11px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.vc-ov-estado { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; flex-shrink:0; }
+.so-abierta    { background:#dbeafe; color:#1d4ed8; }
+.so-en_proceso { background:#fef3c7; color:#92400e; }
+.so-terminada  { background:#dcfce7; color:#166534; }
+.so-entregada  { background:#f1f5f9; color:#64748b; }
+.so-cancelada  { background:#fee2e2; color:#b91c1c; }
+.so-anulada    { background:#fef3c7; color:#92400e; }
+
 .vc-pago-row { display:flex; justify-content:space-between; font-size:13px; padding:2px 0; }
 .vc-pago-total { border-top:1px solid #e2e8f0; margin-top:4px; padding-top:4px; font-weight:700; font-size:14px; }
 

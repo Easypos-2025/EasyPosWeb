@@ -63,22 +63,23 @@
           <div class="section-card">
             <div class="sc-header">
               <span class="sc-title"><i class="bi bi-receipt text-green"></i> Ingresos del día</span>
-              <span class="sc-badge">{{ resumen.ingresos?.num_ordenes || 0 }} órdenes</span>
+              <span class="sc-badge">{{ resumen.ingresos?.num_recibos || 0 }} recibos</span>
             </div>
-            <div v-if="!resumen.ordenes_dia?.length" class="sc-empty">Sin órdenes hoy</div>
+            <div v-if="!resumen.ordenes_dia?.length" class="sc-empty">Sin recibos hoy</div>
             <div v-else class="sc-table-wrap">
               <table class="sc-table">
                 <thead>
-                  <tr><th>Orden</th><th>Placa</th><th>Cliente</th><th>Tipo</th><th class="text-right">Total</th></tr>
+                  <tr><th>#</th><th>Orden</th><th>Placa</th><th>Cliente</th><th>Pago</th><th class="text-right">Total</th></tr>
                 </thead>
                 <tbody>
-                  <tr v-for="o in resumen.ordenes_dia" :key="o.id">
-                    <td class="font-mono">{{ o.numero_orden }}</td>
-                    <td class="font-bold">{{ o.placa_vehiculo }}</td>
+                  <tr v-for="o in resumen.ordenes_dia" :key="o.receipt_number">
+                    <td class="font-mono">{{ o.receipt_number }}</td>
+                    <td class="font-mono">{{ o.numero_orden || '—' }}</td>
+                    <td class="font-bold">{{ o.placa_vehiculo || '—' }}</td>
                     <td class="text-muted">{{ o.convenio_nombre || o.cliente_nombre || '—' }}</td>
                     <td>
                       <span class="tipo-pill" :class="o.convenio_nombre ? 'pill-blue' : 'pill-green'">
-                        {{ o.convenio_nombre ? 'Convenio' : 'Efectivo' }}
+                        {{ o.formas_pago || (o.convenio_nombre ? 'Convenio' : 'Efectivo') }}
                       </span>
                     </td>
                     <td class="text-right font-bold">{{ fmt(o.total_orden) }}</td>
@@ -86,7 +87,7 @@
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colspan="4" class="text-right font-bold">Total del día</td>
+                    <td colspan="5" class="text-right font-bold">Total del día</td>
                     <td class="text-right font-bold text-green">{{ fmt(resumen.ingresos?.ingresos_total) }}</td>
                   </tr>
                 </tfoot>
@@ -207,7 +208,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast, showConfirm } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -219,9 +220,14 @@ const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const loading  = ref(true)
 const resumen  = ref({})
-const fechaSel = ref(new Date().toISOString().split('T')[0])
+
+function fechaHoy() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+}
+const fechaSel = ref(fechaHoy())
 
 async function cargar() {
+  if (!companyId.value) return
   loading.value = true
   try {
     const { data } = await api.get('/api/talleres/caja/resumen', {
@@ -231,6 +237,8 @@ async function cargar() {
   } catch { showToast('Error cargando resumen de caja', 'error') }
   finally { loading.value = false }
 }
+
+watch(companyId, (v) => { if (v) cargar() })
 
 // ── Egresos ───────────────────────────────────────────────────────────────
 const CAT_LABELS   = { gasto: 'Gasto', compra: 'Compra', nomina: 'Nómina', otro: 'Otro' }

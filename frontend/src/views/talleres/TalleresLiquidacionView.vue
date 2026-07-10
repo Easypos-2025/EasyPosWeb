@@ -410,7 +410,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/apis'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -429,16 +429,20 @@ const tabActivo = ref('dia')
 function switchTab(id) { tabActivo.value = id }
 
 // ── Tab 1: Día ────────────────────────────────────────────────────────────────
+function hoy() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+}
+
 const fechaDia     = ref(hoy())
 const loadingDia   = ref(false)
 const dataDia      = ref({ workers: [], total_workers: 0, total_mano_obra: 0 })
 const expandidos   = ref(new Set())
 const selectedWorkers = ref(new Set())
 
-function hoy() { return new Date().toISOString().split('T')[0] }
 function irHoy() { fechaDia.value = hoy(); cargarDia() }
 
 async function cargarDia() {
+  if (!companyId.value) return
   loadingDia.value = true
   expandidos.value = new Set()
   selectedWorkers.value = new Set()
@@ -450,6 +454,8 @@ async function cargarDia() {
   } catch { dataDia.value = { workers: [], total_workers: 0, total_mano_obra: 0 } }
   finally { loadingDia.value = false }
 }
+
+watch(companyId, (v) => { if (v) cargarDia() })
 
 function toggleExpand(wid) {
   const s = new Set(expandidos.value)
@@ -518,8 +524,9 @@ const histBuscado  = ref(false)
 const dataHist     = ref({ liquidaciones: [], total: 0, count: 0 })
 
 function primerDiaMes() {
-  const d = new Date(); d.setDate(1)
-  return d.toISOString().split('T')[0]
+  const d = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }))
+  d.setDate(1)
+  return d.toLocaleDateString('en-CA')
 }
 async function cargarHistorial() {
   loadingHist.value = true

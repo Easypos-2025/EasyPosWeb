@@ -77,9 +77,18 @@
               <td class="oa-jefe">{{ o.jefe_nombre || '—' }}</td>
               <td class="ta-r oa-total">{{ fmt(o.total_orden) }}</td>
               <td @click.stop>
-                <button class="oa-btn-open" @click="router.push(`/talleres/orden/${o.id}`)" title="Editar orden">
-                  <i class="bi bi-pencil-fill"></i>
-                </button>
+                <button
+                  v-if="ESTADOS_EDITABLE.includes(o.estado)"
+                  class="oa-btn-open oa-btn-edit"
+                  @click="router.push(`/talleres/orden/${o.id}`)"
+                  title="Editar orden"
+                ><i class="bi bi-pencil-fill"></i></button>
+                <button
+                  v-else
+                  class="oa-btn-open oa-btn-view"
+                  @click="router.push(`/talleres/orden/${o.id}`)"
+                  title="Ver / Reimprimir"
+                ><i class="bi bi-eye-fill"></i></button>
               </td>
             </tr>
           </tbody>
@@ -459,7 +468,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
@@ -485,19 +494,25 @@ const paginaActual   = ref(1)
 const paginaSize     = 15
 
 const FILTROS_OA = [
-  { val: 'activas',    label: 'Activas' },
-  { val: 'abierta',    label: 'Abiertas' },
-  { val: 'en_proceso', label: 'En proceso' },
-  { val: 'terminada',  label: 'Terminadas' },
-  { val: 'todas',      label: 'Todas' },
+  { val: 'activas',     label: 'Activas' },
+  { val: 'abierta',     label: 'Abiertas' },
+  { val: 'en_proceso',  label: 'En proceso' },
+  { val: 'terminada',   label: 'Terminadas' },
+  { val: 'facturadas',  label: 'Facturadas' },
+  { val: 'todas',       label: 'Todas' },
 ]
 
+const ESTADOS_EDITABLE = ['abierta', 'en_proceso']
+
 async function cargarOrdenes() {
+  if (!companyId.value) return
   loadingOrdenes.value = true
   try {
     const params = { company_id: companyId.value, page: paginaActual.value, page_size: paginaSize }
     if (filtroOA.value === 'activas') {
       params.estado = 'abierta,en_proceso,terminada'
+    } else if (filtroOA.value === 'facturadas') {
+      params.estado = 'entregada'
     } else if (filtroOA.value !== 'todas') {
       params.estado = filtroOA.value
     }
@@ -597,7 +612,7 @@ const historialFiltrado = computed(() => {
   if (filtroHist.value === 'abiertas')
     return historial.value.filter(o => ['abierta','en_proceso','terminada'].includes(o.estado))
   if (filtroHist.value === 'cerradas')
-    return historial.value.filter(o => ['entregada','cancelada'].includes(o.estado))
+    return historial.value.filter(o => ['entregada','cancelada','anulada'].includes(o.estado))
   return historial.value
 })
 
@@ -758,6 +773,7 @@ function fmtFecha(v) {
   return new Date(v).toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' })
 }
 
+watch(companyId, (v) => { if (v) { cargarAuxiliares(); cargarOrdenes() } })
 onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.value?.focus()) })
 </script>
 
@@ -791,8 +807,11 @@ onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.v
 .oa-jefe   { font-size:12px; color:#475569; }
 .oa-total  { font-weight:700; color:#1e293b; white-space:nowrap; }
 .ta-r      { text-align:right; }
-.oa-btn-open { width:30px; height:30px; border-radius:7px; border:none; background:#eff6ff; color:#1d4ed8; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.oa-btn-open:hover { background:#1d4ed8; color:#fff; }
+.oa-btn-open { width:30px; height:30px; border-radius:7px; border:none; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.oa-btn-edit { background:#eff6ff; color:#1d4ed8; }
+.oa-btn-edit:hover { background:#1d4ed8; color:#fff; }
+.oa-btn-view { background:#f0fdf4; color:#059669; }
+.oa-btn-view:hover { background:#059669; color:#fff; }
 .estado-badge { font-size:10px; font-weight:700; padding:3px 8px; border-radius:20px; white-space:nowrap; }
 .es-abierta    { background:#dbeafe; color:#1d4ed8; }
 .es-en_proceso { background:#fef3c7; color:#92400e; }

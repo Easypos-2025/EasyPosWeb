@@ -289,9 +289,40 @@ async def get_venta_detalle(
         row["assembly"] = assembly
         items_list.append(row)
 
+    # Para recibos: incluir órdenes de servicio vinculadas y formas de pago detalladas
+    ordenes_servicio = []
+    pagos_detalle = []
+    if tipo == "recibo":
+        so_rows = await db.execute(text("""
+            SELECT DISTINCT
+                so.id, so.numero_orden, so.placa_vehiculo, so.estado,
+                COALESCE(c.name, '') AS cliente_nombre
+            FROM pos_receipt_order_details rod
+            JOIN service_orders so
+                 ON so.id = CAST(rod.order_number AS UNSIGNED)
+                AND so.company_id = :cid
+            LEFT JOIN clients c ON c.id = so.client_id
+            WHERE rod.receipt_number = :numero
+              AND rod.company_id = :cid
+              AND rod.order_number REGEXP '^[1-9][0-9]*$'
+        """), {"cid": cid, "numero": numero})
+        ordenes_servicio = [dict(r) for r in so_rows.mappings()]
+
+        pm_rows = await db.execute(text("""
+            SELECT pm.amount, COALESCE(pt.name, 'Pago') AS name
+            FROM pos_receipt_payment_methods pm
+            LEFT JOIN pos_payment_types pt
+                   ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
+            WHERE pm.invoice_number = :numero AND pm.company_id = :cid
+            ORDER BY pm.item
+        """), {"cid": cid, "numero": numero})
+        pagos_detalle = [{"amount": float(r.amount or 0), "name": r.name} for r in pm_rows]
+
     return {
         "header": dict(hdr),
         "items": items_list,
+        "ordenes_servicio": ordenes_servicio,
+        "pagos": pagos_detalle,
     }
 
 
