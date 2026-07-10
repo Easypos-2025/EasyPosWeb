@@ -26,8 +26,8 @@
       <div class="company-list">
         <button
           v-for="c in filteredCompanies"
-          :key="c.id_company"
-          :class="['company-item', selectedCompany?.id_company === c.id_company && 'active']"
+          :key="c.id"
+          :class="['company-item', selectedCompany?.id === c.id && 'active']"
           @click="selectCompany(c)"
         >
           <span class="company-item-name">{{ c.name }}</span>
@@ -222,7 +222,7 @@ function selectCompany(c) {
 
 // ── Facturación ─────────────────────────────────────────────────────────────
 const billMode    = ref("day")
-const billDate    = ref(new Date().toISOString().slice(0, 10))
+const billDate    = ref(new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" }))
 const billLoading = ref(false)
 const billing     = ref({ facturas: { count: 0, total: 0 }, recibos: { count: 0, total: 0 } })
 
@@ -237,7 +237,7 @@ async function loadBilling() {
   try {
     const res = await api.get("/dashboard/sysadmin/company-billing", {
       params: {
-        company_id: selectedCompany.value.id_company,
+        company_id: selectedCompany.value.id,
         date: billDate.value,
         mode: billMode.value,
       }
@@ -261,7 +261,7 @@ async function openModal(tipo) {
       : billDate.value
     const res = await api.get("/api/pos-consultas/ventas", {
       params: {
-        company_id: selectedCompany.value.id_company,
+        company_id: selectedCompany.value.id,
         tipo,
         desde,
         hasta,
@@ -279,7 +279,7 @@ async function openDetailModal(row) {
   detailModal.value = { show: true, tipo: modal.value.tipo, numero: row.numero, loading: true, items: [] }
   try {
     const res = await api.get(`/api/pos-consultas/venta-detalle/${modal.value.tipo}/${row.numero}`, {
-      params: { company_id: selectedCompany.value.id_company, fecha: row.date }
+      params: { company_id: selectedCompany.value.id, fecha: row.date }
     })
     detailModal.value.items = res.data.items || []
   } catch {}

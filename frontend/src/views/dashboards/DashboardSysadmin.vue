@@ -4,7 +4,7 @@
 
     <div class="dash-title">Dashboard — SYSADMIN</div>
 
-    <!-- ── Filtro compartido ── -->
+    <!-- ── Filtro compartido + accesos rápidos ── -->
     <div class="conn-toolbar">
       <div class="mode-toggle">
         <button :class="['btn-mode', mode === 'day' && 'active']" @click="setMode('day')">Día</button>
@@ -12,6 +12,13 @@
       </div>
       <CustomDatePicker v-model="selDate" variant="dark" @update:modelValue="loadConnections" />
       <span v-if="connLoading" class="conn-loading-dot">⏳</span>
+      <div class="toolbar-spacer"></div>
+      <router-link to="/sysadmin/monitor" class="btn-monitor">
+        <i class="bi bi-bar-chart-line"></i> Monitor de Ventas
+      </router-link>
+      <router-link to="/sysadmin/admin-pe" class="btn-monitor btn-monitor--pe">
+        <i class="bi bi-lightning-charge-fill"></i> Admin POS Electrónico
+      </router-link>
     </div>
 
     <!-- ── Cards conexiones ── -->
@@ -68,15 +75,6 @@
 
     </div>
 
-    <!-- ── Botones de acceso rápido ── -->
-    <div class="monitor-btn-wrap">
-      <router-link to="/sysadmin/monitor" class="btn-monitor">
-        <i class="bi bi-bar-chart-line"></i> Monitor de Ventas
-      </router-link>
-      <router-link to="/sysadmin/admin-pe" class="btn-monitor btn-monitor--pe">
-        <i class="bi bi-lightning-charge-fill"></i> Admin POS Electrónico
-      </router-link>
-    </div>
 
   </div>
 </template>
@@ -91,7 +89,7 @@ const loading     = ref(true)
 const connLoading = ref(false)
 const stats       = ref({ total_companies: 0, total_users: 0, total_assets: 0, total_tasks: 0 })
 const mode        = ref("day")
-const selDate     = ref(new Date().toISOString().slice(0, 10))
+const selDate     = ref(new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" }))
 const connections = ref({ companies: [], users: [] })
 
 const kpis = computed(() => [
@@ -149,6 +147,8 @@ onMounted(async () => {
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
+
+.toolbar-spacer { flex: 1; }
 
 .mode-toggle {
   display: flex;
@@ -254,14 +254,6 @@ onMounted(async () => {
 }
 
 /* ── botón monitor ── */
-.monitor-btn-wrap {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
 .btn-monitor {
   display: inline-flex;
   align-items: center;
@@ -283,13 +275,14 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .conn-grid { grid-template-columns: 1fr; }
   .conn-toolbar { gap: 8px; }
-  .monitor-btn-wrap { justify-content: stretch; }
-  .btn-monitor { width: 100%; justify-content: center; }
+  .toolbar-spacer { display: none; }
+  .btn-monitor { flex: 1; justify-content: center; }
 }
 
 @media (max-width: 576px) {
   .conn-table th:nth-child(3),
   .conn-table td:nth-child(3) { display: none; }
   .btn-mode { padding: 6px 12px; font-size: 12px; }
+  .btn-monitor { font-size: 12px; padding: 8px 14px; }
 }
 </style>
