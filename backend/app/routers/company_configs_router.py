@@ -98,6 +98,23 @@ async def list_company_configs(
     return [dict(r) for r in rows]
 
 
+# ─── GET conteo de pendientes DIAN por empresa ───────────────────────────────
+
+@router.get("/pe-pendientes-count")
+async def get_pe_pendientes_count(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_sysadmin(authorization, db)
+    rows = (await db.execute(text("""
+        SELECT company_id, COUNT(*) AS pendientes
+        FROM apidian_facturas_cufe
+        WHERE FEExitosa = 0
+        GROUP BY company_id
+    """))).mappings().all()
+    return {r["company_id"]: int(r["pendientes"]) for r in rows}
+
+
 # ─── GET config de una empresa ────────────────────────────────────────────────
 
 @router.get("/{company_id}")
@@ -154,23 +171,6 @@ async def upsert_company_config(
     await db.commit()
     await db.refresh(cfg)
     return _config_dict(cfg)
-
-
-# ─── GET conteo de pendientes DIAN por empresa ───────────────────────────────
-
-@router.get("/pe-pendientes-count")
-async def get_pe_pendientes_count(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    await _require_sysadmin(authorization, db)
-    rows = (await db.execute(text("""
-        SELECT company_id, COUNT(*) AS pendientes
-        FROM apidian_facturas_cufe
-        WHERE FEExitosa = 0
-        GROUP BY company_id
-    """))).mappings().all()
-    return {r["company_id"]: int(r["pendientes"]) for r in rows}
 
 
 # ─── GET facturas DIAN de la BD externa de la empresa ────────────────────────
