@@ -86,36 +86,32 @@
             </div>
           </div>
 
-          <!-- COLUMNA DERECHA: Opciones de impresión -->
+          <!-- COLUMNA DERECHA: Opciones de impresión con tabs -->
           <div class="ir-col ir-col-options">
-            <div class="ir-section-title">
-              <i class="bi bi-printer"></i> ¿Dónde imprimir?
+
+            <!-- Tabs -->
+            <div class="ir-tabs">
+              <button :class="['ir-tab', { active: tab === 'configuradas' }]"
+                      @click="tab = 'configuradas'">
+                <i class="bi bi-printer-fill"></i> Impresoras del taller
+              </button>
+              <button :class="['ir-tab', { active: tab === 'sistema' }]"
+                      @click="tab = 'sistema'">
+                <i class="bi bi-display"></i> Sistema / PDF
+              </button>
             </div>
 
-            <!-- PDF / Sistema -->
-            <button class="ir-opt-btn ir-opt-pdf" @click="imprimirSistema">
-              <div class="ir-opt-icon"><i class="bi bi-file-earmark-pdf-fill"></i></div>
-              <div class="ir-opt-info">
-                <span class="ir-opt-label">PDF / Impresora del sistema</span>
-                <span class="ir-opt-desc">Abre el diálogo de impresión del navegador. Elige cualquier impresora instalada o guarda como PDF.</span>
+            <!-- TAB: Impresoras configuradas (DEFAULT) -->
+            <div v-if="tab === 'configuradas'" class="ir-tab-body">
+              <div v-if="loadingPrinters" class="ir-pos-empty">
+                <i class="bi bi-arrow-repeat spin"></i> Cargando impresoras…
               </div>
-              <i class="bi bi-chevron-right ir-opt-arrow"></i>
-            </button>
-
-            <!-- Impresoras POS -->
-            <div class="ir-pos-section">
-              <div class="ir-pos-title">
-                <i class="bi bi-receipt"></i> Impresoras POS configuradas
-                <span v-if="loadingPrinters" class="ir-loading-chip">
-                  <i class="bi bi-arrow-repeat spin"></i>
-                </span>
+              <div v-else-if="printers.length === 0" class="ir-pos-empty">
+                <i class="bi bi-printer" style="font-size:28px;display:block;margin-bottom:6px;color:#cbd5e1"></i>
+                No hay impresoras configuradas para este taller.
+                <br/>
+                <a href="/pos/impresoras" target="_blank" class="ir-link">Ir a configurar impresoras →</a>
               </div>
-
-              <div v-if="!loadingPrinters && printers.length === 0" class="ir-pos-empty">
-                Sin impresoras POS configuradas.
-                <a href="/pos/impresoras" target="_blank" class="ir-link">Configurar</a>
-              </div>
-
               <button
                 v-for="p in printers"
                 :key="p.id"
@@ -124,7 +120,7 @@
                 :disabled="imprimiendoPosId === p.id"
               >
                 <div class="ir-opt-icon ir-icon-pos">
-                  <i class="bi bi-printer"></i>
+                  <i class="bi bi-printer-fill"></i>
                 </div>
                 <div class="ir-opt-info">
                   <span class="ir-opt-label">{{ p.name }}</span>
@@ -138,6 +134,23 @@
                 <i v-else class="bi bi-chevron-right ir-opt-arrow"></i>
               </button>
             </div>
+
+            <!-- TAB: Sistema / PDF -->
+            <div v-if="tab === 'sistema'" class="ir-tab-body">
+              <button class="ir-opt-btn ir-opt-pdf" @click="imprimirSistema">
+                <div class="ir-opt-icon"><i class="bi bi-file-earmark-pdf-fill"></i></div>
+                <div class="ir-opt-info">
+                  <span class="ir-opt-label">PDF / Impresora del sistema</span>
+                  <span class="ir-opt-desc">Abre el diálogo del navegador. Elige cualquier impresora instalada o guarda como PDF.</span>
+                </div>
+                <i class="bi bi-chevron-right ir-opt-arrow"></i>
+              </button>
+              <div class="ir-sys-note">
+                <i class="bi bi-info-circle"></i>
+                Usa esta opción si tu impresora está instalada como dispositivo del sistema operativo o quieres guardar el recibo como PDF.
+              </div>
+            </div>
+
           </div>
 
         </div>
@@ -169,9 +182,10 @@ const props = defineProps({
 const emit = defineEmits(["close"])
 
 const companyStore   = useCompanyStore()
-const printers       = ref([])
-const loadingPrinters = ref(true)
+const printers         = ref([])
+const loadingPrinters  = ref(true)
 const imprimiendoPosId = ref(null)
+const tab              = ref('configuradas')
 
 const nombreEmpresa = computed(
   () => companyStore.selectedCompany?.name || "EasyPos"
@@ -422,20 +436,59 @@ onMounted(loadPrinters)
 .ir-opt-desc  { font-size: 11px; color: #64748b; line-height: 1.4; }
 .ir-opt-arrow { color: #94a3b8; font-size: 14px; flex-shrink: 0; }
 
-/* ── Sección POS ─────────────────────────────────────────────────────── */
-.ir-pos-section { display: flex; flex-direction: column; gap: 8px; }
-.ir-pos-title {
-  font-size: 11px;
-  font-weight: 700;
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.ir-tabs {
+  display: flex;
+  border-bottom: 2px solid #e2e8f0;
+  gap: 0;
+  flex-shrink: 0;
+}
+.ir-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
   color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: .4px;
+  cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all .15s;
 }
+.ir-tab:hover { color: #1e293b; background: #f8fafc; }
+.ir-tab.active { color: #1d4ed8; border-bottom-color: #3b82f6; background: #eff6ff; }
+
+.ir-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.ir-sys-note {
+  font-size: 12px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+.ir-sys-note i { flex-shrink: 0; margin-top: 2px; color: #3b82f6; }
+
+/* ── Sección POS ─────────────────────────────────────────────────────── */
 .ir-loading-chip { color: #3b82f6; font-size: 12px; }
-.ir-pos-empty { font-size: 13px; color: #94a3b8; padding: 12px; text-align: center; }
+.ir-pos-empty { font-size: 13px; color: #94a3b8; padding: 20px 12px; text-align: center; line-height: 1.8; }
 .ir-link { color: #3b82f6; text-decoration: underline; }
 .ir-conn-chip {
   display: inline-block;
