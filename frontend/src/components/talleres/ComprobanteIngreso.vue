@@ -167,7 +167,7 @@
               <span class="cp-printer-name">{{ p.name }}</span>
               <span class="cp-printer-sub">
                 <span v-if="p.ip">{{ p.ip }}:{{ p.port }}</span>
-                <span v-else class="cp-bt-label"><i class="bi bi-bluetooth"></i> Imprime via diálogo del sistema</span>
+                <span v-else class="cp-bt-label"><i class="bi bi-bluetooth"></i> Bluetooth — toca para conectar</span>
                 <span v-if="p.connection_type" class="cp-chip">{{ p.connection_type }}</span>
               </span>
             </div>
@@ -218,6 +218,139 @@ const props = defineProps({
 
 defineEmits(['close'])
 
+// ── UUIDs comunes de servicio BLE ESC/POS para impresoras térmicas ───────────
+const BLE_SERVICES = [
+  { service: '000018f0-0000-1000-8000-00805f9b34fb', char: '000018f1-0000-1000-8000-00805f9b34fb' },
+  { service: '0000ff00-0000-1000-8000-00805f9b34fb', char: '0000ff02-0000-1000-8000-00805f9b34fb' },
+  { service: '6e400001-b5a3-f393-e0a9-e50e24dcca9e', char: '6e400002-b5a3-f393-e0a9-e50e24dcca9e' },
+  { service: 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', char: 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f' },
+  { service: '49535343-fe7d-4ae5-8fa9-9fafd205e455', char: '49535343-8841-43f4-a8d4-ecbe34729bb3' },
+]
+
+// ── Genera bytes ESC/POS del comprobante en el cliente ────────────────────────
+function buildComprobanteESCPOS() {
+  const enc = new TextEncoder()
+  const buf = []
+  const ESC = 0x1b
+  const push = (...b) => buf.push(...b)
+  const text = (t) => buf.push(...enc.encode(t + '\n'))
+
+  push(ESC, 0x40)                             // INIT
+  push(ESC, 0x61, 0x01)                       // CENTER
+  push(ESC, 0x45, 0x01)                       // BOLD ON
+  text(props.companyName.toUpperCase())
+  text('COMPROBANTE DE INGRESO')
+  push(ESC, 0x45, 0x00)                       // BOLD OFF
+  text('--------------------------------')
+  push(ESC, 0x61, 0x00)                       // LEFT
+
+  const o = props.orden
+  text(`Orden N: ${o.numero_orden}`)
+  if (o.fecha_ingreso) text(`Fecha:  ${fmtFechaHora(o.fecha_ingreso)}`)
+  text('--------------------------------')
+
+  push(ESC, 0x61, 0x01)
+  push(ESC, 0x45, 0x01)
+  text('VEHICULO')
+  push(ESC, 0x45, 0x00)
+  text(`[ ${(o.placa_vehiculo || '').toUpperCase()} ]`)
+  const ti = [o.tipo_vehiculo, o.marca, o.modelo, o.anio].filter(Boolean).join(' ')
+  if (ti) text(ti)
+  push(ESC, 0x61, 0x00)
+  if (o.cliente_nombre)   text(`Propietario: ${o.cliente_nombre}`)
+  if (o.cliente_telefono) text(`Tel: ${o.cliente_telefono}`)
+
+  text('--------------------------------')
+  push(ESC, 0x61, 0x01)
+  push(ESC, 0x45, 0x01)
+  text('SERVICIOS SOLICITADOS')
+  push(ESC, 0x45, 0x00)
+  push(ESC, 0x61, 0x00)
+  if (props.detalles.length) {
+    for (const d of props.detalles) text(`- ${d.nombre}`)
+  } else if (o.diagnostico) {
+    text(o.diagnostico)
+  }
+
+  text('--------------------------------')
+  push(ESC, 0x61, 0x01)
+  push(ESC, 0x45, 0x01)
+  text('PERSONAL ASIGNADO')
+  push(ESC, 0x45, 0x00)
+  push(ESC, 0x61, 0x00)
+  if (o.jefe_nombre) text(`Supervisor: ${o.jefe_nombre}`)
+  for (const w of props.workers) text(`${w.profession_nombre || 'Operario'}: ${w.worker_nombre}`)
+
+  text('--------------------------------')
+  push(ESC, 0x61, 0x01)
+  text('Presente este comprobante en')
+  text('caja para realizar su pago.')
+  push(0x0a, 0x0a, 0x0a)
+  push(ESC, 0x69)                             // CUT
+  return new Uint8Array(buf)
+}
+
+// ── Imprimir via Web Bluetooth API (BLE) ─────────────────────────────────────
+async function imprimirBluetooth(printer) {
+  if (!('bluetooth' in navigator)) {
+    showToast('Web Bluetooth no disponible. Usa Chrome en Android.', 'warning', 4000)
+    return
+  }
+  imprimiendoPosId.value = printer.id
+  try {
+    // Intentar reconectar a dispositivo ya autorizado (Chrome 85+)
+    let device = null
+    const storedId = sessionStorage.getItem(`bt_${printer.id}`)
+    if (storedId && navigator.bluetooth.getDevices) {
+      const devs = await navigator.bluetooth.getDevices()
+      device = devs.find(d => d.id === storedId) || null
+    }
+
+    if (!device) {
+      // Primera vez: mostrar picker filtrado por nombre de impresora
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: printer.name }, { namePrefix: printer.name.split('-')[0] }],
+        optionalServices: BLE_SERVICES.map(s => s.service),
+      })
+      sessionStorage.setItem(`bt_${printer.id}`, device.id)
+    }
+
+    const server = await device.gatt.connect()
+    const bytes  = buildComprobanteESCPOS()
+
+    let enviado = false
+    for (const { service: svcId, char: charId } of BLE_SERVICES) {
+      try {
+        const svc  = await server.getPrimaryService(svcId)
+        const ch   = await svc.getCharacteristic(charId)
+        const CHUNK = 100
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          const slice = bytes.slice(i, i + CHUNK)
+          try { await ch.writeValueWithoutResponse(slice) }
+          catch { await ch.writeValue(slice) }
+          await new Promise(r => setTimeout(r, 20))
+        }
+        enviado = true
+        break
+      } catch { /* probar siguiente servicio */ }
+    }
+
+    server.disconnect()
+    if (!enviado) throw new Error('No se encontró servicio ESC/POS en la impresora')
+
+    showToast(`Impreso en "${printer.name}"`, 'success', 2000)
+    showPanel.value = false
+  } catch (e) {
+    if (e.name === 'NotFoundError' || e.name === 'NotAllowedError') {
+      showToast('Selección cancelada', 'info', 2000)
+    } else {
+      sessionStorage.removeItem(`bt_${printer.id}`)
+      showToast(e.message || 'Error Bluetooth', 'error', 4000)
+    }
+  }
+  imprimiendoPosId.value = null
+}
+
 // ── Estado panel impresoras ───────────────────────────────────────────────────
 const showPanel        = ref(false)
 const panelTab         = ref('taller')
@@ -247,9 +380,8 @@ async function loadPrinters() {
 
 async function imprimirPos(printer) {
   if (!printer.ip) {
-    // Bluetooth/USB: el backend no puede conectarse, usar sistema del móvil
-    showPanel.value = false
-    imprimirSistema()
+    // Sin IP → Bluetooth: usar Web Bluetooth API
+    await imprimirBluetooth(printer)
     return
   }
   imprimiendoPosId.value = printer.id
