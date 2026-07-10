@@ -167,7 +167,7 @@
               <span class="cp-printer-name">{{ p.name }}</span>
               <span class="cp-printer-sub">
                 <span v-if="p.ip">{{ p.ip }}:{{ p.port }}</span>
-                <span v-else>Sin IP configurada</span>
+                <span v-else class="cp-bt-label"><i class="bi bi-bluetooth"></i> Imprime via diálogo del sistema</span>
                 <span v-if="p.connection_type" class="cp-chip">{{ p.connection_type }}</span>
               </span>
             </div>
@@ -247,7 +247,9 @@ async function loadPrinters() {
 
 async function imprimirPos(printer) {
   if (!printer.ip) {
-    showToast(`"${printer.name}" no tiene IP configurada`, 'warning', 3000)
+    // Bluetooth/USB: el backend no puede conectarse, usar sistema del móvil
+    showPanel.value = false
+    imprimirSistema()
     return
   }
   imprimiendoPosId.value = printer.id
@@ -567,6 +569,7 @@ onMounted(() => {
   display: flex; gap: 8px; align-items: flex-start; line-height: 1.5;
 }
 .cp-note i { flex-shrink: 0; margin-top: 2px; color: #3b82f6; }
+.cp-bt-label { color: #6366f1; font-style: italic; }
 
 @media (max-width: 576px) {
   .ci-modal   { max-height: 98vh; border-radius: 12px; }
