@@ -7,10 +7,17 @@
     <!-- ── Filtro compartido + accesos rápidos ── -->
     <div class="conn-toolbar">
       <div class="mode-toggle">
-        <button :class="['btn-mode', mode === 'day' && 'active']" @click="setMode('day')">Día</button>
+        <button :class="['btn-mode', mode === 'live'  && 'active']" @click="setMode('live')">
+          <span v-if="mode === 'live'" class="live-dot"></span>Ahora
+        </button>
+        <button :class="['btn-mode', mode === 'day'   && 'active']" @click="setMode('day')">Día</button>
         <button :class="['btn-mode', mode === 'month' && 'active']" @click="setMode('month')">Mes</button>
       </div>
-      <CustomDatePicker v-model="selDate" variant="dark" @update:modelValue="loadConnections" />
+      <CustomDatePicker
+        v-if="mode !== 'live'"
+        v-model="selDate"
+        @update:modelValue="loadConnections"
+      />
       <span v-if="connLoading" class="conn-loading-dot">⏳</span>
       <div class="toolbar-spacer"></div>
       <router-link to="/sysadmin/monitor" class="btn-monitor">
@@ -24,52 +31,88 @@
     <!-- ── Cards conexiones ── -->
     <div class="conn-grid">
 
-      <!-- Empresas conectadas -->
+      <!-- Empresas -->
       <div class="conn-card">
         <div class="conn-card-header">
           <i class="bi bi-buildings"></i>
-          Empresas conectadas
+          <span v-if="mode === 'live'">Empresas activas ahora</span>
+          <span v-else>Empresas conectadas</span>
           <span class="conn-badge">{{ connections.companies.length }}</span>
         </div>
         <div class="conn-table-wrap">
           <table class="conn-table" v-if="connections.companies.length">
             <thead>
-              <tr><th>Empresa</th><th>Logins</th><th>Último</th></tr>
+              <tr v-if="mode === 'live'">
+                <th>Empresa</th><th class="text-center">Usuarios</th><th>Última actividad</th>
+              </tr>
+              <tr v-else>
+                <th>Empresa</th><th>Último acceso</th>
+              </tr>
             </thead>
             <tbody>
-              <tr v-for="c in connections.companies" :key="c.company_id">
-                <td>{{ c.company_name }}</td>
-                <td class="text-center">{{ c.login_count }}</td>
-                <td class="text-muted">{{ fmtTime(c.last_login) }}</td>
-              </tr>
+              <template v-if="mode === 'live'">
+                <tr v-for="c in connections.companies" :key="c.company_id">
+                  <td>{{ c.company_name }}</td>
+                  <td class="text-center">
+                    <span class="users-chip">{{ c.active_users }}</span>
+                  </td>
+                  <td class="text-muted">{{ fmtTime(c.last_activity) }}</td>
+                </tr>
+              </template>
+              <template v-else>
+                <tr v-for="c in connections.companies" :key="c.company_id">
+                  <td>{{ c.company_name }}</td>
+                  <td class="text-muted">{{ fmtDateTime(c.last_login) }}</td>
+                </tr>
+              </template>
             </tbody>
           </table>
-          <div v-else class="conn-empty">Sin registros para este período</div>
+          <div v-else class="conn-empty">
+            {{ mode === 'live' ? 'Sin sesiones activas en este momento' : 'Sin registros para este período' }}
+          </div>
         </div>
       </div>
 
-      <!-- Usuarios conectados -->
+      <!-- Usuarios -->
       <div class="conn-card">
         <div class="conn-card-header">
           <i class="bi bi-people"></i>
-          Usuarios conectados
+          <span v-if="mode === 'live'">Usuarios activos ahora</span>
+          <span v-else>Usuarios conectados</span>
           <span class="conn-badge">{{ connections.users.length }}</span>
         </div>
         <div class="conn-table-wrap">
           <table class="conn-table" v-if="connections.users.length">
             <thead>
-              <tr><th>Nombre</th><th>Empresa</th><th>Hora</th><th>IP</th></tr>
+              <tr v-if="mode === 'live'">
+                <th>Nombre</th><th>Empresa</th><th>Desde</th><th>IP</th>
+              </tr>
+              <tr v-else>
+                <th>Nombre</th><th>Empresa</th><th>Hora</th><th>IP</th>
+              </tr>
             </thead>
             <tbody>
-              <tr v-for="u in connections.users" :key="u.user_id + u.login_time">
-                <td>{{ u.name }}</td>
-                <td class="text-muted">{{ u.company_name }}</td>
-                <td class="text-muted">{{ fmtTime(u.login_time) }}</td>
-                <td class="text-muted">{{ u.ip }}</td>
-              </tr>
+              <template v-if="mode === 'live'">
+                <tr v-for="u in connections.users" :key="u.user_id">
+                  <td>{{ u.name }}</td>
+                  <td class="text-muted">{{ u.company_name }}</td>
+                  <td class="text-muted">{{ fmtTime(u.session_start) }}</td>
+                  <td class="text-muted ip-cell">{{ u.ip }}</td>
+                </tr>
+              </template>
+              <template v-else>
+                <tr v-for="u in connections.users" :key="u.user_id + u.login_time">
+                  <td>{{ u.name }}</td>
+                  <td class="text-muted">{{ u.company_name }}</td>
+                  <td class="text-muted">{{ fmtTime(u.login_time) }}</td>
+                  <td class="text-muted ip-cell">{{ u.ip }}</td>
+                </tr>
+              </template>
             </tbody>
           </table>
-          <div v-else class="conn-empty">Sin registros para este período</div>
+          <div v-else class="conn-empty">
+            {{ mode === 'live' ? 'Sin sesiones activas en este momento' : 'Sin registros para este período' }}
+          </div>
         </div>
       </div>
 
@@ -80,7 +123,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, onUnmounted } from "vue"
 import KpiStrip from "@/components/dashboard/KpiStrip.vue"
 import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import api from "@/services/apis"
@@ -88,9 +131,10 @@ import api from "@/services/apis"
 const loading     = ref(true)
 const connLoading = ref(false)
 const stats       = ref({ total_companies: 0, total_users: 0, total_assets: 0, total_tasks: 0 })
-const mode        = ref("day")
+const mode        = ref("live")
 const selDate     = ref(new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" }))
 const connections = ref({ companies: [], users: [] })
+let _liveTimer    = null
 
 const kpis = computed(() => [
   { icon: "bi-buildings",       label: "Asociados registrados", value: stats.value.total_companies },
@@ -101,24 +145,40 @@ const kpis = computed(() => [
 
 function setMode(m) {
   mode.value = m
+  clearInterval(_liveTimer)
+  _liveTimer = null
   loadConnections()
+  if (m === "live") {
+    _liveTimer = setInterval(loadConnections, 60000)
+  }
 }
 
 async function loadConnections() {
   connLoading.value = true
   try {
-    const res = await api.get("/dashboard/sysadmin/connections", {
-      params: { date: selDate.value, mode: mode.value }
-    })
-    connections.value = res.data
+    if (mode.value === "live") {
+      const res = await api.get("/dashboard/sysadmin/active-sessions")
+      connections.value = res.data
+    } else {
+      const res = await api.get("/dashboard/sysadmin/connections", {
+        params: { date: selDate.value, mode: mode.value }
+      })
+      connections.value = res.data
+    }
   } catch {}
   connLoading.value = false
 }
 
 function fmtTime(iso) {
   if (!iso) return "—"
+  return new Date(iso).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return "—"
   const d = new Date(iso)
-  return d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })
+  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit" }) + " " +
+         d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })
 }
 
 onMounted(async () => {
@@ -128,6 +188,11 @@ onMounted(async () => {
   } catch {}
   loading.value = false
   await loadConnections()
+  _liveTimer = setInterval(loadConnections, 60000)
+})
+
+onUnmounted(() => {
+  clearInterval(_liveTimer)
 })
 </script>
 
@@ -158,6 +223,9 @@ onMounted(async () => {
 }
 
 .btn-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 18px;
   background: #fff;
   border: none;
@@ -172,6 +240,37 @@ onMounted(async () => {
   color: #fff;
 }
 .btn-mode:hover:not(.active) { background: #f1f5f9; }
+
+/* Punto pulsante verde en modo live */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* Chip de usuarios activos */
+.users-chip {
+  display: inline-block;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+/* IP en celda pequeña */
+.ip-cell {
+  font-family: monospace;
+  font-size: 11px;
+}
 
 .conn-loading-dot { font-size: 18px; animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }

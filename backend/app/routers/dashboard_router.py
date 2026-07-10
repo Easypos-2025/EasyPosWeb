@@ -93,6 +93,57 @@ async def _require_sysadmin(authorization: str, db: AsyncSession) -> User:
     return user
 
 
+# ─── Sesiones activas en este momento ────────────────────────────────────────
+
+@router.get("/sysadmin/active-sessions")
+async def get_active_sessions(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_sysadmin(authorization, db)
+
+    companies = (await db.execute(text("""
+        SELECT c.id_company,
+               c.name                           AS company_name,
+               COUNT(DISTINCT us.user_id)       AS active_users,
+               MAX(us.created_at - INTERVAL 5 HOUR) AS last_activity
+        FROM user_sessions us
+        JOIN users    u ON u.id          = us.user_id
+        JOIN companies c ON c.id_company = u.company_id
+        WHERE us.is_active = 1
+        GROUP BY c.id_company, c.name
+        ORDER BY active_users DESC, c.name
+    """))).mappings().all()
+
+    users_rows = (await db.execute(text("""
+        SELECT u.id          AS user_id,
+               u.nombre      AS name,
+               c.name        AS company_name,
+               (us.created_at - INTERVAL 5 HOUR) AS session_start,
+               us.ip
+        FROM user_sessions us
+        JOIN users    u ON u.id          = us.user_id
+        JOIN companies c ON c.id_company = u.company_id
+        WHERE us.is_active = 1
+        ORDER BY us.created_at DESC
+        LIMIT 300
+    """))).mappings().all()
+
+    def _s(v):
+        return v.isoformat() if hasattr(v, "isoformat") else str(v) if v else None
+
+    return {
+        "companies": [
+            {**dict(r), "last_activity": _s(r["last_activity"])}
+            for r in companies
+        ],
+        "users": [
+            {**dict(r), "session_start": _s(r["session_start"])}
+            for r in users_rows
+        ],
+    }
+
+
 # ─── Conexiones del día / mes ─────────────────────────────────────────────────
 
 @router.get("/sysadmin/connections")
