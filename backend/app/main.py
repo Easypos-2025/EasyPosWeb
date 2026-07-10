@@ -99,6 +99,7 @@ from app.routers.plan_associate_limits_router import router as plan_associate_li
 from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
 from app.routers.company_configs_router import router as company_configs_router
+from app.routers.pos_payment_types_router import router as pos_payment_types_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -2052,6 +2053,7 @@ routers = [
     advertisement_router,
     welcome_steps_router,
     company_configs_router,
+    pos_payment_types_router,
 ]
 
 for router in routers:

@@ -594,6 +594,13 @@ const routes = [
         meta: { title: "Conceptos de Gasto" }
       },
       {
+        path: "/payment-types",
+        name: "PaymentTypesView",
+        component: () => import("@/views/PaymentTypesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Formas de Pago" }
+      },
+      {
         path: "/configuration/conceptos-compras",
         name: "ConceptosComprasView",
         component: () => import("@/views/ConceptosComprasView.vue"),
