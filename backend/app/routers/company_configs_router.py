@@ -4,7 +4,7 @@ from sqlalchemy import select, text
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 import calendar
-from app.database import get_db, get_ext_session
+from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
@@ -155,12 +155,6 @@ async def get_pe_facturas(
 ):
     await _require_sysadmin(authorization, db)
 
-    company = await db.get(Company, company_id)
-    if not company:
-        raise HTTPException(status_code=404, detail="Empresa no encontrada")
-    if not company.ext_db_host:
-        raise HTTPException(status_code=400, detail="Esta empresa no tiene base de datos externa configurada")
-
     target = date or datetime.now(_BOG).date().isoformat()
 
     if mode == "month":
@@ -171,27 +165,19 @@ async def get_pe_facturas(
     else:
         d1 = d2 = target
 
-    ext = get_ext_session(
-        company_id, company.ext_db_host, company.ext_db_port or 3306,
-        company.ext_db_name, company.ext_db_user, company.ext_db_password or "",
-    )
-    try:
-        rows = (await ext.execute(text("""
-            SELECT
-                DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
-                Prefijo                         AS prefijo,
-                Nro_Factura                     AS nro_folio,
-                Valor                           AS valor,
-                Cuenta                          AS cuenta,
-                Cliente                         AS cliente
-            FROM apidian_facturas_cufe
-            WHERE FEExitosa = :fe
-              AND Fecha BETWEEN :d1 AND :d2
-            ORDER BY Fecha, Nro_Factura
-            LIMIT 500
-        """), {"fe": fe, "d1": d1, "d2": d2})).mappings().all()
-        return [dict(r) for r in rows]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error consultando BD externa: {str(e)}")
-    finally:
-        await ext.close()
+    rows = (await db.execute(text("""
+        SELECT
+            DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
+            Prefix                         AS prefijo,
+            Nro_Factura                    AS nro_folio,
+            Valor                          AS valor,
+            Nro_Caja                       AS cuenta,
+            Cedula                         AS cliente
+        FROM apidian_facturas_cufe
+        WHERE company_id = :cid
+          AND FEExitosa  = :fe
+          AND Fecha BETWEEN :d1 AND :d2
+        ORDER BY Fecha, Nro_Factura
+        LIMIT 500
+    """), {"cid": company_id, "fe": fe, "d1": d1, "d2": d2})).mappings().all()
+    return [dict(r) for r in rows]

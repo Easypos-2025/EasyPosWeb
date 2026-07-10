@@ -73,14 +73,7 @@
           </div>
         </div>
 
-        <!-- Sin DB externa -->
-        <div v-if="!selectedCompany.ext_db_host" class="no-ext-db">
-          <i class="bi bi-database-x" style="font-size:32px;color:#f59e0b"></i>
-          <p>Esta empresa no tiene base de datos externa configurada.<br>
-          Configúrala en <strong>Lista Empresas → Editar → Base de datos externa</strong>.</p>
-        </div>
-
-        <template v-else>
+        <template>
           <!-- Tabs -->
           <div class="pe-tabs">
             <button :class="['pe-tab', activeTab === 0 && 'pe-tab--active']" @click="setTab(0)">
@@ -266,7 +259,7 @@ function setTab(t) {
 }
 
 async function loadFacturas() {
-  if (!selectedCompany.value || !selectedCompany.value.ext_db_host) return
+  if (!selectedCompany.value) return
   billLoading.value = true
   try {
     const [r0, r1] = await Promise.all([
