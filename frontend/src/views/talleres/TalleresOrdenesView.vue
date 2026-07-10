@@ -11,15 +11,31 @@
         </div>
       </div>
       <div class="buscar-row">
-        <input
-          v-model="placaInput"
-          class="placa-input"
-          placeholder="Ej: ABC123"
-          maxlength="10"
-          ref="inputRef"
-          @keyup.enter="buscarVehiculo"
-          @input="placaInput = placaInput.toUpperCase()"
-        />
+        <div class="placa-wrap">
+          <input
+            v-model="placaInput"
+            class="placa-input"
+            placeholder="Ej: ABC123"
+            maxlength="10"
+            ref="inputRef"
+            autocomplete="off"
+            @keyup.enter="onPlacaEnter"
+            @input="onPlacaInput"
+            @blur="hideSugerenciasDelayed"
+            @focus="sugerencias.length && (mostrarSug = true)"
+          />
+          <ul v-if="mostrarSug && sugerencias.length" class="placa-sugerencias">
+            <li v-for="s in sugerencias" :key="s.placa"
+                class="placa-sug-item"
+                @mousedown.prevent="seleccionarSugerencia(s)">
+              <span class="sug-placa">{{ s.placa }}</span>
+              <span class="sug-info">
+                {{ [s.marca, s.modelo, s.anio].filter(Boolean).join(' ') }}
+                <span v-if="s.cliente_nombre" class="sug-cliente">· {{ s.cliente_nombre }}</span>
+              </span>
+            </li>
+          </ul>
+        </div>
         <button class="btn-buscar" :disabled="loadingBuscar || placaInput.length < 3" @click="buscarVehiculo">
           <i v-if="loadingBuscar" class="bi bi-hourglass-split spin"></i>
           <i v-else class="bi bi-search"></i>
@@ -192,7 +208,7 @@
             <label>Jefe responsable</label>
             <select v-model="orden.jefe_responsable_id" class="form-ctrl">
               <option value="">— Sin asignar —</option>
-              <option v-for="u in usuarios" :key="u.id" :value="u.id">{{ u.nombre || u.name }}</option>
+              <option v-for="w in jefes" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
           </div>
           <div class="fg">
@@ -385,7 +401,7 @@
             <label>Jefe responsable</label>
             <select v-model="orden.jefe_responsable_id" class="form-ctrl">
               <option value="">— Sin asignar —</option>
-              <option v-for="u in usuarios" :key="u.id" :value="u.id">{{ u.nombre || u.name }}</option>
+              <option v-for="w in jefes" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
           </div>
           <div class="fg">
@@ -539,7 +555,7 @@ async function abrirPorPlaca(placa) {
   await buscarVehiculo()
 }
 
-// ── Búsqueda ──────────────────────────────────────────────────────────────
+// ── Búsqueda + autocomplete placa ─────────────────────────────────────────
 const placaInput    = ref('')
 const loadingBuscar = ref(false)
 const buscado       = ref(false)
@@ -547,6 +563,49 @@ const vehiculo      = ref(null)
 const historial     = ref([])
 const fotosVehiculo = ref([])
 const inputRef      = ref(null)
+
+// Autocomplete
+const sugerencias  = ref([])
+const mostrarSug   = ref(false)
+let   _sugTimer    = null
+
+function onPlacaInput(e) {
+  placaInput.value = e.target.value.toUpperCase()
+  mostrarSug.value = false
+  clearTimeout(_sugTimer)
+  if (placaInput.value.length >= 3) {
+    _sugTimer = setTimeout(buscarSugerencias, 300)
+  } else {
+    sugerencias.value = []
+  }
+}
+
+async function buscarSugerencias() {
+  if (!companyId.value || placaInput.value.length < 3) return
+  try {
+    const { data } = await api.get('/api/talleres/vehiculo/sugerencias', {
+      params: { company_id: companyId.value, q: placaInput.value }
+    })
+    sugerencias.value = data
+    mostrarSug.value  = data.length > 0
+  } catch { /* silencioso */ }
+}
+
+function seleccionarSugerencia(s) {
+  placaInput.value  = s.placa
+  sugerencias.value = []
+  mostrarSug.value  = false
+  buscarVehiculo()
+}
+
+function onPlacaEnter() {
+  mostrarSug.value = false
+  buscarVehiculo()
+}
+
+function hideSugerenciasDelayed() {
+  setTimeout(() => { mostrarSug.value = false }, 150)
+}
 
 async function buscarVehiculo() {
   if (!placaInput.value || placaInput.value.length < 3) return
@@ -757,7 +816,7 @@ async function abrirOrden() {
     nuevaOrdenId.value = data.id
 
     // Armar datos del comprobante y mostrarlo
-    const jefeObj = usuarios.value.find(u => u.id === orden.value.jefe_responsable_id)
+    const jefeObj = jefes.value.find(w => w.id === orden.value.jefe_responsable_id)
     const opObj   = workers.value.find(w => w.id === orden.value.operario_id)
     comprobanteOrden.value = {
       numero_orden:        data.numero_orden,
@@ -784,21 +843,25 @@ async function abrirOrden() {
 
 
 // ── Datos auxiliares ──────────────────────────────────────────────────────
-const usuarios      = ref([])
 const workers       = ref([])
 const convenios     = ref([])
 const tiposVehiculo = ref([])
 
+// Jefes = workers cuya profesión contenga "jefe" o "supervisor"
+const jefes = computed(() =>
+  workers.value.filter(w =>
+    /jefe|supervisor/i.test(w.profession_nombre || '')
+  )
+)
+
 async function cargarAuxiliares() {
   if (!companyId.value) return
   try {
-    const [ru, rw, rc, rt] = await Promise.all([
-      api.get('/users/', { params: { company_id: companyId.value } }),
+    const [rw, rc, rt] = await Promise.all([
       api.get('/workers/', { params: { company_id: companyId.value } }),
       api.get('/api/talleres/convenios', { params: { company_id: companyId.value } }),
       api.get('/api/talleres/tipos-vehiculo', { params: { company_id: companyId.value } }),
     ])
-    usuarios.value      = ru.data?.items ?? ru.data ?? []
     workers.value       = rw.data?.items ?? rw.data ?? []
     convenios.value     = rc.data ?? []
     tiposVehiculo.value = rt.data ?? []
@@ -881,9 +944,27 @@ onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.v
 .buscar-icon-wrap { width:46px; height:46px; background:#eff6ff; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#3b82f6; flex-shrink:0; }
 .buscar-texts h5 { font-size:15px; font-weight:700; color:#1e293b; margin:0 0 2px; }
 .buscar-texts p  { font-size:12px; color:#64748b; margin:0; }
-.buscar-row { display:flex; gap:8px; align-items:center; }
-.placa-input { flex:1; font-size:18px; font-weight:800; letter-spacing:3px; text-transform:uppercase; padding:10px 14px; border:2px solid #e2e8f0; border-radius:10px; outline:none; color:#1e293b; }
+.buscar-row  { display:flex; gap:8px; align-items:center; }
+.placa-wrap  { flex:1; position:relative; }
+.placa-input { width:100%; font-size:18px; font-weight:800; letter-spacing:3px; text-transform:uppercase; padding:10px 14px; border:2px solid #e2e8f0; border-radius:10px; outline:none; color:#1e293b; box-sizing:border-box; }
 .placa-input:focus { border-color:#3b82f6; }
+
+/* Dropdown sugerencias */
+.placa-sugerencias {
+  position:absolute; top:calc(100% + 4px); left:0; right:0;
+  background:#fff; border:1.5px solid #bfdbfe; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:500;
+  list-style:none; margin:0; padding:4px 0; max-height:260px; overflow-y:auto;
+}
+.placa-sug-item {
+  display:flex; align-items:center; gap:10px;
+  padding:9px 14px; cursor:pointer;
+  transition:background .12s;
+}
+.placa-sug-item:hover { background:#eff6ff; }
+.sug-placa  { font-size:15px; font-weight:900; letter-spacing:2px; color:#1e3a5f; min-width:72px; }
+.sug-info   { font-size:12px; color:#64748b; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sug-cliente { color:#2563eb; font-weight:600; }
 .btn-buscar  { display:inline-flex; align-items:center; gap:6px; padding:10px 20px; background:#3b82f6; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
 .btn-buscar:hover:not(:disabled) { background:#2563eb; }
 .btn-buscar:disabled { opacity:.5; cursor:not-allowed; }

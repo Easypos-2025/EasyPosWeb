@@ -64,6 +64,29 @@ async def get_kpi(
     }
 
 
+# ── Sugerencias de placa (autocomplete) ──────────────────────────────────────
+
+@router.get("/vehiculo/sugerencias")
+async def sugerencias_placa(
+    company_id: int  = Query(...),
+    q: str           = Query(..., min_length=2),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    q_up = q.strip().upper()
+    rows = await db.execute(text("""
+        SELECT v.placa, v.tipo, v.marca, v.modelo, v.anio,
+               c.name AS cliente_nombre
+        FROM talleres_vehiculo_ext v
+        JOIN assets a ON a.id = v.asset_id
+        LEFT JOIN clients c ON c.id = a.client_id
+        WHERE v.company_id = :cid AND v.placa LIKE :q
+        ORDER BY v.placa
+        LIMIT 8
+    """), {"cid": company_id, "q": f"%{q_up}%"})
+    return [dict(r) for r in rows.mappings()]
+
+
 # ── Buscar vehículo por placa ─────────────────────────────────────────────────
 
 @router.get("/vehiculo")
@@ -101,11 +124,11 @@ async def buscar_vehiculo(
                 so.estado, so.estado_facturacion,
                 so.km_ingreso, so.trabajo_realizado,
                 so.diagnostico,
-                u.nombre AS jefe_nombre,
+                wj.name AS jefe_nombre,
                 (SELECT SUM(d.subtotal) FROM service_order_details d
                  WHERE d.order_id = so.id) AS total_orden
             FROM service_orders so
-            LEFT JOIN users u ON u.id = so.jefe_responsable_id
+            LEFT JOIN workers wj ON wj.id = so.jefe_responsable_id
             WHERE so.company_id = :cid AND so.placa_vehiculo = :placa
             ORDER BY so.fecha_ingreso DESC
             LIMIT 30
