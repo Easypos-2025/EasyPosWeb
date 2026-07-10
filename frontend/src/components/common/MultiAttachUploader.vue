@@ -130,6 +130,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import api from '@/services/apis'
+import { showConfirm } from '@/utils/toast'
 import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
 
 const props = defineProps({
@@ -225,7 +226,7 @@ async function onFiles(e) {
 }
 
 async function eliminar(a) {
-  if (!confirm(`¿Eliminar "${a.filename}"?`)) return
+  if (!(await showConfirm(`¿Eliminar "${a.filename}"?`))) return
   deletingId.value = a.id
   try {
     await api.delete(`/api/hipotecas/credito/adjunto/${a.id}`, {

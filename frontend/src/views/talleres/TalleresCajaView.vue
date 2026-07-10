@@ -209,7 +209,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
-import { showToast } from '@/utils/toast'
+import { showToast, showConfirm } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import CurrencyInput from '@/components/CurrencyInput.vue'
@@ -256,7 +256,7 @@ async function agregarEgreso() {
 }
 
 async function eliminarEgreso(e) {
-  if (!confirm(`¿Eliminar "${e.concepto}"?`)) return
+  if (!(await showConfirm(`¿Eliminar "${e.concepto}"?`))) return
   try {
     await api.delete(`/api/talleres/caja/egresos/${e.id}`, { params: { company_id: companyId.value } })
     await cargar()

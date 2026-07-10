@@ -464,6 +464,7 @@ import { useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import { showConfirm } from '@/utils/toast'
 
 const router       = useRouter()
 const companyStore = useCompanyStore()
@@ -576,7 +577,7 @@ async function subirFoto(e) {
 }
 
 async function eliminarFoto(f) {
-  if (!confirm('¿Eliminar esta foto?')) return
+  if (!(await showConfirm('¿Eliminar esta foto?'))) return
   try {
     await api.delete(`/api/talleres/vehiculo/fotos/${f.id}`, { params: { company_id: companyId.value } })
     fotosVehiculo.value = fotosVehiculo.value.filter(x => x.id !== f.id)

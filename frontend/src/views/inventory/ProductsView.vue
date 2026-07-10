@@ -318,7 +318,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
 import api from "@/services/apis"
-import { showToast } from "@/utils/toast"
+import { showToast, showConfirm } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
 import CurrencyInput from "@/components/CurrencyInput.vue"
 
@@ -485,7 +485,7 @@ async function agregarParticipante() {
 }
 
 async function eliminarParticipante(p) {
-  if (!confirm(`¿Eliminar participante "${p.profession_nombre}"?`)) return
+  if (!(await showConfirm(`¿Eliminar participante "${p.profession_nombre}"?`))) return
   try {
     await api.delete(`/api/talleres/servicios/participantes/${p.id}`, {
       params: { company_id: companyId.value }

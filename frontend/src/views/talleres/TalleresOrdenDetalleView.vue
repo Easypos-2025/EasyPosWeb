@@ -390,6 +390,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import { showConfirm } from '@/utils/toast'
 
 const route        = useRoute()
 const router       = useRouter()
@@ -480,7 +481,7 @@ async function guardarCambios() {
 
 // ── Facturar / Entregar ────────────────────────────────────────────────────────
 async function facturar() {
-  if (!confirm('¿Marcar esta orden como entregada/facturada?')) return
+  if (!(await showConfirm('¿Marcar esta orden como entregada/facturada?', 'Sí, entregar'))) return
   try {
     await api.patch(`/api/talleres/ordenes/${ordenId.value}/estado`, {
       company_id: companyId.value, estado: 'entregada',
@@ -494,7 +495,7 @@ async function facturar() {
 
 // ── Cancelar orden ────────────────────────────────────────────────────────────
 async function cancelarOrden() {
-  if (!confirm('¿Eliminar (cancelar) esta orden? Esta acción no se puede deshacer.')) return
+  if (!(await showConfirm('¿Eliminar (cancelar) esta orden? Esta acción no se puede deshacer.', 'Sí, cancelar'))) return
   try {
     await api.patch(`/api/talleres/ordenes/${ordenId.value}/estado`, {
       company_id: companyId.value, estado: 'cancelada',
@@ -645,7 +646,7 @@ async function agregarDetalle() {
 }
 
 async function eliminarDetalle(d) {
-  if (!confirm(`¿Eliminar "${d.nombre}"?`)) return
+  if (!(await showConfirm(`¿Eliminar "${d.nombre}"?`))) return
   eliminandoId.value = d.id
   try {
     await api.delete(`/api/talleres/ordenes/${ordenId.value}/detalle/${d.id}`, {

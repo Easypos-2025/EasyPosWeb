@@ -415,6 +415,7 @@
 import { ref, computed, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
+import { showConfirm } from '@/utils/toast'
 import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 
@@ -561,7 +562,7 @@ async function onFotoChange(blob) {
 }
 
 async function eliminarFoto(foto) {
-  if (!confirm('¿Eliminar esta foto?')) return
+  if (!(await showConfirm('¿Eliminar esta foto?'))) return
   try {
     await api.delete(`/api/compraventa/contrato/foto/${foto.id}`)
     fotos.value = fotos.value.filter(f => f.id !== foto.id)
