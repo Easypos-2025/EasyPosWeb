@@ -73,9 +73,8 @@
           </div>
         </div>
 
-        <template>
-          <!-- Tabs -->
-          <div class="pe-tabs">
+        <!-- Tabs -->
+        <div class="pe-tabs">
             <button :class="['pe-tab', activeTab === 0 && 'pe-tab--active']" @click="setTab(0)">
               <i class="bi bi-clock-history"></i>
               Pendientes DIAN
@@ -169,7 +168,6 @@
               </tbody>
             </table>
           </div>
-        </template>
       </template>
     </main>
 
