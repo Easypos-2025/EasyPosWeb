@@ -1742,10 +1742,10 @@ async def registrar_recibo(
     # ── Ítems de la orden ─────────────────────────────────────────────────────
     items = (await db.execute(text("""
         SELECT id, nombre, cantidad, precio_unitario AS precio,
-               COALESCE(producto_id, 0) AS producto_id
-        FROM talleres_ordenes_detalle
-        WHERE orden_id = :oid AND company_id = :cid
-    """), {"oid": orden_id, "cid": company_id})).mappings().all()
+               COALESCE(product_id, 0) AS producto_id
+        FROM service_order_details
+        WHERE order_id = :oid
+    """), {"oid": orden_id})).mappings().all()
 
     subtotal = sum(float(it["precio"]) * float(it["cantidad"]) for it in items)
 
