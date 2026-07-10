@@ -23,6 +23,24 @@
           placeholder="Buscar empresa..."
           autocomplete="off"
         />
+        <!-- Ordenar -->
+        <div class="sort-row">
+          <span class="sort-lbl">Ordenar:</span>
+          <button
+            :class="['sort-btn', sortMode === 'alfa' && 'sort-btn--active']"
+            @click="setSortMode('alfa')"
+            title="Alfabético A-Z"
+          ><i class="bi bi-sort-alpha-down"></i> A-Z</button>
+          <button
+            :class="['sort-btn', sortMode === 'pend' && 'sort-btn--active']"
+            @click="setSortMode('pend')"
+            title="Por pendientes (mayor a menor)"
+          >
+            <i class="bi bi-sort-numeric-down-alt"></i>
+            Pendientes
+            <i v-if="loadingCounts" class="bi bi-arrow-repeat spin" style="font-size:10px"></i>
+          </button>
+        </div>
       </div>
 
       <!-- Lista -->
@@ -34,6 +52,10 @@
           @click="selectCompany(c)"
         >
           <span class="company-item-name">{{ c.name }}</span>
+          <span
+            v-if="sortMode === 'pend' && pendientesCount[c.id_company]"
+            class="pend-badge"
+          >{{ pendientesCount[c.id_company] }}</span>
           <button
             class="pe-mini-toggle"
             :class="c.has_pos_electronico ? 'pmt--on' : 'pmt--off'"
@@ -181,24 +203,46 @@ import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 
 // ── Empresas PE ────────────────────────────────────────────────────────────
-const allCompanies  = ref([])
-const profiles      = ref([])
-const profileFilter = ref("")
-const companySearch = ref("")
+const allCompanies    = ref([])
+const profiles        = ref([])
+const profileFilter   = ref("")
+const companySearch   = ref("")
 const selectedCompany = ref(null)
-const toggling      = ref(null)
+const toggling        = ref(null)
+const sortMode        = ref("alfa")
+const pendientesCount = ref({})
+const loadingCounts   = ref(false)
 
 const companies = computed(() => {
   return allCompanies.value.filter(c => c.has_pos_electronico)
 })
 
 const filteredCompanies = computed(() => {
-  let list = companies.value
+  let list = [...companies.value]
   if (profileFilter.value) list = list.filter(c => c.business_profile_id == profileFilter.value)
   const q = companySearch.value.toLowerCase().trim()
   if (q) list = list.filter(c => c.name.toLowerCase().includes(q))
+  if (sortMode.value === "pend") {
+    list.sort((a, b) => {
+      const pa = pendientesCount.value[a.id_company] || 0
+      const pb = pendientesCount.value[b.id_company] || 0
+      return pb - pa || a.name.localeCompare(b.name, "es")
+    })
+  }
   return list
 })
+
+async function setSortMode(mode) {
+  sortMode.value = mode
+  if (mode === "pend" && Object.keys(pendientesCount.value).length === 0) {
+    loadingCounts.value = true
+    try {
+      const res = await api.get("/company-configs/pe-pendientes-count")
+      pendientesCount.value = res.data || {}
+    } catch { /* silencioso */ }
+    loadingCounts.value = false
+  }
+}
 
 async function loadCompanies() {
   try {
@@ -686,5 +730,49 @@ onMounted(loadCompanies)
   .pe-table td:nth-child(5) { display: none; }
   .action-btns { flex-direction: column; }
   .btn-dian { justify-content: center; }
+}
+
+/* ── Ordenar lista ─────────────────────────────────────────────────────────── */
+.sort-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sort-lbl {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  flex-shrink: 0;
+}
+.sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.sort-btn:hover { border-color: #f59e0b; color: #92400e; }
+.sort-btn--active { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+
+/* Badge conteo pendientes en la lista */
+.pend-badge {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  flex-shrink: 0;
 }
 </style>
