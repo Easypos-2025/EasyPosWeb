@@ -2071,3 +2071,123 @@ async def imprimir_pos(
         raise HTTPException(status_code=502, detail=f"Error al conectar con la impresora: {e}")
 
     return {"ok": True, "printer": printer["name"]}
+
+
+# ─── Imprimir Comprobante de Ingreso en impresora POS ────────────────────────
+
+@router.post("/imprimir-comprobante")
+async def imprimir_comprobante(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    import socket as _socket
+    from datetime import datetime, timezone, timedelta
+
+    company_id   = body.get("company_id")
+    printer_id   = body.get("printer_id")
+    orden        = body.get("orden", {})
+    detalles     = body.get("detalles", [])
+    workers      = body.get("workers", [])
+    company_name = body.get("company_name", "EasyPos")
+
+    if not company_id or not printer_id:
+        raise HTTPException(status_code=422, detail="company_id y printer_id requeridos")
+
+    printer = (await db.execute(text("""
+        SELECT name, ip, port FROM pos_printers
+        WHERE id = :pid AND company_id = :cid AND is_active = 1
+    """), {"pid": printer_id, "cid": company_id})).mappings().first()
+
+    if not printer or not printer["ip"]:
+        raise HTTPException(status_code=404, detail="Impresora no encontrada o sin IP configurada")
+
+    ESC      = b'\x1b'
+    INIT     = ESC + b'@'
+    BOLD_ON  = ESC + b'\x45\x01'
+    BOLD_OFF = ESC + b'\x45\x00'
+    CENTER   = ESC + b'\x61\x01'
+    LEFT     = ESC + b'\x61\x00'
+    LF       = b'\n'
+    CUT      = ESC + b'\x69'
+
+    def line(txt="", bold=False, center=False):
+        enc = (BOLD_ON if bold else b'') + (CENTER if center else LEFT)
+        return enc + txt.encode('utf-8', errors='replace') + LF + (BOLD_OFF if bold else b'')
+
+    def dline(left_txt, right_txt, width=32):
+        spaces = max(1, width - len(left_txt) - len(right_txt))
+        return LEFT + (left_txt + ' ' * spaces + right_txt).encode('utf-8', errors='replace') + LF
+
+    buf = bytearray()
+    buf += INIT
+    buf += line(company_name.upper(), bold=True, center=True)
+    buf += line("COMPROBANTE DE INGRESO", bold=True, center=True)
+    buf += line("--------------------------------")
+
+    buf += dline("Orden N:", str(orden.get("numero_orden", "")))
+    fecha_raw = orden.get("fecha_ingreso", "")
+    if fecha_raw:
+        try:
+            dt = datetime.fromisoformat(str(fecha_raw).replace("Z", "+00:00"))
+            bogota = dt.astimezone(timezone(timedelta(hours=-5)))
+            fecha_str = bogota.strftime("%d/%m/%Y %H:%M")
+        except Exception:
+            fecha_str = str(fecha_raw)[:16]
+        buf += dline("Fecha:", fecha_str)
+
+    buf += line("--------------------------------")
+    buf += line("VEHICULO", bold=True, center=True)
+    placa = str(orden.get("placa_vehiculo", "")).upper()
+    buf += line(f"[ {placa} ]", bold=True, center=True)
+    tipo_info = " ".join(filter(None, [
+        orden.get("tipo_vehiculo", ""),
+        orden.get("marca", ""),
+        orden.get("modelo", ""),
+        str(orden.get("anio", "")) if orden.get("anio") else "",
+    ]))
+    if tipo_info:
+        buf += line(tipo_info[:32], center=True)
+    if orden.get("cliente_nombre"):
+        buf += dline("Propietario:", str(orden["cliente_nombre"])[:18])
+    if orden.get("cliente_telefono"):
+        buf += dline("Tel:", str(orden["cliente_telefono"]))
+
+    buf += line("--------------------------------")
+    buf += line("SERVICIOS SOLICITADOS", bold=True, center=True)
+    if detalles:
+        for d in detalles:
+            nombre = str(d.get("nombre", ""))
+            precio = d.get("precio_unitario", 0)
+            if precio:
+                buf += dline(nombre[:20], f"${int(float(precio)):,}")
+            else:
+                buf += line(f"- {nombre[:30]}")
+    elif orden.get("diagnostico"):
+        buf += line(str(orden["diagnostico"])[:32])
+
+    buf += line("--------------------------------")
+    buf += line("PERSONAL ASIGNADO", bold=True, center=True)
+    if orden.get("jefe_nombre"):
+        buf += dline("Supervisor:", str(orden["jefe_nombre"])[:20])
+    for w in workers:
+        prof    = str(w.get("profession_nombre", "Operario"))[:12]
+        nom_w   = str(w.get("worker_nombre", ""))[:18]
+        buf += dline(f"{prof}:", nom_w)
+
+    buf += line("--------------------------------")
+    buf += line("Presente este comprobante en", center=True)
+    buf += line("caja para realizar su pago.", center=True)
+    buf += LF + LF + LF
+    buf += CUT
+
+    try:
+        with _socket.create_connection(
+            (printer["ip"], int(printer["port"] or 9100)),
+            timeout=5,
+        ) as sock:
+            sock.sendall(bytes(buf))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error al conectar con la impresora: {e}")
+
+    return {"ok": True, "printer": printer["name"]}

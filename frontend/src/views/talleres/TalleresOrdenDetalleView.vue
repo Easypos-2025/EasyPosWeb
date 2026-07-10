@@ -399,6 +399,7 @@
       :detalles="detalles"
       :workers="ordenWorkers"
       :company-name="companyName"
+      :company-id="companyId"
       @close="showComprobante = false"
     />
 

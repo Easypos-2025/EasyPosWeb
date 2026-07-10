@@ -683,6 +683,7 @@
       :detalles="[]"
       :workers="comprobanteOrden._workers || []"
       :company-name="companyName"
+      :company-id="companyId"
       @close="onCerrarComprobante"
     />
 
