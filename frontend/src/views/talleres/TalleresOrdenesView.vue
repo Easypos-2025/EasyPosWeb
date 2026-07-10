@@ -464,6 +464,16 @@
       </div>
     </Teleport>
 
+    <!-- Comprobante de ingreso -->
+    <ComprobanteIngreso
+      v-if="showComprobante && comprobanteOrden"
+      :orden="comprobanteOrden"
+      :detalles="[]"
+      :workers="comprobanteOrden._workers || []"
+      :company-name="companyName"
+      @close="onCerrarComprobante"
+    />
+
   </div>
 </template>
 
@@ -474,6 +484,7 @@ import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import { showConfirm } from '@/utils/toast'
+import ComprobanteIngreso from '@/components/talleres/ComprobanteIngreso.vue'
 
 const router       = useRouter()
 const companyStore = useCompanyStore()
@@ -702,6 +713,21 @@ async function guardarVehiculo() {
   finally { loadingGuardar.value = false }
 }
 
+// ── Comprobante de ingreso ────────────────────────────────────────────────
+const showComprobante  = ref(false)
+const comprobanteOrden = ref(null)
+const nuevaOrdenId     = ref(null)
+const companyName      = computed(() => companyStore.selectedCompany?.name || '')
+
+function onCerrarComprobante() {
+  showComprobante.value = false
+  if (nuevaOrdenId.value) {
+    router.push(`/talleres/orden/${nuevaOrdenId.value}`)
+  } else {
+    limpiarBusqueda()
+  }
+}
+
 // ── Formulario orden ──────────────────────────────────────────────────────
 const ORDEN_DEFAULT = { tipo_item: 'mecanica', km_ingreso: '', diagnostico: '',
                         jefe_responsable_id: '', operario_id: '', convenio_id: '', promesa_entrega: '' }
@@ -728,10 +754,34 @@ async function abrirOrden() {
       workers:             workers_payload,
     })
     mostrarToast(`Orden ${data.numero_orden} creada`, 'ok')
-    setTimeout(() => router.push(`/talleres/orden/${data.id}`), 700)
+    nuevaOrdenId.value = data.id
+
+    // Armar datos del comprobante y mostrarlo
+    const jefeObj = usuarios.value.find(u => u.id === orden.value.jefe_responsable_id)
+    const opObj   = workers.value.find(w => w.id === orden.value.operario_id)
+    comprobanteOrden.value = {
+      numero_orden:        data.numero_orden,
+      fecha_ingreso:       new Date().toISOString(),
+      placa_vehiculo:      placaInput.value,
+      tipo_vehiculo:       vehiculo.value.tipo || '',
+      marca:               vehiculo.value.marca || '',
+      modelo:              vehiculo.value.modelo || '',
+      anio:                vehiculo.value.anio || '',
+      color:               vehiculo.value.color || '',
+      km_ingreso:          orden.value.km_ingreso || '',
+      diagnostico:         orden.value.diagnostico || '',
+      cliente_nombre:      vehiculo.value.cliente_nombre || '',
+      cliente_telefono:    vehiculo.value.cliente_telefono || '',
+      convenio_nombre:     convenios.value.find(c => c.id === orden.value.convenio_id)?.nombre_empresa || '',
+      jefe_nombre:         jefeObj ? (jefeObj.nombre || jefeObj.name) : '',
+      promesa_entrega:     orden.value.promesa_entrega || null,
+      _workers:            opObj ? [{ worker_nombre: opObj.name, profession_nombre: '' }] : [],
+    }
+    showComprobante.value = true
   } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al crear la orden', 'error') }
   finally { loadingGuardar.value = false }
 }
+
 
 // ── Datos auxiliares ──────────────────────────────────────────────────────
 const usuarios      = ref([])

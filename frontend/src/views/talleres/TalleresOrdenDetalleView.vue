@@ -297,6 +297,12 @@
             Guardar Cambios
           </button>
 
+          <!-- Comprobante de ingreso: siempre disponible -->
+          <button class="btn-comprobante" @click="showComprobante = true">
+            <i class="bi bi-printer-fill"></i>
+            Comprobante
+          </button>
+
           <template v-if="orden.estado !== 'entregada'">
             <!-- Recibo (siempre disponible) -->
             <button class="btn-recibo" @click="showFacturarRecibo = true" :disabled="!detalles.length">
@@ -386,6 +392,16 @@
 
     </template>
 
+    <!-- Modal: Comprobante de Ingreso -->
+    <ComprobanteIngreso
+      v-if="showComprobante && orden"
+      :orden="{ ...orden, ...vehiculoExt }"
+      :detalles="detalles"
+      :workers="ordenWorkers"
+      :company-name="companyName"
+      @close="showComprobante = false"
+    />
+
     <!-- Modal: Registrar Recibo -->
     <FacturarRecibo
       v-if="showFacturarRecibo && orden"
@@ -433,6 +449,7 @@ import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import FacturarRecibo from '@/components/billing/FacturarRecibo.vue'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
+import ComprobanteIngreso from '@/components/talleres/ComprobanteIngreso.vue'
 import { showConfirm } from '@/utils/toast'
 
 const route        = useRoute()
@@ -440,9 +457,12 @@ const router       = useRouter()
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 const billingConfig      = computed(() => companyStore.billingConfig)
+const companyName        = computed(() => companyStore.selectedCompany?.name || '')
 const showFacturarRecibo = ref(false)
 const showImprimirRecibo = ref(false)
+const showComprobante    = ref(false)
 const reciboData         = ref(null)
+const ordenWorkers       = ref([])
 const ordenId      = computed(() => route.params.id)
 
 // ── Acordeón ─────────────────────────────────────────────────────────────────
@@ -479,9 +499,10 @@ async function cargarOrden() {
     const { data } = await api.get(`/api/talleres/ordenes/${ordenId.value}`, {
       params: { company_id: companyId.value }
     })
-    orden.value    = data.orden ?? data
-    detalles.value = data.detalles ?? []
-    fotos.value    = data.fotos ?? []
+    orden.value       = data.orden ?? data
+    detalles.value    = data.detalles ?? []
+    fotos.value       = data.fotos ?? []
+    ordenWorkers.value = data.workers ?? []
     vehiculoExt.value = {
       tipo:   orden.value.tipo_vehiculo || '',
       marca:  orden.value.marca  || '',
@@ -933,6 +954,8 @@ textarea.fc { resize:vertical; }
 .btn-save     { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
 .btn-save:hover:not(:disabled) { background:#1e40af; }
 .btn-save:disabled { opacity:.6; cursor:not-allowed; }
+.btn-comprobante { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#64748b; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+.btn-comprobante:hover { background:#475569; }
 .btn-recibo { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#059669; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
 .btn-recibo:hover:not(:disabled) { background:#047857; }
 .btn-recibo:disabled { opacity:.5; cursor:not-allowed; }
