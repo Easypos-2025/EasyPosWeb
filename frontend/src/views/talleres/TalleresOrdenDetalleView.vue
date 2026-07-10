@@ -304,11 +304,12 @@
               Recibo
             </button>
 
-            <!-- PE: solo si tiene PE habilitado (disabled - próximamente) -->
-            <button v-if="billingConfig.has_pos_electronico"
+            <!-- PE: siempre visible; habilitado solo si la empresa tiene PE activo -->
+            <button
               class="btn-facturar-pe"
-              disabled
-              title="Facturación electrónica — Próximamente">
+              :disabled="!billingConfig.has_pos_electronico"
+              :title="billingConfig.has_pos_electronico ? 'Factura Electrónica' : 'Esta empresa no tiene facturación electrónica habilitada'"
+            >
               <i class="bi bi-file-earmark-text-fill"></i>
               Factura PE
             </button>
@@ -908,7 +909,9 @@ textarea.fc { resize:vertical; }
 .btn-recibo { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#059669; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
 .btn-recibo:hover:not(:disabled) { background:#047857; }
 .btn-recibo:disabled { opacity:.5; cursor:not-allowed; }
-.btn-facturar-pe { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#e2e8f0; color:#94a3b8; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:not-allowed; }
+.btn-facturar-pe { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#2563eb; color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+.btn-facturar-pe:hover:not(:disabled) { background:#1d4ed8; }
+.btn-facturar-pe:disabled { background:#e2e8f0; color:#94a3b8; cursor:not-allowed; opacity:1; }
 .badge-entregada { display:flex; align-items:center; gap:6px; background:#dcfce7; color:#166534; font-size:13px; font-weight:700; padding:10px 18px; border-radius:10px; }
 .btn-cancelar { display:flex; align-items:center; gap:7px; padding:11px 22px; background:#fff; color:#dc2626; border:2px solid #fca5a5; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; margin-left:auto; }
 .btn-cancelar:hover { background:#fee2e2; }
