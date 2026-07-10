@@ -290,7 +290,7 @@
         </div>
 
         <!-- ── Botones de acción ──────────────────────────────────── -->
-        <div class="action-bar" v-if="orden.estado !== 'cancelada'">
+        <div class="action-bar" v-if="orden.estado !== 'cancelada' && orden.estado !== 'anulada'">
           <button class="btn-save" :disabled="guardando" @click="guardarCambios">
             <i v-if="guardando" class="bi bi-hourglass-split spin"></i>
             <i v-else class="bi bi-floppy-fill"></i>
@@ -318,13 +318,16 @@
             <i class="bi bi-check-circle-fill"></i> Entregada
           </div>
 
-          <button class="btn-cancelar" @click="cancelarOrden">
-            <i class="bi bi-x-circle-fill"></i>
-            Eliminar Orden
+          <button class="btn-cancelar" @click="anularOrden" v-if="orden.estado !== 'anulada'">
+            <i class="bi bi-slash-circle-fill"></i>
+            Anular Orden
           </button>
         </div>
         <div class="action-bar" v-else>
-          <div class="orden-cancelada-msg"><i class="bi bi-x-circle-fill"></i> Orden cancelada</div>
+          <div class="orden-cancelada-msg">
+            <i class="bi bi-slash-circle-fill"></i>
+            Orden {{ orden.estado === 'anulada' ? 'anulada' : 'cancelada' }}
+          </div>
         </div>
 
       </div><!-- /tab editar -->
@@ -394,6 +397,15 @@
       @close="showFacturarRecibo = false"
     />
 
+    <!-- Modal: Imprimir Recibo -->
+    <ImprimirRecibo
+      v-if="showImprimirRecibo && reciboData"
+      :receipt-data="reciboData"
+      :placa="orden?.placa_vehiculo || ''"
+      :company-id="companyId"
+      @close="onImprimirClose"
+    />
+
     <!-- Zoom foto -->
     <Teleport to="body">
       <div v-if="fotoZoom" class="foto-overlay" @click="fotoZoom=null">
@@ -420,14 +432,17 @@ import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import FacturarRecibo from '@/components/billing/FacturarRecibo.vue'
+import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 import { showConfirm } from '@/utils/toast'
 
 const route        = useRoute()
 const router       = useRouter()
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
-const billingConfig = computed(() => companyStore.billingConfig)
+const billingConfig      = computed(() => companyStore.billingConfig)
 const showFacturarRecibo = ref(false)
+const showImprimirRecibo = ref(false)
+const reciboData         = ref(null)
 const ordenId      = computed(() => route.params.id)
 
 // ── Acordeón ─────────────────────────────────────────────────────────────────
@@ -524,18 +539,28 @@ const itemsParaFacturar = computed(() =>
 function onReciboSuccess(data) {
   showFacturarRecibo.value = false
   if (orden.value) orden.value.estado = 'entregada'
-  mostrarToast(`Recibo #${data.receipt_number} registrado. Orden entregada.`, 'ok')
+  reciboData.value = data
+  showImprimirRecibo.value = true
 }
 
-// ── Cancelar orden ────────────────────────────────────────────────────────────
-async function cancelarOrden() {
-  if (!(await showConfirm('¿Eliminar (cancelar) esta orden? Esta acción no se puede deshacer.', 'Sí, cancelar'))) return
+function onImprimirClose() {
+  showImprimirRecibo.value = false
+  router.push('/talleres/ordenes')
+}
+
+// ── Anular orden ──────────────────────────────────────────────────────────────
+async function anularOrden() {
+  if (!(await showConfirm(
+    '¿Anular esta orden? Quedará registrada como anulada y no se podrá facturar.',
+    'Sí, anular'
+  ))) return
   try {
     await api.patch(`/api/talleres/ordenes/${ordenId.value}/estado`, {
-      company_id: companyId.value, estado: 'cancelada',
+      company_id: companyId.value, estado: 'anulada',
     })
-    mostrarToast('Orden cancelada', 'ok')
-    setTimeout(() => router.push('/talleres/ordenes'), 1000)
+    if (orden.value) orden.value.estado = 'anulada'
+    mostrarToast('Orden anulada', 'ok')
+    setTimeout(() => router.push('/talleres/ordenes'), 1200)
   } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error', 'error') }
 }
 
@@ -750,7 +775,8 @@ async function cargarHistCliente() {
 function estadoLabel(e) {
   return {
     abierta: 'Abierta', en_proceso: 'En Proceso',
-    terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada',
+    terminada: 'Terminada', entregada: 'Entregada',
+    cancelada: 'Cancelada', anulada: 'Anulada',
   }[e] ?? e ?? '—'
 }
 function fmtFecha(v) {
@@ -802,6 +828,7 @@ onMounted(init)
 .es-terminada  { background:#dcfce7; color:#166534; }
 .es-entregada  { background:#f1f5f9; color:#64748b; }
 .es-cancelada  { background:#fee2e2; color:#b91c1c; }
+.es-anulada    { background:#fef3c7; color:#92400e; }
 
 /* ── Tabs ────────────────────────────────────────────────────────────── */
 .od-tabs { display:flex; gap:4px; background:#f1f5f9; border-radius:10px; padding:4px; }

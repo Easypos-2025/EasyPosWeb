@@ -1880,6 +1880,17 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
+        # ── Migración: agregar 'anulada' al ENUM de service_orders.estado ─────
+        try:
+            await db.execute(text(
+                "ALTER TABLE service_orders MODIFY COLUMN estado "
+                "ENUM('abierta','en_proceso','terminada','entregada','cancelada','anulada') "
+                "NOT NULL DEFAULT 'abierta'"
+            ))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
 
 # ===============================
 # RATE LIMITER (in-memory, single server)

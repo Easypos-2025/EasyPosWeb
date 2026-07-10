@@ -592,7 +592,7 @@ const FILTROS_HIST = [
   { val: 'abiertas', label: 'Abiertas' },
   { val: 'cerradas', label: 'Cerradas' },
 ]
-const LABELS_ESTADO = { abierta: 'Abierta', en_proceso: 'En proceso', terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada' }
+const LABELS_ESTADO = { abierta: 'Abierta', en_proceso: 'En proceso', terminada: 'Terminada', entregada: 'Entregada', cancelada: 'Cancelada', anulada: 'Anulada' }
 const historialFiltrado = computed(() => {
   if (filtroHist.value === 'abiertas')
     return historial.value.filter(o => ['abierta','en_proceso','terminada'].includes(o.estado))
@@ -799,6 +799,7 @@ onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.v
 .es-terminada  { background:#dcfce7; color:#166534; }
 .es-entregada  { background:#f1f5f9; color:#64748b; }
 .es-cancelada  { background:#fee2e2; color:#b91c1c; }
+.es-anulada    { background:#fef3c7; color:#92400e; }
 .oa-paginacion { display:flex; align-items:center; justify-content:center; gap:12px; padding:12px; border-top:1px solid #f1f5f9; }
 .pag-btn  { width:32px; height:32px; border-radius:8px; border:1.5px solid #e2e8f0; background:#f8fafc; cursor:pointer; color:#475569; display:flex; align-items:center; justify-content:center; }
 .pag-btn:hover:not(:disabled) { background:#eff6ff; color:#1d4ed8; }
@@ -890,6 +891,7 @@ textarea.form-ctrl { resize:vertical; }
 .hb-abierta    { background:#dbeafe; color:#1d4ed8; } .hb-en_proceso { background:#fef3c7; color:#92400e; }
 .hb-terminada  { background:#dcfce7; color:#16a34a; } .hb-entregada  { background:#f1f5f9; color:#64748b; }
 .hb-cancelada  { background:#fee2e2; color:#b91c1c; }
+.hb-anulada    { background:#fef3c7; color:#92400e; }
 .hi-fecha  { font-size:11px; color:#94a3b8; }
 .hi-center { display:flex; align-items:center; gap:10px; flex:1; font-size:12px; color:#64748b; }
 .hi-total  { font-weight:700; color:#1e293b; }

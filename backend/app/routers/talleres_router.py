@@ -1713,6 +1713,23 @@ async def get_payment_types(
     return [dict(r) for r in rows]
 
 
+# ─── Impresoras POS de la empresa ────────────────────────────────────────────
+
+@router.get("/printers")
+async def get_printers(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    rows = (await db.execute(text("""
+        SELECT id, name, ip, port, connection_type, is_active
+        FROM pos_printers
+        WHERE company_id = :cid AND is_active = 1
+        ORDER BY id
+    """), {"cid": company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
 # ─── Registrar Recibo ─────────────────────────────────────────────────────────
 
 @router.post("/ordenes/{orden_id}/recibo")
@@ -1842,4 +1859,121 @@ async def registrar_recibo(
     """), {"oid": orden_id, "cid": company_id})
 
     await db.commit()
-    return {"receipt_number": receipt_number, "total": grand_total, "tip": tip_amount}
+    return {
+        "receipt_number": receipt_number,
+        "fecha": fecha,
+        "hora": hora,
+        "subtotal": subtotal,
+        "tip": tip_amount,
+        "total": grand_total,
+        "items": [{"nombre": it["nombre"], "cantidad": float(it["cantidad"]), "precio": float(it["precio"])} for it in items],
+    }
+
+
+# ─── Imprimir recibo en impresora POS (socket TCP ESC/POS) ───────────────────
+
+@router.post("/imprimir-pos")
+async def imprimir_pos(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    import socket as _socket
+
+    company_id     = body.get("company_id")
+    printer_id     = body.get("printer_id")
+    receipt_number = str(body.get("receipt_number", ""))
+
+    if not company_id or not printer_id:
+        raise HTTPException(status_code=422, detail="company_id y printer_id requeridos")
+
+    # Datos de la impresora
+    printer = (await db.execute(text("""
+        SELECT name, ip, port FROM pos_printers
+        WHERE id = :pid AND company_id = :cid AND is_active = 1
+    """), {"pid": printer_id, "cid": company_id})).mappings().first()
+
+    if not printer or not printer["ip"]:
+        raise HTTPException(status_code=404, detail="Impresora no encontrada o sin IP configurada")
+
+    # Datos del recibo
+    receipt = (await db.execute(text("""
+        SELECT r.receipt_number, r.date, r.cash_amount, r.tip, r.amount_without_tip
+        FROM pos_receipts r
+        WHERE r.receipt_number = :rn AND r.company_id = :cid
+    """), {"rn": receipt_number, "cid": company_id})).mappings().first()
+
+    items_r = (await db.execute(text("""
+        SELECT notes AS nombre, quantity AS cantidad, amount AS precio
+        FROM pos_receipt_order_details
+        WHERE receipt_number = :rn AND company_id = :cid
+    """), {"rn": receipt_number, "cid": company_id})).mappings().all()
+
+    pagos_r = (await db.execute(text("""
+        SELECT pt.name, prm.amount
+        FROM pos_receipt_payment_methods prm
+        LEFT JOIN pos_payment_types pt ON pt.id = prm.payment_method_id AND pt.company_id = prm.company_id
+        WHERE prm.invoice_number = :rn AND prm.company_id = :cid
+    """), {"rn": receipt_number, "cid": company_id})).mappings().all()
+
+    company_name = (await db.execute(text(
+        "SELECT name FROM companies WHERE id_company = :cid"
+    ), {"cid": company_id})).scalar() or "EasyPos"
+
+    # ── Construir texto ESC/POS ───────────────────────────────────────────────
+    ESC = b'\x1b'
+    INIT        = ESC + b'@'
+    BOLD_ON     = ESC + b'\x45\x01'
+    BOLD_OFF    = ESC + b'\x45\x00'
+    CENTER      = ESC + b'\x61\x01'
+    LEFT        = ESC + b'\x61\x00'
+    LF          = b'\n'
+    CUT         = ESC + b'\x69'          # cut parcial
+
+    def line(txt="", bold=False, center=False):
+        enc = (BOLD_ON if bold else b'') + (CENTER if center else LEFT)
+        return enc + txt.encode('utf-8', errors='replace') + LF + (BOLD_OFF if bold else b'')
+
+    def dline(left_txt, right_txt, width=32):
+        spaces = max(1, width - len(left_txt) - len(right_txt))
+        return LEFT + (left_txt + ' ' * spaces + right_txt).encode('utf-8', errors='replace') + LF
+
+    buf = bytearray()
+    buf += INIT
+    buf += line(company_name, bold=True, center=True)
+    buf += line("RECIBO DE VENTA", bold=True, center=True)
+    buf += line(f"Recibo N°: {receipt_number}", center=True)
+    if receipt:
+        buf += line(f"Fecha: {receipt['date']}", center=True)
+    buf += line("--------------------------------")
+    for it in items_r:
+        nombre = str(it["nombre"])[:24]
+        total  = float(it["precio"]) * float(it["cantidad"])
+        buf += dline(nombre, f"${int(total):,}")
+    buf += line("--------------------------------")
+    if receipt:
+        buf += dline("Subtotal", f"${int(receipt['amount_without_tip']):,}")
+        if receipt["tip"]:
+            buf += dline("Propina", f"${int(receipt['tip']):,}")
+    buf += line("", bold=True)
+    total_val = receipt["cash_amount"] if receipt else 0
+    buf += dline("TOTAL", f"${int(total_val):,}", width=32)
+    buf += line("--------------------------------")
+    for p in pagos_r:
+        buf += dline(str(p["name"] or "Pago"), f"${int(p['amount']):,}")
+    buf += line("--------------------------------")
+    buf += line("Gracias por su preferencia!", center=True)
+    buf += LF + LF + LF
+    buf += CUT
+
+    # ── Enviar via socket TCP ─────────────────────────────────────────────────
+    try:
+        with _socket.create_connection(
+            (printer["ip"], int(printer["port"] or 9100)),
+            timeout=5,
+        ) as sock:
+            sock.sendall(bytes(buf))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error al conectar con la impresora: {e}")
+
+    return {"ok": True, "printer": printer["name"]}

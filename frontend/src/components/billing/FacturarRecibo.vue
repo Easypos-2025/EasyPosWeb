@@ -247,7 +247,15 @@ async function registrar() {
       })),
     })
     showToast(`Recibo #${res.data.receipt_number} registrado`, "success", 2500)
-    emit("success", res.data)
+    emit("success", {
+      ...res.data,
+      ordenNumero: props.ordenNumero,
+      pagos: pagos.value.map(p => ({
+        name:   paymentTypes.value.find(pt => pt.id === p.payment_method_id)?.name || "Pago",
+        amount: parseFloat(p.amount),
+      })),
+      tipLabel: billingConfig.value.tip_label || "Propina",
+    })
   } catch (e) {
     showToast(e?.response?.data?.detail || "Error al registrar recibo", "error", 3000)
   }
