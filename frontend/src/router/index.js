@@ -509,6 +509,14 @@ const routes = [
         meta: { title: "Mapa de Menú por Perfil" }
       },
 
+      {
+        path: "/sysadmin/monitor",
+        name: "SysAdminMonitorView",
+        component: () => import("@/views/sysadmin/SysAdminMonitorView.vue"),
+        requiresAuth: true,
+        meta: { title: "Monitor de Ventas" }
+      },
+
       // ── Facturación (placeholders) ──────────────────────────────
       {
         path: "/facturacion/ventas/factura",
