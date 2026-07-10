@@ -283,8 +283,43 @@ async def crear_orden(
             INSERT IGNORE INTO service_order_workers (order_id, worker_id, rol_en_orden)
             VALUES (:oid, :wid, :rol)
         """), {"oid": new_id, "wid": w["worker_id"], "rol": w.get("rol", "")})
-    await db.commit()
 
+    # Insertar detalles enviados en el mismo payload (todo en una transacción)
+    _tipos_validos = {"mecanica", "lavado", "latoneria", "pintura", "repuesto"}
+    for det in (payload.get("detalles") or []):
+        cantidad  = float(det.get("cantidad", 1))
+        precio    = float(det.get("precio_unitario", 0))
+        descuento = float(det.get("descuento", 0))
+        subtotal  = round((precio * cantidad) - descuento, 2)
+        tipo_det  = det.get("tipo_item", "mecanica")
+        if tipo_det not in _tipos_validos:
+            tipo_det = "mecanica"
+        await db.execute(text("""
+            INSERT INTO service_order_details (
+                order_id, tipo_item, product_id, nombre,
+                worker_id, modified_by, cantidad,
+                precio_unitario, descuento, subtotal,
+                mano_obra_operario, profession_id
+            ) VALUES (
+                :oid, :tipo, :pid, :nom,
+                :wid, :uid, :qty,
+                :pu, :desc, :sub, 0, :prof
+            )
+        """), {
+            "oid":  new_id,
+            "tipo": tipo_det,
+            "pid":  det.get("product_id"),
+            "nom":  det.get("nombre", ""),
+            "wid":  det.get("worker_id"),
+            "uid":  current_user.id,
+            "qty":  cantidad,
+            "pu":   precio,
+            "desc": descuento,
+            "sub":  subtotal,
+            "prof": det.get("profession_id"),
+        })
+
+    await db.commit()
     return {"id": new_id, "numero_orden": numero_orden}
 
 

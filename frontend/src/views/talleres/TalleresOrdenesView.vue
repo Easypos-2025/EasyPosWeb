@@ -182,62 +182,169 @@
         </button>
       </div>
 
-      <!-- TAB NUEVA ORDEN -->
-      <div v-if="tabActivo === 'nueva'" class="form-card">
-        <div class="form-grid">
-          <div class="fg">
-            <label>Tipo de servicio *</label>
-            <select v-model="orden.tipo_item" class="form-ctrl">
-              <option value="mecanica">🔧 Mecánica</option>
-              <option value="lavado">🚿 Lavado / Estética</option>
-              <option value="latoneria">🔨 Latonería</option>
-              <option value="pintura">🎨 Pintura</option>
-              <option value="diagnostico">🔍 Diagnóstico</option>
-            </select>
+      <!-- TAB NUEVA ORDEN — flujo 2 secciones en memoria -->
+      <div v-if="tabActivo === 'nueva'" class="nueva-orden-flow">
+
+        <!-- ── SECCIÓN ENCABEZADO ─────────────────────────────────────────── -->
+        <div :class="['no-sec', { 'no-sec-collapsed': seccionActiva === 'detalle' }]">
+          <div class="no-sec-hdr" @click="seccionActiva === 'detalle' && (seccionActiva = 'header')">
+            <span class="no-sec-icon"><i class="bi bi-clipboard2-fill"></i></span>
+            <span class="no-sec-title">Encabezado de la orden</span>
+            <span v-if="seccionActiva === 'detalle'" class="no-sec-edit"><i class="bi bi-pencil-fill"></i> Editar</span>
           </div>
-          <div class="fg">
-            <label>Km al ingreso</label>
-            <input v-model.number="orden.km_ingreso" type="number" class="form-ctrl" placeholder="220000" />
+
+          <!-- Resumen colapsado -->
+          <div v-if="seccionActiva === 'detalle'" class="no-sec-resumen">
+            <span><i class="bi bi-person-badge-fill"></i>
+              {{ workers.find(w => w.id === orden.jefe_responsable_id)?.name || '—' }}</span>
+            <span><i class="bi bi-wrench-adjustable-circle-fill"></i>
+              {{ workers.find(w => w.id === orden.operario_id)?.name || '—' }}</span>
+            <span class="no-diag">{{ orden.diagnostico }}</span>
           </div>
-          <div class="fg span2">
-            <label>Diagnóstico / Descripción del trabajo</label>
-            <textarea v-model="orden.diagnostico" class="form-ctrl" rows="3"
-              placeholder="Describe el problema reportado o el servicio solicitado…"></textarea>
-          </div>
-          <div class="fg">
-            <label>Jefe responsable</label>
-            <select v-model="orden.jefe_responsable_id" class="form-ctrl">
-              <option value="">— Sin asignar —</option>
-              <option v-for="w in jefes" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Operario principal</label>
-            <select v-model="orden.operario_id" class="form-ctrl">
-              <option value="">— Sin asignar —</option>
-              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>¿Convenio empresarial?</label>
-            <select v-model="orden.convenio_id" class="form-ctrl">
-              <option value="">— Particular —</option>
-              <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Promesa de entrega</label>
-            <CustomDatePicker v-model="orden.promesa_entrega" />
+
+          <!-- Formulario encabezado -->
+          <div v-else class="no-sec-body">
+            <div class="form-grid">
+              <div class="fg">
+                <label>Jefe de área *</label>
+                <select v-model="orden.jefe_responsable_id" :class="['form-ctrl', { 'fc-error': errores.jefe }]">
+                  <option value="">— Sin asignar —</option>
+                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                    {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
+                  </option>
+                </select>
+                <span v-if="errores.jefe" class="field-err">{{ errores.jefe }}</span>
+              </div>
+              <div class="fg">
+                <label>Operario principal *</label>
+                <select v-model="orden.operario_id" :class="['form-ctrl', { 'fc-error': errores.operario }]">
+                  <option value="">— Sin asignar —</option>
+                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                    {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
+                  </option>
+                </select>
+                <span v-if="errores.operario" class="field-err">{{ errores.operario }}</span>
+              </div>
+              <div class="fg span2">
+                <label>Diagnóstico / Descripción del trabajo *</label>
+                <textarea v-model="orden.diagnostico" :class="['form-ctrl', { 'fc-error': errores.diagnostico }]" rows="3"
+                  placeholder="Describe el problema reportado o el servicio solicitado…"></textarea>
+                <span v-if="errores.diagnostico" class="field-err">{{ errores.diagnostico }}</span>
+              </div>
+            </div>
+
+            <!-- Datos opcionales colapsables -->
+            <div class="opc-card">
+              <button class="opc-toggle" type="button" @click="showOpcionales = !showOpcionales">
+                <i :class="showOpcionales ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+                Datos opcionales (km · entrega · convenio)
+              </button>
+              <div v-if="showOpcionales" class="opc-body">
+                <div class="form-grid">
+                  <div class="fg">
+                    <label>Km al ingreso</label>
+                    <input v-model.number="orden.km_ingreso" type="number" class="form-ctrl" placeholder="220000" />
+                  </div>
+                  <div class="fg">
+                    <label>Promesa de entrega</label>
+                    <CustomDatePicker v-model="orden.promesa_entrega" />
+                  </div>
+                  <div class="fg span2">
+                    <label>¿Convenio empresarial?</label>
+                    <select v-model="orden.convenio_id" class="form-ctrl">
+                      <option value="">— Particular —</option>
+                      <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-secondary" @click="limpiarBusqueda">Cancelar</button>
+              <button class="btn btn-primary" @click="irADetalle">
+                <i class="bi bi-arrow-right-circle-fill"></i> Continuar al detalle
+              </button>
+            </div>
           </div>
         </div>
-        <div class="form-actions">
-          <button class="btn btn-secondary" @click="limpiarBusqueda">Cancelar</button>
-          <button class="btn btn-primary" @click="abrirOrden" :disabled="loadingGuardar">
-            <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
-            <i v-else class="bi bi-clipboard2-check-fill"></i>
-            Abrir Orden de Servicio
-          </button>
+
+        <!-- ── SECCIÓN DETALLE DE SERVICIOS ──────────────────────────────── -->
+        <div v-if="seccionActiva === 'detalle'" class="no-sec">
+          <div class="no-sec-hdr">
+            <span class="no-sec-icon"><i class="bi bi-list-ul"></i></span>
+            <span class="no-sec-title">Servicios y productos</span>
+            <span class="no-sec-badge">{{ detallesOrden.length }} ítem(s)</span>
+          </div>
+          <div class="no-sec-body">
+
+            <!-- Buscador catálogo -->
+            <div class="det-add-row">
+              <div class="det-buscar-wrap">
+                <input v-model="detBusq" class="form-ctrl det-busq-input"
+                  placeholder="🔍 Buscar servicio o producto del catálogo…"
+                  autocomplete="off"
+                  @input="onDetBusqInput"
+                  @blur="hideCatalogDelayed"
+                  @focus="catalogSugs.length && (showCatalog = true)" />
+                <ul v-if="showCatalog && catalogSugs.length" class="catalog-dropdown">
+                  <li v-for="p in catalogSugs" :key="p.id" class="cat-item"
+                      @mousedown.prevent="agregarDelCatalogo(p)">
+                    <span :class="['cat-tipo', `ct-${p.service_type || 'repuesto'}`]">
+                      {{ tipoLabel(p.service_type || (p.item_type === 'producto' ? 'repuesto' : 'mecanica')) }}
+                    </span>
+                    <span class="cat-nombre">{{ p.name }}</span>
+                    <span class="cat-precio">{{ fmt(p.base_price) }}</span>
+                  </li>
+                </ul>
+              </div>
+              <button class="btn-det-libre" @click="agregarLineaLibre">
+                <i class="bi bi-plus-circle-fill"></i> Línea libre
+              </button>
+            </div>
+            <span v-if="errores.detalles" class="field-err" style="margin-bottom:8px;display:block">{{ errores.detalles }}</span>
+
+            <!-- Lista de ítems en memoria -->
+            <div v-if="detallesOrden.length === 0" class="det-empty">
+              <i class="bi bi-inbox"></i>
+              <p>Busca un servicio/producto o agrega una línea libre</p>
+            </div>
+            <div v-else class="det-lista">
+              <div v-for="(d, i) in detallesOrden" :key="i" class="det-item">
+                <select v-model="d.tipo_item" class="det-tipo-sel">
+                  <option value="mecanica">🔧 Mecánica</option>
+                  <option value="lavado">🚿 Lavado</option>
+                  <option value="latoneria">🔨 Latonería</option>
+                  <option value="pintura">🎨 Pintura</option>
+                  <option value="repuesto">📦 Repuesto</option>
+                </select>
+                <input v-model="d.nombre" class="det-nombre" placeholder="Nombre del servicio / producto" />
+                <input v-model.number="d.cantidad" type="number" min="1" class="det-qty" />
+                <input v-model.number="d.precio_unitario" type="number" min="0" class="det-precio" placeholder="Precio" />
+                <span class="det-sub">{{ fmt((d.cantidad || 1) * (d.precio_unitario || 0)) }}</span>
+                <button class="det-del" @click="detallesOrden.splice(i, 1)" title="Eliminar">
+                  <i class="bi bi-trash3-fill"></i>
+                </button>
+              </div>
+              <div class="det-total-row">
+                <span>Total estimado</span>
+                <strong>{{ fmt(detallesOrden.reduce((s,d) => s + (d.cantidad||1)*(d.precio_unitario||0), 0)) }}</strong>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-secondary" @click="seccionActiva = 'header'">
+                <i class="bi bi-arrow-left-circle-fill"></i> Editar encabezado
+              </button>
+              <button class="btn btn-primary" @click="abrirOrden" :disabled="loadingGuardar">
+                <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
+                <i v-else class="bi bi-clipboard2-check-fill"></i>
+                Abrir Orden de Servicio
+              </button>
+            </div>
+          </div>
         </div>
+
       </div>
 
       <!-- TAB HISTORIAL -->
@@ -374,63 +481,152 @@
         </div>
       </div>
 
-      <!-- WIZARD PASO 2: Nueva orden (vehículo recién registrado) -->
-      <div v-if="wizardStep === 2" class="form-card">
-        <div class="form-section-title"><i class="bi bi-clipboard2-plus-fill"></i> Abrir Orden de Servicio</div>
-        <div class="form-grid">
-          <div class="fg">
-            <label>Tipo de servicio *</label>
-            <select v-model="orden.tipo_item" class="form-ctrl">
-              <option value="mecanica">🔧 Mecánica</option>
-              <option value="lavado">🚿 Lavado / Estética</option>
-              <option value="latoneria">🔨 Latonería</option>
-              <option value="pintura">🎨 Pintura</option>
-              <option value="diagnostico">🔍 Diagnóstico</option>
-            </select>
+      <!-- WIZARD PASO 2: Nueva orden (vehículo recién registrado) — mismo flujo -->
+      <div v-if="wizardStep === 2" class="nueva-orden-flow">
+
+        <div :class="['no-sec', { 'no-sec-collapsed': seccionActiva === 'detalle' }]">
+          <div class="no-sec-hdr" @click="seccionActiva === 'detalle' && (seccionActiva = 'header')">
+            <span class="no-sec-icon"><i class="bi bi-clipboard2-fill"></i></span>
+            <span class="no-sec-title">Encabezado de la orden</span>
+            <span v-if="seccionActiva === 'detalle'" class="no-sec-edit"><i class="bi bi-pencil-fill"></i> Editar</span>
           </div>
-          <div class="fg">
-            <label>Km al ingreso</label>
-            <input v-model.number="orden.km_ingreso" type="number" class="form-ctrl" />
+          <div v-if="seccionActiva === 'detalle'" class="no-sec-resumen">
+            <span><i class="bi bi-person-badge-fill"></i> {{ workers.find(w => w.id === orden.jefe_responsable_id)?.name || '—' }}</span>
+            <span><i class="bi bi-wrench-adjustable-circle-fill"></i> {{ workers.find(w => w.id === orden.operario_id)?.name || '—' }}</span>
+            <span class="no-diag">{{ orden.diagnostico }}</span>
           </div>
-          <div class="fg span2">
-            <label>Diagnóstico / Descripción</label>
-            <textarea v-model="orden.diagnostico" class="form-ctrl" rows="3"
-              placeholder="Describe el problema o servicio solicitado…"></textarea>
-          </div>
-          <div class="fg">
-            <label>Jefe responsable</label>
-            <select v-model="orden.jefe_responsable_id" class="form-ctrl">
-              <option value="">— Sin asignar —</option>
-              <option v-for="w in jefes" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Operario principal</label>
-            <select v-model="orden.operario_id" class="form-ctrl">
-              <option value="">— Sin asignar —</option>
-              <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>¿Convenio empresarial?</label>
-            <select v-model="orden.convenio_id" class="form-ctrl">
-              <option value="">— Particular —</option>
-              <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Promesa de entrega</label>
-            <CustomDatePicker v-model="orden.promesa_entrega" />
+          <div v-else class="no-sec-body">
+            <div class="form-grid">
+              <div class="fg">
+                <label>Jefe de área *</label>
+                <select v-model="orden.jefe_responsable_id" :class="['form-ctrl', { 'fc-error': errores.jefe }]">
+                  <option value="">— Sin asignar —</option>
+                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                    {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
+                  </option>
+                </select>
+                <span v-if="errores.jefe" class="field-err">{{ errores.jefe }}</span>
+              </div>
+              <div class="fg">
+                <label>Operario principal *</label>
+                <select v-model="orden.operario_id" :class="['form-ctrl', { 'fc-error': errores.operario }]">
+                  <option value="">— Sin asignar —</option>
+                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                    {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
+                  </option>
+                </select>
+                <span v-if="errores.operario" class="field-err">{{ errores.operario }}</span>
+              </div>
+              <div class="fg span2">
+                <label>Diagnóstico / Descripción *</label>
+                <textarea v-model="orden.diagnostico" :class="['form-ctrl', { 'fc-error': errores.diagnostico }]" rows="3"
+                  placeholder="Describe el problema o servicio solicitado…"></textarea>
+                <span v-if="errores.diagnostico" class="field-err">{{ errores.diagnostico }}</span>
+              </div>
+            </div>
+            <div class="opc-card">
+              <button class="opc-toggle" type="button" @click="showOpcionales = !showOpcionales">
+                <i :class="showOpcionales ? 'bi bi-chevron-up' : 'bi bi-chevron-down'"></i>
+                Datos opcionales (km · entrega · convenio)
+              </button>
+              <div v-if="showOpcionales" class="opc-body">
+                <div class="form-grid">
+                  <div class="fg">
+                    <label>Km al ingreso</label>
+                    <input v-model.number="orden.km_ingreso" type="number" class="form-ctrl" placeholder="0" />
+                  </div>
+                  <div class="fg">
+                    <label>Promesa de entrega</label>
+                    <CustomDatePicker v-model="orden.promesa_entrega" />
+                  </div>
+                  <div class="fg span2">
+                    <label>¿Convenio empresarial?</label>
+                    <select v-model="orden.convenio_id" class="form-ctrl">
+                      <option value="">— Particular —</option>
+                      <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary" @click="wizardStep = 1">Atrás</button>
+              <button class="btn btn-primary" @click="irADetalle">
+                <i class="bi bi-arrow-right-circle-fill"></i> Continuar al detalle
+              </button>
+            </div>
           </div>
         </div>
-        <div class="form-actions">
-          <button class="btn btn-secondary" @click="wizardStep = 1">Atrás</button>
-          <button class="btn btn-primary" @click="abrirOrden" :disabled="loadingGuardar">
-            <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
-            <i v-else class="bi bi-clipboard2-check-fill"></i>
-            Abrir Orden de Servicio
-          </button>
+
+        <!-- Detalle (mismo componente lógico) -->
+        <div v-if="seccionActiva === 'detalle'" class="no-sec">
+          <div class="no-sec-hdr">
+            <span class="no-sec-icon"><i class="bi bi-list-ul"></i></span>
+            <span class="no-sec-title">Servicios y productos</span>
+            <span class="no-sec-badge">{{ detallesOrden.length }} ítem(s)</span>
+          </div>
+          <div class="no-sec-body">
+            <div class="det-add-row">
+              <div class="det-buscar-wrap">
+                <input v-model="detBusq" class="form-ctrl det-busq-input"
+                  placeholder="🔍 Buscar servicio o producto del catálogo…"
+                  autocomplete="off"
+                  @input="onDetBusqInput"
+                  @blur="hideCatalogDelayed"
+                  @focus="catalogSugs.length && (showCatalog = true)" />
+                <ul v-if="showCatalog && catalogSugs.length" class="catalog-dropdown">
+                  <li v-for="p in catalogSugs" :key="p.id" class="cat-item"
+                      @mousedown.prevent="agregarDelCatalogo(p)">
+                    <span :class="['cat-tipo', `ct-${p.service_type || 'repuesto'}`]">
+                      {{ tipoLabel(p.service_type || (p.item_type === 'producto' ? 'repuesto' : 'mecanica')) }}
+                    </span>
+                    <span class="cat-nombre">{{ p.name }}</span>
+                    <span class="cat-precio">{{ fmt(p.base_price) }}</span>
+                  </li>
+                </ul>
+              </div>
+              <button class="btn-det-libre" @click="agregarLineaLibre">
+                <i class="bi bi-plus-circle-fill"></i> Línea libre
+              </button>
+            </div>
+            <span v-if="errores.detalles" class="field-err" style="margin-bottom:8px;display:block">{{ errores.detalles }}</span>
+            <div v-if="detallesOrden.length === 0" class="det-empty">
+              <i class="bi bi-inbox"></i>
+              <p>Busca un servicio/producto o agrega una línea libre</p>
+            </div>
+            <div v-else class="det-lista">
+              <div v-for="(d, i) in detallesOrden" :key="i" class="det-item">
+                <select v-model="d.tipo_item" class="det-tipo-sel">
+                  <option value="mecanica">🔧 Mecánica</option>
+                  <option value="lavado">🚿 Lavado</option>
+                  <option value="latoneria">🔨 Latonería</option>
+                  <option value="pintura">🎨 Pintura</option>
+                  <option value="repuesto">📦 Repuesto</option>
+                </select>
+                <input v-model="d.nombre" class="det-nombre" placeholder="Nombre del servicio / producto" />
+                <input v-model.number="d.cantidad" type="number" min="1" class="det-qty" />
+                <input v-model.number="d.precio_unitario" type="number" min="0" class="det-precio" placeholder="Precio" />
+                <span class="det-sub">{{ fmt((d.cantidad||1)*(d.precio_unitario||0)) }}</span>
+                <button class="det-del" @click="detallesOrden.splice(i,1)"><i class="bi bi-trash3-fill"></i></button>
+              </div>
+              <div class="det-total-row">
+                <span>Total estimado</span>
+                <strong>{{ fmt(detallesOrden.reduce((s,d) => s+(d.cantidad||1)*(d.precio_unitario||0),0)) }}</strong>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary" @click="seccionActiva = 'header'">
+                <i class="bi bi-arrow-left-circle-fill"></i> Editar encabezado
+              </button>
+              <button class="btn btn-primary" @click="abrirOrden" :disabled="loadingGuardar">
+                <i v-if="loadingGuardar" class="bi bi-hourglass-split spin"></i>
+                <i v-else class="bi bi-clipboard2-check-fill"></i>
+                Abrir Orden de Servicio
+              </button>
+            </div>
+          </div>
         </div>
+
       </div>
     </template>
 
@@ -640,6 +836,8 @@ function limpiarBusqueda() {
   placaInput.value = ''; buscado.value = false; vehiculo.value = null
   historial.value = []; fotosVehiculo.value = []; wizardStep.value = 1
   orden.value = { ...ORDEN_DEFAULT }; nuevoVehiculo.value = { ...NV_DEFAULT }
+  errores.value = {}; seccionActiva.value = 'header'
+  detallesOrden.value = []; detBusq.value = ''; showOpcionales.value = false
   cargarOrdenes()
   nextTick(() => inputRef.value?.focus())
 }
@@ -788,17 +986,103 @@ function onCerrarComprobante() {
 }
 
 // ── Formulario orden ──────────────────────────────────────────────────────
-const ORDEN_DEFAULT = { tipo_item: 'mecanica', km_ingreso: '', diagnostico: '',
+const ORDEN_DEFAULT = { km_ingreso: '', diagnostico: '',
                         jefe_responsable_id: '', operario_id: '', convenio_id: '', promesa_entrega: '' }
-const orden = ref({ ...ORDEN_DEFAULT })
+const orden          = ref({ ...ORDEN_DEFAULT })
+const errores        = ref({})
+const seccionActiva  = ref('header')   // 'header' | 'detalle'
+const showOpcionales = ref(false)
+
+// ── Detalle en memoria ────────────────────────────────────────────────────
+const detallesOrden = ref([])
+const detBusq       = ref('')
+const catalogSugs   = ref([])
+const showCatalog   = ref(false)
+let   _catTimer     = null
+
+const TIPO_ITEM_MAP = {
+  mecanica: 'mecanica', lavado: 'lavado',
+  latoneria: 'latoneria', pintura: 'pintura',
+  repuesto: 'repuesto', diagnostico: 'mecanica',
+}
+
+function tipoLabel(t) {
+  return { mecanica:'Mecánica', lavado:'Lavado', latoneria:'Latonería',
+           pintura:'Pintura', repuesto:'Repuesto' }[t] || t
+}
+
+function onDetBusqInput() {
+  showCatalog.value = false
+  clearTimeout(_catTimer)
+  if (detBusq.value.trim().length >= 2)
+    _catTimer = setTimeout(buscarCatalogo, 300)
+  else catalogSugs.value = []
+}
+
+async function buscarCatalogo() {
+  try {
+    const { data } = await api.get('/api/talleres/productos-buscar', {
+      params: { company_id: companyId.value, q: detBusq.value }
+    })
+    catalogSugs.value = data
+    showCatalog.value = data.length > 0
+  } catch { /* silencioso */ }
+}
+
+function agregarDelCatalogo(p) {
+  detallesOrden.value.push({
+    product_id:     p.id,
+    tipo_item:      TIPO_ITEM_MAP[p.service_type] || (p.item_type === 'producto' ? 'repuesto' : 'mecanica'),
+    nombre:         p.name,
+    cantidad:       1,
+    precio_unitario: p.base_price || 0,
+    profession_id:  null,
+    worker_id:      null,
+  })
+  detBusq.value     = ''
+  catalogSugs.value = []
+  showCatalog.value = false
+  if (errores.value.detalles) delete errores.value.detalles
+}
+
+function agregarLineaLibre() {
+  detallesOrden.value.push({
+    product_id: null, tipo_item: 'mecanica', nombre: '',
+    cantidad: 1, precio_unitario: 0, profession_id: null, worker_id: null,
+  })
+  if (errores.value.detalles) delete errores.value.detalles
+}
+
+function hideCatalogDelayed() {
+  setTimeout(() => { showCatalog.value = false }, 150)
+}
+
+function validarEncabezado() {
+  const e = {}
+  if (!orden.value.jefe_responsable_id) e.jefe       = 'Selecciona el Jefe de área responsable'
+  if (!orden.value.operario_id)         e.operario   = 'Selecciona el operario asignado'
+  if (!orden.value.diagnostico?.trim()) e.diagnostico = 'Describe el servicio o diagnóstico solicitado'
+  errores.value = e
+  return Object.keys(e).length === 0
+}
+
+function irADetalle() {
+  if (!validarEncabezado()) return
+  seccionActiva.value  = 'detalle'
+  errores.value.detalles = undefined
+}
 
 async function abrirOrden() {
   if (!vehiculo.value?.asset_id) { mostrarToast('Primero registra el vehículo', 'error'); return }
+  if (detallesOrden.value.length === 0) {
+    errores.value = { ...errores.value, detalles: 'Agrega al menos un servicio o producto a la orden' }
+    return
+  }
   loadingGuardar.value = true
   try {
     const workers_payload = []
     if (orden.value.operario_id)
-      workers_payload.push({ worker_id: orden.value.operario_id, rol: orden.value.tipo_item })
+      workers_payload.push({ worker_id: orden.value.operario_id, rol: 'operario' })
 
     const { data } = await api.post('/api/talleres/ordenes', {
       company_id:          companyId.value,
@@ -811,48 +1095,54 @@ async function abrirOrden() {
       diagnostico:         orden.value.diagnostico,
       promesa_entrega:     orden.value.promesa_entrega || null,
       workers:             workers_payload,
+      detalles:            detallesOrden.value.map(d => ({
+        tipo_item:       d.tipo_item,
+        product_id:      d.product_id || null,
+        nombre:          d.nombre,
+        cantidad:        d.cantidad || 1,
+        precio_unitario: d.precio_unitario || 0,
+        worker_id:       orden.value.operario_id || null,
+        profession_id:   d.profession_id || null,
+      })),
     })
     mostrarToast(`Orden ${data.numero_orden} creada`, 'ok')
     nuevaOrdenId.value = data.id
 
-    // Armar datos del comprobante y mostrarlo
-    const jefeObj = jefes.value.find(w => w.id === orden.value.jefe_responsable_id)
+    const jefeObj = workers.value.find(w => w.id === orden.value.jefe_responsable_id)
     const opObj   = workers.value.find(w => w.id === orden.value.operario_id)
     comprobanteOrden.value = {
-      numero_orden:        data.numero_orden,
-      fecha_ingreso:       new Date().toISOString(),
-      placa_vehiculo:      placaInput.value,
-      tipo_vehiculo:       vehiculo.value.tipo || '',
-      marca:               vehiculo.value.marca || '',
-      modelo:              vehiculo.value.modelo || '',
-      anio:                vehiculo.value.anio || '',
-      color:               vehiculo.value.color || '',
-      km_ingreso:          orden.value.km_ingreso || '',
-      diagnostico:         orden.value.diagnostico || '',
-      cliente_nombre:      vehiculo.value.cliente_nombre || '',
-      cliente_telefono:    vehiculo.value.cliente_telefono || '',
-      convenio_nombre:     convenios.value.find(c => c.id === orden.value.convenio_id)?.nombre_empresa || '',
-      jefe_nombre:         jefeObj ? (jefeObj.nombre || jefeObj.name) : '',
-      promesa_entrega:     orden.value.promesa_entrega || null,
-      _workers:            opObj ? [{ worker_nombre: opObj.name, profession_nombre: '' }] : [],
+      numero_orden:     data.numero_orden,
+      fecha_ingreso:    new Date().toISOString(),
+      placa_vehiculo:   placaInput.value,
+      tipo_vehiculo:    vehiculo.value.tipo || '',
+      marca:            vehiculo.value.marca || '',
+      modelo:           vehiculo.value.modelo || '',
+      anio:             vehiculo.value.anio || '',
+      color:            vehiculo.value.color || '',
+      km_ingreso:       orden.value.km_ingreso || '',
+      diagnostico:      orden.value.diagnostico || '',
+      cliente_nombre:   vehiculo.value.cliente_nombre || '',
+      cliente_telefono: vehiculo.value.cliente_telefono || '',
+      convenio_nombre:  convenios.value.find(c => c.id === orden.value.convenio_id)?.nombre_empresa || '',
+      jefe_nombre:      jefeObj?.name || '',
+      promesa_entrega:  orden.value.promesa_entrega || null,
+      _workers:         opObj ? [{ worker_nombre: opObj.name, profession_nombre: opObj.profession_nombre || '' }] : [],
     }
     showComprobante.value = true
   } catch (e) { mostrarToast(e?.response?.data?.detail ?? 'Error al crear la orden', 'error') }
   finally { loadingGuardar.value = false }
 }
 
+// Limpiar error del campo en cuanto el usuario lo corrija
+watch(() => orden.value.jefe_responsable_id, v => { if (v) delete errores.value.jefe })
+watch(() => orden.value.operario_id,         v => { if (v) delete errores.value.operario })
+watch(() => orden.value.diagnostico,         v => { if (v?.trim()) delete errores.value.diagnostico })
 
 // ── Datos auxiliares ──────────────────────────────────────────────────────
 const workers       = ref([])
 const convenios     = ref([])
 const tiposVehiculo = ref([])
 
-// Jefes = workers cuya profesión contenga "jefe" o "supervisor"
-const jefes = computed(() =>
-  workers.value.filter(w =>
-    /jefe|supervisor/i.test(w.profession_nombre || '')
-  )
-)
 
 async function cargarAuxiliares() {
   if (!companyId.value) return
@@ -1004,6 +1294,104 @@ onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.v
 .tab-btn.active { color:#1e3a5f; border-bottom-color:#1e3a5f; }
 .tab-count { background:#1e3a5f; color:#fff; border-radius:20px; font-size:10px; padding:1px 6px; }
 
+/* ── Nueva Orden Flow ──────────────────────────────────────────────────── */
+.nueva-orden-flow { display:flex; flex-direction:column; gap:12px; }
+
+.no-sec {
+  background:#fff; border-radius:14px; overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.07);
+}
+.no-sec-collapsed { opacity:.85; }
+.no-sec-collapsed .no-sec-hdr { cursor:pointer; }
+.no-sec-collapsed .no-sec-hdr:hover { background:#eff6ff; }
+
+.no-sec-hdr {
+  display:flex; align-items:center; gap:10px;
+  padding:14px 18px; border-bottom:1px solid #f1f5f9;
+  background:#f8fafc;
+}
+.no-sec-icon  { font-size:16px; color:#1e3a5f; }
+.no-sec-title { font-size:14px; font-weight:700; color:#1e293b; flex:1; }
+.no-sec-edit  { font-size:12px; color:#3b82f6; font-weight:600; display:flex; align-items:center; gap:4px; }
+.no-sec-badge { font-size:11px; background:#dcfce7; color:#166534; border-radius:20px; padding:2px 8px; font-weight:700; }
+
+.no-sec-body { padding:18px; }
+
+.no-sec-resumen {
+  display:flex; flex-wrap:wrap; gap:10px 20px;
+  padding:10px 18px; font-size:12px; color:#475569;
+}
+.no-sec-resumen span { display:flex; align-items:center; gap:5px; }
+.no-diag { font-style:italic; color:#64748b; max-width:280px;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Opcionales */
+.opc-card   { margin-top:14px; border:1.5px dashed #e2e8f0; border-radius:10px; overflow:hidden; }
+.opc-toggle {
+  width:100%; display:flex; align-items:center; gap:8px;
+  padding:10px 14px; background:transparent; border:none;
+  font-size:12px; font-weight:600; color:#64748b; cursor:pointer; text-align:left;
+}
+.opc-toggle:hover { background:#f8fafc; }
+.opc-body { padding:12px 14px 14px; border-top:1px dashed #e2e8f0; }
+
+/* Detalle de servicios */
+.det-add-row { display:flex; gap:8px; align-items:stretch; margin-bottom:12px; }
+.det-buscar-wrap { flex:1; position:relative; }
+.det-busq-input  { height:100%; }
+
+.catalog-dropdown {
+  position:absolute; top:calc(100% + 4px); left:0; right:0;
+  background:#fff; border:1.5px solid #bfdbfe; border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:500;
+  list-style:none; margin:0; padding:4px 0; max-height:240px; overflow-y:auto;
+}
+.cat-item { display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; }
+.cat-item:hover { background:#eff6ff; }
+.cat-tipo  { font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; flex-shrink:0; }
+.ct-mecanica  { background:#dbeafe; color:#1d4ed8; }
+.ct-lavado    { background:#d1fae5; color:#065f46; }
+.ct-latoneria { background:#fef3c7; color:#92400e; }
+.ct-pintura   { background:#fce7f3; color:#9d174d; }
+.ct-repuesto  { background:#f3f4f6; color:#374151; }
+.cat-nombre { flex:1; font-size:13px; color:#1e293b; }
+.cat-precio { font-size:12px; font-weight:700; color:#1e3a5f; flex-shrink:0; }
+
+.btn-det-libre {
+  display:flex; align-items:center; gap:6px; padding:8px 14px;
+  background:#f0fdf4; color:#166534; border:1.5px solid #86efac;
+  border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;
+}
+.btn-det-libre:hover { background:#dcfce7; }
+
+.det-empty { text-align:center; padding:24px; color:#94a3b8; }
+.det-empty i { font-size:28px; display:block; margin-bottom:6px; }
+.det-empty p { font-size:13px; margin:0; }
+
+.det-lista { display:flex; flex-direction:column; gap:6px; }
+
+.det-item {
+  display:grid;
+  grid-template-columns: 130px 1fr 60px 100px 90px 36px;
+  gap:6px; align-items:center;
+  background:#f8fafc; border-radius:8px; padding:8px;
+}
+.det-tipo-sel { font-size:12px; padding:5px 6px; }
+.det-nombre   { font-size:13px; }
+.det-qty      { font-size:13px; text-align:center; padding:5px 6px; }
+.det-precio   { font-size:13px; padding:5px 6px; }
+.det-sub      { font-size:12px; font-weight:700; color:#1e3a5f; text-align:right; }
+.det-del      { width:32px; height:32px; border:none; background:#fee2e2; color:#dc2626;
+               border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.det-del:hover { background:#fecaca; }
+
+.det-total-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 8px 4px; border-top:2px solid #e2e8f0;
+  font-size:13px; color:#374151; margin-top:4px;
+}
+.det-total-row strong { font-size:15px; color:#1e3a5f; }
+
 /* Form card */
 .form-card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.07); }
 .form-section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#64748b; display:flex; align-items:center; gap:6px; padding-bottom:8px; border-bottom:1px solid #f1f5f9; margin-bottom:12px; }
@@ -1014,6 +1402,10 @@ onMounted(() => { cargarAuxiliares(); cargarOrdenes(); nextTick(() => inputRef.v
 .form-ctrl { border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; font-size:13px; color:#1e293b; outline:none; background:#fff; width:100%; box-sizing:border-box; }
 .form-ctrl:focus { border-color:#3b82f6; }
 textarea.form-ctrl { resize:vertical; }
+.fc-error          { border-color:#f87171 !important; background:#fff5f5; }
+.field-err         { font-size:11px; color:#dc2626; margin-top:2px; display:flex; align-items:center; gap:4px; }
+.field-err::before { content:'⚠'; font-size:10px; }
+.lbl-opt           { font-size:10px; font-weight:400; color:#94a3b8; margin-left:4px; }
 .form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid #f1f5f9; }
 
 /* Fotos upload (nuevo vehículo) */
@@ -1090,6 +1482,9 @@ textarea.form-ctrl { resize:vertical; }
 @media (max-width: 768px) {
   .ordenes-page { padding: 12px; }
   .form-grid    { grid-template-columns: 1fr; }
+  .det-item     { grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto; }
+  .det-nombre   { grid-column: span 2; }
+  .det-add-row  { flex-direction: column; }
   .span2        { grid-column: span 1; }
   .hist-item    { flex-direction: column; align-items: flex-start; gap: 6px; }
 }
