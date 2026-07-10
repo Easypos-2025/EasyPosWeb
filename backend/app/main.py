@@ -98,6 +98,7 @@ from app.routers.tv_router import router as tv_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
 from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
+from app.routers.company_configs_router import router as company_configs_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -1845,6 +1846,24 @@ async def _init_db_data():
         except Exception:
             await db.rollback()
 
+        # ── COMPANY_CONFIGS: configuraciones adicionales por empresa ──────────
+        try:
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS company_configs (
+                    id                      INT AUTO_INCREMENT PRIMARY KEY,
+                    company_id              INT NOT NULL,
+                    has_pos_electronico     TINYINT(1) NOT NULL DEFAULT 0,
+                    pos_electronico_token   VARCHAR(255) NULL,
+                    created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at              DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_cc_company (company_id),
+                    INDEX idx_cc_pe (has_pos_electronico)
+                )
+            """))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
 
 # ===============================
 # RATE LIMITER (in-memory, single server)
@@ -2017,6 +2036,7 @@ routers = [
     plan_associate_limits_router,
     advertisement_router,
     welcome_steps_router,
+    company_configs_router,
 ]
 
 for router in routers:

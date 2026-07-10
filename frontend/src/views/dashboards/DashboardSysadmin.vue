@@ -68,10 +68,13 @@
 
     </div>
 
-    <!-- ── Botón Monitor de Ventas ── -->
+    <!-- ── Botones de acceso rápido ── -->
     <div class="monitor-btn-wrap">
       <router-link to="/sysadmin/monitor" class="btn-monitor">
         <i class="bi bi-bar-chart-line"></i> Monitor de Ventas
+      </router-link>
+      <router-link to="/sysadmin/admin-pe" class="btn-monitor btn-monitor--pe">
+        <i class="bi bi-lightning-charge-fill"></i> Admin POS Electrónico
       </router-link>
     </div>
 
@@ -254,6 +257,8 @@ onMounted(async () => {
 .monitor-btn-wrap {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 24px;
 }
 
@@ -271,6 +276,8 @@ onMounted(async () => {
   transition: background 0.15s;
 }
 .btn-monitor:hover { background: #1e3a5f; color: #fff; }
+.btn-monitor--pe { background: #92400e; }
+.btn-monitor--pe:hover { background: #78350f; color: #fff; }
 
 /* ── responsive ── */
 @media (max-width: 768px) {

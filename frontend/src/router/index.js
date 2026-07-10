@@ -517,6 +517,14 @@ const routes = [
         meta: { title: "Monitor de Ventas" }
       },
 
+      {
+        path: "/sysadmin/admin-pe",
+        name: "SysAdminPEView",
+        component: () => import("@/views/sysadmin/SysAdminPEView.vue"),
+        requiresAuth: true,
+        meta: { title: "Admin POS Electrónico" }
+      },
+
       // ── Facturación (placeholders) ──────────────────────────────
       {
         path: "/facturacion/ventas/factura",
