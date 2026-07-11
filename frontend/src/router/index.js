@@ -837,6 +837,13 @@ const routes = [
         meta: { title: "Impresoras" }
       },
       {
+        path: "/pos/facturas-electronicas",
+        name: "POSFacturasElectronicasView",
+        component: () => import("@/views/pos/POSFacturasElectronicasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Facturas Electrónicas" }
+      },
+      {
         path: "/pos/listas-precios",
         name: "PosListaPreciosView",
         component: () => import("@/views/pos/PosListaPreciosView.vue"),

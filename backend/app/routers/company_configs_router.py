@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 import calendar
 from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
+from app.auth.dependencies import get_current_user
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.models.role_model import Role
@@ -95,6 +96,59 @@ async def list_company_configs(
         "pe_only": 1 if pe_only else 0,
     })).mappings().all()
 
+    return [dict(r) for r in rows]
+
+
+# ─── GET facturas DIAN del usuario autenticado (por su company_id) ───────────
+
+@router.get("/pe-facturas-cliente")
+async def get_pe_facturas_cliente(
+    fe: int = 0,
+    date: Optional[str] = None,
+    mode: Optional[str] = "day",
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    cid    = current_user.company_id
+    target = date or datetime.now(_BOG).date().isoformat()
+
+    if mode == "month":
+        ym  = target[:7]
+        y, m = int(ym[:4]), int(ym[5:7])
+        d1  = f"{ym}-01"
+        d2  = f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
+    else:
+        d1 = d2 = target
+
+    if fe == 0:
+        rows = (await db.execute(text("""
+            SELECT
+                DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
+                Prefix                         AS prefijo,
+                Nro_Factura                    AS nro_folio,
+                Valor                          AS valor,
+                Nro_Caja                       AS cuenta,
+                Cedula                         AS cliente
+            FROM apidian_facturas_cufe
+            WHERE company_id = :cid AND FEExitosa = 0
+            ORDER BY Fecha, Nro_Factura
+            LIMIT 1000
+        """), {"cid": cid})).mappings().all()
+    else:
+        rows = (await db.execute(text("""
+            SELECT
+                DATE_FORMAT(Fecha, '%Y-%m-%d') AS fecha,
+                Prefix                         AS prefijo,
+                Nro_Factura                    AS nro_folio,
+                Valor                          AS valor,
+                Nro_Caja                       AS cuenta,
+                Cedula                         AS cliente
+            FROM apidian_facturas_cufe
+            WHERE company_id = :cid AND FEExitosa = 1
+              AND Fecha BETWEEN :d1 AND :d2
+            ORDER BY Fecha, Nro_Factura
+            LIMIT 500
+        """), {"cid": cid, "d1": d1, "d2": d2})).mappings().all()
     return [dict(r) for r in rows]
 
 

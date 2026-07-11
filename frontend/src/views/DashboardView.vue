@@ -1,14 +1,20 @@
 <template>
-  <component :is="activeDashboard" v-if="activeDashboard" />
-  <div v-else class="dash-empty">
-    <i class="bi bi-grid-3x3-gap"></i>
-    <p>Sin dashboard configurado para este perfil.</p>
+  <div>
+    <!-- Widget PE: visible solo si la company tiene POS Electrónico activo y no es SYSADMIN -->
+    <PEWidget v-if="hasPE" class="pe-widget-top" />
+
+    <component :is="activeDashboard" v-if="activeDashboard" />
+    <div v-else class="dash-empty">
+      <i class="bi bi-grid-3x3-gap"></i>
+      <p>Sin dashboard configurado para este perfil.</p>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from "vue"
 import { useCompanyStore } from "@/stores/companyStore"
+import PEWidget from "@/components/pos/PEWidget.vue"
 
 import DashboardRestaurante   from "@/views/dashboards/DashboardRestaurante.vue"
 import DashboardAdmonTareas   from "@/views/dashboards/DashboardAdmonTareas.vue"
@@ -57,6 +63,11 @@ const activeDashboard = computed(() => {
   if (dash === DashboardSysadmin && !companyStore.isSystem) return null
   return dash
 })
+
+const hasPE = computed(() =>
+  !companyStore.isSystem &&
+  companyStore.billingConfig?.has_pos_electronico == 1
+)
 </script>
 
 <style scoped>
@@ -71,4 +82,5 @@ const activeDashboard = computed(() => {
 }
 .dash-empty .bi { font-size: 40px; }
 .dash-empty p   { font-size: 15px; }
+.pe-widget-top  { margin: 0 0 16px; }
 </style>
