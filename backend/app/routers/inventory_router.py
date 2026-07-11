@@ -147,25 +147,43 @@ async def get_stock(
             GROUP BY ix.id_item
         ),
         receipt_sales AS (
-            SELECT prd.item_id, SUM(prd.quantity) AS total
+            SELECT prd.item_id, SUM(rod.quantity * prd.quantity) AS total
             FROM pos_receipt_order_detail_products prd
+            INNER JOIN pos_receipt_order_details rod
+                ON  rod.order_number   = prd.order_number
+                AND rod.receipt_number = prd.invoice_number
+                AND rod.date           = prd.date
+                AND rod.dish_id        = prd.dish_id
+                AND rod.item           = prd.item
+                AND rod.company_id     = prd.company_id
+            INNER JOIN pos_receipts pr
+                ON  pr.receipt_number = rod.receipt_number
+                AND pr.date           = rod.date
+                AND pr.company_id     = rod.company_id
+                AND (pr.voided IS NULL OR pr.voided = 0)
             LEFT JOIN last_phys lp ON lp.id_item = prd.item_id
-            LEFT JOIN pos_receipts pr
-                   ON pr.receipt_number = prd.invoice_number AND pr.company_id = prd.company_id
             WHERE prd.company_id = :cid
               AND (lp.fecha IS NULL OR prd.date >= lp.fecha)
-              AND (pr.voided IS NULL OR pr.voided = 0)
             GROUP BY prd.item_id
         ),
         invoice_sales AS (
-            SELECT pod.item_id, SUM(pod.quantity) AS total
+            SELECT pod.item_id, SUM(od.quantity * pod.quantity) AS total
             FROM pos_order_detail_products pod
+            INNER JOIN pos_order_details od
+                ON  od.order_number   = pod.order_number
+                AND od.invoice_number = pod.invoice_number
+                AND od.date           = pod.date
+                AND od.dish_id        = pod.dish_id
+                AND od.item           = pod.item
+                AND od.company_id     = pod.company_id
+            INNER JOIN pos_invoices pi
+                ON  pi.invoice_number = od.invoice_number
+                AND pi.date           = od.date
+                AND pi.company_id     = od.company_id
+                AND (pi.voided IS NULL OR pi.voided = 0)
             LEFT JOIN last_phys lp ON lp.id_item = pod.item_id
-            LEFT JOIN pos_invoices pi
-                   ON pi.invoice_number = pod.invoice_number AND pi.company_id = pod.company_id
             WHERE pod.company_id = :cid
               AND (lp.fecha IS NULL OR pod.date >= lp.fecha)
-              AND (pi.voided IS NULL OR pi.voided = 0)
             GROUP BY pod.item_id
         )
         SELECT si.id, si.id_item, si.code, si.description,
@@ -214,36 +232,40 @@ async def update_min_stock(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# RECALCULAR STOCK — sincroniza supply_items.stock_qty con la fórmula real
+# RECALCULAR STOCK — escribe en inventario_actual_porciones.cantidad_actual
+#   Fórmula: físico + entradas - salidas - ventas_recibos - ventas_facturas
+#   Todo contado desde la fecha del último inventario físico en adelante.
+#   supply_items = catálogo de productos (sin stock)
+#   inventario_actual_porciones = stock actual calculado (tabla separada)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/stock/recalculate")
-async def recalculate_stock(
-    data: dict = Body(default={}),
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+async def _recalc_execute(db: AsyncSession, cid: int, where_sql: str, params: dict,
+                          cat_id: int | None = None) -> int:
     """
-    Recalcula supply_items.stock_qty usando la fórmula completa:
-      físico + entradas - salidas - ventas_recibos_VB6 - ventas_facturas_VB6
-    scope: "all" | "category" | "item"
+    1. Inserta en inventario_actual_porciones los ítems de supply_items que falten.
+    2. Calcula el stock real y actualiza inventario_actual_porciones.cantidad_actual.
     """
-    scope       = data.get("scope", "all")
-    category_id = data.get("category_id")
-    id_item     = data.get("id_item")
-    cid         = current_user.company_id
+    # Paso 1 — insertar ítems faltantes (WHERE sobre si.* para evitar NULLs del LEFT JOIN)
+    insert_where = "si.company_id = :cid"
+    if cat_id is not None:
+        insert_where += " AND si.agrupar = :cat_id"
+    await db.execute(text(f"""
+        INSERT INTO inventario_actual_porciones
+            (company_id, id_grupo, id_item, codigo_insumo, descripcion, costo,
+             und_compra, valor_und_compra, und_min_utilizadas, agrupar,
+             compras, controlar, opcion_cambios, und_uso, centro_produccion,
+             cantidad_actual, bodega, insumo_cp, fecha_vence, stock_minimo, enviada_mysql)
+        SELECT si.company_id, si.id_grupo, si.id_item, si.code, si.description, si.cost_price,
+               si.unit_id, si.valor_und_compra, si.und_min_utilizadas, si.agrupar,
+               si.compras, si.control_stock, si.opcion_cambios, si.unit_uso_id, si.centro_produccion,
+               0, si.bodega, si.insumo_cp, si.fecha_vence, si.min_stock, 0
+        FROM supply_items si
+        LEFT JOIN inventario_actual_porciones iap
+               ON iap.company_id = si.company_id AND iap.id_item = si.id_item
+        WHERE iap.id_item IS NULL AND {insert_where}
+    """), params)
 
-    where_parts = ["si.company_id = :cid"]
-    params: dict = {"cid": cid}
-    if scope == "category" and category_id:
-        where_parts.append("si.agrupar = :cat_id")
-        params["cat_id"] = int(category_id)
-    elif scope == "item" and id_item:
-        where_parts.append("si.id_item = :item")
-        params["item"] = int(id_item)
-    where_sql = " AND ".join(where_parts)
-
-    # 1. Calcular el stock real para cada ítem del scope
+    # Paso 2 — calcular y actualizar cantidad_actual
     calc_rows = (await db.execute(text(f"""
         WITH ranked_phys AS (
             SELECT id_item, cantidad, fecha,
@@ -266,47 +288,102 @@ async def recalculate_stock(
             GROUP BY ix.id_item
         ),
         receipt_sales AS (
-            SELECT prd.item_id, SUM(prd.quantity) AS total
+            SELECT prd.item_id, SUM(rod.quantity * prd.quantity) AS total
             FROM pos_receipt_order_detail_products prd
+            INNER JOIN pos_receipt_order_details rod
+                ON  rod.order_number   = prd.order_number
+                AND rod.receipt_number = prd.invoice_number
+                AND rod.date           = prd.date
+                AND rod.dish_id        = prd.dish_id
+                AND rod.item           = prd.item
+                AND rod.company_id     = prd.company_id
+            INNER JOIN pos_receipts pr
+                ON  pr.receipt_number = rod.receipt_number
+                AND pr.date           = rod.date
+                AND pr.company_id     = rod.company_id
+                AND (pr.voided IS NULL OR pr.voided = 0)
             LEFT JOIN last_phys lp ON lp.id_item = prd.item_id
-            LEFT JOIN pos_receipts pr
-                   ON pr.receipt_number = prd.invoice_number AND pr.company_id = prd.company_id
             WHERE prd.company_id = :cid
               AND (lp.fecha IS NULL OR prd.date >= lp.fecha)
-              AND (pr.voided IS NULL OR pr.voided = 0)
             GROUP BY prd.item_id
         ),
         invoice_sales AS (
-            SELECT pod.item_id, SUM(pod.quantity) AS total
+            SELECT pod.item_id, SUM(od.quantity * pod.quantity) AS total
             FROM pos_order_detail_products pod
+            INNER JOIN pos_order_details od
+                ON  od.order_number   = pod.order_number
+                AND od.invoice_number = pod.invoice_number
+                AND od.date           = pod.date
+                AND od.dish_id        = pod.dish_id
+                AND od.item           = pod.item
+                AND od.company_id     = pod.company_id
+            INNER JOIN pos_invoices pi
+                ON  pi.invoice_number = od.invoice_number
+                AND pi.date           = od.date
+                AND pi.company_id     = od.company_id
+                AND (pi.voided IS NULL OR pi.voided = 0)
             LEFT JOIN last_phys lp ON lp.id_item = pod.item_id
-            LEFT JOIN pos_invoices pi
-                   ON pi.invoice_number = pod.invoice_number AND pi.company_id = pod.company_id
             WHERE pod.company_id = :cid
               AND (lp.fecha IS NULL OR pod.date >= lp.fecha)
-              AND (pi.voided IS NULL OR pi.voided = 0)
             GROUP BY pod.item_id
         )
-        SELECT si.id,
+        SELECT iap.id,
                COALESCE(lp.cantidad,0) + COALESCE(ea.total,0) - COALESCE(xa.total,0)
                - COALESCE(rs.total,0) - COALESCE(inv.total,0) AS new_stock
-        FROM supply_items si
-        LEFT JOIN last_phys lp      ON lp.id_item  = si.id_item
-        LEFT JOIN entries_adj ea    ON ea.id_item   = si.id_item
-        LEFT JOIN exits_adj xa      ON xa.id_item   = si.id_item
-        LEFT JOIN receipt_sales rs  ON rs.item_id   = si.id_item
-        LEFT JOIN invoice_sales inv ON inv.item_id  = si.id_item
+        FROM inventario_actual_porciones iap
+        INNER JOIN supply_items si ON si.company_id = iap.company_id AND si.id_item = iap.id_item
+        LEFT JOIN last_phys lp      ON lp.id_item  = iap.id_item
+        LEFT JOIN entries_adj ea    ON ea.id_item   = iap.id_item
+        LEFT JOIN exits_adj xa      ON xa.id_item   = iap.id_item
+        LEFT JOIN receipt_sales rs  ON rs.item_id   = iap.id_item
+        LEFT JOIN invoice_sales inv ON inv.item_id  = iap.id_item
         WHERE {where_sql}
     """), params)).mappings().all()
 
-    # 2. Bulk UPDATE
     for row in calc_rows:
         await db.execute(text("""
-            UPDATE supply_items SET stock_qty = :q, updated_at = NOW() WHERE id = :id
+            UPDATE inventario_actual_porciones
+            SET cantidad_actual = :q, enviada_mysql = 0, updated_at = NOW()
+            WHERE id = :id
         """), {"q": float(row["new_stock"]), "id": row["id"]})
 
     await db.commit()
-    return {"ok": True, "updated": len(calc_rows)}
+    return len(calc_rows)
+
+
+@router.post("/stock/recalculate/all")
+async def recalculate_stock_all(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recalcula cantidad_actual para TODOS los productos de la empresa."""
+    updated = await _recalc_execute(
+        db, current_user.company_id,
+        "iap.company_id = :cid",
+        {"cid": current_user.company_id},
+        cat_id=None,
+    )
+    return {"ok": True, "updated": updated}
+
+
+@router.post("/stock/recalculate/category")
+async def recalculate_stock_category(
+    data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recalcula cantidad_actual para todos los productos de una categoría específica."""
+    category_id = data.get("category_id")
+    if not category_id:
+        raise HTTPException(400, "category_id es requerido")
+    cat = int(category_id)
+    updated = await _recalc_execute(
+        db, current_user.company_id,
+        "iap.company_id = :cid AND iap.agrupar = :cat_id",
+        {"cid": current_user.company_id, "cat_id": cat},
+        cat_id=cat,
+    )
+    return {"ok": True, "updated": updated}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

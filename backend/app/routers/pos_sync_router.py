@@ -3521,6 +3521,106 @@ async def push_inventory_exits(
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
 
 
+# ═════════════════════════════════════════
+# INVENTORY STOCK (inventario_actual_porciones)
+# Variante A: solo envía registros con Enviada_MySql=0.
+# UPSERT completo: crea el registro si no existe, actualiza todos los campos si ya existe.
+# ═════════════════════════════════════════
+class InventoryStockIn(BaseModel):
+    company_id:         int
+    id_item:            int
+    id_grupo:           Optional[int]   = 0
+    codigo_insumo:      Optional[str]   = None
+    descripcion:        Optional[str]   = None
+    costo:              Optional[float] = 0
+    und_compra:         Optional[int]   = 0
+    valor_und_compra:   Optional[float] = 0
+    und_min_utilizadas: Optional[float] = 0
+    agrupar:            Optional[int]   = 0
+    compras:            Optional[int]   = 0
+    controlar:          Optional[int]   = 0
+    opcion_cambios:     Optional[int]   = 0
+    und_uso:            Optional[int]   = 0
+    centro_produccion:  Optional[int]   = 0
+    cantidad_actual:    Optional[float] = 0
+    bodega:             Optional[int]   = 0
+    insumo_cp:          Optional[int]   = 0
+    fecha_vence:        Optional[str]   = None
+    stock_minimo:       Optional[float] = 0
+
+
+@router.post("/sync/push/inventory-stock")
+async def push_inventory_stock(
+    items: List[InventoryStockIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.company_id}|{it.id_item}"
+        try:
+            await db.execute(text("""
+                INSERT INTO inventario_actual_porciones
+                    (company_id, id_grupo, id_item, codigo_insumo, descripcion, costo,
+                     und_compra, valor_und_compra, und_min_utilizadas, agrupar,
+                     compras, controlar, opcion_cambios, und_uso, centro_produccion,
+                     cantidad_actual, bodega, insumo_cp, fecha_vence, stock_minimo, enviada_mysql)
+                VALUES
+                    (:company_id, :id_grupo, :id_item, :codigo_insumo, :descripcion, :costo,
+                     :und_compra, :valor_und_compra, :und_min_utilizadas, :agrupar,
+                     :compras, :controlar, :opcion_cambios, :und_uso, :centro_produccion,
+                     :cantidad_actual, :bodega, :insumo_cp, :fecha_vence, :stock_minimo, 1)
+                ON DUPLICATE KEY UPDATE
+                    id_grupo           = VALUES(id_grupo),
+                    codigo_insumo      = VALUES(codigo_insumo),
+                    descripcion        = VALUES(descripcion),
+                    costo              = VALUES(costo),
+                    und_compra         = VALUES(und_compra),
+                    valor_und_compra   = VALUES(valor_und_compra),
+                    und_min_utilizadas = VALUES(und_min_utilizadas),
+                    agrupar            = VALUES(agrupar),
+                    compras            = VALUES(compras),
+                    controlar          = VALUES(controlar),
+                    opcion_cambios     = VALUES(opcion_cambios),
+                    und_uso            = VALUES(und_uso),
+                    centro_produccion  = VALUES(centro_produccion),
+                    cantidad_actual    = VALUES(cantidad_actual),
+                    bodega             = VALUES(bodega),
+                    insumo_cp          = VALUES(insumo_cp),
+                    fecha_vence        = VALUES(fecha_vence),
+                    stock_minimo       = VALUES(stock_minimo),
+                    enviada_mysql      = 1,
+                    updated_at         = NOW()
+            """), {
+                "company_id":         it.company_id,
+                "id_grupo":           it.id_grupo,
+                "id_item":            it.id_item,
+                "codigo_insumo":      it.codigo_insumo,
+                "descripcion":        it.descripcion,
+                "costo":              it.costo,
+                "und_compra":         it.und_compra,
+                "valor_und_compra":   it.valor_und_compra,
+                "und_min_utilizadas": it.und_min_utilizadas,
+                "agrupar":            it.agrupar,
+                "compras":            it.compras,
+                "controlar":          it.controlar,
+                "opcion_cambios":     it.opcion_cambios,
+                "und_uso":            it.und_uso,
+                "centro_produccion":  it.centro_produccion,
+                "cantidad_actual":    it.cantidad_actual,
+                "bodega":             it.bodega,
+                "insumo_cp":          it.insumo_cp,
+                "fecha_vence":        it.fecha_vence or None,
+                "stock_minimo":       it.stock_minimo,
+            })
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SYNC BIDIRECCIONAL — Descarga web → desktop
 # Todos los endpoints usan X-Api-Key igual que el resto del router.

@@ -130,10 +130,6 @@
                 <button class="btn-mov" @click.stop="openMov(r)" title="Ver movimientos">
                   <i class="bi bi-clock-history"></i>
                 </button>
-                <button class="btn-rc-item" @click.stop="runRecalc('item', r)"
-                        :disabled="recalcItemId === r.id_item" title="Recalcular este insumo">
-                  <i class="bi" :class="recalcItemId === r.id_item ? 'bi-arrow-repeat rc-spin' : 'bi-arrow-clockwise'"></i>
-                </button>
               </div>
             </div>
           </div>
@@ -238,10 +234,9 @@ const categories = ref([])
 const loading    = ref(true)
 
 // ── Recalcular ───────────────────────────────────────────────────────────────
-const rcOpen       = ref(false)
-const rcWrap       = ref(null)
+const rcOpen        = ref(false)
+const rcWrap        = ref(null)
 const recalculating = ref(false)
-const recalcItemId  = ref(null)
 
 const search       = ref('')
 const catFilter    = ref('')   // '' = todas
@@ -416,21 +411,22 @@ async function openMov(r) {
   finally { mov.value.loading = false }
 }
 
-async function runRecalc(scope, row = null) {
+async function runRecalc(scope) {
   rcOpen.value = false
-  const body = { scope }
-  if (scope === 'category' && catFilter.value) body.category_id = catFilter.value
-  if (scope === 'item' && row)               { body.id_item = row.id_item; recalcItemId.value = row.id_item }
-  if (scope !== 'item') recalculating.value = true
+  recalculating.value = true
   try {
-    const res = await api.post('/api/inventory/stock/recalculate', body)
+    let res
+    if (scope === 'all') {
+      res = await api.post('/api/inventory/stock/recalculate/all')
+    } else {
+      res = await api.post('/api/inventory/stock/recalculate/category', { category_id: catFilter.value })
+    }
     showToast(`${res.data.updated} insumo${res.data.updated !== 1 ? 's' : ''} actualizados`, 'success')
     await load()
   } catch {
     showToast('Error al recalcular', 'error')
   } finally {
     recalculating.value = false
-    recalcItemId.value = null
   }
 }
 
@@ -533,15 +529,6 @@ onUnmounted(() => {
 .rc-opt:hover:not(:disabled) { background: #f3f4f6; }
 .rc-opt:disabled { color: #d1d5db; cursor: not-allowed; }
 .rc-opt:not(:last-child) { border-bottom: 1px solid #f3f4f6; }
-
-/* Botón recalcular por ítem */
-.btn-rc-item {
-  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 7px;
-  padding: 5px 8px; cursor: pointer; color: #16a34a; font-size: .82rem;
-  margin-left: 2px;
-}
-.btn-rc-item:hover:not(:disabled) { background: #dcfce7; }
-.btn-rc-item:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Loading / empty */
 .state-c { text-align: center; padding: 40px; color: #6b7280; }
