@@ -102,45 +102,62 @@ async def get_stock(
     endpoints web de entradas/salidas/recibos/facturas.
     """
     cid = current_user.company_id
-    where_parts = ["si.company_id = :cid"]
+    where_parts = ["iap.company_id = :cid"]
     params: dict = {"cid": cid}
 
+    # active filtra por supply_items cuando existe; si no hay supply_item se muestra igual
+    active_clause = ""
     if active == "1":
-        where_parts.append("si.is_active = 1")
+        active_clause = "AND (si.is_active IS NULL OR si.is_active = 1)"
     elif active == "0":
-        where_parts.append("si.is_active = 0")
+        active_clause = "AND si.is_active = 0"
 
     if search and search.strip():
-        where_parts.append("(si.description LIKE :search OR si.code LIKE :search)")
+        where_parts.append(
+            "(iap.descripcion LIKE :search OR iap.codigo_insumo LIKE :search "
+            " OR si.description LIKE :search OR si.code LIKE :search)"
+        )
         params["search"] = f"%{search.strip()}%"
 
     if category_id:
-        where_parts.append("si.agrupar = :cat_id")
+        where_parts.append("COALESCE(si.agrupar, iap.agrupar) = :cat_id")
         params["cat_id"] = category_id
 
     where_sql = " AND ".join(where_parts)
 
     critical_clause = ""
     if critical:
-        critical_clause = "AND si.control_stock = 1 AND si.min_stock > 0 AND COALESCE(iap.cantidad_actual, 0) <= si.min_stock"
+        critical_clause = (
+            "AND COALESCE(si.control_stock, iap.controlar, 0) = 1 "
+            "AND COALESCE(si.min_stock, iap.stock_minimo, 0) > 0 "
+            "AND iap.cantidad_actual <= COALESCE(si.min_stock, iap.stock_minimo, 0)"
+        )
 
     rows = (await db.execute(text(f"""
-        SELECT si.id, si.id_item, si.code, si.description,
-               COALESCE(iap.cantidad_actual, 0)  AS stock_qty,
-               si.min_stock, si.control_stock, si.is_active, si.agrupar AS category_id,
-               COALESCE(mu.name,  '')             AS unit_name,
-               COALESCE(cat.name, '')             AS category_name,
-               iap.updated_at                     AS last_inventory_date
-        FROM supply_items si
-        LEFT JOIN inventario_actual_porciones iap
-               ON iap.id_item = si.id_item AND iap.company_id = si.company_id
+        SELECT
+            COALESCE(si.id, 0)                                    AS id,
+            iap.id_item,
+            COALESCE(si.code,  iap.codigo_insumo, '')             AS code,
+            COALESCE(si.description, iap.descripcion, '')         AS description,
+            iap.cantidad_actual                                    AS stock_qty,
+            COALESCE(si.min_stock,   iap.stock_minimo,  0)        AS min_stock,
+            COALESCE(si.control_stock, iap.controlar,   0)        AS control_stock,
+            COALESCE(si.is_active,   1)                           AS is_active,
+            COALESCE(si.agrupar,     iap.agrupar,       0)        AS category_id,
+            COALESCE(mu.name,  '')                                 AS unit_name,
+            COALESCE(cat.name, '')                                 AS category_name,
+            iap.updated_at                                         AS last_inventory_date
+        FROM inventario_actual_porciones iap
+        LEFT JOIN supply_items si
+               ON si.id_item = iap.id_item AND si.company_id = iap.company_id
         LEFT JOIN pos_measure_forms mu
-               ON mu.id = si.unit_id AND mu.company_id = si.company_id
+               ON mu.id = si.unit_id AND mu.company_id = iap.company_id
         LEFT JOIN pos_product_categories cat
-               ON cat.id = si.agrupar AND cat.company_id = si.company_id
+               ON cat.id = COALESCE(si.agrupar, iap.agrupar) AND cat.company_id = iap.company_id
         WHERE {where_sql}
+        {active_clause}
         {critical_clause}
-        ORDER BY cat.name, si.description
+        ORDER BY COALESCE(cat.name, ''), COALESCE(si.description, iap.descripcion)
     """), params)).mappings().all()
     return [dict(r) for r in rows]
 
