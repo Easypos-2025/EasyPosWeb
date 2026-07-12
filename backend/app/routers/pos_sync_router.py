@@ -1411,7 +1411,8 @@ async def push_receipt_payments(
 # ═════════════════════════════════════════
 
 class DeliveryFeeIn(BaseModel):
-    id_registro:    Optional[int]   = 0  # versiones antiguas VB6 pueden no enviarlo
+    id_registro:    Optional[int]   = 0
+    id:             Optional[int]   = None  # backward-compat: VB6 antiguo enviaba "id" en vez de "id_registro"
     invoice_number: str
     company_id:     int
     amount:         Optional[float] = 0
@@ -1430,7 +1431,7 @@ async def push_invoice_delivery_fees(
 ):
     saved, failed = [], []
     for item in items:
-        key = f"{item.id_registro}|{item.company_id}"
+        eff_id = item.id_registro or item.id or 0
         try:
             await db.execute(text("""
                 INSERT INTO invoice_delivery_fees
@@ -1448,10 +1449,10 @@ async def push_invoice_delivery_fees(
                     customer_id    = VALUES(customer_id),
                     synced         = 1,
                     updated_at     = NOW()
-            """), item.dict())
-            saved.append(key)
+            """), {**item.dict(), "id_registro": eff_id})
+            saved.append(str(eff_id))
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": str(eff_id), "error": str(e)})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1465,7 +1466,7 @@ async def push_receipt_delivery_fees(
 ):
     saved, failed = [], []
     for item in items:
-        key = f"{item.id_registro}|{item.company_id}"
+        eff_id = item.id_registro or item.id or 0
         try:
             await db.execute(text("""
                 INSERT INTO receipt_delivery_fees
@@ -1483,10 +1484,10 @@ async def push_receipt_delivery_fees(
                     customer_id    = VALUES(customer_id),
                     synced         = 1,
                     updated_at     = NOW()
-            """), item.dict())
-            saved.append(key)
+            """), {**item.dict(), "id_registro": eff_id})
+            saved.append(str(eff_id))
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": str(eff_id), "error": str(e)})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
