@@ -3623,6 +3623,114 @@ async def push_inventory_stock(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# HISTÓRICO INVENTARIO ACTUAL PORCIONES
+# Snapshot completo de inventario_actual_porciones por corte (Id_Historico).
+# ══════════════════════════════════════════════════════════════════════════════
+
+class HistoricoInventarioIn(BaseModel):
+    company_id:          int
+    id_historico:        int
+    fecha:               str
+    id_grupo:            Optional[int]   = 0
+    id_item:             int
+    codigo_insumo:       Optional[str]   = None
+    descripcion:         Optional[str]   = None
+    costo:               Optional[float] = 0
+    und_compra:          Optional[int]   = 0
+    valor_und_compra:    Optional[float] = 0
+    und_min_utilizadas:  Optional[float] = 0
+    posicion:            Optional[int]   = 0
+    agrupar:             Optional[int]   = 0
+    compras:             Optional[int]   = 0
+    controlar:           Optional[int]   = 0
+    opcion_cambios:      Optional[int]   = 0
+    und_uso:             Optional[int]   = 0
+    centro_produccion:   Optional[int]   = 0
+    cantidad_actual:     Optional[float] = 0
+    cod_empleado:        Optional[str]   = None
+    insumo_cp:           Optional[int]   = 0
+    fecha_vence:         Optional[str]   = None
+    stock_minimo:        Optional[float] = 0
+
+
+@router.post("/sync/push/historico-inventario-actual")
+async def push_historico_inventario_actual(
+    items: List[HistoricoInventarioIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.company_id}|{it.id_historico}|{it.id_item}"
+        try:
+            await db.execute(text("""
+                INSERT INTO historico_inventario_actual_porciones
+                    (company_id, id_historico, fecha, id_grupo, id_item,
+                     codigo_insumo, descripcion, costo, und_compra, valor_und_compra,
+                     und_min_utilizadas, posicion, agrupar, compras, controlar,
+                     opcion_cambios, und_uso, centro_produccion, cantidad_actual,
+                     cod_empleado, insumo_cp, fecha_vence, stock_minimo, synced, created_at)
+                VALUES
+                    (:company_id, :id_historico, :fecha, :id_grupo, :id_item,
+                     :codigo_insumo, :descripcion, :costo, :und_compra, :valor_und_compra,
+                     :und_min_utilizadas, :posicion, :agrupar, :compras, :controlar,
+                     :opcion_cambios, :und_uso, :centro_produccion, :cantidad_actual,
+                     :cod_empleado, :insumo_cp, :fecha_vence, :stock_minimo, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    fecha              = VALUES(fecha),
+                    codigo_insumo      = VALUES(codigo_insumo),
+                    descripcion        = VALUES(descripcion),
+                    costo              = VALUES(costo),
+                    und_compra         = VALUES(und_compra),
+                    valor_und_compra   = VALUES(valor_und_compra),
+                    und_min_utilizadas = VALUES(und_min_utilizadas),
+                    posicion           = VALUES(posicion),
+                    agrupar            = VALUES(agrupar),
+                    compras            = VALUES(compras),
+                    controlar          = VALUES(controlar),
+                    opcion_cambios     = VALUES(opcion_cambios),
+                    und_uso            = VALUES(und_uso),
+                    centro_produccion  = VALUES(centro_produccion),
+                    cantidad_actual    = VALUES(cantidad_actual),
+                    cod_empleado       = VALUES(cod_empleado),
+                    insumo_cp          = VALUES(insumo_cp),
+                    fecha_vence        = VALUES(fecha_vence),
+                    stock_minimo       = VALUES(stock_minimo),
+                    synced             = 1
+            """), {
+                "company_id":         it.company_id,
+                "id_historico":       it.id_historico,
+                "fecha":              it.fecha,
+                "id_grupo":           it.id_grupo,
+                "id_item":            it.id_item,
+                "codigo_insumo":      it.codigo_insumo,
+                "descripcion":        it.descripcion,
+                "costo":              it.costo,
+                "und_compra":         it.und_compra,
+                "valor_und_compra":   it.valor_und_compra,
+                "und_min_utilizadas": it.und_min_utilizadas,
+                "posicion":           it.posicion,
+                "agrupar":            it.agrupar,
+                "compras":            it.compras,
+                "controlar":          it.controlar,
+                "opcion_cambios":     it.opcion_cambios,
+                "und_uso":            it.und_uso,
+                "centro_produccion":  it.centro_produccion,
+                "cantidad_actual":    it.cantidad_actual,
+                "cod_empleado":       it.cod_empleado,
+                "insumo_cp":          it.insumo_cp,
+                "fecha_vence":        it.fecha_vence or None,
+                "stock_minimo":       it.stock_minimo,
+            })
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SYNC BIDIRECCIONAL — Descarga web → desktop
 # Todos los endpoints usan X-Api-Key igual que el resto del router.
 # Solo retornan pedidos cuyo order_number empieza con 'WEB-' (origen web).

@@ -73,9 +73,31 @@ Public Sub HacerCorteInventarioFisico(Var_Id_Company_Envio As Integer)
                  "'SISTEMA', 0 " & _
                  "FROM inventario_actual_porciones"
 
-    ' -- 6. Limpiar jobs de auto-snapshot en servidor (en siguiente sync) --
-    ' El SincronizarInventariosFisicos con Enviada_MySql=0 subira los registros
-    ' automaticamente en el proximo ciclo de sincronizacion.
+    ' -- 6. INSERT snapshot completo en historico_inventario_actual_porciones --
+    Var_Caption_Error = "Guardando historico de inventario..."
+    DoEvents
+
+    ' Obtener proximo Id_Historico
+    rs.Open "SELECT COALESCE(MAX(Id_Historico), 0) + 1 AS prox FROM historico_inventario_actual_porciones", conn
+    Dim lIdHistorico As Long
+    lIdHistorico = CLng(Nz(rs("prox"), 1))
+    rs.Close
+
+    conn.Execute "INSERT INTO historico_inventario_actual_porciones " & _
+                 "(Id_Historico, Fecha, Id_Grupo, Id_Item, Codigo_Insumo, Descripcion, " & _
+                 " Costo, Und_Compra, Valor_Und_Compra, Und_Min_Utilizadas, Posicion, " & _
+                 " Agrupar, Compras, Controlar, Opcion_Cambios, Und_Uso, Centro_Produccion, " & _
+                 " Cantidad_Actual, Cod_empleado, Insumo_Cp, Fecha_Vence, Stock_MInimo, Enviada_MySql) " & _
+                 "SELECT " & lIdHistorico & ", '" & sFecha & "', Id_Grupo, Id_Item, " & _
+                 "Codigo_Insumo, Descripcion, Costo, Und_Compra, Valor_Und_Compra, " & _
+                 "Und_Min_Utilizadas, 0, Agrupar, Compras, Controlar, Opcion_Cambios, " & _
+                 "Und_Uso, Centro_Produccion, Cantidad_Actual, 'SISTEMA', " & _
+                 "Insumo_Cp, Fecha_Vence, Stock_MInimo, 0 " & _
+                 "FROM inventario_actual_porciones"
+
+    ' -- 7. Los registros con Enviada_MySql=0 se sincronizan en el proximo ciclo --
+    ' SincronizarInventariosFisicos  → sube inventarios_fisicos_manuales
+    ' SincronizarHistoricoInventario → sube historico_inventario_actual_porciones
 
     Var_Caption_Error = "Corte de inventario completado. Id fisico: " & lIdFisico
     MsgBox "Corte de inventario completado." & vbCrLf & vbCrLf & _

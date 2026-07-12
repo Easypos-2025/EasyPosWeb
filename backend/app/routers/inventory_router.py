@@ -384,6 +384,28 @@ async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
                 FROM inventario_actual_porciones iap
                 WHERE iap.company_id = :cid
             """), {"cid": company_id, "fisico": next_fisico, "uid": user_id})
+
+            # También guarda snapshot completo en historico_inventario_actual_porciones
+            await db.execute(text("""
+                INSERT INTO historico_inventario_actual_porciones
+                    (company_id, id_historico, fecha, id_grupo, id_item,
+                     codigo_insumo, descripcion, costo, und_compra, valor_und_compra,
+                     und_min_utilizadas, agrupar, compras, controlar, opcion_cambios,
+                     und_uso, centro_produccion, cantidad_actual, insumo_cp,
+                     fecha_vence, stock_minimo, synced, created_at)
+                SELECT iap.company_id, :fisico, CURDATE(), iap.id_grupo, iap.id_item,
+                       iap.codigo_insumo, iap.descripcion, iap.costo, iap.und_compra,
+                       iap.valor_und_compra, iap.und_min_utilizadas, iap.agrupar,
+                       iap.compras, iap.controlar, iap.opcion_cambios,
+                       iap.und_uso, iap.centro_produccion, iap.cantidad_actual,
+                       iap.insumo_cp, iap.fecha_vence, iap.stock_minimo, 1, NOW()
+                FROM inventario_actual_porciones iap
+                WHERE iap.company_id = :cid
+                ON DUPLICATE KEY UPDATE
+                    cantidad_actual = VALUES(cantidad_actual),
+                    synced          = 1
+            """), {"cid": company_id, "fisico": next_fisico})
+
             await db.commit()
 
         _snapshot_jobs[job_id] = {
