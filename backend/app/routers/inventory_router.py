@@ -49,6 +49,20 @@ async def _stock_move(
             "UPDATE supply_items SET stock_qty=:q WHERE id=:id"
         ), {"q": new_qty, "id": si["id"]})
 
+    # Actualizar inventario_actual_porciones en paralelo
+    if mtype in ("physical",):
+        await db.execute(text("""
+            UPDATE inventario_actual_porciones
+            SET cantidad_actual = :q, enviada_mysql = 0, updated_at = NOW()
+            WHERE company_id = :cid AND id_item = :item
+        """), {"q": new_qty, "cid": company_id, "item": id_item})
+    elif mtype != "physical_snapshot":
+        await db.execute(text("""
+            UPDATE inventario_actual_porciones
+            SET cantidad_actual = cantidad_actual + :q, enviada_mysql = 0, updated_at = NOW()
+            WHERE company_id = :cid AND id_item = :item
+        """), {"q": qty, "cid": company_id, "item": id_item})
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STOCK — vista general de insumos con stock actual
@@ -77,17 +91,15 @@ async def list_categories(
 async def get_stock(
     search:      Optional[str] = Query(None),
     active:      Optional[str] = Query("1"),   # "1"=activos "0"=inactivos "all"=todos
-    critical:    Optional[int] = Query(0),     # 1 = solo los críticos (stock calculado ≤ min)
+    critical:    Optional[int] = Query(0),     # 1 = solo los críticos (stock ≤ min)
     category_id: Optional[int] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Stock calculado dinámicamente:
-      stock = último inventario físico (inventory_physical)
-            + entradas desde esa fecha (inventory_entries)
-            − salidas desde esa fecha (inventory_exits)
-    Funciona con datos sincronizados desde VB6 (no depende de supply_items.stock_qty).
+    Stock leído directamente de inventario_actual_porciones.cantidad_actual.
+    Esta tabla es la fuente de verdad, mantenida por VB6 (sync) y por los
+    endpoints web de entradas/salidas/recibos/facturas.
     """
     cid = current_user.company_id
     where_parts = ["si.company_id = :cid"]
@@ -108,103 +120,27 @@ async def get_stock(
 
     where_sql = " AND ".join(where_parts)
 
-    # ── fórmula completa: físico + entradas - salidas - ventas_VB6 ──────────────
-    STOCK_EXPR = (
-        "COALESCE(lp.cantidad,0) + COALESCE(ea.total,0) - COALESCE(xa.total,0)"
-        " - COALESCE(rs.total,0) - COALESCE(inv.total,0)"
-    )
-
     critical_clause = ""
     if critical:
-        critical_clause = f"""
-            AND si.control_stock = 1 AND si.min_stock > 0
-            AND ({STOCK_EXPR}) <= si.min_stock
-        """
+        critical_clause = "AND si.control_stock = 1 AND si.min_stock > 0 AND COALESCE(iap.cantidad_actual, 0) <= si.min_stock"
 
     rows = (await db.execute(text(f"""
-        WITH ranked_phys AS (
-            SELECT id_item, cantidad, fecha,
-                   ROW_NUMBER() OVER (PARTITION BY id_item ORDER BY fecha DESC, created_at DESC) AS rn
-            FROM inventory_physical WHERE company_id = :cid
-        ),
-        last_phys AS (
-            SELECT id_item, cantidad, fecha FROM ranked_phys WHERE rn = 1
-        ),
-        entries_adj AS (
-            SELECT ie.id_item, SUM(ie.cantidad) AS total
-            FROM inventory_entries ie
-            LEFT JOIN last_phys lp ON lp.id_item = ie.id_item
-            WHERE ie.company_id = :cid
-              AND (lp.fecha IS NULL OR ie.fecha >= lp.fecha)
-            GROUP BY ie.id_item
-        ),
-        exits_adj AS (
-            SELECT ix.id_item, SUM(ix.cantidad) AS total
-            FROM inventory_exits ix
-            LEFT JOIN last_phys lp ON lp.id_item = ix.id_item
-            WHERE ix.company_id = :cid
-              AND (lp.fecha IS NULL OR ix.fecha >= lp.fecha)
-            GROUP BY ix.id_item
-        ),
-        receipt_sales AS (
-            SELECT prd.item_id, SUM(rod.quantity * prd.quantity) AS total
-            FROM pos_receipt_order_detail_products prd
-            INNER JOIN pos_receipt_order_details rod
-                ON  rod.order_number   = prd.order_number
-                AND rod.receipt_number = prd.invoice_number
-                AND rod.date           = prd.date
-                AND rod.dish_id        = prd.dish_id
-                AND rod.item           = prd.item
-                AND rod.company_id     = prd.company_id
-            INNER JOIN pos_receipts pr
-                ON  pr.receipt_number = rod.receipt_number
-                AND pr.date           = rod.date
-                AND pr.company_id     = rod.company_id
-                AND (pr.voided IS NULL OR pr.voided = 0)
-            LEFT JOIN last_phys lp ON lp.id_item = prd.item_id
-            WHERE prd.company_id = :cid
-              AND (lp.fecha IS NULL OR prd.date >= lp.fecha)
-            GROUP BY prd.item_id
-        ),
-        invoice_sales AS (
-            SELECT pod.item_id, SUM(od.quantity * pod.quantity) AS total
-            FROM pos_order_detail_products pod
-            INNER JOIN pos_order_details od
-                ON  od.order_number   = pod.order_number
-                AND od.invoice_number = pod.invoice_number
-                AND od.date           = pod.date
-                AND od.dish_id        = pod.dish_id
-                AND od.item           = pod.item
-                AND od.company_id     = pod.company_id
-            INNER JOIN pos_invoices pi
-                ON  pi.invoice_number = od.invoice_number
-                AND pi.date           = od.date
-                AND pi.company_id     = od.company_id
-                AND (pi.voided IS NULL OR pi.voided = 0)
-            LEFT JOIN last_phys lp ON lp.id_item = pod.item_id
-            WHERE pod.company_id = :cid
-              AND (lp.fecha IS NULL OR pod.date >= lp.fecha)
-            GROUP BY pod.item_id
-        )
         SELECT si.id, si.id_item, si.code, si.description,
-               {STOCK_EXPR} AS stock_qty,
+               COALESCE(iap.cantidad_actual, 0)  AS stock_qty,
                si.min_stock, si.control_stock, si.is_active, si.agrupar AS category_id,
-               COALESCE(mu.name,  '') AS unit_name,
-               COALESCE(cat.name, '') AS category_name,
-               lp.fecha               AS last_inventory_date
+               COALESCE(mu.name,  '')             AS unit_name,
+               COALESCE(cat.name, '')             AS category_name,
+               iap.updated_at                     AS last_inventory_date
         FROM supply_items si
+        LEFT JOIN inventario_actual_porciones iap
+               ON iap.id_item = si.id_item AND iap.company_id = si.company_id
         LEFT JOIN pos_measure_forms mu
                ON mu.id = si.unit_id AND mu.company_id = si.company_id
         LEFT JOIN pos_product_categories cat
                ON cat.id = si.agrupar AND cat.company_id = si.company_id
-        LEFT JOIN last_phys lp      ON lp.id_item  = si.id_item
-        LEFT JOIN entries_adj ea    ON ea.id_item   = si.id_item
-        LEFT JOIN exits_adj xa      ON xa.id_item   = si.id_item
-        LEFT JOIN receipt_sales rs  ON rs.item_id   = si.id_item
-        LEFT JOIN invoice_sales inv ON inv.item_id  = si.id_item
         WHERE {where_sql}
         {critical_clause}
-        ORDER BY si.description
+        ORDER BY cat.name, si.description
     """), params)).mappings().all()
     return [dict(r) for r in rows]
 
