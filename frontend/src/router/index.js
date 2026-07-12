@@ -555,6 +555,29 @@ const routes = [
         meta: { title: "Reporte de Recibos" }
       },
 
+      // ── Métricas - Estadísticas ────────────────────────────────
+      {
+        path: "/metricas/ventas",
+        name: "MetricasVentasView",
+        component: () => import("@/views/metricas/MetricasVentasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Ventas — Métricas" }
+      },
+      {
+        path: "/metricas/forma-pago",
+        name: "MetricasFormaPagoView",
+        component: () => import("@/views/metricas/MetricasFormaPagoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Forma de Pago — Métricas" }
+      },
+      {
+        path: "/metricas/productos-abc",
+        name: "MetricasProductosAbcView",
+        component: () => import("@/views/metricas/MetricasProductosAbcView.vue"),
+        requiresAuth: true,
+        meta: { title: "Análisis ABC — Métricas" }
+      },
+
       // ── Préstamos de bodega ─────────────────────────────────────
       {
         path: "/configuration/colaboradores-externos",

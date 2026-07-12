@@ -100,6 +100,7 @@ from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
 from app.routers.company_configs_router import router as company_configs_router
 from app.routers.pos_payment_types_router import router as pos_payment_types_router
+from app.routers.metricas_router import router as metricas_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -1604,6 +1605,13 @@ async def _init_db_data():
                 await db.refresh(m)
             return m
 
+        # ── SEED: Métricas - Estadísticas (padre + hijos) ──────────────
+        metricas_root = await _get_or_create_module("Métricas - Estadísticas", "/metricas", "bi-graph-up-arrow")
+        await _get_or_create_module("Ventas",            "/metricas/ventas",        "bi-bar-chart-line",   metricas_root.id)
+        await _get_or_create_module("Forma de Pago",     "/metricas/forma-pago",    "bi-credit-card",      metricas_root.id)
+        await _get_or_create_module("Análisis ABC Prod.", "/metricas/productos-abc", "bi-trophy",           metricas_root.id)
+        await db.commit()
+
         fact_root     = await _get_or_create_module("Facturación",   "/facturacion",                  "bi-receipt-cutoff")
         fact_ventas   = await _get_or_create_module("Ventas",        "/facturacion/ventas",            "bi-bag",                  fact_root.id)
         fact_reportes = await _get_or_create_module("Reportes",      "/facturacion/reportes",          "bi-bar-chart-line",       fact_root.id)
@@ -2065,6 +2073,7 @@ routers = [
     welcome_steps_router,
     company_configs_router,
     pos_payment_types_router,
+    metricas_router,
 ]
 
 for router in routers:
