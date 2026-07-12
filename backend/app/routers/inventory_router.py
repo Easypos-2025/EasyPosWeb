@@ -1,15 +1,21 @@
 from datetime import date as date_type, datetime, timedelta
 from collections import defaultdict
 from typing import Optional, List
+import asyncio
+import uuid as uuid_module
+
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
+
+# Almacén en memoria para jobs de auto-snapshot (operación poco frecuente)
+_snapshot_jobs: dict = {}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -337,6 +343,102 @@ async def recalculate_stock_category(
         cat_id=cat,
     )
     return {"ok": True, "updated": updated}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTO-SNAPSHOT — corte automático de inventario físico
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
+    """
+    Background task:
+      1. Recalcula inventario_actual_porciones (CTE completo).
+      2. Inserta los valores calculados en inventory_physical como corte de hoy.
+    Usa su propia sesión de BD porque corre fuera del request cycle.
+    """
+    _snapshot_jobs[job_id]["status"]   = "running"
+    _snapshot_jobs[job_id]["progress"] = "Recalculando stock..."
+    try:
+        async with AsyncSessionLocal() as db:
+            updated = await _recalc_execute(
+                db, company_id,
+                "iap.company_id = :cid",
+                {"cid": company_id},
+                cat_id=None,
+            )
+
+            _snapshot_jobs[job_id]["progress"] = "Guardando inventario físico..."
+
+            row = (await db.execute(text("""
+                SELECT COALESCE(MAX(id_fisico), 0) + 1 AS next_fisico
+                FROM inventory_physical WHERE company_id = :cid
+            """), {"cid": company_id})).mappings().first()
+            next_fisico = int(row["next_fisico"])
+
+            await db.execute(text("""
+                INSERT INTO inventory_physical
+                    (company_id, id_fisico, id_item, fecha, cantidad,
+                     observacion, autorizada, cod_usuario, created_at)
+                SELECT :cid, :fisico, iap.id_item, CURDATE(), iap.cantidad_actual,
+                       'Corte automatico del sistema', 1, :uid, NOW()
+                FROM inventario_actual_porciones iap
+                WHERE iap.company_id = :cid
+            """), {"cid": company_id, "fisico": next_fisico, "uid": user_id})
+            await db.commit()
+
+        _snapshot_jobs[job_id] = {
+            "status":      "done",
+            "items_saved": updated,
+            "id_fisico":   next_fisico,
+            "fecha":       str(date_type.today()),
+        }
+    except Exception as e:
+        _snapshot_jobs[job_id] = {"status": "error", "error": str(e)}
+
+
+@router.get("/snapshot-status")
+async def get_snapshot_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Días desde el último inventario físico. needs_alert=true si > 90 días."""
+    row = (await db.execute(text("""
+        SELECT MAX(fecha) AS last_date FROM inventory_physical
+        WHERE company_id = :cid
+    """), {"cid": current_user.company_id})).mappings().first()
+
+    last_date = row["last_date"] if row else None
+    days_since = (date_type.today() - last_date).days if last_date else 9999
+
+    return {
+        "last_snapshot_date": str(last_date) if last_date else None,
+        "days_since":         days_since,
+        "needs_alert":        days_since > 90,
+        "threshold_days":     90,
+    }
+
+
+@router.post("/auto-snapshot")
+async def start_auto_snapshot(
+    current_user: User = Depends(get_current_user),
+):
+    """Lanza el corte automático en background. Devuelve job_id para polling."""
+    job_id = str(uuid_module.uuid4())[:8]
+    _snapshot_jobs[job_id] = {"status": "running", "progress": "Iniciando..."}
+    asyncio.create_task(_run_auto_snapshot(job_id, current_user.company_id, current_user.id))
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.get("/auto-snapshot/status/{job_id}")
+async def get_snapshot_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Polling: estado actual del job de auto-snapshot."""
+    job = _snapshot_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job no encontrado")
+    return job
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -22,9 +22,27 @@
     </div>
 
     <!-- Último inventario -->
-    <div v-if="lastInventoryDate" class="inv-date-bar">
+    <div v-if="snapshotStatus.last_snapshot_date" class="inv-date-bar">
       <i class="bi bi-calendar-check-fill inv-ico"></i>
-      <span>Último inventario físico registrado: <strong>{{ lastInventoryDate }}</strong></span>
+      <span>Último inventario físico: <strong>{{ snapshotStatus.last_snapshot_date }}</strong>
+        <span v-if="snapshotStatus.days_since !== null" class="inv-days">({{ snapshotStatus.days_since }} días)</span>
+      </span>
+    </div>
+
+    <!-- Alerta corte de inventario -->
+    <div v-if="snapshotStatus.needs_alert" class="snap-alert">
+      <div class="snap-alert-ico"><i class="bi bi-exclamation-triangle-fill"></i></div>
+      <div class="snap-alert-txt">
+        <strong>Inventario físico desactualizado</strong>
+        <span v-if="snapshotStatus.last_snapshot_date">
+          — Último corte hace {{ snapshotStatus.days_since }} días.
+        </span>
+        <span v-else>— Nunca se ha registrado un inventario físico.</span>
+        <span class="snap-note">El recálculo de stock tomará más tiempo hasta que se realice un corte.</span>
+      </div>
+      <button class="btn-snap" @click="openSnapshotModal">
+        <i class="bi bi-camera-fill"></i> Hacer corte ahora
+      </button>
     </div>
 
     <!-- Filters + Export -->
@@ -180,6 +198,65 @@
       </template>
     </template>
 
+    <!-- Auto-Snapshot Modal -->
+    <teleport to="body">
+      <div v-if="snapModal.show" class="modal-bg">
+        <div class="snap-panel">
+          <div class="snap-panel-hdr">
+            <i class="bi bi-camera-fill snap-panel-ico"></i>
+            <div>
+              <div class="snap-panel-title">Corte de inventario físico automático</div>
+              <div class="snap-panel-sub">Este proceso recalcula el stock y registra los valores como inventario físico de hoy</div>
+            </div>
+          </div>
+
+          <!-- Estado: confirmación -->
+          <div v-if="snapModal.phase === 'confirm'" class="snap-body">
+            <ul class="snap-steps">
+              <li><i class="bi bi-1-circle-fill"></i> Recalcular stock desde el historial completo</li>
+              <li><i class="bi bi-2-circle-fill"></i> Guardar los valores calculados como inventario físico de hoy</li>
+              <li><i class="bi bi-3-circle-fill"></i> Desde ahora, los recálculos partirán de esta fecha</li>
+            </ul>
+            <p class="snap-warn">
+              <i class="bi bi-info-circle"></i>
+              Este proceso puede tardar entre 10 y 60 segundos según el volumen de transacciones.
+              Si no lo hace ahora, puede ignorarlo — el recálculo funcionará igual pero más lento.
+            </p>
+            <div class="snap-footer">
+              <button class="btn-snap-cancel" @click="snapModal.show = false">Ignorar por ahora</button>
+              <button class="btn-snap-ok" @click="runSnapshot">Hacer corte ahora</button>
+            </div>
+          </div>
+
+          <!-- Estado: en progreso -->
+          <div v-else-if="snapModal.phase === 'running'" class="snap-body snap-center">
+            <div class="snap-spinner"></div>
+            <div class="snap-prog-lbl">{{ snapModal.progress }}</div>
+            <div class="snap-prog-sub">No cierre esta ventana...</div>
+          </div>
+
+          <!-- Estado: éxito -->
+          <div v-else-if="snapModal.phase === 'done'" class="snap-body snap-center">
+            <i class="bi bi-check-circle-fill snap-done-ico"></i>
+            <div class="snap-done-title">¡Corte completado!</div>
+            <div class="snap-done-info">
+              Se registraron <strong>{{ snapModal.itemsSaved }}</strong> insumos como inventario físico del
+              <strong>{{ snapModal.fecha }}</strong>
+            </div>
+            <button class="btn-snap-ok" @click="snapModal.show = false; load(); loadSnapshotStatus()">Aceptar</button>
+          </div>
+
+          <!-- Estado: error -->
+          <div v-else-if="snapModal.phase === 'error'" class="snap-body snap-center">
+            <i class="bi bi-x-circle-fill snap-err-ico"></i>
+            <div class="snap-done-title">Error en el proceso</div>
+            <div class="snap-done-info snap-err-msg">{{ snapModal.errorMsg }}</div>
+            <button class="btn-snap-cancel" @click="snapModal.show = false">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
     <!-- Movements Modal -->
     <teleport to="body">
       <div v-if="mov.show" class="modal-bg" @click.self="mov.show=false">
@@ -233,6 +310,49 @@ const rows       = ref([])
 const categories = ref([])
 const loading    = ref(true)
 
+// ── Snapshot status ──────────────────────────────────────────────────────────
+const snapshotStatus = ref({ last_snapshot_date: null, days_since: null, needs_alert: false })
+const snapModal = ref({ show: false, phase: 'confirm', progress: '', itemsSaved: 0, fecha: '', errorMsg: '' })
+let   snapPollTimer = null
+
+async function loadSnapshotStatus() {
+  try {
+    snapshotStatus.value = (await api.get('/api/inventory/snapshot-status')).data
+  } catch { /* silencioso */ }
+}
+
+function openSnapshotModal() {
+  snapModal.value = { show: true, phase: 'confirm', progress: '', itemsSaved: 0, fecha: '', errorMsg: '' }
+}
+
+async function runSnapshot() {
+  snapModal.value.phase = 'running'
+  snapModal.value.progress = 'Iniciando recálculo...'
+  try {
+    const { data } = await api.post('/api/inventory/auto-snapshot')
+    const jobId = data.job_id
+    snapPollTimer = setInterval(async () => {
+      try {
+        const { data: s } = await api.get(`/api/inventory/auto-snapshot/status/${jobId}`)
+        snapModal.value.progress = s.progress || 'Procesando...'
+        if (s.status === 'done') {
+          clearInterval(snapPollTimer)
+          snapModal.value.phase     = 'done'
+          snapModal.value.itemsSaved = s.items_saved
+          snapModal.value.fecha      = s.fecha
+        } else if (s.status === 'error') {
+          clearInterval(snapPollTimer)
+          snapModal.value.phase    = 'error'
+          snapModal.value.errorMsg = s.error || 'Error desconocido'
+        }
+      } catch { clearInterval(snapPollTimer); snapModal.value.phase = 'error'; snapModal.value.errorMsg = 'Error al consultar estado' }
+    }, 2000)
+  } catch (e) {
+    snapModal.value.phase    = 'error'
+    snapModal.value.errorMsg = e?.response?.data?.detail || 'Error al iniciar el proceso'
+  }
+}
+
 // ── Recalcular ───────────────────────────────────────────────────────────────
 const rcOpen        = ref(false)
 const rcWrap        = ref(null)
@@ -245,14 +365,6 @@ const critFilter   = ref(false)
 const editingId    = ref(null)
 const editVal      = ref(0)
 const mov          = ref({ show: false, item: null, loading: false, data: [] })
-
-// ── Último inventario físico ─────────────────────────────────────────────────
-const lastInventoryDate = computed(() => {
-  const dates = rows.value
-    .filter(r => r.last_inventory_date)
-    .map(r => String(r.last_inventory_date).slice(0, 10))
-  return dates.length ? dates.sort().at(-1) : null
-})
 
 // Nombre de la categoría activa para mostrar en el dropdown
 const activeCatName = computed(() => {
@@ -438,10 +550,12 @@ onMounted(async () => {
   document.addEventListener('click', onDocClick)
   await loadCategories()
   load()
+  loadSnapshotStatus()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
+  if (snapPollTimer) clearInterval(snapPollTimer)
 })
 </script>
 
@@ -466,7 +580,75 @@ onUnmounted(() => {
   background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
   padding: 7px 12px; margin-bottom: 10px; font-size: .83rem; color: #166534;
 }
-.inv-ico { color: #16a34a; font-size: .88rem; flex-shrink: 0; }
+.inv-ico  { color: #16a34a; font-size: .88rem; flex-shrink: 0; }
+.inv-days { font-size: .78rem; color: #6b7280; margin-left: 4px; }
+
+/* Alerta corte de inventario */
+.snap-alert {
+  display: flex; align-items: center; gap: 12px;
+  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 12px;
+}
+.snap-alert-ico { color: #d97706; font-size: 1.2rem; flex-shrink: 0; }
+.snap-alert-txt { flex: 1; font-size: .82rem; color: #78350f; line-height: 1.5; }
+.snap-note { display: block; font-size: .76rem; color: #92400e; margin-top: 2px; }
+.btn-snap {
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 7px 13px; background: #d97706; color: #fff; border: none;
+  border-radius: 8px; cursor: pointer; font-size: .82rem; font-weight: 600; flex-shrink: 0;
+}
+.btn-snap:hover { background: #b45309; }
+
+/* Auto-Snapshot Modal */
+.snap-panel {
+  background: #fff; border-radius: 16px; width: 100%; max-width: 520px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.22); display: flex; flex-direction: column;
+}
+.snap-panel-hdr {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 20px 22px 14px; border-bottom: 1px solid #e9ecef;
+}
+.snap-panel-ico   { font-size: 1.6rem; color: #d97706; flex-shrink: 0; margin-top: 2px; }
+.snap-panel-title { font-weight: 700; font-size: .98rem; color: #111827; }
+.snap-panel-sub   { font-size: .78rem; color: #6b7280; margin-top: 3px; }
+.snap-body  { padding: 20px 22px; }
+.snap-center { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+.snap-steps  { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.snap-steps li { display: flex; align-items: center; gap: 10px; font-size: .84rem; color: #374151; }
+.snap-steps li i { color: #2563eb; font-size: .9rem; }
+.snap-warn {
+  font-size: .78rem; color: #6b7280; background: #f9fafb;
+  border-radius: 8px; padding: 10px 12px; margin: 0 0 16px;
+  display: flex; gap: 7px; align-items: flex-start;
+}
+.snap-warn i { flex-shrink: 0; color: #9ca3af; margin-top: 1px; }
+.snap-footer { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-snap-cancel {
+  padding: 8px 18px; border: 1px solid #d1d5db; border-radius: 8px;
+  background: #fff; cursor: pointer; font-size: .84rem; color: #374151;
+}
+.btn-snap-cancel:hover { background: #f9fafb; }
+.btn-snap-ok {
+  padding: 8px 20px; border: none; border-radius: 8px;
+  background: #d97706; color: #fff; cursor: pointer; font-size: .84rem; font-weight: 600;
+}
+.btn-snap-ok:hover { background: #b45309; }
+
+/* Spinner del snapshot */
+.snap-spinner {
+  width: 48px; height: 48px; border: 5px solid #fde68a;
+  border-top-color: #d97706; border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+.snap-prog-lbl { font-weight: 600; font-size: .92rem; color: #374151; }
+.snap-prog-sub { font-size: .78rem; color: #9ca3af; }
+
+/* Done / Error */
+.snap-done-ico { font-size: 3rem; color: #16a34a; }
+.snap-err-ico  { font-size: 3rem; color: #dc2626; }
+.snap-done-title { font-weight: 700; font-size: 1rem; color: #111827; }
+.snap-done-info  { font-size: .84rem; color: #374151; line-height: 1.6; }
+.snap-err-msg    { color: #dc2626; font-family: monospace; font-size: .78rem; }
 
 /* Agrupamiento por categoría */
 .cat-group { margin-bottom: 10px; }
@@ -643,6 +825,12 @@ onUnmounted(() => {
   .sc-min    { width: auto; order: 2; }
   .sc-act    { order: 3; margin-left: auto; }
   .kpi-card  { min-width: 80px; }
+}
+
+/* Tablet snap-alert */
+@media (max-width: 767px) {
+  .snap-alert { flex-wrap: wrap; }
+  .btn-snap { width: 100%; justify-content: center; }
 }
 
 /* Mobile */
