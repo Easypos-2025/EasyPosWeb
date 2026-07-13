@@ -99,21 +99,25 @@
             :class="{ 'cart-item--sent': !group.hasUnsent }"
           >
             <div class="cart-item__main">
-              <div class="cart-item__qty-ctrl">
+              <!-- Controles solo para ítems no enviados -->
+              <div class="cart-item__qty-ctrl" v-if="group.hasUnsent">
                 <button class="qty-btn" @click.stop="removeGroupItem(group)"><i class="bi bi-dash-lg"></i></button>
                 <span class="cart-item__qty">{{ group.qty }}</span>
                 <button class="qty-btn" @click.stop="addGroupItem(group)"><i class="bi bi-plus-lg"></i></button>
               </div>
+              <!-- Cantidad estática para ítems ya enviados -->
+              <span class="cart-item__qty-static" v-else>{{ group.qty }}×</span>
               <span class="cart-item__name">{{ group.dish_name }}</span>
               <span class="cart-item__price">{{ formatPrice(group.totalAmount) }}</span>
+              <!-- Nota y eliminar: solo para ítems no enviados -->
               <button
+                v-if="group.hasUnsent"
                 class="cart-item__btn cart-item__btn--notes"
-                :disabled="group.lastSent"
                 @click="openNotasModal(group.allItems[group.allItems.length - 1])"
               >
                 <i class="bi bi-chat-text"></i>
               </button>
-              <button class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
+              <button v-if="group.hasUnsent" class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
@@ -807,6 +811,7 @@ function cancelOrder() {
 .qty-btn:hover { background: #eff6ff; border-color: #2563eb; }
 
 .cart-item__qty { font-weight: 700; color: #2563eb; font-size: .8rem; min-width: 16px; text-align: center; }
+.cart-item__qty-static { font-weight: 700; color: #64748b; font-size: .8rem; flex-shrink: 0; min-width: 24px; }
 
 .cart-item__name {
   flex: 1; font-size: .82rem; font-weight: 600; color: #1e293b;
