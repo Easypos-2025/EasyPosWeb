@@ -1,10 +1,15 @@
 <template>
   <div class="kpi-strip">
-    <div
+    <component
+      :is="kpi.to ? 'RouterLink' : 'div'"
       v-for="(kpi, i) in kpis"
       :key="i"
+      v-bind="kpi.to ? { to: kpi.to } : {}"
       class="kpi-item"
-      :class="{ 'kpi-item--divider': i < kpis.length - 1 || modelValue !== null }"
+      :class="{
+        'kpi-item--divider': i < kpis.length - 1 || modelValue !== null,
+        'kpi-item--link': !!kpi.to
+      }"
       :title="kpi.label"
     >
       <div class="kpi-icon-wrap">
@@ -17,7 +22,7 @@
         </span>
         <span v-if="showLabels && kpi.label" class="kpi-label">{{ kpi.label }}</span>
       </div>
-    </div>
+    </component>
 
     <!-- Selector de fecha (solo Facturas / Recibos) -->
     <div v-if="modelValue !== null" class="kpi-item kpi-item--fecha">
@@ -71,6 +76,15 @@ const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).f
   padding: 5px 16px;
   position: relative;
   min-height: 0;
+  text-decoration: none;
+}
+
+.kpi-item--link {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.kpi-item--link:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .kpi-text {

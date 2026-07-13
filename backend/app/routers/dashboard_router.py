@@ -104,28 +104,31 @@ async def get_active_sessions(
 
     companies = (await db.execute(text("""
         SELECT c.id_company,
-               c.name                           AS company_name,
-               COUNT(DISTINCT us.user_id)       AS active_users,
-               MAX(us.created_at - INTERVAL 5 HOUR) AS last_activity
+               c.name                              AS company_name,
+               COUNT(DISTINCT us.user_id)          AS active_users,
+               MAX(us.last_seen - INTERVAL 5 HOUR) AS last_activity
         FROM user_sessions us
-        JOIN users    u ON u.id          = us.user_id
-        JOIN companies c ON c.id_company = u.company_id
+        JOIN users     u ON u.id          = us.user_id
+        JOIN companies c ON c.id_company  = u.company_id
         WHERE us.is_active = 1
+          AND us.last_seen >= (UTC_TIMESTAMP() - INTERVAL 6 MINUTE)
         GROUP BY c.id_company, c.name
         ORDER BY active_users DESC, c.name
     """))).mappings().all()
 
     users_rows = (await db.execute(text("""
-        SELECT u.id          AS user_id,
-               u.nombre      AS name,
-               c.name        AS company_name,
-               (us.created_at - INTERVAL 5 HOUR) AS session_start,
+        SELECT u.id                                AS user_id,
+               u.nombre                           AS name,
+               c.name                             AS company_name,
+               (us.created_at - INTERVAL 5 HOUR)  AS session_start,
+               (us.last_seen  - INTERVAL 5 HOUR)  AS last_seen,
                us.ip
         FROM user_sessions us
-        JOIN users    u ON u.id          = us.user_id
-        JOIN companies c ON c.id_company = u.company_id
+        JOIN users     u ON u.id          = us.user_id
+        JOIN companies c ON c.id_company  = u.company_id
         WHERE us.is_active = 1
-        ORDER BY us.created_at DESC
+          AND us.last_seen >= (UTC_TIMESTAMP() - INTERVAL 6 MINUTE)
+        ORDER BY us.last_seen DESC
         LIMIT 300
     """))).mappings().all()
 
@@ -138,7 +141,7 @@ async def get_active_sessions(
             for r in companies
         ],
         "users": [
-            {**dict(r), "session_start": _s(r["session_start"])}
+            {**dict(r), "session_start": _s(r["session_start"]), "last_seen": _s(r["last_seen"])}
             for r in users_rows
         ],
     }

@@ -510,6 +510,14 @@ const routes = [
       },
 
       {
+        path: "/sysadmin/sesiones",
+        name: "SesionesLiveView",
+        component: () => import("@/views/sysadmin/SesionesLiveView.vue"),
+        requiresAuth: true,
+        meta: { title: "Sesiones en Vivo" }
+      },
+
+      {
         path: "/sysadmin/monitor",
         name: "SysAdminMonitorView",
         component: () => import("@/views/sysadmin/SysAdminMonitorView.vue"),
