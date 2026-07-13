@@ -142,7 +142,7 @@ class EnviarCocinaIn(BaseModel):
 async def list_waiters(company_id: int = Query(...), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(text(
         "SELECT id, name FROM pos_waiters "
-        "WHERE company_id=:cid AND status=1 AND plan_blocked=0 ORDER BY name"
+        "WHERE company_id=:cid AND status=1 AND plan_blocked=0 AND employee_type=2 ORDER BY name"
     ), {"cid": company_id})).mappings().all()
     return [{"id": int(r["id"]), "name": r["name"]} for r in rows]
 

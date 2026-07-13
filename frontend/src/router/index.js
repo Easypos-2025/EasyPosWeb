@@ -970,6 +970,35 @@ const routes = [
     meta: { title: "Acceso Mesero", public: true }
   },
 
+  // ── TPV Punto de Venta (kiosk, sin sidebar) ──────────────────────────────
+  {
+    path: "/pos/tpv",
+    component: () => import("@/components/layout/KioskLayout.vue"),
+    meta: { kiosk: true },
+    children: [
+      {
+        path: "mesas",
+        name: "PosTpvMesas",
+        component: () => import("@/views/pos/tpv/PosTpvMesasView.vue"),
+        meta: { title: "Mesas — TPV" }
+      },
+      {
+        path: "pedido/:tableId",
+        name: "PosTpvPedido",
+        component: () => import("@/views/pos/tpv/PosTpvPedidoView.vue"),
+        meta: { title: "Pedido — TPV" }
+      },
+    ]
+  },
+
+  // ── Login TPV (sin layout) ────────────────────────────────────────────────
+  {
+    path: "/pos/tpv/login",
+    name: "PosTpvLogin",
+    component: () => import("@/views/pos/tpv/PosTpvLoginView.vue"),
+    meta: { title: "Acceso TPV", public: true }
+  },
+
   // ── Cocina TV (standalone, sin layout, sin auth) ──────────────────────────
   {
     path: "/pos/cocina",
@@ -1021,12 +1050,13 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Rutas kiosk: acepta waiter_token (mesero) O token regular (admin desde dashboard)
-  if (to.meta?.kiosk || to.path.startsWith("/pos/comanda/")) {
+  if (to.meta?.kiosk || to.path.startsWith("/pos/comanda/") || to.path.startsWith("/pos/tpv/")) {
     const waiterToken = localStorage.getItem("waiter_token")
     const userToken   = localStorage.getItem("token")
     if (!waiterToken && !userToken) {
       const cid = localStorage.getItem("waiter_company_id") || ""
-      return next(`/pos/comanda/login${cid ? `?cid=${cid}` : ""}`)
+      const loginPath = to.path.startsWith("/pos/tpv/") ? "/pos/tpv/login" : "/pos/comanda/login"
+      return next(`${loginPath}${cid ? `?cid=${cid}` : ""}`)
     }
     return next()
   }
