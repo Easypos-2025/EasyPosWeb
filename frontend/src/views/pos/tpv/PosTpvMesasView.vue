@@ -1,6 +1,18 @@
 <template>
   <div class="mesas-view">
 
+    <!-- Header: usuario logueado + cambiar usuario -->
+    <div class="tpv-topbar">
+      <div class="tpv-topbar__user">
+        <i class="bi bi-person-circle me-2"></i>
+        <span>{{ waiterName }}</span>
+      </div>
+      <button class="tpv-topbar__switch" @click="cambiarUsuario" title="Cambiar usuario">
+        <i class="bi bi-arrow-left-right me-1"></i>
+        Cambiar usuario
+      </button>
+    </div>
+
     <!-- Tabs de zonas -->
     <div class="zona-tabs" v-if="zonas.length">
       <button
@@ -23,26 +35,26 @@
           v-for="t in currentZone.tables"
           :key="t.id"
           class="mesa-card"
-          :class="`mesa-card--${t.status}`"
+          :class="[`mesa-card--${t.status}`, { 'mesa-card--opening': openingId === t.id }]"
           @click="onTableClick(t)"
+          :disabled="openingId === t.id"
         >
           <div class="mesa-card__header">
             <span class="mesa-card__num">{{ t.name }}</span>
             <span class="mesa-card__seq" v-if="t.daily_seq">#{{ t.daily_seq }}</span>
           </div>
-          <i class="bi mesa-card__icon"
+          <span v-if="openingId === t.id" class="spinner-border spinner-border-sm mesa-card__icon text-success"></span>
+          <i v-else class="bi mesa-card__icon"
             :class="{
               'bi-unlock-fill': t.status === 'free',
               'bi-people-fill': t.status === 'occupied',
-              'bi-receipt': t.status === 'bill_requested',
+              'bi-receipt':     t.status === 'bill_requested',
             }"
           ></i>
           <div class="mesa-card__info" v-if="t.status !== 'free'">
             <span class="mesa-card__waiter">{{ t.waiter_name }}</span>
             <span class="mesa-card__time">{{ t.order_time }}</span>
-            <span class="mesa-card__amount" v-if="t.amount">
-              {{ formatCurrency(t.amount) }}
-            </span>
+            <span class="mesa-card__amount" v-if="t.amount">{{ formatCurrency(t.amount) }}</span>
           </div>
           <div class="mesa-card__status">
             <span v-if="t.status === 'free'">Disponible</span>
@@ -53,10 +65,10 @@
       </div>
     </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="mesas-loading">
+    <!-- Loading inicial -->
+    <div v-if="loading && !zonas.length" class="mesas-loading">
       <div class="spinner-border text-primary"></div>
-      <p class="mt-3 text-muted">Cargando mesas...</p>
+      <p class="mt-3 text-muted">Cargando...</p>
     </div>
 
     <!-- Modal detalle pedido -->
@@ -66,37 +78,6 @@
       @close="detailTable = null"
       @cancelled="onOrderCancelled"
     />
-
-    <!-- Modal abrir mesa -->
-    <div class="modal-overlay" v-if="openingTable" @click.self="openingTable = null">
-      <div class="open-modal">
-        <h3 class="open-modal__title">
-          <i class="bi bi-unlock-fill me-2 text-success"></i>
-          Abrir {{ openingTable.name }}
-        </h3>
-        <div class="open-modal__field">
-          <label class="form-label">Número de comensales</label>
-          <div class="guests-control">
-            <button class="guests-btn" @click="guests = Math.max(1, guests - 1)">
-              <i class="bi bi-dash-lg"></i>
-            </button>
-            <span class="guests-value">{{ guests }}</span>
-            <button class="guests-btn" @click="guests = Math.min(30, guests + 1)">
-              <i class="bi bi-plus-lg"></i>
-            </button>
-          </div>
-        </div>
-        <div class="open-modal__actions">
-          <button class="btn btn-outline-secondary" @click="openingTable = null">
-            Cancelar
-          </button>
-          <button class="btn btn-success" @click="openTable" :disabled="opening">
-            <span v-if="opening" class="spinner-border spinner-border-sm me-2"></span>
-            Abrir Mesa
-          </button>
-        </div>
-      </div>
-    </div>
 
   </div>
 </template>
@@ -110,15 +91,20 @@ import { showToast } from '@/utils/toast'
 
 const router = useRouter()
 
-const zonas         = ref([])
-const loading       = ref(false)
-const activeZone    = ref(null)
-const openingTable  = ref(null)
-const detailTable   = ref(null)
-const guests        = ref(2)
-const opening       = ref(false)
+const zonas       = ref([])
+const loading     = ref(false)
+const activeZone  = ref(null)
+const openingId   = ref(null)
+const detailTable = ref(null)
 
 let pollTimer = null
+
+const waiterName = computed(() => {
+  try {
+    const d = JSON.parse(localStorage.getItem('waiter_data') || '{}')
+    return d.name || 'Usuario'
+  } catch { return 'Usuario' }
+})
 
 const currentZone = computed(() =>
   zonas.value.find(z => z.id === activeZone.value)
@@ -139,7 +125,21 @@ onMounted(async () => {
 
 onUnmounted(() => clearInterval(pollTimer))
 
+function _todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function _checkDateChange() {
+  const loginDate = localStorage.getItem('waiter_login_date')
+  if (loginDate && loginDate !== _todayStr()) {
+    cambiarUsuario()
+    return true
+  }
+  return false
+}
+
 async function loadMesas() {
+  if (_checkDateChange()) return
   if (loading.value) return
   loading.value = true
   try {
@@ -153,21 +153,21 @@ async function loadMesas() {
   }
 }
 
-function _setCtx(tableId, tableName, waiterName) {
+function _setCtx(tableId, tableName) {
   const cid = localStorage.getItem('waiter_company_id')
+  const waiter = (() => { try { return JSON.parse(localStorage.getItem('waiter_data') || '{}') } catch { return {} } })()
   localStorage.setItem('pedido_ctx', JSON.stringify({
     table_id:    tableId,
     table_name:  tableName,
-    waiter_name: waiterName || '',
-    waiter_id:   0,
+    waiter_name: waiter.name || '',
+    waiter_id:   waiter.id   || 0,
     company_id:  cid ? parseInt(cid) : 0,
   }))
 }
 
 function onTableClick(table) {
   if (table.status === 'free') {
-    openingTable.value = table
-    guests.value = 2
+    openTable(table)
   } else {
     detailTable.value = table
   }
@@ -178,24 +178,28 @@ function onOrderCancelled() {
   loadMesas()
 }
 
-async function openTable() {
-  if (opening.value) return
-  opening.value = true
+async function openTable(table) {
+  if (openingId.value) return
+  openingId.value = table.id
   try {
     await apiComanda.post('/api/pos/comanda/mesa/abrir', {
-      table_id:     openingTable.value.id,
-      guests_count: guests.value,
+      table_id:     table.id,
+      guests_count: 1,
     })
-    const tid  = openingTable.value.id
-    const name = openingTable.value.name
-    _setCtx(tid, name, '')
-    openingTable.value = null
-    router.push(`/pos/tpv/pedido/${tid}`)
+    _setCtx(table.id, table.name)
+    router.push(`/pos/tpv/pedido/${table.id}`)
   } catch (e) {
-    showToast(e.response?.data?.detail || 'Error al abrir la mesa', 'error', 3000)
+    showToast(e.response?.data?.detail || 'Error al abrir la cuenta', 'error', 3000)
   } finally {
-    opening.value = false
+    openingId.value = null
   }
+}
+
+function cambiarUsuario() {
+  localStorage.removeItem('waiter_token')
+  localStorage.removeItem('waiter_data')
+  localStorage.removeItem('waiter_login_date')
+  router.push('/pos/tpv/login')
 }
 </script>
 
@@ -208,6 +212,41 @@ async function openTable() {
   overflow: hidden;
 }
 
+/* Topbar usuario */
+.tpv-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #1e293b;
+  flex-shrink: 0;
+}
+
+.tpv-topbar__user {
+  display: flex;
+  align-items: center;
+  color: #e2e8f0;
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+.tpv-topbar__switch {
+  display: flex;
+  align-items: center;
+  padding: 5px 12px;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  touch-action: manipulation;
+}
+.tpv-topbar__switch:hover { border-color: #94a3b8; color: #e2e8f0; }
+
+/* Zona tabs */
 .zona-tabs {
   display: flex;
   gap: 4px;
@@ -249,6 +288,7 @@ async function openTable() {
 }
 .zona-tab--active .zona-tab__badge { background: #dbeafe; color: #1d4ed8; }
 
+/* Mesas */
 .mesas-body { flex: 1; overflow-y: auto; padding: 14px; }
 
 .mesas-grid {
@@ -271,13 +311,15 @@ async function openTable() {
   background: #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
-.mesa-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+.mesa-card:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+.mesa-card:disabled { opacity: .7; cursor: not-allowed; }
+.mesa-card--opening { border-color: #bbf7d0 !important; }
 
-.mesa-card--free    { border-color: #bbf7d0; background: #f0fdf4; }
+.mesa-card--free         { border-color: #bbf7d0; background: #f0fdf4; }
 .mesa-card--free .mesa-card__icon   { color: #16a34a; }
 .mesa-card--free .mesa-card__status { color: #16a34a; }
 
-.mesa-card--occupied { border-color: #fecaca; background: #fff5f5; }
+.mesa-card--occupied     { border-color: #fecaca; background: #fff5f5; }
 .mesa-card--occupied .mesa-card__icon   { color: #dc2626; }
 .mesa-card--occupied .mesa-card__status { color: #dc2626; }
 
@@ -285,19 +327,11 @@ async function openTable() {
 .mesa-card--bill_requested .mesa-card__icon   { color: #d97706; }
 .mesa-card--bill_requested .mesa-card__status { color: #d97706; }
 
-.mesa-card__header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  justify-content: center;
-}
-
-.mesa-card__num  { font-size: 1rem; font-weight: 700; color: #1e293b; }
-.mesa-card__seq  { font-size: .7rem; font-weight: 700; background: #1e293b; color: #fff; padding: 1px 5px; border-radius: 6px; }
-.mesa-card__icon { font-size: 2rem; }
-
-.mesa-card__info { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; }
+.mesa-card__header { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; }
+.mesa-card__num    { font-size: 1rem; font-weight: 700; color: #1e293b; }
+.mesa-card__seq    { font-size: .7rem; font-weight: 700; background: #1e293b; color: #fff; padding: 1px 5px; border-radius: 6px; }
+.mesa-card__icon   { font-size: 2rem; }
+.mesa-card__info   { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; }
 .mesa-card__waiter { font-size: .75rem; color: #475569; font-weight: 600; }
 .mesa-card__time   { font-size: .7rem; color: #94a3b8; }
 .mesa-card__amount { font-size: .8rem; font-weight: 700; color: #1e293b; }
@@ -311,55 +345,6 @@ async function openTable() {
   justify-content: center;
 }
 
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-}
-
-.open-modal {
-  background: #fff;
-  border-radius: 18px;
-  padding: 28px 24px;
-  width: 100%;
-  max-width: 340px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.3);
-}
-
-.open-modal__title { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin-bottom: 20px; }
-.open-modal__field { margin-bottom: 24px; }
-
-.guests-control {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  justify-content: center;
-  margin-top: 8px;
-}
-
-.guests-btn {
-  width: 44px; height: 44px;
-  border-radius: 50%;
-  border: 2px solid #e2e8f0;
-  background: #f8fafc;
-  font-size: 1.2rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all .15s;
-}
-.guests-btn:hover { border-color: #2563eb; color: #2563eb; }
-
-.guests-value { font-size: 2rem; font-weight: 700; color: #1e293b; min-width: 40px; text-align: center; }
-
-.open-modal__actions { display: flex; gap: 10px; justify-content: flex-end; }
-
 @media (max-width: 768px) {
   .mesas-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 }
@@ -368,5 +353,6 @@ async function openTable() {
   .mesas-body { padding: 10px; }
   .mesas-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .mesa-card  { padding: 12px 8px; }
+  .tpv-topbar__switch span { display: none; }
 }
 </style>

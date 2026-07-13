@@ -2,9 +2,9 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-card__logo">
-        <i class="bi bi-shop"></i>
+        <i class="bi bi-bag-check-fill"></i>
       </div>
-      <h1 class="login-card__title">Punto de Venta</h1>
+      <h1 class="login-card__title">Tomar Pedido</h1>
       <p class="login-card__subtitle">Seleccione su nombre e ingrese el PIN</p>
 
       <!-- Selección de usuario -->
@@ -151,6 +151,7 @@ async function submitLogin() {
     })
     localStorage.setItem('waiter_token', res.data.token)
     localStorage.setItem('waiter_data', JSON.stringify(res.data.waiter))
+    localStorage.setItem('waiter_login_date', new Date().toISOString().slice(0, 10))
     router.push('/pos/tpv/mesas')
   } catch (e) {
     error.value = e.response?.data?.detail || 'PIN incorrecto'
