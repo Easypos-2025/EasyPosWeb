@@ -1,5 +1,5 @@
 <template>
-  <div class="monitor-wrap">
+  <div :class="['monitor-wrap', selectedCompany ? 'mobile-detail' : 'mobile-list']">
 
     <!-- ══ PANEL IZQUIERDO — Lista de empresas ══ -->
     <aside class="monitor-left">
@@ -40,7 +40,7 @@
     <!-- ══ PANEL DERECHO — Detalle de empresa ══ -->
     <main class="monitor-right">
 
-      <!-- Placeholder -->
+      <!-- Placeholder (solo escritorio) -->
       <div v-if="!selectedCompany" class="right-placeholder">
         <i class="bi bi-arrow-left-circle placeholder-icon"></i>
         <p>Selecciona una empresa para ver su facturación</p>
@@ -48,6 +48,10 @@
 
       <template v-else>
         <div class="right-header">
+          <!-- Botón volver (solo mobile) -->
+          <button class="btn-back-mobile" @click="selectedCompany = null">
+            <i class="bi bi-arrow-left"></i> Empresas
+          </button>
           <div>
             <h2 class="right-title">{{ selectedCompany.name }}</h2>
             <span class="right-profile">{{ selectedCompany.business_profile_name }}</span>
@@ -657,8 +661,26 @@ onMounted(loadCompanies)
 }
 .btn-detail:hover { background: #e2e8f0; }
 
+/* ══ Botón volver (solo mobile) ══════════════════════ */
+.btn-back-mobile {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.btn-back-mobile:hover { background: #e2e8f0; }
+
 /* ═══════════════════════════════════════════════════════
-   RESPONSIVE
+   RESPONSIVE — patrón master-detail
 ═══════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .monitor-wrap {
@@ -666,19 +688,31 @@ onMounted(loadCompanies)
     height: auto;
     min-height: unset;
   }
-  .monitor-left {
+
+  /* MODO LISTA: solo panel izquierdo ocupa toda la pantalla */
+  .monitor-wrap.mobile-list .monitor-left {
     width: 100%;
     border-right: none;
-    border-bottom: 1px solid #e2e8f0;
-    max-height: 240px;
+    border-bottom: none;
+    max-height: none;
+    min-height: 60vh;
   }
+  .monitor-wrap.mobile-list .monitor-right { display: none; }
+
+  /* MODO DETALLE: solo panel derecho */
+  .monitor-wrap.mobile-detail .monitor-left  { display: none; }
+  .monitor-wrap.mobile-detail .monitor-right {
+    width: 100%;
+    min-height: 80vh;
+  }
+
+  .btn-back-mobile { display: flex; }
   .monitor-right { padding: 16px; }
   .right-header { flex-direction: column; }
   .bill-cards { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 576px) {
-  .monitor-left { max-height: 200px; }
   .bill-card { padding: 20px 14px 16px; }
   .bill-card-count { font-size: 28px; }
   .modal-box { max-height: 95vh; border-radius: 8px; }

@@ -1,5 +1,5 @@
 <template>
-  <div class="pe-wrap">
+  <div :class="['pe-wrap', selectedCompany ? 'mobile-detail' : 'mobile-list']">
 
     <!-- ══ PANEL IZQUIERDO ══ -->
     <aside class="pe-left">
@@ -73,7 +73,7 @@
     <!-- ══ PANEL DERECHO ══ -->
     <main class="pe-right">
 
-      <!-- Placeholder -->
+      <!-- Placeholder (solo escritorio) -->
       <div v-if="!selectedCompany" class="right-placeholder">
         <i class="bi bi-lightning-charge placeholder-icon"></i>
         <p>Selecciona una empresa para ver sus facturas electrónicas</p>
@@ -81,6 +81,10 @@
 
       <template v-else>
         <div class="right-header">
+          <!-- Botón volver (solo mobile) -->
+          <button class="btn-back-mobile" @click="selectedCompany = null">
+            <i class="bi bi-arrow-left"></i> Empresas
+          </button>
           <div>
             <h2 class="right-title">{{ selectedCompany.name }}</h2>
             <span class="right-profile">{{ selectedCompany.business_profile_name }}</span>
@@ -702,8 +706,26 @@ onMounted(loadCompanies)
 .btn-dian--mail { background: #d1fae5; color: #065f46; }
 .btn-dian--mail:hover { background: #a7f3d0; }
 
+/* ══ Botón volver (solo mobile) ══════════════════════ */
+.btn-back-mobile {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.btn-back-mobile:hover { background: #e2e8f0; }
+
 /* ═══════════════════════════════════════════════════════
-   RESPONSIVE
+   RESPONSIVE — patrón master-detail
 ═══════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .pe-wrap {
@@ -711,20 +733,33 @@ onMounted(loadCompanies)
     height: auto;
     min-height: unset;
   }
-  .pe-left {
+
+  /* MODO LISTA: solo muestra el panel izquierdo */
+  .pe-wrap.mobile-list .pe-left {
     width: 100%;
     border-right: none;
-    border-bottom: 1px solid #e2e8f0;
-    max-height: 220px;
+    border-bottom: none;
+    max-height: none;
+    height: auto;
+    min-height: 60vh;
   }
-  .right-header { padding: 14px 16px 12px; }
+  .pe-wrap.mobile-list .pe-right { display: none; }
+
+  /* MODO DETALLE: solo muestra el panel derecho */
+  .pe-wrap.mobile-detail .pe-left  { display: none; }
+  .pe-wrap.mobile-detail .pe-right {
+    width: 100%;
+    min-height: 80vh;
+  }
+
+  .btn-back-mobile { display: flex; }
+  .right-header { padding: 14px 16px 12px; flex-direction: column; }
   .pe-tabs { padding: 0 16px; }
   .pe-table-wrap { padding: 12px 16px; }
   .td-cliente { max-width: 100px; }
 }
 
 @media (max-width: 576px) {
-  .pe-left { max-height: 180px; }
   .pe-tab { padding: 10px 12px; font-size: 13px; }
   .pe-table th:nth-child(5),
   .pe-table td:nth-child(5) { display: none; }
