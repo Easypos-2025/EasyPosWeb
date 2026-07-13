@@ -1945,6 +1945,23 @@ async def registrar_recibo(
             "cid": company_id,
         })
 
+    # ── Descontar stock de repuestos (items con product_id) ──────────────────
+    for it in items:
+        if int(it["producto_id"] or 0) != 0:
+            await db.execute(text("""
+                UPDATE inventario_actual_porciones iap
+                INNER JOIN supply_items si
+                    ON si.id_item = iap.id_item AND si.company_id = iap.company_id
+                SET iap.cantidad_actual = iap.cantidad_actual - :qty,
+                    iap.enviada_mysql   = 0,
+                    iap.updated_at      = NOW()
+                WHERE si.id = :pid AND iap.company_id = :cid
+            """), {
+                "qty": float(it["cantidad"]),
+                "pid": int(it["producto_id"]),
+                "cid": company_id,
+            })
+
     # ── Marcar orden como entregada ───────────────────────────────────────────
     await db.execute(text("""
         UPDATE service_orders
@@ -1962,6 +1979,66 @@ async def registrar_recibo(
         "total": grand_total,
         "items": [{"nombre": it["nombre"], "cantidad": float(it["cantidad"]), "precio": float(it["precio"])} for it in items],
     }
+
+
+# ─── Anular Recibo ────────────────────────────────────────────────────────────
+
+@router.patch("/ordenes/{orden_id}/recibo/{receipt_number}/anular")
+async def anular_recibo(
+    orden_id: int,
+    receipt_number: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    company_id = current_user.company_id
+
+    # Verificar que el recibo existe y no está ya anulado
+    rec = (await db.execute(text("""
+        SELECT voided FROM pos_receipts
+        WHERE receipt_number = :rn AND company_id = :cid LIMIT 1
+    """), {"rn": receipt_number, "cid": company_id})).mappings().first()
+
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recibo no encontrado")
+    if rec["voided"]:
+        raise HTTPException(status_code=400, detail="El recibo ya está anulado")
+
+    # Marcar como anulado
+    await db.execute(text("""
+        UPDATE pos_receipts SET voided = 1
+        WHERE receipt_number = :rn AND company_id = :cid
+    """), {"rn": receipt_number, "cid": company_id})
+
+    # Devolver stock de repuestos al inventario
+    items = (await db.execute(text("""
+        SELECT COALESCE(product_id, 0) AS producto_id, cantidad
+        FROM service_order_details
+        WHERE order_id = :oid AND product_id IS NOT NULL AND product_id != 0
+    """), {"oid": orden_id})).mappings().all()
+
+    for it in items:
+        await db.execute(text("""
+            UPDATE inventario_actual_porciones iap
+            INNER JOIN supply_items si
+                ON si.id_item = iap.id_item AND si.company_id = iap.company_id
+            SET iap.cantidad_actual = iap.cantidad_actual + :qty,
+                iap.enviada_mysql   = 0,
+                iap.updated_at      = NOW()
+            WHERE si.id = :pid AND iap.company_id = :cid
+        """), {
+            "qty": float(it["cantidad"]),
+            "pid": int(it["producto_id"]),
+            "cid": company_id,
+        })
+
+    # Revertir estado de la orden a 'lista' para que pueda re-facturarse
+    await db.execute(text("""
+        UPDATE service_orders SET estado = 'lista'
+        WHERE id = :oid AND company_id = :cid
+    """), {"oid": orden_id, "cid": company_id})
+
+    await db.commit()
+    return {"ok": True, "receipt_number": receipt_number, "voided": True}
 
 
 # ─── Imprimir recibo en impresora POS (socket TCP ESC/POS) ───────────────────

@@ -1,4 +1,4 @@
-Attribute VB_Name = "SincronizarHistoricoInventarioActual"
+'Attribute VB_Name = "SincronizarHistoricoInventarioActual"
 ' ============================================================
 ' SincronizarHistoricoInventarioActual
 ' Endpoint: POST /api/pos/sync/push/historico-inventario-actual

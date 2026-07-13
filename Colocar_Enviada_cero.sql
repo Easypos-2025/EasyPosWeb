@@ -24,6 +24,7 @@ UPDATE recibos_forma_pago               SET Enviada_MySql=0 WHERE Enviada_MySql=
 UPDATE gastos                           SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE impresoras                       SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE inventario_porciones             SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE inventario_Actual_porciones      SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE lista_precios_cliente            SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE menu_diario                      SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE mesas                            SET Enviada_MySql=0 WHERE Enviada_MySql=1;

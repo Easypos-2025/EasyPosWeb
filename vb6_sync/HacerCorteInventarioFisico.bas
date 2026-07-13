@@ -66,11 +66,12 @@ Public Sub HacerCorteInventarioFisico(Var_Id_Company_Envio As Integer)
     sFecha = Format(Date, "yyyy-mm-dd")
 
     conn.Execute "INSERT INTO inventarios_fisicos_manuales " & _
-                 "(Id_Fisico, Id_Item, Fecha, Cantidad, Observacion, Autorizada, " & _
-                 " Cod_Usuario, Enviada_MySql) " & _
-                 "SELECT " & lIdFisico & ", Id_Item, '" & sFecha & "', " & _
-                 "Cantidad_Actual, 'Corte automatico del sistema', 1, " & _
-                 "'SISTEMA', 0 " & _
+                 "(Id_Fisico, Posicion, Id_Grupo, Id_Item, Producto, Codigo_Insumo, " & _
+                 " Fecha, Cantidad, Observacion, Autorizada, Usuario, Agrupar, " & _
+                 " Revisada, Cobrar, Enviada_MySql) " & _
+                 "SELECT " & lIdFisico & ", Posicion, Id_Grupo, Id_Item, Descripcion, Codigo_Insumo, " & _
+                 "'" & sFecha & "', Cantidad_Actual, 'Corte automatico del sistema', 1, " & _
+                 "'" & Var_Codigo_Usuario & "', Agrupar, 0, 0, 0 " & _
                  "FROM inventario_actual_porciones"
 
     ' -- 6. INSERT snapshot completo en historico_inventario_actual_porciones --
@@ -91,7 +92,7 @@ Public Sub HacerCorteInventarioFisico(Var_Id_Company_Envio As Integer)
                  "SELECT " & lIdHistorico & ", '" & sFecha & "', Id_Grupo, Id_Item, " & _
                  "Codigo_Insumo, Descripcion, Costo, Und_Compra, Valor_Und_Compra, " & _
                  "Und_Min_Utilizadas, 0, Agrupar, Compras, Controlar, Opcion_Cambios, " & _
-                 "Und_Uso, Centro_Produccion, Cantidad_Actual, 'SISTEMA', " & _
+                 "Und_Uso, Centro_Produccion, Cantidad_Actual, '" & Var_Codigo_Usuario & "', " & _
                  "Insumo_Cp, Fecha_Vence, Stock_MInimo, 0 " & _
                  "FROM inventario_actual_porciones"
 

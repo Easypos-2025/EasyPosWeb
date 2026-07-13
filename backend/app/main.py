@@ -1593,23 +1593,29 @@ async def _init_db_data():
 
         # ── SEED: módulos Facturación (estructura padre/hijo) ────────────
         async def _get_or_create_module(name, route, icon, parent_id=None):
+            from sqlalchemy.exc import IntegrityError
             r = await db.execute(select(SystemModule).where(SystemModule.route == route))
             m = r.scalars().first()
             if not m:
-                m = SystemModule(
-                    name=name, route=route, icon=icon,
-                    parent_id=parent_id, is_active=True, order_index=0, is_sysadmin=False
-                )
-                db.add(m)
-                await db.commit()
-                await db.refresh(m)
+                try:
+                    m = SystemModule(
+                        name=name, route=route, icon=icon,
+                        parent_id=parent_id, is_active=True, order_index=0, is_sysadmin=False
+                    )
+                    db.add(m)
+                    await db.commit()
+                    await db.refresh(m)
+                except IntegrityError:
+                    await db.rollback()
+                    r = await db.execute(select(SystemModule).where(SystemModule.route == route))
+                    m = r.scalars().first()
             return m
 
         # ── SEED: Métricas - Estadísticas (padre + hijos) ──────────────
-        metricas_root = await _get_or_create_module("Métricas - Estadísticas", "/metricas", "bi-graph-up-arrow")
-        await _get_or_create_module("Ventas",            "/metricas/ventas",        "bi-bar-chart-line",   metricas_root.id)
-        await _get_or_create_module("Forma de Pago",     "/metricas/forma-pago",    "bi-credit-card",      metricas_root.id)
-        await _get_or_create_module("Análisis ABC Prod.", "/metricas/productos-abc", "bi-trophy",           metricas_root.id)
+        metricas_root = await _get_or_create_module("Métricas - Estadísticas",   "/metricas",             "bi-graph-up-arrow")
+        await _get_or_create_module("Comportamiento de Ventas",    "/metricas/ventas",        "bi-bar-chart-line",   metricas_root.id)
+        await _get_or_create_module("Ventas por Forma de Pago",    "/metricas/forma-pago",    "bi-credit-card",      metricas_root.id)
+        await _get_or_create_module("ABC - Análisis de Productos", "/metricas/productos-abc", "bi-trophy",           metricas_root.id)
         await db.commit()
 
         fact_root     = await _get_or_create_module("Facturación",   "/facturacion",                  "bi-receipt-cutoff")
@@ -1955,7 +1961,15 @@ async def rate_limit_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup():
     await init_db()
-    await _init_db_data()
+    # Advisory lock evita que múltiples workers de uvicorn corran el seeding simultáneamente
+    async with AsyncSessionLocal() as _lock_db:
+        lock_res = await _lock_db.execute(text("SELECT GET_LOCK('easyposweb_seed', 30)"))
+        got_lock = lock_res.scalar()
+        if got_lock:
+            try:
+                await _init_db_data()
+            finally:
+                await _lock_db.execute(text("SELECT RELEASE_LOCK('easyposweb_seed')"))
 
 
 app.router.redirect_slashes = True

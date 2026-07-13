@@ -1,132 +1,135 @@
 ' ============================================================
 ' ModRecalcularStock
-' Recalcula inventario_actual_porciones.Cantidad_Actual usando
-' la formula completa desde las transacciones reales.
-' 
-' Formula:
+' Gestiona el stock de inventario_actual_porciones en tres modos:
+'
+'   1. RecalcularStock(conn, lCategoria)
+'      Reconciliacion completa desde cero usando toda la historia.
+'      Usar periodicamente o al detectar desajustes.
+'      lCategoria = 0 -> todos | lCategoria <> 0 -> esa categoria (Agrupar)
+'
+'   2. DescontarStockFactura(conn, sNroFactura, sFecha)
+'      Delta inmediato al cerrar una factura. Resta solo los items
+'      de esa factura. Mas liviano que recalcular todo.
+'
+'   3. DescontarStockRecibo(conn, sNroRecibo, sFecha)
+'      Delta inmediato al cerrar un recibo. Misma logica que facturas
+'      pero sobre las tablas de recibos.
+'
+' Formula completa (usada en RecalcularStock):
 '   Cantidad_Actual = ultimo_inventario_fisico
 '                   + entradas desde esa fecha
 '                   - salidas desde esa fecha
-'                   - ventas en recibos no anulados (recibos_detalle_comanda.Cantidad
-'                                                  * recibos_detalle_comanda_producto.Cantidad)
-'                   - ventas en facturas no anuladas (detalle_comanda.Cantidad
-'                                                   * detalle_comanda_producto.Cantidad)
+'                   - ventas en recibos no anulados
+'                   - ventas en facturas no anuladas
 '
-' Mapeo tablas VB6 -> Web:
-'   inventario_porciones              -> supply_items
-'   inventario_actual_porciones       -> inventario_actual_porciones
-'   inventarios_fisicos_manuales      -> inventory_physical
-'   inventarios_entradas_manuales     -> inventory_entries
-'   inventarios_salidas_manuales      -> inventory_exits
-'   facturas                          -> pos_invoices
-'   detalle_comanda                   -> pos_order_details
-'   detalle_comanda_producto          -> pos_order_detail_products
-'   recibos                           -> pos_receipts
-'   recibos_detalle_comanda           -> pos_receipt_order_details
-'   recibos_detalle_comanda_producto  -> pos_receipt_order_detail_products
-'
-' Nota: Facturas y Recibos tienen estructura identica, mismos nombres de columna.
-'   Solo cambia el nombre de la tabla. Nro_Factura = numero de documento en ambas.
+' Nota: en recibos el numero de documento se guarda en Nro_Factura
+'       (misma estructura de columnas que facturas, solo cambia la tabla).
 '
 ' Requiere: MySQL 8+ / MariaDB 10.2+ (usa WITH ... CTE)
 ' ============================================================
 
-' ── SQL: CTE completo con nombres de tablas VB6 ─────────────────────────────
+' ── CTE completo para reconciliacion total ───────────────────────────────────
 Private Function BuildCTE_VB6() As String
-    BuildCTE_VB6 = _
-        "WITH ranked_phys AS ( " & _
-        "  SELECT Id_Item, Cantidad, Fecha, " & _
-        "         ROW_NUMBER() OVER (PARTITION BY Id_Item ORDER BY Fecha DESC) AS rn " & _
-        "  FROM inventarios_fisicos_manuales " & _
-        "), " & _
-        "last_phys AS ( " & _
-        "  SELECT Id_Item, Cantidad, Fecha FROM ranked_phys WHERE rn = 1 " & _
-        "), " & _
-        "entries_adj AS ( " & _
-        "  SELECT ie.Id_Item, SUM(ie.Cantidad) AS total " & _
-        "  FROM inventarios_entradas_manuales ie " & _
-        "  LEFT JOIN last_phys lp ON lp.Id_Item = ie.Id_Item " & _
-        "  WHERE (lp.Fecha IS NULL OR ie.Fecha >= lp.Fecha) " & _
-        "  GROUP BY ie.Id_Item " & _
-        "), " & _
-        "exits_adj AS ( " & _
-        "  SELECT ix.Id_Item, SUM(ix.Cantidad) AS total " & _
-        "  FROM inventarios_salidas_manuales ix " & _
-        "  LEFT JOIN last_phys lp ON lp.Id_Item = ix.Id_Item " & _
-        "  WHERE (lp.Fecha IS NULL OR ix.Fecha >= lp.Fecha) " & _
-        "  GROUP BY ix.Id_Item " & _
-        "), " & _
-        "receipt_sales AS ( " & _
-        "  SELECT prd.Id_Item, SUM(rod.Cantidad * prd.Cantidad) AS total " & _
-        "  FROM recibos_detalle_comanda_producto prd " & _
-        "  INNER JOIN recibos_detalle_comanda rod " & _
-        "      ON  rod.Nro_Pedido  = prd.Nro_Pedido " & _
-        "      AND rod.Nro_Factura = prd.Nro_Factura " & _
-        "      AND rod.Fecha       = prd.Fecha " & _
-        "      AND rod.Id_Plato    = prd.Id_Plato " & _
-        "      AND rod.Item        = prd.Item " & _
-        "  INNER JOIN recibos pr " & _
-        "      ON  pr.Nro_Factura = rod.Nro_Factura " & _
-        "      AND pr.Fecha       = rod.Fecha " & _
-        "      AND (pr.Anulada IS NULL OR pr.Anulada = 0) " & _
-        "  LEFT JOIN last_phys lp ON lp.Id_Item = prd.Id_Item " & _
-        "  WHERE (lp.Fecha IS NULL OR prd.Fecha >= lp.Fecha) " & _
-        "  GROUP BY prd.Id_Item " & _
-        "), " & _
-        "invoice_sales AS ( " & _
-        "  SELECT pod.Id_Item, SUM(od.Cantidad * pod.Cantidad) AS total " & _
-        "  FROM detalle_comanda_producto pod " & _
-        "  INNER JOIN detalle_comanda od " & _
-        "      ON  od.Nro_Pedido  = pod.Nro_Pedido " & _
-        "      AND od.Nro_Factura = pod.Nro_Factura " & _
-        "      AND od.Fecha       = pod.Fecha " & _
-        "      AND od.Id_Plato    = pod.Id_Plato " & _
-        "      AND od.Item        = pod.Item " & _
-        "  INNER JOIN facturas pi " & _
-        "      ON  pi.Nro_Factura = od.Nro_Factura " & _
-        "      AND pi.Fecha       = od.Fecha " & _
-        "      AND (pi.Anulada IS NULL OR pi.Anulada = 0) " & _
-        "  LEFT JOIN last_phys lp ON lp.Id_Item = pod.Id_Item " & _
-        "  WHERE (lp.Fecha IS NULL OR pod.Fecha >= lp.Fecha) " & _
-        "  GROUP BY pod.Id_Item " & _
-        ") "
+    Dim s As String
+    s = "WITH ranked_phys AS ( "
+    s = s & "SELECT Id_Item, Cantidad, Fecha, "
+    s = s & "ROW_NUMBER() OVER (PARTITION BY Id_Item ORDER BY Fecha DESC) AS rn "
+    s = s & "FROM inventarios_fisicos_manuales "
+    s = s & "), "
+    s = s & "last_phys AS ( "
+    s = s & "SELECT Id_Item, Cantidad, Fecha FROM ranked_phys WHERE rn = 1 "
+    s = s & "), "
+    s = s & "entries_adj AS ( "
+    s = s & "SELECT ie.Id_Item, SUM(ie.Cantidad) AS total "
+    s = s & "FROM inventarios_entradas_manuales ie "
+    s = s & "LEFT JOIN last_phys lp ON lp.Id_Item = ie.Id_Item "
+    s = s & "WHERE (lp.Fecha IS NULL OR ie.Fecha >= lp.Fecha) "
+    s = s & "GROUP BY ie.Id_Item "
+    s = s & "), "
+    s = s & "exits_adj AS ( "
+    s = s & "SELECT ix.Id_Item, SUM(ix.Cantidad) AS total "
+    s = s & "FROM inventarios_salidas_manuales ix "
+    s = s & "LEFT JOIN last_phys lp ON lp.Id_Item = ix.Id_Item "
+    s = s & "WHERE (lp.Fecha IS NULL OR ix.Fecha >= lp.Fecha) "
+    s = s & "GROUP BY ix.Id_Item "
+    s = s & "), "
+    s = s & "receipt_sales AS ( "
+    s = s & "SELECT prd.Id_Item, SUM(rod.Cantidad * prd.Cantidad) AS total "
+    s = s & "FROM recibos_detalle_comanda_producto prd "
+    s = s & "INNER JOIN recibos_detalle_comanda rod "
+    s = s & "ON rod.Nro_Pedido   = prd.Nro_Pedido "
+    s = s & "AND rod.Nro_Factura = prd.Nro_Factura "
+    s = s & "AND rod.Fecha       = prd.Fecha "
+    s = s & "AND rod.Id_Plato    = prd.Id_Plato "
+    s = s & "AND rod.Item        = prd.Item "
+    s = s & "INNER JOIN recibos pr "
+    s = s & "ON pr.Nro_Factura = rod.Nro_Factura "
+    s = s & "AND pr.Fecha      = rod.Fecha "
+    s = s & "AND (pr.Anulada IS NULL OR pr.Anulada = 0) "
+    s = s & "LEFT JOIN last_phys lp ON lp.Id_Item = prd.Id_Item "
+    s = s & "WHERE (lp.Fecha IS NULL OR prd.Fecha >= lp.Fecha) "
+    s = s & "GROUP BY prd.Id_Item "
+    s = s & "), "
+    s = s & "invoice_sales AS ( "
+    s = s & "SELECT pod.Id_Item, SUM(od.Cantidad * pod.Cantidad) AS total "
+    s = s & "FROM detalle_comanda_producto pod "
+    s = s & "INNER JOIN detalle_comanda od "
+    s = s & "ON od.Nro_Pedido   = pod.Nro_Pedido "
+    s = s & "AND od.Nro_Factura = pod.Nro_Factura "
+    s = s & "AND od.Fecha       = pod.Fecha "
+    s = s & "AND od.Id_Plato    = pod.Id_Plato "
+    s = s & "AND od.Item        = pod.Item "
+    s = s & "INNER JOIN facturas pi "
+    s = s & "ON pi.Nro_Factura = od.Nro_Factura "
+    s = s & "AND pi.Fecha      = od.Fecha "
+    s = s & "AND (pi.Anulada IS NULL OR pi.Anulada = 0) "
+    s = s & "LEFT JOIN last_phys lp ON lp.Id_Item = pod.Id_Item "
+    s = s & "WHERE (lp.Fecha IS NULL OR pod.Fecha >= lp.Fecha) "
+    s = s & "GROUP BY pod.Id_Item "
+    s = s & ") "
+    BuildCTE_VB6 = s
 End Function
 
-' ── Paso 1: Insertar en inventario_actual_porciones los items faltantes ──────
+' ── Insertar en inventario_actual_porciones los items que falten ──────────────
 Private Sub InsertarFaltantes(ByVal conn As Object, ByVal sWhere As String)
-    conn.Execute _
-        "INSERT INTO inventario_actual_porciones " & _
-        "  (Id_Grupo, Id_Item, Codigo_Insumo, Descripcion, Costo, " & _
-        "   Und_Compra, Valor_Und_Compra, Und_Min_Utilizadas, Posicion, Agrupar, " & _
-        "   Compras, Controlar, Opcion_Cambios, Und_Uso, Centro_Produccion, " & _
-        "   Cantidad_Actual, Bodega, Insumo_Cp, Fecha_Vence, Stock_MInimo) " & _
-        "SELECT ip.Id_Grupo, ip.Id_Item, ip.Codigo_Insumo, ip.Descripcion, ip.Costo, " & _
-        "       ip.Und_Compra, ip.Valor_Und_Compra, ip.Und_Min_Utilizadas, ip.Posicion, ip.Agrupar, " & _
-        "       ip.Compras, ip.Controlar, ip.Opcion_Cambios, ip.Und_Uso, ip.Centro_Produccion, " & _
-        "       0, ip.Bodega, ip.Insumo_Cp, ip.Fecha_Vence, ip.Stock_MInimo " & _
-        "FROM inventario_porciones ip " & _
-        "LEFT JOIN inventario_actual_porciones iap ON iap.Id_Item = ip.Id_Item " & _
-        "WHERE iap.Id_Item IS NULL " & IIf(sWhere <> "", " AND " & sWhere, "")
+    Dim s As String
+    s = "INSERT INTO inventario_actual_porciones "
+    s = s & "(Id_Grupo, Id_Item, Codigo_Insumo, Descripcion, Costo, "
+    s = s & "Und_Compra, Valor_Und_Compra, Und_Min_Utilizadas, Posicion, Agrupar, "
+    s = s & "Compras, Controlar, Opcion_Cambios, Und_Uso, Centro_Produccion, "
+    s = s & "Cantidad_Actual, Bodega, Insumo_Cp, Fecha_Vence, Stock_MInimo) "
+    s = s & "SELECT ip.Id_Grupo, ip.Id_Item, ip.Codigo_Insumo, ip.Descripcion, ip.Costo, "
+    s = s & "ip.Und_Compra, ip.Valor_Und_Compra, ip.Und_Min_Utilizadas, ip.Posicion, ip.Agrupar, "
+    s = s & "ip.Compras, ip.Controlar, ip.Opcion_Cambios, ip.Und_Uso, ip.Centro_Produccion, "
+    s = s & "0, ip.Bodega, ip.Insumo_Cp, ip.Fecha_Vence, ip.Stock_MInimo "
+    s = s & "FROM inventario_porciones ip "
+    s = s & "LEFT JOIN inventario_actual_porciones iap ON iap.Id_Item = ip.Id_Item "
+    s = s & "WHERE iap.Id_Item IS NULL"
+    If sWhere <> "" Then s = s & " AND " & sWhere
+    conn.Execute s
 End Sub
 
-' ── Paso 2: Calcular y actualizar Cantidad_Actual ────────────────────────────
+' ── Calcular y actualizar Cantidad_Actual (reconciliacion completa) ───────────
 Private Sub EjecutarRecalculo_VB6(ByVal conn As Object, ByVal sWhere As String)
+    On Error GoTo ErrHandler
+
     Dim sSQL As String
-    sSQL = BuildCTE_VB6() & _
-           "SELECT ip.Id_Item, ip.Id_Grupo, " & _
-           "       COALESCE(lp.Cantidad,0) + COALESCE(ea.total,0) - COALESCE(xa.total,0) " & _
-           "       - COALESCE(rs.total,0) - COALESCE(inv.total,0) AS nueva_cantidad " & _
-           "FROM inventario_porciones ip " & _
-           "LEFT JOIN last_phys lp      ON lp.Id_Item  = ip.Id_Item " & _
-           "LEFT JOIN entries_adj ea    ON ea.Id_Item   = ip.Id_Item " & _
-           "LEFT JOIN exits_adj xa      ON xa.Id_Item   = ip.Id_Item " & _
-           "LEFT JOIN receipt_sales rs  ON rs.Id_Item   = ip.Id_Item " & _
-           "LEFT JOIN invoice_sales inv ON inv.Id_Item  = ip.Id_Item " & _
-           "WHERE 1=1" & IIf(sWhere <> "", " AND " & sWhere, "")
+    sSQL = BuildCTE_VB6()
+    sSQL = sSQL & "SELECT ip.Id_Item, "
+    sSQL = sSQL & "COALESCE(lp.Cantidad,0) + COALESCE(ea.total,0) - COALESCE(xa.total,0) "
+    sSQL = sSQL & "- COALESCE(rs.total,0) - COALESCE(inv.total,0) AS nueva_cantidad "
+    sSQL = sSQL & "FROM inventario_porciones ip "
+    sSQL = sSQL & "LEFT JOIN last_phys lp      ON lp.Id_Item  = ip.Id_Item "
+    sSQL = sSQL & "LEFT JOIN entries_adj ea    ON ea.Id_Item   = ip.Id_Item "
+    sSQL = sSQL & "LEFT JOIN exits_adj xa      ON xa.Id_Item   = ip.Id_Item "
+    sSQL = sSQL & "LEFT JOIN receipt_sales rs  ON rs.Id_Item   = ip.Id_Item "
+    sSQL = sSQL & "LEFT JOIN invoice_sales inv ON inv.Id_Item  = ip.Id_Item "
+    sSQL = sSQL & "WHERE 1=1"
+    If sWhere <> "" Then sSQL = sSQL & " AND " & sWhere
 
     Dim rs As Object
     Set rs = CreateObject("ADODB.Recordset")
-    rs.Open sSQL, conn, 0, 1  ' adOpenForwardOnly, adLockReadOnly
+    rs.Open sSQL, conn, 0, 1
 
     If rs.EOF Then
         rs.Close: Set rs = Nothing
@@ -134,38 +137,40 @@ Private Sub EjecutarRecalculo_VB6(ByVal conn As Object, ByVal sWhere As String)
         Exit Sub
     End If
 
-    Dim lCount As Long: lCount = 0
+    Dim lCount As Long
+    lCount = 0
     conn.BeginTrans
     Do While Not rs.EOF
-        conn.Execute _
-            "UPDATE inventario_actual_porciones " & _
-            "SET Cantidad_Actual = " & CDbl(rs("nueva_cantidad")) & ", " & _
-            "    Enviada_MySql   = 0 " & _
-            "WHERE Id_Item = " & CLng(rs("Id_Item"))
+        Dim sUpd As String
+        sUpd = "UPDATE inventario_actual_porciones "
+        sUpd = sUpd & "SET Cantidad_Actual = " & CDbl(rs("nueva_cantidad")) & ", "
+        sUpd = sUpd & "Enviada_MySql = 0 "
+        sUpd = sUpd & "WHERE Id_Item = " & CLng(rs("Id_Item"))
+        conn.Execute sUpd
         lCount = lCount + 1
         rs.MoveNext
     Loop
     conn.CommitTrans
     rs.Close: Set rs = Nothing
 
-    MsgBox lCount & " insumo(s) recalculados correctamente.", vbInformation, "Recalcular Stock"
+    MsgBox lCount & " insumo(s) recalculados.", vbInformation, "Recalcular Stock"
     Exit Sub
 
 ErrHandler:
     On Error Resume Next
     conn.RollbackTrans
-    MsgBox "Error al recalcular: " & Err.Description, vbCritical
+    MsgBox "EjecutarRecalculo: " & Err.Description, vbCritical
 End Sub
 
 
 ' ════════════════════════════════════════════════════════════════
-'  RecalcularStock
-'  lCategoria = 0  → recalcula TODOS los productos
-'  lCategoria <> 0 → recalcula solo esa categoria (campo Agrupar)
+'  RecalcularStock  —  Reconciliacion completa desde cero
+'  lCategoria = 0  -> recalcula TODOS los productos
+'  lCategoria <> 0 -> recalcula solo esa categoria (campo Agrupar)
 '
 '  Uso:
-'    Call RecalcularStock(cnDB, 0)   ' todos
-'    Call RecalcularStock(cnDB, 5)   ' solo categoria 5
+'    Call RecalcularStock(cnDB, 0)     ' todos
+'    Call RecalcularStock(cnDB, 5)     ' solo categoria 5
 ' ════════════════════════════════════════════════════════════════
 Public Sub RecalcularStock(ByVal conn As Object, ByVal lCategoria As Long)
     On Error GoTo ErrHandler
@@ -179,4 +184,251 @@ Public Sub RecalcularStock(ByVal conn As Object, ByVal lCategoria As Long)
 
 ErrHandler:
     MsgBox "RecalcularStock: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  DescontarStockFactura  —  Delta al cerrar una factura
+'  Resta del stock los items vendidos en ESA factura especifica.
+'  Llamar inmediatamente despues de guardar/cerrar la factura.
+'
+'  Uso:
+'    Call DescontarStockFactura(cnDB, Nro_Factura, Format(Date,"yyyy-mm-dd"))
+' ════════════════════════════════════════════════════════════════
+Public Sub DescontarStockFactura(ByVal conn As Object, ByVal sNroFactura As String, ByVal dFecha As Date)
+    On Error GoTo ErrHandler
+
+    Dim sFecha As String
+    sFecha = Format(dFecha, "yyyy-mm-dd")
+
+    Dim s As String
+    s = "UPDATE inventario_actual_porciones iap "
+    s = s & "INNER JOIN ( "
+    s = s & "SELECT pod.Id_Item, SUM(od.Cantidad * pod.Cantidad) AS total "
+    s = s & "FROM detalle_comanda_producto pod "
+    s = s & "INNER JOIN detalle_comanda od "
+    s = s & "ON od.Nro_Pedido   = pod.Nro_Pedido "
+    s = s & "AND od.Nro_Factura = pod.Nro_Factura "
+    s = s & "AND od.Fecha       = pod.Fecha "
+    s = s & "AND od.Id_Plato    = pod.Id_Plato "
+    s = s & "AND od.Item        = pod.Item "
+    s = s & "WHERE od.Nro_Factura = '" & sNroFactura & "' "
+    s = s & "AND od.Fecha = '" & sFecha & "' "
+    s = s & "GROUP BY pod.Id_Item "
+    s = s & ") ventas ON ventas.Id_Item = iap.Id_Item "
+    s = s & "SET iap.Cantidad_Actual = iap.Cantidad_Actual - ventas.total, "
+    s = s & "iap.Enviada_MySql = 0"
+    conn.Execute s
+    Exit Sub
+
+ErrHandler:
+    MsgBox "DescontarStockFactura: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  DescontarStockRecibo  —  Delta al cerrar un recibo
+'  Resta del stock los items vendidos en ESE recibo especifico.
+'  Llamar inmediatamente despues de guardar/cerrar el recibo.
+'
+'  Nota: en recibos_detalle_comanda el numero de recibo se guarda
+'        en Nro_Factura (misma estructura que facturas).
+'
+'  Uso:
+'    Call DescontarStockRecibo(cnDB, Nro_Recibo, Format(Date,"yyyy-mm-dd"))
+' ════════════════════════════════════════════════════════════════
+Public Sub DescontarStockRecibo(ByVal conn As Object, ByVal sNroRecibo As String, ByVal dFecha As Date)
+    On Error GoTo ErrHandler
+
+    Dim sFecha As String
+    sFecha = Format(dFecha, "yyyy-mm-dd")
+
+    Dim s As String
+    s = "UPDATE inventario_actual_porciones iap "
+    s = s & "INNER JOIN ( "
+    s = s & "SELECT prd.Id_Item, SUM(rod.Cantidad * prd.Cantidad) AS total "
+    s = s & "FROM recibos_detalle_comanda_producto prd "
+    s = s & "INNER JOIN recibos_detalle_comanda rod "
+    s = s & "ON rod.Nro_Pedido   = prd.Nro_Pedido "
+    s = s & "AND rod.Nro_Factura = prd.Nro_Factura "
+    s = s & "AND rod.Fecha       = prd.Fecha "
+    s = s & "AND rod.Id_Plato    = prd.Id_Plato "
+    s = s & "AND rod.Item        = prd.Item "
+    s = s & "WHERE rod.Nro_Factura = '" & sNroRecibo & "' "
+    s = s & "AND rod.Fecha = '" & sFecha & "' "
+    s = s & "GROUP BY prd.Id_Item "
+    s = s & ") ventas ON ventas.Id_Item = iap.Id_Item "
+    s = s & "SET iap.Cantidad_Actual = iap.Cantidad_Actual - ventas.total, "
+    s = s & "iap.Enviada_MySql = 0"
+    conn.Execute s
+    Exit Sub
+
+ErrHandler:
+    MsgBox "DescontarStockRecibo: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  DevolverStockFactura  —  Delta al ANULAR una factura
+'  Devuelve al stock los items que se habian descontado.
+'  Llamar inmediatamente despues de marcar la factura como anulada.
+'
+'  Uso:
+'    Call DevolverStockFactura(cnDB, Nro_Factura, Format(Date,"yyyy-mm-dd"))
+' ════════════════════════════════════════════════════════════════
+Public Sub DevolverStockFactura(ByVal conn As Object, ByVal sNroFactura As String, ByVal dFecha As Date)
+    On Error GoTo ErrHandler
+
+    Dim sFecha As String
+    sFecha = Format(dFecha, "yyyy-mm-dd")
+
+    Dim s As String
+    s = "UPDATE inventario_actual_porciones iap "
+    s = s & "INNER JOIN ( "
+    s = s & "SELECT pod.Id_Item, SUM(od.Cantidad * pod.Cantidad) AS total "
+    s = s & "FROM detalle_comanda_producto pod "
+    s = s & "INNER JOIN detalle_comanda od "
+    s = s & "ON od.Nro_Pedido   = pod.Nro_Pedido "
+    s = s & "AND od.Nro_Factura = pod.Nro_Factura "
+    s = s & "AND od.Fecha       = pod.Fecha "
+    s = s & "AND od.Id_Plato    = pod.Id_Plato "
+    s = s & "AND od.Item        = pod.Item "
+    s = s & "WHERE od.Nro_Factura = '" & sNroFactura & "' "
+    s = s & "AND od.Fecha = '" & sFecha & "' "
+    s = s & "GROUP BY pod.Id_Item "
+    s = s & ") ventas ON ventas.Id_Item = iap.Id_Item "
+    s = s & "SET iap.Cantidad_Actual = iap.Cantidad_Actual + ventas.total, "
+    s = s & "iap.Enviada_MySql = 0"
+    conn.Execute s
+    Exit Sub
+
+ErrHandler:
+    MsgBox "DevolverStockFactura: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  DevolverStockRecibo  —  Delta al ANULAR un recibo
+'  Devuelve al stock los items que se habian descontado.
+'  Llamar inmediatamente despues de marcar el recibo como anulado.
+'
+'  Uso:
+'    Call DevolverStockRecibo(cnDB, Nro_Recibo, Format(Date,"yyyy-mm-dd"))
+' ════════════════════════════════════════════════════════════════
+Public Sub DevolverStockRecibo(ByVal conn As Object, ByVal sNroRecibo As String, ByVal dFecha As Date)
+    On Error GoTo ErrHandler
+
+    Dim sFecha As String
+    sFecha = Format(dFecha, "yyyy-mm-dd")
+
+    Dim s As String
+    s = "UPDATE inventario_actual_porciones iap "
+    s = s & "INNER JOIN ( "
+    s = s & "SELECT prd.Id_Item, SUM(rod.Cantidad * prd.Cantidad) AS total "
+    s = s & "FROM recibos_detalle_comanda_producto prd "
+    s = s & "INNER JOIN recibos_detalle_comanda rod "
+    s = s & "ON rod.Nro_Pedido   = prd.Nro_Pedido "
+    s = s & "AND rod.Nro_Factura = prd.Nro_Factura "
+    s = s & "AND rod.Fecha       = prd.Fecha "
+    s = s & "AND rod.Id_Plato    = prd.Id_Plato "
+    s = s & "AND rod.Item        = prd.Item "
+    s = s & "WHERE rod.Nro_Factura = '" & sNroRecibo & "' "
+    s = s & "AND rod.Fecha = '" & sFecha & "' "
+    s = s & "GROUP BY prd.Id_Item "
+    s = s & ") ventas ON ventas.Id_Item = iap.Id_Item "
+    s = s & "SET iap.Cantidad_Actual = iap.Cantidad_Actual + ventas.total, "
+    s = s & "iap.Enviada_MySql = 0"
+    conn.Execute s
+    Exit Sub
+
+ErrHandler:
+    MsgBox "DevolverStockRecibo: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  AgregarEntrada  —  Delta al REGISTRAR una entrada de inventario
+'  Suma la cantidad al stock del insumo.
+'  Llamar al guardar el registro en inventarios_entradas_manuales.
+'
+'  Uso:
+'    Call AgregarEntrada(cnDB, lIdItem, dblCantidad)
+' ════════════════════════════════════════════════════════════════
+Public Sub AgregarEntrada(ByVal conn As Object, ByVal lIdItem As Long, ByVal dblCantidad As Double)
+    On Error GoTo ErrHandler
+
+    conn.Execute "UPDATE inventario_actual_porciones " & _
+                 "SET Cantidad_Actual = Cantidad_Actual + " & Replace(CStr(dblCantidad), ",", ".") & ", " & _
+                 "Enviada_MySql = 0 " & _
+                 "WHERE Id_Item = " & lIdItem
+    Exit Sub
+
+ErrHandler:
+    MsgBox "AgregarEntrada: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  RevertirEntrada  —  Delta al ELIMINAR una entrada de inventario
+'  Resta la cantidad al stock (deshace lo que AgregarEntrada sumo).
+'  Llamar antes o despues de eliminar el registro.
+'
+'  Uso:
+'    Call RevertirEntrada(cnDB, lIdItem, dblCantidad)
+' ════════════════════════════════════════════════════════════════
+Public Sub RevertirEntrada(ByVal conn As Object, ByVal lIdItem As Long, ByVal dblCantidad As Double)
+    On Error GoTo ErrHandler
+
+    conn.Execute "UPDATE inventario_actual_porciones " & _
+                 "SET Cantidad_Actual = Cantidad_Actual - " & Replace(CStr(dblCantidad), ",", ".") & ", " & _
+                 "Enviada_MySql = 0 " & _
+                 "WHERE Id_Item = " & lIdItem
+    Exit Sub
+
+ErrHandler:
+    MsgBox "RevertirEntrada: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  AgregarSalida  —  Delta al REGISTRAR una salida de inventario
+'  Resta la cantidad al stock del insumo.
+'  Llamar al guardar el registro en inventarios_salidas_manuales.
+'
+'  Uso:
+'    Call AgregarSalida(cnDB, lIdItem, dblCantidad)
+' ════════════════════════════════════════════════════════════════
+Public Sub AgregarSalida(ByVal conn As Object, ByVal lIdItem As Long, ByVal dblCantidad As Double)
+    On Error GoTo ErrHandler
+
+    conn.Execute "UPDATE inventario_actual_porciones " & _
+                 "SET Cantidad_Actual = Cantidad_Actual - " & Replace(CStr(dblCantidad), ",", ".") & ", " & _
+                 "Enviada_MySql = 0 " & _
+                 "WHERE Id_Item = " & lIdItem
+    Exit Sub
+
+ErrHandler:
+    MsgBox "AgregarSalida: " & Err.Description, vbCritical
+End Sub
+
+
+' ════════════════════════════════════════════════════════════════
+'  RevertirSalida  —  Delta al ELIMINAR una salida de inventario
+'  Suma la cantidad al stock (deshace lo que AgregarSalida resto).
+'  Llamar antes o despues de eliminar el registro.
+'
+'  Uso:
+'    Call RevertirSalida(cnDB, lIdItem, dblCantidad)
+' ════════════════════════════════════════════════════════════════
+Public Sub RevertirSalida(ByVal conn As Object, ByVal lIdItem As Long, ByVal dblCantidad As Double)
+    On Error GoTo ErrHandler
+
+    conn.Execute "UPDATE inventario_actual_porciones " & _
+                 "SET Cantidad_Actual = Cantidad_Actual + " & Replace(CStr(dblCantidad), ",", ".") & ", " & _
+                 "Enviada_MySql = 0 " & _
+                 "WHERE Id_Item = " & lIdItem
+    Exit Sub
+
+ErrHandler:
+    MsgBox "RevertirSalida: " & Err.Description, vbCritical
 End Sub
