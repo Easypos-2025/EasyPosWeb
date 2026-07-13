@@ -1,3 +1,4 @@
+import io
 import json
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
@@ -7,6 +8,7 @@ def _today() -> str:
     return datetime.now(_BOG).date().isoformat()
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
@@ -14,6 +16,8 @@ from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
+from app.utils.excel_ventas import build_ventas_excel
+from app.routers.metricas_router import _query_export
 
 router = APIRouter(prefix="/api/pos-consultas", tags=["POS Consultas"])
 
@@ -377,3 +381,34 @@ async def get_detalle_productos(
     })).mappings().all()
 
     return [dict(r) for r in rows]
+
+
+# ─── 4. Exportar a Excel ───────────────────────────────────────────────────────
+
+@router.get("/export-excel")
+async def export_excel(
+    desde:      Optional[str] = None,
+    hasta:      Optional[str] = None,
+    tipo:       str           = "ambos",   # "factura" | "recibo" | "ambos"
+    company_id: Optional[int] = None,
+    authorization: str        = Header(None),
+    db: AsyncSession          = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = await _resolve_cid(user, company_id, db)
+    hoy  = _today()
+    d0   = desde or hoy
+    d1   = hasta or hoy
+
+    # normalizar tipo: consultas usa "factura"/"recibo", export usa "facturas"/"recibos"
+    tipo_exp = {"factura": "facturas", "recibo": "recibos", "ambos": "ambos"}.get(tipo, "ambos")
+
+    enc, det, fp = await _query_export(db, cid, tipo_exp, d0, d1)
+    xlsx_bytes   = build_ventas_excel(enc, det, fp)
+
+    filename = f"ventas_{d0}_{d1}_{tipo_exp}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

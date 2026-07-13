@@ -37,6 +37,12 @@
             <i v-else class="bi bi-arrow-clockwise me-1"></i>Cargar
           </button>
         </div>
+        <div class="col-6 col-md-3 col-lg-2">
+          <button class="btn btn-success btn-sm w-100" @click="descargarExcel" :disabled="descargando">
+            <span v-if="descargando" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-file-earmark-excel me-1"></i>Excel
+          </button>
+        </div>
       </div>
     </div>
 
@@ -176,6 +182,7 @@ const selectedMonth = ref(now.getMonth() + 1)
 const selectedTipo  = ref('ambos')
 const vistaActiva   = ref('anual')
 const cargando      = ref(false)
+const descargando   = ref(false)
 const activeTab     = ref('valores')
 const chartType     = ref('barraH')
 const busqueda      = ref('')
@@ -243,6 +250,36 @@ const ABC_COLORS = {
   A: { bg: 'rgba(25,135,84,.8)', border: 'rgba(25,135,84,1)' },
   B: { bg: 'rgba(255,193,7,.8)', border: 'rgba(255,193,7,1)' },
   C: { bg: 'rgba(220,53,69,.8)', border: 'rgba(220,53,69,1)' },
+}
+
+// ── Descarga Excel ─────────────────────────────────────────────────
+async function descargarExcel() {
+  descargando.value = true
+  try {
+    const cid = companyStore.selectedCompany?.id
+    const params = new URLSearchParams({
+      year: selectedYear.value,
+      month: selectedMonth.value,
+      tipo: selectedTipo.value,
+      ...(cid ? { company_id: cid } : {}),
+    })
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token') || ''
+    const res = await fetch(`/api/metricas/export-excel?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error('Error al generar Excel')
+    const blob = await res.blob()
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `ventas_${selectedYear.value}-${String(selectedMonth.value).padStart(2,'0')}_${selectedTipo.value}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    descargando.value = false
+  }
 }
 
 // ── Carga ────────────────────────────────────────────────────────────

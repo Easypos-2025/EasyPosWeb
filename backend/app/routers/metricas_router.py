@@ -1,8 +1,11 @@
+import calendar
 from math import ceil
 from collections import defaultdict
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi.responses import StreamingResponse
+import io
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
@@ -10,6 +13,7 @@ from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
+from app.utils.excel_ventas import build_ventas_excel
 
 router = APIRouter(prefix="/api/metricas", tags=["Métricas"])
 
@@ -468,3 +472,207 @@ async def productos_abc_mensual(
         "total_mes": total_mes,
         "resumen_abc": resumen_abc,
     }
+
+
+# ── Helpers de consulta para export ──────────────────────────────────────────
+
+def _sql_enc_facturas():
+    return """
+        SELECT 'Factura' AS Tipo,
+            i.invoice_number AS Numero,
+            NULL            AS Cedula,
+            i.date          AS Fecha,
+            i.time          AS Hora,
+            i.employee_id   AS Cod_Empleado,
+            w.name          AS Empleado,
+            i.cash_amount   AS Total_Efectivo,
+            i.credit_card_amount AS T_Credito,
+            i.tip           AS Propina,
+            i.voided        AS Anulada,
+            i.resolution_id AS Id_Resolucion,
+            i.customer_id   AS Id_Cliente
+        FROM pos_invoices i
+        LEFT JOIN pos_waiters w ON w.id = i.employee_id AND w.company_id = i.company_id
+        WHERE i.company_id = :cid AND i.date BETWEEN :desde AND :hasta
+        ORDER BY i.date, i.invoice_number
+    """
+
+def _sql_enc_recibos():
+    return """
+        SELECT 'Recibo' AS Tipo,
+            r.receipt_number AS Numero,
+            r.id_number     AS Cedula,
+            r.date          AS Fecha,
+            r.time          AS Hora,
+            r.employee_id   AS Cod_Empleado,
+            w.name          AS Empleado,
+            r.cash_amount   AS Total_Efectivo,
+            r.credit_card_amount AS T_Credito,
+            r.tip           AS Propina,
+            r.voided        AS Anulada,
+            r.resolution_id AS Id_Resolucion,
+            r.customer_id   AS Id_Cliente
+        FROM pos_receipts r
+        LEFT JOIN pos_waiters w ON w.id = r.employee_id AND w.company_id = r.company_id
+        WHERE r.company_id = :cid AND r.date BETWEEN :desde AND :hasta
+        ORDER BY r.date, r.receipt_number
+    """
+
+def _sql_det_facturas():
+    return """
+        SELECT 'Factura' AS Tipo,
+            d.order_number   AS Nro_Pedido,
+            d.date           AS Fecha,
+            d.invoice_number AS Nro_Factura,
+            d.dish_id        AS Id_Plato,
+            d.item           AS Item,
+            d.quantity       AS Cantidad,
+            d.dish_amount    AS Valor,
+            d.notes          AS Novedad,
+            d.discount_pct   AS Porc_Descuento_Plato,
+            NULL             AS Porc_Descuento_General,
+            NULL             AS Cambios,
+            NULL             AS Hora_Plato,
+            pl.tax           AS Impuesto,
+            d.complimentary  AS Producto_Personalizado,
+            d.depends_on     AS Depende,
+            pl.name          AS Plato_Nombre,
+            pl.product_code  AS Codigo_Producto,
+            pl.price         AS Plato_Valor,
+            pl.active        AS Plato_Activo,
+            pl.category_id   AS Cod_Categoria,
+            pl.product_cost  AS Costo_Producto,
+            pl.minimum_stock AS Stock_Minimo
+        FROM pos_invoice_details d
+        LEFT JOIN pos_dishes pl ON pl.id = d.dish_id AND pl.company_id = d.company_id
+        WHERE d.company_id = :cid AND d.date BETWEEN :desde AND :hasta
+        ORDER BY d.date, d.invoice_number, d.item
+    """
+
+def _sql_det_recibos():
+    return """
+        SELECT 'Recibo' AS Tipo,
+            d.order_number   AS Nro_Pedido,
+            d.date           AS Fecha,
+            d.receipt_number AS Nro_Factura,
+            d.dish_id        AS Id_Plato,
+            d.item           AS Item,
+            d.quantity       AS Cantidad,
+            d.dish_amount    AS Valor,
+            d.notes          AS Novedad,
+            d.discount_pct   AS Porc_Descuento_Plato,
+            NULL             AS Porc_Descuento_General,
+            NULL             AS Cambios,
+            NULL             AS Hora_Plato,
+            pl.tax           AS Impuesto,
+            d.complimentary  AS Producto_Personalizado,
+            d.depends_on     AS Depende,
+            pl.name          AS Plato_Nombre,
+            pl.product_code  AS Codigo_Producto,
+            pl.price         AS Plato_Valor,
+            pl.active        AS Plato_Activo,
+            pl.category_id   AS Cod_Categoria,
+            pl.product_cost  AS Costo_Producto,
+            pl.minimum_stock AS Stock_Minimo
+        FROM pos_receipt_invoice_details d
+        LEFT JOIN pos_dishes pl ON pl.id = d.dish_id AND pl.company_id = d.company_id
+        WHERE d.company_id = :cid AND d.date BETWEEN :desde AND :hasta
+        ORDER BY d.date, d.receipt_number, d.item
+    """
+
+def _sql_fp_facturas():
+    return """
+        SELECT 'Factura' AS Tipo,
+            pm.item              AS Item,
+            pm.payment_method_id AS Id_Forma_Pago,
+            pm.card_id           AS Id_Tarjeta,
+            pm.invoice_number    AS Nro_Factura,
+            pm.amount            AS Valor,
+            pm.date              AS Fecha,
+            pm.delivery_amount   AS Valor_Domicilio,
+            pm.order_number      AS Nro_Pedido,
+            pt.name              AS FP_Descripcion,
+            pt.value             AS FP_Valor,
+            pt.is_active         AS FP_Activo
+        FROM pos_invoice_payment_methods pm
+        LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
+        WHERE pm.company_id = :cid AND pm.date BETWEEN :desde AND :hasta
+        ORDER BY pm.date, pm.invoice_number, pm.item
+    """
+
+def _sql_fp_recibos():
+    return """
+        SELECT 'Recibo' AS Tipo,
+            pm.item              AS Item,
+            pm.payment_method_id AS Id_Forma_Pago,
+            pm.card_id           AS Id_Tarjeta,
+            pm.invoice_number    AS Nro_Factura,
+            pm.amount            AS Valor,
+            pm.date              AS Fecha,
+            pm.delivery_amount   AS Valor_Domicilio,
+            pm.order_number      AS Nro_Pedido,
+            pt.name              AS FP_Descripcion,
+            pt.value             AS FP_Valor,
+            pt.is_active         AS FP_Activo
+        FROM pos_receipt_payment_methods pm
+        LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
+        WHERE pm.company_id = :cid AND pm.date BETWEEN :desde AND :hasta
+        ORDER BY pm.date, pm.invoice_number, pm.item
+    """
+
+
+async def _query_export(db: AsyncSession, cid: int, tipo: str, desde: str, hasta: str):
+    """Ejecuta las 3 consultas y retorna (rows_enc, rows_det, rows_fp) como listas de dicts."""
+    params = {"cid": cid, "desde": desde, "hasta": hasta}
+
+    async def run(sql):
+        return [dict(r) for r in (await db.execute(text(sql), params)).mappings().all()]
+
+    if tipo == "facturas":
+        enc = await run(_sql_enc_facturas())
+        det = await run(_sql_det_facturas())
+        fp  = await run(_sql_fp_facturas())
+    elif tipo == "recibos":
+        enc = await run(_sql_enc_recibos())
+        det = await run(_sql_det_recibos())
+        fp  = await run(_sql_fp_recibos())
+    else:  # ambos
+        enc = (await run(_sql_enc_facturas())) + (await run(_sql_enc_recibos()))
+        det = (await run(_sql_det_facturas())) + (await run(_sql_det_recibos()))
+        fp  = (await run(_sql_fp_facturas()))  + (await run(_sql_fp_recibos()))
+
+    return enc, det, fp
+
+
+# ── Endpoint export Excel ─────────────────────────────────────────────────────
+
+@router.get("/export-excel")
+async def export_excel(
+    year:       int            = Query(..., ge=2000, le=2100),
+    month:      Optional[int]  = Query(None, ge=1, le=12),
+    tipo:       str            = Query("ambos", pattern="^(facturas|recibos|ambos)$"),
+    company_id: Optional[int]  = Query(None),
+    authorization: str         = Header(None),
+    db: AsyncSession           = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = _resolve_cid(user, company_id)
+
+    if month:
+        desde = f"{year}-{month:02d}-01"
+        hasta = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
+        label = f"{year}-{month:02d}"
+    else:
+        desde = f"{year}-01-01"
+        hasta = f"{year}-12-31"
+        label = str(year)
+
+    enc, det, fp = await _query_export(db, cid, tipo, desde, hasta)
+    xlsx_bytes   = build_ventas_excel(enc, det, fp)
+
+    filename = f"ventas_{label}_{tipo}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
