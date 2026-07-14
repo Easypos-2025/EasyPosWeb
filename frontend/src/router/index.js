@@ -930,6 +930,13 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Menú Diario" }
       },
+      {
+        path: "/pos/tpv/config",
+        name: "PosTpvConfig",
+        component: () => import("@/views/pos/tpv/PosTpvConfigView.vue"),
+        requiresAuth: true,
+        meta: { title: "Configuración TPV" }
+      },
 ]
   },
 
@@ -997,14 +1004,6 @@ const routes = [
     name: "PosTpvLogin",
     component: () => import("@/views/pos/tpv/PosTpvLoginView.vue"),
     meta: { title: "Acceso TPV", public: true }
-  },
-
-  // ── Config TPV (admin, con layout normal) ─────────────────────────────────
-  {
-    path: "/pos/tpv/config",
-    name: "PosTpvConfig",
-    component: () => import("@/views/pos/tpv/PosTpvConfigView.vue"),
-    meta: { title: "Configuración TPV" }
   },
 
   // ── Cocina TV (standalone, sin layout, sin auth) ──────────────────────────
