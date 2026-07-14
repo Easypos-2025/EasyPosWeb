@@ -28,7 +28,7 @@ async def _get_company(authorization: str, db: AsyncSession) -> int:
     )).scalar_one_or_none()
     if not session or payload is None:
         raise HTTPException(status_code=401, detail="Sesión inválida")
-    user = (await db.execute(select(User).where(User.email == payload.get("sub")))).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.email == payload.get("sub")))).scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user.company_id
