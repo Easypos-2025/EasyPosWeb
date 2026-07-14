@@ -70,6 +70,7 @@
               :src="rawSrc"
               image-restriction="none"
               :auto-zoom="true"
+              :default-size="({ imageSize }) => ({ width: imageSize.width, height: imageSize.height })"
               :stencil-props="{ movable: true, resizable: true, aspectRatio: cropRatio || undefined }"
             />
           </div>
@@ -177,13 +178,11 @@ async function autoProcess(file) {
   let canvasW, canvasH, sx, sy, sw, sh
 
   if (H === null) {
-    // Preservar proporción original, ajustar solo el ancho máximo
     const ratio = img.naturalHeight / img.naturalWidth
     canvasW = Math.min(W, img.naturalWidth)
     canvasH = Math.round(canvasW * ratio)
     sx = 0; sy = 0; sw = img.naturalWidth; sh = img.naturalHeight
   } else {
-    // Recorte centrado al ratio exacto (object-fit: cover)
     const srcRatio = img.naturalWidth / img.naturalHeight
     const dstRatio = W / H
     canvasW = W; canvasH = H
@@ -204,9 +203,11 @@ async function autoProcess(file) {
   const blob = await new Promise(r => out.toBlob(r, mime, props.outputQuality))
   if (!blob) return
 
-  if (previewUrl.value?.startsWith('blob:')) URL.revokeObjectURL(previewUrl.value)
-  previewUrl.value = URL.createObjectURL(blob)
-  emit('change', blob)
+  // Abrir el editor con la imagen ya ajustada para que el usuario confirme, recorte o voltee
+  if (rawSrc.value?.startsWith('blob:')) URL.revokeObjectURL(rawSrc.value)
+  rawSrc.value     = URL.createObjectURL(blob)
+  cropRatio.value  = 0
+  editorOpen.value = true
 }
 
 function rotate(deg) {
