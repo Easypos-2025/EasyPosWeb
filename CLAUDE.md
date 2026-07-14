@@ -19,9 +19,9 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
   2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
   3. `git push origin master`
   4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && cd frontend && npm run build && systemctl restart easyposweb`
-     Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && cd frontend && npm run build && systemctl restart easyposweb"`
+     Comando SSH completo: `ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && cd frontend && npm run build && systemctl restart easyposweb"`
   5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
-     `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
+     `ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
   6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
   - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
