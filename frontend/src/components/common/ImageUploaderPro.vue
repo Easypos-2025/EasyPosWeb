@@ -23,12 +23,22 @@
 
     <!-- Botones -->
     <div class="iup-btns">
-      <button type="button" class="iup-btn" @click.stop="triggerFile">
-        <i class="bi bi-folder2-open me-1"></i>Archivo
-      </button>
-      <button type="button" class="iup-btn" @click.stop="triggerCamera">
-        <i class="bi bi-camera me-1"></i>Cámara
-      </button>
+      <template v-if="previewUrl">
+        <button type="button" class="iup-btn" @click.stop="triggerFile">
+          <i class="bi bi-arrow-repeat me-1"></i>Cambiar
+        </button>
+        <button type="button" class="iup-btn" @click.stop="openEditorFromCurrent">
+          <i class="bi bi-crop me-1"></i>Ajustar
+        </button>
+      </template>
+      <template v-else>
+        <button type="button" class="iup-btn" @click.stop="triggerFile">
+          <i class="bi bi-folder2-open me-1"></i>Archivo
+        </button>
+        <button type="button" class="iup-btn" @click.stop="triggerCamera">
+          <i class="bi bi-camera me-1"></i>Cámara
+        </button>
+      </template>
       <button v-if="showRemove && previewUrl" type="button" class="iup-btn iup-btn--danger" @click.stop="removePhoto">
         <i class="bi bi-trash"></i>
       </button>
@@ -95,11 +105,12 @@ import 'vue-advanced-cropper/dist/style.css'
 const props = defineProps({
   currentUrl:    { type: String,  default: null  },
   outputWidth:   { type: Number,  default: 800   },
-  outputHeight:  { type: Number,  default: null  },   // null = igual a outputWidth (cuadrado)
+  outputHeight:  { type: Number,  default: null  },
   outputFormat:  { type: String,  default: 'webp' },
   outputQuality: { type: Number,  default: 0.88  },
   label:         { type: String,  default: 'Sin foto' },
   showRemove:    { type: Boolean, default: true   },
+  autoFit:       { type: Boolean, default: true   },
 })
 const emit = defineEmits(['change', 'remove'])
 
@@ -128,14 +139,15 @@ function triggerCamera() { cameraRef.value?.click() }
 function onDrop(e) {
   isDragging.value = false
   const file = e.dataTransfer?.files?.[0]
-  if (file?.type.startsWith('image/')) openEditor(file)
+  if (!file?.type.startsWith('image/')) return
+  props.autoFit ? autoProcess(file) : openEditor(file)
 }
 
 function onFileSelected(e) {
   const file = e.target.files?.[0]
   if (!file) return
   e.target.value = ''
-  openEditor(file)
+  props.autoFit ? autoProcess(file) : openEditor(file)
 }
 
 function openEditor(file) {
@@ -143,6 +155,58 @@ function openEditor(file) {
   rawSrc.value    = URL.createObjectURL(file)
   cropRatio.value = 0
   editorOpen.value = true
+}
+
+function openEditorFromCurrent() {
+  if (!displayUrl.value) return
+  rawSrc.value     = displayUrl.value
+  cropRatio.value  = 0
+  editorOpen.value = true
+}
+
+async function autoProcess(file) {
+  const img = new Image()
+  const objectUrl = URL.createObjectURL(file)
+  img.src = objectUrl
+  await new Promise(resolve => { img.onload = resolve; img.onerror = resolve })
+  URL.revokeObjectURL(objectUrl)
+
+  const W = props.outputWidth
+  const H = props.outputHeight
+
+  let canvasW, canvasH, sx, sy, sw, sh
+
+  if (H === null) {
+    // Preservar proporción original, ajustar solo el ancho máximo
+    const ratio = img.naturalHeight / img.naturalWidth
+    canvasW = Math.min(W, img.naturalWidth)
+    canvasH = Math.round(canvasW * ratio)
+    sx = 0; sy = 0; sw = img.naturalWidth; sh = img.naturalHeight
+  } else {
+    // Recorte centrado al ratio exacto (object-fit: cover)
+    const srcRatio = img.naturalWidth / img.naturalHeight
+    const dstRatio = W / H
+    canvasW = W; canvasH = H
+    if (srcRatio > dstRatio) {
+      sh = img.naturalHeight; sw = sh * dstRatio
+      sx = (img.naturalWidth - sw) / 2; sy = 0
+    } else {
+      sw = img.naturalWidth; sh = sw / dstRatio
+      sx = 0; sy = (img.naturalHeight - sh) / 2
+    }
+  }
+
+  const out = document.createElement('canvas')
+  out.width = canvasW; out.height = canvasH
+  out.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvasW, canvasH)
+
+  const mime = props.outputFormat === 'webp' ? 'image/webp' : 'image/jpeg'
+  const blob = await new Promise(r => out.toBlob(r, mime, props.outputQuality))
+  if (!blob) return
+
+  if (previewUrl.value?.startsWith('blob:')) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = URL.createObjectURL(blob)
+  emit('change', blob)
 }
 
 function rotate(deg) {
@@ -175,7 +239,8 @@ async function confirmEdit() {
 function cancelEdit() { closeEditor() }
 function closeEditor() {
   editorOpen.value = false
-  if (rawSrc.value) { URL.revokeObjectURL(rawSrc.value); rawSrc.value = '' }
+  if (rawSrc.value?.startsWith('blob:')) URL.revokeObjectURL(rawSrc.value)
+  rawSrc.value = ''
 }
 
 function removePhoto() {
