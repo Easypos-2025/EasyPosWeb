@@ -23,6 +23,12 @@
         <div class="spinner-border spinner-border-sm text-primary"></div>
       </div>
 
+      <div v-else-if="loadError" class="tpv-cfg__empty">
+        <i class="bi bi-exclamation-triangle-fill fs-1 text-danger"></i>
+        <p class="mt-2 text-danger">{{ loadError }}</p>
+        <button class="btn-tpv-secondary mt-2" @click="loadEmpleados">Reintentar</button>
+      </div>
+
       <div v-else-if="!empleados.length" class="tpv-cfg__empty">
         <i class="bi bi-person-x fs-1 text-muted"></i>
         <p class="mt-2 text-muted">No hay vendedores registrados</p>
@@ -160,10 +166,11 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 
-const empleados = ref([])
-const loading   = ref(false)
-const delTarget = ref(null)
-const deleting  = ref(false)
+const empleados  = ref([])
+const loading    = ref(false)
+const loadError  = ref('')
+const delTarget  = ref(null)
+const deleting   = ref(false)
 
 const modal = ref({ open: false, editing: false, editId: null, error: '', saving: false })
 const form  = ref({ name: '', phone: '', password: '' })
@@ -173,11 +180,13 @@ const localUrlSet   = computed(() => !!localStorage.getItem('tpv_api_url'))
 
 async function loadEmpleados() {
   loading.value = true
+  loadError.value = ''
   try {
     const res = await api.get('/api/pos/tpv/config/empleados')
     empleados.value = res.data
-  } catch {
+  } catch (e) {
     empleados.value = []
+    loadError.value = e?.response?.data?.detail || `Error ${e?.response?.status || ''}: no se pudo cargar la lista`
   } finally {
     loading.value = false
   }

@@ -25,7 +25,7 @@ async def _get_company(authorization: str, db: AsyncSession) -> int:
     payload = decode_access_token(token)
     session = (await db.execute(
         select(UserSession).where(UserSession.token == token, UserSession.is_active == True)
-    )).scalar_one_or_none()
+    )).scalars().first()
     if not session or payload is None:
         raise HTTPException(status_code=401, detail="Sesión inválida")
     user = (await db.execute(select(User).where(User.email == payload.get("sub")))).scalars().first()
