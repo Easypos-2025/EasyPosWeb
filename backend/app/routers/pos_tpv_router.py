@@ -36,6 +36,21 @@ async def _get_company(authorization: str, db: AsyncSession) -> int:
 
 # ── Empleados TPV (employee_type=2) ──────────────────────────────────────────
 
+@router.get("/config/debug")
+async def debug_tpv(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    cid = await _get_company(authorization, db)
+    total = (await db.execute(text(
+        "SELECT COUNT(*) as n FROM pos_waiters WHERE company_id=:cid"
+    ), {"cid": cid})).first()
+    tipo2 = (await db.execute(text(
+        "SELECT COUNT(*) as n FROM pos_waiters WHERE company_id=:cid AND employee_type=2"
+    ), {"cid": cid})).first()
+    return {"company_id": cid, "total_waiters": total.n, "employee_type2": tipo2.n}
+
+
 @router.get("/config/empleados")
 async def list_tpv_empleados(
     authorization: str = Header(None),
