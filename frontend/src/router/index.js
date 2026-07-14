@@ -999,6 +999,14 @@ const routes = [
     meta: { title: "Acceso TPV", public: true }
   },
 
+  // ── Config TPV (admin, con layout normal) ─────────────────────────────────
+  {
+    path: "/pos/tpv/config",
+    name: "PosTpvConfig",
+    component: () => import("@/views/pos/tpv/PosTpvConfigView.vue"),
+    meta: { title: "Configuración TPV" }
+  },
+
   // ── Cocina TV (standalone, sin layout, sin auth) ──────────────────────────
   {
     path: "/pos/cocina",
@@ -1050,7 +1058,8 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // Rutas kiosk: acepta waiter_token (mesero) O token regular (admin desde dashboard)
-  if (to.meta?.kiosk || to.path.startsWith("/pos/comanda/") || to.path.startsWith("/pos/tpv/")) {
+  // /pos/tpv/config es admin normal, no kiosk
+  if (to.meta?.kiosk || to.path.startsWith("/pos/comanda/") || (to.path.startsWith("/pos/tpv/") && to.path !== "/pos/tpv/config")) {
     const waiterToken = localStorage.getItem("waiter_token")
     const userToken   = localStorage.getItem("token")
     if (!waiterToken && !userToken) {

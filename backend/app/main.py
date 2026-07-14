@@ -93,6 +93,7 @@ from app.routers.pos_lista_precios_router import router as pos_lista_precios_rou
 from app.routers.pos_platos_router import router as pos_platos_router
 from app.routers.pos_tables_router import router as pos_tables_router
 from app.routers.pos_comanda_router import router as pos_comanda_router
+from app.routers.pos_tpv_router import router as pos_tpv_router
 from app.routers.pos_utilitarios_router import router as pos_utilitarios_router
 from app.routers.tv_router import router as tv_router
 from app.routers.plan_associate_limits_router import router as plan_associate_limits_router
@@ -2080,6 +2081,7 @@ routers = [
     pos_platos_router,
     pos_tables_router,
     pos_comanda_router,
+    pos_tpv_router,
     pos_utilitarios_router,
     tv_router,
     plan_associate_limits_router,
