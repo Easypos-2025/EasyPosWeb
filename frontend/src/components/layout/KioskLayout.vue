@@ -14,7 +14,21 @@
         <i class="bi bi-person-fill me-1"></i>
         <span>{{ waiterName }}</span>
       </div>
-      <button class="kiosk-header__logout" @click="logout" title="Salir">
+      <!-- TPV: botones de acción mesero en lugar de redirect a dashboard -->
+      <div v-if="isTpvRoute" class="kiosk-header__tpv-actions">
+        <button class="kiosk-header__action" @click="goToCuentas" title="Ver cuentas abiertas">
+          <i class="bi bi-list-ul me-1"></i>
+          <span class="kiosk-header__action-label">Cuentas</span>
+        </button>
+        <button class="kiosk-header__action kiosk-header__action--new" @click="abrirCuenta" title="Abrir nueva cuenta">
+          <i class="bi bi-plus-circle me-1"></i>
+          <span class="kiosk-header__action-label">Abrir cuenta</span>
+        </button>
+        <button class="kiosk-header__logout" @click="logout" title="Cerrar sesión">
+          <i class="bi bi-box-arrow-right"></i>
+        </button>
+      </div>
+      <button v-else class="kiosk-header__logout" @click="logout" title="Salir">
         <i class="bi bi-box-arrow-right"></i>
       </button>
     </header>
@@ -37,9 +51,9 @@ const waiterName = computed(() => {
     const data = JSON.parse(localStorage.getItem('waiter_data') || '{}')
     if (data.name) return data.name
     const user = JSON.parse(localStorage.getItem('user') || '{}')
-    return user.name || user.username || 'Administrador'
+    return user.name || user.username || 'Mesero'
   } catch {
-    return 'Administrador'
+    return 'Mesero'
   }
 })
 
@@ -56,9 +70,19 @@ watch(() => route.path, () => {
   }
 }, { immediate: true })
 
+const isTpvRoute = computed(() => route.path.startsWith('/pos/tpv/'))
+
 const isAdminSession = computed(() => {
   return !localStorage.getItem('waiter_token') && !!localStorage.getItem('token')
 })
+
+function goToCuentas() {
+  router.push('/pos/tpv/mesas')
+}
+
+function abrirCuenta() {
+  router.push('/pos/tpv/mesas')
+}
 
 function logout() {
   if (isAdminSession.value) {
@@ -125,6 +149,34 @@ function logout() {
   color: #94a3b8;
 }
 
+.kiosk-header__tpv-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kiosk-header__action {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.2);
+  color: #f1f5f9;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: background .2s;
+  touch-action: manipulation;
+}
+.kiosk-header__action:hover { background: rgba(255,255,255,.22); }
+.kiosk-header__action--new {
+  background: #2563eb;
+  border-color: #1d4ed8;
+}
+.kiosk-header__action--new:hover { background: #1d4ed8; }
+
 .kiosk-header__logout {
   background: none;
   border: none;
@@ -134,6 +186,7 @@ function logout() {
   padding: 4px 8px;
   border-radius: 6px;
   transition: color .2s, background .2s;
+  flex-shrink: 0;
 }
 .kiosk-header__logout:hover {
   color: #f87171;
@@ -145,5 +198,11 @@ function logout() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 576px) {
+  .kiosk-header__action-label { display: none; }
+  .kiosk-header__action { padding: 6px 10px; font-size: .9rem; }
+  .kiosk-header { gap: 8px; padding: 0 10px; }
 }
 </style>

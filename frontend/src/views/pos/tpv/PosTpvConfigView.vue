@@ -76,6 +76,30 @@
       </div>
     </div>
 
+    <!-- ── Enlace para meseros ──────────────────────────────────────── -->
+    <div class="tpv-cfg__card">
+      <div class="tpv-cfg__card-head">
+        <h2 class="tpv-cfg__section-title">
+          <i class="bi bi-share-fill me-2"></i>Enlace de acceso para meseros
+        </h2>
+      </div>
+      <p class="tpv-cfg__share-desc">
+        Comparte este enlace con tus vendedores o meseros para que accedan al sistema de toma de pedidos desde cualquier dispositivo con navegador.
+      </p>
+      <div class="tpv-cfg__url-box">
+        <span class="tpv-cfg__url-text">{{ tpvLoginUrl }}</span>
+        <button
+          class="btn-tpv-copy"
+          :class="{ 'btn-tpv-copy--copied': copied }"
+          @click="copyUrl"
+          :title="copied ? '¡Copiado!' : 'Copiar enlace'"
+        >
+          <i :class="copied ? 'bi bi-check-lg' : 'bi bi-clipboard'"></i>
+          {{ copied ? 'Copiado' : 'Copiar' }}
+        </button>
+      </div>
+    </div>
+
     <!-- ── Sección conexión ───────────────────────────────────────── -->
     <div class="tpv-cfg__card">
       <div class="tpv-cfg__card-head">
@@ -177,6 +201,36 @@ const form  = ref({ name: '', phone: '', password: '' })
 
 const currentApiUrl = computed(() => localStorage.getItem('tpv_api_url') || import.meta.env.VITE_API_URL)
 const localUrlSet   = computed(() => !!localStorage.getItem('tpv_api_url'))
+
+const copied = ref(false)
+
+const tpvLoginUrl = computed(() => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    const cid  = user.company_id || ''
+    const base = window.location.origin
+    return cid ? `${base}/pos/tpv/login?cid=${cid}` : `${base}/pos/tpv/login`
+  } catch {
+    return `${window.location.origin}/pos/tpv/login`
+  }
+})
+
+async function copyUrl() {
+  try {
+    await navigator.clipboard.writeText(tpvLoginUrl.value)
+  } catch {
+    const el = document.createElement('textarea')
+    el.value = tpvLoginUrl.value
+    el.style.position = 'fixed'
+    el.style.opacity  = '0'
+    document.body.appendChild(el)
+    el.select()
+    document.execCommand('copy')
+    document.body.removeChild(el)
+  }
+  copied.value = true
+  setTimeout(() => { copied.value = false }, 2500)
+}
 
 async function loadEmpleados() {
   loading.value = true
@@ -462,6 +516,53 @@ onMounted(loadEmpleados)
   transition: border-color .15s;
 }
 .tpv-input:focus { border-color: #0d6efd; }
+
+/* Share URL */
+.tpv-cfg__share-desc {
+  font-size: .87rem;
+  color: #64748b;
+  margin: 0 0 .85rem;
+}
+
+.tpv-cfg__url-box {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: .65rem 1rem;
+  flex-wrap: wrap;
+}
+
+.tpv-cfg__url-text {
+  flex: 1;
+  font-family: monospace;
+  font-size: .85rem;
+  color: #334155;
+  word-break: break-all;
+  min-width: 0;
+}
+
+.btn-tpv-copy {
+  background: #0d6efd;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: .4rem .9rem;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.btn-tpv-copy:hover        { background: #0b5ed7; }
+.btn-tpv-copy--copied      { background: #16a34a; }
+.btn-tpv-copy--copied:hover { background: #15803d; }
 
 /* Responsive */
 @media (max-width: 768px) {

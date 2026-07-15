@@ -16,17 +16,43 @@
       <div class="tpv-header__total">{{ formatPrice(localTotal) }}</div>
     </div>
 
-    <!-- Categorías mobile (scroll horizontal) -->
-    <div class="tpv-cats-mobile d-md-none" v-if="menuCategories.length">
-      <button
-        v-for="cat in menuCategories"
-        :key="cat.category_id"
-        class="tpv-cat-mob-btn"
-        :class="{ 'tpv-cat-mob-btn--active': activeCategory === cat.category_id }"
-        @click="selectCategory(cat.category_id)"
-      >
-        {{ cat.category_name }}
+    <!-- Categorías mobile: botón hamburguesa -->
+    <div class="tpv-cats-mobile-bar d-md-none" v-if="menuCategories.length">
+      <button class="tpv-cats-hamburger" @click="catMenuOpen = true">
+        <i class="bi bi-grid-3x3-gap"></i>
+        <span class="tpv-cats-hamburger__label">{{ activeCategoryName }}</span>
+        <i class="bi bi-chevron-down ms-auto"></i>
       </button>
+    </div>
+
+    <!-- Drawer de categorías (mobile) -->
+    <div class="tpv-cat-overlay d-md-none" v-if="catMenuOpen" @click.self="catMenuOpen = false">
+      <div class="tpv-cat-drawer">
+        <div class="tpv-cat-drawer__header">
+          <span>Seleccionar categoría</span>
+          <button class="tpv-cat-drawer__close" @click="catMenuOpen = false">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+        <div class="tpv-cat-drawer__list">
+          <button
+            v-for="cat in menuCategories"
+            :key="cat.category_id"
+            class="tpv-cat-drawer-item"
+            :class="{ 'tpv-cat-drawer-item--active': activeCategory === cat.category_id }"
+            @click="selectCategoryMobile(cat.category_id)"
+          >
+            <div class="tpv-cat-drawer-item__img" v-if="cat.photo_path">
+              <img :src="photoUrl(cat.photo_path)" :alt="cat.category_name" loading="lazy" />
+            </div>
+            <div class="tpv-cat-drawer-item__icon" v-else>
+              <i class="bi bi-grid-3x3-gap"></i>
+            </div>
+            <span class="tpv-cat-drawer-item__name">{{ cat.category_name }}</span>
+            <i class="bi bi-check2 ms-auto" v-if="activeCategory === cat.category_id"></i>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Body principal -->
@@ -199,7 +225,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaAssemblyModal from '@/components/comanda/ComandaAssemblyModal.vue'
@@ -229,6 +255,7 @@ const menuCategories = ref([])
 const activeCategory = ref(null)
 const preloadedNotes = ref([])
 const cartOpen       = ref(false)
+const catMenuOpen    = ref(false)
 const assemblyDish   = ref(null)
 const notasItem      = ref(null)
 const sending        = ref(false)
@@ -253,6 +280,11 @@ function _assemblyKey(assembly) {
 const currentCategoryDishes = computed(() => {
   const cat = menuCategories.value.find(c => c.category_id === activeCategory.value)
   return cat?.dishes || []
+})
+
+const activeCategoryName = computed(() => {
+  const cat = menuCategories.value.find(c => c.category_id === activeCategory.value)
+  return cat?.category_name || 'Categorías'
 })
 
 const groupedItems = computed(() => {
@@ -347,10 +379,11 @@ async function loadNotes() {
 
 function selectCategory(catId) {
   activeCategory.value = catId
-  nextTick(() => {
-    const btn = document.querySelector('.tpv-cat-mob-btn.tpv-cat-mob-btn--active')
-    if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-  })
+}
+
+function selectCategoryMobile(catId) {
+  activeCategory.value = catId
+  catMenuOpen.value = false
 }
 
 function onDishSelect(dish) {
@@ -541,35 +574,142 @@ function cancelOrder() {
 .tpv-header__waiter { font-size: .8rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tpv-header__total  { font-size: 1rem; font-weight: 700; color: #2563eb; white-space: nowrap; }
 
-/* ── Categorías mobile ── */
-.tpv-cats-mobile {
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  overflow-x: auto;
+/* ── Categorías mobile: barra hamburguesa ── */
+.tpv-cats-mobile-bar {
+  padding: 8px 12px;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
-  scrollbar-width: none;
 }
-.tpv-cats-mobile::-webkit-scrollbar { display: none; }
 
-.tpv-cat-mob-btn {
-  padding: 9px 20px;
-  border: 2px solid #e2e8f0;
-  border-radius: 24px;
-  background: #f8fafc;
-  color: #475569;
-  font-size: .88rem;
+.tpv-cats-hamburger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: .9rem;
   font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all .15s;
   touch-action: manipulation;
+  text-align: left;
+  transition: background .15s;
 }
-.tpv-cat-mob-btn:hover { background: #e2e8f0; }
-.tpv-cat-mob-btn--active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.tpv-cats-hamburger:active { background: #dbeafe; }
+
+.tpv-cats-hamburger__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Drawer de categorías (mobile) ── */
+.tpv-cat-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.tpv-cat-drawer {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  max-height: 80dvh;
+  display: flex;
+  flex-direction: column;
+  animation: tpvSlideUp .25s ease;
+}
+
+@keyframes tpvSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.tpv-cat-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  font-size: .95rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.tpv-cat-drawer__close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+.tpv-cat-drawer__close:hover { background: #f1f5f9; }
+
+.tpv-cat-drawer__list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tpv-cat-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: #f8fafc;
+  cursor: pointer;
+  touch-action: manipulation;
+  text-align: left;
+  transition: all .15s;
+}
+.tpv-cat-drawer-item:hover  { background: #eff6ff; }
+.tpv-cat-drawer-item--active { background: #dbeafe; border-color: #2563eb; }
+
+.tpv-cat-drawer-item__img {
+  width: 42px; height: 42px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.tpv-cat-drawer-item__img img { width: 100%; height: 100%; object-fit: cover; }
+
+.tpv-cat-drawer-item__icon {
+  width: 42px; height: 42px;
+  border-radius: 8px;
+  background: #e2e8f0;
+  display: flex; align-items: center; justify-content: center;
+  color: #64748b;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+.tpv-cat-drawer-item--active .tpv-cat-drawer-item__icon { background: #bfdbfe; color: #1d4ed8; }
+
+.tpv-cat-drawer-item__name {
+  flex: 1;
+  font-size: .92rem;
+  font-weight: 600;
+  color: #334155;
+  line-height: 1.3;
+}
+.tpv-cat-drawer-item--active .tpv-cat-drawer-item__name { color: #1d4ed8; }
+
+.tpv-cat-drawer-item .bi-check2 { color: #2563eb; font-size: 1rem; }
 
 /* ── Body ── */
 .tpv-body {
@@ -580,7 +720,7 @@ function cancelOrder() {
 
 /* ── Sidebar categorías (desktop) ── */
 .tpv-cats {
-  width: 130px;
+  width: 180px;
   flex-shrink: 0;
   flex-direction: column;
   gap: 4px;
@@ -588,9 +728,12 @@ function cancelOrder() {
   overflow-y: auto;
   background: #fff;
   border-right: 1px solid #e2e8f0;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
-.tpv-cats::-webkit-scrollbar { display: none; }
+.tpv-cats::-webkit-scrollbar { width: 5px; }
+.tpv-cats::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.tpv-cats::-webkit-scrollbar-track { background: transparent; }
 
 .tpv-cat-item {
   display: flex;
@@ -631,11 +774,11 @@ function cancelOrder() {
 .tpv-cat-item--active .tpv-cat-item__icon { background: #bfdbfe; color: #1d4ed8; }
 
 .tpv-cat-item__name {
-  font-size: .72rem;
+  font-size: .78rem;
   font-weight: 700;
   color: #334155;
   text-align: center;
-  line-height: 1.2;
+  line-height: 1.25;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
