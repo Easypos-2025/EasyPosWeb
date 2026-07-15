@@ -1,55 +1,30 @@
 <template>
   <div class="mesas-view">
 
-    <!-- Header: usuario logueado + cambiar usuario -->
+    <!-- Barra secundaria: usuario + selector de zona (tab nueva) + cambiar usuario -->
     <div class="tpv-topbar">
       <div class="tpv-topbar__user">
         <i class="bi bi-person-circle me-2"></i>
         <span>{{ waiterName }}</span>
       </div>
+      <button
+        v-if="activeMainTab === 'nueva' && zonas.length"
+        class="tpv-topbar__zone-btn"
+        @click="zoneMenuOpen = true"
+        title="Cambiar zona"
+      >
+        <i class="bi bi-grid-3x3-gap me-1"></i>
+        <span>{{ currentZoneName }}</span>
+        <i class="bi bi-chevron-down ms-1"></i>
+      </button>
       <button class="tpv-topbar__switch" @click="cambiarUsuario" title="Cambiar usuario">
         <i class="bi bi-arrow-left-right me-1"></i>
-        Cambiar usuario
-      </button>
-    </div>
-
-    <!-- Tabs principales: Abrir cuenta | Cuentas abiertas -->
-    <div class="main-tabs">
-      <button
-        class="main-tab"
-        :class="{ 'main-tab--active': activeMainTab === 'nueva' }"
-        @click="setTab('nueva')"
-      >
-        <i class="bi bi-plus-circle me-1"></i>Abrir cuenta
-      </button>
-      <button
-        class="main-tab"
-        :class="{ 'main-tab--active': activeMainTab === 'abiertas' }"
-        @click="setTab('abiertas')"
-      >
-        <i class="bi bi-list-ul me-1"></i>Cuentas abiertas
-        <span class="main-tab__badge" v-if="openOrders.length">{{ openOrders.length }}</span>
+        <span>Cambiar usuario</span>
       </button>
     </div>
 
     <!-- ═══ TAB: ABRIR CUENTA ════════════════════════════════════════ -->
     <template v-if="activeMainTab === 'nueva'">
-
-      <!-- Tabs de zonas -->
-      <div class="zona-tabs" v-if="zonas.length">
-        <button
-          v-for="z in zonas"
-          :key="z.id"
-          class="zona-tab"
-          :class="{ 'zona-tab--active': activeZone === z.id }"
-          @click="activeZone = z.id"
-        >
-          <i :class="`bi ${z.icon || 'bi-grid'} me-1`"></i>
-          {{ z.name }}
-          <span class="zona-tab__badge">{{ countFree(z) }}/{{ z.tables.length }}</span>
-        </button>
-      </div>
-
       <!-- Grid de mesas -->
       <div class="mesas-body" v-if="currentZone">
         <div class="mesas-grid">
@@ -86,7 +61,6 @@
           </button>
         </div>
       </div>
-
     </template>
 
     <!-- ═══ TAB: CUENTAS ABIERTAS ════════════════════════════════════ -->
@@ -100,40 +74,38 @@
         <div v-else-if="!openOrders.length" class="cuentas-empty">
           <i class="bi bi-bag-check fs-1 text-muted"></i>
           <p class="text-muted mt-2">No hay cuentas abiertas</p>
+          <button class="btn-abrir-primera mt-3" @click="setTab('nueva')">
+            <i class="bi bi-plus-circle me-1"></i>Abrir primera cuenta
+          </button>
         </div>
 
-        <div v-else class="cuentas-list">
+        <div v-else class="cuentas-circles">
           <button
             v-for="t in openOrders"
             :key="t.id"
-            class="cuenta-card"
-            :class="`cuenta-card--${t.status}`"
+            class="cuenta-circulo"
+            :class="{ 'cuenta-circulo--bill': t.status === 'bill_requested' }"
             @click="goToOrder(t)"
           >
-            <div class="cuenta-card__left">
-              <span class="cuenta-card__name">{{ t.name }}</span>
-              <span class="cuenta-card__zone">{{ t.zone_name }}</span>
+            <div class="cuenta-circulo__timer">
+              <i class="bi bi-clock-fill me-1"></i>{{ t.order_time }}
             </div>
-            <div class="cuenta-card__center">
-              <span class="cuenta-card__waiter"><i class="bi bi-person-fill me-1"></i>{{ t.waiter_name }}</span>
-              <span class="cuenta-card__time"><i class="bi bi-clock me-1"></i>{{ t.order_time }}</span>
+            <div class="cuenta-circulo__content">
+              <span class="cuenta-circulo__name">{{ t.name }}</span>
+              <span class="cuenta-circulo__valor-lbl">VALOR</span>
+              <span class="cuenta-circulo__amount">{{ formatCurrency(t.amount || 0) }}</span>
             </div>
-            <div class="cuenta-card__right">
-              <span class="cuenta-card__amount">{{ formatCurrency(t.amount || 0) }}</span>
-              <span class="cuenta-card__status-badge"
-                :class="t.status === 'bill_requested' ? 'cuenta-badge--bill' : 'cuenta-badge--open'">
-                {{ t.status === 'bill_requested' ? 'Cuenta' : 'En curso' }}
-              </span>
+            <div class="cuenta-circulo__waiter">
+              <i class="bi bi-person-fill me-1"></i>{{ t.waiter_name }}
             </div>
-            <i class="bi bi-chevron-right cuenta-card__arrow"></i>
           </button>
         </div>
 
       </div>
     </template>
 
-    <!-- Loading inicial (solo tab nueva) -->
-    <div v-if="activeMainTab === 'nueva' && loading && !zonas.length" class="mesas-loading">
+    <!-- Loading inicial -->
+    <div v-if="loading && !zonas.length && activeMainTab === 'nueva'" class="mesas-loading">
       <div class="spinner-border text-primary"></div>
       <p class="mt-3 text-muted">Cargando...</p>
     </div>
@@ -145,6 +117,32 @@
       @close="detailTable = null"
       @cancelled="onOrderCancelled"
     />
+
+    <!-- Drawer selector de zonas -->
+    <div class="zone-overlay" v-if="zoneMenuOpen" @click.self="zoneMenuOpen = false">
+      <div class="zone-drawer">
+        <div class="zone-drawer__header">
+          <span>Seleccionar zona</span>
+          <button class="zone-drawer__close" @click="zoneMenuOpen = false">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+        <div class="zone-drawer__list">
+          <button
+            v-for="z in zonas"
+            :key="z.id"
+            class="zone-drawer-item"
+            :class="{ 'zone-drawer-item--active': activeZone === z.id }"
+            @click="selectZone(z.id)"
+          >
+            <i :class="`bi ${z.icon || 'bi-grid-3x3-gap'}`" class="zone-drawer-item__icon"></i>
+            <span class="zone-drawer-item__name">{{ z.name }}</span>
+            <span class="zone-drawer-item__count">{{ countFree(z) }}/{{ z.tables.length }}</span>
+            <i class="bi bi-check2 ms-auto" v-if="activeZone === z.id" style="color:#2563eb"></i>
+          </button>
+        </div>
+      </div>
+    </div>
 
   </div>
 </template>
@@ -164,7 +162,8 @@ const loading       = ref(false)
 const activeZone    = ref(null)
 const openingId     = ref(null)
 const detailTable   = ref(null)
-const activeMainTab = ref('nueva')
+const activeMainTab = ref('abiertas')
+const zoneMenuOpen  = ref(false)
 
 let pollTimer = null
 
@@ -179,6 +178,10 @@ const currentZone = computed(() =>
   zonas.value.find(z => z.id === activeZone.value)
 )
 
+const currentZoneName = computed(() =>
+  currentZone.value?.name || 'Zona'
+)
+
 const openOrders = computed(() =>
   zonas.value.flatMap(z =>
     z.tables
@@ -189,6 +192,11 @@ const openOrders = computed(() =>
 
 function setTab(tab) {
   activeMainTab.value = tab
+}
+
+function selectZone(zoneId) {
+  activeZone.value = zoneId
+  zoneMenuOpen.value = false
 }
 
 function goToOrder(table) {
@@ -205,13 +213,15 @@ function formatCurrency(v) {
 }
 
 onMounted(async () => {
-  if (route.query.tab === 'abiertas') activeMainTab.value = 'abiertas'
+  if (route.query.tab === 'nueva') activeMainTab.value = 'nueva'
+  // default ya es 'abiertas'
   await loadMesas()
   pollTimer = setInterval(loadMesas, 10000)
 })
 
 watch(() => route.query.tab, (tab) => {
   if (tab === 'abiertas' || tab === 'nueva') activeMainTab.value = tab
+  else activeMainTab.value = 'abiertas'
 })
 
 onUnmounted(() => clearInterval(pollTimer))
@@ -303,11 +313,11 @@ function cambiarUsuario() {
   overflow: hidden;
 }
 
-/* Topbar usuario */
+/* ── Barra secundaria ── */
 .tpv-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 8px 14px;
   background: #1e293b;
   flex-shrink: 0;
@@ -319,12 +329,38 @@ function cambiarUsuario() {
   color: #e2e8f0;
   font-size: .85rem;
   font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.tpv-topbar__zone-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  background: rgba(255,255,255,.08);
+  color: #e2e8f0;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  touch-action: manipulation;
+  max-width: 140px;
+  flex-shrink: 0;
+}
+.tpv-topbar__zone-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpv-topbar__zone-btn:hover { border-color: #94a3b8; background: rgba(255,255,255,.15); }
 
 .tpv-topbar__switch {
   display: flex;
   align-items: center;
-  padding: 5px 12px;
+  gap: 4px;
+  padding: 5px 10px;
   border: 1px solid #475569;
   border-radius: 8px;
   background: transparent;
@@ -334,50 +370,9 @@ function cambiarUsuario() {
   cursor: pointer;
   transition: all .15s;
   touch-action: manipulation;
+  flex-shrink: 0;
 }
 .tpv-topbar__switch:hover { border-color: #94a3b8; color: #e2e8f0; }
-
-/* Zona tabs */
-.zona-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 12px 0;
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
-  overflow-x: auto;
-  flex-shrink: 0;
-  scrollbar-width: none;
-}
-.zona-tabs::-webkit-scrollbar { display: none; }
-
-.zona-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: none;
-  border-bottom: 3px solid transparent;
-  background: none;
-  color: #64748b;
-  font-size: .875rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all .2s;
-  border-radius: 8px 8px 0 0;
-}
-.zona-tab:hover { color: #1e293b; background: #f1f5f9; }
-.zona-tab--active { color: #2563eb; border-bottom-color: #2563eb; }
-
-.zona-tab__badge {
-  background: #e2e8f0;
-  color: #475569;
-  font-size: .7rem;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-weight: 700;
-}
-.zona-tab--active .zona-tab__badge { background: #dbeafe; color: #1d4ed8; }
 
 /* Mesas */
 .mesas-body { flex: 1; overflow-y: auto; padding: 14px; }
@@ -436,147 +431,218 @@ function cambiarUsuario() {
   justify-content: center;
 }
 
-/* ── Tabs principales ── */
-.main-tabs {
-  display: flex;
-  background: #fff;
-  border-bottom: 2px solid #e2e8f0;
-  flex-shrink: 0;
-}
-
-.main-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 13px 8px;
-  border: none;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -2px;
-  background: none;
-  color: #64748b;
-  font-size: .9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all .2s;
-  touch-action: manipulation;
-}
-.main-tab:hover { color: #1e293b; background: #f8fafc; }
-.main-tab--active { color: #2563eb; border-bottom-color: #2563eb; }
-
-.main-tab__badge {
-  background: #fee2e2;
-  color: #dc2626;
-  font-size: .7rem;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 10px;
-  line-height: 1.4;
-}
-.main-tab--active .main-tab__badge { background: #dbeafe; color: #1d4ed8; }
-
-/* ── Cuentas abiertas ── */
-.cuentas-body { flex: 1; overflow-y: auto; padding: 12px; }
+/* ── Cuentas abiertas: círculos ── */
+.cuentas-body { flex: 1; overflow-y: auto; padding: 16px; }
 
 .cuentas-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
+  height: 240px;
 }
 
-.cuentas-list {
+.btn-abrir-primera {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 18px;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background .15s;
+}
+.btn-abrir-primera:hover { background: #1d4ed8; }
+
+.cuentas-circles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 20px;
+  justify-items: center;
+}
+
+.cuenta-circulo {
+  width: min(180px, 100%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fcd34d 0%, #d97706 55%, #92400e 100%);
+  box-shadow: 0 8px 28px rgba(146,64,14,.45), inset 0 1px 0 rgba(255,255,255,.25);
+  border: 3px solid rgba(253,211,77,.3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.cuenta-card {
-  display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 2px solid #e2e8f0;
-  border-radius: 14px;
-  background: #fff;
+  justify-content: center;
+  position: relative;
   cursor: pointer;
-  text-align: left;
-  width: 100%;
-  transition: all .2s;
-  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  overflow: hidden;
+  text-align: center;
+  padding: 20px 10px;
+  transition: transform .2s, box-shadow .2s;
   touch-action: manipulation;
 }
-.cuenta-card:hover { border-color: #2563eb; box-shadow: 0 4px 14px rgba(37,99,235,.12); transform: translateY(-1px); }
-.cuenta-card:active { transform: scale(.99); }
-.cuenta-card--bill_requested { border-color: #fde68a; background: #fffbeb; }
-.cuenta-card--bill_requested:hover { border-color: #d97706; }
+.cuenta-circulo:hover { transform: scale(1.05); box-shadow: 0 12px 36px rgba(146,64,14,.6); }
+.cuenta-circulo:active { transform: scale(.97); }
 
-.cuenta-card__left {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 90px;
+.cuenta-circulo--bill {
+  background: radial-gradient(circle at 35% 30%, #fb923c 0%, #c2410c 55%, #7c2d12 100%);
+  box-shadow: 0 8px 28px rgba(194,65,12,.45), inset 0 1px 0 rgba(255,255,255,.2);
 }
-.cuenta-card__name {
-  font-size: 1.05rem;
+
+.cuenta-circulo__timer {
+  position: absolute;
+  top: 17%;
+  background: rgba(220,38,38,.9);
+  color: #fff;
+  font-size: .65rem;
   font-weight: 700;
-  color: #1e293b;
-}
-.cuenta-card__zone {
-  font-size: .72rem;
-  color: #94a3b8;
-  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
 }
 
-.cuenta-card__center {
-  flex: 1;
+.cuenta-circulo__content {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  gap: 1px;
+  margin-top: 12px;
 }
-.cuenta-card__waiter {
-  font-size: .78rem;
-  color: #475569;
+
+.cuenta-circulo__name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,.4);
+  line-height: 1.1;
+  word-break: break-word;
+}
+
+.cuenta-circulo__valor-lbl {
+  font-size: .55rem;
+  font-weight: 700;
+  color: rgba(255,255,255,.75);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.cuenta-circulo__amount {
+  font-size: .88rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+
+.cuenta-circulo__waiter {
+  position: absolute;
+  bottom: 17%;
+  font-size: .65rem;
+  color: rgba(255,255,255,.92);
   font-weight: 600;
-  white-space: nowrap;
+  background: rgba(0,0,0,.28);
+  padding: 3px 10px;
+  border-radius: 10px;
+  max-width: 78%;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.cuenta-card__time {
-  font-size: .75rem;
-  color: #94a3b8;
+  white-space: nowrap;
 }
 
-.cuenta-card__right {
+/* ── Drawer zonas ── */
+.zone-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 620;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  flex-shrink: 0;
+  justify-content: flex-end;
 }
-.cuenta-card__amount {
+
+.zone-drawer {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  max-height: 70dvh;
+  display: flex;
+  flex-direction: column;
+  animation: zoneSlideUp .25s ease;
+}
+
+@keyframes zoneSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.zone-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #e2e8f0;
   font-size: .95rem;
   font-weight: 700;
   color: #1e293b;
-  white-space: nowrap;
+  flex-shrink: 0;
 }
-.cuenta-card__status-badge {
-  font-size: .7rem;
+
+.zone-drawer__close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+.zone-drawer__close:hover { background: #f1f5f9; }
+
+.zone-drawer__list {
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.zone-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: #f8fafc;
+  cursor: pointer;
+  touch-action: manipulation;
+  text-align: left;
+  width: 100%;
+  transition: all .15s;
+}
+.zone-drawer-item:hover { background: #eff6ff; }
+.zone-drawer-item--active { background: #dbeafe; border-color: #2563eb; }
+
+.zone-drawer-item__icon { font-size: 1.15rem; color: #64748b; width: 24px; text-align: center; }
+.zone-drawer-item--active .zone-drawer-item__icon { color: #2563eb; }
+
+.zone-drawer-item__name { flex: 1; font-size: .9rem; font-weight: 600; color: #334155; }
+.zone-drawer-item--active .zone-drawer-item__name { color: #1d4ed8; }
+
+.zone-drawer-item__count {
+  background: #e2e8f0;
+  color: #475569;
+  font-size: .72rem;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 10px;
-  white-space: nowrap;
 }
-.cuenta-badge--open { background: #fee2e2; color: #dc2626; }
-.cuenta-badge--bill { background: #fef3c7; color: #d97706; }
-
-.cuenta-card__arrow {
-  color: #cbd5e1;
-  font-size: .85rem;
-  flex-shrink: 0;
-}
+.zone-drawer-item--active .zone-drawer-item__count { background: #bfdbfe; color: #1d4ed8; }
 
 @media (max-width: 768px) {
   .mesas-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
@@ -587,8 +653,7 @@ function cambiarUsuario() {
   .mesas-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .mesa-card  { padding: 12px 8px; }
   .tpv-topbar__switch span { display: none; }
-  .main-tab { font-size: .82rem; padding: 11px 6px; }
-  .cuenta-card { padding: 12px; gap: 8px; }
-  .cuenta-card__left { min-width: 70px; }
+  .cuentas-circles { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .cuenta-circulo { width: min(150px, 100%); }
 }
 </style>

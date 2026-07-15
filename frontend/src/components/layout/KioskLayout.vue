@@ -16,11 +16,21 @@
       </div>
       <!-- TPV: botones de acción mesero en lugar de redirect a dashboard -->
       <div v-if="isTpvRoute" class="kiosk-header__tpv-actions">
-        <button class="kiosk-header__action" @click="goToCuentas" title="Ver cuentas abiertas">
+        <button
+          class="kiosk-header__action"
+          :class="{ 'kiosk-header__action--selected': activeTpvTab === 'abiertas' }"
+          @click="goToCuentas"
+          title="Ver cuentas abiertas"
+        >
           <i class="bi bi-list-ul me-1"></i>
-          <span class="kiosk-header__action-label">Cuentas</span>
+          <span class="kiosk-header__action-label">Cuentas Abiertas</span>
         </button>
-        <button class="kiosk-header__action kiosk-header__action--new" @click="abrirCuenta" title="Abrir nueva cuenta">
+        <button
+          class="kiosk-header__action"
+          :class="{ 'kiosk-header__action--selected': activeTpvTab === 'nueva' }"
+          @click="abrirCuenta"
+          title="Abrir nueva cuenta"
+        >
           <i class="bi bi-plus-circle me-1"></i>
           <span class="kiosk-header__action-label">Abrir cuenta</span>
         </button>
@@ -71,6 +81,11 @@ watch(() => route.path, () => {
 }, { immediate: true })
 
 const isTpvRoute = computed(() => route.path.startsWith('/pos/tpv/'))
+
+const activeTpvTab = computed(() => {
+  if (!route.path.startsWith('/pos/tpv/mesas')) return null
+  return route.query.tab === 'nueva' ? 'nueva' : 'abiertas'
+})
 
 const isAdminSession = computed(() => {
   return !localStorage.getItem('waiter_token') && !!localStorage.getItem('token')
@@ -171,11 +186,12 @@ function logout() {
   touch-action: manipulation;
 }
 .kiosk-header__action:hover { background: rgba(255,255,255,.22); }
-.kiosk-header__action--new {
+.kiosk-header__action--selected {
   background: #2563eb;
   border-color: #1d4ed8;
+  color: #fff;
 }
-.kiosk-header__action--new:hover { background: #1d4ed8; }
+.kiosk-header__action--selected:hover { background: #1d4ed8; }
 
 .kiosk-header__logout {
   background: none;

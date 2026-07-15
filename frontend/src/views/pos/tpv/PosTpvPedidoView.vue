@@ -513,7 +513,7 @@ async function submitOrder() {
         order_number: order.value.order_number, date: order.value.date,
       })
     }
-    router.push('/pos/tpv/mesas')
+    router.push('/pos/tpv/mesas?tab=abiertas')
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al enviar', 'error', 3000)
   } finally {
@@ -522,7 +522,7 @@ async function submitOrder() {
 }
 
 function cancelOrder() {
-  router.push('/pos/tpv/mesas')
+  router.push('/pos/tpv/mesas?tab=abiertas')
 }
 </script>
 
