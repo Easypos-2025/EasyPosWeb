@@ -404,15 +404,18 @@
     </template>
 
     <!-- Lightbox -->
-    <div v-if="fotoAmpliada" class="lightbox" @click="fotoAmpliada = null">
-      <img :src="fotoUrl(fotoAmpliada.url)" />
+    <div v-if="fotoAmpliada" class="lightbox" @click.self="cerrarLightbox">
+      <button class="lightbox-close" @click="cerrarLightbox">
+        <i class="bi bi-x-lg"></i>
+      </button>
+      <img :src="fotoUrl(fotoAmpliada.url)" @click.stop />
     </div>
 
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 import { showConfirm } from '@/utils/toast'
@@ -441,6 +444,24 @@ const fotos        = ref([])
 const uploading    = ref(false)
 const uploaderKey  = ref(0)
 const fotoAmpliada = ref(null)
+
+function cerrarLightbox() { fotoAmpliada.value = null }
+
+function onPopState() {
+  fotoAmpliada.value = null
+  window.removeEventListener('popstate', onPopState)
+}
+
+watch(fotoAmpliada, val => {
+  if (val) {
+    history.pushState({ lightbox: true }, '')
+    window.addEventListener('popstate', onPopState)
+  } else {
+    window.removeEventListener('popstate', onPopState)
+  }
+})
+
+onUnmounted(() => { window.removeEventListener('popstate', onPopState) })
 
 // Observación
 const nuevaObs  = ref('')
@@ -970,9 +991,21 @@ const exportData = computed(() => {
 /* ── Lightbox ─────────────────────────────────────────────────────────────── */
 .lightbox {
   position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 2000;
-  display: flex; align-items: center; justify-content: center; cursor: zoom-out;
+  display: flex; align-items: center; justify-content: center; cursor: default;
 }
-.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; cursor: default; }
+.lightbox-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.5);
+  color: #fff; font-size: 22px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .15s; z-index: 10;
+}
+.lightbox-close:hover { background: rgba(255,255,255,.3); transform: scale(1.1); }
+@media (max-width: 576px) {
+  .lightbox-close { width: 44px; height: 44px; font-size: 18px; top: 10px; right: 10px; }
+}
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
