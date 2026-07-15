@@ -23,12 +23,14 @@ async def _get_company(authorization: str, db: AsyncSession) -> int:
         raise HTTPException(status_code=401, detail="Token requerido")
     token = authorization.replace("Bearer ", "")
     payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Token inválido")
     session = (await db.execute(
         select(UserSession).where(UserSession.token == token, UserSession.is_active == True)
     )).scalars().first()
-    if not session or payload is None:
+    if not session:
         raise HTTPException(status_code=401, detail="Sesión inválida")
-    user = (await db.execute(select(User).where(User.email == payload.get("sub")))).scalars().first()
+    user = (await db.execute(select(User).where(User.id == session.user_id))).scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user.company_id
@@ -36,35 +38,18 @@ async def _get_company(authorization: str, db: AsyncSession) -> int:
 
 # ── Empleados TPV (employee_type=2) ──────────────────────────────────────────
 
-@router.get("/config/debug")
-async def debug_tpv(
-    authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db)
-):
-    cid = await _get_company(authorization, db)
-    total = (await db.execute(text(
-        "SELECT COUNT(*) as n FROM pos_waiters WHERE company_id=:cid"
-    ), {"cid": cid})).first()
-    tipo2 = (await db.execute(text(
-        "SELECT COUNT(*) as n FROM pos_waiters WHERE company_id=:cid AND employee_type=2"
-    ), {"cid": cid})).first()
-    return {"company_id": cid, "total_waiters": total.n, "employee_type2": tipo2.n}
-
-
 @router.get("/config/empleados")
 async def list_tpv_empleados(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
     cid = await _get_company(authorization, db)
-    print(f"[TPV DEBUG] company_id={cid!r} type={type(cid)}", flush=True)
     rows = (await db.execute(text(
         "SELECT id, name, phone, status, plan_blocked "
         "FROM pos_waiters "
         "WHERE company_id=:cid AND employee_type=2 "
         "ORDER BY name"
     ), {"cid": cid})).mappings().all()
-    print(f"[TPV DEBUG] rows found={len(rows)}", flush=True)
     return [dict(r) for r in rows]
 
 
