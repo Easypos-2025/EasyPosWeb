@@ -57,12 +57,14 @@ async def list_tpv_empleados(
     db: AsyncSession = Depends(get_db)
 ):
     cid = await _get_company(authorization, db)
+    print(f"[TPV DEBUG] company_id={cid!r} type={type(cid)}", flush=True)
     rows = (await db.execute(text(
         "SELECT id, name, phone, status, plan_blocked "
         "FROM pos_waiters "
         "WHERE company_id=:cid AND employee_type=2 "
         "ORDER BY name"
     ), {"cid": cid})).mappings().all()
+    print(f"[TPV DEBUG] rows found={len(rows)}", flush=True)
     return [dict(r) for r in rows]
 
 
