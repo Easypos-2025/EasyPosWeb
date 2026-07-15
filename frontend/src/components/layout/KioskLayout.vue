@@ -77,11 +77,11 @@ const isAdminSession = computed(() => {
 })
 
 function goToCuentas() {
-  router.push('/pos/tpv/mesas')
+  router.push('/pos/tpv/mesas?tab=abiertas')
 }
 
 function abrirCuenta() {
-  router.push('/pos/tpv/mesas')
+  router.push('/pos/tpv/mesas?tab=nueva')
 }
 
 function logout() {
