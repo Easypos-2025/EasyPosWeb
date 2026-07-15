@@ -225,7 +225,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaAssemblyModal from '@/components/comanda/ComandaAssemblyModal.vue'
@@ -333,9 +333,46 @@ const visibleItemsCount = computed(() =>
   items.value.filter(i => !i._deleted).length
 )
 
+// ── Lock de edición ───────────────────────────────────────────────────────────
+const _editToken = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
+let _heartbeat = null
+
+function _waiterName() {
+  try {
+    const d = JSON.parse(localStorage.getItem('waiter_data') || '{}')
+    return d.name || 'Mesero'
+  } catch { return 'Mesero' }
+}
+
+async function _acquireLock() {
+  try {
+    await apiComanda.post(`/api/pos/comanda/mesa/${tableId.value}/editar`, {
+      waiter_name: _waiterName(),
+      token: _editToken,
+    })
+  } catch { /* lock suave — no bloquea si falla */ }
+}
+
+async function _releaseLock() {
+  try {
+    await apiComanda.delete(`/api/pos/comanda/mesa/${tableId.value}/editar`, {
+      params: { token: _editToken },
+    })
+  } catch { /* ignorar errores al salir */ }
+}
+
 onMounted(async () => {
   if (ctx.company_id) localStorage.setItem('waiter_company_id', String(ctx.company_id))
   await Promise.all([loadOrder(), loadMenu(), loadNotes()])
+  await _acquireLock()
+  _heartbeat = setInterval(_acquireLock, 3 * 60 * 1000)
+  window.addEventListener('beforeunload', _releaseLock)
+})
+
+onUnmounted(async () => {
+  clearInterval(_heartbeat)
+  window.removeEventListener('beforeunload', _releaseLock)
+  await _releaseLock()
 })
 
 async function loadOrder() {

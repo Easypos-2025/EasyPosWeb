@@ -2,6 +2,9 @@
 
   <!-- ═══ ESTILO: oval-wood (mesa elíptica de madera) ══════════════════════ -->
   <div v-if="cardStyle === 'oval-wood'" class="aoc-oval" @click="$emit('click')">
+    <div v-if="editingBy" class="aoc-lock-badge aoc-lock-badge--oval">
+      <i class="bi bi-pencil-fill"></i> {{ editingBy }}
+    </div>
     <div class="aoc-oval__timer" :class="{ 'aoc-oval__timer--alert': isAlert }">
       <i class="bi bi-clock"></i>
       <span>{{ timeDisplay }}</span>
@@ -32,6 +35,9 @@
     :class="[`aoc--${cardStyle}`, { 'aoc--bill': d.billRequested }]"
     @click="$emit('click')"
   >
+    <div v-if="editingBy" class="aoc-lock-badge">
+      <i class="bi bi-pencil-fill"></i> {{ editingBy }}
+    </div>
     <!-- Fila superior: timer + botón eliminar -->
     <div class="aoc__top">
       <span class="aoc__timer" :class="{ 'aoc__timer--alert': isAlert }">
@@ -67,6 +73,7 @@ const props = defineProps({
   cardStyle:  { type: String,  default: 'oval-wood' },
   showDelete: { type: Boolean, default: false },
   currency:   { type: String,  default: 'COP' },
+  editingBy:  { type: String,  default: null },
 })
 
 defineEmits(['click', 'eliminar'])
@@ -506,4 +513,32 @@ function fmt(v) {
   .aoc__name { font-size: .9rem; }
   .aoc__amount { font-size: .75rem; }
 }
+
+/* ── Badge "editando" ── */
+.aoc-lock-badge {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #7c3aed;
+  color: #fff;
+  font-size: .6rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(124,58,237,.4);
+}
+.aoc-lock-badge--oval {
+  bottom: 4px;
+}
+.aoc { padding-bottom: 14px; }
+.aoc--circular-gold { padding-bottom: 0; }
 </style>

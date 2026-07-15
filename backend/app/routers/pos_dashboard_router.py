@@ -206,11 +206,24 @@ async def get_mesas(
         ORDER BY z.order_index, z.name, t.name
     """), {"cid": cid})).mappings().all()
 
-    # Mesas abiertas desde datatemppos
-    open_rows = (await db_temp.execute(text(
-        "SELECT Id_Mesa FROM temp_mesa_abierta WHERE company_id=:cid AND Abierta=1"
-    ), {"cid": cid})).mappings().all()
+    # Mesas abiertas y locks de edición desde datatemppos
+    open_rows = (await db_temp.execute(text("""
+        SELECT Id_Mesa, editing_waiter_name, editing_since
+        FROM temp_mesa_abierta
+        WHERE company_id=:cid AND Abierta=1
+    """), {"cid": cid})).mappings().all()
     open_set = {int(r["Id_Mesa"]) for r in open_rows}
+    def _lock_active(since) -> bool:
+        if not since: return False
+        try:
+            t = since if isinstance(since, datetime) else datetime.fromisoformat(str(since))
+            return (datetime.now() - t.replace(tzinfo=None)).total_seconds() < 600
+        except: return False
+    locks_dash = {
+        int(r["Id_Mesa"]): r["editing_waiter_name"]
+        for r in open_rows
+        if r.get("editing_waiter_name") and _lock_active(r.get("editing_since"))
+    }
 
     # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
     order_rows = (await db_temp.execute(text("""
@@ -257,6 +270,7 @@ async def get_mesas(
             "guests_count": order_info["guests_count"] if order_info else None,
             "waiter_name":  waiter_names.get(int(order_info["Mesero"] or 0)) if order_info else None,
             "daily_seq":    order_info["daily_seq"] if order_info else None,
+            "editing_by":   locks_dash.get(tid),
         }
         result.append(row)
     return result

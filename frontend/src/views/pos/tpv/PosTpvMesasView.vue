@@ -86,7 +86,8 @@
             :order="t"
             :card-style="cardStyle || 'circular-gold'"
             :show-delete="false"
-            @click="goToOrder(t)"
+            :editing-by="t.editing_by || null"
+            @click="onOpenOrder(t)"
           />
         </div>
 
@@ -106,6 +107,21 @@
       @close="detailTable = null"
       @cancelled="onOrderCancelled"
     />
+
+    <!-- Modal advertencia lock de edición -->
+    <div v-if="lockWarning" class="lock-modal-backdrop" @click.self="lockWarning = null">
+      <div class="lock-modal">
+        <i class="bi bi-pencil-square lock-modal__icon"></i>
+        <p class="lock-modal__msg">
+          <strong>{{ lockWarning.editing_by }}</strong> está editando este pedido ahora.
+        </p>
+        <p class="lock-modal__sub">¿Quieres entrar de todas formas?</p>
+        <div class="lock-modal__btns">
+          <button class="lock-modal__cancel" @click="lockWarning = null">Esperar</button>
+          <button class="lock-modal__confirm" @click="goToOrder(lockWarning); lockWarning = null">Entrar</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Drawer selector de zonas -->
     <div class="zone-overlay" v-if="zoneMenuOpen" @click.self="zoneMenuOpen = false">
@@ -157,6 +173,7 @@ const openingId     = ref(null)
 const detailTable   = ref(null)
 const activeMainTab = ref('abiertas')
 const zoneMenuOpen  = ref(false)
+const lockWarning   = ref(null)
 
 let pollTimer = null
 
@@ -190,6 +207,14 @@ function setTab(tab) {
 function selectZone(zoneId) {
   activeZone.value = zoneId
   zoneMenuOpen.value = false
+}
+
+function onOpenOrder(table) {
+  if (table.editing_by) {
+    lockWarning.value = table
+    return
+  }
+  goToOrder(table)
 }
 
 function goToOrder(table) {
@@ -560,4 +585,47 @@ function cambiarUsuario() {
   .tpv-topbar__switch span { display: none; }
   .cuentas-circles { gap: 12px; }
 }
+
+/* ── Modal lock de edición ── */
+.lock-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 700;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.lock-modal {
+  background: #fff;
+  border-radius: 18px;
+  padding: 28px 24px 20px;
+  max-width: 320px; width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  animation: lockSlideIn .2s ease;
+}
+@keyframes lockSlideIn {
+  from { transform: scale(.9); opacity: 0; }
+  to   { transform: scale(1);  opacity: 1; }
+}
+.lock-modal__icon {
+  font-size: 2.4rem;
+  color: #7c3aed;
+  display: block;
+  margin-bottom: 12px;
+}
+.lock-modal__msg  { font-size: .95rem; color: #1e293b; margin: 0 0 4px; }
+.lock-modal__sub  { font-size: .82rem; color: #64748b; margin: 0 0 20px; }
+.lock-modal__btns { display: flex; gap: 10px; }
+.lock-modal__cancel {
+  flex: 1; padding: 10px; border: 2px solid #e2e8f0;
+  border-radius: 10px; background: #f8fafc; color: #475569;
+  font-weight: 600; cursor: pointer; font-size: .88rem;
+}
+.lock-modal__cancel:hover { background: #f1f5f9; }
+.lock-modal__confirm {
+  flex: 1; padding: 10px; border: none;
+  border-radius: 10px; background: #7c3aed; color: #fff;
+  font-weight: 700; cursor: pointer; font-size: .88rem;
+}
+.lock-modal__confirm:hover { background: #6d28d9; }
 </style>

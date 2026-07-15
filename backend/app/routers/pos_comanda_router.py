@@ -265,6 +265,17 @@ async def get_mesas(
         ), {"cid": cid})).mappings().all()
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
+    # Locks de edición activos (expiran tras 10 minutos sin heartbeat)
+    lock_rows = (await db_temp.execute(text("""
+        SELECT Id_Mesa, editing_waiter_name, editing_token
+        FROM temp_mesa_abierta
+        WHERE company_id=:cid AND Abierta=1
+          AND editing_waiter_name IS NOT NULL
+          AND editing_since IS NOT NULL
+          AND editing_since > NOW() - INTERVAL 10 MINUTE
+    """), {"cid": cid})).mappings().all()
+    locks: dict = {int(r["Id_Mesa"]): {"name": r["editing_waiter_name"], "token": r["editing_token"]} for r in lock_rows}
+
     # Construir respuesta por zonas
     zones: dict = {}
     for r in layout_rows:
@@ -283,6 +294,7 @@ async def get_mesas(
         order_info = order_by_mesa.get(str(r["name"]).strip())
         status = "occupied" if (tid in open_set or order_info is not None) else "free"
 
+        lk = locks.get(tid)
         zones[zid]["tables"].append({
             "id":          tid,
             "name":        r["name"],
@@ -294,6 +306,7 @@ async def get_mesas(
             "waiter_id":    order_info["waiter_id"] if order_info else None,
             "waiter_name":  waiter_names.get(order_info["waiter_id"]) if order_info else None,
             "daily_seq":    order_info["daily_seq"] if order_info else None,
+            "editing_by":   lk["name"] if lk else None,
         })
 
     return sorted(zones.values(), key=lambda z: z["order_index"])
@@ -1413,7 +1426,74 @@ async def get_cocina_pedidos(
     return result
 
 
-# ── 14. COCINA TV ─────────────────────────────────────────────────────────────
+# ── 14. LOCK DE EDICIÓN DE MESA ───────────────────────────────────────────────
+
+import secrets as _secrets
+
+class EditLockIn(BaseModel):
+    waiter_name: str
+    token: str  # UUID generado en frontend por sesión
+
+@router.post("/mesa/{table_id}/editar")
+async def adquirir_lock(
+    table_id: int,
+    data: EditLockIn,
+    payload: dict = Depends(_auth_comanda),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    """Adquiere el lock de edición para la mesa. Si otro dispositivo ya lo tiene y no expiró → 409."""
+    cid = payload["company_id"]
+
+    # Verificar si hay un lock activo de OTRO token
+    existing_lock = (await db_temp.execute(text("""
+        SELECT editing_waiter_name, editing_token
+        FROM temp_mesa_abierta
+        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
+          AND editing_waiter_name IS NOT NULL
+          AND editing_since > NOW() - INTERVAL 10 MINUTE
+          AND editing_token != :token
+        LIMIT 1
+    """), {"cid": cid, "tid": table_id, "token": data.token})).mappings().first()
+
+    if existing_lock:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Mesa siendo editada por {existing_lock['editing_waiter_name']}"
+        )
+
+    # Adquirir o renovar el lock
+    await db_temp.execute(text("""
+        UPDATE temp_mesa_abierta
+        SET editing_waiter_name = :name,
+            editing_since       = NOW(),
+            editing_token       = :token
+        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
+    """), {"cid": cid, "tid": table_id, "name": data.waiter_name, "token": data.token})
+    await db_temp.commit()
+    return {"ok": True, "token": data.token}
+
+
+@router.delete("/mesa/{table_id}/editar")
+async def liberar_lock(
+    table_id: int,
+    token: str,
+    payload: dict = Depends(_auth_comanda),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    """Libera el lock de edición. Solo lo puede liberar quien lo posee (mismo token)."""
+    cid = payload["company_id"]
+    await db_temp.execute(text("""
+        UPDATE temp_mesa_abierta
+        SET editing_waiter_name = NULL,
+            editing_since       = NULL,
+            editing_token       = NULL
+        WHERE company_id=:cid AND Id_Mesa=:tid AND editing_token=:token
+    """), {"cid": cid, "tid": table_id, "token": token})
+    await db_temp.commit()
+    return {"ok": True}
+
+
+# ── 15. COCINA TV ─────────────────────────────────────────────────────────────
 
 @router.get("/cocina/tv-config")
 async def get_tv_config(

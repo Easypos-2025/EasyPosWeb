@@ -72,6 +72,7 @@
             :order="mesa"
             :card-style="cardStyle || 'oval-wood'"
             :show-delete="true"
+            :editing-by="mesa.editing_by || null"
             @click="irAMesaExistente(mesa)"
             @eliminar="eliminarOrden(mesa)"
           />
