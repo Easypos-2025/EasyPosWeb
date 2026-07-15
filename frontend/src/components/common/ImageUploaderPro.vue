@@ -220,12 +220,23 @@ async function confirmEdit() {
   if (!canvas) return
 
   const W = props.outputWidth
-  const H = props.outputHeight ?? props.outputWidth
+  const H = props.outputHeight
+
+  let outW, outH
+  if (H === null) {
+    // Sin outputHeight: respetar la proporción exacta del recorte
+    const ratio = canvas.height / canvas.width
+    outW = Math.min(W, canvas.width)
+    outH = Math.round(outW * ratio)
+  } else {
+    outW = W
+    outH = H
+  }
 
   const out    = document.createElement('canvas')
-  out.width    = W
-  out.height   = H
-  out.getContext('2d').drawImage(canvas, 0, 0, W, H)
+  out.width    = outW
+  out.height   = outH
+  out.getContext('2d').drawImage(canvas, 0, 0, outW, outH)
 
   const mime = props.outputFormat === 'webp' ? 'image/webp' : 'image/jpeg'
   const blob = await new Promise(r => out.toBlob(r, mime, props.outputQuality))
