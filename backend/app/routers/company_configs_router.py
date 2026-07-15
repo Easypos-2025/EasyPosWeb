@@ -33,9 +33,6 @@ async def _require_sysadmin(authorization: str, db: AsyncSession) -> User:
     uid = payload.get("user_id")
     user = await db.get(User, int(uid)) if uid else None
     if not user:
-        r2 = await db.execute(select(User).where(User.email == payload.get("sub")))
-        user = r2.scalars().first()
-    if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     role = await db.get(Role, user.role_id)
     if not role or not role.is_system:

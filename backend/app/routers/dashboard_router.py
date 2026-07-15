@@ -36,9 +36,8 @@ async def get_stats(
     if not session or payload is None:
         raise HTTPException(status_code=401, detail="Sesión inválida")
 
-    email = payload.get("sub")
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
+    uid = payload.get("user_id") or (session.user_id if session else None)
+    user = await db.get(User, int(uid)) if uid else None
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
@@ -82,9 +81,6 @@ async def _require_sysadmin(authorization: str, db: AsyncSession) -> User:
         raise HTTPException(status_code=401, detail="Sesión inválida")
     uid = payload.get("user_id")
     user = await db.get(User, int(uid)) if uid else None
-    if not user:
-        r2 = await db.execute(select(User).where(User.email == payload.get("sub")))
-        user = r2.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     role = await db.get(Role, user.role_id)

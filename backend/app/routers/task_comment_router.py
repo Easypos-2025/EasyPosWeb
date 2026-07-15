@@ -22,9 +22,6 @@ async def _get_user(authorization: str, db: AsyncSession):
     uid = payload.get("user_id")
     user = await db.get(User, int(uid)) if uid else None
     if not user:
-        result = await db.execute(select(User).where(User.email == payload.get("sub")))
-        user = result.scalars().first()
-    if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
 
