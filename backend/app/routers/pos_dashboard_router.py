@@ -624,10 +624,14 @@ async def set_card_style(
     cid  = await _resolve_cid(user, data.company_id, db)
     if data.style not in VALID_CARD_STYLES:
         raise HTTPException(status_code=422, detail="Estilo de tarjeta inválido")
-    await db.execute(text("""
-        INSERT INTO company_configs (company_id, pos_card_style)
-        VALUES (:cid, :style)
-        ON DUPLICATE KEY UPDATE pos_card_style = :style
-    """), {"cid": cid, "style": data.style})
+    result = await db.execute(text(
+        "UPDATE company_configs SET pos_card_style = :style WHERE company_id = :cid"
+    ), {"cid": cid, "style": data.style})
+    if result.rowcount == 0:
+        await db.execute(text("""
+            INSERT INTO company_configs (company_id, pos_card_style, has_pos_electronico)
+            VALUES (:cid, :style, 0)
+            ON DUPLICATE KEY UPDATE pos_card_style = :style
+        """), {"cid": cid, "style": data.style})
     await db.commit()
     return {"ok": True, "style": data.style}

@@ -227,6 +227,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { useCardStyle, CARD_STYLES } from '@/composables/useCardStyle'
 import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'
+import { showToast } from '@/utils/toast'
 
 const previewOrder = {
   name: 'Mesa 5',
@@ -247,8 +248,7 @@ async function pickStyle(key) {
     const user = JSON.parse(localStorage.getItem('user') || '{}')
     await saveStyle(key, user.company_id || undefined)
   } catch (err) {
-    console.error('[CardStyle] Error guardando estilo:', err)
-    alert('No se pudo guardar el estilo. Verifica la conexión.')
+    showToast(err.response?.data?.detail || 'No se pudo guardar el estilo de tarjeta', 'error', 3500)
   } finally {
     savingStyle.value = null
   }
