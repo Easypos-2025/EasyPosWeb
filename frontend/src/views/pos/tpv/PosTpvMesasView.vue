@@ -80,25 +80,14 @@
         </div>
 
         <div v-else class="cuentas-circles">
-          <button
+          <AccountOrderCard
             v-for="t in openOrders"
             :key="t.id"
-            class="cuenta-circulo"
-            :class="{ 'cuenta-circulo--bill': t.status === 'bill_requested' }"
+            :order="t"
+            :card-style="cardStyle || 'circular-gold'"
+            :show-delete="false"
             @click="goToOrder(t)"
-          >
-            <div class="cuenta-circulo__timer">
-              <i class="bi bi-clock-fill me-1"></i>{{ t.order_time }}
-            </div>
-            <div class="cuenta-circulo__content">
-              <span class="cuenta-circulo__name">{{ t.name }}</span>
-              <span class="cuenta-circulo__valor-lbl">VALOR</span>
-              <span class="cuenta-circulo__amount">{{ formatCurrency(t.amount || 0) }}</span>
-            </div>
-            <div class="cuenta-circulo__waiter">
-              <i class="bi bi-person-fill me-1"></i>{{ t.waiter_name }}
-            </div>
-          </button>
+          />
         </div>
 
       </div>
@@ -152,7 +141,11 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
+import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'
 import { showToast } from '@/utils/toast'
+import { useCardStyle } from '@/composables/useCardStyle'
+
+const { cardStyle, load: loadCardStyle } = useCardStyle()
 
 const router = useRouter()
 const route  = useRoute()
@@ -214,8 +207,8 @@ function formatCurrency(v) {
 
 onMounted(async () => {
   if (route.query.tab === 'nueva') activeMainTab.value = 'nueva'
-  // default ya es 'abiertas'
-  await loadMesas()
+  const cid = localStorage.getItem('waiter_company_id') || undefined
+  await Promise.all([loadMesas(), loadCardStyle(cid)])
   pollTimer = setInterval(loadMesas, 10000)
 })
 
@@ -459,100 +452,12 @@ function cambiarUsuario() {
 .btn-abrir-primera:hover { background: #1d4ed8; }
 
 .cuentas-circles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 20px;
-  justify-items: center;
-}
-
-.cuenta-circulo {
-  width: min(180px, 100%);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fcd34d 0%, #d97706 55%, #92400e 100%);
-  box-shadow: 0 8px 28px rgba(146,64,14,.45), inset 0 1px 0 rgba(255,255,255,.25);
-  border: 3px solid rgba(253,211,77,.3);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  position: relative;
-  cursor: pointer;
-  overflow: hidden;
-  text-align: center;
-  padding: 20px 10px;
-  transition: transform .2s, box-shadow .2s;
-  touch-action: manipulation;
-}
-.cuenta-circulo:hover { transform: scale(1.05); box-shadow: 0 12px 36px rgba(146,64,14,.6); }
-.cuenta-circulo:active { transform: scale(.97); }
-
-.cuenta-circulo--bill {
-  background: radial-gradient(circle at 35% 30%, #fb923c 0%, #c2410c 55%, #7c2d12 100%);
-  box-shadow: 0 8px 28px rgba(194,65,12,.45), inset 0 1px 0 rgba(255,255,255,.2);
-}
-
-.cuenta-circulo__timer {
-  position: absolute;
-  top: 17%;
-  background: rgba(220,38,38,.9);
-  color: #fff;
-  font-size: .65rem;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 10px;
-  display: flex;
   align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-}
-
-.cuenta-circulo__content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  margin-top: 12px;
-}
-
-.cuenta-circulo__name {
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: #fff;
-  text-shadow: 0 1px 4px rgba(0,0,0,.4);
-  line-height: 1.1;
-  word-break: break-word;
-}
-
-.cuenta-circulo__valor-lbl {
-  font-size: .55rem;
-  font-weight: 700;
-  color: rgba(255,255,255,.75);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  margin-top: 4px;
-}
-
-.cuenta-circulo__amount {
-  font-size: .88rem;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,.3);
-}
-
-.cuenta-circulo__waiter {
-  position: absolute;
-  bottom: 17%;
-  font-size: .65rem;
-  color: rgba(255,255,255,.92);
-  font-weight: 600;
-  background: rgba(0,0,0,.28);
-  padding: 3px 10px;
-  border-radius: 10px;
-  max-width: 78%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 4px 0;
 }
 
 /* ── Drawer zonas ── */
@@ -653,7 +558,6 @@ function cambiarUsuario() {
   .mesas-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .mesa-card  { padding: 12px 8px; }
   .tpv-topbar__switch span { display: none; }
-  .cuentas-circles { grid-template-columns: repeat(2, 1fr); gap: 14px; }
-  .cuenta-circulo { width: min(150px, 100%); }
+  .cuentas-circles { gap: 12px; }
 }
 </style>

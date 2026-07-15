@@ -66,10 +66,12 @@
           <p>No hay cuentas abiertas en este momento.</p>
         </div>
         <div v-else class="mesas-grid">
-          <MesaTableCard
+          <AccountOrderCard
             v-for="mesa in mesasOcupadasOrdenadas"
             :key="mesa.id"
-            :mesa="mesa"
+            :order="mesa"
+            :card-style="cardStyle || 'oval-wood'"
+            :show-delete="true"
             @click="irAMesaExistente(mesa)"
             @eliminar="eliminarOrden(mesa)"
           />
@@ -331,8 +333,11 @@ import api from '@/services/apis.js'
 import apiComanda from '@/services/apiComanda.js'
 import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
-import MesaTableCard from '@/components/comanda/MesaTableCard.vue'
+import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'
 import { showToast } from '@/utils/toast'
+import { useCardStyle } from '@/composables/useCardStyle'
+
+const { cardStyle, load: loadCardStyle } = useCardStyle()
 
 const companyStore = useCompanyStore()
 const router = useRouter()
@@ -524,7 +529,10 @@ function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } 
 function _onVisible()    { if (!document.hidden) _tick() }
 
 onMounted(async () => {
-  await Promise.all([cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTvToken(), _silentTV()])
+  await Promise.all([
+    cargarKpis(), cargarMesas(), cargarMeseros(), cargarStock(), cargarTvToken(), _silentTV(),
+    loadCardStyle(selectedCid.value),
+  ])
   _startRefresh()
   document.addEventListener('visibilitychange', _onVisible)
 })

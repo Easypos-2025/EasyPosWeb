@@ -100,6 +100,33 @@
       </div>
     </div>
 
+    <!-- ── Estilo de tarjetas de mesa ───────────────────────────── -->
+    <div class="tpv-cfg__card">
+      <div class="tpv-cfg__card-head">
+        <h2 class="tpv-cfg__section-title">
+          <i class="bi bi-palette-fill me-2"></i>Estilo de tarjetas de mesa
+        </h2>
+      </div>
+      <p class="tpv-cfg__share-desc">
+        Elige cómo se visualizan las mesas/cuentas abiertas en el dashboard y en la pantalla de toma de pedidos.
+      </p>
+      <div class="card-style-grid">
+        <button
+          v-for="s in CARD_STYLES"
+          :key="s.key"
+          class="card-style-opt"
+          :class="{ 'card-style-opt--active': selectedCardStyle === s.key }"
+          @click="pickStyle(s.key)"
+        >
+          <i :class="`bi ${s.icon} card-style-opt__icon`"></i>
+          <span class="card-style-opt__label">{{ s.label }}</span>
+          <span class="card-style-opt__desc">{{ s.desc }}</span>
+          <i v-if="selectedCardStyle === s.key" class="bi bi-check-circle-fill card-style-opt__check"></i>
+          <span v-if="savingStyle === s.key" class="spinner-border spinner-border-sm card-style-opt__spinner"></span>
+        </button>
+      </div>
+    </div>
+
     <!-- ── Sección conexión ───────────────────────────────────────── -->
     <div class="tpv-cfg__card">
       <div class="tpv-cfg__card-head">
@@ -189,6 +216,23 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
+import { useCardStyle, CARD_STYLES } from '@/composables/useCardStyle'
+
+const { cardStyle: selectedCardStyle, load: loadStyle, save: saveStyle } = useCardStyle()
+const savingStyle = ref(null)
+
+async function pickStyle(key) {
+  if (savingStyle.value) return
+  savingStyle.value = key
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    await saveStyle(key, user.company_id || undefined)
+  } catch {
+    /* ignore */
+  } finally {
+    savingStyle.value = null
+  }
+}
 
 const empleados  = ref([])
 const loading    = ref(false)
@@ -313,7 +357,10 @@ function clearLocalUrl() {
   localStorage.removeItem('tpv_api_url')
 }
 
-onMounted(loadEmpleados)
+onMounted(async () => {
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  await Promise.all([loadEmpleados(), loadStyle(user.company_id || undefined)])
+})
 </script>
 
 <style scoped>
@@ -576,5 +623,62 @@ onMounted(loadEmpleados)
   .tpv-cfg__card   { padding: 1rem .75rem; }
   .tpv-modal { max-width: 100%; border-radius: 14px 14px 0 0; align-self: flex-end; }
   .tpv-modal-backdrop { align-items: flex-end; }
+}
+
+/* ── Selector de estilo de tarjeta ── */
+.card-style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.card-style-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: all .15s;
+}
+.card-style-opt:hover { border-color: #93c5fd; background: #eff6ff; }
+.card-style-opt--active { border-color: #2563eb; background: #dbeafe; }
+
+.card-style-opt__icon {
+  font-size: 1.4rem;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.card-style-opt--active .card-style-opt__icon { color: #2563eb; }
+
+.card-style-opt__label {
+  font-size: .9rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+.card-style-opt__desc {
+  font-size: .75rem;
+  color: #64748b;
+  line-height: 1.3;
+}
+.card-style-opt__check {
+  position: absolute;
+  top: 10px; right: 10px;
+  color: #2563eb;
+  font-size: 1rem;
+}
+.card-style-opt__spinner {
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 14px; height: 14px;
+}
+@media (max-width: 576px) {
+  .card-style-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card-style-opt  { padding: 10px 12px; }
 }
 </style>

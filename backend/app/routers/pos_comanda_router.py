@@ -280,8 +280,8 @@ async def get_mesas(
             }
 
         tid = int(r["id"])
-        status = "occupied" if tid in open_set else "free"
-        order_info = order_by_mesa.get(str(r["name"]).strip()) if status == "occupied" else None
+        order_info = order_by_mesa.get(str(r["name"]).strip())
+        status = "occupied" if (tid in open_set or order_info is not None) else "free"
 
         zones[zid]["tables"].append({
             "id":          tid,
@@ -318,8 +318,14 @@ async def abrir_mesa(
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
 
-    # Verificar si ya existe un pedido activo para esta mesa (sin filtro de fecha:
-    # un pedido puede cruzar medianoche y seguir activo al día siguiente)
+    # Verificar bloqueo en temp_mesa_abierta (check primario — previene race condition)
+    locked = (await db_temp.execute(text("""
+        SELECT Id_Mesa FROM temp_mesa_abierta
+        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
+        LIMIT 1
+    """), {"cid": cid, "tid": data.table_id})).mappings().first()
+
+    # Verificar también en temp_comanda (sin filtro de fecha: órdenes que cruzan medianoche)
     existing = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
         WHERE Mesa=:mesa AND company_id=:cid
@@ -327,8 +333,11 @@ async def abrir_mesa(
         ORDER BY Fecha DESC
         LIMIT 1
     """), {"mesa": mesa["name"], "cid": cid})).mappings().first()
-    if existing:
-        return {"order_number": existing["Nro_Pedido"], "date": today, "already_open": True}
+
+    if locked or existing:
+        # Devuelve el número de pedido existente para redirigir al mesero
+        order_num = existing["Nro_Pedido"] if existing else None
+        return {"order_number": order_num, "date": today, "already_open": True}
 
     order_number = _order_number(cid, data.table_id)
 

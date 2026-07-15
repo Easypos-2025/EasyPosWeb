@@ -26,6 +26,9 @@ class CompanyConfig(Base):
     tip_percentage: Mapped[float] = mapped_column(Float, default=0.0)
     tip_label: Mapped[str] = mapped_column(String(50), nullable=True, default="Propina")
 
+    # ── POS Comandera: estilo de tarjetas de mesa ───────────────────────────
+    pos_card_style: Mapped[str] = mapped_column(String(30), nullable=True, default="oval-wood")
+
     # ── (Futuros módulos se agregan aquí agrupados por sección) ─────────────
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

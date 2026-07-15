@@ -460,15 +460,22 @@ async def abrir_mesa(
     today = _today()
     now_time = datetime.now(_BOG).strftime("%H:%M:%S")
 
-    # Verificar que la mesa no esté ya abierta (datatemppos)
+    # Verificar bloqueo en temp_mesa_abierta (check primario — sin filtro de fecha)
+    locked = (await db_temp.execute(text("""
+        SELECT Id_Mesa FROM temp_mesa_abierta
+        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
+        LIMIT 1
+    """), {"cid": cid, "tid": data.table_id})).fetchone()
+
+    # Verificar también en temp_comanda (sin filtro de fecha: órdenes que cruzan medianoche)
     existing = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
-        WHERE company_id=:cid AND Mesa=:mesa AND Fecha=:today
+        WHERE company_id=:cid AND Mesa=:mesa
           AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
-    """), {"cid": cid, "mesa": data.table_name, "today": today})).fetchone()
+    """), {"cid": cid, "mesa": data.table_name})).fetchone()
 
-    if existing:
+    if locked or existing:
         raise HTTPException(status_code=409, detail="La mesa ya tiene una comanda abierta")
 
     ts = int(datetime.now(_BOG).timestamp() * 1000)
@@ -570,3 +577,43 @@ async def stock_alertas(
     """), {"cid": cid})).mappings().all()
 
     return [dict(r) for r in rows]
+
+
+# ─── Estilo de tarjetas de mesa (company_configs.pos_card_style) ──────────────
+
+VALID_CARD_STYLES = {"oval-wood", "circular-gold", "checkered", "minimal-card", "ticket", "bubble"}
+
+class CardStyleIn(BaseModel):
+    style: str
+    company_id: Optional[int] = None
+
+@router.get("/card-style")
+async def get_card_style(
+    company_id: Optional[int] = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = await _resolve_cid(user, company_id, db)
+    row  = (await db.execute(text(
+        "SELECT pos_card_style FROM company_configs WHERE company_id=:cid"
+    ), {"cid": cid})).mappings().first()
+    return {"style": (row["pos_card_style"] if row and row["pos_card_style"] else "oval-wood")}
+
+@router.put("/card-style")
+async def set_card_style(
+    data: CardStyleIn,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = await _resolve_cid(user, data.company_id, db)
+    if data.style not in VALID_CARD_STYLES:
+        raise HTTPException(status_code=422, detail="Estilo de tarjeta inválido")
+    await db.execute(text("""
+        INSERT INTO company_configs (company_id, pos_card_style)
+        VALUES (:cid, :style)
+        ON DUPLICATE KEY UPDATE pos_card_style = :style
+    """), {"cid": cid, "style": data.style})
+    await db.commit()
+    return {"ok": True, "style": data.style}
