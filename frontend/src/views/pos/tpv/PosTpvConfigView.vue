@@ -118,9 +118,18 @@
           :class="{ 'card-style-opt--active': selectedCardStyle === s.key }"
           @click="pickStyle(s.key)"
         >
-          <i :class="`bi ${s.icon} card-style-opt__icon`"></i>
+          <!-- Preview real del estilo de tarjeta -->
+          <div class="cso-preview">
+            <div class="cso-preview__inner">
+              <AccountOrderCard
+                :order="previewOrder"
+                :card-style="s.key"
+                currency="COP"
+                :show-delete="false"
+              />
+            </div>
+          </div>
           <span class="card-style-opt__label">{{ s.label }}</span>
-          <span class="card-style-opt__desc">{{ s.desc }}</span>
           <i v-if="selectedCardStyle === s.key" class="bi bi-check-circle-fill card-style-opt__check"></i>
           <span v-if="savingStyle === s.key" class="spinner-border spinner-border-sm card-style-opt__spinner"></span>
         </button>
@@ -217,6 +226,16 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { useCardStyle, CARD_STYLES } from '@/composables/useCardStyle'
+import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'
+
+const previewOrder = {
+  name: 'Mesa 5',
+  amount: 45000,
+  order_time: '14:30',
+  waiter_name: 'Carlos',
+  daily_seq: 5,
+  status: 'occupied',
+}
 
 const { cardStyle: selectedCardStyle, load: loadStyle, save: saveStyle } = useCardStyle()
 const savingStyle = ref(null)
@@ -227,8 +246,9 @@ async function pickStyle(key) {
   try {
     const user = JSON.parse(localStorage.getItem('user') || '{}')
     await saveStyle(key, user.company_id || undefined)
-  } catch {
-    /* ignore */
+  } catch (err) {
+    console.error('[CardStyle] Error guardando estilo:', err)
+    alert('No se pudo guardar el estilo. Verifica la conexión.')
   } finally {
     savingStyle.value = null
   }
@@ -635,37 +655,60 @@ onMounted(async () => {
 .card-style-opt {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 14px 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px 14px;
   border: 2px solid #e2e8f0;
   border-radius: 14px;
   background: #f8fafc;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   position: relative;
   transition: all .15s;
 }
 .card-style-opt:hover { border-color: #93c5fd; background: #eff6ff; }
 .card-style-opt--active { border-color: #2563eb; background: #dbeafe; }
 
-.card-style-opt__icon {
-  font-size: 1.4rem;
-  color: #64748b;
-  margin-bottom: 4px;
+/* Contenedor de la preview real del componente */
+.cso-preview {
+  width: 100%;
+  height: 155px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #e9eef5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
-.card-style-opt--active .card-style-opt__icon { color: #2563eb; }
+.cso-preview__inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.62);
+  transform-origin: center center;
+  pointer-events: none;
+}
+/* Congelar hover-animations dentro de la preview */
+.cso-preview :deep(.aoc-oval),
+.cso-preview :deep(.aoc) {
+  transition: none !important;
+  cursor: default;
+}
+.cso-preview :deep(.aoc-oval:hover),
+.cso-preview :deep(.aoc:hover) {
+  transform: none !important;
+  box-shadow: inherit;
+}
 
 .card-style-opt__label {
-  font-size: .9rem;
+  font-size: .85rem;
   font-weight: 700;
   color: #1e293b;
 }
-.card-style-opt__desc {
-  font-size: .75rem;
-  color: #64748b;
-  line-height: 1.3;
-}
+.card-style-opt--active .card-style-opt__label { color: #1d4ed8; }
+
 .card-style-opt__check {
   position: absolute;
   top: 10px; right: 10px;
@@ -677,8 +720,17 @@ onMounted(async () => {
   top: 10px; right: 10px;
   width: 14px; height: 14px;
 }
+
+@media (max-width: 768px) {
+  .card-style-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .cso-preview { height: 135px; }
+  .cso-preview__inner { transform: translate(-50%, -50%) scale(0.55); }
+}
 @media (max-width: 576px) {
   .card-style-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .card-style-opt  { padding: 10px 12px; }
+  .card-style-opt  { padding: 8px 6px 12px; }
+  .cso-preview { height: 120px; }
+  .cso-preview__inner { transform: translate(-50%, -50%) scale(0.48); }
+  .card-style-opt__label { font-size: .78rem; }
 }
 </style>

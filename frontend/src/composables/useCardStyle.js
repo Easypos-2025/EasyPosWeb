@@ -31,16 +31,23 @@ export function useCardStyle() {
   }
 
   async function save(style, companyId) {
-    const { data } = await api.put('/api/pos-dashboard/card-style', {
-      style,
-      company_id: companyId || undefined,
-    })
-    if (data.ok) {
-      _style.value = style
-      _loaded = true
-      localStorage.setItem('pos_card_style', style)
+    // Actualización optimista: refleja el cambio de inmediato en la UI
+    const prev = _style.value
+    _style.value = style
+    _loaded = true
+    localStorage.setItem('pos_card_style', style)
+    try {
+      const { data } = await api.put('/api/pos-dashboard/card-style', {
+        style,
+        company_id: companyId || undefined,
+      })
+      return data
+    } catch (err) {
+      // Revertir si el backend falla
+      _style.value = prev
+      localStorage.setItem('pos_card_style', prev || 'oval-wood')
+      throw err
     }
-    return data
   }
 
   function reset() {
