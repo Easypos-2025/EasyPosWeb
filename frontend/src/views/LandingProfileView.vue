@@ -448,7 +448,12 @@ export default {
     const heroStyle = computed(() => {
       if (!profile.value) return { background: "#0f172a" }
       if (profile.value.image_url) {
-        return { backgroundImage: `url(${profile.value.image_url})` }
+        return {
+          backgroundImage: `url(${profile.value.image_url})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }
       }
       const id = profile.value.id ?? 0
       return { background: SLIDE_GRADIENTS[id % SLIDE_GRADIENTS.length] }

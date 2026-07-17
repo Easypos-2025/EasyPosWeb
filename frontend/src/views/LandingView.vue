@@ -925,7 +925,12 @@ export default {
     // ── Fondo de cada slide ────────────────────────────────────
     function getSlideBackground(profile) {
       if (profile.image_url) {
-        return { backgroundImage: `url(${profile.image_url})` }
+        return {
+          backgroundImage: `url(${profile.image_url})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }
       }
       const id = profile.id ?? 0
       const gradient = SLIDE_GRADIENTS[id % SLIDE_GRADIENTS.length]
