@@ -451,8 +451,6 @@ export default {
         return {
           backgroundImage: `url(${profile.value.image_url})`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
         }
       }
       const id = profile.value.id ?? 0

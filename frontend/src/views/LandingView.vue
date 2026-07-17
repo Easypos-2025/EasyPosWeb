@@ -928,8 +928,6 @@ export default {
         return {
           backgroundImage: `url(${profile.image_url})`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
         }
       }
       const id = profile.id ?? 0
@@ -1309,7 +1307,7 @@ export default {
 .slider-track {
   display: flex;
   height: 100%;
-  will-change: transform;
+  will-change: auto;
 }
 
 .slide-item {
@@ -1321,6 +1319,10 @@ export default {
   background-repeat: no-repeat;
   flex-shrink: 0;
   cursor: pointer;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+  image-rendering: -webkit-optimize-contrast;
 }
 
 /* Overlay degradado desde abajo */
@@ -2211,7 +2213,7 @@ export default {
   .slider-arrow { width: 40px; height: 40px; font-size: 1rem; }
   .slider-arrow.left  { left: 12px; }
   .slider-arrow.right { right: 12px; }
-  .slide-item { background-position: top center; }
+  .slide-item { background-position: center 20%; }
   .slide-content { padding: 0 6% 90px; }
   .slide-name { font-size: clamp(1.3rem, 5vw, 2rem); }
   .slide-desc { font-size: .95rem; }
