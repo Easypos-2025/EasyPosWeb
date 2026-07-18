@@ -2985,7 +2985,6 @@ async def push_customer_price_list(
 ):
     saved, failed = [], []
     for item in items:
-        key = f"{item.id_lista}|{item.id_cliente}|{item.id_producto}|{item.company_id}"
         try:
             await db.execute(text("""
                 INSERT INTO pos_customer_price_list
@@ -3000,9 +2999,9 @@ async def push_customer_price_list(
                     synced          = 1,
                     updated_at      = NOW()
             """), item.dict())
-            saved.append(key)
+            saved.append(item.id_lista)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": item.id_lista, "error": str(e)})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
