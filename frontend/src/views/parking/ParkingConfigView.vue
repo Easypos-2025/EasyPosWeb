@@ -5,7 +5,7 @@
       <i class="bi bi-gear-fill"></i>
       <div>
         <h5>Configuración Parking Service</h5>
-        <p>Define el modo de cobro y las tarifas para este establecimiento</p>
+        <p>Define la capacidad y el modo de operación. Los servicios a cobrar se gestionan en <strong>Productos Parking</strong>.</p>
       </div>
     </div>
 
@@ -40,61 +40,6 @@
         </div>
       </div>
 
-      <!-- ── Tarifas según modo ── -->
-      <div class="pkconf-section">
-        <h6 class="pkconf-section-title"><i class="bi bi-tag-fill"></i> Tarifas</h6>
-
-        <div v-if="form.modo_cobro === 'tarifa_unica'" class="pkconf-tarifas-grid">
-          <div class="pkconf-field">
-            <label><i class="bi bi-person-fill"></i> Tarifa por adulto</label>
-            <div class="pkconf-input-money">
-              <span>$</span>
-              <input v-model.number="form.tarifa_adulto" type="number" min="0" class="pkconf-input" placeholder="0" />
-            </div>
-          </div>
-          <div class="pkconf-field">
-            <label><i class="bi bi-person-hearts"></i> Tarifa por niño</label>
-            <div class="pkconf-input-money">
-              <span>$</span>
-              <input v-model.number="form.tarifa_nino" type="number" min="0" class="pkconf-input" placeholder="0" />
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="form.modo_cobro === 'por_minuto'" class="pkconf-tarifas-grid">
-          <div class="pkconf-field">
-            <label><i class="bi bi-clock"></i> Tarifa por minuto</label>
-            <div class="pkconf-input-money">
-              <span>$</span>
-              <input v-model.number="form.tarifa_minuto" type="number" min="0" class="pkconf-input" placeholder="0" />
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="form.modo_cobro === 'por_hora'" class="pkconf-tarifas-grid">
-          <div class="pkconf-field">
-            <label><i class="bi bi-hourglass-split"></i> Tarifa por hora (fracción = hora completa)</label>
-            <div class="pkconf-input-money">
-              <span>$</span>
-              <input v-model.number="form.tarifa_hora" type="number" min="0" class="pkconf-input" placeholder="0" />
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="form.modo_cobro === 'mensualidad'" class="pkconf-info-mensual">
-          <i class="bi bi-info-circle-fill"></i>
-          <span>En modo <strong>Mensualidad</strong> el sistema registra entradas y salidas pero el cobro se gestiona externamente. No se configura tarifa aquí.</span>
-        </div>
-      </div>
-
-      <!-- ── Resumen del cobro ── -->
-      <div v-if="form.modo_cobro === 'tarifa_unica' && (form.tarifa_adulto > 0 || form.tarifa_nino > 0)" class="pkconf-preview">
-        <i class="bi bi-calculator"></i>
-        <span>Ejemplo: 2 adultos + 1 niño =
-          <strong>{{ fmt((form.tarifa_adulto * 2) + (form.tarifa_nino * 1)) }}</strong>
-        </span>
-      </div>
-
       <!-- ── Acciones ── -->
       <div class="pkconf-actions">
         <button class="pkconf-btn-guardar" :disabled="guardando" @click="guardar">
@@ -109,7 +54,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -124,15 +69,11 @@ const MODOS = [
   { val: 'mensualidad',  nombre: 'Mensualidad',         icon: 'bi bi-calendar2-check',   desc: 'Cobro mensual fijo, solo se registra entrada/salida' },
 ]
 
-const loading  = ref(false)
+const loading   = ref(false)
 const guardando = ref(false)
 const form = ref({
-  total_plazas:  20,
-  modo_cobro:    'tarifa_unica',
-  tarifa_adulto: 0,
-  tarifa_nino:   0,
-  tarifa_minuto: 0,
-  tarifa_hora:   0,
+  total_plazas: 20,
+  modo_cobro:   'tarifa_unica',
 })
 
 async function cargar() {
@@ -158,10 +99,6 @@ async function guardar() {
     showToast('Configuración guardada', 'success', 2500)
   } catch (e) { showToast(e?.response?.data?.detail || 'Error al guardar', 'error', 3000) }
   guardando.value = false
-}
-
-function fmt(val) {
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0)
 }
 
 onMounted(cargar)

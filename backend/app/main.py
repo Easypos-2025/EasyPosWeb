@@ -899,6 +899,20 @@ async def _init_db_data():
                 UNIQUE KEY uq_pc_company (company_id),
                 FOREIGN KEY (company_id) REFERENCES companies(id_company)
             )""",
+            """CREATE TABLE IF NOT EXISTS parking_order_items (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                parking_order_id INT NOT NULL,
+                product_id       INT NULL,
+                nombre           VARCHAR(200) NOT NULL,
+                precio_unitario  DECIMAL(12,2) NOT NULL DEFAULT 0,
+                impuesto_pct     DECIMAL(5,2)  NOT NULL DEFAULT 0,
+                cantidad         INT           NOT NULL DEFAULT 1,
+                subtotal         DECIMAL(12,2) NOT NULL DEFAULT 0,
+                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (parking_order_id) REFERENCES parking_orders(id),
+                FOREIGN KEY (product_id)       REFERENCES products(id),
+                INDEX idx_poi_order (parking_order_id)
+            )""",
         ]
         for _sql in _parking_tables:
             try:
@@ -1028,10 +1042,11 @@ async def _init_db_data():
             pass  # ya existe, usamos _pk_parent.id para hijos faltantes
 
         _pk_hijos = [
-            ("/parking/portero",       "Portero",        "bi-door-open-fill",   1),
-            ("/parking/mesero",        "Mesero",         "bi-person-badge-fill", 2),
-            ("/parking/caja",          "Liquidar Parking", "bi-cash-coin", 3),
-            ("/parking/configuracion", "Config. Parking",  "bi-gear-fill", 4),
+            ("/parking/portero",       "Portero",           "bi-door-open-fill",    1),
+            ("/parking/mesero",        "Mesero",            "bi-person-badge-fill", 2),
+            ("/parking/caja",          "Liquidar Parking",  "bi-cash-coin",         3),
+            ("/parking/configuracion", "Config. Parking",   "bi-gear-fill",         4),
+            ("/products",              "Productos Parking", "bi-box-seam-fill",     5),
         ]
         await db.flush()
         for _r, _n, _ic, _ord in _pk_hijos:

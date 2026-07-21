@@ -6,7 +6,7 @@
       <div class="pkc-kpi-card pkc-kpi-pendiente">
         <i class="bi bi-hourglass-split"></i>
         <div>
-          <span class="pkc-kpi-val">{{ ordenes.length }}</span>
+          <span class="pkc-kpi-val">{{ ordenesPendientes.length }}</span>
           <span class="pkc-kpi-lbl">Pendientes cobro</span>
         </div>
       </div>
@@ -89,12 +89,10 @@
           <button
             v-if="o.estado === 'registrado'"
             class="pkc-btn-pagar"
-            :disabled="pagandoId === o.id"
-            @click="pagar(o)"
+            @click="abrirCobro(o)"
           >
-            <i v-if="pagandoId === o.id" class="bi bi-arrow-repeat spin"></i>
-            <i v-else class="bi bi-cash-coin"></i>
-            {{ pagandoId === o.id ? 'Procesando…' : 'Cobrar' }}
+            <i class="bi bi-cash-coin"></i>
+            Cobrar
           </button>
           <span v-else class="pkc-ya-pagado">
             <i class="bi bi-check-circle-fill"></i>
@@ -104,6 +102,107 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- ══ MODAL COBRO ══════════════════════════════════════════════════════════ -->
+  <div v-if="showCobro" class="pkc-overlay" @click.self="showCobro = false">
+    <div class="pkc-modal">
+
+      <div class="pkc-modal-header">
+        <div>
+          <h5><i class="bi bi-cash-coin me-2"></i>Liquidar Parking</h5>
+          <span class="pkc-modal-sub">{{ ordenCobro?.numero_orden }}</span>
+        </div>
+        <button class="pkc-btn-close" @click="showCobro = false"><i class="bi bi-x-lg"></i></button>
+      </div>
+
+      <!-- Info orden -->
+      <div class="pkc-cobro-info">
+        <div class="pkc-cobro-placa">{{ ordenCobro?.placa }}</div>
+        <div class="pkc-cobro-personas">
+          <span><i class="bi bi-person-fill"></i> {{ ordenCobro?.adultos }} adulto{{ ordenCobro?.adultos !== 1 ? 's' : '' }}</span>
+          <span v-if="ordenCobro?.ninos > 0"><i class="bi bi-person-hearts"></i> {{ ordenCobro?.ninos }} niño{{ ordenCobro?.ninos !== 1 ? 's' : '' }}</span>
+          <span v-if="ordenCobro?.mascotas > 0"><i class="bi bi-circle-fill" style="font-size:.5rem"></i> {{ ordenCobro?.mascotas }} mascota{{ ordenCobro?.mascotas !== 1 ? 's' : '' }}</span>
+        </div>
+        <div v-if="ordenCobro?.mesero_nombre" class="pkc-cobro-confirmado">
+          <i class="bi bi-check2-circle"></i> Confirmado por: {{ ordenCobro.mesero_nombre }}
+        </div>
+      </div>
+
+      <!-- Lista de servicios -->
+      <div class="pkc-modal-body">
+        <div v-if="loadingProductos" class="pkc-loading-sm">
+          <i class="bi bi-arrow-repeat spin"></i> Cargando servicios…
+        </div>
+        <div v-else-if="productos.length === 0" class="pkc-sin-productos">
+          <i class="bi bi-box-seam"></i>
+          <p>No hay servicios configurados</p>
+          <small>Crea los productos en <strong>Productos Parking</strong> del menú</small>
+        </div>
+        <div v-else>
+          <div class="pkc-servicios-title">Selecciona los servicios a cobrar</div>
+          <div class="pkc-servicios-list">
+            <div
+              v-for="p in productos" :key="p.id"
+              :class="['pkc-servicio-row', { selected: seleccion[p.id]?.activo }]"
+            >
+              <label class="pkc-servicio-check">
+                <input
+                  type="checkbox"
+                  :checked="seleccion[p.id]?.activo"
+                  @change="toggleServicio(p)"
+                />
+                <span class="pkc-servicio-nombre">{{ p.name }}</span>
+              </label>
+              <div class="pkc-servicio-right">
+                <span class="pkc-servicio-precio">{{ fmt(p.base_price) }}</span>
+                <span v-if="p.tax_rate > 0" class="pkc-servicio-iva">+{{ p.tax_rate }}% IVA</span>
+                <div v-if="seleccion[p.id]?.activo" class="pkc-qty-wrap">
+                  <button class="pkc-qty-btn" @click="cambiarCantidad(p.id, -1)">−</button>
+                  <span class="pkc-qty-val">{{ seleccion[p.id].cantidad }}</span>
+                  <button class="pkc-qty-btn" @click="cambiarCantidad(p.id, 1)">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Totales -->
+      <div v-if="lineasSeleccionadas.length > 0" class="pkc-totales">
+        <div class="pkc-total-row" v-for="l in lineasSeleccionadas" :key="l.product_id">
+          <span>{{ l.nombre }} × {{ l.cantidad }}</span>
+          <span>{{ fmt(l.subtotal_bruto) }}</span>
+        </div>
+        <div class="pkc-total-sep"></div>
+        <div class="pkc-total-row pkc-total-sub">
+          <span>Subtotal</span>
+          <span>{{ fmt(totalBruto) }}</span>
+        </div>
+        <div v-if="totalImpuesto > 0" class="pkc-total-row pkc-total-iva">
+          <span>Impuestos</span>
+          <span>{{ fmt(totalImpuesto) }}</span>
+        </div>
+        <div class="pkc-total-row pkc-total-final">
+          <span>TOTAL</span>
+          <span>{{ fmt(totalFinal) }}</span>
+        </div>
+      </div>
+
+      <div class="pkc-modal-footer">
+        <button class="pkc-btn-cancelar" @click="showCobro = false">Cancelar</button>
+        <button
+          class="pkc-btn-confirmar"
+          :disabled="lineasSeleccionadas.length === 0 || pagando"
+          @click="confirmarCobro"
+        >
+          <i v-if="pagando" class="bi bi-arrow-repeat spin"></i>
+          <i v-else class="bi bi-check-lg"></i>
+          {{ pagando ? 'Procesando…' : `Confirmar cobro${totalFinal > 0 ? ' · ' + fmt(totalFinal) : ''}` }}
+        </button>
+      </div>
+
+    </div>
   </div>
 
   <!-- ══ COMPROBANTE DE SALIDA ══════════════════════════════════════════════ -->
@@ -135,26 +234,58 @@ const LABELS_ESTADO = {
   cancelado:  'Cancelado',
 }
 
-// ── Estado ────────────────────────────────────────────────────────────────────
+// ── Estado principal ──────────────────────────────────────────────────────────
 const ordenes         = ref([])
 const loading         = ref(false)
 const fechaFiltro     = ref(new Date().toISOString().slice(0, 10))
 const soloRegistradas = ref(true)
-const pagandoId       = ref(null)
 const ordenParaSalida = ref(null)
 
-// ── KPIs computados ───────────────────────────────────────────────────────────
+// ── Modal cobro ───────────────────────────────────────────────────────────────
+const showCobro        = ref(false)
+const ordenCobro       = ref(null)
+const productos        = ref([])
+const loadingProductos = ref(false)
+const seleccion        = ref({})  // { [product_id]: { activo, cantidad } }
+const pagando          = ref(false)
+
+// ── KPIs ──────────────────────────────────────────────────────────────────────
+const ordenesPendientes = computed(() => ordenes.value.filter(o => o.estado === 'registrado'))
+
 const totalPersonas = computed(() =>
   ordenes.value
     .filter(o => o.estado === 'registrado')
     .reduce((s, o) => s + o.adultos + o.ninos + o.mascotas, 0)
 )
 
-const pagadasHoy = computed(() =>
-  ordenes.value.filter(o => o.estado === 'pagado').length
-)
+const pagadasHoy = computed(() => ordenes.value.filter(o => o.estado === 'pagado').length)
 
-// ── Carga ─────────────────────────────────────────────────────────────────────
+// ── Líneas y totales del modal ────────────────────────────────────────────────
+const lineasSeleccionadas = computed(() => {
+  return productos.value
+    .filter(p => seleccion.value[p.id]?.activo)
+    .map(p => {
+      const qty        = seleccion.value[p.id].cantidad
+      const bruto      = p.base_price * qty
+      const iva        = bruto * ((p.tax_rate || 0) / 100)
+      return {
+        product_id:     p.id,
+        nombre:         p.name,
+        precio_unitario: p.base_price,
+        impuesto_pct:   p.tax_rate || 0,
+        cantidad:       qty,
+        subtotal_bruto: bruto,
+        impuesto:       iva,
+        subtotal:       bruto + iva,
+      }
+    })
+})
+
+const totalBruto    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal_bruto, 0))
+const totalImpuesto = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.impuesto, 0))
+const totalFinal    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal, 0))
+
+// ── Carga órdenes ─────────────────────────────────────────────────────────────
 async function cargar() {
   if (!companyId.value) return
   loading.value = true
@@ -170,27 +301,65 @@ async function cargar() {
   loading.value = false
 }
 
-onMounted(cargar)
+// ── Abrir modal cobro ─────────────────────────────────────────────────────────
+async function abrirCobro(orden) {
+  ordenCobro.value = orden
+  seleccion.value  = {}
+  showCobro.value  = true
 
-// ── Pagar ─────────────────────────────────────────────────────────────────────
-async function pagar(orden) {
-  pagandoId.value = orden.id
-  try {
-    await api.put(`/api/parking/orders/${orden.id}/pagar`)
-    showToast('Orden cobrada correctamente', 'success', 2500)
-    // Actualiza el estado localmente y guarda para imprimir recibo de salida
-    const actualizada = { ...orden, estado: 'pagado', hora_salida: new Date().toISOString() }
-    const idx = ordenes.value.findIndex(o => o.id === orden.id)
-    if (idx !== -1) ordenes.value[idx] = actualizada
-    if (soloRegistradas.value) {
-      ordenes.value = ordenes.value.filter(o => o.id !== orden.id)
+  if (productos.value.length === 0) {
+    loadingProductos.value = true
+    try {
+      const res = await api.get('/api/parking/products', { params: { company_id: companyId.value } })
+      productos.value = res.data
+    } catch {
+      showToast('Error al cargar servicios', 'error', 3000)
     }
+    loadingProductos.value = false
+  }
+}
+
+function toggleServicio(p) {
+  if (seleccion.value[p.id]?.activo) {
+    seleccion.value[p.id] = { activo: false, cantidad: 1 }
+  } else {
+    seleccion.value[p.id] = { activo: true, cantidad: 1 }
+  }
+}
+
+function cambiarCantidad(pid, delta) {
+  const actual = seleccion.value[pid]?.cantidad || 1
+  const nueva  = Math.max(1, actual + delta)
+  seleccion.value[pid] = { activo: true, cantidad: nueva }
+}
+
+// ── Confirmar cobro ───────────────────────────────────────────────────────────
+async function confirmarCobro() {
+  if (lineasSeleccionadas.value.length === 0) return
+  pagando.value = true
+  try {
+    const items = lineasSeleccionadas.value.map(l => ({
+      product_id:      l.product_id,
+      nombre:          l.nombre,
+      precio_unitario: l.precio_unitario,
+      impuesto_pct:    l.impuesto_pct,
+      cantidad:        l.cantidad,
+      subtotal:        l.subtotal,
+    }))
+    await api.put(`/api/parking/orders/${ordenCobro.value.id}/pagar`, { items })
+    showToast('Orden cobrada correctamente', 'success', 2500)
+
+    const actualizada = { ...ordenCobro.value, estado: 'pagado', hora_salida: new Date().toISOString() }
+    const idx = ordenes.value.findIndex(o => o.id === ordenCobro.value.id)
+    if (idx !== -1) ordenes.value[idx] = actualizada
+    if (soloRegistradas.value) ordenes.value = ordenes.value.filter(o => o.id !== ordenCobro.value.id)
+
+    showCobro.value  = false
     ordenParaSalida.value = actualizada
-    // Refresca stats en la otra vista cuando vuelvan
   } catch (e) {
     showToast(e?.response?.data?.detail || 'Error al cobrar', 'error', 3000)
   }
-  pagandoId.value = null
+  pagando.value = false
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
@@ -198,30 +367,32 @@ function fmtHora(dt) {
   if (!dt) return ''
   return new Date(dt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
+
+function fmt(val) {
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0)
+}
+
+onMounted(cargar)
 </script>
 
 <style scoped>
 .pkc-page { padding: 16px; max-width: 1200px; margin: 0 auto; }
 
 /* ── KPI bar ── */
-.pkc-kpi-bar {
-  display: flex; align-items: stretch; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
-}
+.pkc-kpi-bar { display: flex; align-items: stretch; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .pkc-kpi-card {
   display: flex; align-items: center; gap: 12px; padding: 12px 20px;
   border-radius: 10px; color: #fff; font-weight: 600; flex: 1; min-width: 130px;
 }
-.pkc-kpi-card i    { font-size: 1.5rem; opacity: .85; }
-.pkc-kpi-val       { display: block; font-size: 1.6rem; line-height: 1; }
-.pkc-kpi-lbl       { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
+.pkc-kpi-card i { font-size: 1.5rem; opacity: .85; }
+.pkc-kpi-val    { display: block; font-size: 1.6rem; line-height: 1; }
+.pkc-kpi-lbl    { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
 .pkc-kpi-pendiente { background: #fd7e14; }
 .pkc-kpi-personas  { background: #0d6efd; }
 .pkc-kpi-pagadas   { background: #198754; }
 
 /* ── Filtro ── */
-.pkc-filtro-bar {
-  display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
-}
+.pkc-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .pkc-filtro-tabs { display: flex; gap: 6px; }
 .pkc-tab {
   padding: 6px 16px; border-radius: 20px; border: 1px solid #dee2e6;
@@ -236,22 +407,16 @@ function fmtHora(dt) {
 .pkc-empty small { font-size: .8rem; display: block; margin-top: 6px; }
 
 /* ── Grid tarjetas ── */
-.pkc-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
+.pkc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .pkc-card {
   background: #fff; border-radius: 12px; padding: 14px;
   border: 2px solid #dee2e6; display: flex; flex-direction: column; gap: 8px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: box-shadow .2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
 .pkc-card--registrado { border-color: #0d6efd; }
 .pkc-card--pagado     { border-color: #d1e7dd; opacity: .75; }
 
-.pkc-card-top {
-  display: flex; align-items: center; justify-content: space-between;
-}
+.pkc-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pkc-badge {
   font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px;
   text-transform: uppercase; letter-spacing: .3px;
@@ -267,9 +432,7 @@ function fmtHora(dt) {
 }
 .pkc-card-tipo { text-align: center; font-size: .78rem; color: #6c757d; }
 
-.pkc-personas-summary {
-  display: flex; flex-direction: column; gap: 4px;
-}
+.pkc-personas-summary { display: flex; flex-direction: column; gap: 4px; }
 .pkc-psuma {
   display: flex; align-items: center; gap: 6px; font-size: .88rem; font-weight: 600;
   padding: 4px 10px; border-radius: 8px; background: #f8f9fa;
@@ -285,10 +448,7 @@ function fmtHora(dt) {
 }
 .pkc-obs-mesero { background: #e8f4fd; color: #055160; }
 
-.pkc-confirmado-por {
-  font-size: .75rem; color: #198754;
-  display: flex; align-items: center; gap: 5px;
-}
+.pkc-confirmado-por { font-size: .75rem; color: #198754; display: flex; align-items: center; gap: 5px; }
 
 .pkc-card-footer {
   display: flex; align-items: center; justify-content: space-between;
@@ -301,12 +461,124 @@ function fmtHora(dt) {
   border: none; border-radius: 8px; background: #198754; color: #fff;
   font-size: .85rem; font-weight: 600; cursor: pointer; transition: background .15s;
 }
-.pkc-btn-pagar:hover:not(:disabled) { background: #157347; }
-.pkc-btn-pagar:disabled { opacity: .6; cursor: default; }
+.pkc-btn-pagar:hover { background: #157347; }
 
-.pkc-ya-pagado {
-  font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 4px;
+.pkc-ya-pagado { font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 4px; }
+
+/* ── Modal overlay ── */
+.pkc-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1050; padding: 12px;
 }
+.pkc-modal {
+  background: #fff; border-radius: 16px; width: 100%; max-width: 520px;
+  max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+
+/* ── Modal header ── */
+.pkc-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px; border-bottom: 1px solid #e9ecef;
+}
+.pkc-modal-header h5 { margin: 0; font-weight: 700; font-size: 1rem; }
+.pkc-modal-sub { font-size: .78rem; color: #6c757d; font-family: monospace; }
+.pkc-btn-close {
+  border: none; background: none; font-size: 1rem; color: #6c757d; cursor: pointer; padding: 4px 8px;
+}
+
+/* ── Info orden ── */
+.pkc-cobro-info {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 20px; background: #f8f9fa; border-bottom: 1px solid #e9ecef;
+}
+.pkc-cobro-placa {
+  font-size: 1.3rem; font-weight: 900; letter-spacing: 2px;
+  border: 2px solid #212529; border-radius: 6px; padding: 4px 10px;
+}
+.pkc-cobro-personas { display: flex; gap: 10px; flex-wrap: wrap; }
+.pkc-cobro-personas span {
+  display: flex; align-items: center; gap: 4px; font-size: .84rem;
+  font-weight: 600; background: #fff; padding: 4px 10px; border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+.pkc-cobro-confirmado { font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 5px; width: 100%; }
+
+/* ── Body modal ── */
+.pkc-modal-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.pkc-loading-sm { text-align: center; padding: 20px; color: #6c757d; font-size: .9rem; }
+.pkc-sin-productos { text-align: center; padding: 30px 20px; color: #adb5bd; }
+.pkc-sin-productos i { font-size: 2rem; display: block; margin-bottom: 8px; }
+.pkc-sin-productos p { margin: 0 0 6px; font-size: .9rem; }
+.pkc-sin-productos small { font-size: .8rem; }
+
+.pkc-servicios-title {
+  font-size: .78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .5px; color: #6c757d; margin-bottom: 10px;
+}
+.pkc-servicios-list { display: flex; flex-direction: column; gap: 8px; }
+
+.pkc-servicio-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border: 1.5px solid #e9ecef; border-radius: 10px;
+  transition: border-color .15s, background .15s; cursor: pointer;
+}
+.pkc-servicio-row.selected { border-color: #0d6efd; background: #f0f6ff; }
+
+.pkc-servicio-check {
+  display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; min-width: 0;
+}
+.pkc-servicio-check input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; accent-color: #0d6efd; }
+.pkc-servicio-nombre { font-size: .9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pkc-servicio-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pkc-servicio-precio { font-size: .88rem; font-weight: 700; color: #212529; }
+.pkc-servicio-iva { font-size: .72rem; color: #6c757d; }
+
+.pkc-qty-wrap { display: flex; align-items: center; gap: 4px; }
+.pkc-qty-btn {
+  width: 26px; height: 26px; border: 1.5px solid #0d6efd; border-radius: 6px;
+  background: #fff; color: #0d6efd; font-size: 1rem; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.pkc-qty-btn:hover { background: #0d6efd; color: #fff; }
+.pkc-qty-val { font-size: .9rem; font-weight: 700; min-width: 20px; text-align: center; }
+
+/* ── Totales ── */
+.pkc-totales {
+  border-top: 1px solid #e9ecef; padding: 14px 20px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pkc-total-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .85rem; color: #495057;
+}
+.pkc-total-sep { height: 1px; background: #e9ecef; margin: 4px 0; }
+.pkc-total-sub  { font-weight: 600; color: #212529; }
+.pkc-total-iva  { color: #6c757d; }
+.pkc-total-final {
+  font-size: 1.1rem; font-weight: 800; color: #198754;
+  padding-top: 4px; border-top: 2px solid #198754; margin-top: 2px;
+}
+
+/* ── Footer modal ── */
+.pkc-modal-footer {
+  display: flex; gap: 10px; padding: 14px 20px; border-top: 1px solid #e9ecef;
+  justify-content: flex-end;
+}
+.pkc-btn-cancelar {
+  padding: 10px 20px; border: 1.5px solid #dee2e6; border-radius: 8px;
+  background: #fff; color: #6c757d; font-size: .9rem; cursor: pointer;
+}
+.pkc-btn-cancelar:hover { background: #f8f9fa; }
+.pkc-btn-confirmar {
+  display: flex; align-items: center; gap: 6px; padding: 10px 22px;
+  border: none; border-radius: 8px; background: #198754; color: #fff;
+  font-size: .9rem; font-weight: 700; cursor: pointer; transition: background .15s;
+}
+.pkc-btn-confirmar:hover:not(:disabled) { background: #157347; }
+.pkc-btn-confirmar:disabled { opacity: .55; cursor: default; }
 
 .spin { animation: pkc-spin .8s linear infinite; }
 @keyframes pkc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -317,16 +589,19 @@ function fmtHora(dt) {
   .pkc-kpi-val  { font-size: 1.3rem; }
   .pkc-grid     { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
   .pkc-card-placa { font-size: 1.5rem; }
+  .pkc-modal { max-height: 95vh; border-radius: 12px 12px 0 0; margin-top: auto; }
 }
 @media (max-width: 576px) {
   .pkc-page { padding: 10px; }
-  .pkc-kpi-bar {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
-  }
+  .pkc-kpi-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .pkc-kpi-card { padding: 8px 10px; gap: 6px; min-width: unset; }
   .pkc-kpi-card i { font-size: 1.1rem; }
   .pkc-kpi-val { font-size: 1.1rem; }
   .pkc-grid { grid-template-columns: 1fr; gap: 10px; }
   .pkc-filtro-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .pkc-cobro-personas { flex-direction: column; gap: 6px; }
+  .pkc-modal-footer { flex-direction: column; }
+  .pkc-btn-confirmar, .pkc-btn-cancelar { width: 100%; justify-content: center; }
+  .pkc-overlay { align-items: flex-end; padding: 0; }
 }
 </style>

@@ -5,7 +5,7 @@ from app.database import get_db
 from app.auth.dependencies import get_current_user
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 router = APIRouter(prefix="/api/parking", tags=["parking"])
 
@@ -261,12 +261,25 @@ async def registrar_orden(
     return {"ok": True, "estado": "registrado"}
 
 
-# ── Pagar (cajero cierra la orden) ────────────────────────────────────────────
+# ── Pagar (cajero cierra la orden con detalle de ítems) ──────────────────────
+
+class ItemCobro(BaseModel):
+    product_id:      Optional[int] = None
+    nombre:          str
+    precio_unitario: float
+    impuesto_pct:    float = 0
+    cantidad:        int   = 1
+    subtotal:        float
+
+class PagarBody(BaseModel):
+    items: List[ItemCobro] = []
+
 
 @router.put("/orders/{order_id}/pagar")
 async def pagar_orden(
     order_id: int,
-    db: AsyncSession = Depends(get_db),
+    body: PagarBody,
+    db: AsyncSession      = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     row = await db.execute(text(
@@ -281,9 +294,25 @@ async def pagar_orden(
             detail=f"Solo se pueden pagar órdenes en estado 'registrado'. Estado actual: '{orden['estado']}'"
         )
 
+    # Guardar ítems del cobro
+    for item in body.items:
+        await db.execute(text("""
+            INSERT INTO parking_order_items
+                (parking_order_id, product_id, nombre, precio_unitario, impuesto_pct, cantidad, subtotal)
+            VALUES (:oid, :pid, :nom, :pu, :imp, :qty, :sub)
+        """), {
+            "oid": order_id,
+            "pid": item.product_id,
+            "nom": item.nombre,
+            "pu":  item.precio_unitario,
+            "imp": item.impuesto_pct,
+            "qty": item.cantidad,
+            "sub": item.subtotal,
+        })
+
     await db.execute(text("""
         UPDATE parking_orders
-        SET estado     = 'pagado',
+        SET estado      = 'pagado',
             hora_salida = NOW(),
             pagado_por  = :uid,
             updated_at  = NOW()
@@ -291,6 +320,41 @@ async def pagar_orden(
     """), {"uid": current_user.id, "id": order_id})
     await db.commit()
     return {"ok": True, "estado": "pagado"}
+
+
+# ── Ítems de una orden (detalle del cobro) ────────────────────────────────────
+
+@router.get("/orders/{order_id}/items")
+async def get_order_items(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT poi.id, poi.product_id, poi.nombre, poi.precio_unitario,
+               poi.impuesto_pct, poi.cantidad, poi.subtotal
+        FROM parking_order_items poi
+        WHERE poi.parking_order_id = :oid
+        ORDER BY poi.id
+    """), {"oid": order_id})
+    return [dict(r) for r in rows.mappings()]
+
+
+# ── Productos activos de la empresa (catálogo para cobrar) ────────────────────
+
+@router.get("/products")
+async def listar_productos(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT id, name, base_price, tax_rate
+        FROM products
+        WHERE company_id = :cid AND is_active = 1
+        ORDER BY name
+    """), {"cid": company_id})
+    return [dict(r) for r in rows.mappings()]
 
 
 # ── Tipos de vehículo (reutiliza vehicle_types) ───────────────────────────────
