@@ -283,6 +283,30 @@
       </div>
       <!-- ── /POS ELECTRÓNICO ────────────────────────────────────── -->
 
+      <!-- ── PARKING SERVICE ─────────────────────────────────────── -->
+      <div class="pe-section mt-4">
+        <div class="pe-section-header">
+          <i class="bi bi-p-circle-fill" style="color:#0d6efd"></i>
+          Parking Service
+        </div>
+        <div class="pe-section-body">
+          <div class="pe-toggle-row">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="parkingForm.has_parking ? 'stb--on' : 'stb--off'"
+              @click="parkingForm.has_parking = parkingForm.has_parking ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                <i class="bi bi-p-circle-fill"></i>
+                {{ parkingForm.has_parking ? 'Módulo Parking activo para esta empresa' : 'Módulo Parking inactivo' }}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- ── /PARKING SERVICE ────────────────────────────────────── -->
+
       <button class="btn btn-primary mt-3" @click="createCompany">
         Guardar
       </button>
@@ -310,7 +334,8 @@ const showExtDb  = ref(false)
 const showPass   = ref(false)
 const testing    = ref(false)
 const testResult = ref(null)
-const peForm     = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
+const peForm      = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
+const parkingForm = ref({ has_parking: 0 })
 
 const form = ref({
   name: "",
@@ -475,6 +500,13 @@ const createCompany = async () => {
       } catch {}
     }
 
+    // Guardar config Parking si fue habilitado
+    if (newId && parkingForm.value.has_parking) {
+      try {
+        await api.put(`/company-configs/${newId}`, { has_parking: parkingForm.value.has_parking })
+      } catch {}
+    }
+
     form.value = {
       ...form.value,
       name: "", identification_number: "", dv: "", address: "",
@@ -483,7 +515,8 @@ const createCompany = async () => {
       ext_db_user: "", ext_db_password: "", ext_db_has_password: false,
     }
     planForm.value = { plan_id: "", expiration_date: "" }
-    peForm.value   = { has_pos_electronico: 0, pos_electronico_token: "" }
+    peForm.value      = { has_pos_electronico: 0, pos_electronico_token: "" }
+    parkingForm.value = { has_parking: 0 }
     showExtDb.value = false
   } catch (error) {
     console.error(error)

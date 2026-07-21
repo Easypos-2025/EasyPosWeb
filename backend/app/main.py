@@ -1005,6 +1005,15 @@ async def _init_db_data():
         except Exception:
             await db.rollback()
 
+        # ── Migración: has_parking en company_configs ─────────────────────────
+        try:
+            await db.execute(text(
+                "ALTER TABLE company_configs ADD COLUMN IF NOT EXISTS has_parking INT NOT NULL DEFAULT 0"
+            ))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
         # ── Registrar módulos Parking Service en system_modules ──────────────
         _pk_parent_res = await db.execute(select(SystemModule).where(SystemModule.route == "/parking"))
         _pk_parent = _pk_parent_res.scalars().first()
@@ -1015,20 +1024,27 @@ async def _init_db_data():
             )
             db.add(_pk_parent)
             await db.flush()
-            for _r, _n, _ic in [
-                ("/parking/ingresos", "Ingresos", "bi-car-front-fill"),
-                ("/parking/caja",     "Cobros",   "bi-cash-coin"),
-            ]:
-                _ck = await db.execute(select(SystemModule).where(SystemModule.route == _r))
-                if not _ck.scalars().first():
-                    db.add(SystemModule(
-                        name=_n, route=_r, icon=_ic,
-                        parent_id=_pk_parent.id, is_active=True, order_index=0, is_sysadmin=False
-                    ))
-            try:
-                await db.commit()
-            except Exception:
-                await db.rollback()
+        else:
+            pass  # ya existe, usamos _pk_parent.id para hijos faltantes
+
+        _pk_hijos = [
+            ("/parking/portero",       "Portero",        "bi-door-open-fill",   1),
+            ("/parking/mesero",        "Mesero",         "bi-person-badge-fill", 2),
+            ("/parking/caja",          "Cobros",         "bi-cash-coin",         3),
+            ("/parking/configuracion", "Configuración",  "bi-gear-fill",         4),
+        ]
+        await db.flush()
+        for _r, _n, _ic, _ord in _pk_hijos:
+            _ck = await db.execute(select(SystemModule).where(SystemModule.route == _r))
+            if not _ck.scalars().first():
+                db.add(SystemModule(
+                    name=_n, route=_r, icon=_ic,
+                    parent_id=_pk_parent.id, is_active=True, order_index=_ord, is_sysadmin=False
+                ))
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
 
         # ── SEED pasos bienvenida Perfil Administrativo (id=2) ───────────────
         from app.models.profile_welcome_step_model import ProfileWelcomeStep

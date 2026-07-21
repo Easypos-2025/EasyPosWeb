@@ -51,6 +51,11 @@
         <span>Pedidos TV</span>
         <span v-if="pedidosTV.length" class="action-btn__badge action-btn__badge--tv">{{ pedidosTV.length }}</span>
       </button>
+      <button v-if="companyStore.billingConfig?.has_parking == 1"
+        class="action-btn action-btn--parking" @click="$router.push('/parking/caja')">
+        <i class="bi bi-p-circle-fill"></i>
+        <span>Parking</span>
+      </button>
     </div>
 
     <!-- MESAS ABIERTAS -->
@@ -878,6 +883,12 @@ async function guardarNuevoMesero() {
   border: 2px solid #bfdbfe;
 }
 .action-btn--tv:hover { background: #dbeafe; }
+.action-btn--parking {
+  background: #e7f1ff;
+  color: #0d6efd;
+  border: 2px solid #b6d4fe;
+}
+.action-btn--parking:hover { background: #cfe2ff; }
 
 .action-btn__badge {
   background: #dc2626;

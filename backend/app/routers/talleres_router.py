@@ -1778,15 +1778,16 @@ async def get_billing_config(
 ):
     row = (await db.execute(text("""
         SELECT has_pos_electronico,
-               COALESCE(has_tip, 0)          AS has_tip,
-               COALESCE(tip_percentage, 0)   AS tip_percentage,
-               COALESCE(tip_label, 'Propina') AS tip_label
+               COALESCE(has_tip, 0)           AS has_tip,
+               COALESCE(tip_percentage, 0)    AS tip_percentage,
+               COALESCE(tip_label, 'Propina') AS tip_label,
+               COALESCE(has_parking, 0)       AS has_parking
         FROM company_configs
         WHERE company_id = :cid
     """), {"cid": company_id})).mappings().first()
 
     if not row:
-        return {"has_pos_electronico": 0, "has_tip": 0, "tip_percentage": 0.0, "tip_label": "Propina"}
+        return {"has_pos_electronico": 0, "has_tip": 0, "tip_percentage": 0.0, "tip_label": "Propina", "has_parking": 0}
     return dict(row)
 
 

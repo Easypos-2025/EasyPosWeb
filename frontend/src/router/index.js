@@ -824,16 +824,34 @@ const routes = [
 
       // ── Parking Service (genérico multitenant) ───────────────────────────
       {
-        path: "/parking/ingresos",
-        name: "ParkingIngresosView",
-        component: () => import("@/views/parking/ParkingIngresosView.vue"),
-        meta: { requiresAuth: true, title: "Parking — Ingresos" }
+        path: "/parking/portero",
+        name: "ParkingPorteroView",
+        component: () => import("@/views/parking/ParkingPorteroView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Portero" }
+      },
+      {
+        path: "/parking/mesero",
+        name: "ParkingMeseroView",
+        component: () => import("@/views/parking/ParkingMeseroView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Mesero" }
       },
       {
         path: "/parking/caja",
         name: "ParkingCajaView",
         component: () => import("@/views/parking/ParkingCajaView.vue"),
         meta: { requiresAuth: true, title: "Parking — Cobros" }
+      },
+      {
+        path: "/parking/configuracion",
+        name: "ParkingConfigView",
+        component: () => import("@/views/parking/ParkingConfigView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Configuración" }
+      },
+      {
+        path: "/parking/ingresos",
+        name: "ParkingIngresosView",
+        component: () => import("@/views/parking/ParkingIngresosView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Ingresos" }
       },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────

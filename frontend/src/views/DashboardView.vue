@@ -2,6 +2,8 @@
   <div>
     <!-- Widget PE: visible solo si la company tiene POS Electrónico activo y no es SYSADMIN -->
     <PEWidget v-if="hasPE" class="pe-widget-top" />
+    <!-- Widget Parking: visible cuando el módulo Parking Service está activo -->
+    <ParkingWidget v-if="hasParking" />
 
     <component :is="activeDashboard" v-if="activeDashboard" />
     <div v-else class="dash-empty">
@@ -14,7 +16,8 @@
 <script setup>
 import { computed } from "vue"
 import { useCompanyStore } from "@/stores/companyStore"
-import PEWidget from "@/components/pos/PEWidget.vue"
+import PEWidget      from "@/components/pos/PEWidget.vue"
+import ParkingWidget from "@/components/parking/ParkingWidget.vue"
 
 import DashboardRestaurante   from "@/views/dashboards/DashboardRestaurante.vue"
 import DashboardAdmonTareas   from "@/views/dashboards/DashboardAdmonTareas.vue"
@@ -67,6 +70,11 @@ const activeDashboard = computed(() => {
 const hasPE = computed(() =>
   !companyStore.isSystem &&
   companyStore.billingConfig?.has_pos_electronico == 1
+)
+
+const hasParking = computed(() =>
+  !companyStore.isSystem &&
+  companyStore.billingConfig?.has_parking == 1
 )
 </script>
 

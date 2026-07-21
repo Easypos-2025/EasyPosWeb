@@ -12,6 +12,7 @@ export const useCompanyStore = defineStore("company", () => {
     has_tip: 0,
     tip_percentage: 0,
     tip_label: "Propina",
+    has_parking: 0,
   })
 
   async function loadTheme(companyId) {
@@ -49,7 +50,7 @@ export const useCompanyStore = defineStore("company", () => {
     isSystem.value        = false
     selectedCompany.value = null
     companies.value       = []
-    billingConfig.value   = { has_pos_electronico: 0, has_tip: 0, tip_percentage: 0, tip_label: "Propina" }
+    billingConfig.value   = { has_pos_electronico: 0, has_tip: 0, tip_percentage: 0, tip_label: "Propina", has_parking: 0 }
   }
 
   async function init(userFromStorage) {
