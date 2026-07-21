@@ -218,6 +218,26 @@
           </div>
           <!-- /POS ELECTRÓNICO -->
 
+          <!-- PARKING SERVICE -->
+          <div class="section-title mt-3">
+            <i class="bi bi-p-circle-fill" style="color:#0d6efd"></i> Parking Service
+          </div>
+          <div class="pe-edit-wrap">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="parkingEditForm.has_parking ? 'stb--on' : 'stb--off'"
+              :disabled="peEditLoading"
+              @click="parkingEditForm.has_parking = parkingEditForm.has_parking ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                <i class="bi bi-p-circle-fill"></i>
+                {{ parkingEditForm.has_parking ? 'Módulo Parking activo' : 'Módulo Parking inactivo' }}
+              </span>
+            </button>
+          </div>
+          <!-- /PARKING SERVICE -->
+
         </div>
 
         <div class="modal-footer-bar">
@@ -331,8 +351,9 @@ const testResult    = ref(null)
 const showPass      = ref(false)
 const modalBodyRef    = ref(null)
 const showExtDbModal  = ref(false)
-const peEditForm    = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
-const peEditLoading = ref(false)
+const peEditForm      = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
+const peEditLoading   = ref(false)
+const parkingEditForm = ref({ has_parking: 0 })
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -416,15 +437,17 @@ function openEdit(c) {
   showExtDb.value  = true
   testResult.value = null
   showPass.value   = false
-  peEditForm.value = { has_pos_electronico: 0, pos_electronico_token: "" }
-  showEdit.value   = true
-  // Cargar config PE en background
+  peEditForm.value      = { has_pos_electronico: 0, pos_electronico_token: "" }
+  parkingEditForm.value = { has_parking: 0 }
+  showEdit.value        = true
+  // Cargar config PE + Parking en background
   peEditLoading.value = true
   api.get(`/company-configs/${c.id}`).then(r => {
     peEditForm.value = {
       has_pos_electronico:   r.data.has_pos_electronico ?? 0,
       pos_electronico_token: r.data.pos_electronico_token || "",
     }
+    parkingEditForm.value = { has_parking: r.data.has_parking ?? 0 }
   }).catch(() => {}).finally(() => { peEditLoading.value = false })
 }
 
@@ -507,11 +530,12 @@ async function saveEdit() {
     // 1. Guardar datos de la empresa
     await api.put(`/companies/${f.id}`, f)
 
-    // 2. Guardar config PE
+    // 2. Guardar config PE + Parking
     try {
       await api.put(`/company-configs/${f.id}`, {
         has_pos_electronico:   peEditForm.value.has_pos_electronico,
         pos_electronico_token: peEditForm.value.pos_electronico_token || null,
+        has_parking:           parkingEditForm.value.has_parking,
       })
     } catch {}
 
