@@ -822,6 +822,20 @@ const routes = [
         meta: { requiresAuth: true, title: "Cierre de Caja" }
       },
 
+      // ── Parking Service (genérico multitenant) ───────────────────────────
+      {
+        path: "/parking/ingresos",
+        name: "ParkingIngresosView",
+        component: () => import("@/views/parking/ParkingIngresosView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Ingresos" }
+      },
+      {
+        path: "/parking/caja",
+        name: "ParkingCajaView",
+        component: () => import("@/views/parking/ParkingCajaView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Cobros" }
+      },
+
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",
