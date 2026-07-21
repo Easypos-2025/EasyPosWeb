@@ -73,12 +73,16 @@ async def contratos_por_cedula(
         filtro_busqueda = "WHERE c.cedula = :cedula"
         params: dict = {"cedula": cedula.strip()}
     else:
-        filtro_busqueda = (
-            "WHERE (cl.nombres LIKE :nombre "
-            "OR cl.apellidos LIKE :nombre "
-            "OR CONCAT(COALESCE(cl.nombres,''), ' ', COALESCE(cl.apellidos,'')) LIKE :nombre)"
+        # Cada palabra debe aparecer en el nombre completo (AND por token)
+        palabras = [p for p in nombre.strip().split() if p]
+        if not palabras:
+            raise HTTPException(status_code=400, detail="Nombre inválido")
+        nombre_col = "CONCAT(COALESCE(cl.nombres,''), ' ', COALESCE(cl.apellidos,''))"
+        condiciones = " AND ".join(
+            f"{nombre_col} LIKE :p{i}" for i in range(len(palabras))
         )
-        params = {"nombre": f"%{nombre.strip()}%"}
+        filtro_busqueda = f"WHERE ({condiciones})"
+        params = {f"p{i}": f"%{p}%" for i, p in enumerate(palabras)}
 
     if estado:
         params["estado"] = estado.strip()
