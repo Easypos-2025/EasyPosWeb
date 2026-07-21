@@ -1030,8 +1030,8 @@ async def _init_db_data():
         _pk_hijos = [
             ("/parking/portero",       "Portero",        "bi-door-open-fill",   1),
             ("/parking/mesero",        "Mesero",         "bi-person-badge-fill", 2),
-            ("/parking/caja",          "Cobros",         "bi-cash-coin",         3),
-            ("/parking/configuracion", "Configuración",  "bi-gear-fill",         4),
+            ("/parking/caja",          "Liquidar Parking", "bi-cash-coin", 3),
+            ("/parking/configuracion", "Config. Parking",  "bi-gear-fill", 4),
         ]
         await db.flush()
         for _r, _n, _ic, _ord in _pk_hijos:
