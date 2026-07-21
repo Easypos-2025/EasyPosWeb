@@ -36,6 +36,26 @@
           </button>
         </div>
 
+        <div class="search-sep"></div>
+
+        <!-- Por Nombre -->
+        <div class="search-input-wrap">
+          <span class="search-lbl">Nombre</span>
+          <i class="bi bi-person-lines-fill"></i>
+          <input v-model="queryNombre" class="search-input" placeholder="Ej: García"
+            @keyup.enter="buscarPorNombre" />
+          <select v-model="filtroEstadoNombre" class="filtro-estado-select" title="Filtrar por estado">
+            <option value="">Todos</option>
+            <option value="V">Vigentes</option>
+            <option value="R">Retirados</option>
+            <option value="D">Vencidos</option>
+          </select>
+          <button class="btn-buscar" @click="buscarPorNombre" :disabled="loadingNombre || !queryNombre.trim()">
+            <span v-if="loadingNombre" class="spinner-border spinner-border-sm"></span>
+            <span v-else>Buscar</span>
+          </button>
+        </div>
+
       </div>
 
       <!-- Selector en fila separada -->
@@ -44,7 +64,7 @@
         <select class="form-select selector-contrato" v-model="nroSeleccionado" @change="cargarDetalle">
           <option value="">— Seleccionar contrato —</option>
           <option v-for="c in listaContratos" :key="c.nro_contrato" :value="c.nro_contrato">
-            {{ c.nro_contrato }} · {{ formatFecha(c.fecha_inicio) }} · {{ formatCurrency(c.valor_contrato) }} · {{ c.estado_descripcion }}
+            {{ c.nro_contrato }} · {{ c.cliente_nombre || c.cedula }} · {{ formatFecha(c.fecha_inicio) }} · {{ formatCurrency(c.valor_contrato) }} · {{ c.estado_descripcion }}
           </option>
         </select>
       </div>
@@ -426,13 +446,16 @@ const companyStore = useCompanyStore()
 const cid = computed(() => companyStore.selectedCompany?.id)
 
 // Búsqueda
-const queryNro       = ref('')
-const queryCedula    = ref('')
-const filtroEstado   = ref('')
-const loadingNro     = ref(false)
-const loadingCedula  = ref(false)
-const loadingDetalle = ref(false)
-const errorMsg       = ref('')
+const queryNro          = ref('')
+const queryCedula       = ref('')
+const queryNombre       = ref('')
+const filtroEstado      = ref('')
+const filtroEstadoNombre = ref('')
+const loadingNro        = ref(false)
+const loadingCedula     = ref(false)
+const loadingNombre     = ref(false)
+const loadingDetalle    = ref(false)
+const errorMsg          = ref('')
 
 // Resultados
 const listaContratos  = ref([])
@@ -501,6 +524,28 @@ async function buscarPorCedula() {
     errorMsg.value = e.response?.data?.detail || 'No se encontraron contratos para esa cédula'
   } finally {
     loadingCedula.value = false
+  }
+}
+
+// ── Búsqueda por Nombre ──────────────────────────────────────────────────────
+
+async function buscarPorNombre() {
+  if (!queryNombre.value.trim() || !cid.value) return
+  resetAll()
+  loadingNombre.value = true
+  try {
+    const params = { company_id: cid.value, nombre: queryNombre.value.trim() }
+    if (filtroEstadoNombre.value) params.estado = filtroEstadoNombre.value
+    const res = await api.get('/api/compraventa/contratos-por-cedula', { params })
+    listaContratos.value = res.data.contratos || []
+    if (listaContratos.value.length === 1) {
+      nroSeleccionado.value = listaContratos.value[0].nro_contrato
+      await cargarDetalle()
+    }
+  } catch (e) {
+    errorMsg.value = e.response?.data?.detail || 'No se encontraron contratos para ese nombre'
+  } finally {
+    loadingNombre.value = false
   }
 }
 

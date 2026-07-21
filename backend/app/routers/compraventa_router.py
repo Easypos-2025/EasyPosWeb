@@ -57,14 +57,29 @@ async def get_movimientos(
 @router.get("/contratos-por-cedula")
 async def contratos_por_cedula(
     company_id: int       = Query(...),
-    cedula: str           = Query(...),
+    cedula: str           = Query(None),
+    nombre: str           = Query(None),
     estado: str           = Query(None, description="V, R o D — vacío = todos"),
     db: AsyncSession      = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    if not cedula and not nombre:
+        raise HTTPException(status_code=400, detail="Debe proporcionar cédula o nombre")
+
     ext = await _get_ext(company_id, db)
-    filtro_estado = f"AND c.estado = :estado" if estado else ""
-    params = {"cedula": cedula.strip()}
+    filtro_estado = "AND c.estado = :estado" if estado else ""
+
+    if cedula:
+        filtro_busqueda = "WHERE c.cedula = :cedula"
+        params: dict = {"cedula": cedula.strip()}
+    else:
+        filtro_busqueda = (
+            "WHERE (cl.nombres LIKE :nombre "
+            "OR cl.apellidos LIKE :nombre "
+            "OR CONCAT(COALESCE(cl.nombres,''), ' ', COALESCE(cl.apellidos,'')) LIKE :nombre)"
+        )
+        params = {"nombre": f"%{nombre.strip()}%"}
+
     if estado:
         params["estado"] = estado.strip()
 
@@ -77,12 +92,13 @@ async def contratos_por_cedula(
             FROM contratos c
             LEFT JOIN clientes cl ON cl.cedula = c.cedula
             LEFT JOIN estado_contratos ec ON ec.estado = c.estado
-            WHERE c.cedula = :cedula {filtro_estado}
+            {filtro_busqueda} {filtro_estado}
             ORDER BY c.fecha_inicio DESC
+            LIMIT 100
         """), params)
         contratos = [dict(r) for r in rows.mappings()]
     if not contratos:
-        raise HTTPException(status_code=404, detail="No se encontraron contratos para esa cédula con ese filtro")
+        raise HTTPException(status_code=404, detail="No se encontraron contratos")
     return {"total": len(contratos), "contratos": contratos}
 
 
