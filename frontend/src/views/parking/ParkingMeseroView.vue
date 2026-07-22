@@ -98,25 +98,37 @@
             <span><strong>Portero:</strong> {{ ordenSeleccionada.obs_portero }}</span>
           </div>
 
-          <!-- Servicios registrados -->
+          <!-- Selector de servicios editable -->
           <div class="pkm-servicios-wrap">
             <div class="pkm-servicios-title">
-              <i class="bi bi-list-check"></i> Servicios registrados
+              <i class="bi bi-list-check"></i> Servicios
+              <span class="pkm-svc-hint">Modifica o agrega servicios</span>
             </div>
             <div v-if="loadingItems" class="pkm-servicios-loading">
               <i class="bi bi-arrow-repeat spin"></i> Cargando…
             </div>
-            <div v-else-if="itemsOrden.length === 0" class="pkm-servicios-empty">
-              Sin detalle de servicios disponible
+            <div v-else-if="productos.length === 0" class="pkm-servicios-empty">
+              Sin productos configurados
             </div>
             <div v-else class="pkm-servicios-list">
-              <div v-for="item in itemsOrden" :key="item.id" class="pkm-svc-row">
-                <span class="pkm-svc-nombre">{{ item.nombre }}</span>
-                <span class="pkm-svc-qty">× {{ item.cantidad }}</span>
+              <div v-for="p in productos" :key="p.id"
+                :class="['pkm-svc-row-edit', { selected: seleccionMesero[p.id]?.activo }]">
+                <label class="pkm-svc-check">
+                  <input type="checkbox"
+                    :checked="seleccionMesero[p.id]?.activo"
+                    @change="toggleSvc(p)"
+                  />
+                  <span class="pkm-svc-nombre">{{ p.name }}</span>
+                </label>
+                <div v-if="seleccionMesero[p.id]?.activo" class="pkm-qty-wrap">
+                  <button class="pkm-qty-btn" @click="cambiarQty(p.id, -1)">−</button>
+                  <span class="pkm-qty-val">{{ seleccionMesero[p.id].cantidad }}</span>
+                  <button class="pkm-qty-btn" @click="cambiarQty(p.id, 1)">+</button>
+                </div>
               </div>
             </div>
-            <div class="pkm-total-resumen">
-              Total: <strong>{{ totalItems }}</strong> unidad{{ totalItems !== 1 ? 'es' : '' }}
+            <div v-if="totalItemsMesero > 0" class="pkm-total-resumen">
+              Total: <strong>{{ totalItemsMesero }}</strong> unidad{{ totalItemsMesero !== 1 ? 'es' : '' }}
             </div>
           </div>
 
@@ -159,14 +171,23 @@ const filtroEstado      = ref('ingresado')
 const showModal         = ref(false)
 const confirmando       = ref(false)
 const ordenSeleccionada = ref(null)
-const itemsOrden        = ref([])
 
-const formMesero     = ref({ obs_mesero: '' })
-const totalItems     = computed(() => itemsOrden.value.reduce((s, i) => s + (i.cantidad || 1), 0))
+
+const formMesero       = ref({ obs_mesero: '' })
+const productos        = ref([])
+const seleccionMesero  = ref({})
 const ordenesFiltradas = computed(() => ordenes.value.filter(o => o.estado === filtroEstado.value))
-const cntIngresado   = computed(() => ordenes.value.filter(o => o.estado === 'ingresado').length)
-const cntRegistrado  = computed(() => ordenes.value.filter(o => o.estado === 'registrado').length)
-const cntPagado      = computed(() => ordenes.value.filter(o => o.estado === 'pagado').length)
+const cntIngresado     = computed(() => ordenes.value.filter(o => o.estado === 'ingresado').length)
+const cntRegistrado    = computed(() => ordenes.value.filter(o => o.estado === 'registrado').length)
+const cntPagado        = computed(() => ordenes.value.filter(o => o.estado === 'pagado').length)
+const totalItemsMesero = computed(() =>
+  Object.values(seleccionMesero.value).filter(v => v.activo).reduce((s, v) => s + v.cantidad, 0)
+)
+const itemsParaEnviar  = computed(() =>
+  productos.value
+    .filter(p => seleccionMesero.value[p.id]?.activo)
+    .map(p => ({ product_id: p.id, nombre: p.name, cantidad: seleccionMesero.value[p.id].cantidad }))
+)
 
 async function cargar() {
   if (!companyId.value) return
@@ -185,22 +206,47 @@ watch(companyId, v => { if (v) cargar() }, { immediate: true })
 async function abrirConfirmar(orden) {
   ordenSeleccionada.value = orden
   formMesero.value        = { obs_mesero: '' }
-  itemsOrden.value        = []
+  seleccionMesero.value   = {}
   showModal.value         = true
   loadingItems.value      = true
   try {
-    const res = await api.get(`/api/parking/orders/${orden.id}/items`)
-    itemsOrden.value = res.data
+    const needProds = productos.value.length === 0
+    const calls = [api.get(`/api/parking/orders/${orden.id}/items`)]
+    if (needProds) calls.push(api.get('/api/parking/products', { params: { company_id: companyId.value } }))
+    const [rItems, rProds] = await Promise.all(calls)
+    if (rProds) productos.value = rProds.data
+    // Pre-popular selección con los ítems existentes
+    for (const item of rItems.data) {
+      if (item.product_id) {
+        seleccionMesero.value[item.product_id] = { activo: true, cantidad: item.cantidad }
+      }
+    }
   } catch {}
   loadingItems.value = false
 }
 
+function toggleSvc(p) {
+  seleccionMesero.value[p.id] = seleccionMesero.value[p.id]?.activo
+    ? { activo: false, cantidad: 1 }
+    : { activo: true, cantidad: 1 }
+}
+
+function cambiarQty(pid, delta) {
+  const actual = seleccionMesero.value[pid]?.cantidad || 1
+  seleccionMesero.value[pid] = { activo: true, cantidad: Math.max(1, actual + delta) }
+}
+
 async function confirmar() {
   if (!ordenSeleccionada.value) return
+  if (itemsParaEnviar.value.length === 0) {
+    showToast('Selecciona al menos un servicio', 'warning', 2500)
+    return
+  }
   confirmando.value = true
   try {
     await api.put(`/api/parking/orders/${ordenSeleccionada.value.id}/registrar`, {
       obs_mesero: formMesero.value.obs_mesero || null,
+      items: itemsParaEnviar.value,
     })
     showToast('Confirmado y enviado a caja', 'success', 2500)
     showModal.value = false
@@ -278,15 +324,25 @@ function fmtHora(dt) {
 
 /* Servicios en modal */
 .pkm-servicios-wrap { background: #f8f9fa; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-.pkm-servicios-title { display: flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 700; color: #495057; }
+.pkm-servicios-title { display: flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 700; color: #495057; flex-wrap: wrap; }
+.pkm-svc-hint { font-size: .72rem; color: #0d6efd; font-weight: 400; margin-left: auto; }
 .pkm-servicios-loading { text-align: center; font-size: .85rem; color: #6c757d; padding: 8px; }
 .pkm-servicios-empty   { text-align: center; font-size: .82rem; color: #adb5bd; }
-.pkm-servicios-list { display: flex; flex-direction: column; gap: 4px; }
-.pkm-svc-row { display: flex; align-items: center; justify-content: space-between; font-size: .88rem; padding: 4px 0; border-bottom: 1px solid #e9ecef; }
-.pkm-svc-row:last-child { border-bottom: none; }
-.pkm-svc-nombre { color: #212529; }
-.pkm-svc-qty    { font-weight: 700; color: #0d6efd; }
-.pkm-total-resumen { text-align: right; font-size: .82rem; color: #495057; }
+.pkm-servicios-list { display: flex; flex-direction: column; gap: 6px; }
+.pkm-svc-row-edit {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border: 1.5px solid #e9ecef; border-radius: 8px;
+  background: #fff; transition: border-color .15s, background .15s;
+}
+.pkm-svc-row-edit.selected { border-color: #0d6efd; background: #f0f6ff; }
+.pkm-svc-check { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; }
+.pkm-svc-check input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #0d6efd; flex-shrink: 0; }
+.pkm-svc-nombre { font-size: .88rem; font-weight: 600; color: #212529; }
+.pkm-qty-wrap { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.pkm-qty-btn { width: 24px; height: 24px; border: 1.5px solid #0d6efd; border-radius: 5px; background: #fff; color: #0d6efd; font-size: .9rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.pkm-qty-btn:hover { background: #0d6efd; color: #fff; }
+.pkm-qty-val { font-size: .88rem; font-weight: 700; min-width: 18px; text-align: center; }
+.pkm-total-resumen { text-align: right; font-size: .82rem; color: #495057; padding-top: 4px; border-top: 1px solid #dee2e6; }
 
 .pkm-field { display: flex; flex-direction: column; gap: 5px; }
 .pkm-field label { font-size: .82rem; font-weight: 600; color: #495057; }

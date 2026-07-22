@@ -60,14 +60,9 @@
         <div class="pkc-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pkc-card-tipo">{{ o.tipo_vehiculo }}</div>
 
-        <div class="pkc-personas-summary">
-          <span class="pkc-psuma"><i class="bi bi-person-fill"></i> {{ o.adultos }} adulto{{ o.adultos !== 1 ? 's' : '' }}</span>
-          <span v-if="o.ninos > 0" class="pkc-psuma pkc-nino">
-            <i class="bi bi-person-hearts"></i> {{ o.ninos }} niño{{ o.ninos !== 1 ? 's' : '' }}
-          </span>
-          <span v-if="o.mascotas > 0" class="pkc-psuma pkc-mascota">
-            <i class="bi bi-circle-fill" style="font-size:.6rem"></i> {{ o.mascotas }} mascota{{ o.mascotas !== 1 ? 's' : '' }}
-          </span>
+        <div class="pkc-svc-pill">
+          <i class="bi bi-list-check"></i>
+          {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
         </div>
 
         <div v-if="o.obs_portero || o.obs_mesero" class="pkc-obs-wrap">
@@ -80,23 +75,17 @@
         </div>
 
         <div v-if="o.mesero_nombre" class="pkc-confirmado-por">
-          <i class="bi bi-check2"></i> Confirmado por: {{ o.mesero_nombre }}
+          <i class="bi bi-check2"></i> {{ o.mesero_nombre }}
         </div>
 
         <div class="pkc-card-footer">
           <span class="pkc-card-orden">{{ o.numero_orden }}</span>
-          <button
-            v-if="o.estado === 'registrado'"
-            class="pkc-btn-pagar"
-            @click="abrirCobro(o)"
-          >
-            <i class="bi bi-cash-coin"></i>
-            Cobrar
+          <button v-if="o.estado === 'registrado'" class="pkc-btn-pagar" @click="abrirCobro(o)">
+            <i class="bi bi-cash-coin"></i> Cobrar
           </button>
-          <span v-else class="pkc-ya-pagado">
-            <i class="bi bi-check-circle-fill"></i>
-            Pagado {{ fmtHora(o.hora_salida) }}
-          </span>
+          <button v-else class="pkc-btn-reimprimir" @click="abrirReimpresion(o)">
+            <i class="bi bi-printer-fill"></i> Reimprimir
+          </button>
         </div>
       </div>
     </div>
@@ -139,7 +128,7 @@
           <small>Crea los productos en <strong>Productos Parking</strong> del menú</small>
         </div>
         <div v-else>
-          <div class="pkc-servicios-title">Selecciona los servicios a cobrar</div>
+          <div class="pkc-servicios-title">Servicios a cobrar <span style="font-weight:400;color:#0d6efd;font-size:.72rem;">· Pre-cargados del ingreso</span></div>
           <div class="pkc-servicios-list">
             <div
               v-for="p in productos" :key="p.id"
@@ -204,14 +193,15 @@
     </div>
   </div>
 
-  <!-- ══ COMPROBANTE DE SALIDA ══════════════════════════════════════════════ -->
+  <!-- ══ COMPROBANTE DE SALIDA / REIMPRESIÓN ═════════════════════════════════ -->
   <ComprobanteParkingIngreso
     v-if="ordenParaSalida"
     :orden="ordenParaSalida"
+    :items="itemsParaSalida"
     :company-name="companyStore.selectedCompany?.name || ''"
     :company-id="companyStore.selectedCompany?.id"
     tipo="salida"
-    @close="ordenParaSalida = null"
+    @close="ordenParaSalida = null; itemsParaSalida = []"
   />
 </template>
 
@@ -239,7 +229,8 @@ const stats         = ref({ cnt_ingresado: 0, cnt_registrado: 0, cnt_pagado: 0, 
 const loading       = ref(false)
 const fechaFiltro   = ref(new Date().toISOString().slice(0, 10))
 const filtroEstado  = ref('registrado')
-const ordenParaSalida = ref(null)
+const ordenParaSalida   = ref(null)
+const itemsParaSalida   = ref([])
 
 // ── Modal cobro ───────────────────────────────────────────────────────────────
 const showCobro        = ref(false)
@@ -300,17 +291,24 @@ async function abrirCobro(orden) {
   ordenCobro.value = orden
   seleccion.value  = {}
   showCobro.value  = true
-
-  if (productos.value.length === 0) {
-    loadingProductos.value = true
-    try {
-      const res = await api.get('/api/parking/products', { params: { company_id: companyId.value } })
-      productos.value = res.data
-    } catch {
-      showToast('Error al cargar servicios', 'error', 3000)
+  loadingProductos.value = true
+  try {
+    const calls = [api.get(`/api/parking/orders/${orden.id}/items`)]
+    if (productos.value.length === 0) {
+      calls.push(api.get('/api/parking/products', { params: { company_id: companyId.value } }))
     }
-    loadingProductos.value = false
+    const [rItems, rProds] = await Promise.all(calls)
+    if (rProds) productos.value = rProds.data
+    // Pre-popular con ítems ya confirmados
+    for (const item of rItems.data) {
+      if (item.product_id) {
+        seleccion.value[item.product_id] = { activo: true, cantidad: item.cantidad }
+      }
+    }
+  } catch {
+    showToast('Error al cargar servicios', 'error', 3000)
   }
+  loadingProductos.value = false
 }
 
 function toggleServicio(p) {
@@ -350,12 +348,24 @@ async function confirmarCobro() {
     const r2 = await api.get('/api/parking/stats', { params: { company_id: companyId.value, fecha: fechaFiltro.value } })
     stats.value = r2.data
 
-    showCobro.value  = false
+    showCobro.value       = false
+    itemsParaSalida.value = lineasSeleccionadas.value.map(l => ({ nombre: l.nombre, cantidad: l.cantidad }))
     ordenParaSalida.value = actualizada
   } catch (e) {
     showToast(e?.response?.data?.detail || 'Error al cobrar', 'error', 3000)
   }
   pagando.value = false
+}
+
+// ── Reimprimir tiquete de salida ──────────────────────────────────────────────
+async function abrirReimpresion(orden) {
+  try {
+    const res = await api.get(`/api/parking/orders/${orden.id}/items`)
+    itemsParaSalida.value = res.data.map(i => ({ nombre: i.nombre, cantidad: i.cantidad }))
+  } catch {
+    itemsParaSalida.value = []
+  }
+  ordenParaSalida.value = orden
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
@@ -437,13 +447,11 @@ watch(companyId, (v) => { if (v) cargar() }, { immediate: true })
 }
 .pkc-card-tipo { text-align: center; font-size: .78rem; color: #6c757d; }
 
-.pkc-personas-summary { display: flex; flex-direction: column; gap: 4px; }
-.pkc-psuma {
-  display: flex; align-items: center; gap: 6px; font-size: .88rem; font-weight: 600;
-  padding: 4px 10px; border-radius: 8px; background: #f8f9fa;
+.pkc-svc-pill {
+  display: flex; align-items: center; gap: 6px; font-size: .85rem; font-weight: 600;
+  padding: 4px 10px; border-radius: 8px; background: #e7f1ff; color: #084298;
+  border: 1px solid #c2d8ff;
 }
-.pkc-nino    { background: #fff3cd; }
-.pkc-mascota { background: #e2d9f3; }
 
 .pkc-obs-wrap { display: flex; flex-direction: column; gap: 4px; }
 .pkc-obs {
@@ -469,6 +477,12 @@ watch(companyId, (v) => { if (v) cargar() }, { immediate: true })
 .pkc-btn-pagar:hover { background: #157347; }
 
 .pkc-ya-pagado { font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 4px; }
+.pkc-btn-reimprimir {
+  display: flex; align-items: center; gap: 5px; padding: 6px 12px;
+  border: 1px solid #6c757d; border-radius: 8px; background: #fff; color: #6c757d;
+  font-size: .8rem; cursor: pointer; transition: all .15s;
+}
+.pkc-btn-reimprimir:hover { background: #6c757d; color: #fff; }
 
 /* ── Modal overlay ── */
 .pkc-overlay {

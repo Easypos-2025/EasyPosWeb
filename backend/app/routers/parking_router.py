@@ -285,6 +285,7 @@ async def crear_orden(
 
 class RegistrarBody(BaseModel):
     obs_mesero: Optional[str] = None
+    items:      Optional[List[ItemIngreso]] = None
 
 
 @router.put("/orders/{order_id}/registrar")
@@ -311,6 +312,22 @@ async def registrar_orden(
             updated_at     = NOW()
         WHERE id = :id
     """), {"obs": body.obs_mesero, "uid": current_user.id, "id": order_id})
+
+    if body.items is not None:
+        await db.execute(text(
+            "DELETE FROM parking_order_items WHERE parking_order_id = :oid"
+        ), {"oid": order_id})
+        total_qty = sum(i.cantidad for i in body.items)
+        for item in body.items:
+            await db.execute(text("""
+                INSERT INTO parking_order_items
+                    (parking_order_id, product_id, nombre, precio_unitario, impuesto_pct, cantidad, subtotal)
+                VALUES (:oid, :pid, :nom, 0, 0, :qty, 0)
+            """), {"oid": order_id, "pid": item.product_id, "nom": item.nombre, "qty": item.cantidad})
+        await db.execute(text(
+            "UPDATE parking_orders SET adultos = :qty WHERE id = :id"
+        ), {"qty": total_qty, "id": order_id})
+
     await db.commit()
     return {"ok": True, "estado": "registrado"}
 
@@ -348,7 +365,11 @@ async def pagar_orden(
             detail=f"Solo se pueden pagar órdenes en estado 'registrado'. Estado actual: '{orden['estado']}'"
         )
 
-    # Guardar ítems del cobro
+    # Reemplaza ítems existentes (los del portero/mesero con precio=0) con los del cobro
+    await db.execute(text(
+        "DELETE FROM parking_order_items WHERE parking_order_id = :oid"
+    ), {"oid": order_id})
+
     for item in body.items:
         await db.execute(text("""
             INSERT INTO parking_order_items

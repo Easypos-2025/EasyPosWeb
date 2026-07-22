@@ -350,7 +350,7 @@ function imprimirSistema() {
       .cpi-k            { color:#555; flex-shrink:0; }
       .cpi-v            { font-weight:600; text-align:right; }
       .cpi-orden        { font-size:13px; font-weight:900; }
-      .cpi-placa-box    { font-size:22px; font-weight:900; letter-spacing:3px; text-align:center;
+      .cpi-placa-box    { font-size:30px; font-weight:900; letter-spacing:4px; text-align:center;
                           border:2px solid #000; padding:4px 8px; margin:4px auto; display:inline-block; }
       .cpi-total-personas { font-size:11px; font-weight:bold; margin-top:4px; }
       .cpi-row-kv .cpi-k { color:#555; }
@@ -403,8 +403,8 @@ function imprimirSistema() {
 .cpi-k            { color: #555; flex-shrink: 0; }
 .cpi-v            { font-weight: 600; text-align: right; }
 .cpi-orden        { font-size: 13px; font-weight: 900; }
-.cpi-placa-box    { font-size: 22px; font-weight: 900; letter-spacing: 3px; text-align: center;
-                    border: 2px solid #000; padding: 4px 8px; margin: 4px auto; display: inline-block; }
+.cpi-placa-box    { font-size: 30px; font-weight: 900; letter-spacing: 4px; text-align: center;
+                    border: 2px solid #000; padding: 6px 10px; margin: 6px auto; display: inline-block; }
 .cpi-total-personas { font-size: 11px; font-weight: bold; margin-top: 4px; }
 .cpi-obs          { font-size: 11px; font-style: italic; color: #333; padding: 2px 0; }
 .cpi-footer       { text-align: center; font-size: 10px; color: #555; margin-top: 6px; line-height: 1.4; }
