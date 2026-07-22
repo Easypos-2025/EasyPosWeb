@@ -1,46 +1,49 @@
 <template>
   <div class="pk-page">
 
-    <!-- ══ KPI BAR ══════════════════════════════════════════════════════════ -->
+    <!-- ══ KPI BAR (clickables = filtros) ══════════════════════════════════ -->
     <div class="pk-kpi-bar">
       <button class="pk-btn-nuevo" @click="abrirModalNuevo">
         <i class="bi bi-plus-circle-fill"></i>
         <span>Nuevo Ingreso</span>
       </button>
-      <div class="pk-kpi-card pk-kpi-disponibles">
-        <i class="bi bi-p-circle-fill"></i>
+      <div :class="['pk-kpi-card pk-kpi-ingresado', { 'pk-kpi-active': filtroEstado === 'ingresado' }]"
+        @click="filtroEstado = 'ingresado'; cargar()">
+        <i class="bi bi-door-open-fill"></i>
         <div>
-          <span class="pk-kpi-val">{{ stats.disponibles }}</span>
-          <span class="pk-kpi-lbl">Disponibles</span>
+          <span class="pk-kpi-val">{{ stats.cnt_ingresado ?? 0 }}</span>
+          <span class="pk-kpi-lbl">Ingresados</span>
         </div>
       </div>
-      <div class="pk-kpi-card pk-kpi-ocupadas">
+      <div :class="['pk-kpi-card pk-kpi-confirmado', { 'pk-kpi-active': filtroEstado === 'registrado' }]"
+        @click="filtroEstado = 'registrado'; cargar()">
+        <i class="bi bi-person-check-fill"></i>
+        <div>
+          <span class="pk-kpi-val">{{ stats.cnt_registrado ?? 0 }}</span>
+          <span class="pk-kpi-lbl">Confirmados</span>
+        </div>
+      </div>
+      <div :class="['pk-kpi-card pk-kpi-parasalir', { 'pk-kpi-active': filtroEstado === 'pagado' }]"
+        @click="filtroEstado = 'pagado'; cargar()">
         <i class="bi bi-car-front-fill"></i>
         <div>
-          <span class="pk-kpi-val">{{ stats.ocupadas }}</span>
-          <span class="pk-kpi-lbl">Ocupadas</span>
+          <span class="pk-kpi-val">{{ stats.cnt_pagado ?? 0 }}</span>
+          <span class="pk-kpi-lbl">Para salir</span>
         </div>
       </div>
-      <div class="pk-kpi-card pk-kpi-total">
-        <i class="bi bi-grid-3x3-gap-fill"></i>
+      <div :class="['pk-kpi-card pk-kpi-cancelado', { 'pk-kpi-active': filtroEstado === 'cancelado' }]"
+        @click="filtroEstado = 'cancelado'; cargar()">
+        <i class="bi bi-x-circle-fill"></i>
         <div>
-          <span class="pk-kpi-val">{{ stats.total_plazas }}</span>
-          <span class="pk-kpi-lbl">Total · {{ stats.pct_ocupacion }}%</span>
+          <span class="pk-kpi-val">{{ stats.cnt_cancelado ?? 0 }}</span>
+          <span class="pk-kpi-lbl">Cancelados</span>
         </div>
       </div>
     </div>
 
-    <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
+    <!-- ══ FECHA ═════════════════════════════════════════════════════════════ -->
     <div class="pk-filtro-bar">
       <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
-      <div class="pk-filtros-estado">
-        <button v-for="f in FILTROS" :key="f.val"
-          :class="['pk-flt', { active: filtroEstado === f.val }]"
-          @click="filtroEstado = f.val; cargar()">
-          {{ f.label }}
-          <span v-if="conteoFiltro(f.val) > 0" class="pk-flt-badge">{{ conteoFiltro(f.val) }}</span>
-        </button>
-      </div>
     </div>
 
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
@@ -427,17 +430,15 @@ function fmtHora(dt) {
 .pk-kpi-card i { font-size: 1.4rem; opacity: .85; }
 .pk-kpi-val  { display: block; font-size: 1.4rem; line-height: 1; }
 .pk-kpi-lbl  { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
-.pk-kpi-disponibles { background: #198754; }
-.pk-kpi-ocupadas    { background: #dc3545; }
-.pk-kpi-total       { background: #6c757d; }
+.pk-kpi-ingresado  { background: #0d6efd; cursor: pointer; }
+.pk-kpi-confirmado { background: #198754; cursor: pointer; }
+.pk-kpi-parasalir  { background: #fd7e14; cursor: pointer; }
+.pk-kpi-cancelado  { background: #6c757d; cursor: pointer; }
+.pk-kpi-card:hover { filter: brightness(1.1); }
+.pk-kpi-active     { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
 
-/* Filtros */
+/* Fecha */
 .pk-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-.pk-filtros-estado { display: flex; gap: 6px; flex-wrap: wrap; }
-.pk-flt { padding: 6px 14px; border-radius: 20px; border: 1px solid #dee2e6; background: #fff; font-size: .82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.pk-flt.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-.pk-flt-badge { background: #dc3545; color: #fff; border-radius: 10px; font-size: .7rem; font-weight: 700; padding: 1px 6px; min-width: 18px; text-align: center; }
-.pk-flt.active .pk-flt-badge { background: rgba(255,255,255,.3); }
 
 /* Grid vacío / loading */
 .pk-loading { text-align: center; padding: 40px; color: #6c757d; }

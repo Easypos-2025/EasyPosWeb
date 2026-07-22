@@ -1,36 +1,37 @@
 <template>
   <div class="pkm-page">
 
-    <!-- ══ HEADER ════════════════════════════════════════════════════════════ -->
-    <div class="pkm-header">
-      <div class="pkm-header-info">
-        <i class="bi bi-person-badge-fill"></i>
+    <!-- ══ KPI BAR (clickables = filtros) ══════════════════════════════════ -->
+    <div class="pkm-kpi-bar">
+      <div :class="['pkm-kpi-card pkm-kpi-sinconf', { 'pkm-kpi-active': filtroEstado === 'ingresado' }]"
+        @click="filtroEstado = 'ingresado'">
+        <i class="bi bi-door-open-fill"></i>
         <div>
-          <h6>Confirmación de Ingresos</h6>
-          <p>Toca una tarjeta para confirmar el servicio y enviar a cobro</p>
+          <span class="pkm-kpi-val">{{ cntIngresado }}</span>
+          <span class="pkm-kpi-lbl">Sin confirmar</span>
         </div>
       </div>
-      <div class="pkm-pendientes-badge">
-        <span class="pkm-count">{{ ordenes.length }}</span>
-        <span class="pkm-count-lbl">pendientes</span>
+      <div :class="['pkm-kpi-card pkm-kpi-conf', { 'pkm-kpi-active': filtroEstado === 'registrado' }]"
+        @click="filtroEstado = 'registrado'">
+        <i class="bi bi-person-check-fill"></i>
+        <div>
+          <span class="pkm-kpi-val">{{ cntRegistrado }}</span>
+          <span class="pkm-kpi-lbl">Confirmadas</span>
+        </div>
+      </div>
+      <div :class="['pkm-kpi-card pkm-kpi-pagadas', { 'pkm-kpi-active': filtroEstado === 'pagado' }]"
+        @click="filtroEstado = 'pagado'">
+        <i class="bi bi-cash-coin"></i>
+        <div>
+          <span class="pkm-kpi-val">{{ cntPagado }}</span>
+          <span class="pkm-kpi-lbl">Pagadas</span>
+        </div>
       </div>
     </div>
 
     <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
     <div class="pkm-filtro-bar">
       <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
-      <div class="pkm-tabs">
-        <button :class="['pkm-tab', { active: filtroEstado === 'ingresado' }]"
-          @click="filtroEstado = 'ingresado'">
-          Sin confirmar
-          <span v-if="cntIngresado > 0" class="pkm-tab-badge">{{ cntIngresado }}</span>
-        </button>
-        <button :class="['pkm-tab', { active: filtroEstado === 'registrado' }]"
-          @click="filtroEstado = 'registrado'">
-          Confirmados
-          <span v-if="cntRegistrado > 0" class="pkm-tab-badge pkm-tab-badge--ok">{{ cntRegistrado }}</span>
-        </button>
-      </div>
     </div>
 
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
@@ -46,12 +47,14 @@
     <div v-else class="pkm-grid">
       <div
         v-for="o in ordenesFiltradas" :key="o.id"
-        :class="['pkm-card', { 'pkm-card--confirmado': o.estado === 'registrado' }]"
+        :class="['pkm-card', { 'pkm-card--confirmado': o.estado === 'registrado', 'pkm-card--pagado': o.estado === 'pagado' }]"
         @click="o.estado === 'ingresado' && abrirConfirmar(o)"
       >
         <div class="pkm-card-top">
-          <span :class="['pkm-badge-nuevo', o.estado === 'registrado' && 'pkm-badge-confirmado']">
-            {{ o.estado === 'registrado' ? 'Confirmado' : 'Pendiente confirmación' }}
+          <span :class="['pkm-badge-nuevo',
+            o.estado === 'registrado' && 'pkm-badge-confirmado',
+            o.estado === 'pagado' && 'pkm-badge-pagado']">
+            {{ o.estado === 'pagado' ? 'Pagado' : o.estado === 'registrado' ? 'Confirmado' : 'Pendiente confirmación' }}
           </span>
           <span class="pkm-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
         </div>
@@ -69,6 +72,7 @@
         <div class="pkm-card-footer">
           <span class="pkm-card-orden">{{ o.numero_orden }}</span>
           <span v-if="o.estado === 'ingresado'" class="pkm-tap-hint"><i class="bi bi-hand-index"></i> Toca para confirmar</span>
+          <span v-else-if="o.estado === 'pagado'" class="pkm-confirmado-por pkm-pagado-txt"><i class="bi bi-cash-coin"></i> Pagado en caja</span>
           <span v-else class="pkm-confirmado-por"><i class="bi bi-check2-all"></i> {{ o.mesero_nombre || 'Confirmado' }}</span>
         </div>
       </div>
@@ -138,7 +142,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -162,20 +166,21 @@ const totalItems     = computed(() => itemsOrden.value.reduce((s, i) => s + (i.c
 const ordenesFiltradas = computed(() => ordenes.value.filter(o => o.estado === filtroEstado.value))
 const cntIngresado   = computed(() => ordenes.value.filter(o => o.estado === 'ingresado').length)
 const cntRegistrado  = computed(() => ordenes.value.filter(o => o.estado === 'registrado').length)
+const cntPagado      = computed(() => ordenes.value.filter(o => o.estado === 'pagado').length)
 
 async function cargar() {
   if (!companyId.value) return
   loading.value = true
   try {
     const res = await api.get('/api/parking/orders', {
-      params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado,registrado' },
+      params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado,registrado,pagado' },
     })
     ordenes.value = res.data
   } catch { showToast('Error al cargar órdenes', 'error', 3000) }
   loading.value = false
 }
 
-onMounted(cargar)
+watch(companyId, v => { if (v) cargar() }, { immediate: true })
 
 async function abrirConfirmar(orden) {
   ordenSeleccionada.value = orden
@@ -215,26 +220,19 @@ function fmtHora(dt) {
 <style scoped>
 .pkm-page { padding: 16px; max-width: 900px; margin: 0 auto; }
 
-.pkm-header {
-  display: flex; align-items: center; justify-content: space-between;
-  background: #fff; border-radius: 12px; padding: 14px 18px;
-  border: 1px solid #e9ecef; margin-bottom: 14px; gap: 12px;
-}
-.pkm-header-info { display: flex; align-items: center; gap: 12px; flex: 1; }
-.pkm-header-info i { font-size: 2rem; color: #0d6efd; }
-.pkm-header-info h6 { margin: 0; font-weight: 700; font-size: .95rem; }
-.pkm-header-info p  { margin: 0; font-size: .8rem; color: #6c757d; }
-.pkm-pendientes-badge { display: flex; flex-direction: column; align-items: center; background: #ffc107; border-radius: 12px; padding: 8px 16px; flex-shrink: 0; }
-.pkm-count     { font-size: 1.8rem; font-weight: 900; color: #212529; line-height: 1; }
-.pkm-count-lbl { font-size: .7rem; font-weight: 600; color: #495057; }
+/* KPI Bar */
+.pkm-kpi-bar { display: flex; gap: 10px; margin-bottom: 14px; }
+.pkm-kpi-card { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; color: #fff; font-weight: 600; flex: 1; cursor: pointer; transition: filter .15s; }
+.pkm-kpi-card:hover { filter: brightness(1.1); }
+.pkm-kpi-card i { font-size: 1.4rem; opacity: .85; }
+.pkm-kpi-val { display: block; font-size: 1.4rem; line-height: 1; }
+.pkm-kpi-lbl { display: block; font-size: .7rem; opacity: .85; white-space: nowrap; }
+.pkm-kpi-sinconf { background: #fd7e14; }
+.pkm-kpi-conf    { background: #198754; }
+.pkm-kpi-pagadas { background: #0d6efd; }
+.pkm-kpi-active  { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
 
 .pkm-filtro-bar { margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.pkm-tabs { display: flex; gap: 6px; }
-.pkm-tab { padding: 6px 14px; border-radius: 20px; border: 1px solid #dee2e6; background: #fff; font-size: .82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.pkm-tab.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-.pkm-tab-badge { background: #dc3545; color: #fff; border-radius: 10px; font-size: .7rem; font-weight: 700; padding: 1px 6px; min-width: 18px; text-align: center; }
-.pkm-tab.active .pkm-tab-badge { background: rgba(255,255,255,.3); }
-.pkm-tab-badge--ok { background: #198754; }
 
 .pkm-loading { text-align: center; padding: 40px; color: #6c757d; }
 .pkm-empty   { text-align: center; padding: 60px 20px; color: #adb5bd; }
@@ -251,7 +249,10 @@ function fmtHora(dt) {
 .pkm-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pkm-badge-nuevo { font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; background: #fff3cd; color: #856404; text-transform: uppercase; }
 .pkm-badge-confirmado { background: #d1e7dd !important; color: #0a3622 !important; }
+.pkm-badge-pagado     { background: #cfe2ff !important; color: #084298 !important; }
 .pkm-card--confirmado { border-color: #198754; cursor: default; }
+.pkm-card--pagado     { border-color: #0d6efd; cursor: default; opacity: .85; }
+.pkm-pagado-txt { font-size: .72rem; color: #0d6efd; display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .pkm-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; color: #212529; background: #fff; }
 .pkm-confirmado-por { font-size: .72rem; color: #198754; display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .pkm-card-hora { font-size: .75rem; color: #6c757d; }
