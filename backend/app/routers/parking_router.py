@@ -103,6 +103,21 @@ async def get_stats(
     }
 
 
+# ── Búsqueda de vehículo por placa ───────────────────────────────────────────
+
+@router.get("/vehicle")
+async def get_vehicle(
+    placa: str       = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    row = await db.execute(text(
+        "SELECT placa, vehicle_type_name, foto_url FROM vehicles WHERE placa = :p"
+    ), {"p": placa.strip().upper()})
+    v = row.mappings().first()
+    return dict(v) if v else {}
+
+
 # ── Listar órdenes ────────────────────────────────────────────────────────────
 
 @router.get("/orders")
@@ -134,7 +149,7 @@ async def listar_orders(
     rows = await db.execute(text(f"""
         SELECT
             po.id, po.numero_orden, po.placa, po.vehicle_type_id,
-            vt.nombre AS tipo_vehiculo,
+            COALESCE(vt.nombre, v.vehicle_type_name) AS tipo_vehiculo,
             po.adultos, po.ninos, po.mascotas,
             po.hora_ingreso, po.hora_salida,
             po.foto_url, po.obs_portero, po.obs_mesero,
@@ -145,6 +160,7 @@ async def listar_orders(
             po.created_at
         FROM parking_orders po
         LEFT JOIN vehicle_types vt ON vt.id  = po.vehicle_type_id
+        LEFT JOIN vehicles v       ON v.placa = po.placa
         LEFT JOIN users ur         ON ur.id  = po.registrado_por
         LEFT JOIN users uc         ON uc.id  = po.confirmado_por
         LEFT JOIN users up         ON up.id  = po.pagado_por
@@ -157,16 +173,18 @@ async def listar_orders(
 
 # ── Crear orden (portero) ─────────────────────────────────────────────────────
 
+class ItemIngreso(BaseModel):
+    product_id: Optional[int] = None
+    nombre:     str
+    cantidad:   int = 1
+
 class NuevaOrdenBody(BaseModel):
-    company_id:      int
-    placa:           str
-    vehicle_type_id: Optional[int] = None
-    adultos:         int
-    ninos:           int = 0
-    mascotas:        int = 0
-    hora_ingreso:    str
-    foto_url:        Optional[str] = None
-    obs_portero:     Optional[str] = None
+    company_id:        int
+    placa:             str
+    vehicle_type_name: Optional[str] = None
+    foto_url:          Optional[str] = None
+    items:             List[ItemIngreso] = []
+    obs_portero:       Optional[str] = None
 
 
 @router.post("/orders")
@@ -175,10 +193,21 @@ async def crear_orden(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    if body.adultos < 1:
-        raise HTTPException(400, detail="Se requiere al menos 1 adulto")
+    if not body.items:
+        raise HTTPException(400, detail="Selecciona al menos un servicio")
 
-    placa_up = body.placa.strip().upper()
+    placa_up  = body.placa.strip().upper()
+    total_qty = sum(i.cantidad for i in body.items)
+
+    # UPSERT vehicle (1 foto por placa, global)
+    await db.execute(text("""
+        INSERT INTO vehicles (placa, vehicle_type_name, foto_url)
+        VALUES (:p, :vtn, :foto)
+        ON DUPLICATE KEY UPDATE
+            vehicle_type_name = COALESCE(:vtn, vehicle_type_name),
+            foto_url          = COALESCE(:foto, foto_url),
+            updated_at        = NOW()
+    """), {"p": placa_up, "vtn": body.vehicle_type_name, "foto": body.foto_url})
 
     r_count = await db.execute(text("""
         SELECT COUNT(*) FROM parking_orders
@@ -187,40 +216,47 @@ async def crear_orden(
     seq = (r_count.scalar() or 0) + 1
     numero_orden = f"PS-{datetime.now().strftime('%Y%m%d')}-{seq:03d}"
 
-    await db.execute(text("""
+    result = await db.execute(text("""
         INSERT INTO parking_orders
             (company_id, numero_orden, placa, vehicle_type_id, adultos, ninos, mascotas,
              hora_ingreso, foto_url, obs_portero, estado, registrado_por)
         VALUES
-            (:cid, :num, :placa, :vtid, :adu, :nin, :mas,
-             :hi, :foto, :obs, 'ingresado', :uid)
+            (:cid, :num, :placa, NULL, :adu, 0, 0,
+             NOW(), :foto, :obs, 'ingresado', :uid)
     """), {
         "cid": body.company_id, "num": numero_orden, "placa": placa_up,
-        "vtid": body.vehicle_type_id, "adu": body.adultos,
-        "nin": body.ninos, "mas": body.mascotas,
-        "hi": body.hora_ingreso, "foto": body.foto_url,
+        "adu": total_qty, "foto": body.foto_url,
         "obs": body.obs_portero, "uid": current_user.id,
     })
+    new_id = result.lastrowid
+
+    for item in body.items:
+        await db.execute(text("""
+            INSERT INTO parking_order_items
+                (parking_order_id, product_id, nombre, precio_unitario, impuesto_pct, cantidad, subtotal)
+            VALUES (:oid, :pid, :nom, 0, 0, :qty, 0)
+        """), {
+            "oid": new_id, "pid": item.product_id, "nom": item.nombre, "qty": item.cantidad,
+        })
+
     await db.commit()
 
     row = await db.execute(text("""
-        SELECT po.*, vt.nombre AS tipo_vehiculo,
+        SELECT po.*, COALESCE(vt.nombre, v.vehicle_type_name) AS tipo_vehiculo,
                ur.nombre AS portero_nombre
         FROM parking_orders po
-        LEFT JOIN vehicle_types vt ON vt.id = po.vehicle_type_id
-        LEFT JOIN users ur         ON ur.id = po.registrado_por
-        WHERE po.numero_orden = :num AND po.company_id = :cid
-    """), {"num": numero_orden, "cid": body.company_id})
+        LEFT JOIN vehicle_types vt ON vt.id  = po.vehicle_type_id
+        LEFT JOIN vehicles v       ON v.placa = po.placa
+        LEFT JOIN users ur         ON ur.id   = po.registrado_por
+        WHERE po.id = :id
+    """), {"id": new_id})
     nueva = row.mappings().first()
     return dict(nueva)
 
 
-# ── Registrar (mesero confirma personas) ─────────────────────────────────────
+# ── Registrar (mesero confirma ingreso) ──────────────────────────────────────
 
 class RegistrarBody(BaseModel):
-    adultos:    int
-    ninos:      int = 0
-    mascotas:   int = 0
     obs_mesero: Optional[str] = None
 
 
@@ -231,9 +267,6 @@ async def registrar_orden(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    if body.adultos < 1:
-        raise HTTPException(400, detail="Se requiere al menos 1 adulto")
-
     row = await db.execute(text(
         "SELECT id, estado FROM parking_orders WHERE id = :id"
     ), {"id": order_id})
@@ -245,18 +278,12 @@ async def registrar_orden(
 
     await db.execute(text("""
         UPDATE parking_orders
-        SET adultos        = :adu,
-            ninos          = :nin,
-            mascotas       = :mas,
-            obs_mesero     = :obs,
+        SET obs_mesero     = :obs,
             estado         = 'registrado',
             confirmado_por = :uid,
             updated_at     = NOW()
         WHERE id = :id
-    """), {
-        "adu": body.adultos, "nin": body.ninos, "mas": body.mascotas,
-        "obs": body.obs_mesero, "uid": current_user.id, "id": order_id,
-    })
+    """), {"obs": body.obs_mesero, "uid": current_user.id, "id": order_id})
     await db.commit()
     return {"ok": True, "estado": "registrado"}
 

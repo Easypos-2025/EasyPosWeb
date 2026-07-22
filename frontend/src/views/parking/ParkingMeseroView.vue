@@ -6,8 +6,8 @@
       <div class="pkm-header-info">
         <i class="bi bi-person-badge-fill"></i>
         <div>
-          <h6>Confirmación de Personas</h6>
-          <p>Toca una tarjeta para confirmar la cantidad de personas y enviar a cobro</p>
+          <h6>Confirmación de Ingresos</h6>
+          <p>Toca una tarjeta para confirmar el servicio y enviar a cobro</p>
         </div>
       </div>
       <div class="pkm-pendientes-badge">
@@ -42,10 +42,11 @@
         </div>
         <div class="pkm-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pkm-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pkm-card-personas">
-          <span class="pkm-persona-pill"><i class="bi bi-person-fill"></i> {{ o.adultos }}</span>
-          <span v-if="o.ninos > 0" class="pkm-persona-pill pkm-nino"><i class="bi bi-person-hearts"></i> {{ o.ninos }}</span>
-          <span v-if="o.mascotas > 0" class="pkm-persona-pill pkm-mascota"><i class="bi bi-circle-fill" style="font-size:.6rem"></i> {{ o.mascotas }}</span>
+        <div class="pkm-card-servicios">
+          <span class="pkm-svc-pill">
+            <i class="bi bi-list-check"></i>
+            {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
+          </span>
         </div>
         <div v-if="o.obs_portero" class="pkm-card-obs">
           <i class="bi bi-door-open"></i> {{ o.obs_portero }}
@@ -59,12 +60,12 @@
 
   </div>
 
-  <!-- ══ MODAL CONFIRMAR PERSONAS ══════════════════════════════════════════ -->
+  <!-- ══ MODAL CONFIRMAR INGRESO ══════════════════════════════════════════ -->
   <Teleport to="body">
     <div v-if="showModal" class="pkm-modal-overlay" @click.self="showModal = false">
       <div class="pkm-modal">
         <div class="pkm-modal-head">
-          <span><i class="bi bi-people-fill"></i> Confirmar Personas</span>
+          <span><i class="bi bi-clipboard2-check-fill"></i> Confirmar Ingreso</span>
           <button class="pkm-modal-close" @click="showModal = false"><i class="bi bi-x-lg"></i></button>
         </div>
 
@@ -77,30 +78,25 @@
             <span><strong>Portero:</strong> {{ ordenSeleccionada.obs_portero }}</span>
           </div>
 
-          <div class="pkm-personas-row">
-            <div class="pkm-field pkm-field--num">
-              <label><i class="bi bi-person-fill"></i> Adultos <span class="req">*</span></label>
-              <div class="pkm-counter">
-                <button type="button" @click="formMesero.adultos = Math.max(1, formMesero.adultos - 1)">−</button>
-                <span>{{ formMesero.adultos }}</span>
-                <button type="button" @click="formMesero.adultos++">+</button>
+          <!-- Servicios registrados -->
+          <div class="pkm-servicios-wrap">
+            <div class="pkm-servicios-title">
+              <i class="bi bi-list-check"></i> Servicios registrados
+            </div>
+            <div v-if="loadingItems" class="pkm-servicios-loading">
+              <i class="bi bi-arrow-repeat spin"></i> Cargando…
+            </div>
+            <div v-else-if="itemsOrden.length === 0" class="pkm-servicios-empty">
+              Sin detalle de servicios disponible
+            </div>
+            <div v-else class="pkm-servicios-list">
+              <div v-for="item in itemsOrden" :key="item.id" class="pkm-svc-row">
+                <span class="pkm-svc-nombre">{{ item.nombre }}</span>
+                <span class="pkm-svc-qty">× {{ item.cantidad }}</span>
               </div>
             </div>
-            <div class="pkm-field pkm-field--num">
-              <label><i class="bi bi-person-hearts"></i> Niños</label>
-              <div class="pkm-counter">
-                <button type="button" @click="formMesero.ninos = Math.max(0, formMesero.ninos - 1)">−</button>
-                <span>{{ formMesero.ninos }}</span>
-                <button type="button" @click="formMesero.ninos++">+</button>
-              </div>
-            </div>
-            <div class="pkm-field pkm-field--num">
-              <label><i class="bi bi-circle-fill" style="font-size:.7rem"></i> Mascotas</label>
-              <div class="pkm-counter">
-                <button type="button" @click="formMesero.mascotas = Math.max(0, formMesero.mascotas - 1)">−</button>
-                <span>{{ formMesero.mascotas }}</span>
-                <button type="button" @click="formMesero.mascotas++">+</button>
-              </div>
+            <div class="pkm-total-resumen">
+              Total: <strong>{{ totalItems }}</strong> unidad{{ totalItems !== 1 ? 'es' : '' }}
             </div>
           </div>
 
@@ -110,15 +106,11 @@
               placeholder="Notas del mesero (no reemplaza la del portero)…"></textarea>
           </div>
 
-          <div class="pkm-total-resumen">
-            Total: <strong>{{ formMesero.adultos + formMesero.ninos + formMesero.mascotas }}</strong>
-            persona{{ (formMesero.adultos + formMesero.ninos + formMesero.mascotas) !== 1 ? 's' : '' }}
-          </div>
         </div>
 
         <div class="pkm-modal-footer">
           <button class="pkm-btn-cancel" @click="showModal = false">Cancelar</button>
-          <button class="pkm-btn-confirmar" :disabled="confirmando" @click="confirmar">
+          <button class="pkm-btn-confirmar" :disabled="confirmando || loadingItems" @click="confirmar">
             <i v-if="confirmando" class="bi bi-arrow-repeat spin"></i>
             <i v-else class="bi bi-check2-all"></i>
             {{ confirmando ? 'Confirmando…' : 'Confirmar y Enviar a Caja' }}
@@ -137,16 +129,19 @@ import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const companyStore = useCompanyStore()
-const companyId    = computed(() => companyStore.selectedCompany?.id_company)
+const companyId    = computed(() => companyStore.selectedCompany?.id)
 
-const ordenes          = ref([])
-const loading          = ref(false)
-const fechaFiltro      = ref(new Date().toISOString().slice(0, 10))
-const showModal        = ref(false)
-const confirmando      = ref(false)
+const ordenes           = ref([])
+const loading           = ref(false)
+const loadingItems      = ref(false)
+const fechaFiltro       = ref(new Date().toISOString().slice(0, 10))
+const showModal         = ref(false)
+const confirmando       = ref(false)
 const ordenSeleccionada = ref(null)
+const itemsOrden        = ref([])
 
-const formMesero = ref({ adultos: 1, ninos: 0, mascotas: 0, obs_mesero: '' })
+const formMesero    = ref({ obs_mesero: '' })
+const totalItems    = computed(() => itemsOrden.value.reduce((s, i) => s + (i.cantidad || 1), 0))
 
 async function cargar() {
   if (!companyId.value) return
@@ -162,26 +157,29 @@ async function cargar() {
 
 onMounted(cargar)
 
-function abrirConfirmar(orden) {
+async function abrirConfirmar(orden) {
   ordenSeleccionada.value = orden
-  formMesero.value = { adultos: orden.adultos, ninos: orden.ninos, mascotas: orden.mascotas, obs_mesero: '' }
-  showModal.value  = true
+  formMesero.value        = { obs_mesero: '' }
+  itemsOrden.value        = []
+  showModal.value         = true
+  loadingItems.value      = true
+  try {
+    const res = await api.get(`/api/parking/orders/${orden.id}/items`)
+    itemsOrden.value = res.data
+  } catch {}
+  loadingItems.value = false
 }
 
 async function confirmar() {
   if (!ordenSeleccionada.value) return
-  if (formMesero.value.adultos < 1) { showToast('Se requiere al menos 1 adulto', 'warning', 2500); return }
   confirmando.value = true
   try {
     await api.put(`/api/parking/orders/${ordenSeleccionada.value.id}/registrar`, {
-      adultos:    formMesero.value.adultos,
-      ninos:      formMesero.value.ninos,
-      mascotas:   formMesero.value.mascotas,
       obs_mesero: formMesero.value.obs_mesero || null,
     })
     showToast('Confirmado y enviado a caja', 'success', 2500)
     showModal.value = false
-    ordenes.value = ordenes.value.filter(o => o.id !== ordenSeleccionada.value.id)
+    ordenes.value   = ordenes.value.filter(o => o.id !== ordenSeleccionada.value.id)
   } catch (e) { showToast(e?.response?.data?.detail || 'Error al confirmar', 'error', 3000) }
   confirmando.value = false
 }
@@ -227,10 +225,8 @@ function fmtHora(dt) {
 .pkm-card-hora { font-size: .75rem; color: #6c757d; }
 .pkm-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; }
 .pkm-card-tipo  { text-align: center; font-size: .78rem; color: #6c757d; }
-.pkm-card-personas { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-.pkm-persona-pill { display: inline-flex; align-items: center; gap: 4px; background: #f8f9fa; border: 1px solid #dee2e6; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; }
-.pkm-nino    { background: #fff3cd; border-color: #ffc107; }
-.pkm-mascota { background: #e2d9f3; border-color: #6f42c1; }
+.pkm-card-servicios { display: flex; justify-content: center; }
+.pkm-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; color: #084298; }
 .pkm-card-obs { font-size: .78rem; color: #6c757d; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pkm-card-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #f1f3f5; padding-top: 6px; margin-top: 2px; }
 .pkm-card-orden { font-size: .72rem; color: #adb5bd; font-family: monospace; }
@@ -239,24 +235,29 @@ function fmtHora(dt) {
 /* Modal */
 .pkm-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1050; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .pkm-modal { background: #fff; border-radius: 14px; width: 100%; max-width: 420px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
-.pkm-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e9ecef; font-weight: 700; font-size: .95rem; }
+.pkm-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e9ecef; font-weight: 700; font-size: .95rem; position: sticky; top: 0; background: #fff; z-index: 1; }
 .pkm-modal-close { border: none; background: #f1f3f5; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
 .pkm-modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
 .pkm-modal-footer { padding: 14px 18px; border-top: 1px solid #e9ecef; display: flex; gap: 10px; justify-content: flex-end; }
 .pkm-ord-placa-big { font-size: 2.2rem; font-weight: 900; letter-spacing: 4px; text-align: center; border: 2px solid #212529; border-radius: 8px; padding: 8px; }
 .pkm-ord-sub { text-align: center; font-size: .82rem; color: #6c757d; margin-top: 4px; }
 .pkm-obs-portero { font-size: .82rem; background: #fff3cd; color: #664d03; padding: 8px 12px; border-radius: 8px; border-left: 3px solid #ffc107; display: flex; gap: 8px; }
-.pkm-personas-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+/* Servicios en modal */
+.pkm-servicios-wrap { background: #f8f9fa; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pkm-servicios-title { display: flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 700; color: #495057; }
+.pkm-servicios-loading { text-align: center; font-size: .85rem; color: #6c757d; padding: 8px; }
+.pkm-servicios-empty   { text-align: center; font-size: .82rem; color: #adb5bd; }
+.pkm-servicios-list { display: flex; flex-direction: column; gap: 4px; }
+.pkm-svc-row { display: flex; align-items: center; justify-content: space-between; font-size: .88rem; padding: 4px 0; border-bottom: 1px solid #e9ecef; }
+.pkm-svc-row:last-child { border-bottom: none; }
+.pkm-svc-nombre { color: #212529; }
+.pkm-svc-qty    { font-weight: 700; color: #0d6efd; }
+.pkm-total-resumen { text-align: right; font-size: .82rem; color: #495057; }
+
 .pkm-field { display: flex; flex-direction: column; gap: 5px; }
 .pkm-field label { font-size: .82rem; font-weight: 600; color: #495057; }
-.pkm-field--num { align-items: center; text-align: center; }
-.req { color: #dc3545; }
 .pkm-input { border: 1px solid #ced4da; border-radius: 8px; padding: 9px 12px; font-size: .9rem; outline: none; width: 100%; }
-.pkm-counter { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 2px; }
-.pkm-counter button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #ced4da; background: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.pkm-counter button:hover { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-.pkm-counter span { font-size: 1.3rem; font-weight: 700; min-width: 30px; text-align: center; }
-.pkm-total-resumen { text-align: center; font-size: .9rem; color: #495057; background: #f8f9fa; border-radius: 8px; padding: 8px; }
 .pkm-btn-cancel { padding: 9px 18px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; color: #495057; font-size: .9rem; cursor: pointer; }
 .pkm-btn-confirmar { padding: 9px 20px; border: none; border-radius: 8px; background: #198754; color: #fff; font-size: .9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .pkm-btn-confirmar:hover:not(:disabled) { background: #157347; }

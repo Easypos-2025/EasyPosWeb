@@ -51,22 +51,22 @@
 
             <div class="cpi-divider">· · · · · · · · · · · · · · · · · ·</div>
 
-            <div class="cpi-section-lbl">PERSONAS</div>
-            <div class="cpi-row-kv">
-              <span class="cpi-k">Adultos</span>
-              <span class="cpi-v">{{ orden.adultos }}</span>
-            </div>
-            <div v-if="orden.ninos > 0" class="cpi-row-kv">
-              <span class="cpi-k">Niños</span>
-              <span class="cpi-v">{{ orden.ninos }}</span>
-            </div>
-            <div v-if="orden.mascotas > 0" class="cpi-row-kv">
-              <span class="cpi-k">Mascotas</span>
-              <span class="cpi-v">{{ orden.mascotas }}</span>
-            </div>
-            <div class="cpi-total-personas">
-              Total: {{ orden.adultos + (orden.ninos || 0) + (orden.mascotas || 0) }} personas/animales
-            </div>
+            <div class="cpi-section-lbl">SERVICIOS</div>
+            <template v-if="items && items.length > 0">
+              <div v-for="item in items" :key="item.product_id ?? item.nombre" class="cpi-row-kv">
+                <span class="cpi-k">{{ item.nombre }}</span>
+                <span class="cpi-v">× {{ item.cantidad }}</span>
+              </div>
+              <div class="cpi-total-personas">
+                Total: {{ totalCantidad }} unidad{{ totalCantidad !== 1 ? 'es' : '' }}
+              </div>
+            </template>
+            <template v-else>
+              <div class="cpi-row-kv">
+                <span class="cpi-k">Cantidad</span>
+                <span class="cpi-v">{{ orden.adultos }}</span>
+              </div>
+            </template>
 
             <div v-if="orden.obs_portero" class="cpi-divider">· · · · · · · · · · · · · · · · · ·</div>
             <div v-if="orden.obs_portero" class="cpi-section-lbl">OBSERVACIONES</div>
@@ -120,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
@@ -128,8 +128,13 @@ const props = defineProps({
   orden:       { type: Object, required: true },
   companyName: { type: String, default: '' },
   companyId:   { type: Number, default: null },
-  tipo:        { type: String, default: 'ingreso' },  // 'ingreso' | 'salida'
+  tipo:        { type: String, default: 'ingreso' }, // 'ingreso' | 'salida'
+  items:       { type: Array,  default: () => [] },
 })
+
+const totalCantidad = computed(() =>
+  (props.items || []).reduce((s, i) => s + (i.cantidad || 1), 0)
+)
 
 defineEmits(['close'])
 
@@ -184,12 +189,21 @@ function buildESCPOS() {
   line('--------------------------------')
   push(ESC, 0x61, 0x01)
   push(ESC, 0x45, 0x01)
-  line('PERSONAS')
+  line('SERVICIOS')
   push(ESC, 0x45, 0x00)
   push(ESC, 0x61, 0x00)
-  line(`Adultos:  ${o.adultos}`)
-  if (o.ninos > 0)    line(`Ninos:    ${o.ninos}`)
-  if (o.mascotas > 0) line(`Mascotas: ${o.mascotas}`)
+
+  const svcItems = props.items && props.items.length > 0 ? props.items : null
+  if (svcItems) {
+    for (const it of svcItems) {
+      const nombre = String(it.nombre).padEnd(20).slice(0, 20)
+      line(`${nombre}  x ${it.cantidad}`)
+    }
+    const total = svcItems.reduce((s, i) => s + (i.cantidad || 1), 0)
+    line(`Total: ${total} unidad${total !== 1 ? 'es' : ''}`)
+  } else {
+    line(`Cantidad: ${o.adultos}`)
+  }
 
   if (o.obs_portero) {
     line('--------------------------------')
@@ -339,6 +353,8 @@ function imprimirSistema() {
       .cpi-placa-box    { font-size:22px; font-weight:900; letter-spacing:3px; text-align:center;
                           border:2px solid #000; padding:4px 8px; margin:4px auto; display:inline-block; }
       .cpi-total-personas { font-size:11px; font-weight:bold; margin-top:4px; }
+      .cpi-row-kv .cpi-k { color:#555; }
+      .cpi-row-kv .cpi-v { font-weight:600; }
       .cpi-obs          { font-size:11px; font-style:italic; color:#333; padding:2px 0; }
       .cpi-footer       { text-align:center; font-size:10px; color:#555; margin-top:6px; line-height:1.4; }
     </style>

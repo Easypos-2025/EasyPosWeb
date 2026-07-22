@@ -58,10 +58,11 @@
         </div>
         <div class="pk-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pk-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pk-card-personas">
-          <span class="pk-persona-pill"><i class="bi bi-person-fill"></i> {{ o.adultos }}</span>
-          <span v-if="o.ninos > 0" class="pk-persona-pill pk-nino"><i class="bi bi-person-hearts"></i> {{ o.ninos }}</span>
-          <span v-if="o.mascotas > 0" class="pk-persona-pill pk-mascota"><i class="bi bi-circle-fill" style="font-size:.6rem"></i> {{ o.mascotas }}</span>
+        <div class="pk-card-servicios">
+          <span class="pk-svc-pill">
+            <i class="bi bi-list-check"></i>
+            {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
+          </span>
         </div>
         <div v-if="o.obs_portero" class="pk-card-obs">
           <i class="bi bi-chat-left-text"></i> {{ o.obs_portero }}
@@ -87,70 +88,81 @@
           <button class="pk-modal-close" @click="cerrarModalNuevo"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="pk-modal-body">
+
+          <!-- PLACA -->
           <div class="pk-field pk-field--required">
             <label>Placa <span class="req">*</span></label>
-            <input v-model="form.placa" class="pk-input pk-placa-input"
-              placeholder="Ej: ABC123" maxlength="10" autocomplete="off"
-              @input="form.placa = form.placa.toUpperCase()" />
+            <div class="pk-placa-wrap">
+              <input v-model="form.placa" class="pk-input pk-placa-input"
+                placeholder="Ej: ABC123" maxlength="10" autocomplete="off"
+                @input="onPlacaInput" />
+              <i v-if="buscandoVehiculo" class="bi bi-arrow-repeat spin pk-placa-spin"></i>
+              <i v-else-if="vehiculoEncontrado" class="bi bi-check-circle-fill pk-placa-ok"></i>
+            </div>
+            <small v-if="vehiculoEncontrado" class="pk-hint-ok">
+              <i class="bi bi-info-circle"></i> Vehículo registrado — foto cargada automáticamente
+            </small>
           </div>
+
+          <!-- TIPO DE VEHÍCULO -->
           <div class="pk-field">
             <label>Tipo de Vehículo</label>
-            <select v-model="form.vehicle_type_id" class="pk-input">
-              <option :value="null">— Seleccionar —</option>
-              <option v-for="t in vehicleTypes" :key="t.id" :value="t.id">{{ t.nombre }}</option>
-            </select>
+            <input v-model="form.vehicle_type_name" class="pk-input"
+              placeholder="Ej: Automóvil, Moto, Camioneta…" />
           </div>
-          <div class="pk-field pk-field--required">
-            <label>Hora de Ingreso <span class="req">*</span></label>
-            <input v-model="form.hora_ingreso" type="datetime-local" class="pk-input" />
-          </div>
-          <div class="pk-personas-row">
-            <div class="pk-field pk-field--required pk-field--num">
-              <label><i class="bi bi-person-fill"></i> Adultos <span class="req">*</span></label>
-              <div class="pk-counter">
-                <button type="button" @click="form.adultos = Math.max(1, form.adultos - 1)">−</button>
-                <span>{{ form.adultos }}</span>
-                <button type="button" @click="form.adultos++">+</button>
-              </div>
-            </div>
-            <div class="pk-field pk-field--num">
-              <label><i class="bi bi-person-hearts"></i> Niños</label>
-              <div class="pk-counter">
-                <button type="button" @click="form.ninos = Math.max(0, form.ninos - 1)">−</button>
-                <span>{{ form.ninos }}</span>
-                <button type="button" @click="form.ninos++">+</button>
-              </div>
-            </div>
-            <div class="pk-field pk-field--num">
-              <label><i class="bi bi-circle-fill" style="font-size:.7rem"></i> Mascotas</label>
-              <div class="pk-counter">
-                <button type="button" @click="form.mascotas = Math.max(0, form.mascotas - 1)">−</button>
-                <span>{{ form.mascotas }}</span>
-                <button type="button" @click="form.mascotas++">+</button>
-              </div>
-            </div>
-          </div>
+
+          <!-- FOTO DEL VEHÍCULO -->
           <div class="pk-field">
             <label>Foto del Vehículo</label>
-            <div class="pk-foto-area">
-              <img v-if="form.foto_url" :src="form.foto_url" class="pk-foto-preview" alt="Foto" />
-              <div v-else class="pk-foto-placeholder"><i class="bi bi-camera"></i><span>Sin foto</span></div>
-              <div class="pk-foto-btns">
-                <label class="pk-btn-foto">
-                  <i class="bi bi-camera-fill"></i> Tomar / Subir
-                  <input type="file" accept="image/*" capture="environment" style="display:none" @change="onFotoChange" />
-                </label>
-                <button v-if="form.foto_url" type="button" class="pk-btn-foto-rm" @click="form.foto_url = null">
-                  <i class="bi bi-trash"></i>
+            <ImageUploaderPro
+              :current-url="vehiculoFotoUrl"
+              :show-remove="false"
+              label="Sin foto · Toca para capturar"
+              :output-width="800"
+              :output-quality="0.82"
+              @change="onFotoChange"
+            />
+          </div>
+
+          <!-- SERVICIOS -->
+          <div class="pk-field pk-field--required">
+            <label>Servicios <span class="req">*</span></label>
+            <div v-if="loadingProductos" class="pk-svc-loading">
+              <i class="bi bi-arrow-repeat spin"></i> Cargando servicios…
+            </div>
+            <div v-else-if="productos.length === 0" class="pk-svc-empty">
+              <i class="bi bi-exclamation-triangle"></i>
+              Sin servicios configurados. Agrégalos en <strong>Productos Parking</strong>.
+            </div>
+            <div v-else class="pk-svc-list">
+              <div
+                v-for="prod in productos" :key="prod.id"
+                :class="['pk-svc-item', { 'pk-svc-item--sel': estaSeleccionado(prod.id) }]"
+              >
+                <button type="button" class="pk-svc-toggle" @click="toggleItem(prod)">
+                  <i :class="estaSeleccionado(prod.id) ? 'bi bi-check-square-fill' : 'bi bi-square'"></i>
+                  <span>{{ prod.name }}</span>
                 </button>
+                <div v-if="estaSeleccionado(prod.id)" class="pk-counter pk-svc-counter">
+                  <button type="button" @click="cambiarCantidad(prod, -1)">−</button>
+                  <span>{{ itemsSeleccionados[prod.id]?.cantidad || 1 }}</span>
+                  <button type="button" @click="cambiarCantidad(prod, 1)">+</button>
+                </div>
               </div>
             </div>
+            <small v-if="itemsActivos.length > 0" class="pk-svc-resumen">
+              {{ itemsActivos.length }} tipo{{ itemsActivos.length !== 1 ? 's' : '' }} ·
+              {{ totalCantidad }} unidad{{ totalCantidad !== 1 ? 'es' : '' }} seleccionadas
+            </small>
           </div>
+
+          <!-- OBSERVACIONES -->
           <div class="pk-field">
             <label>Observaciones</label>
             <textarea v-model="form.obs_portero" class="pk-input" rows="2"
               placeholder="Daños visibles, notas de ingreso…"></textarea>
           </div>
+
         </div>
         <div class="pk-modal-footer">
           <button class="pk-btn-cancel" @click="cerrarModalNuevo">Cancelar</button>
@@ -167,8 +179,9 @@
   <ComprobanteParkingIngreso
     v-if="ordenParaImprimir"
     :orden="ordenParaImprimir"
+    :items="ordenParaImprimir.items || []"
     :company-name="companyStore.selectedCompany?.name || ''"
-    :company-id="companyStore.selectedCompany?.id_company"
+    :company-id="companyStore.selectedCompany?.id"
     tipo="ingreso"
     @close="ordenParaImprimir = null"
   />
@@ -180,10 +193,11 @@ import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
 
 const companyStore = useCompanyStore()
-const companyId    = computed(() => companyStore.selectedCompany?.id_company)
+const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const FILTROS = [
   { val: 'activos',    label: 'Activos' },
@@ -195,17 +209,57 @@ const LABELS_ESTADO = {
   ingresado: 'Ingresado', registrado: 'Confirmado', pagado: 'Pagado', cancelado: 'Cancelado',
 }
 
-const ordenes          = ref([])
-const stats            = ref({ disponibles: 0, ocupadas: 0, total_plazas: 0, pct_ocupacion: 0 })
-const vehicleTypes     = ref([])
-const loading          = ref(false)
-const fechaFiltro      = ref(new Date().toISOString().slice(0, 10))
-const filtroEstado     = ref('activos')
-const showModalNuevo   = ref(false)
-const guardando        = ref(false)
-const ordenParaImprimir = ref(null)
+const ordenes            = ref([])
+const stats              = ref({ disponibles: 0, ocupadas: 0, total_plazas: 0, pct_ocupacion: 0 })
+const productos          = ref([])
+const loading            = ref(false)
+const loadingProductos   = ref(false)
+const fechaFiltro        = ref(new Date().toISOString().slice(0, 10))
+const filtroEstado       = ref('activos')
+const showModalNuevo     = ref(false)
+const guardando          = ref(false)
+const ordenParaImprimir  = ref(null)
+const buscandoVehiculo   = ref(false)
+const vehiculoEncontrado = ref(false)
+const vehiculoFotoUrl    = ref(null)
+const nuevaFotoBlob      = ref(null)
 
-const form = ref({ placa: '', vehicle_type_id: null, hora_ingreso: '', adultos: 1, ninos: 0, mascotas: 0, foto_url: null, obs_portero: '' })
+const form             = ref({ placa: '', vehicle_type_name: '', obs_portero: '' })
+const itemsSeleccionados = ref({}) // { [product_id]: { product_id, nombre, cantidad, checked } }
+
+const itemsActivos = computed(() =>
+  Object.values(itemsSeleccionados.value).filter(i => i.checked)
+)
+const totalCantidad = computed(() =>
+  itemsActivos.value.reduce((s, i) => s + (i.cantidad || 1), 0)
+)
+
+function estaSeleccionado(id) {
+  return !!itemsSeleccionados.value[id]?.checked
+}
+
+function toggleItem(prod) {
+  const k = prod.id
+  if (itemsSeleccionados.value[k]?.checked) {
+    itemsSeleccionados.value[k] = { ...itemsSeleccionados.value[k], checked: false }
+  } else {
+    itemsSeleccionados.value[k] = { product_id: prod.id, nombre: prod.name, cantidad: 1, checked: true }
+  }
+}
+
+function cambiarCantidad(prod, delta) {
+  const k = prod.id
+  if (!itemsSeleccionados.value[k]) {
+    itemsSeleccionados.value[k] = { product_id: prod.id, nombre: prod.name, cantidad: 1, checked: true }
+    return
+  }
+  const nuevo = (itemsSeleccionados.value[k].cantidad || 1) + delta
+  if (nuevo < 1) {
+    itemsSeleccionados.value[k] = { ...itemsSeleccionados.value[k], checked: false, cantidad: 1 }
+  } else {
+    itemsSeleccionados.value[k] = { ...itemsSeleccionados.value[k], cantidad: nuevo, checked: true }
+  }
+}
 
 async function cargar() {
   if (!companyId.value) return
@@ -223,49 +277,90 @@ async function cargar() {
   loading.value = false
 }
 
-async function cargarVehicleTypes() {
+async function cargarProductos() {
   if (!companyId.value) return
+  loadingProductos.value = true
   try {
-    const res = await api.get('/api/parking/vehicle-types', { params: { company_id: companyId.value } })
-    vehicleTypes.value = res.data
+    const res = await api.get('/api/parking/products', { params: { company_id: companyId.value } })
+    productos.value = res.data
   } catch {}
+  loadingProductos.value = false
 }
 
-onMounted(() => { cargar(); cargarVehicleTypes() })
+onMounted(() => { cargar(); cargarProductos() })
 
 function abrirModalNuevo() {
-  const now = new Date()
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-  form.value = { placa: '', vehicle_type_id: null, hora_ingreso: now.toISOString().slice(0, 16), adultos: 1, ninos: 0, mascotas: 0, foto_url: null, obs_portero: '' }
-  showModalNuevo.value = true
+  form.value               = { placa: '', vehicle_type_name: '', obs_portero: '' }
+  vehiculoFotoUrl.value    = null
+  nuevaFotoBlob.value      = null
+  vehiculoEncontrado.value = false
+  itemsSeleccionados.value = {}
+  showModalNuevo.value     = true
 }
 function cerrarModalNuevo() { showModalNuevo.value = false }
 
-async function onFotoChange(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = (ev) => { form.value.foto_url = ev.target.result }
-  reader.readAsDataURL(file)
+let placaTimer = null
+function onPlacaInput() {
+  form.value.placa         = form.value.placa.toUpperCase()
+  vehiculoEncontrado.value = false
+  vehiculoFotoUrl.value    = null
+  clearTimeout(placaTimer)
+  const p = form.value.placa.trim()
+  if (p.length < 3) return
+  placaTimer = setTimeout(() => buscarVehiculo(p), 600)
+}
+
+async function buscarVehiculo(placa) {
+  buscandoVehiculo.value = true
+  try {
+    const res = await api.get('/api/parking/vehicle', { params: { placa } })
+    if (res.data?.placa) {
+      vehiculoEncontrado.value = true
+      vehiculoFotoUrl.value    = res.data.foto_url || null
+      if (res.data.vehicle_type_name && !form.value.vehicle_type_name) {
+        form.value.vehicle_type_name = res.data.vehicle_type_name
+      }
+    }
+  } catch {}
+  buscandoVehiculo.value = false
+}
+
+function onFotoChange(blob) {
+  nuevaFotoBlob.value = blob
+}
+
+function blobToBase64(blob) {
+  return new Promise(resolve => {
+    const reader = new FileReader()
+    reader.onload = e => resolve(e.target.result)
+    reader.readAsDataURL(blob)
+  })
 }
 
 async function guardarNuevo() {
   if (!form.value.placa.trim()) { showToast('La placa es requerida', 'warning', 2500); return }
-  if (form.value.adultos < 1)   { showToast('Se requiere al menos 1 adulto', 'warning', 2500); return }
-  if (!form.value.hora_ingreso) { showToast('La hora de ingreso es requerida', 'warning', 2500); return }
+  const items = itemsActivos.value
+  if (items.length === 0) { showToast('Selecciona al menos un servicio', 'warning', 2500); return }
+
+  let foto_url = vehiculoFotoUrl.value
+  if (nuevaFotoBlob.value) {
+    foto_url = await blobToBase64(nuevaFotoBlob.value)
+  }
+
   guardando.value = true
   try {
     const res = await api.post('/api/parking/orders', {
-      company_id: companyId.value, placa: form.value.placa.trim().toUpperCase(),
-      vehicle_type_id: form.value.vehicle_type_id, adultos: form.value.adultos,
-      ninos: form.value.ninos, mascotas: form.value.mascotas,
-      hora_ingreso: form.value.hora_ingreso + ':00',
-      foto_url: form.value.foto_url, obs_portero: form.value.obs_portero || null,
+      company_id:        companyId.value,
+      placa:             form.value.placa.trim().toUpperCase(),
+      vehicle_type_name: form.value.vehicle_type_name || null,
+      foto_url,
+      items:             items.map(i => ({ product_id: i.product_id, nombre: i.nombre, cantidad: i.cantidad })),
+      obs_portero:       form.value.obs_portero || null,
     })
     showToast('Ingreso registrado', 'success', 2000)
     cerrarModalNuevo()
     await cargar()
-    ordenParaImprimir.value = res.data
+    ordenParaImprimir.value = { ...res.data, items }
   } catch (e) { showToast(e?.response?.data?.detail || 'Error al registrar ingreso', 'error', 3000) }
   guardando.value = false
 }
@@ -278,6 +373,8 @@ function fmtHora(dt) {
 
 <style scoped>
 .pk-page { padding: 16px; max-width: 1200px; margin: 0 auto; }
+
+/* KPI Bar */
 .pk-kpi-bar { display: flex; align-items: stretch; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .pk-btn-nuevo { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: #0d6efd; color: #fff; border: none; border-radius: 10px; font-size: .9rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .pk-btn-nuevo:hover { background: #0b5ed7; }
@@ -288,13 +385,19 @@ function fmtHora(dt) {
 .pk-kpi-disponibles { background: #198754; }
 .pk-kpi-ocupadas    { background: #dc3545; }
 .pk-kpi-total       { background: #6c757d; }
+
+/* Filtros */
 .pk-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .pk-filtros-estado { display: flex; gap: 6px; flex-wrap: wrap; }
 .pk-flt { padding: 6px 14px; border-radius: 20px; border: 1px solid #dee2e6; background: #fff; font-size: .82rem; cursor: pointer; }
 .pk-flt.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+
+/* Grid vacío / loading */
 .pk-loading { text-align: center; padding: 40px; color: #6c757d; }
 .pk-empty   { text-align: center; padding: 60px 20px; color: #adb5bd; }
 .pk-empty i { font-size: 2.5rem; display: block; margin-bottom: 8px; }
+
+/* Cards */
 .pk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .pk-card { background: #fff; border-radius: 12px; padding: 14px; border: 2px solid #e9ecef; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .pk-card--ingresado  { border-color: #ffc107; }
@@ -307,49 +410,64 @@ function fmtHora(dt) {
 .pk-badge--registrado { background: #cfe2ff; color: #084298; }
 .pk-badge--pagado     { background: #d1e7dd; color: #0a3622; }
 .pk-badge--cancelado  { background: #f8d7da; color: #842029; }
-.pk-card-hora  { font-size: .75rem; color: #6c757d; }
-.pk-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; }
-.pk-card-tipo  { text-align: center; font-size: .78rem; color: #6c757d; }
-.pk-card-personas { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-.pk-persona-pill { display: inline-flex; align-items: center; gap: 4px; background: #f8f9fa; border: 1px solid #dee2e6; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; }
-.pk-nino    { background: #fff3cd; border-color: #ffc107; }
-.pk-mascota { background: #e2d9f3; border-color: #6f42c1; }
+.pk-card-hora   { font-size: .75rem; color: #6c757d; }
+.pk-card-placa  { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; }
+.pk-card-tipo   { text-align: center; font-size: .78rem; color: #6c757d; }
+.pk-card-servicios { display: flex; justify-content: center; }
+.pk-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; color: #084298; }
 .pk-card-obs  { font-size: .78rem; color: #6c757d; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; border-top: 1px solid #f1f3f5; padding-top: 6px; }
 .pk-card-orden { font-size: .72rem; color: #adb5bd; font-family: monospace; }
 .pk-btn-reimprimir { border: none; background: #f8f9fa; border-radius: 6px; padding: 4px 8px; cursor: pointer; color: #6c757d; font-size: .8rem; }
 .pk-btn-reimprimir:hover { background: #e9ecef; }
+
+/* Modal */
 .pk-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1050; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.pk-modal { background: #fff; border-radius: 14px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
-.pk-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e9ecef; font-weight: 700; font-size: .95rem; }
+.pk-modal { background: #fff; border-radius: 14px; width: 100%; max-width: 500px; max-height: 92vh; overflow-y: auto; display: flex; flex-direction: column; }
+.pk-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #e9ecef; font-weight: 700; font-size: .95rem; position: sticky; top: 0; background: #fff; z-index: 1; }
 .pk-modal-close { border: none; background: #f1f3f5; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
 .pk-modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
-.pk-modal-footer { padding: 14px 18px; border-top: 1px solid #e9ecef; display: flex; gap: 10px; justify-content: flex-end; }
+.pk-modal-footer { padding: 14px 18px; border-top: 1px solid #e9ecef; display: flex; gap: 10px; justify-content: flex-end; position: sticky; bottom: 0; background: #fff; }
+
+/* Campos */
 .pk-field { display: flex; flex-direction: column; gap: 5px; }
 .pk-field label { font-size: .82rem; font-weight: 600; color: #495057; }
 .req { color: #dc3545; }
 .pk-input { border: 1px solid #ced4da; border-radius: 8px; padding: 9px 12px; font-size: .9rem; outline: none; width: 100%; }
 .pk-input:focus { border-color: #0d6efd; }
-.pk-placa-input { font-size: 1.4rem; font-weight: 900; letter-spacing: 3px; text-align: center; text-transform: uppercase; }
-.pk-personas-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.pk-field--num { align-items: center; text-align: center; }
-.pk-counter { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 2px; }
-.pk-counter button { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #ced4da; background: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.pk-counter button:hover { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-.pk-counter span { font-size: 1.2rem; font-weight: 700; min-width: 28px; text-align: center; }
-.pk-foto-area { display: flex; flex-direction: column; gap: 8px; }
-.pk-foto-preview { width: 100%; max-height: 160px; object-fit: cover; border-radius: 8px; }
-.pk-foto-placeholder { height: 80px; border: 2px dashed #ced4da; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #adb5bd; font-size: .9rem; }
-.pk-foto-placeholder i { font-size: 1.5rem; }
-.pk-foto-btns { display: flex; gap: 8px; }
-.pk-btn-foto { flex: 1; padding: 8px 12px; border: 1px solid #0d6efd; border-radius: 8px; background: #fff; color: #0d6efd; font-size: .85rem; cursor: pointer; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px; }
-.pk-btn-foto-rm { padding: 8px 12px; border: 1px solid #dc3545; border-radius: 8px; background: #fff; color: #dc3545; cursor: pointer; }
+
+/* Placa */
+.pk-placa-wrap { position: relative; }
+.pk-placa-input { font-size: 1.4rem; font-weight: 900; letter-spacing: 3px; text-align: center; text-transform: uppercase; padding-right: 36px; }
+.pk-placa-spin { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #6c757d; font-size: 1rem; }
+.pk-placa-ok   { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #198754; font-size: 1rem; }
+.pk-hint-ok { font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 4px; }
+
+/* Selector de servicios */
+.pk-svc-loading { text-align: center; padding: 12px; color: #6c757d; font-size: .85rem; }
+.pk-svc-empty   { text-align: center; padding: 12px; color: #6c757d; font-size: .85rem; background: #fff3cd; border-radius: 8px; }
+.pk-svc-list  { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px; padding: 8px; }
+.pk-svc-item  { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 8px; border: 1px solid #e9ecef; transition: all .15s; }
+.pk-svc-item--sel { background: #e7f1ff; border-color: #c2d8ff; }
+.pk-svc-toggle { flex: 1; display: flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; font-size: .88rem; color: #212529; text-align: left; padding: 0; }
+.pk-svc-toggle i { font-size: 1rem; color: #6c757d; flex-shrink: 0; }
+.pk-svc-item--sel .pk-svc-toggle i { color: #0d6efd; }
+.pk-svc-counter { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pk-counter { display: flex; align-items: center; gap: 6px; }
+.pk-svc-counter button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #ced4da; background: #fff; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.pk-svc-counter button:hover { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+.pk-svc-counter span { font-size: 1rem; font-weight: 700; min-width: 22px; text-align: center; color: #212529; }
+.pk-svc-resumen { font-size: .78rem; color: #0d6efd; font-weight: 600; }
+
+/* Acciones */
 .pk-btn-cancel  { padding: 9px 18px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; color: #495057; font-size: .9rem; cursor: pointer; }
 .pk-btn-guardar { padding: 9px 20px; border: none; border-radius: 8px; background: #0d6efd; color: #fff; font-size: .9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .pk-btn-guardar:hover:not(:disabled) { background: #0b5ed7; }
 .pk-btn-guardar:disabled { opacity: .6; cursor: default; }
+
 .spin { animation: pk-spin .8s linear infinite; }
 @keyframes pk-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 @media (max-width: 768px) {
   .pk-kpi-bar { gap: 8px; }
   .pk-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }

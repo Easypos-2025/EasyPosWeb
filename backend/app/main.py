@@ -858,6 +858,15 @@ async def _init_db_data():
 
         # ── TABLAS MÓDULO PARKING SERVICE (genérico multitenant) ─────────────
         _parking_tables = [
+            """CREATE TABLE IF NOT EXISTS vehicles (
+                id                INT AUTO_INCREMENT PRIMARY KEY,
+                placa             VARCHAR(20) NOT NULL,
+                vehicle_type_name VARCHAR(80) NULL,
+                foto_url          TEXT NULL,
+                created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_vehicles_placa (placa)
+            )""",
             """CREATE TABLE IF NOT EXISTS parking_orders (
                 id              INT AUTO_INCREMENT PRIMARY KEY,
                 company_id      INT NOT NULL,
