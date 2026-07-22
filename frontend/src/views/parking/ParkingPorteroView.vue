@@ -107,8 +107,10 @@
           <!-- TIPO DE VEHÍCULO -->
           <div class="pk-field">
             <label>Tipo de Vehículo</label>
-            <input v-model="form.vehicle_type_name" class="pk-input"
-              placeholder="Ej: Automóvil, Moto, Camioneta…" />
+            <select v-model="form.vehicle_type_id" class="pk-input">
+              <option :value="null">— Seleccionar —</option>
+              <option v-for="t in vehicleTypes" :key="t.id" :value="t.id">{{ t.nombre }}</option>
+            </select>
           </div>
 
           <!-- FOTO DEL VEHÍCULO -->
@@ -212,6 +214,7 @@ const LABELS_ESTADO = {
 const ordenes            = ref([])
 const stats              = ref({ disponibles: 0, ocupadas: 0, total_plazas: 0, pct_ocupacion: 0 })
 const productos          = ref([])
+const vehicleTypes       = ref([])
 const loading            = ref(false)
 const loadingProductos   = ref(false)
 const fechaFiltro        = ref(new Date().toISOString().slice(0, 10))
@@ -224,7 +227,7 @@ const vehiculoEncontrado = ref(false)
 const vehiculoFotoUrl    = ref(null)
 const nuevaFotoBlob      = ref(null)
 
-const form             = ref({ placa: '', vehicle_type_name: '', obs_portero: '' })
+const form             = ref({ placa: '', vehicle_type_id: null, obs_portero: '' })
 const itemsSeleccionados = ref({}) // { [product_id]: { product_id, nombre, cantidad, checked } }
 
 const itemsActivos = computed(() =>
@@ -287,10 +290,18 @@ async function cargarProductos() {
   loadingProductos.value = false
 }
 
-onMounted(() => { cargar(); cargarProductos() })
+async function cargarVehicleTypes() {
+  if (!companyId.value) return
+  try {
+    const res = await api.get('/api/parking/vehicle-types', { params: { company_id: companyId.value } })
+    vehicleTypes.value = res.data
+  } catch {}
+}
+
+onMounted(() => { cargar(); cargarProductos(); cargarVehicleTypes() })
 
 function abrirModalNuevo() {
-  form.value               = { placa: '', vehicle_type_name: '', obs_portero: '' }
+  form.value               = { placa: '', vehicle_type_id: null, obs_portero: '' }
   vehiculoFotoUrl.value    = null
   nuevaFotoBlob.value      = null
   vehiculoEncontrado.value = false
@@ -317,8 +328,11 @@ async function buscarVehiculo(placa) {
     if (res.data?.placa) {
       vehiculoEncontrado.value = true
       vehiculoFotoUrl.value    = res.data.foto_url || null
-      if (res.data.vehicle_type_name && !form.value.vehicle_type_name) {
-        form.value.vehicle_type_name = res.data.vehicle_type_name
+      if (res.data.vehicle_type_name && form.value.vehicle_type_id === null) {
+        const match = vehicleTypes.value.find(t =>
+          t.nombre.toLowerCase() === res.data.vehicle_type_name.toLowerCase()
+        )
+        if (match) form.value.vehicle_type_id = match.id
       }
     }
   } catch {}
@@ -349,10 +363,11 @@ async function guardarNuevo() {
 
   guardando.value = true
   try {
+    const tipoNombre = vehicleTypes.value.find(t => t.id === form.value.vehicle_type_id)?.nombre || null
     const res = await api.post('/api/parking/orders', {
       company_id:        companyId.value,
       placa:             form.value.placa.trim().toUpperCase(),
-      vehicle_type_name: form.value.vehicle_type_name || null,
+      vehicle_type_name: tipoNombre,
       foto_url,
       items:             items.map(i => ({ product_id: i.product_id, nombre: i.nombre, cantidad: i.cantidad })),
       obs_portero:       form.value.obs_portero || null,
@@ -433,7 +448,7 @@ function fmtHora(dt) {
 .pk-field { display: flex; flex-direction: column; gap: 5px; }
 .pk-field label { font-size: .82rem; font-weight: 600; color: #495057; }
 .req { color: #dc3545; }
-.pk-input { border: 1px solid #ced4da; border-radius: 8px; padding: 9px 12px; font-size: .9rem; outline: none; width: 100%; }
+.pk-input { border: 1px solid #ced4da; border-radius: 8px; padding: 9px 12px; font-size: .9rem; outline: none; width: 100%; color: #212529; background: #fff; }
 .pk-input:focus { border-color: #0d6efd; }
 
 /* Placa */
