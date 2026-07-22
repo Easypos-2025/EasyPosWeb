@@ -19,25 +19,40 @@
     <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
     <div class="pkm-filtro-bar">
       <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
+      <div class="pkm-tabs">
+        <button :class="['pkm-tab', { active: filtroEstado === 'ingresado' }]"
+          @click="filtroEstado = 'ingresado'">
+          Sin confirmar
+          <span v-if="cntIngresado > 0" class="pkm-tab-badge">{{ cntIngresado }}</span>
+        </button>
+        <button :class="['pkm-tab', { active: filtroEstado === 'registrado' }]"
+          @click="filtroEstado = 'registrado'">
+          Confirmados
+          <span v-if="cntRegistrado > 0" class="pkm-tab-badge pkm-tab-badge--ok">{{ cntRegistrado }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
     <div v-if="loading" class="pkm-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
     </div>
-    <div v-else-if="ordenes.length === 0" class="pkm-empty">
+    <div v-else-if="ordenesFiltradas.length === 0" class="pkm-empty">
       <i class="bi bi-check2-circle"></i>
-      <p>No hay vehículos pendientes de confirmación</p>
+      <p v-if="filtroEstado === 'ingresado'">No hay vehículos pendientes de confirmación</p>
+      <p v-else>No hay ingresos confirmados aún</p>
       <small>Las tarjetas aparecen aquí cuando el portero registra un ingreso</small>
     </div>
     <div v-else class="pkm-grid">
       <div
-        v-for="o in ordenes" :key="o.id"
-        class="pkm-card"
-        @click="abrirConfirmar(o)"
+        v-for="o in ordenesFiltradas" :key="o.id"
+        :class="['pkm-card', { 'pkm-card--confirmado': o.estado === 'registrado' }]"
+        @click="o.estado === 'ingresado' && abrirConfirmar(o)"
       >
         <div class="pkm-card-top">
-          <span class="pkm-badge-nuevo">Pendiente confirmación</span>
+          <span :class="['pkm-badge-nuevo', o.estado === 'registrado' && 'pkm-badge-confirmado']">
+            {{ o.estado === 'registrado' ? 'Confirmado' : 'Pendiente confirmación' }}
+          </span>
           <span class="pkm-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
         </div>
         <div class="pkm-card-placa">{{ o.placa }}</div>
@@ -53,7 +68,8 @@
         </div>
         <div class="pkm-card-footer">
           <span class="pkm-card-orden">{{ o.numero_orden }}</span>
-          <span class="pkm-tap-hint"><i class="bi bi-hand-index"></i> Toca para confirmar</span>
+          <span v-if="o.estado === 'ingresado'" class="pkm-tap-hint"><i class="bi bi-hand-index"></i> Toca para confirmar</span>
+          <span v-else class="pkm-confirmado-por"><i class="bi bi-check2-all"></i> {{ o.mesero_nombre || 'Confirmado' }}</span>
         </div>
       </div>
     </div>
@@ -135,20 +151,24 @@ const ordenes           = ref([])
 const loading           = ref(false)
 const loadingItems      = ref(false)
 const fechaFiltro       = ref(new Date().toISOString().slice(0, 10))
+const filtroEstado      = ref('ingresado')
 const showModal         = ref(false)
 const confirmando       = ref(false)
 const ordenSeleccionada = ref(null)
 const itemsOrden        = ref([])
 
-const formMesero    = ref({ obs_mesero: '' })
-const totalItems    = computed(() => itemsOrden.value.reduce((s, i) => s + (i.cantidad || 1), 0))
+const formMesero     = ref({ obs_mesero: '' })
+const totalItems     = computed(() => itemsOrden.value.reduce((s, i) => s + (i.cantidad || 1), 0))
+const ordenesFiltradas = computed(() => ordenes.value.filter(o => o.estado === filtroEstado.value))
+const cntIngresado   = computed(() => ordenes.value.filter(o => o.estado === 'ingresado').length)
+const cntRegistrado  = computed(() => ordenes.value.filter(o => o.estado === 'registrado').length)
 
 async function cargar() {
   if (!companyId.value) return
   loading.value = true
   try {
     const res = await api.get('/api/parking/orders', {
-      params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado' },
+      params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado,registrado' },
     })
     ordenes.value = res.data
   } catch { showToast('Error al cargar órdenes', 'error', 3000) }
@@ -179,7 +199,9 @@ async function confirmar() {
     })
     showToast('Confirmado y enviado a caja', 'success', 2500)
     showModal.value = false
-    ordenes.value   = ordenes.value.filter(o => o.id !== ordenSeleccionada.value.id)
+    // Actualiza estado localmente (no lo elimina, lo mueve a "Confirmados")
+    const idx = ordenes.value.findIndex(o => o.id === ordenSeleccionada.value.id)
+    if (idx !== -1) ordenes.value[idx] = { ...ordenes.value[idx], estado: 'registrado' }
   } catch (e) { showToast(e?.response?.data?.detail || 'Error al confirmar', 'error', 3000) }
   confirmando.value = false
 }
@@ -206,7 +228,13 @@ function fmtHora(dt) {
 .pkm-count     { font-size: 1.8rem; font-weight: 900; color: #212529; line-height: 1; }
 .pkm-count-lbl { font-size: .7rem; font-weight: 600; color: #495057; }
 
-.pkm-filtro-bar { margin-bottom: 14px; }
+.pkm-filtro-bar { margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.pkm-tabs { display: flex; gap: 6px; }
+.pkm-tab { padding: 6px 14px; border-radius: 20px; border: 1px solid #dee2e6; background: #fff; font-size: .82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.pkm-tab.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+.pkm-tab-badge { background: #dc3545; color: #fff; border-radius: 10px; font-size: .7rem; font-weight: 700; padding: 1px 6px; min-width: 18px; text-align: center; }
+.pkm-tab.active .pkm-tab-badge { background: rgba(255,255,255,.3); }
+.pkm-tab-badge--ok { background: #198754; }
 
 .pkm-loading { text-align: center; padding: 40px; color: #6c757d; }
 .pkm-empty   { text-align: center; padding: 60px 20px; color: #adb5bd; }
@@ -222,8 +250,12 @@ function fmtHora(dt) {
 .pkm-card:hover { border-color: #fd7e14; transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.1); }
 .pkm-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pkm-badge-nuevo { font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; background: #fff3cd; color: #856404; text-transform: uppercase; }
+.pkm-badge-confirmado { background: #d1e7dd !important; color: #0a3622 !important; }
+.pkm-card--confirmado { border-color: #198754; cursor: default; }
+.pkm-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; color: #212529; background: #fff; }
+.pkm-confirmado-por { font-size: .72rem; color: #198754; display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .pkm-card-hora { font-size: .75rem; color: #6c757d; }
-.pkm-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; }
+
 .pkm-card-tipo  { text-align: center; font-size: .78rem; color: #6c757d; }
 .pkm-card-servicios { display: flex; justify-content: center; }
 .pkm-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; color: #084298; }

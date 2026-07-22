@@ -78,13 +78,23 @@ async def get_stats(
 ):
     fecha_sql = fecha or datetime.now().strftime("%Y-%m-%d")
 
-    r_ocup = await db.execute(text("""
-        SELECT COUNT(*) FROM parking_orders
-        WHERE company_id = :cid
-          AND estado IN ('ingresado', 'registrado')
-          AND DATE(hora_ingreso) = :fecha
+    # Conteo por estado para el día
+    r_cnt = await db.execute(text("""
+        SELECT estado, COUNT(*) AS cnt
+        FROM parking_orders
+        WHERE company_id = :cid AND DATE(hora_ingreso) = :fecha
+        GROUP BY estado
     """), {"cid": company_id, "fecha": fecha_sql})
-    ocupadas = r_ocup.scalar() or 0
+    conteos = {row["estado"]: row["cnt"] for row in r_cnt.mappings()}
+
+    cnt_ingresado  = conteos.get("ingresado",  0)
+    cnt_registrado = conteos.get("registrado", 0)
+    cnt_pagado     = conteos.get("pagado",     0)
+    cnt_salido     = conteos.get("salido",     0)
+    cnt_cancelado  = conteos.get("cancelado",  0)
+
+    # Ocupadas = vehículos con presencia física (todos excepto salido y cancelado)
+    ocupadas = cnt_ingresado + cnt_registrado + cnt_pagado
 
     r_cfg = await db.execute(text(
         "SELECT total_plazas FROM parking_config WHERE company_id = :cid"
@@ -95,11 +105,28 @@ async def get_stats(
     disponibles = max(0, total_plazas - ocupadas)
     pct = round((ocupadas / total_plazas * 100) if total_plazas > 0 else 0, 1)
 
+    # Recaudo del día (suma de subtotales de ítems de órdenes pagadas)
+    r_rec = await db.execute(text("""
+        SELECT COALESCE(SUM(poi.subtotal), 0) AS recaudo
+        FROM parking_order_items poi
+        JOIN parking_orders po ON po.id = poi.parking_order_id
+        WHERE po.company_id = :cid
+          AND po.estado IN ('pagado', 'salido')
+          AND DATE(po.hora_ingreso) = :fecha
+    """), {"cid": company_id, "fecha": fecha_sql})
+    recaudo = float(r_rec.scalar() or 0)
+
     return {
-        "total_plazas":  total_plazas,
-        "ocupadas":      ocupadas,
-        "disponibles":   disponibles,
-        "pct_ocupacion": pct,
+        "total_plazas":   total_plazas,
+        "ocupadas":       ocupadas,
+        "disponibles":    disponibles,
+        "pct_ocupacion":  pct,
+        "cnt_ingresado":  cnt_ingresado,
+        "cnt_registrado": cnt_registrado,
+        "cnt_pagado":     cnt_pagado,
+        "cnt_salido":     cnt_salido,
+        "cnt_cancelado":  cnt_cancelado,
+        "recaudo_hoy":    recaudo,
     }
 
 
@@ -347,6 +374,33 @@ async def pagar_orden(
     """), {"uid": current_user.id, "id": order_id})
     await db.commit()
     return {"ok": True, "estado": "pagado"}
+
+
+# ── Marcar salida física (portero confirma que el vehículo salió) ────────────
+
+@router.put("/orders/{order_id}/salida")
+async def marcar_salida(
+    order_id: int,
+    db: AsyncSession      = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    row = await db.execute(text(
+        "SELECT id, estado FROM parking_orders WHERE id = :id"
+    ), {"id": order_id})
+    orden = row.mappings().first()
+    if not orden:
+        raise HTTPException(404, detail="Orden no encontrada")
+    if orden["estado"] != "pagado":
+        raise HTTPException(400, detail=f"Solo se puede marcar salida de órdenes pagadas. Estado actual: '{orden['estado']}'")
+
+    await db.execute(text("""
+        UPDATE parking_orders
+        SET estado     = 'salido',
+            updated_at = NOW()
+        WHERE id = :id
+    """), {"id": order_id})
+    await db.commit()
+    return {"ok": True, "estado": "salido"}
 
 
 # ── Ítems de una orden (detalle del cobro) ────────────────────────────────────

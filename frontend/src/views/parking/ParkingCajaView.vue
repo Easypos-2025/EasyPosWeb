@@ -1,27 +1,30 @@
 <template>
   <div class="pkc-page">
 
-    <!-- ══ KPI BAR ══════════════════════════════════════════════════════════ -->
+    <!-- ══ KPI BAR — clickables como filtros ════════════════════════════════ -->
     <div class="pkc-kpi-bar">
-      <div class="pkc-kpi-card pkc-kpi-pendiente">
+      <div :class="['pkc-kpi-card pkc-kpi-sinconfirmar', { 'pkc-kpi-active': filtroEstado === 'ingresado' }]"
+        @click="filtroEstado = 'ingresado'; cargar()">
         <i class="bi bi-hourglass-split"></i>
         <div>
-          <span class="pkc-kpi-val">{{ ordenesPendientes.length }}</span>
+          <span class="pkc-kpi-val">{{ stats.cnt_ingresado || 0 }}</span>
+          <span class="pkc-kpi-lbl">Por confirmar</span>
+        </div>
+      </div>
+      <div :class="['pkc-kpi-card pkc-kpi-pendiente', { 'pkc-kpi-active': filtroEstado === 'registrado' }]"
+        @click="filtroEstado = 'registrado'; cargar()">
+        <i class="bi bi-cash-coin"></i>
+        <div>
+          <span class="pkc-kpi-val">{{ stats.cnt_registrado || 0 }}</span>
           <span class="pkc-kpi-lbl">Pendientes cobro</span>
         </div>
       </div>
-      <div class="pkc-kpi-card pkc-kpi-personas">
-        <i class="bi bi-people-fill"></i>
-        <div>
-          <span class="pkc-kpi-val">{{ totalPersonas }}</span>
-          <span class="pkc-kpi-lbl">Personas activas</span>
-        </div>
-      </div>
-      <div class="pkc-kpi-card pkc-kpi-pagadas">
+      <div :class="['pkc-kpi-card pkc-kpi-pagadas', { 'pkc-kpi-active': filtroEstado === 'pagado' }]"
+        @click="filtroEstado = 'pagado'; cargar()">
         <i class="bi bi-check-circle-fill"></i>
         <div>
-          <span class="pkc-kpi-val">{{ pagadasHoy }}</span>
-          <span class="pkc-kpi-lbl">Pagadas hoy</span>
+          <span class="pkc-kpi-val">{{ stats.cnt_pagado || 0 }}</span>
+          <span class="pkc-kpi-lbl">Pagadas · {{ fmtMini(stats.recaudo_hoy) }}</span>
         </div>
       </div>
     </div>
@@ -29,14 +32,10 @@
     <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
     <div class="pkc-filtro-bar">
       <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
-      <div class="pkc-filtro-tabs">
-        <button :class="['pkc-tab', { active: soloRegistradas }]" @click="soloRegistradas = true; cargar()">
-          Pendientes cobro
-        </button>
-        <button :class="['pkc-tab', { active: !soloRegistradas }]" @click="soloRegistradas = false; cargar()">
-          Todas
-        </button>
-      </div>
+      <span class="pkc-filtro-hint">
+        <i class="bi bi-info-circle"></i>
+        Toca un indicador para filtrar
+      </span>
     </div>
 
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
@@ -210,14 +209,14 @@
     v-if="ordenParaSalida"
     :orden="ordenParaSalida"
     :company-name="companyStore.selectedCompany?.name || ''"
-    :company-id="companyStore.selectedCompany?.id_company"
+    :company-id="companyStore.selectedCompany?.id"
     tipo="salida"
     @close="ordenParaSalida = null"
   />
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -225,7 +224,7 @@ import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
 
 const companyStore = useCompanyStore()
-const companyId    = computed(() => companyStore.selectedCompany?.id_company)
+const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const LABELS_ESTADO = {
   ingresado:  'Ingresado',
@@ -235,10 +234,11 @@ const LABELS_ESTADO = {
 }
 
 // ── Estado principal ──────────────────────────────────────────────────────────
-const ordenes         = ref([])
-const loading         = ref(false)
-const fechaFiltro     = ref(new Date().toISOString().slice(0, 10))
-const soloRegistradas = ref(true)
+const ordenes       = ref([])
+const stats         = ref({ cnt_ingresado: 0, cnt_registrado: 0, cnt_pagado: 0, recaudo_hoy: 0 })
+const loading       = ref(false)
+const fechaFiltro   = ref(new Date().toISOString().slice(0, 10))
+const filtroEstado  = ref('registrado')
 const ordenParaSalida = ref(null)
 
 // ── Modal cobro ───────────────────────────────────────────────────────────────
@@ -248,17 +248,6 @@ const productos        = ref([])
 const loadingProductos = ref(false)
 const seleccion        = ref({})  // { [product_id]: { activo, cantidad } }
 const pagando          = ref(false)
-
-// ── KPIs ──────────────────────────────────────────────────────────────────────
-const ordenesPendientes = computed(() => ordenes.value.filter(o => o.estado === 'registrado'))
-
-const totalPersonas = computed(() =>
-  ordenes.value
-    .filter(o => o.estado === 'registrado')
-    .reduce((s, o) => s + o.adultos + o.ninos + o.mascotas, 0)
-)
-
-const pagadasHoy = computed(() => ordenes.value.filter(o => o.estado === 'pagado').length)
 
 // ── Líneas y totales del modal ────────────────────────────────────────────────
 const lineasSeleccionadas = computed(() => {
@@ -285,16 +274,21 @@ const totalBruto    = computed(() => lineasSeleccionadas.value.reduce((s, l) => 
 const totalImpuesto = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.impuesto, 0))
 const totalFinal    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal, 0))
 
-// ── Carga órdenes ─────────────────────────────────────────────────────────────
+// ── Carga órdenes + stats ─────────────────────────────────────────────────────
 async function cargar() {
   if (!companyId.value) return
   loading.value = true
   try {
-    const estado = soloRegistradas.value ? 'registrado' : 'registrado,pagado'
-    const res = await api.get('/api/parking/orders', {
-      params: { company_id: companyId.value, fecha: fechaFiltro.value, estado },
-    })
-    ordenes.value = res.data
+    const [r1, r2] = await Promise.all([
+      api.get('/api/parking/orders', {
+        params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value },
+      }),
+      api.get('/api/parking/stats', {
+        params: { company_id: companyId.value, fecha: fechaFiltro.value },
+      }),
+    ])
+    ordenes.value = r1.data
+    stats.value   = r2.data
   } catch {
     showToast('Error al cargar órdenes', 'error', 3000)
   }
@@ -352,7 +346,9 @@ async function confirmarCobro() {
     const actualizada = { ...ordenCobro.value, estado: 'pagado', hora_salida: new Date().toISOString() }
     const idx = ordenes.value.findIndex(o => o.id === ordenCobro.value.id)
     if (idx !== -1) ordenes.value[idx] = actualizada
-    if (soloRegistradas.value) ordenes.value = ordenes.value.filter(o => o.id !== ordenCobro.value.id)
+    if (filtroEstado.value === 'registrado') ordenes.value = ordenes.value.filter(o => o.id !== ordenCobro.value.id)
+    const r2 = await api.get('/api/parking/stats', { params: { company_id: companyId.value, fecha: fechaFiltro.value } })
+    stats.value = r2.data
 
     showCobro.value  = false
     ordenParaSalida.value = actualizada
@@ -372,7 +368,14 @@ function fmt(val) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val || 0)
 }
 
-onMounted(cargar)
+function fmtMini(val) {
+  if (!val) return ''
+  if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`
+  if (val >= 1000)    return `$${(val / 1000).toFixed(0)}K`
+  return fmt(val)
+}
+
+watch(companyId, (v) => { if (v) cargar() }, { immediate: true })
 </script>
 
 <style scoped>
@@ -387,13 +390,15 @@ onMounted(cargar)
 .pkc-kpi-card i { font-size: 1.5rem; opacity: .85; }
 .pkc-kpi-val    { display: block; font-size: 1.6rem; line-height: 1; }
 .pkc-kpi-lbl    { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
-.pkc-kpi-pendiente { background: #fd7e14; }
-.pkc-kpi-personas  { background: #0d6efd; }
-.pkc-kpi-pagadas   { background: #198754; }
+.pkc-kpi-sinconfirmar { background: #6c757d; cursor: pointer; transition: filter .15s; }
+.pkc-kpi-pendiente    { background: #fd7e14; cursor: pointer; transition: filter .15s; }
+.pkc-kpi-pagadas      { background: #198754; cursor: pointer; transition: filter .15s; }
+.pkc-kpi-card:hover   { filter: brightness(1.1); }
+.pkc-kpi-active       { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px rgba(0,0,0,.25); }
 
 /* ── Filtro ── */
 .pkc-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-.pkc-filtro-tabs { display: flex; gap: 6px; }
+.pkc-filtro-hint { font-size: .78rem; color: #6c757d; display: flex; align-items: center; gap: 4px; }
 .pkc-tab {
   padding: 6px 16px; border-radius: 20px; border: 1px solid #dee2e6;
   background: #fff; font-size: .82rem; cursor: pointer; transition: all .15s;

@@ -38,6 +38,7 @@
           :class="['pk-flt', { active: filtroEstado === f.val }]"
           @click="filtroEstado = f.val; cargar()">
           {{ f.label }}
+          <span v-if="conteoFiltro(f.val) > 0" class="pk-flt-badge">{{ conteoFiltro(f.val) }}</span>
         </button>
       </div>
     </div>
@@ -69,10 +70,19 @@
         </div>
         <div class="pk-card-footer">
           <span class="pk-card-orden">{{ o.numero_orden }}</span>
-          <button v-if="o.estado === 'ingresado'" class="pk-btn-reimprimir" title="Reimprimir comprobante"
-            @click="ordenParaImprimir = o">
-            <i class="bi bi-printer"></i>
-          </button>
+          <div class="pk-card-acciones">
+            <button v-if="o.estado === 'ingresado'" class="pk-btn-reimprimir" title="Reimprimir comprobante"
+              @click="ordenParaImprimir = o">
+              <i class="bi bi-printer"></i>
+            </button>
+            <button v-if="o.estado === 'pagado'" class="pk-btn-salida" title="Confirmar salida"
+              :disabled="marcandoSalida === o.id"
+              @click="confirmarSalida(o)">
+              <i v-if="marcandoSalida === o.id" class="bi bi-arrow-repeat spin"></i>
+              <i v-else class="bi bi-door-open-fill"></i>
+              Salida
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -202,13 +212,17 @@ const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const FILTROS = [
-  { val: 'activos',    label: 'Activos' },
-  { val: 'ingresado',  label: 'Ingresados' },
+  { val: 'ingresado',  label: 'Ingresados'  },
   { val: 'registrado', label: 'Confirmados' },
-  { val: 'todos',      label: 'Todos' },
+  { val: 'pagado',     label: 'Para salir'  },
+  { val: 'cancelado',  label: 'Cancelados'  },
 ]
 const LABELS_ESTADO = {
-  ingresado: 'Ingresado', registrado: 'Confirmado', pagado: 'Pagado', cancelado: 'Cancelado',
+  ingresado:  'Ingresado',
+  registrado: 'Confirmado',
+  pagado:     'Para salir',
+  cancelado:  'Cancelado',
+  salido:     'Salido',
 }
 
 const ordenes            = ref([])
@@ -217,8 +231,9 @@ const productos          = ref([])
 const vehicleTypes       = ref([])
 const loading            = ref(false)
 const loadingProductos   = ref(false)
+const marcandoSalida     = ref(null)
 const fechaFiltro        = ref(new Date().toISOString().slice(0, 10))
-const filtroEstado       = ref('activos')
+const filtroEstado       = ref('ingresado')
 const showModalNuevo     = ref(false)
 const guardando          = ref(false)
 const ordenParaImprimir  = ref(null)
@@ -264,20 +279,35 @@ function cambiarCantidad(prod, delta) {
   }
 }
 
+function conteoFiltro(val) {
+  const m = { ingresado: 'cnt_ingresado', registrado: 'cnt_registrado', pagado: 'cnt_pagado', cancelado: 'cnt_cancelado' }
+  return stats.value[m[val]] || 0
+}
+
 async function cargar() {
   if (!companyId.value) return
   loading.value = true
   try {
-    const estadoParam = filtroEstado.value === 'activos' ? 'ingresado,registrado'
-      : filtroEstado.value === 'todos' ? undefined : filtroEstado.value
     const [r1, r2] = await Promise.all([
-      api.get('/api/parking/orders', { params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: estadoParam } }),
+      api.get('/api/parking/orders', { params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value } }),
       api.get('/api/parking/stats',  { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
     ])
     ordenes.value = r1.data
     stats.value   = r2.data
   } catch { showToast('Error al cargar ingresos', 'error', 3000) }
   loading.value = false
+}
+
+async function confirmarSalida(orden) {
+  marcandoSalida.value = orden.id
+  try {
+    await api.put(`/api/parking/orders/${orden.id}/salida`)
+    showToast('Salida registrada', 'success', 2000)
+    ordenes.value = ordenes.value.filter(o => o.id !== orden.id)
+    const r2 = await api.get('/api/parking/stats', { params: { company_id: companyId.value, fecha: fechaFiltro.value } })
+    stats.value = r2.data
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error al registrar salida', 'error', 3000) }
+  marcandoSalida.value = null
 }
 
 async function cargarProductos() {
@@ -404,8 +434,10 @@ function fmtHora(dt) {
 /* Filtros */
 .pk-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .pk-filtros-estado { display: flex; gap: 6px; flex-wrap: wrap; }
-.pk-flt { padding: 6px 14px; border-radius: 20px; border: 1px solid #dee2e6; background: #fff; font-size: .82rem; cursor: pointer; }
+.pk-flt { padding: 6px 14px; border-radius: 20px; border: 1px solid #dee2e6; background: #fff; font-size: .82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
 .pk-flt.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+.pk-flt-badge { background: #dc3545; color: #fff; border-radius: 10px; font-size: .7rem; font-weight: 700; padding: 1px 6px; min-width: 18px; text-align: center; }
+.pk-flt.active .pk-flt-badge { background: rgba(255,255,255,.3); }
 
 /* Grid vacío / loading */
 .pk-loading { text-align: center; padding: 40px; color: #6c757d; }
@@ -426,15 +458,20 @@ function fmtHora(dt) {
 .pk-badge--pagado     { background: #d1e7dd; color: #0a3622; }
 .pk-badge--cancelado  { background: #f8d7da; color: #842029; }
 .pk-card-hora   { font-size: .75rem; color: #6c757d; }
-.pk-card-placa  { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; }
+.pk-card-placa  { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; color: #212529; background: #fff; }
 .pk-card-tipo   { text-align: center; font-size: .78rem; color: #6c757d; }
 .pk-card-servicios { display: flex; justify-content: center; }
 .pk-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; color: #084298; }
 .pk-card-obs  { font-size: .78rem; color: #6c757d; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; border-top: 1px solid #f1f3f5; padding-top: 6px; }
 .pk-card-orden { font-size: .72rem; color: #adb5bd; font-family: monospace; }
+.pk-card-acciones { display: flex; gap: 6px; }
 .pk-btn-reimprimir { border: none; background: #f8f9fa; border-radius: 6px; padding: 4px 8px; cursor: pointer; color: #6c757d; font-size: .8rem; }
 .pk-btn-reimprimir:hover { background: #e9ecef; }
+.pk-btn-salida { border: none; background: #198754; color: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: .8rem; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.pk-btn-salida:hover:not(:disabled) { background: #157347; }
+.pk-btn-salida:disabled { opacity: .6; cursor: default; }
+.pk-card--pagado { border-color: #198754; }
 
 /* Modal */
 .pk-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1050; display: flex; align-items: center; justify-content: center; padding: 16px; }
