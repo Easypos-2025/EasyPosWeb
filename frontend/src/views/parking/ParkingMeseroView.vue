@@ -60,10 +60,14 @@
         </div>
         <div class="pkm-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pkm-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pkm-card-servicios">
-          <span class="pkm-svc-pill">
-            <i class="bi bi-list-check"></i>
-            {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
+        <div class="pkm-card-items">
+          <template v-if="o.items && o.items.length">
+            <span v-for="it in o.items" :key="it.nombre" class="pkm-svc-pill">
+              {{ it.nombre }} <strong>×{{ it.cantidad }}</strong>
+            </span>
+          </template>
+          <span v-else class="pkm-svc-pill">
+            <i class="bi bi-list-check"></i> {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
           </span>
         </div>
         <div v-if="o.obs_portero" class="pkm-card-obs">
@@ -316,8 +320,9 @@ function fmtHora(dt) {
 .pkm-card-hora { font-size: .75rem; color: #6c757d; }
 
 .pkm-card-tipo  { text-align: center; font-size: .78rem; color: #6c757d; }
-.pkm-card-servicios { display: flex; justify-content: center; }
-.pkm-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; color: #084298; }
+.pkm-card-items { display: flex; flex-wrap: wrap; gap: 4px; }
+.pkm-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .78rem; font-weight: 500; color: #084298; }
+.pkm-svc-pill strong { font-weight: 700; }
 .pkm-card-obs { font-size: .78rem; color: #6c757d; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pkm-card-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #f1f3f5; padding-top: 6px; margin-top: 2px; }
 .pkm-card-orden { font-size: .72rem; color: #adb5bd; font-family: monospace; }

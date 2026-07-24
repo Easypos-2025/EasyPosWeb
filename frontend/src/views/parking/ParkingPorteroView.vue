@@ -62,10 +62,14 @@
         </div>
         <div class="pk-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pk-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pk-card-servicios">
-          <span class="pk-svc-pill">
-            <i class="bi bi-list-check"></i>
-            {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
+        <div class="pk-card-items">
+          <template v-if="o.items && o.items.length">
+            <span v-for="it in o.items" :key="it.nombre" class="pk-svc-pill">
+              {{ it.nombre }} <strong>×{{ it.cantidad }}</strong>
+            </span>
+          </template>
+          <span v-else class="pk-svc-pill">
+            <i class="bi bi-list-check"></i> {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
           </span>
         </div>
         <div v-if="o.obs_portero" class="pk-card-obs">
@@ -467,8 +471,9 @@ function fmtHora(dt) {
 .pk-card-hora   { font-size: .75rem; color: #6c757d; }
 .pk-card-placa  { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; color: #212529; background: #fff; }
 .pk-card-tipo   { text-align: center; font-size: .78rem; color: #6c757d; }
-.pk-card-servicios { display: flex; justify-content: center; }
-.pk-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .82rem; font-weight: 600; color: #084298; }
+.pk-card-items { display: flex; flex-wrap: wrap; gap: 4px; }
+.pk-svc-pill { display: inline-flex; align-items: center; gap: 4px; background: #e7f1ff; border: 1px solid #c2d8ff; padding: 3px 10px; border-radius: 20px; font-size: .78rem; font-weight: 500; color: #084298; }
+.pk-svc-pill strong { font-weight: 700; }
 .pk-card-obs  { font-size: .78rem; color: #6c757d; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; border-top: 1px solid #f1f3f5; padding-top: 6px; }
 .pk-card-orden { font-size: .72rem; color: #adb5bd; font-family: monospace; }

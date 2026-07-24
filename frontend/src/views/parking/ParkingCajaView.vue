@@ -60,9 +60,15 @@
         <div class="pkc-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pkc-card-tipo">{{ o.tipo_vehiculo }}</div>
 
-        <div class="pkc-svc-pill">
-          <i class="bi bi-list-check"></i>
-          {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
+        <div class="pkc-card-items">
+          <template v-if="o.items && o.items.length">
+            <span v-for="it in o.items" :key="it.nombre" class="pkc-item-pill">
+              {{ it.nombre }} <strong>×{{ it.cantidad }}</strong>
+            </span>
+          </template>
+          <span v-else class="pkc-item-pill">
+            <i class="bi bi-list-check"></i> {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
+          </span>
         </div>
 
         <div v-if="o.obs_portero || o.obs_mesero" class="pkc-obs-wrap">
@@ -452,6 +458,14 @@ onUnmounted(() => clearInterval(_autoRefresh))
   border: 2px solid #212529; border-radius: 6px; padding: 6px 0;
 }
 .pkc-card-tipo { text-align: center; font-size: .78rem; color: #6c757d; }
+
+.pkc-card-items { display: flex; flex-wrap: wrap; gap: 4px; }
+.pkc-item-pill {
+  display: inline-flex; align-items: center; gap: 4px; font-size: .82rem;
+  padding: 3px 9px; border-radius: 8px; background: #e7f1ff; color: #084298;
+  border: 1px solid #c2d8ff;
+}
+.pkc-item-pill strong { font-weight: 700; }
 
 .pkc-svc-pill {
   display: flex; align-items: center; gap: 6px; font-size: .85rem; font-weight: 600;

@@ -195,7 +195,26 @@ async def listar_orders(
         ORDER BY po.hora_ingreso DESC
     """), filtros)
 
-    return [dict(r) for r in rows.mappings()]
+    orders = [dict(r) for r in rows.mappings()]
+
+    # Carga los ítems de todas las órdenes en una sola query (evita N+1)
+    if orders:
+        ids = [o["id"] for o in orders]
+        ph  = ", ".join(f":oid{i}" for i in range(len(ids)))
+        items_rows = await db.execute(text(f"""
+            SELECT parking_order_id, nombre, cantidad
+            FROM parking_order_items
+            WHERE parking_order_id IN ({ph})
+            ORDER BY id
+        """), {f"oid{i}": v for i, v in enumerate(ids)})
+        items_map: dict = {}
+        for ir in items_rows.mappings():
+            oid = ir["parking_order_id"]
+            items_map.setdefault(oid, []).append({"nombre": ir["nombre"], "cantidad": ir["cantidad"]})
+        for o in orders:
+            o["items"] = items_map.get(o["id"], [])
+
+    return orders
 
 
 # ── Crear orden (portero) ─────────────────────────────────────────────────────
