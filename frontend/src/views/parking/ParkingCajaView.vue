@@ -8,6 +8,7 @@
         <i class="bi bi-hourglass-split"></i>
         <div>
           <span class="pkc-kpi-val">{{ stats.cnt_ingresado || 0 }}</span>
+          <span class="pkc-kpi-pct">{{ stats.pct_ocupacion || 0 }}% ocupado</span>
           <span class="pkc-kpi-lbl">Por confirmar</span>
         </div>
       </div>
@@ -16,6 +17,7 @@
         <i class="bi bi-cash-coin"></i>
         <div>
           <span class="pkc-kpi-val">{{ stats.cnt_registrado || 0 }}</span>
+          <span class="pkc-kpi-pct">{{ stats.pct_ocupacion || 0 }}% ocupado</span>
           <span class="pkc-kpi-lbl">Pendientes cobro</span>
         </div>
       </div>
@@ -25,6 +27,14 @@
         <div>
           <span class="pkc-kpi-val">{{ stats.cnt_pagado || 0 }}</span>
           <span class="pkc-kpi-lbl">Pagadas · {{ fmtMini(stats.recaudo_hoy) }}</span>
+        </div>
+      </div>
+      <div class="pkc-kpi-card pkc-kpi-disponible">
+        <i class="bi bi-p-square-fill"></i>
+        <div>
+          <span class="pkc-kpi-val">{{ stats.disponibles || 0 }}</span>
+          <span class="pkc-kpi-pct">{{ stats.total_plazas || 0 }} plazas</span>
+          <span class="pkc-kpi-lbl">Disponibles</span>
         </div>
       </div>
     </div>
@@ -414,10 +424,12 @@ onUnmounted(() => clearInterval(_autoRefresh))
 }
 .pkc-kpi-card i { font-size: 1.5rem; opacity: .85; }
 .pkc-kpi-val    { display: block; font-size: 1.6rem; line-height: 1; }
+.pkc-kpi-pct    { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
 .pkc-kpi-lbl    { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
 .pkc-kpi-sinconfirmar { background: #6c757d; cursor: pointer; transition: filter .15s; }
 .pkc-kpi-pendiente    { background: #fd7e14; cursor: pointer; transition: filter .15s; }
 .pkc-kpi-pagadas      { background: #198754; cursor: pointer; transition: filter .15s; }
+.pkc-kpi-disponible   { background: #6f42c1; cursor: default; }
 .pkc-kpi-card:hover   { filter: brightness(1.1); }
 .pkc-kpi-active       { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px rgba(0,0,0,.25); }
 
@@ -635,7 +647,7 @@ onUnmounted(() => clearInterval(_autoRefresh))
 }
 @media (max-width: 576px) {
   .pkc-page { padding: 10px; }
-  .pkc-kpi-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .pkc-kpi-bar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .pkc-kpi-card { padding: 8px 10px; gap: 6px; min-width: unset; }
   .pkc-kpi-card i { font-size: 1.1rem; }
   .pkc-kpi-val { font-size: 1.1rem; }

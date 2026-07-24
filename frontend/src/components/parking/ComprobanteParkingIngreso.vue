@@ -161,7 +161,7 @@ function buildESCPOS() {
   const ESC  = 0x1b
   const push = (...b) => buf.push(...b)
   // Normaliza texto para impresoras termicas (NFD + ASCII only)
-  const escStr = (t) => String(t).normalize('NFD').replace(/[^\x00-\x7F]/g, '?')
+  const escStr = (t) => String(t).normalize('NFD').replace(/[^\x00-\x7F]/g, '')
   const line = (t) => buf.push(...enc.encode(escStr(t) + '\n'))
 
   push(ESC, 0x40)                              // INIT
@@ -224,10 +224,12 @@ function buildESCPOS() {
     line('Presente este comprobante')
     line('en caja para realizar su pago.')
   }
-  push(ESC, 0x45, 0x00)                        // BOLD OFF (reset para siguiente impresion)
-  push(ESC, 0x61, 0x00)                        // LEFT (reset alineacion)
+  push(ESC, 0x45, 0x00)                        // BOLD OFF
+  push(0x1D, 0x42, 0x00)                      // GS B 0 — invert mode OFF
+  push(ESC, 0x61, 0x00)                        // LEFT
   push(0x0a, 0x0a, 0x0a)
   push(ESC, 0x69)                              // CUT
+  push(ESC, 0x40)                              // INIT — resetea estado para siguiente impresión
 
   return new Uint8Array(buf)
 }

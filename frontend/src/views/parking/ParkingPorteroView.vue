@@ -12,6 +12,7 @@
         <i class="bi bi-door-open-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_ingresado ?? 0 }}</span>
+          <span class="pk-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
           <span class="pk-kpi-lbl">Ingresados</span>
         </div>
       </div>
@@ -20,6 +21,7 @@
         <i class="bi bi-person-check-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_registrado ?? 0 }}</span>
+          <span class="pk-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
           <span class="pk-kpi-lbl">Confirmados</span>
         </div>
       </div>
@@ -31,12 +33,12 @@
           <span class="pk-kpi-lbl">Para salir</span>
         </div>
       </div>
-      <div :class="['pk-kpi-card pk-kpi-cancelado', { 'pk-kpi-active': filtroEstado === 'cancelado' }]"
-        @click="filtroEstado = 'cancelado'; cargar()">
-        <i class="bi bi-x-circle-fill"></i>
+      <div class="pk-kpi-card pk-kpi-disponible">
+        <i class="bi bi-p-square-fill"></i>
         <div>
-          <span class="pk-kpi-val">{{ stats.cnt_cancelado ?? 0 }}</span>
-          <span class="pk-kpi-lbl">Cancelados</span>
+          <span class="pk-kpi-val">{{ stats.disponibles ?? 0 }}</span>
+          <span class="pk-kpi-pct">{{ stats.total_plazas ?? 0 }} plazas</span>
+          <span class="pk-kpi-lbl">Disponibles</span>
         </div>
       </div>
     </div>
@@ -446,7 +448,8 @@ function fmtHora(dt) {
 .pk-kpi-ingresado  { background: #0d6efd; cursor: pointer; }
 .pk-kpi-confirmado { background: #198754; cursor: pointer; }
 .pk-kpi-parasalir  { background: #fd7e14; cursor: pointer; }
-.pk-kpi-cancelado  { background: #6c757d; cursor: pointer; }
+.pk-kpi-disponible { background: #6f42c1; }
+.pk-kpi-pct        { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
 .pk-kpi-card:hover { filter: brightness(1.1); }
 .pk-kpi-active     { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
 

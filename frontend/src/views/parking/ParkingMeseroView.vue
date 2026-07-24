@@ -8,6 +8,7 @@
         <i class="bi bi-door-open-fill"></i>
         <div>
           <span class="pkm-kpi-val">{{ cntIngresado }}</span>
+          <span class="pkm-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
           <span class="pkm-kpi-lbl">Sin confirmar</span>
         </div>
       </div>
@@ -16,6 +17,7 @@
         <i class="bi bi-person-check-fill"></i>
         <div>
           <span class="pkm-kpi-val">{{ cntRegistrado }}</span>
+          <span class="pkm-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
           <span class="pkm-kpi-lbl">Confirmadas</span>
         </div>
       </div>
@@ -25,6 +27,14 @@
         <div>
           <span class="pkm-kpi-val">{{ cntPagado }}</span>
           <span class="pkm-kpi-lbl">Pagadas</span>
+        </div>
+      </div>
+      <div class="pkm-kpi-card pkm-kpi-disponible">
+        <i class="bi bi-p-square-fill"></i>
+        <div>
+          <span class="pkm-kpi-val">{{ stats.disponibles ?? 0 }}</span>
+          <span class="pkm-kpi-pct">{{ stats.total_plazas ?? 0 }} plazas</span>
+          <span class="pkm-kpi-lbl">Disponibles</span>
         </div>
       </div>
     </div>
@@ -171,6 +181,7 @@ const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const ordenes           = ref([])
+const stats             = ref({})
 const loading           = ref(false)
 const loadingItems      = ref(false)
 const fechaFiltro       = ref(new Date().toISOString().slice(0, 10))
@@ -200,10 +211,14 @@ async function cargar(silent = false) {
   if (!companyId.value) return
   if (!silent) loading.value = true
   try {
-    const res = await api.get('/api/parking/orders', {
-      params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado,registrado,pagado' },
-    })
-    ordenes.value = res.data
+    const [resOrd, resSt] = await Promise.all([
+      api.get('/api/parking/orders', {
+        params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado,registrado,pagado' },
+      }),
+      api.get('/api/parking/stats', { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
+    ])
+    ordenes.value = resOrd.data
+    stats.value   = resSt.data
   } catch { if (!silent) showToast('Error al cargar órdenes', 'error', 3000) }
   if (!silent) loading.value = false
 }
@@ -290,12 +305,14 @@ function fmtHora(dt) {
 .pkm-kpi-card { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; color: #fff; font-weight: 600; flex: 1; cursor: pointer; transition: filter .15s; }
 .pkm-kpi-card:hover { filter: brightness(1.1); }
 .pkm-kpi-card i { font-size: 1.4rem; opacity: .85; }
-.pkm-kpi-val { display: block; font-size: 1.4rem; line-height: 1; }
-.pkm-kpi-lbl { display: block; font-size: .7rem; opacity: .85; white-space: nowrap; }
-.pkm-kpi-sinconf { background: #fd7e14; }
-.pkm-kpi-conf    { background: #198754; }
-.pkm-kpi-pagadas { background: #0d6efd; }
-.pkm-kpi-active  { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
+.pkm-kpi-val  { display: block; font-size: 1.4rem; line-height: 1; }
+.pkm-kpi-pct  { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
+.pkm-kpi-lbl  { display: block; font-size: .7rem; opacity: .85; white-space: nowrap; }
+.pkm-kpi-sinconf   { background: #fd7e14; }
+.pkm-kpi-conf      { background: #198754; }
+.pkm-kpi-pagadas   { background: #0d6efd; }
+.pkm-kpi-disponible{ background: #6f42c1; cursor: default; }
+.pkm-kpi-active    { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
 
 .pkm-filtro-bar { margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 
@@ -383,6 +400,9 @@ function fmtHora(dt) {
   .pkm-page { padding: 10px; }
   .pkm-header { flex-direction: column; align-items: flex-start; gap: 10px; }
   .pkm-pendientes-badge { align-self: flex-end; }
+  .pkm-kpi-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pkm-kpi-card { padding: 8px 10px; gap: 6px; }
+  .pkm-kpi-val  { font-size: 1.1rem; }
   .pkm-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .pkm-card { padding: 10px; }
   .pkm-card-placa { font-size: 1.3rem; letter-spacing: 2px; }
