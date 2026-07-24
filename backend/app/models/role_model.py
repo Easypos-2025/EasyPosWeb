@@ -30,6 +30,8 @@ class Role(Base):
 
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    home_route: Mapped[str] = mapped_column(String(200), nullable=True)
+
     users = relationship("User", back_populates="role", lazy="selectin")
 
     role_modules = relationship(

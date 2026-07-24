@@ -160,8 +160,9 @@ function buildESCPOS() {
   const buf  = []
   const ESC  = 0x1b
   const push = (...b) => buf.push(...b)
-  // Normaliza texto para impresoras termicas (NFD + ASCII only)
-  const escStr = (t) => String(t).normalize('NFD').replace(/[^\x00-\x7F]/g, '')
+  // Mapa explícito de caracteres especiales → ASCII para impresoras térmicas
+  const _CM = {'á':'a','à':'a','â':'a','ä':'a','ã':'a','é':'e','è':'e','ê':'e','ë':'e','í':'i','ì':'i','î':'i','ï':'i','ó':'o','ò':'o','ô':'o','ö':'o','õ':'o','ú':'u','ù':'u','û':'u','ü':'u','ñ':'n','ç':'c','Á':'A','À':'A','Â':'A','Ä':'A','Ã':'A','É':'E','È':'E','Ê':'E','Ë':'E','Í':'I','Ì':'I','Î':'I','Ï':'I','Ó':'O','Ò':'O','Ô':'O','Ö':'O','Õ':'O','Ú':'U','Ù':'U','Û':'U','Ü':'U','Ñ':'N','Ç':'C','¿':'','¡':''}
+  const escStr = (t) => String(t).split('').map(c => _CM[c] !== undefined ? _CM[c] : (c.charCodeAt(0) > 127 ? '' : c)).join('')
   const line = (t) => buf.push(...enc.encode(escStr(t) + '\n'))
 
   push(ESC, 0x40)                              // INIT
@@ -342,8 +343,7 @@ function imprimirSistema() {
   showPanel.value = false
   const contenido = document.getElementById('cpi-print-area')
   if (!contenido) return
-  const printWin = window.open('', '_blank', 'width=400,height=600')
-  printWin.document.write(`<!DOCTYPE html><html><head>
+  const html = `<!DOCTYPE html><html><head>
     <meta charset="UTF-8"><title>Comprobante Parking</title>
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
@@ -360,15 +360,21 @@ function imprimirSistema() {
       .cpi-placa-box    { font-size:30px; font-weight:900; letter-spacing:4px; text-align:center;
                           border:2px solid #000; padding:4px 8px; margin:4px auto; display:inline-block; }
       .cpi-total-personas { font-size:11px; font-weight:bold; margin-top:4px; }
-      .cpi-row-kv .cpi-k { color:#555; }
-      .cpi-row-kv .cpi-v { font-weight:600; }
       .cpi-obs          { font-size:11px; font-style:italic; color:#333; padding:2px 0; }
       .cpi-footer       { text-align:center; font-size:10px; color:#555; margin-top:6px; line-height:1.4; }
     </style>
-  </head><body>${contenido.innerHTML}</body></html>`)
+  </head><body>${contenido.innerHTML}</body></html>`
+
+  const printWin = window.open('', '_blank', 'width=420,height=640')
+  if (!printWin) {
+    // Popup bloqueado (frecuente en móvil) — imprimir página actual directamente
+    showToast('Permite ventanas emergentes o usa el botón Compartir de tu navegador', 'warning', 4000)
+    return
+  }
+  printWin.document.write(html)
   printWin.document.close()
   printWin.focus()
-  setTimeout(() => { printWin.print(); printWin.close() }, 250)
+  setTimeout(() => { printWin.print(); printWin.close() }, 300)
 }
 </script>
 

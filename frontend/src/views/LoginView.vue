@@ -168,7 +168,8 @@ async function _completeLogin(token) {
   localStorage.setItem("user", JSON.stringify(userResponse.data))
   const menuStore = useMenuStore()
   await menuStore.loadMenu()
-  router.push("/dashboard")
+  const userData  = JSON.parse(localStorage.getItem("user") || "{}")
+  router.push(userData.home_route || "/dashboard")
 }
 
 const login = async () => {

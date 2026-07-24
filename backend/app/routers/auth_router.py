@@ -316,4 +316,5 @@ async def get_me(authorization: str = Header(None), db: AsyncSession = Depends(g
         "business_profile_id": company.business_profile_id if company else None,
         "payment_status":     await _resolve_payment_status(company, db),
         "upgrade_status":     getattr(company, "upgrade_status", None) if company else None,
+        "home_route":         getattr(role, "home_route", None) if role else None,
     }

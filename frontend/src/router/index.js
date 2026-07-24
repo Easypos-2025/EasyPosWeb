@@ -1145,33 +1145,20 @@ router.beforeEach(async (to, from, next) => {
   }
 
   /* =========================================
-     3b. REDIRECCIÓN POR MENÚ DE PARKING
-     Detecta por módulos asignados, no por nombre de rol.
-     Funciona con cualquier nombre: PORTERO, VIGILANTE, ENTRADA, MESERO, PATIO, VENDEDOR…
+     3b. REDIRECCIÓN POR home_route DEL ROL
+     Si el rol tiene una vista inicial configurada (home_route en roles)
+     y el usuario intenta ir a otra ruta → redirigir a su home.
   ========================================= */
   {
     const ALLOWED_ALWAYS = ["/payment-pending", "/soporte/ticket", "/login"]
     if (!ALLOWED_ALWAYS.includes(to.path)) {
       try {
-        const menuLocal  = JSON.parse(localStorage.getItem("menu") || "[]")
-        const allRoutes  = []
-        const flatMenu   = (items) => {
-          for (const item of items) {
-            if (item.route) allRoutes.push(item.route)
-            if (item.children?.length) flatMenu(item.children)
-          }
+        const userData  = JSON.parse(localStorage.getItem("user") || "{}")
+        const homeRoute = userData.home_route
+        if (homeRoute && homeRoute !== "/dashboard" && to.path !== homeRoute) {
+          return next(homeRoute)
         }
-        flatMenu(menuLocal)
-        if (allRoutes.length > 0) {
-          // Redirige si tiene acceso a portero/mesero pero NO al dashboard general
-          if (allRoutes.includes("/parking/portero") && !allRoutes.includes("/dashboard") && to.path !== "/parking/portero") {
-            return next("/parking/portero")
-          }
-          if (allRoutes.includes("/parking/mesero") && !allRoutes.includes("/parking/portero") && !allRoutes.includes("/dashboard") && to.path !== "/parking/mesero") {
-            return next("/parking/mesero")
-          }
-        }
-      } catch { /* menú no disponible aún */ }
+      } catch { /* user no disponible */ }
     }
   }
 

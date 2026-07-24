@@ -14,10 +14,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from "vue"
+import { computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { useCompanyStore } from "@/stores/companyStore"
-import { useMenuStore } from "@/stores/menuStore"
 import PEWidget      from "@/components/pos/PEWidget.vue"
 import ParkingWidget from "@/components/parking/ParkingWidget.vue"
 
@@ -60,30 +59,16 @@ const DASHBOARD_MAP = {
   20: DashboardFerreterias,    // Ferreterías
 }
 
-const router      = useRouter()
-const companyStore = useCompanyStore()
-const menuStore   = useMenuStore()
+const router       = useRouter()
+const companyStore  = useCompanyStore()
 
-function getMenuRoutes(items) {
-  const routes = []
-  const flatten = (list) => list.forEach(it => {
-    if (it.route) routes.push(it.route)
-    if (it.children?.length) flatten(it.children)
-  })
-  flatten(items)
-  return routes
-}
-
-function checkMenuRedirect(menu) {
-  if (!menu || !menu.length) return
-  const routes = getMenuRoutes(menu)
-  if (!routes.length || routes.includes('/dashboard')) return
-  if (routes.includes('/parking/mesero')) { router.replace('/parking/mesero'); return }
-  if (routes.includes('/parking/portero')) { router.replace('/parking/portero'); return }
-}
-
-onMounted(() => checkMenuRedirect(menuStore.menu))
-watch(() => menuStore.menu, checkMenuRedirect, { deep: true, immediate: true })
+onMounted(() => {
+  const userData  = JSON.parse(localStorage.getItem("user") || "{}")
+  const homeRoute = userData.home_route
+  if (homeRoute && homeRoute !== "/dashboard") {
+    router.replace(homeRoute)
+  }
+})
 
 const activeDashboard = computed(() => {
   const profileId = companyStore.selectedCompany?.business_profile_id

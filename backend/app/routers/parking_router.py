@@ -104,7 +104,7 @@ async def get_stats(
         "SELECT total_plazas FROM parking_config WHERE company_id = :cid"
     ), {"cid": company_id})
     cfg_row = r_cfg.mappings().first()
-    total_plazas = cfg_row["total_plazas"] if cfg_row else 0
+    total_plazas = cfg_row["total_plazas"] if cfg_row else 20  # mismo default que GET /config
 
     disponibles = max(0, total_plazas - ocupadas)
     pct = round((ocupadas / total_plazas * 100) if total_plazas > 0 else 0, 1)
