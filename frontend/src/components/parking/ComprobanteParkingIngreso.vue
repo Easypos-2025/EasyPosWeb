@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <Teleport to="body">
     <div class="cpi-overlay" @click.self="$emit('close')">
       <div class="cpi-modal">
@@ -149,8 +149,9 @@ const BLE_SERVICES = [
 
 function fmtHora(dt) {
   if (!dt) return ''
-  const d = new Date(dt)
-  return d.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
+  const d = new Date(String(dt).replace(' ', 'T'))
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)}, ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 // ── Genera bytes ESC/POS ──────────────────────────────────────────────────────
@@ -159,7 +160,9 @@ function buildESCPOS() {
   const buf  = []
   const ESC  = 0x1b
   const push = (...b) => buf.push(...b)
-  const line = (t) => buf.push(...enc.encode(t + '\n'))
+  // Normaliza texto para impresoras termicas (NFD + ASCII only)
+  const escStr = (t) => String(t).normalize('NFD').replace(/[^\x00-\x7F]/g, '?')
+  const line = (t) => buf.push(...enc.encode(escStr(t) + '\n'))
 
   push(ESC, 0x40)                              // INIT
   push(ESC, 0x61, 0x01)                        // CENTER
@@ -221,6 +224,8 @@ function buildESCPOS() {
     line('Presente este comprobante')
     line('en caja para realizar su pago.')
   }
+  push(ESC, 0x45, 0x00)                        // BOLD OFF (reset para siguiente impresion)
+  push(ESC, 0x61, 0x00)                        // LEFT (reset alineacion)
   push(0x0a, 0x0a, 0x0a)
   push(ESC, 0x69)                              // CUT
 

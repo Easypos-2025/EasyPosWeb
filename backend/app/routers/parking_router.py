@@ -3,9 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
 from app.auth.dependencies import get_current_user
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional, List
+
+def bogota_now() -> str:
+    """Hora actual en Colombia (UTC-5) como string para MySQL."""
+    return datetime.now(timezone(timedelta(hours=-5))).strftime('%Y-%m-%d %H:%M:%S')
 
 router = APIRouter(prefix="/api/parking", tags=["parking"])
 
@@ -260,7 +264,8 @@ async def crear_orden(
         WHERE company_id = :cid AND DATE(created_at) = CURDATE()
     """), {"cid": body.company_id})
     seq = (r_count.scalar() or 0) + 1
-    numero_orden = f"PS-{datetime.now().strftime('%Y%m%d')}-{seq:03d}"
+    now_co = bogota_now()
+    numero_orden = f"PS-{now_co[:10].replace('-', '')}-{seq:03d}"
 
     result = await db.execute(text("""
         INSERT INTO parking_orders
@@ -268,11 +273,11 @@ async def crear_orden(
              hora_ingreso, foto_url, obs_portero, estado, registrado_por)
         VALUES
             (:cid, :num, :placa, NULL, :adu, 0, 0,
-             NOW(), :foto, :obs, 'ingresado', :uid)
+             :now, :foto, :obs, 'ingresado', :uid)
     """), {
         "cid": body.company_id, "num": numero_orden, "placa": placa_up,
         "adu": total_qty, "foto": body.foto_url,
-        "obs": body.obs_portero, "uid": current_user.id,
+        "obs": body.obs_portero, "uid": current_user.id, "now": now_co,
     })
     new_id = result.lastrowid
 
@@ -415,11 +420,11 @@ async def pagar_orden(
     await db.execute(text("""
         UPDATE parking_orders
         SET estado      = 'pagado',
-            hora_salida = NOW(),
+            hora_salida = :now,
             pagado_por  = :uid,
-            updated_at  = NOW()
+            updated_at  = :now
         WHERE id = :id
-    """), {"uid": current_user.id, "id": order_id})
+    """), {"uid": current_user.id, "id": order_id, "now": bogota_now()})
     await db.commit()
     return {"ok": True, "estado": "pagado"}
 

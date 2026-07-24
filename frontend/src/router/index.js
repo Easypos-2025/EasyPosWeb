@@ -1163,14 +1163,12 @@ router.beforeEach(async (to, from, next) => {
         }
         flatMenu(menuLocal)
         if (allRoutes.length > 0) {
-          const nonParking = allRoutes.filter(r => r && !r.startsWith("/parking"))
-          if (nonParking.length === 0) {
-            if (allRoutes.includes("/parking/portero") && !allRoutes.includes("/parking/mesero") && !allRoutes.includes("/parking/caja") && to.path !== "/parking/portero") {
-              return next("/parking/portero")
-            }
-            if (allRoutes.includes("/parking/mesero") && !allRoutes.includes("/parking/portero") && !allRoutes.includes("/parking/caja") && to.path !== "/parking/mesero") {
-              return next("/parking/mesero")
-            }
+          // Redirige si tiene acceso a portero/mesero pero NO al dashboard general
+          if (allRoutes.includes("/parking/portero") && !allRoutes.includes("/dashboard") && to.path !== "/parking/portero") {
+            return next("/parking/portero")
+          }
+          if (allRoutes.includes("/parking/mesero") && !allRoutes.includes("/parking/portero") && !allRoutes.includes("/dashboard") && to.path !== "/parking/mesero") {
+            return next("/parking/mesero")
           }
         }
       } catch { /* menú no disponible aún */ }

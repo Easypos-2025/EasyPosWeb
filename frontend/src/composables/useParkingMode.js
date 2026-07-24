@@ -18,16 +18,12 @@ export function useParkingMode() {
 
   const isParkingPortero = computed(() => {
     const routes = getRoutes()
-    if (!routes.length) return false
-    const nonParking = routes.filter(r => r && !r.startsWith('/parking'))
-    return nonParking.length === 0 && routes.includes('/parking/portero') && !routes.includes('/parking/mesero') && !routes.includes('/parking/caja')
+    return routes.length > 0 && routes.includes('/parking/portero') && !routes.includes('/dashboard')
   })
 
   const isParkingMesero = computed(() => {
     const routes = getRoutes()
-    if (!routes.length) return false
-    const nonParking = routes.filter(r => r && !r.startsWith('/parking'))
-    return nonParking.length === 0 && routes.includes('/parking/mesero') && !routes.includes('/parking/portero') && !routes.includes('/parking/caja')
+    return routes.length > 0 && routes.includes('/parking/mesero') && !routes.includes('/parking/portero') && !routes.includes('/dashboard')
   })
 
   const isParkingRole = computed(() => isParkingPortero.value || isParkingMesero.value)

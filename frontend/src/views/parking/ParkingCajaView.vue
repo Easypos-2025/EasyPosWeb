@@ -377,7 +377,10 @@ async function abrirReimpresion(orden) {
 // ── Utilidades ────────────────────────────────────────────────────────────────
 function fmtHora(dt) {
   if (!dt) return ''
-  return new Date(dt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+  const d = new Date(String(dt).replace(' ', 'T'))
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
 }
 
 function fmt(val) {
