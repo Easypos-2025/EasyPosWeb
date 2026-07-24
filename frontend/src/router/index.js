@@ -1145,6 +1145,19 @@ router.beforeEach(async (to, from, next) => {
   }
 
   /* =========================================
+     3b. REDIRECCIÓN POR ROL DE PARKING
+     Portero y Mesero solo pueden ver su vista
+  ========================================= */
+  const userRole = (meData?.role || "").toLowerCase()
+  const ALLOWED_ALWAYS = ["/payment-pending", "/soporte/ticket", "/login"]
+  if (userRole === "portero" && !ALLOWED_ALWAYS.includes(to.path) && to.path !== "/parking/portero") {
+    return next("/parking/portero")
+  }
+  if (userRole === "mesero" && !ALLOWED_ALWAYS.includes(to.path) && to.path !== "/parking/mesero") {
+    return next("/parking/mesero")
+  }
+
+  /* =========================================
      4. VALIDAR PERMISOS
   ========================================= */
   try {

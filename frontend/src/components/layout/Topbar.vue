@@ -4,7 +4,7 @@
     <!-- ── IZQUIERDA: logo + selector + plan + notif-bell + título ── -->
     <div class="topbar-left">
 
-      <button class="btn-icon btn-menu-left" @click="emit('toggle-sidebar')" title="Menú">
+      <button v-if="!isParkingRole" class="btn-icon btn-menu-left" @click="emit('toggle-sidebar')" title="Menú">
         <i class="bi bi-list"></i>
       </button>
 
@@ -22,7 +22,7 @@
 
       <!-- Desktop: select normal -->
       <select
-        v-if="companyStore.companies.length > 1"
+        v-if="!isParkingRole && companyStore.companies.length > 1"
         :value="companyStore.selectedCompany?.id"
         @change="onCompanyChange"
         class="company-select company-select-desktop"
@@ -35,7 +35,7 @@
 
       <!-- Móvil: icono compacto + dropdown -->
       <div
-        v-if="companyStore.companies.length > 1"
+        v-if="!isParkingRole && companyStore.companies.length > 1"
         class="company-select-mobile"
         ref="companyDropRef"
       >
@@ -467,6 +467,11 @@ const isPaymentActive = computed(() => {
 const isAdminUser = computed(() => {
   const role = user.value?.role?.toLowerCase() || ""
   return role.includes("admin")
+})
+
+const isParkingRole = computed(() => {
+  const role = (user.value?.role || "").toLowerCase()
+  return role === "portero" || role === "mesero"
 })
 
 const totalNotifCount = computed(() =>

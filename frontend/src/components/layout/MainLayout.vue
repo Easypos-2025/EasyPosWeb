@@ -35,6 +35,7 @@
     <div class="layout" :class="{ collapsed: sidebarCollapsed }">
 
       <Sidebar
+        v-if="!isParkingRole"
         v-show="sidebarOpen"
         :visible="sidebarOpen"
         @close="handleCloseSidebar"
@@ -79,7 +80,14 @@ import HelpButton from "@/components/common/HelpButton.vue"
 import api from "@/services/apis"
 import { useCompanyStore } from "@/stores/companyStore"
 
-const companyStore = useCompanyStore()
+const companyStore  = useCompanyStore()
+const isParkingRole = computed(() => {
+  try {
+    const u    = JSON.parse(localStorage.getItem("user") || "{}")
+    const role = (u?.role || "").toLowerCase()
+    return role === "portero" || role === "mesero"
+  } catch { return false }
+})
 
 const router    = useRouter()
 const route     = useRoute()

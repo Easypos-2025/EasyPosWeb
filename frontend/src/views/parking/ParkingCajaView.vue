@@ -206,7 +206,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -386,6 +386,12 @@ function fmtMini(val) {
 }
 
 watch(companyId, (v) => { if (v) cargar() }, { immediate: true })
+
+let _autoRefresh = null
+onMounted(() => {
+  _autoRefresh = setInterval(() => { if (!showCobro.value) cargar() }, 30000)
+})
+onUnmounted(() => clearInterval(_autoRefresh))
 </script>
 
 <style scoped>

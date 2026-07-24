@@ -154,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -202,6 +202,12 @@ async function cargar() {
 }
 
 watch(companyId, v => { if (v) cargar() }, { immediate: true })
+
+let _autoRefresh = null
+onMounted(() => {
+  _autoRefresh = setInterval(() => { if (!showModal.value) cargar() }, 30000)
+})
+onUnmounted(() => clearInterval(_autoRefresh))
 
 async function abrirConfirmar(orden) {
   ordenSeleccionada.value = orden

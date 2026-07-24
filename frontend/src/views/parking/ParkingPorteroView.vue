@@ -203,7 +203,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -331,7 +331,12 @@ async function cargarVehicleTypes() {
   } catch {}
 }
 
-onMounted(() => { cargar(); cargarProductos(); cargarVehicleTypes() })
+let _autoRefresh = null
+onMounted(() => {
+  cargar(); cargarProductos(); cargarVehicleTypes()
+  _autoRefresh = setInterval(() => { if (!showModal.value) cargar() }, 30000)
+})
+onUnmounted(() => clearInterval(_autoRefresh))
 
 function abrirModalNuevo() {
   form.value               = { placa: '', vehicle_type_id: null, obs_portero: '' }
