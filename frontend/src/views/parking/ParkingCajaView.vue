@@ -266,9 +266,9 @@ const totalImpuesto = computed(() => lineasSeleccionadas.value.reduce((s, l) => 
 const totalFinal    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal, 0))
 
 // ── Carga órdenes + stats ─────────────────────────────────────────────────────
-async function cargar() {
+async function cargar(silent = false) {
   if (!companyId.value) return
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const [r1, r2] = await Promise.all([
       api.get('/api/parking/orders', {
@@ -281,9 +281,9 @@ async function cargar() {
     ordenes.value = r1.data
     stats.value   = r2.data
   } catch {
-    showToast('Error al cargar órdenes', 'error', 3000)
+    if (!silent) showToast('Error al cargar órdenes', 'error', 3000)
   }
-  loading.value = false
+  if (!silent) loading.value = false
 }
 
 // ── Abrir modal cobro ─────────────────────────────────────────────────────────
@@ -389,7 +389,7 @@ watch(companyId, (v) => { if (v) cargar() }, { immediate: true })
 
 let _autoRefresh = null
 onMounted(() => {
-  _autoRefresh = setInterval(() => { if (!showCobro.value) cargar() }, 30000)
+  _autoRefresh = setInterval(() => { if (!showCobro.value) cargar(true) }, 30000)
 })
 onUnmounted(() => clearInterval(_autoRefresh))
 </script>

@@ -424,6 +424,7 @@ import { useRouter } from "vue-router"
 import { getThemeState } from "@/utils/theme"
 import { useCompanyStore } from "@/stores/companyStore"
 import api from "@/services/apis"
+import { useParkingMode } from "@/composables/useParkingMode"
 
 const props = defineProps({ sidebarRightOpen: { type: Boolean, default: true } })
 const emit  = defineEmits(["toggle-sidebar", "toggle-sidebar-right", "open-upgrade-modal"])
@@ -469,10 +470,7 @@ const isAdminUser = computed(() => {
   return role.includes("admin")
 })
 
-const isParkingRole = computed(() => {
-  const role = (user.value?.role || "").toLowerCase()
-  return role === "portero" || role === "mesero"
-})
+const { isParkingRole } = useParkingMode()
 
 const totalNotifCount = computed(() =>
   unreadNotif.value +

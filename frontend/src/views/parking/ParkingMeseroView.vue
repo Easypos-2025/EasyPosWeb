@@ -48,7 +48,7 @@
       <div
         v-for="o in ordenesFiltradas" :key="o.id"
         :class="['pkm-card', { 'pkm-card--confirmado': o.estado === 'registrado', 'pkm-card--pagado': o.estado === 'pagado' }]"
-        @click="o.estado === 'ingresado' && abrirConfirmar(o)"
+        @click="o.estado !== 'pagado' && abrirConfirmar(o)"
       >
         <div class="pkm-card-top">
           <span :class="['pkm-badge-nuevo',
@@ -85,7 +85,10 @@
     <div v-if="showModal" class="pkm-modal-overlay" @click.self="showModal = false">
       <div class="pkm-modal">
         <div class="pkm-modal-head">
-          <span><i class="bi bi-clipboard2-check-fill"></i> Confirmar Ingreso</span>
+          <span>
+            <i :class="ordenSeleccionada?.estado === 'registrado' ? 'bi bi-pencil-square' : 'bi bi-clipboard2-check-fill'"></i>
+            {{ ordenSeleccionada?.estado === 'registrado' ? 'Editar Servicios' : 'Confirmar Ingreso' }}
+          </span>
           <button class="pkm-modal-close" @click="showModal = false"><i class="bi bi-x-lg"></i></button>
         </div>
 
@@ -144,8 +147,8 @@
           <button class="pkm-btn-cancel" @click="showModal = false">Cancelar</button>
           <button class="pkm-btn-confirmar" :disabled="confirmando || loadingItems" @click="confirmar">
             <i v-if="confirmando" class="bi bi-arrow-repeat spin"></i>
-            <i v-else class="bi bi-check2-all"></i>
-            {{ confirmando ? 'Confirmando…' : 'Confirmar y Enviar a Caja' }}
+            <i v-else :class="ordenSeleccionada?.estado === 'registrado' ? 'bi bi-floppy' : 'bi bi-check2-all'"></i>
+            {{ confirmando ? 'Guardando…' : ordenSeleccionada?.estado === 'registrado' ? 'Guardar Cambios' : 'Confirmar y Enviar a Caja' }}
           </button>
         </div>
       </div>
@@ -189,23 +192,23 @@ const itemsParaEnviar  = computed(() =>
     .map(p => ({ product_id: p.id, nombre: p.name, cantidad: seleccionMesero.value[p.id].cantidad }))
 )
 
-async function cargar() {
+async function cargar(silent = false) {
   if (!companyId.value) return
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const res = await api.get('/api/parking/orders', {
       params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: 'ingresado,registrado,pagado' },
     })
     ordenes.value = res.data
-  } catch { showToast('Error al cargar órdenes', 'error', 3000) }
-  loading.value = false
+  } catch { if (!silent) showToast('Error al cargar órdenes', 'error', 3000) }
+  if (!silent) loading.value = false
 }
 
 watch(companyId, v => { if (v) cargar() }, { immediate: true })
 
 let _autoRefresh = null
 onMounted(() => {
-  _autoRefresh = setInterval(() => { if (!showModal.value) cargar() }, 30000)
+  _autoRefresh = setInterval(() => { if (!showModal.value) cargar(true) }, 30000)
 })
 onUnmounted(() => clearInterval(_autoRefresh))
 
@@ -254,11 +257,14 @@ async function confirmar() {
       obs_mesero: formMesero.value.obs_mesero || null,
       items: itemsParaEnviar.value,
     })
-    showToast('Confirmado y enviado a caja', 'success', 2500)
+    const eraIngresado = ordenSeleccionada.value.estado === 'ingresado'
+    showToast(eraIngresado ? 'Confirmado y enviado a caja' : 'Servicios actualizados', 'success', 2500)
     showModal.value = false
-    // Actualiza estado localmente (no lo elimina, lo mueve a "Confirmados")
     const idx = ordenes.value.findIndex(o => o.id === ordenSeleccionada.value.id)
-    if (idx !== -1) ordenes.value[idx] = { ...ordenes.value[idx], estado: 'registrado' }
+    if (idx !== -1) {
+      const nuevoEstado = eraIngresado ? 'registrado' : ordenes.value[idx].estado
+      ordenes.value[idx] = { ...ordenes.value[idx], estado: nuevoEstado }
+    }
   } catch (e) { showToast(e?.response?.data?.detail || 'Error al confirmar', 'error', 3000) }
   confirmando.value = false
 }
@@ -302,7 +308,7 @@ function fmtHora(dt) {
 .pkm-badge-nuevo { font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; background: #fff3cd; color: #856404; text-transform: uppercase; }
 .pkm-badge-confirmado { background: #d1e7dd !important; color: #0a3622 !important; }
 .pkm-badge-pagado     { background: #cfe2ff !important; color: #084298 !important; }
-.pkm-card--confirmado { border-color: #198754; cursor: default; }
+.pkm-card--confirmado { border-color: #198754; }
 .pkm-card--pagado     { border-color: #0d6efd; cursor: default; opacity: .85; }
 .pkm-pagado-txt { font-size: .72rem; color: #0d6efd; display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .pkm-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; color: #212529; background: #fff; }

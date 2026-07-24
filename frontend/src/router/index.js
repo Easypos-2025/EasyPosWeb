@@ -1145,16 +1145,36 @@ router.beforeEach(async (to, from, next) => {
   }
 
   /* =========================================
-     3b. REDIRECCIÓN POR ROL DE PARKING
-     Portero y Mesero solo pueden ver su vista
+     3b. REDIRECCIÓN POR MENÚ DE PARKING
+     Detecta por módulos asignados, no por nombre de rol.
+     Funciona con cualquier nombre: PORTERO, VIGILANTE, ENTRADA, MESERO, PATIO, VENDEDOR…
   ========================================= */
-  const userRole = (meData?.role || "").toLowerCase()
-  const ALLOWED_ALWAYS = ["/payment-pending", "/soporte/ticket", "/login"]
-  if (userRole === "portero" && !ALLOWED_ALWAYS.includes(to.path) && to.path !== "/parking/portero") {
-    return next("/parking/portero")
-  }
-  if (userRole === "mesero" && !ALLOWED_ALWAYS.includes(to.path) && to.path !== "/parking/mesero") {
-    return next("/parking/mesero")
+  {
+    const ALLOWED_ALWAYS = ["/payment-pending", "/soporte/ticket", "/login"]
+    if (!ALLOWED_ALWAYS.includes(to.path)) {
+      try {
+        const menuLocal  = JSON.parse(localStorage.getItem("menu") || "[]")
+        const allRoutes  = []
+        const flatMenu   = (items) => {
+          for (const item of items) {
+            if (item.route) allRoutes.push(item.route)
+            if (item.children?.length) flatMenu(item.children)
+          }
+        }
+        flatMenu(menuLocal)
+        if (allRoutes.length > 0) {
+          const nonParking = allRoutes.filter(r => r && !r.startsWith("/parking"))
+          if (nonParking.length === 0) {
+            if (allRoutes.includes("/parking/portero") && !allRoutes.includes("/parking/mesero") && !allRoutes.includes("/parking/caja") && to.path !== "/parking/portero") {
+              return next("/parking/portero")
+            }
+            if (allRoutes.includes("/parking/mesero") && !allRoutes.includes("/parking/portero") && !allRoutes.includes("/parking/caja") && to.path !== "/parking/mesero") {
+              return next("/parking/mesero")
+            }
+          }
+        }
+      } catch { /* menú no disponible aún */ }
+    }
   }
 
   /* =========================================

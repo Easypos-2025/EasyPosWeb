@@ -79,15 +79,10 @@ import PlanUpgradeModal from "@/components/plans/PlanUpgradeModal.vue"
 import HelpButton from "@/components/common/HelpButton.vue"
 import api from "@/services/apis"
 import { useCompanyStore } from "@/stores/companyStore"
+import { useParkingMode }  from "@/composables/useParkingMode"
 
-const companyStore  = useCompanyStore()
-const isParkingRole = computed(() => {
-  try {
-    const u    = JSON.parse(localStorage.getItem("user") || "{}")
-    const role = (u?.role || "").toLowerCase()
-    return role === "portero" || role === "mesero"
-  } catch { return false }
-})
+const companyStore            = useCompanyStore()
+const { isParkingRole }       = useParkingMode()
 
 const router    = useRouter()
 const route     = useRoute()

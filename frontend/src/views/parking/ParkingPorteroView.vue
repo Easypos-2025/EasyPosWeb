@@ -287,9 +287,9 @@ function conteoFiltro(val) {
   return stats.value[m[val]] || 0
 }
 
-async function cargar() {
+async function cargar(silent = false) {
   if (!companyId.value) return
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const [r1, r2] = await Promise.all([
       api.get('/api/parking/orders', { params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value } }),
@@ -297,8 +297,8 @@ async function cargar() {
     ])
     ordenes.value = r1.data
     stats.value   = r2.data
-  } catch { showToast('Error al cargar ingresos', 'error', 3000) }
-  loading.value = false
+  } catch { if (!silent) showToast('Error al cargar ingresos', 'error', 3000) }
+  if (!silent) loading.value = false
 }
 
 async function confirmarSalida(orden) {
@@ -334,7 +334,7 @@ async function cargarVehicleTypes() {
 let _autoRefresh = null
 onMounted(() => {
   cargar(); cargarProductos(); cargarVehicleTypes()
-  _autoRefresh = setInterval(() => { if (!showModal.value) cargar() }, 30000)
+  _autoRefresh = setInterval(() => { if (!showModalNuevo.value) cargar(true) }, 30000)
 })
 onUnmounted(() => clearInterval(_autoRefresh))
 
@@ -350,9 +350,10 @@ function cerrarModalNuevo() { showModalNuevo.value = false }
 
 let placaTimer = null
 function onPlacaInput() {
-  form.value.placa         = form.value.placa.toUpperCase()
-  vehiculoEncontrado.value = false
-  vehiculoFotoUrl.value    = null
+  form.value.placa              = form.value.placa.toUpperCase()
+  vehiculoEncontrado.value      = false
+  vehiculoFotoUrl.value         = null
+  form.value.vehicle_type_id    = null
   clearTimeout(placaTimer)
   const p = form.value.placa.trim()
   if (p.length < 3) return

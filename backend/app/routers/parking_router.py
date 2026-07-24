@@ -301,17 +301,25 @@ async def registrar_orden(
     orden = row.mappings().first()
     if not orden:
         raise HTTPException(404, detail="Orden no encontrada")
-    if orden["estado"] != "ingresado":
-        raise HTTPException(400, detail=f"Estado actual '{orden['estado']}' no permite esta acción")
+    if orden["estado"] not in ("ingresado", "registrado"):
+        raise HTTPException(400, detail=f"Estado '{orden['estado']}' no permite esta acción")
 
-    await db.execute(text("""
-        UPDATE parking_orders
-        SET obs_mesero     = :obs,
-            estado         = 'registrado',
-            confirmado_por = :uid,
-            updated_at     = NOW()
-        WHERE id = :id
-    """), {"obs": body.obs_mesero, "uid": current_user.id, "id": order_id})
+    if orden["estado"] == "ingresado":
+        await db.execute(text("""
+            UPDATE parking_orders
+            SET obs_mesero     = :obs,
+                estado         = 'registrado',
+                confirmado_por = :uid,
+                updated_at     = NOW()
+            WHERE id = :id
+        """), {"obs": body.obs_mesero, "uid": current_user.id, "id": order_id})
+    else:
+        # Ya está confirmado: solo actualiza obs sin cambiar estado
+        await db.execute(text("""
+            UPDATE parking_orders
+            SET obs_mesero = :obs, updated_at = NOW()
+            WHERE id = :id
+        """), {"obs": body.obs_mesero, "id": order_id})
 
     if body.items is not None:
         await db.execute(text(
