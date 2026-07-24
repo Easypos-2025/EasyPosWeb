@@ -49,6 +49,7 @@ def _config_dict(cfg: Optional[CompanyConfig]) -> dict:
             "tip_percentage": 0.0,
             "tip_label": "Propina",
             "has_parking": 0,
+            "has_tv_cocina": 0,
         }
     return {
         "has_pos_electronico": cfg.has_pos_electronico or 0,
@@ -57,6 +58,7 @@ def _config_dict(cfg: Optional[CompanyConfig]) -> dict:
         "tip_percentage": float(cfg.tip_percentage or 0),
         "tip_label": cfg.tip_label or "Propina",
         "has_parking": cfg.has_parking or 0,
+        "has_tv_cocina": cfg.has_tv_cocina or 0,
     }
 
 
@@ -224,6 +226,10 @@ async def upsert_company_config(
     # Parking Service
     if "has_parking" in body:
         cfg.has_parking = int(bool(body["has_parking"]))
+
+    # TV Cocina
+    if "has_tv_cocina" in body:
+        cfg.has_tv_cocina = int(bool(body["has_tv_cocina"]))
 
     await db.commit()
     await db.refresh(cfg)

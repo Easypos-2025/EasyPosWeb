@@ -307,6 +307,30 @@
       </div>
       <!-- ── /PARKING SERVICE ────────────────────────────────────── -->
 
+      <!-- ── TV COCINA ──────────────────────────────────────────── -->
+      <div class="pe-section mt-4">
+        <div class="pe-section-header">
+          <i class="bi bi-display" style="color:#6366f1"></i>
+          TV Cocina / Pedidos TV
+        </div>
+        <div class="pe-section-body">
+          <div class="pe-toggle-row">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="tvCocinaForm.has_tv_cocina ? 'stb--on' : 'stb--off'"
+              @click="tvCocinaForm.has_tv_cocina = tvCocinaForm.has_tv_cocina ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                <i class="bi bi-display"></i>
+                {{ tvCocinaForm.has_tv_cocina ? 'Módulo TV Cocina activo para esta empresa' : 'Módulo TV Cocina inactivo' }}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <!-- ── /TV COCINA ─────────────────────────────────────────── -->
+
       <button class="btn btn-primary mt-3" @click="createCompany">
         Guardar
       </button>
@@ -334,8 +358,9 @@ const showExtDb  = ref(false)
 const showPass   = ref(false)
 const testing    = ref(false)
 const testResult = ref(null)
-const peForm      = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
-const parkingForm = ref({ has_parking: 0 })
+const peForm        = ref({ has_pos_electronico: 0, pos_electronico_token: "" })
+const parkingForm   = ref({ has_parking: 0 })
+const tvCocinaForm  = ref({ has_tv_cocina: 0 })
 
 const form = ref({
   name: "",
@@ -507,6 +532,13 @@ const createCompany = async () => {
       } catch {}
     }
 
+    // Guardar config TV Cocina si fue habilitado
+    if (newId && tvCocinaForm.value.has_tv_cocina) {
+      try {
+        await api.put(`/company-configs/${newId}`, { has_tv_cocina: tvCocinaForm.value.has_tv_cocina })
+      } catch {}
+    }
+
     form.value = {
       ...form.value,
       name: "", identification_number: "", dv: "", address: "",
@@ -515,8 +547,9 @@ const createCompany = async () => {
       ext_db_user: "", ext_db_password: "", ext_db_has_password: false,
     }
     planForm.value = { plan_id: "", expiration_date: "" }
-    peForm.value      = { has_pos_electronico: 0, pos_electronico_token: "" }
-    parkingForm.value = { has_parking: 0 }
+    peForm.value       = { has_pos_electronico: 0, pos_electronico_token: "" }
+    parkingForm.value  = { has_parking: 0 }
+    tvCocinaForm.value = { has_tv_cocina: 0 }
     showExtDb.value = false
   } catch (error) {
     console.error(error)

@@ -35,11 +35,8 @@
     <div class="layout" :class="{ collapsed: sidebarCollapsed }">
 
       <Sidebar
-        v-show="isDesktop || sidebarOpen"
-        :collapsed="sidebarCollapsed"
+        v-show="sidebarOpen"
         :visible="sidebarOpen"
-        @expand="expandSidebar"
-        @collapse="collapseSidebar"
         @close="handleCloseSidebar"
       />
 
@@ -88,8 +85,7 @@ const router    = useRouter()
 const route     = useRoute()
 const isDesktop = ref(window.innerWidth >= 1024)
 
-const sidebarOpen      = ref(false)
-const sidebarCollapsed = ref(true)
+const sidebarOpen      = ref(window.innerWidth >= 1024)
 const showUpgradeModal = ref(false)
 
 const sidebarRightAllowed = computed(() =>
@@ -124,40 +120,32 @@ function goRenew() { router.push("/payment-pending") }
 
 const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value
-  if (window.innerWidth < 1024) {
-    sidebarCollapsed.value = false
-    if (sidebarOpen.value) sidebarRightOpen.value = false
-  }
+  if (sidebarOpen.value && window.innerWidth < 1024) sidebarRightOpen.value = false
 }
 const toggleSidebarRight = () => {
   if (!sidebarRightAllowed.value) return
   sidebarRightOpen.value = !sidebarRightOpen.value
   if (window.innerWidth < 1024 && sidebarRightOpen.value) sidebarOpen.value = false
 }
-const expandSidebar  = () => { sidebarCollapsed.value = false }
-const collapseSidebar = () => { sidebarCollapsed.value = true }
-const handleCloseSidebar = () => {
-  sidebarOpen.value = false
-  if (window.innerWidth >= 1024) sidebarCollapsed.value = true
-}
+const handleCloseSidebar = () => { sidebarOpen.value = false }
 const handleResize = () => {
   const was = isDesktop.value
   isDesktop.value = window.innerWidth >= 1024
   if (!was && isDesktop.value) {
-    // Al pasar a desktop (≥1024px): cerrar overlay izquierdo y abrir panel derecho
-    sidebarOpen.value      = false
+    sidebarOpen.value      = true
     sidebarRightOpen.value = sidebarRightAllowed.value
   }
   if (was && !isDesktop.value) {
-    // Al pasar a móvil/tablet (<1024px): cerrar ambos sidebars
     sidebarOpen.value      = false
     sidebarRightOpen.value = false
   }
 }
 
 watch(() => route.path, () => {
-  sidebarOpen.value = false
-  if (window.innerWidth < 1024) sidebarRightOpen.value = false
+  if (window.innerWidth < 1024) {
+    sidebarOpen.value      = false
+    sidebarRightOpen.value = false
+  }
 })
 
 watch(sidebarRightAllowed, (allowed) => {
@@ -184,11 +172,8 @@ onUnmounted(() => window.removeEventListener("resize", handleResize))
 
 <style>
 .layout { display: flex; }
-.layout .sidebar-left { width: 260px; transition: width 0.25s ease; }
-.layout.collapsed .sidebar-left { width: 70px; }
-.content {
-  flex: 1; overflow-y: auto; padding-bottom: 40px; transition: all 0.25s ease;
-}
+.layout .sidebar-left { width: 260px; }
+.content { flex: 1; overflow-y: auto; padding-bottom: 40px; }
 .sidebar-menu i { font-size: 20px; }
 </style>
 

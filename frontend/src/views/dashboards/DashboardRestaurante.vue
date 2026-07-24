@@ -8,23 +8,25 @@
     <div class="dash-header">
       <h6 class="dash-title">{{ companyStore.selectedCompany?.name || 'Panel de Operaciones' }}</h6>
       <div class="dash-header-right">
-        <a
-          :href="tvUrl" target="_blank"
-          class="btn-tv"
-          :class="{ 'btn-tv--disabled': !tvToken }"
-          title="Abrir Pedidos TV en pantalla"
-        >
-          <i class="bi bi-display me-1"></i>
-          <span class="btn-tv-label">Ver Pedidos TV</span>
-        </a>
-        <button class="btn-tv-icon" @click="copiarUrlTV" :disabled="!tvToken"
-          :title="urlCopiada ? '¡URL copiada!' : 'Copiar URL para el TV'">
-          <i class="bi" :class="urlCopiada ? 'bi-clipboard-check-fill' : 'bi-clipboard'"></i>
-        </button>
-        <button class="btn-tv-icon btn-tv-icon--regen" @click="regenerarUrlTV" :disabled="!tvToken"
-          title="Regenerar URL del TV (invalida la anterior)">
-          <i class="bi bi-arrow-repeat"></i>
-        </button>
+        <template v-if="companyStore.billingConfig?.has_tv_cocina == 1">
+          <a
+            :href="tvUrl" target="_blank"
+            class="btn-tv"
+            :class="{ 'btn-tv--disabled': !tvToken }"
+            title="Abrir Pedidos TV en pantalla"
+          >
+            <i class="bi bi-display me-1"></i>
+            <span class="btn-tv-label">Ver Pedidos TV</span>
+          </a>
+          <button class="btn-tv-icon" @click="copiarUrlTV" :disabled="!tvToken"
+            :title="urlCopiada ? '¡URL copiada!' : 'Copiar URL para el TV'">
+            <i class="bi" :class="urlCopiada ? 'bi-clipboard-check-fill' : 'bi-clipboard'"></i>
+          </button>
+          <button class="btn-tv-icon btn-tv-icon--regen" @click="regenerarUrlTV" :disabled="!tvToken"
+            title="Regenerar URL del TV (invalida la anterior)">
+            <i class="bi bi-arrow-repeat"></i>
+          </button>
+        </template>
         <button class="btn-refresh" @click="cargarTodo" :disabled="cargandoTodo" title="Actualizar">
           <i class="bi" :class="cargandoTodo ? 'bi-arrow-repeat spin' : 'bi-arrow-clockwise'"></i>
         </button>
@@ -46,7 +48,8 @@
         <span>Stock</span>
         <span v-if="stockAlertas.length" class="action-btn__badge">{{ stockAlertas.length }}</span>
       </button>
-      <button class="action-btn action-btn--tv" @click="abrirModalTV">
+      <button v-if="companyStore.billingConfig?.has_tv_cocina == 1"
+        class="action-btn action-btn--tv" @click="abrirModalTV">
         <i class="bi bi-tv"></i>
         <span>Pedidos TV</span>
         <span v-if="pedidosTV.length" class="action-btn__badge action-btn__badge--tv">{{ pedidosTV.length }}</span>

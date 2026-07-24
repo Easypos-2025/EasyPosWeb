@@ -1,6 +1,6 @@
 
 <template>
-  <div class="sidebar-left" :class="{ 'sidebar-mobile-active': visible, 'collapsed': collapsed }" @mouseenter="handleMouseEnter" @mouseleave="handleMouseLeave">
+  <div class="sidebar-left" :class="{ 'sidebar-mobile-active': visible }">
     <!-- EMPTY -->
     <div v-if="!menu || menu.length === 0" class="sidebar-empty">
       No tienes módulos asignados
@@ -100,10 +100,9 @@ import { useRoute } from "vue-router"
 
 const props = defineProps({
   visible: Boolean,
-  collapsed: Boolean
 })
 
-const emit = defineEmits(["close", "expand", "collapse"])
+const emit = defineEmits(["close"])
 
 const route = useRoute()
 const menuStore = useMenuStore()
@@ -122,19 +121,6 @@ const handleNavigate = () => {
   // 🔥 SOLO EN MÓVIL
   if (window.innerWidth < 768) {
     emit("close")
-  }
-}
-
-// ===== HOVER DESKTOP =====
-const handleMouseEnter = () => {
-  if (window.innerWidth >= 768) {
-    emit("expand")
-  }
-}
-
-const handleMouseLeave = () => {
-  if (window.innerWidth >= 768) {
-    emit("collapse")
   }
 }
 
