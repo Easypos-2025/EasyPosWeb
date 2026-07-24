@@ -117,6 +117,7 @@
 import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import api from "../services/apis"
+import { useMenuStore } from "@/stores/menuStore"
 
 const email            = ref(localStorage.getItem("lastUser") || "")
 const password         = ref("")
@@ -165,6 +166,8 @@ async function _completeLogin(token) {
     headers: { Authorization: `Bearer ${token}` }
   })
   localStorage.setItem("user", JSON.stringify(userResponse.data))
+  const menuStore = useMenuStore()
+  await menuStore.loadMenu()
   router.push("/dashboard")
 }
 

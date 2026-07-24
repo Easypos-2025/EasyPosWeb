@@ -21,9 +21,11 @@ export const useMenuStore = defineStore("menu", {
         const params = companyId ? { company_id: companyId } : {}
         const res = await api.get("/menu/my-menu/", { params })
         this.menu = this.buildTree(res.data)
+        localStorage.setItem("menu", JSON.stringify(this.menu))
       } catch (error) {
         console.error("Error cargando menú:", error)
         this.menu = []
+        localStorage.removeItem("menu")
       }
     },
 
