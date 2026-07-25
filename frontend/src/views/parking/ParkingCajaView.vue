@@ -244,7 +244,11 @@ const LABELS_ESTADO = {
 const ordenes       = ref([])
 const stats         = ref({ cnt_ingresado: 0, cnt_registrado: 0, cnt_pagado: 0, recaudo_hoy: 0 })
 const loading       = ref(false)
-const fechaFiltro   = ref(new Date().toISOString().slice(0, 10))
+function hoyLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+const fechaFiltro   = ref(hoyLocal())
 const filtroEstado  = ref('registrado')
 const ordenParaSalida   = ref(null)
 const itemsParaSalida   = ref([])

@@ -80,7 +80,7 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    fecha_sql = fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha_sql = fecha or datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
 
     # Conteo por estado para el día (actividad del día seleccionado)
     r_cnt = await db.execute(text("""
@@ -159,7 +159,7 @@ async def listar_orders(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    fecha_sql = fecha or datetime.now().strftime("%Y-%m-%d")
+    fecha_sql = fecha or datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
     filtros = {"cid": company_id, "fecha": fecha_sql}
     where   = ["po.company_id = :cid", "DATE(po.hora_ingreso) = :fecha"]
 

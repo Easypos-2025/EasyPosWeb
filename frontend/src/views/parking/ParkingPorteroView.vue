@@ -44,11 +44,6 @@
       </div>
     </div>
 
-    <!-- ══ FECHA ═════════════════════════════════════════════════════════════ -->
-    <div class="pk-filtro-bar">
-      <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
-    </div>
-
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
     <div v-if="loading" class="pk-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
@@ -222,7 +217,6 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
 
@@ -255,7 +249,11 @@ const vehicleTypes       = ref([])
 const loading            = ref(false)
 const loadingProductos   = ref(false)
 const marcandoSalida     = ref(null)
-const fechaFiltro        = ref(new Date().toISOString().slice(0, 10))
+function hoyLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+const fechaFiltro        = ref(hoyLocal())
 const filtroEstado       = ref('ingresado')
 const showModalNuevo     = ref(false)
 const guardando          = ref(false)

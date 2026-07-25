@@ -40,11 +40,6 @@
       </div>
     </div>
 
-    <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
-    <div class="pkm-filtro-bar">
-      <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
-    </div>
-
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
     <div v-if="loading" class="pkm-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
@@ -176,7 +171,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
@@ -185,7 +179,11 @@ const ordenes           = ref([])
 const stats             = ref({})
 const loading           = ref(false)
 const loadingItems      = ref(false)
-const fechaFiltro       = ref(new Date().toISOString().slice(0, 10))
+function hoyLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+const fechaFiltro       = ref(hoyLocal())
 const filtroEstado      = ref('ingresado')
 const showModal         = ref(false)
 const confirmando       = ref(false)
