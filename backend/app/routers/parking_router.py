@@ -82,7 +82,7 @@ async def get_stats(
 ):
     fecha_sql = fecha or datetime.now().strftime("%Y-%m-%d")
 
-    # Conteo por estado para el día
+    # Conteo por estado para el día (actividad del día seleccionado)
     r_cnt = await db.execute(text("""
         SELECT estado, COUNT(*) AS cnt
         FROM parking_orders
@@ -97,14 +97,19 @@ async def get_stats(
     cnt_salido     = conteos.get("salido",     0)
     cnt_cancelado  = conteos.get("cancelado",  0)
 
-    # Ocupadas = vehículos con presencia física (todos excepto salido y cancelado)
-    ocupadas = cnt_ingresado + cnt_registrado + cnt_pagado
-
     r_cfg = await db.execute(text(
         "SELECT total_plazas FROM parking_config WHERE company_id = :cid"
     ), {"cid": company_id})
     cfg_row = r_cfg.mappings().first()
     total_plazas = cfg_row["total_plazas"] if cfg_row else 20  # mismo default que GET /config
+
+    # Ocupación real actual: vehículos físicamente presentes sin importar cuándo entraron
+    r_ocp = await db.execute(text("""
+        SELECT COUNT(*) AS cnt
+        FROM parking_orders
+        WHERE company_id = :cid AND estado IN ('ingresado', 'registrado', 'pagado')
+    """), {"cid": company_id})
+    ocupadas = r_ocp.scalar() or 0
 
     disponibles = max(0, total_plazas - ocupadas)
     pct = round((ocupadas / total_plazas * 100) if total_plazas > 0 else 0, 1)
