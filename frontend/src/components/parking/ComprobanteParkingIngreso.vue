@@ -343,6 +343,7 @@ function imprimirSistema() {
   showPanel.value = false
   const contenido = document.getElementById('cpi-print-area')
   if (!contenido) return
+
   const html = `<!DOCTYPE html><html><head>
     <meta charset="UTF-8"><title>Comprobante Parking</title>
     <style>
@@ -365,18 +366,27 @@ function imprimirSistema() {
     </style>
   </head><body>${contenido.innerHTML}</body></html>`
 
-  const printWin = window.open('', '_blank', 'width=420,height=640')
-  if (!printWin) {
-    showToast('Permite ventanas emergentes o usa el botón Compartir de tu navegador', 'warning', 4000)
-    return
+  // iframe oculto: no requiere permiso de popup y en Android muestra todas las
+  // impresoras del sistema (USB/WiFi/red) igual que en Windows
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;'
+  document.body.appendChild(iframe)
+
+  const cleanup = () => { if (document.body.contains(iframe)) document.body.removeChild(iframe) }
+
+  iframe.onload = () => {
+    iframe.contentWindow.onafterprint = cleanup
+    setTimeout(() => {
+      iframe.contentWindow.focus()
+      iframe.contentWindow.print()
+    }, 200)
+    // fallback por si afterprint no dispara (algunos Android)
+    setTimeout(cleanup, 30000)
   }
-  printWin.document.write(html)
-  printWin.document.close()
-  printWin.focus()
-  // afterprint cierra la ventana sólo DESPUÉS de que el usuario termina con el diálogo
-  // (en móvil print() no es bloqueante; no usar close() en el mismo setTimeout)
-  printWin.onafterprint = () => printWin.close()
-  setTimeout(() => { printWin.print() }, 300)
+
+  iframe.contentDocument.open()
+  iframe.contentDocument.write(html)
+  iframe.contentDocument.close()
 }
 </script>
 
