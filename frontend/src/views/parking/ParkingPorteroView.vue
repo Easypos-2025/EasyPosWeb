@@ -457,9 +457,9 @@ function fmtHora(dt) {
 .pk-kpi-card i { font-size: 1.4rem; opacity: .85; }
 .pk-kpi-val  { display: block; font-size: 1.4rem; line-height: 1; }
 .pk-kpi-lbl  { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
-.pk-kpi-ingresado  { background: #0d6efd; cursor: pointer; }
-.pk-kpi-confirmado { background: #198754; cursor: pointer; }
-.pk-kpi-parasalir  { background: #fd7e14; cursor: pointer; }
+.pk-kpi-ingresado  { background: #fd7e14; cursor: pointer; }
+.pk-kpi-confirmado { background: #0d6efd; cursor: pointer; }
+.pk-kpi-parasalir  { background: #198754; cursor: pointer; }
 .pk-kpi-disponible { background: #6f42c1; }
 .pk-kpi-pct        { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
 .pk-kpi-card:hover { filter: brightness(1.1); }
@@ -476,9 +476,9 @@ function fmtHora(dt) {
 /* Cards */
 .pk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .pk-card { background: #fff; border-radius: 12px; padding: 14px; border: 2px solid #e9ecef; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.pk-card--ingresado  { border-color: #ffc107; }
-.pk-card--registrado { border-color: #0d6efd; }
-.pk-card--pagado     { border-color: #d1e7dd; opacity: .65; }
+.pk-card--ingresado  { border-color: #fd7e14; background: #fff8f0; }
+.pk-card--registrado { border-color: #0d6efd; background: #f0f6ff; }
+.pk-card--pagado     { border-color: #198754; background: #f0fff4; opacity: .85; }
 .pk-card--cancelado  { opacity: .5; }
 .pk-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pk-badge { font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; text-transform: uppercase; }
@@ -501,7 +501,6 @@ function fmtHora(dt) {
 .pk-btn-salida { border: none; background: #198754; color: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: .8rem; font-weight: 600; display: flex; align-items: center; gap: 4px; }
 .pk-btn-salida:hover:not(:disabled) { background: #157347; }
 .pk-btn-salida:disabled { opacity: .6; cursor: default; }
-.pk-card--pagado { border-color: #198754; }
 
 /* Modal */
 .pk-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1050; display: flex; align-items: center; justify-content: center; padding: 16px; }

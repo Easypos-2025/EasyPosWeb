@@ -436,8 +436,8 @@ onUnmounted(() => clearInterval(_autoRefresh))
 .pkc-kpi-val    { display: block; font-size: 1.6rem; line-height: 1; }
 .pkc-kpi-pct    { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
 .pkc-kpi-lbl    { display: block; font-size: .72rem; opacity: .85; white-space: nowrap; }
-.pkc-kpi-sinconfirmar { background: #6c757d; cursor: pointer; transition: filter .15s; }
-.pkc-kpi-pendiente    { background: #fd7e14; cursor: pointer; transition: filter .15s; }
+.pkc-kpi-sinconfirmar { background: #fd7e14; cursor: pointer; transition: filter .15s; }
+.pkc-kpi-pendiente    { background: #0d6efd; cursor: pointer; transition: filter .15s; }
 .pkc-kpi-pagadas      { background: #198754; cursor: pointer; transition: filter .15s; }
 .pkc-kpi-disponible   { background: #6f42c1; cursor: default; }
 .pkc-kpi-card:hover   { filter: brightness(1.1); }
@@ -465,8 +465,9 @@ onUnmounted(() => clearInterval(_autoRefresh))
   border: 2px solid #dee2e6; display: flex; flex-direction: column; gap: 8px;
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
-.pkc-card--registrado { border-color: #0d6efd; }
-.pkc-card--pagado     { border-color: #d1e7dd; opacity: .75; }
+.pkc-card--ingresado  { border-color: #fd7e14; background: #fff8f0; }
+.pkc-card--registrado { border-color: #0d6efd; background: #f0f6ff; }
+.pkc-card--pagado     { border-color: #198754; background: #f0fff4; opacity: .85; }
 
 .pkc-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pkc-badge {

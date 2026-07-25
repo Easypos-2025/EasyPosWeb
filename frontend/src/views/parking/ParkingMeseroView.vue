@@ -53,7 +53,7 @@
     <div v-else class="pkm-grid">
       <div
         v-for="o in ordenesFiltradas" :key="o.id"
-        :class="['pkm-card', { 'pkm-card--confirmado': o.estado === 'registrado', 'pkm-card--pagado': o.estado === 'pagado' }]"
+        :class="['pkm-card', { 'pkm-card--sinconf': o.estado === 'ingresado', 'pkm-card--confirmado': o.estado === 'registrado', 'pkm-card--pagado': o.estado === 'pagado' }]"
         @click="o.estado !== 'pagado' && abrirConfirmar(o)"
       >
         <div class="pkm-card-top">
@@ -312,8 +312,8 @@ function fmtHora(dt) {
 .pkm-kpi-pct  { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
 .pkm-kpi-lbl  { display: block; font-size: .7rem; opacity: .85; white-space: nowrap; }
 .pkm-kpi-sinconf   { background: #fd7e14; }
-.pkm-kpi-conf      { background: #198754; }
-.pkm-kpi-pagadas   { background: #0d6efd; }
+.pkm-kpi-conf      { background: #0d6efd; }
+.pkm-kpi-pagadas   { background: #198754; }
 .pkm-kpi-disponible{ background: #6f42c1; cursor: default; }
 .pkm-kpi-active    { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
 
@@ -335,8 +335,9 @@ function fmtHora(dt) {
 .pkm-badge-nuevo { font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; background: #fff3cd; color: #856404; text-transform: uppercase; }
 .pkm-badge-confirmado { background: #d1e7dd !important; color: #0a3622 !important; }
 .pkm-badge-pagado     { background: #cfe2ff !important; color: #084298 !important; }
-.pkm-card--confirmado { border-color: #198754; }
-.pkm-card--pagado     { border-color: #0d6efd; cursor: default; opacity: .85; }
+.pkm-card--sinconf    { border-color: #fd7e14; background: #fff8f0; }
+.pkm-card--confirmado { border-color: #0d6efd; background: #f0f6ff; }
+.pkm-card--pagado     { border-color: #198754; background: #f0fff4; cursor: default; opacity: .85; }
 .pkm-pagado-txt { font-size: .72rem; color: #0d6efd; display: flex; align-items: center; gap: 4px; font-weight: 600; }
 .pkm-card-placa { font-size: 1.8rem; font-weight: 900; letter-spacing: 3px; text-align: center; border: 2px solid #212529; border-radius: 6px; padding: 4px 0; color: #212529; background: #fff; }
 .pkm-confirmado-por { font-size: .72rem; color: #198754; display: flex; align-items: center; gap: 4px; font-weight: 600; }
