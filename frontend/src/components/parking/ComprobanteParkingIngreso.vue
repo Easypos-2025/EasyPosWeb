@@ -103,7 +103,7 @@
                 :disabled="imprimiendoPosId === p.id"
                 @click="imprimirPos(p)"
               >
-                <i :class="p.ip ? 'bi bi-wifi' : 'bi bi-bluetooth'"></i>
+                <i :class="p.connection_type === 'usb' ? 'bi bi-usb-symbol' : (p.ip ? 'bi bi-wifi' : 'bi bi-bluetooth')"></i>
                 <span>{{ p.name }}</span>
                 <i v-if="imprimiendoPosId === p.id" class="bi bi-arrow-repeat spin ms-auto"></i>
               </button>
@@ -319,6 +319,10 @@ async function loadPrinters() {
 }
 
 async function imprimirPos(printer) {
+  if (printer.connection_type === 'usb') {
+    await imprimirWebUSB(printer)
+    return
+  }
   if (!printer.ip) {
     await imprimirBluetooth(printer)
     return
@@ -335,6 +339,62 @@ async function imprimirPos(printer) {
     showPanel.value = false
   } catch (e) {
     showToast(e?.response?.data?.detail || `Error al enviar a "${printer.name}"`, 'error', 3000)
+  }
+  imprimiendoPosId.value = null
+}
+
+async function imprimirWebUSB(printer) {
+  if (!('usb' in navigator)) {
+    showToast('WebUSB no disponible — usa Chrome en PC o Android', 'warning', 4000)
+    return
+  }
+  imprimiendoPosId.value = printer.id
+  try {
+    let device = null
+    // Intentar reusar dispositivo ya autorizado en esta sesión
+    const paired = await navigator.usb.getDevices()
+    if (printer.usb_device_id && paired.length) {
+      const [vid, pid] = printer.usb_device_id.split(':').map(Number)
+      device = paired.find(d => d.vendorId === vid && d.productId === pid) || null
+    }
+    if (!device) {
+      const filters = [{ classCode: 7 }] // clase impresora USB
+      if (printer.usb_device_id) {
+        const [vid, pid] = printer.usb_device_id.split(':').map(Number)
+        if (!isNaN(vid)) filters.unshift({ vendorId: vid, productId: pid })
+      }
+      device = await navigator.usb.requestDevice({ filters })
+    }
+
+    await device.open()
+    if (device.configuration === null) await device.selectConfiguration(1)
+
+    const iface = device.configuration.interfaces.find(i =>
+      i.alternate.interfaceClass === 7
+    ) || device.configuration.interfaces[0]
+    await device.claimInterface(iface.interfaceNumber)
+
+    const endpoint = iface.alternate.endpoints.find(e =>
+      e.direction === 'out' && e.type === 'bulk'
+    )
+    if (!endpoint) throw new Error('No se encontró endpoint bulk-out en la impresora USB')
+
+    const bytes = buildESCPOS()
+    const CHUNK = 4096
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      await device.transferOut(endpoint.endpointNumber, bytes.slice(i, i + CHUNK))
+    }
+    await device.releaseInterface(iface.interfaceNumber)
+    await device.close()
+
+    showToast(`Impreso en "${printer.name}"`, 'success', 2000)
+    showPanel.value = false
+  } catch (e) {
+    if (e.name === 'NotFoundError' || e.name === 'NotAllowedError') {
+      showToast('Selección cancelada', 'info', 2000)
+    } else {
+      showToast(e.message || 'Error USB', 'error', 4000)
+    }
   }
   imprimiendoPosId.value = null
 }
@@ -416,23 +476,24 @@ function imprimirSistema() {
 }
 .cpi-ticket {
   background: #fff; border: 1px dashed #ccc; border-radius: 4px;
-  padding: 12px 16px; font-family: 'Courier New', monospace;
-  font-size: 12px; width: 100%; max-width: 300px;
+  padding: 16px; font-family: 'Courier New', monospace;
+  font-size: 14px; width: 100%; max-width: 340px;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
-.cpi-company      { text-align: center; margin-bottom: 6px; }
-.cpi-company-name { font-size: 14px; font-weight: bold; text-transform: uppercase; }
-.cpi-company-sub  { font-size: 10px; margin-top: 2px; }
-.cpi-divider      { text-align: center; font-size: 10px; color: #666; margin: 4px 0; }
-.cpi-section-lbl  { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: .5px; margin: 6px 0 3px; color: #333; }
-.cpi-row-kv       { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; font-size: 11px; }
+.cpi-company      { text-align: center; margin-bottom: 8px; }
+.cpi-company-name { font-size: 16px; font-weight: bold; text-transform: uppercase; }
+.cpi-company-sub  { font-size: 12px; margin-top: 3px; color: #444; }
+.cpi-divider      { text-align: center; font-size: 12px; color: #999; margin: 6px 0; }
+.cpi-section-lbl  { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .8px; margin: 8px 0 4px; color: #222; }
+.cpi-row-kv       { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; font-size: 13px; }
 .cpi-k            { color: #555; flex-shrink: 0; }
-.cpi-v            { font-weight: 600; text-align: right; }
-.cpi-orden        { font-size: 13px; font-weight: 900; }
-.cpi-placa-box    { font-size: 30px; font-weight: 900; letter-spacing: 4px; text-align: center;
-                    border: 2px solid #000; padding: 6px 10px; margin: 6px auto; display: inline-block; }
-.cpi-total-personas { font-size: 11px; font-weight: bold; margin-top: 4px; }
-.cpi-obs          { font-size: 11px; font-style: italic; color: #333; padding: 2px 0; }
-.cpi-footer       { text-align: center; font-size: 10px; color: #555; margin-top: 6px; line-height: 1.4; }
+.cpi-v            { font-weight: 700; text-align: right; }
+.cpi-orden        { font-size: 15px; font-weight: 900; }
+.cpi-placa-box    { font-size: 34px; font-weight: 900; letter-spacing: 5px; text-align: center;
+                    border: 2px solid #000; padding: 8px 12px; margin: 8px auto; display: inline-block; }
+.cpi-total-personas { font-size: 13px; font-weight: bold; margin-top: 5px; }
+.cpi-obs          { font-size: 12px; font-style: italic; color: #333; padding: 3px 0; }
+.cpi-footer       { text-align: center; font-size: 12px; color: #555; margin-top: 8px; line-height: 1.5; }
 
 /* Panel impresoras */
 .cpi-panel-overlay {
