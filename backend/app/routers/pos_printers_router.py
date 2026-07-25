@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -38,27 +38,34 @@ class PrinterIn(BaseModel):
     bluetooth_address: Optional[str] = None
     usb_device_id: Optional[str] = None
     is_active: Optional[int] = 1
+    company_id: Optional[int] = None  # SYSADMIN puede operar en otra company
 
 
 @router.get("")
-async def listar(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+async def listar(
+    company_id: Optional[int] = Query(None),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
     user = await _get_user(authorization, db)
+    cid = company_id or user.company_id
     rows = (await db.execute(text(
         "SELECT * FROM pos_printers WHERE company_id=:cid ORDER BY name"
-    ), {"cid": user.company_id})).mappings().all()
+    ), {"cid": cid})).mappings().all()
     return [dict(r) for r in rows]
 
 
 @router.post("", status_code=201)
 async def crear(data: PrinterIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    cid = data.company_id or user.company_id
     await db.execute(text("""
         INSERT INTO pos_printers
             (company_id, name, connection_type, ip, bluetooth_address, usb_device_id, is_active)
         VALUES
             (:cid, :name, :ctype, :ip, :bt, :usb, :active)
     """), {
-        "cid":    user.company_id,
+        "cid":    cid,
         "name":   data.name,
         "ctype":  data.connection_type,
         "ip":     data.ip,
@@ -69,7 +76,7 @@ async def crear(data: PrinterIn, authorization: str = Header(None), db: AsyncSes
     await db.commit()
     row = (await db.execute(text(
         "SELECT * FROM pos_printers WHERE company_id=:cid ORDER BY id DESC LIMIT 1"
-    ), {"cid": user.company_id})).mappings().one()
+    ), {"cid": cid})).mappings().one()
     return dict(row)
 
 
@@ -79,6 +86,7 @@ async def actualizar(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    cid = data.company_id or user.company_id
     await db.execute(text("""
         UPDATE pos_printers
         SET name=:name, connection_type=:ctype, ip=:ip,
@@ -86,7 +94,7 @@ async def actualizar(
         WHERE id=:id AND company_id=:cid
     """), {
         "id":     printer_id,
-        "cid":    user.company_id,
+        "cid":    cid,
         "name":   data.name,
         "ctype":  data.connection_type,
         "ip":     data.ip,
@@ -101,32 +109,36 @@ async def actualizar(
 @router.patch("/{printer_id}/toggle")
 async def toggle_activa(
     printer_id: int,
-    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+    company_id: Optional[int] = Query(None),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
+    cid = company_id or user.company_id
     await db.execute(text(
         "UPDATE pos_printers SET is_active = 1 - is_active WHERE id=:id AND company_id=:cid"
-    ), {"id": printer_id, "cid": user.company_id})
+    ), {"id": printer_id, "cid": cid})
     await db.commit()
     row = (await db.execute(text(
         "SELECT id, is_active FROM pos_printers WHERE id=:id AND company_id=:cid"
-    ), {"id": printer_id, "cid": user.company_id})).mappings().first()
+    ), {"id": printer_id, "cid": cid})).mappings().first()
     return {"id": int(row["id"]), "is_active": int(row["is_active"])}
 
 
 @router.delete("/{printer_id}")
 async def eliminar(
     printer_id: int,
-    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+    company_id: Optional[int] = Query(None),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    # Eliminar asignaciones artículo→impresora antes de borrar
+    cid = company_id or user.company_id
     await db.execute(text(
         "DELETE FROM pos_item_printers WHERE printer_id=:id AND company_id=:cid"
-    ), {"id": printer_id, "cid": user.company_id})
-    # Eliminar registro definitivamente
+    ), {"id": printer_id, "cid": cid})
     await db.execute(text(
         "DELETE FROM pos_printers WHERE id=:id AND company_id=:cid"
-    ), {"id": printer_id, "cid": user.company_id})
+    ), {"id": printer_id, "cid": cid})
     await db.commit()
     return {"ok": True}

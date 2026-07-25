@@ -193,6 +193,9 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
+import { useCompanyStore } from '@/stores/companyStore'
+const companyStore = useCompanyStore()
+const selectedCid  = computed(() => companyStore.selectedCompany?.id ?? null)
 
 const BASE = '/api/pos-catalogo/impresoras'
 
@@ -259,7 +262,11 @@ const puedeGuardar = computed(() => {
 onMounted(cargar)
 async function cargar() {
   loading.value = true
-  try { const{data}=await api.get(BASE); items.value=data } catch { items.value=[] }
+  try {
+    const params = selectedCid.value ? { company_id: selectedCid.value } : {}
+    const { data } = await api.get(BASE, { params })
+    items.value = data
+  } catch { items.value=[] }
   finally { loading.value=false }
 }
 
@@ -286,7 +293,7 @@ async function guardar() {
   if (!modal.value.name || !puedeGuardar.value) return
   guardando.value = true
   try {
-    const p = { name:modal.value.name, connection_type:modal.value.connection_type, ip:modal.value.ip||null, bluetooth_address:modal.value.bluetooth_address||null, usb_device_id:modal.value.usb_device_id||null, is_active:modal.value.is_active }
+    const p = { name:modal.value.name, connection_type:modal.value.connection_type, ip:modal.value.ip||null, bluetooth_address:modal.value.bluetooth_address||null, usb_device_id:modal.value.usb_device_id||null, is_active:modal.value.is_active, company_id: selectedCid.value||null }
     if (modal.value.id) await api.put(`${BASE}/${modal.value.id}`, p)
     else                await api.post(BASE, p)
     showToast('Impresora guardada', 'success')
@@ -297,7 +304,8 @@ async function guardar() {
 
 async function toggleActiva(imp) {
   try {
-    const { data } = await api.patch(`${BASE}/${imp.id}/toggle`)
+    const params = selectedCid.value ? { company_id: selectedCid.value } : {}
+    const { data } = await api.patch(`${BASE}/${imp.id}/toggle`, null, { params })
     imp.is_active = data.is_active
     showToast(data.is_active ? 'Impresora activada' : 'Impresora desactivada', 'success')
   } catch { showToast('Error al cambiar estado', 'error') }
@@ -314,8 +322,12 @@ async function eliminar(imp) {
     cancelButtonText: 'Cancelar',
   })
   if (!isConfirmed) return
-  try { await api.delete(`${BASE}/${imp.id}`); showToast('Impresora eliminada', 'success'); await cargar() }
-  catch { showToast('Error al eliminar', 'error') }
+  try {
+    const params = selectedCid.value ? { company_id: selectedCid.value } : {}
+    await api.delete(`${BASE}/${imp.id}`, { params })
+    showToast('Impresora eliminada', 'success')
+    await cargar()
+  } catch { showToast('Error al eliminar', 'error') }
 }
 
 // ── USB ───────────────────────────────────────────────────────────────────────
