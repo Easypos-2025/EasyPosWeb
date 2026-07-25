@@ -8,7 +8,7 @@
         <i class="bi bi-hourglass-split"></i>
         <div>
           <span class="pkc-kpi-val">{{ stats.cnt_ingresado || 0 }}</span>
-          <span class="pkc-kpi-pct">{{ stats.pct_ocupacion || 0 }}% ocupado</span>
+          <span class="pkc-kpi-pct">{{ pctIngresado }}% de capacidad</span>
           <span class="pkc-kpi-lbl">Por confirmar</span>
         </div>
       </div>
@@ -17,7 +17,7 @@
         <i class="bi bi-cash-coin"></i>
         <div>
           <span class="pkc-kpi-val">{{ stats.cnt_registrado || 0 }}</span>
-          <span class="pkc-kpi-pct">{{ stats.pct_ocupacion || 0 }}% ocupado</span>
+          <span class="pkc-kpi-pct">{{ pctRegistrado }}% de capacidad</span>
           <span class="pkc-kpi-lbl">Pendientes cobro</span>
         </div>
       </div>
@@ -26,6 +26,7 @@
         <i class="bi bi-check-circle-fill"></i>
         <div>
           <span class="pkc-kpi-val">{{ stats.cnt_pagado || 0 }}</span>
+          <span v-if="pctPagado > 0" class="pkc-kpi-pct">{{ pctPagado }}% de activos</span>
           <span class="pkc-kpi-lbl">Pagadas · {{ fmtMini(stats.recaudo_hoy) }}</span>
         </div>
       </div>
@@ -33,7 +34,7 @@
         <i class="bi bi-p-square-fill"></i>
         <div>
           <span class="pkc-kpi-val">{{ stats.disponibles || 0 }}</span>
-          <span class="pkc-kpi-pct">{{ stats.total_plazas || 0 }} plazas</span>
+          <span class="pkc-kpi-pct">{{ pctDisponible }}% libres · {{ stats.total_plazas || 0 }} plazas</span>
           <span class="pkc-kpi-lbl">Disponibles</span>
         </div>
       </div>
@@ -280,6 +281,11 @@ const lineasSeleccionadas = computed(() => {
 const totalBruto    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal_bruto, 0))
 const totalImpuesto = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.impuesto, 0))
 const totalFinal    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal, 0))
+
+const pctIngresado  = computed(() => stats.value.total_plazas ? Math.round((stats.value.cnt_ingresado || 0) / stats.value.total_plazas * 100) : 0)
+const pctRegistrado = computed(() => stats.value.total_plazas ? Math.round((stats.value.cnt_registrado || 0) / stats.value.total_plazas * 100) : 0)
+const pctPagado     = computed(() => { const a = (stats.value.cnt_ingresado || 0) + (stats.value.cnt_registrado || 0); return a ? Math.round((stats.value.cnt_pagado || 0) / a * 100) : 0 })
+const pctDisponible = computed(() => stats.value.total_plazas ? Math.round((stats.value.disponibles || 0) / stats.value.total_plazas * 100) : 0)
 
 // ── Carga órdenes + stats ─────────────────────────────────────────────────────
 async function cargar(silent = false) {

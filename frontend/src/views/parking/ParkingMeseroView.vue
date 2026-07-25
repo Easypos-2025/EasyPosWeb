@@ -8,7 +8,7 @@
         <i class="bi bi-door-open-fill"></i>
         <div>
           <span class="pkm-kpi-val">{{ cntIngresado }}</span>
-          <span class="pkm-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
+          <span class="pkm-kpi-pct">{{ pctIngresado }}% de capacidad</span>
           <span class="pkm-kpi-lbl">Sin confirmar</span>
         </div>
       </div>
@@ -17,7 +17,7 @@
         <i class="bi bi-person-check-fill"></i>
         <div>
           <span class="pkm-kpi-val">{{ cntRegistrado }}</span>
-          <span class="pkm-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
+          <span class="pkm-kpi-pct">{{ pctRegistrado }}% de capacidad</span>
           <span class="pkm-kpi-lbl">Confirmadas</span>
         </div>
       </div>
@@ -26,6 +26,7 @@
         <i class="bi bi-cash-coin"></i>
         <div>
           <span class="pkm-kpi-val">{{ cntPagado }}</span>
+          <span v-if="pctPagado > 0" class="pkm-kpi-pct">{{ pctPagado }}% de activos</span>
           <span class="pkm-kpi-lbl">Pagadas</span>
         </div>
       </div>
@@ -33,7 +34,7 @@
         <i class="bi bi-p-square-fill"></i>
         <div>
           <span class="pkm-kpi-val">{{ stats.disponibles ?? 0 }}</span>
-          <span class="pkm-kpi-pct">{{ stats.total_plazas ?? 0 }} plazas</span>
+          <span class="pkm-kpi-pct">{{ pctDisponible }}% libres · {{ stats.total_plazas ?? 0 }} plazas</span>
           <span class="pkm-kpi-lbl">Disponibles</span>
         </div>
       </div>
@@ -198,6 +199,10 @@ const ordenesFiltradas = computed(() => ordenes.value.filter(o => o.estado === f
 const cntIngresado     = computed(() => ordenes.value.filter(o => o.estado === 'ingresado').length)
 const cntRegistrado    = computed(() => ordenes.value.filter(o => o.estado === 'registrado').length)
 const cntPagado        = computed(() => ordenes.value.filter(o => o.estado === 'pagado').length)
+const pctIngresado     = computed(() => stats.value.total_plazas ? Math.round(cntIngresado.value / stats.value.total_plazas * 100) : 0)
+const pctRegistrado    = computed(() => stats.value.total_plazas ? Math.round(cntRegistrado.value / stats.value.total_plazas * 100) : 0)
+const pctPagado        = computed(() => { const a = cntIngresado.value + cntRegistrado.value; return a ? Math.round(cntPagado.value / a * 100) : 0 })
+const pctDisponible    = computed(() => stats.value.total_plazas ? Math.round((stats.value.disponibles || 0) / stats.value.total_plazas * 100) : 0)
 const totalItemsMesero = computed(() =>
   Object.values(seleccionMesero.value).filter(v => v.activo).reduce((s, v) => s + v.cantidad, 0)
 )

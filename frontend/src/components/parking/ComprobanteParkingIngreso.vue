@@ -367,14 +367,16 @@ function imprimirSistema() {
 
   const printWin = window.open('', '_blank', 'width=420,height=640')
   if (!printWin) {
-    // Popup bloqueado (frecuente en móvil) — imprimir página actual directamente
     showToast('Permite ventanas emergentes o usa el botón Compartir de tu navegador', 'warning', 4000)
     return
   }
   printWin.document.write(html)
   printWin.document.close()
   printWin.focus()
-  setTimeout(() => { printWin.print(); printWin.close() }, 300)
+  // afterprint cierra la ventana sólo DESPUÉS de que el usuario termina con el diálogo
+  // (en móvil print() no es bloqueante; no usar close() en el mismo setTimeout)
+  printWin.onafterprint = () => printWin.close()
+  setTimeout(() => { printWin.print() }, 300)
 }
 </script>
 

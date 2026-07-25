@@ -12,7 +12,7 @@
         <i class="bi bi-door-open-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_ingresado ?? 0 }}</span>
-          <span class="pk-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
+          <span class="pk-kpi-pct">{{ pctIngresado }}% de capacidad</span>
           <span class="pk-kpi-lbl">Ingresados</span>
         </div>
       </div>
@@ -21,7 +21,7 @@
         <i class="bi bi-person-check-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_registrado ?? 0 }}</span>
-          <span class="pk-kpi-pct">{{ stats.pct_ocupacion ?? 0 }}% ocupado</span>
+          <span class="pk-kpi-pct">{{ pctRegistrado }}% de capacidad</span>
           <span class="pk-kpi-lbl">Confirmados</span>
         </div>
       </div>
@@ -30,6 +30,7 @@
         <i class="bi bi-car-front-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_pagado ?? 0 }}</span>
+          <span v-if="pctPagado > 0" class="pk-kpi-pct">{{ pctPagado }}% de activos</span>
           <span class="pk-kpi-lbl">Para salir</span>
         </div>
       </div>
@@ -37,7 +38,7 @@
         <i class="bi bi-p-square-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.disponibles ?? 0 }}</span>
-          <span class="pk-kpi-pct">{{ stats.total_plazas ?? 0 }} plazas</span>
+          <span class="pk-kpi-pct">{{ pctDisponible }}% libres · {{ stats.total_plazas ?? 0 }} plazas</span>
           <span class="pk-kpi-lbl">Disponibles</span>
         </div>
       </div>
@@ -126,10 +127,18 @@
           <!-- TIPO DE VEHÍCULO -->
           <div class="pk-field">
             <label>Tipo de Vehículo</label>
-            <select v-model="form.vehicle_type_id" class="pk-input">
-              <option :value="null">— Seleccionar —</option>
-              <option v-for="t in vehicleTypes" :key="t.id" :value="t.id">{{ t.nombre }}</option>
-            </select>
+            <div v-if="vehicleTypes.length" class="pk-vtype-list">
+              <button
+                v-for="t in vehicleTypes" :key="t.id"
+                type="button"
+                :class="['pk-vtype-btn', { 'pk-vtype-btn--sel': form.vehicle_type_id === t.id }]"
+                @click="form.vehicle_type_id = form.vehicle_type_id === t.id ? null : t.id"
+              >
+                <i v-if="form.vehicle_type_id === t.id" class="bi bi-check-circle-fill"></i>
+                {{ t.nombre }}
+              </button>
+            </div>
+            <small v-else class="pk-hint-vtype">Sin tipos configurados</small>
           </div>
 
           <!-- FOTO DEL VEHÍCULO -->
@@ -236,6 +245,11 @@ const LABELS_ESTADO = {
 
 const ordenes            = ref([])
 const stats              = ref({ disponibles: 0, ocupadas: 0, total_plazas: 0, pct_ocupacion: 0 })
+
+const pctIngresado  = computed(() => stats.value.total_plazas ? Math.round((stats.value.cnt_ingresado || 0) / stats.value.total_plazas * 100) : 0)
+const pctRegistrado = computed(() => stats.value.total_plazas ? Math.round((stats.value.cnt_registrado || 0) / stats.value.total_plazas * 100) : 0)
+const pctPagado     = computed(() => { const a = (stats.value.cnt_ingresado || 0) + (stats.value.cnt_registrado || 0); return a ? Math.round((stats.value.cnt_pagado || 0) / a * 100) : 0 })
+const pctDisponible = computed(() => stats.value.total_plazas ? Math.round((stats.value.disponibles || 0) / stats.value.total_plazas * 100) : 0)
 const productos          = ref([])
 const vehicleTypes       = ref([])
 const loading            = ref(false)
@@ -512,6 +526,19 @@ function fmtHora(dt) {
 .pk-placa-spin { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #6c757d; font-size: 1rem; }
 .pk-placa-ok   { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #198754; font-size: 1rem; }
 .pk-hint-ok { font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 4px; }
+
+/* Selector de tipo de vehículo — chips táctiles (sin select nativo) */
+.pk-vtype-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.pk-vtype-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 18px; border: 2px solid #dee2e6; border-radius: 10px;
+  background: #fff; font-size: .9rem; font-weight: 500; color: #495057;
+  cursor: pointer; transition: all .15s; min-height: 44px;
+}
+.pk-vtype-btn:hover    { border-color: #0d6efd; color: #0d6efd; }
+.pk-vtype-btn--sel     { border-color: #0d6efd; background: #e7f1ff; color: #0d6efd; font-weight: 700; }
+.pk-vtype-btn--sel i   { color: #0d6efd; }
+.pk-hint-vtype         { font-size: .78rem; color: #adb5bd; }
 
 /* Selector de servicios */
 .pk-svc-loading { text-align: center; padding: 12px; color: #6c757d; font-size: .85rem; }
