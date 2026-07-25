@@ -15,15 +15,22 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
 
 - **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
 - **Auto-Deploy**: Cuando el usuario escriba la palabra **"commit"**, ejecutar el siguiente flujo completo en orden:
-  1. `npm run build` en frontend — si hay errores, detener y reportar.
+  1. `npm run build` en frontend (local) — si hay errores, detener y reportar.
   2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
   3. `git push origin master`
-  4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && cd frontend && npm run build && systemctl restart easyposweb`
-     Comando SSH completo: `ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && cd frontend && npm run build && systemctl restart easyposweb"`
-  5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
+  4. **rsync** del `dist/` local al servidor (solo sube archivos que cambiaron):
+     ```bash
+     rsync -avz --delete "d:/AAA Proyectos Claude-Code/EasyPosWeb/frontend/dist/" root@209.38.152.254:/var/www/easyposweb/frontend/dist/
+     ```
+     > En Bash/Git Bash usar rutas POSIX: `/d/AAA\ Proyectos\ Claude-Code/EasyPosWeb/frontend/dist/`
+  5. SSH al servidor — solo git pull (backend) + restart (sin `npm run build` en servidor):
+     ```bash
+     ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && systemctl restart easyposweb"
+     ```
+  6. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
      `ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
-  6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
-  - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
+  7. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
+  - El build de Vite se hace **solo en local**; el servidor recibe el `dist/` listo vía rsync. Esto elimina el rebuild en servidor y acelera el deploy.
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
 - Todos los campos donde se describa un valor de pesos debe tener el formato de moneda correspondiente al país del Asociado.
 - La aplicación está enfocada a que todo se haga en un 80% desde móvil; siempre tener en cuenta los dos media queries: dos tamaños de móvil, tablet y PC.

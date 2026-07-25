@@ -60,7 +60,7 @@ import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 
 const companyStore = useCompanyStore()
-const companyId    = computed(() => companyStore.selectedCompany?.id_company)
+const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const MODOS = [
   { val: 'tarifa_unica', nombre: 'Tarifa Única',        icon: 'bi bi-person-check-fill', desc: 'Un precio fijo por persona, sin importar el tiempo' },
