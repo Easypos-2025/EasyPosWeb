@@ -783,7 +783,7 @@ const routes = [
         path: "/talleres/orden/:id",
         name: "TalleresOrdenDetalleView",
         component: () => import("@/views/talleres/TalleresOrdenDetalleView.vue"),
-        meta: { requiresAuth: true, title: "Detalle de Orden" }
+        meta: { requiresAuth: true, title: "Detalle de Orden", parentRoute: "/talleres/ordenes" }
       },
       {
         path: "/talleres/operarios",
@@ -1197,10 +1197,11 @@ router.beforeEach(async (to, from, next) => {
 
     if (to.meta.requiresAuth && !isSystem) {
 
-      // Verifica tanto la URL resuelta como el patrón de ruta (para rutas dinámicas como /orden/:id)
+      // Verifica la URL resuelta, el patrón de ruta, o la ruta padre declarada en meta
       const routePattern = to.matched.length ? to.matched[to.matched.length - 1].path : null
       const allowed = hasAccess(menu, to.path) ||
-                      (routePattern && routePattern !== to.path && hasAccess(menu, routePattern))
+                      (routePattern && routePattern !== to.path && hasAccess(menu, routePattern)) ||
+                      (to.meta.parentRoute && hasAccess(menu, to.meta.parentRoute))
 
       if (!allowed) {
         showToast("No tienes permisos para acceder a este módulo", "error")
