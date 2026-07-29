@@ -1175,7 +1175,18 @@ router.beforeEach(async (to, from, next) => {
 
     const hasAccess = (items, path) => {
       for (const item of items) {
+        if (!item.route) continue
+
+        // Coincidencia exacta
         if (item.route === path) return true
+
+        // Coincidencia por patrón dinámico (ej: /talleres/orden/:id → /talleres/orden/123)
+        if (item.route.includes(':')) {
+          try {
+            const pattern = '^' + item.route.replace(/:[\w]+/g, '[^/]+') + '$'
+            if (new RegExp(pattern).test(path)) return true
+          } catch { /* regex inválida, ignorar */ }
+        }
 
         if (item.children && item.children.length) {
           if (hasAccess(item.children, path)) return true
@@ -1186,16 +1197,15 @@ router.beforeEach(async (to, from, next) => {
 
     if (to.meta.requiresAuth && !isSystem) {
 
-      const allowed = hasAccess(menu, to.path)
+      // Verifica tanto la URL resuelta como el patrón de ruta (para rutas dinámicas como /orden/:id)
+      const routePattern = to.matched.length ? to.matched[to.matched.length - 1].path : null
+      const allowed = hasAccess(menu, to.path) ||
+                      (routePattern && routePattern !== to.path && hasAccess(menu, routePattern))
 
       if (!allowed) {
         showToast("No tienes permisos para acceder a este módulo", "error")
-
-        localStorage.removeItem("token")
-        localStorage.removeItem("menu")
-        localStorage.removeItem("user")
-
-        return next("/login")
+        // NO eliminar token: el usuario está autenticado, solo sin permiso para esta ruta
+        return next(from.path && from.path !== to.path ? from.path : "/dashboard")
       }
     }
 
