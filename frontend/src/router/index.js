@@ -695,7 +695,19 @@ const routes = [
         name: "ProductsView",
         component: () => import("@/views/inventory/ProductsView.vue"),
         requiresAuth: true,
-        meta: { title: "Productos" }
+        meta: { title: "Productos", defaultTab: "servicio" }
+      },
+      {
+        path: "/inventory/servicios",
+        name: "ServiciosView",
+        component: () => import("@/views/inventory/ProductsView.vue"),
+        meta: { requiresAuth: true, title: "Catálogo de Servicios", defaultTab: "servicio" }
+      },
+      {
+        path: "/inventory/repuestos",
+        name: "RepuestosView",
+        component: () => import("@/views/inventory/ProductsView.vue"),
+        meta: { requiresAuth: true, title: "Catálogo de Productos", defaultTab: "producto" }
       },
       {
         path: "/inventory/purchase-orders",

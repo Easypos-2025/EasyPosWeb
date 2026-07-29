@@ -209,10 +209,10 @@
             </span>
           </div>
 
-          <!-- Aviso servicios: agregar participantes después de guardar -->
+          <!-- Aviso servicios: participantes se configuran automáticamente al guardar -->
           <div v-if="tab === 'servicio' && !editing" class="info-hint">
             <i class="bi bi-info-circle-fill"></i>
-            Después de guardar, usa el botón <strong><i class="bi bi-people-fill"></i></strong> en la tabla para configurar quién participa en este servicio y su % de pago.
+            Al guardar, podrás configurar inmediatamente quién participa en este servicio y su % de pago.
           </div>
         </div>
         <div class="mf">
@@ -317,16 +317,18 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
+import { useRoute } from "vue-router"
 import api from "@/services/apis"
 import { showToast, showConfirm } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
 import CurrencyInput from "@/components/CurrencyInput.vue"
 
+const route        = useRoute()
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 // ── Estado general ─────────────────────────────────────────────────────────
-const tab      = ref("servicio")
+const tab      = ref(route.meta?.defaultTab || "servicio")
 const products = ref([])
 const categories   = ref([])
 const professions  = ref([])
@@ -421,6 +423,12 @@ async function submit() {
     } else {
       const r = await api.post("/products/", payload)
       products.value.unshift(r.data)
+      showModal.value = false
+      showToast("Servicio guardado. Configura los participantes a continuación.", "success")
+      if (tab.value === "servicio") {
+        await abrirParticipantes(r.data)
+      }
+      return
     }
     showModal.value = false
     showToast(tab.value === "servicio" ? "Servicio guardado" : "Producto guardado", "success")
