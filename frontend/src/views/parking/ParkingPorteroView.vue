@@ -119,8 +119,8 @@
             </small>
           </div>
 
-          <!-- TIPO DE VEHÍCULO -->
-          <div class="pk-field">
+          <!-- TIPO DE VEHÍCULO: solo para vehículos nuevos no registrados -->
+          <div v-if="!vehiculoEncontrado" class="pk-field">
             <label>Tipo de Vehículo</label>
             <div v-if="vehicleTypes.length" class="pk-vtype-list">
               <button
@@ -134,6 +134,14 @@
               </button>
             </div>
             <small v-else class="pk-hint-vtype">Sin tipos configurados</small>
+          </div>
+          <!-- Vehículo existente: mostrar tipo ya guardado -->
+          <div v-else-if="form.vehicle_type_id" class="pk-field">
+            <label>Tipo de Vehículo</label>
+            <span class="pk-tipo-readonly">
+              <i class="bi bi-check-circle-fill" style="color:#16a34a"></i>
+              {{ vehicleTypes.find(t => t.id === form.vehicle_type_id)?.nombre || 'Registrado' }}
+            </span>
           </div>
 
           <!-- FOTO DEL VEHÍCULO -->
@@ -381,15 +389,20 @@ function onPlacaInput() {
 async function buscarVehiculo(placa) {
   buscandoVehiculo.value = true
   try {
-    const res = await api.get('/api/parking/vehicle', { params: { placa } })
+    const res = await api.get('/api/parking/vehicle', { params: { placa, company_id: companyId.value } })
     if (res.data?.placa) {
       vehiculoEncontrado.value = true
       vehiculoFotoUrl.value    = res.data.foto_url || null
-      if (res.data.vehicle_type_name && form.value.vehicle_type_id === null) {
-        const match = vehicleTypes.value.find(t =>
-          t.nombre.toLowerCase() === res.data.vehicle_type_name.toLowerCase()
-        )
-        if (match) form.value.vehicle_type_id = match.id
+      // Preseleccionar tipo por nombre o por vehicle_type_id
+      if (form.value.vehicle_type_id === null) {
+        if (res.data.vehicle_type_id) {
+          form.value.vehicle_type_id = res.data.vehicle_type_id
+        } else if (res.data.vehicle_type_name) {
+          const match = vehicleTypes.value.find(t =>
+            t.nombre.toLowerCase() === res.data.vehicle_type_name.toLowerCase()
+          )
+          if (match) form.value.vehicle_type_id = match.id
+        }
       }
     }
   } catch {}
