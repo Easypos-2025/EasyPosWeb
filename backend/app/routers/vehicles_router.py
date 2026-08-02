@@ -7,6 +7,23 @@ from app.auth.dependencies import get_current_user
 router = APIRouter(prefix="/api/vehicles", tags=["vehicles"])
 
 
+# ── Tipos de vehículo (compartido entre todos los perfiles) ──────────────────
+
+@router.get("/tipos")
+async def listar_tipos_vehiculo(
+    company_id: int  = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows = await db.execute(text("""
+        SELECT id, nombre, icono, activo, orden
+        FROM vehicle_types
+        WHERE company_id = :cid AND activo = 1
+        ORDER BY orden, nombre
+    """), {"cid": company_id})
+    return [dict(r) for r in rows.mappings()]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PROPIETARIOS
 # ══════════════════════════════════════════════════════════════════════════════

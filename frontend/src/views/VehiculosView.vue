@@ -286,7 +286,7 @@ async function cargarVehiculos() {
 
 async function cargarTipos() {
   try {
-    const { data } = await api.get("/api/talleres/vehicle-types", {
+    const { data } = await api.get("/api/vehicles/tipos", {
       params: { company_id: companyId() }
     })
     tiposVehiculo.value = data
