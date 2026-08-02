@@ -75,12 +75,11 @@ async def sugerencias_placa(
 ):
     q_up = q.strip().upper()
     rows = await db.execute(text("""
-        SELECT v.placa, v.tipo, v.marca, v.modelo, v.anio,
-               c.name AS cliente_nombre
-        FROM talleres_vehiculo_ext v
-        JOIN assets a ON a.id = v.asset_id
-        LEFT JOIN clients c ON c.id = a.client_id
-        WHERE v.company_id = :cid AND v.placa LIKE :q
+        SELECT v.placa, v.marca, v.modelo, v.anio, v.color,
+               p.nombre AS cliente_nombre, p.telefono AS cliente_telefono
+        FROM vehicles v
+        LEFT JOIN propietarios p ON p.id = v.propietario_id
+        WHERE v.company_id = :cid AND v.placa LIKE :q AND v.is_active = 1
         ORDER BY v.placa
         LIMIT 8
     """), {"cid": company_id, "q": f"%{q_up}%"})
@@ -101,17 +100,18 @@ async def buscar_vehiculo(
 
     row = await db.execute(text("""
         SELECT
-            a.id            AS asset_id,
-            a.name          AS nombre_vehiculo,
-            a.client_id,
-            c.name          AS cliente_nombre,
-            c.phone         AS cliente_telefono,
-            c.document_number AS cliente_documento,
-            v.placa, v.tipo, v.marca, v.modelo, v.anio, v.color, v.km_actual
-        FROM talleres_vehiculo_ext v
-        JOIN assets a ON a.id = v.asset_id
-        LEFT JOIN clients c ON c.id = a.client_id
-        WHERE v.company_id = :cid AND v.placa = :placa
+            v.id            AS vehicle_id,
+            v.placa, v.marca, v.modelo, v.anio, v.color, v.km_actual,
+            vt.nombre       AS tipo,
+            v.propietario_id,
+            p.nombre        AS cliente_nombre,
+            p.telefono      AS cliente_telefono,
+            p.documento     AS cliente_documento,
+            p.email         AS cliente_email
+        FROM vehicles v
+        LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
+        LEFT JOIN propietarios  p  ON p.id  = v.propietario_id
+        WHERE v.company_id = :cid AND v.placa = :placa AND v.is_active = 1
         LIMIT 1
     """), {"cid": company_id, "placa": placa_up})
     vehiculo = row.mappings().first()

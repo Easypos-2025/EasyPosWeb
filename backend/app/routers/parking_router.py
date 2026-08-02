@@ -138,13 +138,21 @@ async def get_stats(
 
 @router.get("/vehicle")
 async def get_vehicle(
-    placa: str       = Query(...),
+    placa:      str = Query(...),
+    company_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    row = await db.execute(text(
-        "SELECT placa, vehicle_type_name, foto_url FROM vehicles WHERE placa = :p"
-    ), {"p": placa.strip().upper()})
+    row = await db.execute(text("""
+        SELECT v.placa, v.vehicle_type_name, v.foto_url,
+               vt.nombre AS tipo_nombre,
+               p.nombre  AS propietario_nombre,
+               p.telefono AS propietario_telefono
+        FROM vehicles v
+        LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
+        LEFT JOIN propietarios  p  ON p.id  = v.propietario_id
+        WHERE v.placa = :p AND v.company_id = :cid
+    """), {"p": placa.strip().upper(), "cid": company_id})
     v = row.mappings().first()
     return dict(v) if v else {}
 
@@ -249,15 +257,15 @@ async def crear_orden(
     placa_up  = body.placa.strip().upper()
     total_qty = sum(i.cantidad for i in body.items)
 
-    # UPSERT vehicle (1 foto por placa, global)
+    # UPSERT vehicle aislado por empresa
     await db.execute(text("""
-        INSERT INTO vehicles (placa, vehicle_type_name, foto_url)
-        VALUES (:p, :vtn, :foto)
+        INSERT INTO vehicles (company_id, placa, vehicle_type_name, foto_url)
+        VALUES (:cid, :p, :vtn, :foto)
         ON DUPLICATE KEY UPDATE
             vehicle_type_name = COALESCE(:vtn, vehicle_type_name),
             foto_url          = COALESCE(:foto, foto_url),
             updated_at        = NOW()
-    """), {"p": placa_up, "vtn": body.vehicle_type_name, "foto": body.foto_url})
+    """), {"cid": body.company_id, "p": placa_up, "vtn": body.vehicle_type_name, "foto": body.foto_url})
 
     r_count = await db.execute(text("""
         SELECT COUNT(*) FROM parking_orders

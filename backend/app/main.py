@@ -86,6 +86,7 @@ from app.routers.compraventa_router import router as compraventa_router
 from app.routers.hipotecas_router import router as hipotecas_router
 from app.routers.talleres_router import router as talleres_router
 from app.routers.parking_router import router as parking_router
+from app.routers.vehicles_router import router as vehicles_router
 from app.routers.pos_consultas_router import router as pos_consultas_router
 from app.routers.pos_categorias_router import router as pos_categorias_router
 from app.routers.pos_printers_router import router as pos_printers_router
@@ -2191,6 +2192,7 @@ routers = [
     hipotecas_router,
     talleres_router,
     parking_router,
+    vehicles_router,
     pos_consultas_router,
     pos_categorias_router,
     pos_printers_router,

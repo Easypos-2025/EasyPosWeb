@@ -710,6 +710,12 @@ const routes = [
         meta: { requiresAuth: true, title: "Catálogo de Productos", defaultTab: "producto" }
       },
       {
+        path: "/vehiculos",
+        name: "VehiculosView",
+        component: () => import("@/views/VehiculosView.vue"),
+        meta: { requiresAuth: true, title: "Vehículos" }
+      },
+      {
         path: "/inventory/purchase-orders",
         name: "PurchaseOrdersView",
         component: () => import("@/views/inventory/PurchaseOrdersView.vue"),
