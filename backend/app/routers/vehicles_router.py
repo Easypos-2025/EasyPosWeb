@@ -363,16 +363,21 @@ async def buscar_por_placa(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Búsqueda rápida por placa (para autocompletar en órdenes)."""
+    """Búsqueda rápida por placa (para autocompletar en órdenes). Incluye flag activo_en_parking."""
     placa_up = placa.strip().upper()
     rows = await db.execute(text("""
         SELECT
             v.id, v.placa, v.marca, v.modelo, v.anio, v.color,
-            v.km_actual, v.foto_url,
+            v.km_actual, v.foto_url, v.vehicle_type_id,
             vt.nombre AS tipo_nombre,
             p.nombre  AS propietario_nombre,
             p.telefono AS propietario_telefono,
-            p.documento AS propietario_documento
+            p.documento AS propietario_documento,
+            EXISTS(
+                SELECT 1 FROM parking_orders po
+                WHERE po.company_id = :cid AND po.placa = v.placa
+                  AND po.estado NOT IN ('salido', 'cancelado')
+            ) AS activo_en_parking
         FROM  vehicles v
         LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
         LEFT JOIN propietarios  p  ON p.id  = v.propietario_id

@@ -110,13 +110,38 @@
             <div class="pk-placa-wrap">
               <input v-model="form.placa" class="pk-input pk-placa-input"
                 placeholder="Ej: ABC123" maxlength="10" autocomplete="off"
-                @input="onPlacaInput" />
+                @input="onPlacaInput"
+                @blur="cerrarSugerencias"
+                @focus="showSugerencias = sugerencias.length > 0"
+                @keydown.escape="showSugerencias = false" />
               <i v-if="buscandoVehiculo" class="bi bi-arrow-repeat spin pk-placa-spin"></i>
+              <i v-else-if="placaActiva" class="bi bi-exclamation-triangle-fill pk-placa-warn"></i>
               <i v-else-if="vehiculoEncontrado" class="bi bi-check-circle-fill pk-placa-ok"></i>
+
+              <!-- Dropdown de sugerencias -->
+              <div v-if="showSugerencias && sugerencias.length" class="pk-sugerencias">
+                <button
+                  v-for="v in sugerencias" :key="v.id"
+                  type="button"
+                  :class="['pk-sugerencia-item', { 'pk-sug--activo': v.activo_en_parking }]"
+                  @mousedown.prevent="seleccionarSugerencia(v)"
+                >
+                  <div class="pk-sug-placa">{{ v.placa }}</div>
+                  <div class="pk-sug-info">
+                    <span>{{ v.propietario_nombre || 'Sin propietario' }}</span>
+                    <span v-if="v.tipo_nombre" class="pk-sug-tipo">· {{ v.tipo_nombre }}</span>
+                  </div>
+                  <span v-if="v.activo_en_parking" class="pk-sug-badge">En Patio</span>
+                </button>
+              </div>
             </div>
-            <small v-if="vehiculoEncontrado" class="pk-hint-ok">
-              <i class="bi bi-info-circle"></i> Vehículo registrado — foto cargada automáticamente
+            <small v-if="vehiculoEncontrado && !placaActiva" class="pk-hint-ok">
+              <i class="bi bi-info-circle"></i> Vehículo registrado — datos cargados automáticamente
             </small>
+            <div v-if="placaActiva" class="pk-alerta-activa">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              Esta placa ya tiene un ingreso activo en el parqueadero. Registre la salida antes de crear un nuevo ingreso.
+            </div>
           </div>
 
           <!-- TIPO DE VEHÍCULO: solo para vehículos nuevos no registrados -->
@@ -199,7 +224,7 @@
         </div>
         <div class="pk-modal-footer">
           <button class="pk-btn-cancel" @click="cerrarModalNuevo">Cancelar</button>
-          <button class="pk-btn-guardar" :disabled="guardando" @click="guardarNuevo">
+          <button class="pk-btn-guardar" :disabled="guardando || placaActiva" @click="guardarNuevo">
             <i v-if="guardando" class="bi bi-arrow-repeat spin"></i>
             <i v-else class="bi bi-check-lg"></i>
             {{ guardando ? 'Guardando…' : 'Registrar Ingreso' }}
@@ -270,6 +295,9 @@ const buscandoVehiculo   = ref(false)
 const vehiculoEncontrado = ref(false)
 const vehiculoFotoUrl    = ref(null)
 const nuevaFotoBlob      = ref(null)
+const sugerencias        = ref([])
+const showSugerencias    = ref(false)
+const placaActiva        = ref(false)
 
 const form             = ref({ placa: '', vehicle_type_id: null, obs_portero: '' })
 const itemsSeleccionados = ref({}) // { [product_id]: { product_id, nombre, cantidad, checked } }
@@ -369,6 +397,9 @@ function abrirModalNuevo() {
   vehiculoFotoUrl.value    = null
   nuevaFotoBlob.value      = null
   vehiculoEncontrado.value = false
+  placaActiva.value        = false
+  sugerencias.value        = []
+  showSugerencias.value    = false
   itemsSeleccionados.value = {}
   showModalNuevo.value     = true
 }
@@ -376,37 +407,62 @@ function cerrarModalNuevo() { showModalNuevo.value = false }
 
 let placaTimer = null
 function onPlacaInput() {
-  form.value.placa              = form.value.placa.toUpperCase()
-  vehiculoEncontrado.value      = false
-  vehiculoFotoUrl.value         = null
-  form.value.vehicle_type_id    = null
+  form.value.placa           = form.value.placa.toUpperCase()
+  vehiculoEncontrado.value   = false
+  vehiculoFotoUrl.value      = null
+  form.value.vehicle_type_id = null
+  placaActiva.value          = false
+  sugerencias.value          = []
+  showSugerencias.value      = false
   clearTimeout(placaTimer)
   const p = form.value.placa.trim()
   if (p.length < 3) return
-  placaTimer = setTimeout(() => buscarVehiculo(p), 600)
+  placaTimer = setTimeout(() => buscarSugerencias(p), 400)
 }
 
-async function buscarVehiculo(placa) {
+async function buscarSugerencias(placa) {
   buscandoVehiculo.value = true
   try {
-    const res = await api.get('/api/parking/vehicle', { params: { placa, company_id: companyId.value } })
-    if (res.data?.placa) {
-      vehiculoEncontrado.value = true
-      vehiculoFotoUrl.value    = res.data.foto_url || null
-      // Preseleccionar tipo por nombre o por vehicle_type_id
-      if (form.value.vehicle_type_id === null) {
-        if (res.data.vehicle_type_id) {
-          form.value.vehicle_type_id = res.data.vehicle_type_id
-        } else if (res.data.vehicle_type_name) {
-          const match = vehicleTypes.value.find(t =>
-            t.nombre.toLowerCase() === res.data.vehicle_type_name.toLowerCase()
-          )
-          if (match) form.value.vehicle_type_id = match.id
-        }
-      }
+    const res = await api.get(`/api/vehicles/placa/${encodeURIComponent(placa)}`, {
+      params: { company_id: companyId.value },
+    })
+    sugerencias.value = res.data
+
+    // Si hay coincidencia exacta, auto-aplicarla sin mostrar dropdown
+    const exacto = res.data.find(v => v.placa === placa)
+    if (exacto) {
+      aplicarVehiculo(exacto)
+      showSugerencias.value = false
+    } else {
+      showSugerencias.value = res.data.length > 0
     }
   } catch {}
   buscandoVehiculo.value = false
+}
+
+function aplicarVehiculo(v) {
+  vehiculoEncontrado.value = true
+  vehiculoFotoUrl.value    = v.foto_url || null
+  placaActiva.value        = !!v.activo_en_parking
+  if (v.vehicle_type_id) {
+    form.value.vehicle_type_id = v.vehicle_type_id
+  } else if (v.tipo_nombre) {
+    const match = vehicleTypes.value.find(t =>
+      t.nombre.toLowerCase() === v.tipo_nombre.toLowerCase()
+    )
+    if (match) form.value.vehicle_type_id = match.id
+  }
+}
+
+function seleccionarSugerencia(v) {
+  form.value.placa      = v.placa
+  showSugerencias.value = false
+  aplicarVehiculo(v)
+}
+
+function cerrarSugerencias() {
+  // Timeout para que mousedown en sugerencia registre antes del blur
+  setTimeout(() => { showSugerencias.value = false }, 150)
 }
 
 function onFotoChange(blob) {
@@ -423,6 +479,7 @@ function blobToBase64(blob) {
 
 async function guardarNuevo() {
   if (!form.value.placa.trim()) { showToast('La placa es requerida', 'warning', 2500); return }
+  if (placaActiva.value) { showToast('Esta placa ya tiene un ingreso activo. Registre la salida primero.', 'warning', 3500); return }
   const items = itemsActivos.value
   if (items.length === 0) { showToast('Selecciona al menos un servicio', 'warning', 2500); return }
 
@@ -535,7 +592,24 @@ function fmtHora(dt) {
 .pk-placa-input { font-size: 1.4rem; font-weight: 900; letter-spacing: 3px; text-align: center; text-transform: uppercase; padding-right: 36px; }
 .pk-placa-spin { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #6c757d; font-size: 1rem; }
 .pk-placa-ok   { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #198754; font-size: 1rem; }
+.pk-placa-warn { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #dc3545; font-size: 1rem; }
 .pk-hint-ok { font-size: .78rem; color: #198754; display: flex; align-items: center; gap: 4px; }
+
+/* Autocomplete dropdown de placa */
+.pk-sugerencias { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #ced4da; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.15); z-index: 200; max-height: 200px; overflow-y: auto; }
+.pk-sugerencia-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: none; background: none; cursor: pointer; text-align: left; border-bottom: 1px solid #f1f3f5; }
+.pk-sugerencia-item:last-child { border-bottom: none; }
+.pk-sugerencia-item:hover { background: #f8f9fa; }
+.pk-sug--activo { background: #fff8e1; }
+.pk-sug--activo:hover { background: #fff0b3; }
+.pk-sug-placa { font-size: 1rem; font-weight: 900; letter-spacing: 2px; color: #212529; min-width: 80px; }
+.pk-sug-info  { flex: 1; font-size: .78rem; color: #6c757d; display: flex; gap: 4px; align-items: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pk-sug-tipo  { color: #adb5bd; }
+.pk-sug-badge { font-size: .68rem; font-weight: 700; background: #856404; color: #fff; padding: 2px 8px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+
+/* Advertencia placa activa */
+.pk-alerta-activa { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 10px 14px; font-size: .82rem; font-weight: 600; color: #856404; display: flex; align-items: flex-start; gap: 8px; }
+.pk-alerta-activa i { color: #dc3545; flex-shrink: 0; margin-top: 1px; }
 
 /* Selector de tipo de vehículo — chips táctiles (sin select nativo) */
 .pk-vtype-list { display: flex; flex-wrap: wrap; gap: 8px; }

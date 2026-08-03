@@ -257,6 +257,19 @@ async def crear_orden(
     placa_up  = body.placa.strip().upper()
     total_qty = sum(i.cantidad for i in body.items)
 
+    # Validar que la placa no tenga un ingreso activo (sin salida registrada)
+    r_activo = await db.execute(text("""
+        SELECT id FROM parking_orders
+        WHERE company_id = :cid AND placa = :placa
+          AND estado NOT IN ('salido', 'cancelado')
+        LIMIT 1
+    """), {"cid": body.company_id, "placa": placa_up})
+    if r_activo.scalar():
+        raise HTTPException(
+            409,
+            detail="Esta placa ya tiene un ingreso activo. Registre la salida antes de crear un nuevo ingreso."
+        )
+
     # UPSERT vehicle aislado por empresa
     await db.execute(text("""
         INSERT INTO vehicles (company_id, placa, vehicle_type_name, foto_url)
