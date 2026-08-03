@@ -97,12 +97,22 @@
 
         <div class="pkc-card-footer">
           <span class="pkc-card-orden">{{ o.numero_orden }}</span>
-          <button v-if="o.estado === 'registrado'" class="pkc-btn-pagar" @click="abrirCobro(o)">
-            <i class="bi bi-cash-coin"></i> Cobrar
-          </button>
-          <button v-else class="pkc-btn-reimprimir" @click="abrirReimpresion(o)">
-            <i class="bi bi-printer-fill"></i> Reimprimir
-          </button>
+          <div class="pkc-card-acciones">
+            <button
+              v-if="o.estado === 'ingresado'"
+              class="pkc-btn-eliminar"
+              title="Cancelar ingreso"
+              @click="abrirCancelacion(o)"
+            >
+              <i class="bi bi-trash3"></i>
+            </button>
+            <button v-if="o.estado === 'registrado'" class="pkc-btn-pagar" @click="abrirCobro(o)">
+              <i class="bi bi-cash-coin"></i> Cobrar
+            </button>
+            <button v-else-if="o.estado === 'pagado'" class="pkc-btn-reimprimir" @click="abrirReimpresion(o)">
+              <i class="bi bi-printer-fill"></i> Reimprimir
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -207,6 +217,46 @@
         </button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ══ MODAL CANCELACIÓN ══════════════════════════════════════════════════ -->
+  <div v-if="showCancelacion" class="pkc-overlay" @click.self="showCancelacion = false">
+    <div class="pkc-modal pkc-modal--cancel">
+      <div class="pkc-modal-header">
+        <div>
+          <h5><i class="bi bi-trash3 me-2" style="color:#dc3545"></i>Cancelar Ingreso</h5>
+          <span class="pkc-modal-sub">{{ ordenCancelacion?.numero_orden }} · {{ ordenCancelacion?.placa }}</span>
+        </div>
+        <button class="pkc-btn-close" @click="showCancelacion = false"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="pkc-cancel-body">
+        <div class="pkc-cancel-warn">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          Esta acción cancelará el ingreso y quedará registrado en el historial de cancelaciones.
+        </div>
+        <label class="pkc-cancel-label">Motivo de cancelación <span style="color:#dc3545">*</span></label>
+        <textarea
+          v-model="motivoCancelacion"
+          class="pkc-cancel-textarea"
+          rows="3"
+          placeholder="Ej: Vehículo salió inmediatamente, era una prueba, visita familiar sin cargo…"
+          maxlength="300"
+        ></textarea>
+        <small class="pkc-cancel-count">{{ motivoCancelacion.length }}/300</small>
+      </div>
+      <div class="pkc-modal-footer">
+        <button class="pkc-btn-cancelar" @click="showCancelacion = false">Volver</button>
+        <button
+          class="pkc-btn-cancel-confirm"
+          :disabled="!motivoCancelacion.trim() || cancelando"
+          @click="confirmarCancelacion"
+        >
+          <i v-if="cancelando" class="bi bi-arrow-repeat spin"></i>
+          <i v-else class="bi bi-trash3"></i>
+          {{ cancelando ? 'Cancelando…' : 'Confirmar cancelación' }}
+        </button>
+      </div>
     </div>
   </div>
 
@@ -383,6 +433,40 @@ async function confirmarCobro() {
   pagando.value = false
 }
 
+// ── Cancelar ingreso ──────────────────────────────────────────────────────────
+const showCancelacion   = ref(false)
+const ordenCancelacion  = ref(null)
+const motivoCancelacion = ref('')
+const cancelando        = ref(false)
+
+function abrirCancelacion(orden) {
+  ordenCancelacion.value  = orden
+  motivoCancelacion.value = ''
+  showCancelacion.value   = true
+}
+
+async function confirmarCancelacion() {
+  if (!motivoCancelacion.value.trim()) {
+    showToast('El motivo es requerido', 'warning', 2500)
+    return
+  }
+  cancelando.value = true
+  try {
+    await api.put(`/api/parking/orders/${ordenCancelacion.value.id}/cancelar`, {
+      company_id: companyId.value,
+      motivo:     motivoCancelacion.value.trim(),
+    })
+    showToast('Ingreso cancelado y registrado en historial', 'success', 2500)
+    ordenes.value = ordenes.value.filter(o => o.id !== ordenCancelacion.value.id)
+    showCancelacion.value = false
+    const r2 = await api.get('/api/parking/stats', { params: { company_id: companyId.value, fecha: fechaFiltro.value } })
+    stats.value = r2.data
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'Error al cancelar', 'error', 3000)
+  }
+  cancelando.value = false
+}
+
 // ── Reimprimir tiquete de salida ──────────────────────────────────────────────
 async function abrirReimpresion(orden) {
   try {
@@ -513,7 +597,16 @@ onUnmounted(() => clearInterval(_autoRefresh))
   display: flex; align-items: center; justify-content: space-between;
   margin-top: 4px; border-top: 1px solid #f1f3f5; padding-top: 8px;
 }
-.pkc-card-orden { font-size: .72rem; color: #adb5bd; font-family: monospace; }
+.pkc-card-orden   { font-size: .72rem; color: #adb5bd; font-family: monospace; }
+.pkc-card-acciones { display: flex; align-items: center; gap: 6px; }
+
+.pkc-btn-eliminar {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border: 1.5px solid #dc3545; border-radius: 8px; background: #fff; color: #dc3545;
+  font-size: .85rem; cursor: pointer; transition: all .15s; flex-shrink: 0;
+}
+.pkc-btn-eliminar:hover { background: #dc3545; color: #fff; }
 
 .pkc-btn-pagar {
   display: flex; align-items: center; gap: 6px; padding: 8px 16px;
@@ -647,6 +740,31 @@ onUnmounted(() => clearInterval(_autoRefresh))
 
 .spin { animation: pkc-spin .8s linear infinite; }
 @keyframes pkc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ── Modal cancelación ── */
+.pkc-modal--cancel  { max-width: 440px; }
+.pkc-cancel-body    { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.pkc-cancel-warn {
+  background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;
+  padding: 12px 14px; font-size: .82rem; font-weight: 600; color: #856404;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.pkc-cancel-warn i { color: #dc3545; flex-shrink: 0; margin-top: 2px; }
+.pkc-cancel-label   { font-size: .82rem; font-weight: 600; color: #495057; }
+.pkc-cancel-textarea {
+  border: 1.5px solid #ced4da; border-radius: 8px; padding: 10px 12px;
+  font-size: .88rem; outline: none; resize: vertical; width: 100%; color: #212529;
+  font-family: inherit;
+}
+.pkc-cancel-textarea:focus { border-color: #dc3545; }
+.pkc-cancel-count   { font-size: .72rem; color: #adb5bd; text-align: right; }
+.pkc-btn-cancel-confirm {
+  display: flex; align-items: center; gap: 6px; padding: 10px 20px;
+  border: none; border-radius: 8px; background: #dc3545; color: #fff;
+  font-size: .9rem; font-weight: 700; cursor: pointer; transition: background .15s;
+}
+.pkc-btn-cancel-confirm:hover:not(:disabled) { background: #bb2d3b; }
+.pkc-btn-cancel-confirm:disabled { opacity: .55; cursor: default; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {

@@ -450,6 +450,73 @@ async def pagar_orden(
     return {"ok": True, "estado": "pagado"}
 
 
+# ── Cancelar orden (cajero elimina con motivo obligatorio) ───────────────────
+
+class CancelarBody(BaseModel):
+    company_id: int
+    motivo:     str
+
+
+@router.put("/orders/{order_id}/cancelar")
+async def cancelar_orden(
+    order_id: int,
+    body: CancelarBody,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    motivo = (body.motivo or "").strip()
+    if not motivo:
+        raise HTTPException(400, detail="El motivo de cancelación es requerido")
+
+    row = await db.execute(text("""
+        SELECT po.id, po.estado, po.numero_orden, po.placa, po.adultos, po.hora_ingreso,
+               u.nombre AS usuario_nombre
+        FROM parking_orders po
+        LEFT JOIN users u ON u.id = :uid
+        WHERE po.id = :id AND po.company_id = :cid
+    """), {"id": order_id, "cid": body.company_id, "uid": current_user.id})
+    orden = row.mappings().first()
+    if not orden:
+        raise HTTPException(404, detail="Orden no encontrada")
+    if orden["estado"] != "ingresado":
+        raise HTTPException(
+            400,
+            detail=f"Solo se pueden cancelar ingresos sin confirmar. Estado actual: '{orden['estado']}'"
+        )
+
+    # Registrar en tabla de auditoría
+    await db.execute(text("""
+        INSERT INTO parking_cancelaciones
+            (company_id, parking_order_id, numero_orden, placa, estado_anterior,
+             adultos, hora_ingreso, motivo, cancelado_por, cancelado_nombre)
+        VALUES
+            (:cid, :oid, :num, :placa, :estado,
+             :adultos, :hora, :motivo, :uid, :unom)
+    """), {
+        "cid":    body.company_id,
+        "oid":    order_id,
+        "num":    orden["numero_orden"],
+        "placa":  orden["placa"],
+        "estado": orden["estado"],
+        "adultos": orden["adultos"],
+        "hora":   orden["hora_ingreso"],
+        "motivo": motivo,
+        "uid":    current_user.id,
+        "unom":   orden["usuario_nombre"] or current_user.nombre,
+    })
+
+    await db.execute(text("""
+        UPDATE parking_orders
+        SET estado              = 'cancelado',
+            motivo_cancelacion = :motivo,
+            cancelado_por      = :uid,
+            updated_at         = NOW()
+        WHERE id = :id
+    """), {"id": order_id, "motivo": motivo, "uid": current_user.id})
+    await db.commit()
+    return {"ok": True, "estado": "cancelado"}
+
+
 # ── Marcar salida física (portero confirma que el vehículo salió) ────────────
 
 @router.put("/orders/{order_id}/salida")
