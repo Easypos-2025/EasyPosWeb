@@ -367,7 +367,7 @@ async function cargar(silent = false) {
   try {
     const [r1, r2, r3] = await Promise.all([
       api.get('/api/parking/orders', {
-        params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value },
+        params: { company_id: companyId.value, estado: filtroEstado.value },
       }),
       api.get('/api/parking/stats', {
         params: { company_id: companyId.value, fecha: fechaFiltro.value },
@@ -823,8 +823,9 @@ onUnmounted(() => clearInterval(_autoRefresh))
 .pkc-svc-kpi-card {
   display: flex; flex-direction: column; align-items: center;
   gap: 4px; padding: 10px 16px; border-radius: 10px;
-  background: #1e293b; color: #fff;
-  min-width: 110px; flex: 1;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  color: #fff; min-width: 110px; flex: 1;
+  box-shadow: 0 2px 8px rgba(37,99,235,.3);
 }
 .pkc-svc-kpi-nom {
   font-size: 0.7rem; text-transform: uppercase;

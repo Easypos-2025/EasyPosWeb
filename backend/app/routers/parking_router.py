@@ -82,28 +82,38 @@ async def get_stats(
 ):
     fecha_sql = fecha or datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
 
-    # Conteo por estado para el día (actividad del día seleccionado)
-    r_cnt = await db.execute(text("""
+    # Ocupación en tiempo real: órdenes ACTIVAS sin importar la fecha de ingreso
+    r_activos = await db.execute(text("""
+        SELECT estado, COUNT(*) AS cnt
+        FROM parking_orders
+        WHERE company_id = :cid AND estado NOT IN ('salido', 'cancelado')
+        GROUP BY estado
+    """), {"cid": company_id})
+    activos = {row["estado"]: row["cnt"] for row in r_activos.mappings()}
+
+    # Historial del día: salidos y cancelados para métricas diarias
+    r_dia = await db.execute(text("""
         SELECT estado, COUNT(*) AS cnt
         FROM parking_orders
         WHERE company_id = :cid AND DATE(hora_ingreso) = :fecha
+          AND estado IN ('salido', 'cancelado')
         GROUP BY estado
     """), {"cid": company_id, "fecha": fecha_sql})
-    conteos = {row["estado"]: row["cnt"] for row in r_cnt.mappings()}
+    dia = {row["estado"]: row["cnt"] for row in r_dia.mappings()}
 
-    cnt_ingresado  = conteos.get("ingresado",  0)
-    cnt_registrado = conteos.get("registrado", 0)
-    cnt_pagado     = conteos.get("pagado",     0)
-    cnt_salido     = conteos.get("salido",     0)
-    cnt_cancelado  = conteos.get("cancelado",  0)
+    cnt_ingresado  = activos.get("ingresado",  0)
+    cnt_registrado = activos.get("registrado", 0)
+    cnt_pagado     = activos.get("pagado",     0)
+    cnt_salido     = dia.get("salido",     0)
+    cnt_cancelado  = dia.get("cancelado",  0)
 
     r_cfg = await db.execute(text(
         "SELECT total_plazas FROM parking_config WHERE company_id = :cid"
     ), {"cid": company_id})
     cfg_row = r_cfg.mappings().first()
-    total_plazas = cfg_row["total_plazas"] if cfg_row else 20  # mismo default que GET /config
+    total_plazas = cfg_row["total_plazas"] if cfg_row else 20
 
-    # Ocupadas = vehículos activos del día seleccionado (ingresado/registrado/pagado = presencia física)
+    # Ocupadas = todos los vehículos físicamente en el patio ahora mismo
     ocupadas = cnt_ingresado + cnt_registrado + cnt_pagado
 
     disponibles = max(0, total_plazas - ocupadas)
