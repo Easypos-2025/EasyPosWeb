@@ -25,6 +25,7 @@ class SystemModuleBase(BaseModel):
     parent_id: Optional[int] = None
     is_active: Optional[bool] = True
     order_index: Optional[int] = None
+    is_default_child: Optional[bool] = False
 
 # =====================================================
 # CREATE
@@ -45,6 +46,7 @@ class SystemModuleUpdate(BaseModel):
     parent_id: Optional[int] = None
     is_active: Optional[bool] = None
     order_index: Optional[int] = None
+    is_default_child: Optional[bool] = None
 
 
 # =====================================================

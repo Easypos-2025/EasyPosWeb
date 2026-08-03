@@ -18,11 +18,11 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
   1. `npm run build` en frontend (local) — si hay errores, detener y reportar.
   2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
   3. `git push origin master`
-  4. **rsync** del `dist/` local al servidor (solo sube archivos que cambiaron):
+  4. **scp** del `dist/` local al servidor (borrar primero el dist/ viejo, luego subir el nuevo):
      ```bash
-     rsync -avz --delete "d:/AAA Proyectos Claude-Code/EasyPosWeb/frontend/dist/" root@209.38.152.254:/var/www/easyposweb/frontend/dist/
+     ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "rm -rf /var/www/easyposweb/frontend/dist"
+     scp -r -i /c/Users/Personal/.ssh/id_ed25519 "/d/AAA Proyectos Claude-Code/EasyPosWeb/frontend/dist" root@209.38.152.254:/var/www/easyposweb/frontend/
      ```
-     > En Bash/Git Bash usar rutas POSIX: `/d/AAA\ Proyectos\ Claude-Code/EasyPosWeb/frontend/dist/`
   5. SSH al servidor — solo git pull (backend) + restart (sin `npm run build` en servidor):
      ```bash
      ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && systemctl restart easyposweb"

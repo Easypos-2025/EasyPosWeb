@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from app.models.role_module_model import RoleModule
 from app.database import get_db
 from app.models.system_module_model import SystemModule
@@ -117,6 +117,84 @@ async def update_module(module_id: int, data: SystemModuleUpdate, db: AsyncSessi
     await db.refresh(module)
     return {"id": module.id, "name": module.name, "route": module.route, "icon": module.icon,
             "parent_id": module.parent_id, "is_active": module.is_active, "children": []}
+
+
+@router.get("/defaults-tree/")
+async def get_defaults_tree(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Árbol de padres con sus hijos y flags is_default_child. Incluye conteo de perfiles."""
+    result = await db.execute(
+        select(SystemModule)
+        .where(SystemModule.is_active == True)
+        .order_by(SystemModule.order_index, SystemModule.id)
+    )
+    all_modules = result.scalars().all()
+
+    children_map: dict[int, list] = {}
+    for m in all_modules:
+        if m.parent_id:
+            children_map.setdefault(m.parent_id, []).append(m)
+
+    profile_counts_res = await db.execute(text("""
+        SELECT bpm.module_id, COUNT(DISTINCT bpm.business_profile_id) AS cnt
+        FROM business_profile_modules bpm
+        GROUP BY bpm.module_id
+    """))
+    count_map = {r.module_id: r.cnt for r in profile_counts_res.fetchall()}
+
+    tree = []
+    for m in all_modules:
+        if not m.parent_id and m.id in children_map:
+            tree.append({
+                "id": m.id,
+                "name": m.name,
+                "icon": m.icon,
+                "route": m.route,
+                "profile_count": count_map.get(m.id, 0),
+                "children": [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "route": c.route,
+                        "icon": c.icon,
+                        "is_default_child": c.is_default_child,
+                    }
+                    for c in children_map[m.id]
+                ],
+            })
+    return tree
+
+
+@router.patch("/{module_id}/toggle-default")
+async def toggle_default_child(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Activa/desactiva is_default_child en un módulo hijo."""
+    module = await db.get(SystemModule, module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail="Módulo no encontrado")
+    if not module.parent_id:
+        raise HTTPException(status_code=400, detail="Solo módulos hijos pueden ser marcados como default")
+    module.is_default_child = not module.is_default_child
+    await db.commit()
+
+    count_res = await db.execute(text(
+        "SELECT COUNT(DISTINCT business_profile_id) AS cnt FROM business_profile_modules WHERE module_id = :pid"
+    ), {"pid": module.parent_id})
+    profile_count = count_res.fetchone().cnt or 0
+
+    return {"module_id": module_id, "is_default_child": module.is_default_child, "parent_profiles": profile_count}
+
+
+@router.get("/{module_id}/defaults-preview/")
+async def get_defaults_preview(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    """Retorna los hijos marcados como is_default_child=1 para un módulo padre."""
+    result = await db.execute(
+        select(SystemModule).where(
+            SystemModule.parent_id == module_id,
+            SystemModule.is_default_child == True,
+            SystemModule.is_active == True,
+        )
+    )
+    children = result.scalars().all()
+    return [{"id": c.id, "name": c.name, "route": c.route} for c in children]
 
 
 @router.delete("/{module_id}")

@@ -510,6 +510,14 @@ const routes = [
       },
 
       {
+        path: "/sysadmin/module-defaults",
+        name: "ModuleDefaultsManagerView",
+        component: () => import("@/views/sysadmin/ModuleDefaultsManagerView.vue"),
+        requiresAuth: true,
+        meta: { title: "Defaults de Módulos" }
+      },
+
+      {
         path: "/sysadmin/sesiones",
         name: "SesionesLiveView",
         component: () => import("@/views/sysadmin/SesionesLiveView.vue"),

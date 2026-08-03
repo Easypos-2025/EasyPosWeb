@@ -6,6 +6,20 @@ from app.models.business_profile_module import BusinessProfileModule
 from app.models.system_module_model import SystemModule
 from app.auth.dependencies import get_current_user
 
+async def _insert_role_permissions(db: AsyncSession, module_id: int, profile_id: int):
+    """Inserta can_view=1 en role_modules para todos los roles del perfil que no lo tengan."""
+    await db.execute(text("""
+        INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
+        SELECT DISTINCT r.id, :module_id, 1, 0, 0, 0
+        FROM roles r
+        JOIN companies c ON c.id_company = r.company_id
+        WHERE c.business_profile_id = :profile_id
+          AND NOT EXISTS (
+              SELECT 1 FROM role_modules rm2
+              WHERE rm2.role_id = r.id AND rm2.module_id = :module_id
+          )
+    """), {"module_id": module_id, "profile_id": profile_id})
+
 router = APIRouter(prefix="/business-profile-module", tags=["BusinessProfileModule"])
 
 
@@ -152,17 +166,166 @@ async def add_module_to_profile(
     )
     db.add(new_bpm)
 
-    await db.execute(text("""
-        INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
-        SELECT DISTINCT r.id, :module_id, 1, 0, 0, 0
-        FROM roles r
-        JOIN companies c ON c.id_company = r.company_id
-        WHERE c.business_profile_id = :profile_id
-          AND NOT EXISTS (
-              SELECT 1 FROM role_modules rm2
-              WHERE rm2.role_id = r.id AND rm2.module_id = :module_id
-          )
-    """), {"module_id": module_id, "profile_id": profile_id})
+    await _insert_role_permissions(db, module_id, profile_id)
 
     await db.commit()
     return {"message": "Módulo agregado correctamente"}
+
+
+@router.post("/add-parent-with-defaults/")
+async def add_parent_with_defaults(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    """Agrega un padre + todos sus hijos is_default_child=1 al perfil en un solo call.
+    No destructivo: si el padre o algún hijo ya existen en el perfil, se omiten."""
+    profile_id = data.get("profile_id")
+    parent_module_id = data.get("module_id")
+    display_name = data.get("display_name") or None
+
+    if not profile_id or not parent_module_id:
+        raise HTTPException(status_code=400, detail="profile_id y module_id son requeridos")
+
+    added: list[int] = []
+    skipped: list[int] = []
+
+    # 1. Agregar el padre si no existe
+    existing_parent_res = await db.execute(
+        select(BusinessProfileModule).where(
+            BusinessProfileModule.business_profile_id == profile_id,
+            BusinessProfileModule.module_id == parent_module_id
+        )
+    )
+    parent_bpm = existing_parent_res.scalar_one_or_none()
+
+    if not parent_bpm:
+        max_res = await db.execute(
+            select(func.max(BusinessProfileModule.sort_order)).where(
+                BusinessProfileModule.business_profile_id == profile_id,
+                BusinessProfileModule.parent_id == None
+            )
+        )
+        parent_bpm = BusinessProfileModule(
+            business_profile_id=profile_id,
+            module_id=parent_module_id,
+            parent_id=None,
+            sort_order=(max_res.scalar() or 0) + 1,
+            display_name=display_name
+        )
+        db.add(parent_bpm)
+        await db.flush()
+        added.append(parent_module_id)
+        await _insert_role_permissions(db, parent_module_id, profile_id)
+    else:
+        skipped.append(parent_module_id)
+
+    # 2. Obtener hijos marcados como default
+    children_res = await db.execute(
+        select(SystemModule).where(
+            SystemModule.parent_id == parent_module_id,
+            SystemModule.is_default_child == True,
+            SystemModule.is_active == True,
+        )
+    )
+    default_children = children_res.scalars().all()
+
+    # 3. Agregar cada hijo default si no existe ya en el perfil
+    for child in default_children:
+        existing_child_res = await db.execute(
+            select(BusinessProfileModule).where(
+                BusinessProfileModule.business_profile_id == profile_id,
+                BusinessProfileModule.module_id == child.id
+            )
+        )
+        if existing_child_res.scalar_one_or_none():
+            skipped.append(child.id)
+            continue
+
+        max_child_res = await db.execute(
+            select(func.max(BusinessProfileModule.sort_order)).where(
+                BusinessProfileModule.business_profile_id == profile_id,
+                BusinessProfileModule.parent_id == parent_bpm.id
+            )
+        )
+        db.add(BusinessProfileModule(
+            business_profile_id=profile_id,
+            module_id=child.id,
+            parent_id=parent_bpm.id,
+            sort_order=(max_child_res.scalar() or 0) + 1,
+        ))
+        added.append(child.id)
+        await _insert_role_permissions(db, child.id, profile_id)
+
+    await db.commit()
+    return {
+        "added": added,
+        "skipped": skipped,
+        "message": f"Agregados {len(added)} módulos, {len(skipped)} ya existían"
+    }
+
+
+@router.post("/propagate-default-child/")
+async def propagate_default_child(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    """Inserta un hijo default en todos los perfiles que ya tienen su padre.
+    Completamente no destructivo: solo agrega donde falta, nunca elimina."""
+    child_module_id = data.get("child_module_id")
+    if not child_module_id:
+        raise HTTPException(status_code=400, detail="child_module_id es requerido")
+
+    child_module = await db.get(SystemModule, child_module_id)
+    if not child_module:
+        raise HTTPException(status_code=404, detail="Módulo hijo no encontrado")
+    if not child_module.parent_id:
+        raise HTTPException(status_code=400, detail="El módulo no tiene padre definido")
+
+    # Todos los BPM donde el padre está asignado
+    parent_bpms_res = await db.execute(
+        select(BusinessProfileModule).where(
+            BusinessProfileModule.module_id == child_module.parent_id
+        )
+    )
+    parent_bpms = parent_bpms_res.scalars().all()
+
+    propagated = 0
+    skipped = 0
+
+    for parent_bpm in parent_bpms:
+        profile_id = parent_bpm.business_profile_id
+
+        # ¿Ya existe el hijo en este perfil?
+        existing_res = await db.execute(
+            select(BusinessProfileModule).where(
+                BusinessProfileModule.business_profile_id == profile_id,
+                BusinessProfileModule.module_id == child_module_id
+            )
+        )
+        if existing_res.scalar_one_or_none():
+            skipped += 1
+            continue
+
+        max_res = await db.execute(
+            select(func.max(BusinessProfileModule.sort_order)).where(
+                BusinessProfileModule.business_profile_id == profile_id,
+                BusinessProfileModule.parent_id == parent_bpm.id
+            )
+        )
+        db.add(BusinessProfileModule(
+            business_profile_id=profile_id,
+            module_id=child_module_id,
+            parent_id=parent_bpm.id,
+            sort_order=(max_res.scalar() or 0) + 1,
+        ))
+        propagated += 1
+        await _insert_role_permissions(db, child_module_id, profile_id)
+
+    await db.commit()
+    return {
+        "propagated": propagated,
+        "skipped": skipped,
+        "message": f"Propagado a {propagated} perfil(es). {skipped} ya lo tenían."
+    }

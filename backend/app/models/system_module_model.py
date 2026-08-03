@@ -76,7 +76,12 @@ class SystemModule(Base):
     is_sysadmin: Mapped[bool] = mapped_column(
     Boolean,
     default=False
-    )    
+    )
+
+    is_default_child: Mapped[bool] = mapped_column(
+    Boolean,
+    default=False
+    )
 
     role_modules = relationship("RoleModule", back_populates="module", lazy="selectin")
 

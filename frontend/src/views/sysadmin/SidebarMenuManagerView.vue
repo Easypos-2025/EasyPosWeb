@@ -50,6 +50,17 @@
           </select>
         </div>
 
+        <!-- HIJOS POR DEFECTO: se muestra si el módulo seleccionado tiene defaults -->
+        <div v-if="defaultChildren.length" class="smm-defaults-box">
+          <label class="smm-defaults-check">
+            <input type="checkbox" v-model="addForm.includeDefaults" />
+            <span>
+              Incluir <strong>{{ defaultChildren.length }}</strong> hijo(s) por defecto:
+              <em>{{ defaultChildren.map(c => c.name).join(', ') }}</em>
+            </span>
+          </label>
+        </div>
+
         <button class="btn smm-btn-add" :disabled="!addForm.module_id || adding" @click="addModule">
           <i v-if="adding" class="bi bi-arrow-repeat spin"></i>
           <i v-else class="bi bi-plus-lg"></i>
@@ -223,7 +234,8 @@ const selectedProfileId = ref("")
 const availableModules = ref([])   // system_modules aún no en el perfil
 const flatModules = ref([])        // módulos del perfil (para elegir padre)
 const adding = ref(false)
-const addForm = ref({ module_id: null, display_name: "", parent_id: null })
+const addForm = ref({ module_id: null, display_name: "", parent_id: null, includeDefaults: false })
+const defaultChildren = ref([])   // hijos default del módulo seleccionado
 
 function flatList(nodes, result = []) {
   nodes.forEach(n => {
@@ -241,18 +253,41 @@ async function loadAvailable() {
   } catch { availableModules.value = [] }
 }
 
+// Cuando cambia el módulo seleccionado en el form, busca sus hijos default
+watch(() => addForm.value.module_id, async (id) => {
+  defaultChildren.value = []
+  addForm.value.includeDefaults = false
+  if (!id) return
+  try {
+    const res = await api.get(`/system-modules/${id}/defaults-preview/`)
+    defaultChildren.value = res.data
+    if (res.data.length) addForm.value.includeDefaults = true
+  } catch { defaultChildren.value = [] }
+})
+
 async function addModule() {
   if (!addForm.value.module_id) return
   adding.value = true
   try {
-    await api.post("/business-profile-module/add-module/", {
-      profile_id: selectedProfileId.value,
-      module_id: addForm.value.module_id,
-      parent_id: addForm.value.parent_id || null,
-      display_name: addForm.value.display_name || null
-    })
-    showToast("Módulo agregado al perfil", "success")
-    addForm.value = { module_id: null, display_name: "", parent_id: null }
+    if (addForm.value.includeDefaults && defaultChildren.value.length) {
+      // Usar el endpoint que agrega padre + hijos default en un solo call
+      const res = await api.post("/business-profile-module/add-parent-with-defaults/", {
+        profile_id: selectedProfileId.value,
+        module_id: addForm.value.module_id,
+        display_name: addForm.value.display_name || null
+      })
+      showToast(res.data.message, "success")
+    } else {
+      await api.post("/business-profile-module/add-module/", {
+        profile_id: selectedProfileId.value,
+        module_id: addForm.value.module_id,
+        parent_id: addForm.value.parent_id || null,
+        display_name: addForm.value.display_name || null
+      })
+      showToast("Módulo agregado al perfil", "success")
+    }
+    addForm.value = { module_id: null, display_name: "", parent_id: null, includeDefaults: false }
+    defaultChildren.value = []
     const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
     modules.value = res.data
     flatModules.value = flatList(modules.value)
@@ -721,6 +756,38 @@ async function saveEdit() {
   .smm-item {
     padding: 20px 12px;
   }
+}
+
+/* ── Defaults box ── */
+.smm-defaults-box {
+  background: #052e16;
+  border: 1px solid #16a34a;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.smm-defaults-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #86efac;
+  margin: 0;
+}
+
+.smm-defaults-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.smm-defaults-check em {
+  color: #4ade80;
+  font-style: normal;
 }
 
 .spin { animation: spin .7s linear infinite; }
