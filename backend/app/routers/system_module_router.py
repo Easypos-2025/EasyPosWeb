@@ -121,47 +121,55 @@ async def update_module(module_id: int, data: SystemModuleUpdate, db: AsyncSessi
 
 @router.get("/defaults-tree/")
 async def get_defaults_tree(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
-    """Árbol de padres con sus hijos y flags is_default_child. Incluye conteo de perfiles."""
-    result = await db.execute(
-        select(SystemModule)
-        .where(SystemModule.is_active == True)
-        .order_by(SystemModule.order_index, SystemModule.id)
-    )
-    all_modules = result.scalars().all()
-
-    children_map: dict[int, list] = {}
-    for m in all_modules:
-        if m.parent_id:
-            children_map.setdefault(m.parent_id, []).append(m)
-
-    profile_counts_res = await db.execute(text("""
-        SELECT bpm.module_id, COUNT(DISTINCT bpm.business_profile_id) AS cnt
-        FROM business_profile_modules bpm
-        GROUP BY bpm.module_id
+    """Árbol padre→hijos basado en relaciones reales de business_profile_modules.
+    Muestra cualquier módulo que haya sido colocado bajo un padre en algún perfil,
+    independientemente de la jerarquía global de system_modules.parent_id."""
+    rows = await db.execute(text("""
+        SELECT
+            sm_p.id         AS parent_id,
+            sm_p.name       AS parent_name,
+            sm_p.icon       AS parent_icon,
+            sm_p.route      AS parent_route,
+            sm_c.id         AS child_id,
+            sm_c.name       AS child_name,
+            sm_c.icon       AS child_icon,
+            sm_c.route      AS child_route,
+            sm_c.is_default_child AS is_default_child,
+            pc.profile_count      AS profile_count
+        FROM (
+            SELECT DISTINCT bpm_p.module_id AS parent_mid, bpm_c.module_id AS child_mid
+            FROM business_profile_modules bpm_c
+            JOIN business_profile_modules bpm_p ON bpm_p.id = bpm_c.parent_id
+        ) pairs
+        JOIN system_modules sm_p ON sm_p.id = pairs.parent_mid AND sm_p.is_active = 1
+        JOIN system_modules sm_c ON sm_c.id = pairs.child_mid  AND sm_c.is_active = 1
+        JOIN (
+            SELECT module_id, COUNT(DISTINCT business_profile_id) AS profile_count
+            FROM business_profile_modules GROUP BY module_id
+        ) pc ON pc.module_id = pairs.parent_mid
+        ORDER BY sm_p.order_index, sm_p.id, sm_c.id
     """))
-    count_map = {r.module_id: r.cnt for r in profile_counts_res.fetchall()}
 
-    tree = []
-    for m in all_modules:
-        if not m.parent_id and m.id in children_map:
-            tree.append({
-                "id": m.id,
-                "name": m.name,
-                "icon": m.icon,
-                "route": m.route,
-                "profile_count": count_map.get(m.id, 0),
-                "children": [
-                    {
-                        "id": c.id,
-                        "name": c.name,
-                        "route": c.route,
-                        "icon": c.icon,
-                        "is_default_child": c.is_default_child,
-                    }
-                    for c in children_map[m.id]
-                ],
-            })
-    return tree
+    parents: dict = {}
+    for r in rows.fetchall():
+        pid = r.parent_id
+        if pid not in parents:
+            parents[pid] = {
+                "id": pid,
+                "name": r.parent_name,
+                "icon": r.parent_icon,
+                "route": r.parent_route,
+                "profile_count": r.profile_count,
+                "children": [],
+            }
+        parents[pid]["children"].append({
+            "id": r.child_id,
+            "name": r.child_name,
+            "icon": r.child_icon,
+            "route": r.child_route,
+            "is_default_child": bool(r.is_default_child),
+        })
+    return list(parents.values())
 
 
 @router.patch("/{module_id}/toggle-default")
@@ -170,31 +178,25 @@ async def toggle_default_child(module_id: int, db: AsyncSession = Depends(get_db
     module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Módulo no encontrado")
-    if not module.parent_id:
-        raise HTTPException(status_code=400, detail="Solo módulos hijos pueden ser marcados como default")
     module.is_default_child = not module.is_default_child
     await db.commit()
-
-    count_res = await db.execute(text(
-        "SELECT COUNT(DISTINCT business_profile_id) AS cnt FROM business_profile_modules WHERE module_id = :pid"
-    ), {"pid": module.parent_id})
-    profile_count = count_res.fetchone().cnt or 0
-
-    return {"module_id": module_id, "is_default_child": module.is_default_child, "parent_profiles": profile_count}
+    return {"module_id": module_id, "is_default_child": module.is_default_child}
 
 
 @router.get("/{module_id}/defaults-preview/")
 async def get_defaults_preview(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
-    """Retorna los hijos marcados como is_default_child=1 para un módulo padre."""
-    result = await db.execute(
-        select(SystemModule).where(
-            SystemModule.parent_id == module_id,
-            SystemModule.is_default_child == True,
-            SystemModule.is_active == True,
-        )
-    )
-    children = result.scalars().all()
-    return [{"id": c.id, "name": c.name, "route": c.route} for c in children]
+    """Retorna los hijos default (is_default_child=1) que han sido asignados bajo este padre
+    en al menos un perfil. Usa relaciones reales de BPM, no system_modules.parent_id."""
+    rows = await db.execute(text("""
+        SELECT DISTINCT sm.id, sm.name, sm.route
+        FROM system_modules sm
+        JOIN business_profile_modules bpm_c ON bpm_c.module_id = sm.id
+        JOIN business_profile_modules bpm_p ON bpm_p.id = bpm_c.parent_id
+        WHERE bpm_p.module_id = :parent_id
+          AND sm.is_default_child = 1
+          AND sm.is_active = 1
+    """), {"parent_id": module_id})
+    return [{"id": r.id, "name": r.name, "route": r.route} for r in rows.fetchall()]
 
 
 @router.delete("/{module_id}")

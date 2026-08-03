@@ -231,7 +231,10 @@ async function confirmPropagateAll() {
 
   for (const child of children) {
     try {
-      const res = await api.post("/business-profile-module/propagate-default-child/", { child_module_id: child.id })
+      const res = await api.post("/business-profile-module/propagate-default-child/", {
+        child_module_id: child.id,
+        parent_module_id: propagateModal.value.parentId
+      })
       totalPropagated += res.data.propagated ?? 0
       totalSkipped += res.data.skipped ?? 0
     } catch (e) {

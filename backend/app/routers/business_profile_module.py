@@ -220,15 +220,18 @@ async def add_parent_with_defaults(
     else:
         skipped.append(parent_module_id)
 
-    # 2. Obtener hijos marcados como default
-    children_res = await db.execute(
-        select(SystemModule).where(
-            SystemModule.parent_id == parent_module_id,
-            SystemModule.is_default_child == True,
-            SystemModule.is_active == True,
-        )
-    )
-    default_children = children_res.scalars().all()
+    # 2. Obtener hijos default via relaciones reales de BPM (no system_modules.parent_id)
+    children_res = await db.execute(text("""
+        SELECT DISTINCT sm.id AS id
+        FROM system_modules sm
+        JOIN business_profile_modules bpm_c ON bpm_c.module_id = sm.id
+        JOIN business_profile_modules bpm_p ON bpm_p.id = bpm_c.parent_id
+        WHERE bpm_p.module_id = :parent_mid
+          AND sm.is_default_child = 1
+          AND sm.is_active = 1
+    """), {"parent_mid": parent_module_id})
+    default_children = [await db.get(SystemModule, r.id) for r in children_res.fetchall()]
+    default_children = [c for c in default_children if c]
 
     # 3. Agregar cada hijo default si no existe ya en el perfil
     for child in default_children:
@@ -280,13 +283,16 @@ async def propagate_default_child(
     child_module = await db.get(SystemModule, child_module_id)
     if not child_module:
         raise HTTPException(status_code=404, detail="Módulo hijo no encontrado")
-    if not child_module.parent_id:
-        raise HTTPException(status_code=400, detail="El módulo no tiene padre definido")
+
+    # parent_module_id explícito (desde el botón Propagar Todos) o fallback a system_modules.parent_id
+    parent_module_id = data.get("parent_module_id") or child_module.parent_id
+    if not parent_module_id:
+        raise HTTPException(status_code=400, detail="No se pudo determinar el padre del módulo")
 
     # Todos los BPM donde el padre está asignado
     parent_bpms_res = await db.execute(
         select(BusinessProfileModule).where(
-            BusinessProfileModule.module_id == child_module.parent_id
+            BusinessProfileModule.module_id == parent_module_id
         )
     )
     parent_bpms = parent_bpms_res.scalars().all()
