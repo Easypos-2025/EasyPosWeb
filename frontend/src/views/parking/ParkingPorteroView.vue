@@ -8,7 +8,7 @@
         <span>Nuevo Ingreso</span>
       </button>
       <div :class="['pk-kpi-card pk-kpi-ingresado', { 'pk-kpi-active': filtroEstado === 'ingresado' }]"
-        @click="filtroEstado = filtroEstado === 'ingresado' ? '' : 'ingresado'; cargar()">
+        @click="filtroEstado = 'ingresado'; cargar()">
         <i class="bi bi-door-open-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_ingresado ?? 0 }}</span>
@@ -17,7 +17,7 @@
         </div>
       </div>
       <div :class="['pk-kpi-card pk-kpi-confirmado', { 'pk-kpi-active': filtroEstado === 'registrado' }]"
-        @click="filtroEstado = filtroEstado === 'registrado' ? '' : 'registrado'; cargar()">
+        @click="filtroEstado = 'registrado'; cargar()">
         <i class="bi bi-person-check-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_registrado ?? 0 }}</span>
@@ -26,7 +26,7 @@
         </div>
       </div>
       <div :class="['pk-kpi-card pk-kpi-parasalir', { 'pk-kpi-active': filtroEstado === 'pagado' }]"
-        @click="filtroEstado = filtroEstado === 'pagado' ? '' : 'pagado'; cargar()">
+        @click="filtroEstado = 'pagado'; cargar()">
         <i class="bi bi-car-front-fill"></i>
         <div>
           <span class="pk-kpi-val">{{ stats.cnt_pagado ?? 0 }}</span>
@@ -287,7 +287,7 @@ function hoyLocal() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 const fechaFiltro        = ref(hoyLocal())
-const filtroEstado       = ref('')
+const filtroEstado       = ref('ingresado')
 const showModalNuevo     = ref(false)
 const guardando          = ref(false)
 const ordenParaImprimir  = ref(null)
