@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
 from app.auth.dependencies import get_current_user
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter(prefix="/api/vehicles", tags=["vehicles"])
 
@@ -384,5 +385,5 @@ async def buscar_por_placa(
         WHERE v.company_id = :cid AND v.placa LIKE :q AND v.is_active = 1
         ORDER BY v.placa
         LIMIT 10
-    """), {"cid": company_id, "q": f"%{placa_up}%"})
+    """), {"cid": company_id, "q": f"%{placa_up}%", "hoy": hoy_co})
     return [dict(r) for r in rows.mappings()]

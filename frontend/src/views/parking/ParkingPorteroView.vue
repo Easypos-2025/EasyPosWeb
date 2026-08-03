@@ -62,13 +62,34 @@
       </div>
     </div>
 
+    <!-- ══ BARRA DE FILTROS ═════════════════════════════════════════════════ -->
+    <div class="pk-filtro-bar">
+      <div class="pk-fecha-nav">
+        <button class="pk-fecha-btn" @click="cambiarFecha(-1)" title="Día anterior">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <span class="pk-fecha-label">{{ fmtFechaLabel(fechaFiltro) }}</span>
+        <button class="pk-fecha-btn" @click="cambiarFecha(1)" :disabled="fechaFiltro >= hoyLocal()" title="Día siguiente">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+        <button v-if="fechaFiltro !== hoyLocal()" class="pk-fecha-hoy" @click="irHoy">Hoy</button>
+      </div>
+      <div class="pk-estado-tabs">
+        <button v-for="f in FILTROS" :key="f.val"
+          :class="['pk-tab', { 'pk-tab--active': filtroEstado === f.val }]"
+          @click="filtroEstado = f.val; cargar()">
+          {{ f.label }} <span v-if="conteoFiltro(f.val) > 0" class="pk-tab-badge">{{ conteoFiltro(f.val) }}</span>
+        </button>
+      </div>
+    </div>
+
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
     <div v-if="loading" class="pk-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
     </div>
     <div v-else-if="ordenes.length === 0" class="pk-empty">
       <i class="bi bi-car-front"></i>
-      <p>No hay ingresos para esta fecha</p>
+      <p>No hay ingresos activos</p>
     </div>
     <div v-else class="pk-grid">
       <div v-for="o in ordenes" :key="o.id" :class="['pk-card', `pk-card--${o.estado}`]">
@@ -305,6 +326,25 @@ function hoyLocal() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
+function cambiarFecha(delta) {
+  const d = new Date(fechaFiltro.value + 'T12:00:00')
+  d.setDate(d.getDate() + delta)
+  fechaFiltro.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  cargar()
+}
+function irHoy() {
+  fechaFiltro.value = hoyLocal()
+  cargar()
+}
+function fmtFechaLabel(fecha) {
+  if (!fecha) return ''
+  const hoy  = hoyLocal()
+  const ayer = (() => { const d = new Date(hoy + 'T12:00:00'); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+  if (fecha === hoy)  return 'Hoy'
+  if (fecha === ayer) return 'Ayer'
+  const [y, m, dd] = fecha.split('-')
+  return `${dd}/${m}/${y}`
+}
 const fechaFiltro        = ref(hoyLocal())
 const filtroEstado       = ref('ingresado')
 const showModalNuevo     = ref(false)
@@ -364,8 +404,10 @@ async function cargar(silent = false) {
   if (!companyId.value) return
   if (!silent) loading.value = true
   try {
+    // Órdenes: sin fecha → muestra todos los activos (cualquier día, no salidos/cancelados)
+    // KPI stats: con fecha → métricas del día seleccionado
     const [r1, r2, r3] = await Promise.all([
-      api.get('/api/parking/orders',          { params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value } }),
+      api.get('/api/parking/orders',          { params: { company_id: companyId.value, estado: filtroEstado.value } }),
       api.get('/api/parking/stats',           { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
       api.get('/api/parking/stats/servicios', { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
     ])
@@ -567,8 +609,20 @@ function fmtHora(dt) {
 .pk-svc-kpi-lbl  { font-size: .62rem; color: #adb5bd; line-height: 1; }
 .pk-svc-kpi-sep  { color: #dee2e6; font-size: .9rem; }
 
-/* Fecha */
-.pk-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+/* Barra de filtros: fecha + estado tabs */
+.pk-filtro-bar    { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.pk-fecha-nav     { display: flex; align-items: center; gap: 6px; background: #fff; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 4px 8px; }
+.pk-fecha-btn     { background: none; border: none; cursor: pointer; color: #6c757d; padding: 4px 6px; border-radius: 6px; line-height: 1; }
+.pk-fecha-btn:hover:not(:disabled) { background: #f1f3f5; color: #212529; }
+.pk-fecha-btn:disabled { opacity: .35; cursor: default; }
+.pk-fecha-label   { font-size: .9rem; font-weight: 700; color: #212529; min-width: 60px; text-align: center; }
+.pk-fecha-hoy     { font-size: .78rem; font-weight: 600; color: #0d6efd; background: #e7f1ff; border: 1px solid #c2d8ff; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.pk-fecha-hoy:hover { background: #0d6efd; color: #fff; }
+.pk-estado-tabs   { display: flex; gap: 6px; flex-wrap: wrap; }
+.pk-tab           { font-size: .8rem; font-weight: 600; padding: 5px 12px; border: 1.5px solid #e9ecef; border-radius: 20px; background: #fff; color: #6c757d; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+.pk-tab:hover     { border-color: #adb5bd; color: #212529; }
+.pk-tab--active   { background: #212529; color: #fff; border-color: #212529; }
+.pk-tab-badge     { background: #fd7e14; color: #fff; border-radius: 20px; font-size: .7rem; padding: 1px 6px; font-weight: 700; line-height: 1.4; }
 
 /* Grid vacío / loading */
 .pk-loading { text-align: center; padding: 40px; color: #6c757d; }

@@ -167,9 +167,16 @@ async def listar_orders(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    fecha_sql = fecha or datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
-    filtros = {"cid": company_id, "fecha": fecha_sql}
-    where   = ["po.company_id = :cid", "DATE(po.hora_ingreso) = :fecha"]
+    filtros = {"cid": company_id}
+    where   = ["po.company_id = :cid"]
+
+    if fecha:
+        # Con fecha explícita: historial de ese día (cualquier estado)
+        filtros["fecha"] = fecha
+        where.append("DATE(po.hora_ingreso) = :fecha")
+    else:
+        # Sin fecha: solo órdenes activas (no salidas ni canceladas)
+        where.append("po.estado NOT IN ('salido', 'cancelado')")
 
     if estado:
         VALIDOS = {"ingresado", "registrado", "pagado", "cancelado"}
@@ -254,10 +261,11 @@ async def crear_orden(
     if not body.items:
         raise HTTPException(400, detail="Selecciona al menos un servicio")
 
-    placa_up  = body.placa.strip().upper()
-    total_qty = sum(i.cantidad for i in body.items)
+    placa_up   = body.placa.strip().upper()
+    total_qty  = sum(i.cantidad for i in body.items)
+    hoy_co     = datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
 
-    # Validar que la placa no tenga un ingreso activo (sin salida registrada)
+    # Validar que la placa no tenga un ingreso activo (cualquier fecha, solo por estado)
     r_activo = await db.execute(text("""
         SELECT id FROM parking_orders
         WHERE company_id = :cid AND placa = :placa
@@ -280,23 +288,30 @@ async def crear_orden(
             updated_at        = NOW()
     """), {"cid": body.company_id, "p": placa_up, "vtn": body.vehicle_type_name, "foto": body.foto_url})
 
+    # Obtener el id del vehículo recién upserted
+    r_vid = await db.execute(text("""
+        SELECT id FROM vehicles WHERE company_id = :cid AND placa = :p LIMIT 1
+    """), {"cid": body.company_id, "p": placa_up})
+    vehicle_id = r_vid.scalar()
+
     r_count = await db.execute(text("""
         SELECT COUNT(*) FROM parking_orders
-        WHERE company_id = :cid AND DATE(created_at) = CURDATE()
-    """), {"cid": body.company_id})
+        WHERE company_id = :cid AND DATE(hora_ingreso) = :hoy
+    """), {"cid": body.company_id, "hoy": hoy_co})
     seq = (r_count.scalar() or 0) + 1
     now_co = bogota_now()
     numero_orden = f"PS-{now_co[:10].replace('-', '')}-{seq:03d}"
 
     result = await db.execute(text("""
         INSERT INTO parking_orders
-            (company_id, numero_orden, placa, vehicle_type_id, adultos, ninos, mascotas,
+            (company_id, numero_orden, placa, vehicle_id, vehicle_type_id, adultos, ninos, mascotas,
              hora_ingreso, foto_url, obs_portero, estado, registrado_por)
         VALUES
-            (:cid, :num, :placa, NULL, :adu, 0, 0,
+            (:cid, :num, :placa, :vid, NULL, :adu, 0, 0,
              :now, :foto, :obs, 'ingresado', :uid)
     """), {
         "cid": body.company_id, "num": numero_orden, "placa": placa_up,
+        "vid": vehicle_id,
         "adu": total_qty, "foto": body.foto_url,
         "obs": body.obs_portero, "uid": current_user.id, "now": now_co,
     })
@@ -572,18 +587,37 @@ async def stats_servicios(
     _=Depends(get_current_user),
 ):
     fecha_sql = fecha or datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
+    # total_dia  → órdenes del día seleccionado
+    # activos_ahora → todos los activos en el patio ahora (sin filtro de fecha)
     rows = await db.execute(text("""
         SELECT
-            poi.nombre AS servicio,
-            SUM(poi.cantidad) AS total_dia,
-            SUM(CASE WHEN po.estado NOT IN ('salido','cancelado') THEN poi.cantidad ELSE 0 END) AS activos_ahora
-        FROM parking_order_items poi
-        JOIN parking_orders po ON po.id = poi.parking_order_id
-        WHERE po.company_id = :cid
-          AND DATE(po.hora_ingreso) = :fecha
-          AND po.estado != 'cancelado'
-        GROUP BY poi.nombre
-        ORDER BY total_dia DESC
+            servicio,
+            SUM(total_dia)    AS total_dia,
+            SUM(activos_ahora) AS activos_ahora
+        FROM (
+            SELECT poi.nombre AS servicio,
+                   SUM(poi.cantidad) AS total_dia,
+                   0                 AS activos_ahora
+            FROM parking_order_items poi
+            JOIN parking_orders po ON po.id = poi.parking_order_id
+            WHERE po.company_id = :cid
+              AND DATE(po.hora_ingreso) = :fecha
+              AND po.estado != 'cancelado'
+            GROUP BY poi.nombre
+
+            UNION ALL
+
+            SELECT poi.nombre AS servicio,
+                   0                 AS total_dia,
+                   SUM(poi.cantidad) AS activos_ahora
+            FROM parking_order_items poi
+            JOIN parking_orders po ON po.id = poi.parking_order_id
+            WHERE po.company_id = :cid
+              AND po.estado NOT IN ('salido', 'cancelado')
+            GROUP BY poi.nombre
+        ) combined
+        GROUP BY servicio
+        ORDER BY activos_ahora DESC, total_dia DESC
     """), {"cid": company_id, "fecha": fecha_sql})
     return [dict(r) for r in rows.mappings()]
 
