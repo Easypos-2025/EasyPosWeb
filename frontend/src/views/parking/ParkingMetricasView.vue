@@ -59,7 +59,7 @@
 
     <template v-else-if="summary">
 
-      <!-- ══ KPI RESUMEN ════════════════════════════════════════════════════ -->
+      <!-- ══ KPI RESUMEN — siempre visible ════════════════════════════════ -->
       <div class="pkm-kpi-bar">
         <div class="pkm-kpi pkm-kpi--ingresos">
           <i class="bi bi-car-front-fill"></i>
@@ -98,88 +98,114 @@
         </div>
       </div>
 
-      <!-- ══ GRÁFICOS ════════════════════════════════════════════════════ -->
-      <div class="pkm-charts-row">
-        <div class="pkm-chart-card card p-3">
-          <div class="pkm-chart-title"><i class="bi bi-bar-chart-fill"></i> Ingresos por {{ filtros.agrupar === 'mes' ? 'mes' : 'día' }}</div>
-          <canvas ref="canvasIngresos" height="160"></canvas>
-        </div>
-        <div class="pkm-chart-card card p-3">
-          <div class="pkm-chart-title"><i class="bi bi-currency-dollar"></i> Recaudado por {{ filtros.agrupar === 'mes' ? 'mes' : 'día' }}</div>
-          <canvas ref="canvasRecaudo" height="160"></canvas>
-        </div>
+      <!-- ══ PESTAÑAS ══════════════════════════════════════════════════════ -->
+      <div class="pkm-tabs">
+        <button :class="['pkm-tab', { 'pkm-tab--act': tabActiva === 'valores' }]"
+          @click="tabActiva = 'valores'">
+          <i class="bi bi-table"></i> Valores
+        </button>
+        <button :class="['pkm-tab', { 'pkm-tab--act': tabActiva === 'grafico' }]"
+          @click="tabActiva = 'grafico'">
+          <i class="bi bi-bar-chart-fill"></i> Gráfico
+        </button>
       </div>
 
-      <!-- ══ TABLA POR SERVICIO ════════════════════════════════════════════ -->
-      <div class="card p-3 mb-3">
-        <div class="pkm-table-title"><i class="bi bi-list-check"></i> Por servicio</div>
-        <div v-if="servicios.length === 0" class="pkm-empty-table">Sin datos para este período</div>
-        <div v-else class="pkm-table-wrap">
-          <table class="pkm-table">
-            <thead>
-              <tr>
-                <th>Servicio</th>
-                <th class="text-end">Usos</th>
-                <th class="text-end">Unidades</th>
-                <th class="text-end">Recaudado</th>
-                <th class="text-end">% ingresos</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in servicios" :key="s.servicio">
-                <td><span class="pkm-svc-pill">{{ s.servicio }}</span></td>
-                <td class="text-end fw-semibold">{{ s.total_usos }}</td>
-                <td class="text-end">{{ s.total_unidades }}</td>
-                <td class="text-end">{{ fmt(s.recaudado) }}</td>
-                <td class="text-end">
-                  <div class="pkm-pct-bar-wrap">
-                    <div class="pkm-pct-bar" :style="{ width: pctUsos(s.total_usos) + '%' }"></div>
-                    <span>{{ pctUsos(s.total_usos) }}%</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr>
-                <td><strong>TOTAL</strong></td>
-                <td class="text-end"><strong>{{ totalUsos }}</strong></td>
-                <td class="text-end"><strong>{{ totalUnidades }}</strong></td>
-                <td class="text-end"><strong>{{ fmt(summary.recaudado) }}</strong></td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
+      <!-- ══ PESTAÑA: VALORES ══════════════════════════════════════════════ -->
+      <div v-show="tabActiva === 'valores'">
+
+        <!-- Tabla por servicio -->
+        <div class="card p-3 mb-3">
+          <div class="pkm-table-title"><i class="bi bi-list-check"></i> Por servicio</div>
+          <div v-if="servicios.length === 0" class="pkm-empty-table">Sin datos para este período</div>
+          <div v-else class="pkm-table-wrap">
+            <table class="pkm-table">
+              <thead>
+                <tr>
+                  <th>Servicio</th>
+                  <th class="text-end">Usos</th>
+                  <th class="text-end">Unidades</th>
+                  <th class="text-end">Recaudado</th>
+                  <th class="text-end">% ingresos</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in servicios" :key="s.servicio">
+                  <td><span class="pkm-svc-pill">{{ s.servicio }}</span></td>
+                  <td class="text-end fw-semibold">{{ s.total_usos }}</td>
+                  <td class="text-end">{{ s.total_unidades }}</td>
+                  <td class="text-end">{{ fmt(s.recaudado) }}</td>
+                  <td class="text-end">
+                    <div class="pkm-pct-bar-wrap">
+                      <div class="pkm-pct-bar" :style="{ width: pctUsos(s.total_usos) + '%' }"></div>
+                      <span>{{ pctUsos(s.total_usos) }}%</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td><strong>TOTAL</strong></td>
+                  <td class="text-end"><strong>{{ totalUsos }}</strong></td>
+                  <td class="text-end"><strong>{{ totalUnidades }}</strong></td>
+                  <td class="text-end"><strong>{{ fmt(summary.recaudado) }}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
+
+        <!-- Tabla por período -->
+        <div class="card p-3 mb-3">
+          <div class="pkm-table-title">
+            <i class="bi bi-calendar-week"></i>
+            Por {{ filtros.agrupar === 'mes' ? 'mes' : 'día' }}
+          </div>
+          <div v-if="periodos.length === 0" class="pkm-empty-table">Sin datos para este período</div>
+          <div v-else class="pkm-table-wrap">
+            <table class="pkm-table">
+              <thead>
+                <tr>
+                  <th>{{ filtros.agrupar === 'mes' ? 'Mes' : 'Fecha' }}</th>
+                  <th class="text-end">Ingresos</th>
+                  <th class="text-end">Con cobro</th>
+                  <th class="text-end">Cortesías</th>
+                  <th class="text-end">Recaudado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in periodos" :key="p.periodo">
+                  <td class="pkm-td-fecha">{{ p.periodo_label }}</td>
+                  <td class="text-end fw-semibold">{{ p.total_ordenes }}</td>
+                  <td class="text-end"><span class="pkm-badge pkm-badge--cobro">{{ p.con_cobro }}</span></td>
+                  <td class="text-end"><span class="pkm-badge pkm-badge--cortesia">{{ p.cortesias }}</span></td>
+                  <td class="text-end fw-semibold text-success">{{ fmt(p.recaudado) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
 
-      <!-- ══ TABLA POR PERÍODO ════════════════════════════════════════════ -->
-      <div class="card p-3 mb-3">
-        <div class="pkm-table-title">
-          <i class="bi bi-calendar-week"></i>
-          Por {{ filtros.agrupar === 'mes' ? 'mes' : 'día' }}
-        </div>
-        <div v-if="periodos.length === 0" class="pkm-empty-table">Sin datos para este período</div>
-        <div v-else class="pkm-table-wrap">
-          <table class="pkm-table">
-            <thead>
-              <tr>
-                <th>{{ filtros.agrupar === 'mes' ? 'Mes' : 'Fecha' }}</th>
-                <th class="text-end">Ingresos</th>
-                <th class="text-end">Con cobro</th>
-                <th class="text-end">Cortesías</th>
-                <th class="text-end">Recaudado</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="p in periodos" :key="p.periodo">
-                <td class="pkm-td-fecha">{{ p.periodo_label }}</td>
-                <td class="text-end fw-semibold">{{ p.total_ordenes }}</td>
-                <td class="text-end"><span class="pkm-badge pkm-badge--cobro">{{ p.con_cobro }}</span></td>
-                <td class="text-end"><span class="pkm-badge pkm-badge--cortesia">{{ p.cortesias }}</span></td>
-                <td class="text-end fw-semibold text-success">{{ fmt(p.recaudado) }}</td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- ══ PESTAÑA: GRÁFICO ══════════════════════════════════════════════ -->
+      <div v-show="tabActiva === 'grafico'">
+        <div class="pkm-charts-row">
+          <div class="pkm-chart-card card p-3">
+            <div class="pkm-chart-title">
+              <i class="bi bi-bar-chart-fill"></i>
+              Ingresos por {{ filtros.agrupar === 'mes' ? 'mes' : 'día' }}
+              <span class="pkm-chart-sub">Con cobro vs Cortesías</span>
+            </div>
+            <div class="pkm-chart-wrap"><canvas ref="canvasIngresos"></canvas></div>
+          </div>
+          <div class="pkm-chart-card card p-3">
+            <div class="pkm-chart-title">
+              <i class="bi bi-currency-dollar"></i>
+              Recaudado por {{ filtros.agrupar === 'mes' ? 'mes' : 'día' }}
+            </div>
+            <div class="pkm-chart-wrap"><canvas ref="canvasRecaudo"></canvas></div>
+          </div>
         </div>
       </div>
 
@@ -242,6 +268,7 @@ const SHORTCUTS = [
 
 // ── Estado ────────────────────────────────────────────────────────────────────
 const shortcutActivo = ref('mes')
+const tabActiva = ref('valores')
 const filtros = ref({ desde: primerDiaMes(), hasta: hoyStr(), servicio: '', agrupar: 'dia' })
 const cargando = ref(false)
 const summary  = ref(null)
@@ -398,6 +425,14 @@ function fmtFecha(str) {
 
 watch(companyId, (v) => { if (v) cargar() }, { immediate: true })
 
+// Reconstruir gráficos al activar la pestaña (canvas invisible no renderiza bien)
+watch(tabActiva, async (tab) => {
+  if (tab === 'grafico' && periodos.value.length > 0) {
+    await nextTick()
+    buildCharts()
+  }
+})
+
 onUnmounted(() => {
   if (chartI) chartI.destroy()
   if (chartR) chartR.destroy()
@@ -450,11 +485,24 @@ onUnmounted(() => {
 .pkm-kpi--cortesia  { background: #6f42c1; }
 .pkm-kpi--promedio  { background: #20c997; }
 
+/* ── Pestañas ── */
+.pkm-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 2px solid #e9ecef; padding-bottom: 0; }
+.pkm-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 20px; border: none; background: none;
+  font-size: .88rem; font-weight: 600; color: #6c757d; cursor: pointer;
+  border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all .15s;
+}
+.pkm-tab:hover { color: #0d6efd; }
+.pkm-tab--act  { color: #0d6efd; border-bottom-color: #0d6efd; }
+
 /* ── Charts ── */
 .pkm-charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
 .pkm-chart-card { display: flex; flex-direction: column; gap: 10px; }
-.pkm-chart-title { font-size: .82rem; font-weight: 700; color: #495057; display: flex; align-items: center; gap: 6px; }
-.pkm-chart-card canvas { min-height: 160px; max-height: 220px; }
+.pkm-chart-title { font-size: .82rem; font-weight: 700; color: #495057; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pkm-chart-sub   { font-size: .72rem; font-weight: 400; color: #adb5bd; }
+.pkm-chart-wrap  { position: relative; height: 220px; }
+.pkm-chart-wrap canvas { position: absolute; inset: 0; }
 
 /* ── Tablas ── */
 .pkm-table-title { font-size: .82rem; font-weight: 700; color: #495057; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
@@ -486,6 +534,7 @@ onUnmounted(() => {
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .pkm-charts-row { grid-template-columns: 1fr; }
+  .pkm-chart-wrap { height: 180px; }
   .pkm-kpi-bar { gap: 6px; }
   .pkm-kpi { padding: 10px 12px; min-width: 110px; }
   .pkm-kpi-val { font-size: 1.2rem; }
