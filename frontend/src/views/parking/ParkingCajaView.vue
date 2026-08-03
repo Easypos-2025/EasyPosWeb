@@ -40,6 +40,24 @@
       </div>
     </div>
 
+    <!-- ══ KPI SERVICIOS ════════════════════════════════════════════════════ -->
+    <div v-if="statsServicios.length" class="pkc-svc-kpi-bar">
+      <div v-for="s in statsServicios" :key="s.servicio" class="pkc-svc-kpi-card">
+        <span class="pkc-svc-kpi-nom">{{ s.servicio }}</span>
+        <div class="pkc-svc-kpi-nums">
+          <div class="pkc-svc-kpi-col">
+            <span class="pkc-svc-kpi-val">{{ s.total_dia }}</span>
+            <span class="pkc-svc-kpi-lbl">hoy</span>
+          </div>
+          <span class="pkc-svc-kpi-sep">|</span>
+          <div class="pkc-svc-kpi-col">
+            <span class="pkc-svc-kpi-val pkc-svc-kpi-val--activo">{{ s.activos_ahora }}</span>
+            <span class="pkc-svc-kpi-lbl">en patio</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
     <div class="pkc-filtro-bar">
       <CustomDatePicker v-model="fechaFiltro" @update:modelValue="cargar" />
@@ -292,7 +310,8 @@ const LABELS_ESTADO = {
 
 // ── Estado principal ──────────────────────────────────────────────────────────
 const ordenes       = ref([])
-const stats         = ref({ cnt_ingresado: 0, cnt_registrado: 0, cnt_pagado: 0, recaudo_hoy: 0 })
+const stats              = ref({ cnt_ingresado: 0, cnt_registrado: 0, cnt_pagado: 0, recaudo_hoy: 0 })
+const statsServicios     = ref([])
 const loading       = ref(false)
 function hoyLocal() {
   const d = new Date()
@@ -346,16 +365,20 @@ async function cargar(silent = false) {
   if (!companyId.value) return
   if (!silent) loading.value = true
   try {
-    const [r1, r2] = await Promise.all([
+    const [r1, r2, r3] = await Promise.all([
       api.get('/api/parking/orders', {
         params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value },
       }),
       api.get('/api/parking/stats', {
         params: { company_id: companyId.value, fecha: fechaFiltro.value },
       }),
+      api.get('/api/parking/stats/servicios', {
+        params: { company_id: companyId.value, fecha: fechaFiltro.value },
+      }),
     ])
-    ordenes.value = r1.data
-    stats.value   = r2.data
+    ordenes.value        = r1.data
+    stats.value          = r2.data
+    statsServicios.value = r3.data
   } catch {
     if (!silent) showToast('Error al cargar órdenes', 'error', 3000)
   }
@@ -786,5 +809,43 @@ onUnmounted(() => clearInterval(_autoRefresh))
   .pkc-modal-footer { flex-direction: column; }
   .pkc-btn-confirmar, .pkc-btn-cancelar { width: 100%; justify-content: center; }
   .pkc-overlay { align-items: flex-end; padding: 0; }
+  .pkc-svc-kpi-bar { gap: 6px; }
+  .pkc-svc-kpi-card { padding: 8px 12px; min-width: 90px; }
+  .pkc-svc-kpi-nom { font-size: 0.65rem; }
+  .pkc-svc-kpi-val { font-size: 1.1rem; }
+}
+
+/* ── KPI Servicios ── */
+.pkc-svc-kpi-bar {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 12px;
+}
+.pkc-svc-kpi-card {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; padding: 10px 16px; border-radius: 10px;
+  background: #1e293b; color: #fff;
+  min-width: 110px; flex: 1;
+}
+.pkc-svc-kpi-nom {
+  font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: .06em; color: #94a3b8; font-weight: 600;
+}
+.pkc-svc-kpi-nums {
+  display: flex; align-items: center; gap: 8px;
+}
+.pkc-svc-kpi-col {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.pkc-svc-kpi-val {
+  font-size: 1.25rem; font-weight: 700; line-height: 1;
+}
+.pkc-svc-kpi-val--activo { color: #34d399; }
+.pkc-svc-kpi-lbl {
+  font-size: 0.6rem; color: #64748b; text-transform: uppercase;
+}
+.pkc-svc-kpi-sep { color: #334155; font-size: 1.1rem; }
+
+@media (max-width: 768px) {
+  .pkc-svc-kpi-card { padding: 8px 12px; min-width: 90px; }
 }
 </style>
