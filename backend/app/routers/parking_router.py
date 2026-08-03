@@ -562,6 +562,132 @@ async def get_order_items(
     return [dict(r) for r in rows.mappings()]
 
 
+# ── KPI de servicios por fecha (conteo por ítem) ─────────────────────────────
+
+@router.get("/stats/servicios")
+async def stats_servicios(
+    company_id: int  = Query(...),
+    fecha: str       = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    fecha_sql = fecha or datetime.now(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
+    rows = await db.execute(text("""
+        SELECT
+            poi.nombre AS servicio,
+            SUM(poi.cantidad) AS total_dia,
+            SUM(CASE WHEN po.estado NOT IN ('salido','cancelado') THEN poi.cantidad ELSE 0 END) AS activos_ahora
+        FROM parking_order_items poi
+        JOIN parking_orders po ON po.id = poi.parking_order_id
+        WHERE po.company_id = :cid
+          AND DATE(po.hora_ingreso) = :fecha
+          AND po.estado != 'cancelado'
+        GROUP BY poi.nombre
+        ORDER BY total_dia DESC
+    """), {"cid": company_id, "fecha": fecha_sql})
+    return [dict(r) for r in rows.mappings()]
+
+
+# ── Métricas consolidadas (vista analítica) ───────────────────────────────────
+
+@router.get("/metricas")
+async def get_metricas(
+    company_id: int  = Query(...),
+    desde: str       = Query(None),
+    hasta: str       = Query(None),
+    servicio: str    = Query(None),
+    agrupar: str     = Query("dia"),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    hoy = datetime.now(timezone(timedelta(hours=-5)))
+    desde_sql = desde or hoy.strftime("%Y-%m-01")
+    hasta_sql = hasta or hoy.strftime("%Y-%m-%d")
+    params = {"cid": company_id, "desde": desde_sql, "hasta": hasta_sql}
+
+    # ── Resumen global
+    r_sum = await db.execute(text("""
+        SELECT
+            COUNT(DISTINCT po.id) AS total_ordenes,
+            COUNT(DISTINCT CASE WHEN po.estado IN ('pagado','salido') AND COALESCE(ps.total,0) > 0 THEN po.id END) AS con_cobro,
+            COUNT(DISTINCT CASE WHEN po.estado IN ('pagado','salido') AND COALESCE(ps.total,0) = 0 THEN po.id END) AS cortesias,
+            COALESCE(SUM(ps.total), 0) AS recaudado
+        FROM parking_orders po
+        LEFT JOIN (
+            SELECT parking_order_id, SUM(subtotal) AS total
+            FROM parking_order_items GROUP BY parking_order_id
+        ) ps ON ps.parking_order_id = po.id
+        WHERE po.company_id = :cid AND po.estado != 'cancelado'
+          AND DATE(po.hora_ingreso) BETWEEN :desde AND :hasta
+    """), params)
+    summary = dict(r_sum.mappings().first() or {})
+
+    # ── Por servicio
+    svc_where = "AND poi.nombre = :servicio" if servicio else ""
+    svc_params = {**params, "servicio": servicio} if servicio else params
+    r_svc = await db.execute(text(f"""
+        SELECT
+            poi.nombre AS servicio,
+            COUNT(DISTINCT poi.parking_order_id) AS total_usos,
+            SUM(poi.cantidad) AS total_unidades,
+            COALESCE(SUM(poi.subtotal), 0) AS recaudado
+        FROM parking_order_items poi
+        JOIN parking_orders po ON po.id = poi.parking_order_id
+        WHERE po.company_id = :cid AND po.estado != 'cancelado'
+          AND DATE(po.hora_ingreso) BETWEEN :desde AND :hasta
+          {svc_where}
+        GROUP BY poi.nombre
+        ORDER BY total_usos DESC
+    """), svc_params)
+    servicios = [dict(r) for r in r_svc.mappings()]
+
+    # ── Por período
+    if agrupar == "mes":
+        grp = "DATE_FORMAT(po.hora_ingreso,'%Y-%m')"
+        lbl = "DATE_FORMAT(po.hora_ingreso,'%b %Y')"
+    else:
+        grp = "DATE(po.hora_ingreso)"
+        lbl = "DATE(po.hora_ingreso)"
+
+    r_per = await db.execute(text(f"""
+        SELECT
+            {grp} AS periodo,
+            {lbl} AS periodo_label,
+            COUNT(DISTINCT po.id) AS total_ordenes,
+            COUNT(DISTINCT CASE WHEN po.estado IN ('pagado','salido') AND COALESCE(ps.total,0) > 0 THEN po.id END) AS con_cobro,
+            COUNT(DISTINCT CASE WHEN po.estado IN ('pagado','salido') AND COALESCE(ps.total,0) = 0 THEN po.id END) AS cortesias,
+            COALESCE(SUM(ps.total), 0) AS recaudado
+        FROM parking_orders po
+        LEFT JOIN (
+            SELECT parking_order_id, SUM(subtotal) AS total
+            FROM parking_order_items GROUP BY parking_order_id
+        ) ps ON ps.parking_order_id = po.id
+        WHERE po.company_id = :cid AND po.estado != 'cancelado'
+          AND DATE(po.hora_ingreso) BETWEEN :desde AND :hasta
+        GROUP BY {grp}
+        ORDER BY periodo
+    """), params)
+    periodos = [dict(r) for r in r_per.mappings()]
+
+    # ── Servicios disponibles en el rango (para el filtro)
+    r_avail = await db.execute(text("""
+        SELECT DISTINCT poi.nombre
+        FROM parking_order_items poi
+        JOIN parking_orders po ON po.id = poi.parking_order_id
+        WHERE po.company_id = :cid AND po.estado != 'cancelado'
+          AND DATE(po.hora_ingreso) BETWEEN :desde AND :hasta
+        ORDER BY poi.nombre
+    """), params)
+    servicios_disponibles = [r["nombre"] for r in r_avail.mappings()]
+
+    return {
+        "summary": summary,
+        "servicios": servicios,
+        "periodos": periodos,
+        "servicios_disponibles": servicios_disponibles,
+    }
+
+
 # ── Productos activos de la empresa (catálogo para cobrar) ────────────────────
 
 @router.get("/products")

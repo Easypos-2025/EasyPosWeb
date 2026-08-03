@@ -44,6 +44,24 @@
       </div>
     </div>
 
+    <!-- ══ KPI SERVICIOS HOY ════════════════════════════════════════════════ -->
+    <div v-if="statsServicios.length" class="pk-svc-kpi-bar">
+      <div v-for="s in statsServicios" :key="s.servicio" class="pk-svc-kpi-card">
+        <span class="pk-svc-kpi-nom">{{ s.servicio }}</span>
+        <div class="pk-svc-kpi-nums">
+          <div class="pk-svc-kpi-col">
+            <span class="pk-svc-kpi-val">{{ s.total_dia }}</span>
+            <span class="pk-svc-kpi-lbl">hoy</span>
+          </div>
+          <span class="pk-svc-kpi-sep">|</span>
+          <div class="pk-svc-kpi-col">
+            <span class="pk-svc-kpi-val pk-svc-kpi-val--activo">{{ s.activos_ahora }}</span>
+            <span class="pk-svc-kpi-lbl">en patio</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
     <div v-if="loading" class="pk-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
@@ -270,6 +288,7 @@ const LABELS_ESTADO = {
   salido:     'Salido',
 }
 
+const statsServicios     = ref([])
 const ordenes            = ref([])
 const stats              = ref({ disponibles: 0, ocupadas: 0, total_plazas: 0, pct_ocupacion: 0 })
 
@@ -345,12 +364,14 @@ async function cargar(silent = false) {
   if (!companyId.value) return
   if (!silent) loading.value = true
   try {
-    const [r1, r2] = await Promise.all([
-      api.get('/api/parking/orders', { params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value } }),
-      api.get('/api/parking/stats',  { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
+    const [r1, r2, r3] = await Promise.all([
+      api.get('/api/parking/orders',          { params: { company_id: companyId.value, fecha: fechaFiltro.value, estado: filtroEstado.value } }),
+      api.get('/api/parking/stats',           { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
+      api.get('/api/parking/stats/servicios', { params: { company_id: companyId.value, fecha: fechaFiltro.value } }),
     ])
-    ordenes.value = r1.data
-    stats.value   = r2.data
+    ordenes.value        = r1.data
+    stats.value          = r2.data
+    statsServicios.value = r3.data
   } catch { if (!silent) showToast('Error al cargar ingresos', 'error', 3000) }
   if (!silent) loading.value = false
 }
@@ -534,6 +555,17 @@ function fmtHora(dt) {
 .pk-kpi-pct        { display: block; font-size: .68rem; opacity: .85; white-space: nowrap; margin-top: 1px; }
 .pk-kpi-card:hover { filter: brightness(1.1); }
 .pk-kpi-active     { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 3px rgba(0,0,0,.25); }
+
+/* KPI servicios hoy */
+.pk-svc-kpi-bar { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 4px; }
+.pk-svc-kpi-card { display: flex; flex-direction: column; gap: 4px; background: #fff; border: 1.5px solid #e9ecef; border-radius: 10px; padding: 10px 14px; min-width: 110px; flex-shrink: 0; }
+.pk-svc-kpi-nom  { font-size: .72rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.pk-svc-kpi-nums { display: flex; align-items: center; gap: 8px; }
+.pk-svc-kpi-col  { display: flex; flex-direction: column; align-items: center; }
+.pk-svc-kpi-val  { font-size: 1.3rem; font-weight: 800; color: #212529; line-height: 1; }
+.pk-svc-kpi-val--activo { color: #fd7e14; }
+.pk-svc-kpi-lbl  { font-size: .62rem; color: #adb5bd; line-height: 1; }
+.pk-svc-kpi-sep  { color: #dee2e6; font-size: .9rem; }
 
 /* Fecha */
 .pk-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }

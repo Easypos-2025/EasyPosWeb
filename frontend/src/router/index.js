@@ -879,6 +879,12 @@ const routes = [
         component: () => import("@/views/parking/ParkingIngresosView.vue"),
         meta: { requiresAuth: true, title: "Parking — Ingresos" }
       },
+      {
+        path: "/parking/metricas",
+        name: "ParkingMetricasView",
+        component: () => import("@/views/parking/ParkingMetricasView.vue"),
+        meta: { requiresAuth: true, title: "Parking — Métricas" }
+      },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
