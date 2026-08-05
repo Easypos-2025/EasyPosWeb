@@ -94,9 +94,15 @@
             <span v-if="detalle.contrato.direccion"><i class="bi bi-geo-alt"></i> {{ detalle.contrato.direccion }}</span>
           </div>
         </div>
-        <div class="estado-banner" :class="estadoClass(detalle.contrato.estado)">
-          <i class="bi estado-icon" :class="estadoIcon(detalle.contrato.estado)"></i>
-          <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
+        <div class="estado-stack">
+          <div class="estado-banner" :class="estadoClass(detalle.contrato.estado)">
+            <i class="bi estado-icon" :class="estadoIcon(detalle.contrato.estado)"></i>
+            <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
+          </div>
+          <div v-if="moraState" class="estado-banner" :class="moraState === 'vencido' ? 'banner-mora-v' : 'banner-mora-a'">
+            <i class="bi estado-icon" :class="moraState === 'vencido' ? 'bi-exclamation-triangle-fill' : 'bi-check2-circle'"></i>
+            <span class="estado-texto">{{ moraState === 'vencido' ? 'VENCIDO' : 'ACTIVO' }}</span>
+          </div>
         </div>
       </div>
 
@@ -136,9 +142,9 @@
               <span class="rf-label">Deuda Actual</span>
               <span class="rf-val">{{ formatCurrency(resumen.deudaActual) }}</span>
             </div>
-            <div class="rf-row" v-if="resumen.fechaUltimaAmpliacion">
+            <div class="rf-row" v-if="resumen.ultimaAmpliacion">
               <span class="rf-label">Últ. Ampliación</span>
-              <span class="rf-val">{{ formatFecha(resumen.fechaUltimaAmpliacion) }}</span>
+              <span class="rf-val">{{ formatFecha(resumen.ultimaAmpliacion.fecha) }}</span>
             </div>
           </div>
 
@@ -152,20 +158,24 @@
               <span class="rf-val">{{ detalle.contrato.nro_meses }} meses</span>
             </div>
             <div class="rf-row">
-              <span class="rf-label">Meses Deuda</span>
+              <span class="rf-label">Meses Transcurridos</span>
               <span class="rf-val">{{ resumen.mesesDeuda }}</span>
             </div>
             <div class="rf-row">
-              <span class="rf-label">Días Deuda</span>
+              <span class="rf-label">Días Pasados Mes</span>
               <span class="rf-val rf-dias">{{ resumen.diasDeuda }} días</span>
             </div>
             <div class="rf-row">
               <span class="rf-label">Prorrogas (meses)</span>
               <span class="rf-val">{{ resumen.sumaMesesProrrogados }}</span>
             </div>
-            <div class="rf-row rf-row--total">
-              <span class="rf-label">Total Meses</span>
+            <div class="rf-row rf-row--total-meses">
+              <span class="rf-label">Total Meses Deuda</span>
               <span class="rf-val">{{ resumen.totalMeses }}</span>
+            </div>
+            <div class="rf-row" v-if="resumen.ultimaAmpliacion">
+              <span class="rf-label">Última Ampliación</span>
+              <span class="rf-val rf-ampliacion">{{ formatFecha(resumen.ultimaAmpliacion.fecha) }} · {{ formatCurrency(resumen.ultimaAmpliacion.valor) }}</span>
             </div>
             <div class="rf-row">
               <span class="rf-label">Abonos Registrados</span>
@@ -701,14 +711,22 @@ const resumen = computed(() => {
   const totalAbonos   = (abonos || []).reduce((s, a) => s + (Number(a.Valor_Abono) || 0), 0)
   const deudaActual   = valorContrato + sobrecosto - totalAbonos
 
-  // Última ampliación (prorroga más reciente)
-  const fechaUltimaAmpliacion = prorrogas.length
-    ? prorrogas.reduce((max, p) => p.fecha_prorroga > max ? p.fecha_prorroga : max,
-                       prorrogas[0].fecha_prorroga)
-    : null
+  // Última ampliación (prorroga más reciente, sumando valores si comparten fecha)
+  let ultimaAmpliacion = null
+  if (prorrogas.length) {
+    const maxFecha = prorrogas.reduce((max, p) => p.fecha_prorroga > max ? p.fecha_prorroga : max, prorrogas[0].fecha_prorroga)
+    const mismaDia = prorrogas.filter(p => p.fecha_prorroga === maxFecha)
+    const valorUltima = mismaDia.reduce((s, p) => s + (Number(p.valor_prorroga) || 0), 0)
+    ultimaAmpliacion = { fecha: maxFecha, valor: valorUltima }
+  }
 
   return { mesesDeuda, diasDeuda, totalMeses, sumaMesesProrrogados,
-           cuotaMes, sobrecosto, totalAbonos, deudaActual, fechaUltimaAmpliacion }
+           cuotaMes, sobrecosto, totalAbonos, deudaActual, ultimaAmpliacion }
+})
+
+const moraState = computed(() => {
+  if (!resumen.value || !detalle.value) return null
+  return resumen.value.totalMeses > Number(detalle.value.contrato.nro_meses) ? 'vencido' : 'activo'
 })
 
 // ── Export ───────────────────────────────────────────────────────────────────
@@ -785,8 +803,8 @@ const exportData = computed(() => {
   if (resumen.value) {
     const r = resumen.value
     rows.push({ _sectionHeader: true, _title: 'RESUMEN FINANCIERO' })
-    rows.push({ c1: 'Meses Deuda', c2: r.mesesDeuda, c3: 'Días Deuda', c4: r.diasDeuda })
-    rows.push({ c1: 'Total Meses', c2: r.totalMeses, c3: 'Cuota/Mes', c4: formatCurrency(r.cuotaMes) })
+    rows.push({ c1: 'Meses Transcurridos', c2: r.mesesDeuda, c3: 'Días Pasados Mes', c4: r.diasDeuda })
+    rows.push({ c1: 'Total Meses Deuda', c2: r.totalMeses, c3: 'Cuota/Mes', c4: formatCurrency(r.cuotaMes) })
     rows.push({ c1: 'Sobrecosto', c2: formatCurrency(r.sobrecosto), c3: 'Abonos', c4: formatCurrency(r.totalAbonos) })
     rows.push({ c1: 'DEUDA ACTUAL', c2: formatCurrency(r.deudaActual), c3: '', c4: '' })
   }
@@ -868,18 +886,24 @@ const exportData = computed(() => {
 .cliente-datos .bi { color: #93c5fd; }
 
 /* Estado parpadeante */
-.estado-banner {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px; border-radius: 14px; padding: 14px 28px;
-  font-size: 18px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+.estado-stack {
+  display: flex; flex-direction: column; gap: 6px;
   min-width: 160px; flex-shrink: 0;
 }
-.estado-icon { font-size: 26px; animation: pulso 1.4s ease-in-out infinite; }
+.estado-banner {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; border-radius: 14px; padding: 10px 24px;
+  font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  flex: 1;
+}
+.estado-icon { font-size: 22px; animation: pulso 1.4s ease-in-out infinite; }
 .estado-texto { animation: pulso 1.4s ease-in-out infinite; }
 @keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 .banner-v { background: #dcfce7; color: #166534; border: 2px solid #86efac; }
 .banner-r { background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; }
 .banner-d { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
+.banner-mora-v { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
+.banner-mora-a { background: #f0fdf4; color: #166534; border: 2px solid #bbf7d0; }
 
 /* ── Resumen financiero ───────────────────────────────────────────────────── */
 .resumen-card {
@@ -903,15 +927,19 @@ const exportData = computed(() => {
 .resumen-col { display: flex; flex-direction: column; gap: 6px; }
 .resumen-col--right { padding-left: 4px; }
 .rf-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 3px 6px; border-radius: 6px; }
-.rf-row--highlight { background: #fef3c7; }
-.rf-row--deuda     { background: #fee2e2; }
-.rf-row--total     { background: #eff6ff; }
+.rf-row--highlight  { background: #fef3c7; }
+.rf-row--deuda      { background: #fee2e2; }
+.rf-row--total      { background: #eff6ff; }
+.rf-row--total-meses { background: #1e3a5f; border-radius: 8px; }
 .rf-label { font-size: 11.5px; color: #64748b; font-weight: 500; white-space: nowrap; }
 .rf-val   { font-size: 13px; font-weight: 700; color: #1e293b; text-align: right; }
-.rf-abono { color: #059669; }
-.rf-dias  { color: #d97706; }
-.rf-row--highlight .rf-val { color: #92400e; }
-.rf-row--deuda .rf-val     { color: #991b1b; font-size: 14px; }
+.rf-abono    { color: #059669; }
+.rf-dias     { color: #d97706; }
+.rf-ampliacion { color: #7c3aed; font-size: 12px; }
+.rf-row--highlight .rf-val  { color: #92400e; }
+.rf-row--deuda .rf-val      { color: #991b1b; font-size: 14px; }
+.rf-row--total-meses .rf-label { color: #93c5fd; font-weight: 700; }
+.rf-row--total-meses .rf-val   { color: #fff; font-size: 15px; }
 
 /* Observación */
 .obs-card { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
@@ -1065,7 +1093,8 @@ const exportData = computed(() => {
   .search-input-wrap { min-width: unset; width: 100%; }
   .selector-contrato { min-width: unset; width: 100%; }
   .cliente-estado-row { flex-direction: column; }
-  .estado-banner { flex-direction: row; min-width: unset; padding: 12px 16px; font-size: 16px; }
+  .estado-stack { flex-direction: row; min-width: unset; }
+  .estado-banner { flex-direction: row; padding: 10px 14px; font-size: 14px; }
   .resumen-body { grid-template-columns: 1fr; }
   .resumen-div { display: none; }
   .resumen-col--right { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 4px; }
