@@ -96,11 +96,9 @@
         </div>
         <div class="estado-stack">
           <div class="estado-banner" :class="estadoClass(detalle.contrato.estado)">
-            <i class="bi estado-icon" :class="estadoIcon(detalle.contrato.estado)"></i>
             <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
           </div>
           <div v-if="moraState" class="estado-banner" :class="moraState === 'vencido' ? 'banner-mora-v' : 'banner-mora-a'">
-            <i class="bi estado-icon" :class="moraState === 'vencido' ? 'bi-exclamation-triangle-fill' : 'bi-check2-circle'"></i>
             <span class="estado-texto">{{ moraState === 'vencido' ? 'VENCIDO' : 'ACTIVO' }}</span>
           </div>
         </div>
@@ -173,9 +171,9 @@
               <span class="rf-label">Total Meses Deuda</span>
               <span class="rf-val">{{ resumen.totalMeses }}</span>
             </div>
-            <div class="rf-row" v-if="resumen.ultimaAmpliacion">
+            <div class="rf-row">
               <span class="rf-label">Última Ampliación</span>
-              <span class="rf-val rf-ampliacion">{{ formatFecha(resumen.ultimaAmpliacion.fecha) }} · {{ formatCurrency(resumen.ultimaAmpliacion.valor) }}</span>
+              <span class="rf-val rf-ampliacion">{{ resumen.ultimaAmpliacion ? formatFecha(resumen.ultimaAmpliacion.fecha) + ' · ' + formatCurrency(resumen.ultimaAmpliacion.valor) : '—' }}</span>
             </div>
             <div class="rf-row">
               <span class="rf-label">Abonos Registrados</span>
@@ -887,23 +885,22 @@ const exportData = computed(() => {
 
 /* Estado parpadeante */
 .estado-stack {
-  display: flex; flex-direction: column; gap: 6px;
-  min-width: 160px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 130px; flex-shrink: 0;
 }
 .estado-banner {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 5px; border-radius: 14px; padding: 10px 24px;
-  font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
-  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; padding: 0 16px;
+  font-size: 13px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
+  flex: 1; min-height: 0;
 }
-.estado-icon { font-size: 22px; animation: pulso 1.4s ease-in-out infinite; }
 .estado-texto { animation: pulso 1.4s ease-in-out infinite; }
 @keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 .banner-v { background: #dcfce7; color: #166534; border: 2px solid #86efac; }
 .banner-r { background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; }
 .banner-d { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
 .banner-mora-v { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
-.banner-mora-a { background: #f0fdf4; color: #166534; border: 2px solid #bbf7d0; }
+.banner-mora-a { background: #dbeafe; color: #1d4ed8; border: 2px solid #93c5fd; }
 
 /* ── Resumen financiero ───────────────────────────────────────────────────── */
 .resumen-card {
@@ -1093,8 +1090,8 @@ const exportData = computed(() => {
   .search-input-wrap { min-width: unset; width: 100%; }
   .selector-contrato { min-width: unset; width: 100%; }
   .cliente-estado-row { flex-direction: column; }
-  .estado-stack { flex-direction: row; min-width: unset; }
-  .estado-banner { flex-direction: row; padding: 10px 14px; font-size: 14px; }
+  .estado-stack { flex-direction: row; min-width: unset; gap: 4px; }
+  .estado-banner { padding: 8px 10px; font-size: 12px; }
   .resumen-body { grid-template-columns: 1fr; }
   .resumen-div { display: none; }
   .resumen-col--right { border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 4px; }
