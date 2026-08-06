@@ -99,7 +99,7 @@
             <span class="estado-texto">{{ detalle.contrato.estado_descripcion || estadoLabel(detalle.contrato.estado) }}</span>
           </div>
           <div v-if="moraState && detalle.contrato.estado === 'V'" class="estado-banner" :class="moraState === 'vencido' ? 'banner-mora-v' : 'banner-mora-a'">
-            <span class="estado-texto">{{ moraState === 'vencido' ? 'REMATADO' : 'ACTIVO' }}</span>
+            <span class="estado-texto">{{ moraState === 'vencido' ? 'VENCIDO' : 'ACTIVO' }}</span>
           </div>
         </div>
       </div>
