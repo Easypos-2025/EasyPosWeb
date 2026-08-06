@@ -173,7 +173,7 @@
             </div>
             <div class="rf-row">
               <span class="rf-label">Última Ampliación</span>
-              <span class="rf-val rf-ampliacion">{{ resumen.ultimaAmpliacion ? formatFecha(resumen.ultimaAmpliacion.fecha) + ' · ' + formatCurrency(resumen.ultimaAmpliacion.valor) : '—' }}</span>
+              <span class="rf-val rf-ampliacion">{{ resumen.ultimaAmpliacion ? formatFecha(resumen.ultimaAmpliacion.fecha) + ' · ' + resumen.ultimaAmpliacion.meses + ' mes(es) · ' + formatCurrency(resumen.ultimaAmpliacion.valor) : '—' }}</span>
             </div>
             <div class="rf-row">
               <span class="rf-label">Abonos Registrados</span>
@@ -715,7 +715,8 @@ const resumen = computed(() => {
     const maxFecha = prorrogas.reduce((max, p) => p.fecha_prorroga > max ? p.fecha_prorroga : max, prorrogas[0].fecha_prorroga)
     const mismaDia = prorrogas.filter(p => p.fecha_prorroga === maxFecha)
     const valorUltima = mismaDia.reduce((s, p) => s + (Number(p.valor_prorroga) || 0), 0)
-    ultimaAmpliacion = { fecha: maxFecha, valor: valorUltima }
+    const mesesUltima = mismaDia.reduce((s, p) => s + (Number(p.meses_prorrogados) || 0), 0)
+    ultimaAmpliacion = { fecha: maxFecha, valor: valorUltima, meses: mesesUltima }
   }
 
   return { mesesDeuda, diasDeuda, totalMeses, sumaMesesProrrogados,
