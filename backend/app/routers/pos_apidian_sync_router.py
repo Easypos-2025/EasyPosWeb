@@ -1,7 +1,7 @@
 import os
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -231,7 +231,7 @@ async def push_apidian_facturas_cufe(
                     VentaCerrada        = VALUES(VentaCerrada),
                     Observacion_Factura = VALUES(Observacion_Factura),
                     Hora                = VALUES(Hora),
-                    Enviada_MySql       = VALUES(Enviada_MySql),
+                    Enviada_MySql       = 1,
                     updated_at          = NOW()
             """), r.dict())
             saved.append(key)
@@ -240,6 +240,33 @@ async def push_apidian_facturas_cufe(
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ═════════════════════════════════════════════════════════════════
+# PULL  apidian_facturas_cufe
+#   Caso A: Enviada_MySql=0  → web modificó la factura, bajar cambios
+#   Caso B: FEExitosa=0      → DIAN falló en servidor, trigger re-envío local
+# ═════════════════════════════════════════════════════════════════
+@router.get("/sync/pull/apidian-facturas-cufe")
+async def pull_apidian_facturas_cufe(
+    company_id: int = Query(...),
+    limit: int = Query(default=500, le=2000),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    rows = (await db.execute(text("""
+        SELECT
+            Nro_Caja, Prefix, Nro_Factura, Tipo_Pago, Cedula,
+            Fecha, Nro_Pedido, cufe, FEExitosa,
+            Valor, Descuento, Empleado, Pc_Desde, Estado,
+            VentaCerrada, Observacion_Factura, Hora, Enviada_MySql
+        FROM apidian_facturas_cufe
+        WHERE company_id = :cid
+          AND (Enviada_MySql = 0 OR FEExitosa = 0)
+        ORDER BY Fecha DESC
+        LIMIT :lim
+    """), {"cid": company_id, "lim": limit})).mappings().all()
+    return {"total": len(rows), "records": [dict(r) for r in rows]}
 
 
 # ═════════════════════════════════════════════════════════════════

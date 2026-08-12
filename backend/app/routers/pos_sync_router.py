@@ -3856,6 +3856,35 @@ async def pull_web_order_assembly(
     return [dict(r) for r in rows]
 
 
+@router.get("/sync/pull/web-order-notes")
+async def pull_web_order_notes(
+    company_id: int = Query(...),
+    x_api_key: str = Header(...),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    verify_api_key(x_api_key)
+    rows = (await db_temp.execute(text("""
+        SELECT
+            n.Nro_Pedido     AS order_number,
+            n.Id_Consecutivo AS consecutive_id,
+            n.Item           AS item,
+            n.Depende        AS depends_on,
+            n.Cod_Categoria  AS category_id,
+            n.Id_Novedad     AS note_id,
+            n.Novedad        AS note
+        FROM temp_novedades_plato_pedido n
+        INNER JOIN temp_comanda c
+            ON c.Nro_Pedido = n.Nro_Pedido
+           AND c.company_id = :cid
+           AND c.Nro_Pedido LIKE 'WEB-%%'
+           AND c.Salio = 0
+        WHERE c.Fecha = CURDATE()
+        ORDER BY n.Nro_Pedido, n.Item
+        LIMIT 2000
+    """), {"cid": company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
 @router.get("/sync/pull/table-status")
 async def pull_table_status(
     company_id: int = Query(...),

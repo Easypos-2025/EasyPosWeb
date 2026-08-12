@@ -5,7 +5,7 @@ Option Explicit
 ' modSyncDownload.bas
 ' Módulo maestro de descarga web → desktop
 ' Llamar DescargarTodo() desde el timer del exe SyncDownloader
-' Orden: Comandas → Detalle → Armado → Mesas → Tirillas
+' Orden: Comandas → Detalle → Armado → Novedades → Mesas → Tirillas
 ' ============================================================
 
 ' ── Configuración — misma que modSyncAll ─────────────────────
@@ -46,13 +46,16 @@ Public Sub DescargarTodo(lblEstado As Label)
     ' 3. Selecciones de armado (modificadores)
     DescargarPlatosProductoParcial lblEstado
 
-    ' 4. Estado de mesas (abierta/libre)
+    ' 4. Novedades de platos (acompañamientos / observaciones)
+    DescargarNovedadesPlatoPedido lblEstado
+
+    ' 5. Estado de mesas (abierta/libre)
     DescargarMesaAbierta lblEstado
 
-    ' 5. Generar tirillas para impresión (derivado del detalle local)
+    ' 6. Generar tirillas para impresión (derivado del detalle local)
     DescargarTirilla lblEstado
 
-    ' 6. Actualizar timestamp del pull exitoso
+    ' 7. Actualizar timestamp del pull exitoso
     ActualizarUltimoPull()
 
     MarcarSyncFin()
