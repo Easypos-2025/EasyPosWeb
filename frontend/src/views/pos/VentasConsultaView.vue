@@ -1,6 +1,13 @@
 <template>
   <div class="vc-wrap">
 
+    <!-- ── Tabs de navegación ─────────────────────────────── -->
+    <div class="vc-tabs">
+      <RouterLink to="/pos/consultas/ventas"          class="vc-tab">Consulta Ventas</RouterLink>
+      <RouterLink to="/pos/consultas/ventas-producto"  class="vc-tab">Venta x Producto</RouterLink>
+      <RouterLink to="/pos/consultas/ventas-insumo"    class="vc-tab">Venta x Insumo</RouterLink>
+    </div>
+
     <!-- ── Barra de filtros (colapsable) ──────────────────────── -->
     <div class="vc-filters card">
       <!-- Cabecera: siempre visible, click colapsa/expande -->
@@ -511,6 +518,22 @@ onMounted(() => buscar())
   gap: 10px;
 }
 
+/* ── Tabs ───────────────────────────────────────────────── */
+.vc-tabs {
+  display: flex; gap: 4px; flex-shrink: 0;
+  border-bottom: 2px solid #e2e8f0;
+}
+.vc-tab {
+  padding: 8px 16px; font-size: 13px; font-weight: 600;
+  color: #64748b; text-decoration: none; border-radius: 8px 8px 0 0;
+  border: 1px solid transparent; border-bottom: none; transition: all .15s; white-space: nowrap;
+}
+.vc-tab:hover { color: #1e40af; background: #f1f5f9; }
+.vc-tab.router-link-active {
+  color: #1e40af; background: #fff;
+  border-color: #e2e8f0; border-bottom-color: #fff; margin-bottom: -2px;
+}
+
 .vc-body {
   display: flex;
   gap: 16px;
@@ -804,6 +827,8 @@ onMounted(() => buscar())
 
 /* ── RESPONSIVE MÓVIL PEQUEÑO ───────────────────────────── */
 @media (max-width: 576px) {
+  .vc-tabs { overflow-x: auto; }
+  .vc-tab  { padding: 6px 10px; font-size: 12px; }
   .vc-filters-body { padding:0 12px 10px; }
   .vc-filter-row  { flex-direction:column; align-items:stretch; }
   .vc-btns-group  { flex-direction:row; }

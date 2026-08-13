@@ -380,7 +380,215 @@ async def get_detalle_productos(
     return [dict(r) for r in rows]
 
 
-# ─── 4. Exportar a Excel ───────────────────────────────────────────────────────
+# ─── 4. Categorías de platos (dropdown para filtros) ─────────────────────────
+
+@router.get("/categorias-platos")
+async def get_categorias_platos(
+    company_id: Optional[int] = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = await _resolve_cid(user, company_id, db)
+    rows = (await db.execute(text(
+        "SELECT id, name FROM pos_dish_categories WHERE company_id=:cid AND is_active=1 ORDER BY name"
+    ), {"cid": cid})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+# ─── 5. Ventas agrupadas por producto ─────────────────────────────────────────
+
+@router.get("/ventas-producto")
+async def get_ventas_producto(
+    desde:      Optional[str] = None,
+    hasta:      Optional[str] = None,
+    tipo:       Optional[str] = "ambos",   # "factura" | "recibo" | "ambos"
+    cat_id:     Optional[int] = None,
+    company_id: Optional[int] = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = await _resolve_cid(user, company_id, db)
+    hoy  = _today()
+    d0   = desde or hoy
+    d1   = hasta or hoy
+    cat_filter = "AND dc.id = :cat_id" if cat_id else ""
+
+    rows = []
+
+    if tipo in ("factura", "ambos"):
+        fact = (await db.execute(text(f"""
+            SELECT
+                COALESCE(dc.name, 'Sin categoría')         AS categoria,
+                COALESCE(d.name, od.dish_id)               AS plato,
+                SUM(od.quantity)                           AS cantidad,
+                SUM(COALESCE(od.amount, 0))                AS total
+            FROM pos_order_details od
+            JOIN pos_invoices i
+                ON i.invoice_number = od.invoice_number
+               AND i.company_id     = od.company_id
+               AND i.date           = od.date
+               AND i.voided         = 0
+            LEFT JOIN pos_dishes d
+                ON d.id = od.dish_id AND d.company_id = od.company_id
+            LEFT JOIN pos_dish_categories dc
+                ON dc.id = d.category_id AND dc.company_id = od.company_id
+            WHERE od.company_id = :cid
+              AND od.date BETWEEN :d0 AND :d1
+              {cat_filter}
+            GROUP BY dc.name, d.id, d.name, od.dish_id
+        """), {"cid": cid, "d0": d0, "d1": d1, **({"cat_id": cat_id} if cat_id else {})}
+        )).mappings().all()
+        rows.extend([dict(r) for r in fact])
+
+    if tipo in ("recibo", "ambos"):
+        recs = (await db.execute(text(f"""
+            SELECT
+                COALESCE(dc.name, 'Sin categoría')         AS categoria,
+                COALESCE(d.name, od.dish_id)               AS plato,
+                SUM(od.quantity)                           AS cantidad,
+                SUM(COALESCE(od.amount, 0))                AS total
+            FROM pos_receipt_order_details od
+            JOIN pos_receipts rc
+                ON rc.receipt_number = od.receipt_number
+               AND rc.company_id     = od.company_id
+               AND rc.date           = od.date
+               AND rc.voided         = 0
+            LEFT JOIN pos_dishes d
+                ON d.id = od.dish_id AND d.company_id = od.company_id
+            LEFT JOIN pos_dish_categories dc
+                ON dc.id = d.category_id AND dc.company_id = od.company_id
+            WHERE od.company_id = :cid
+              AND od.date BETWEEN :d0 AND :d1
+              {cat_filter}
+            GROUP BY dc.name, d.id, d.name, od.dish_id
+        """), {"cid": cid, "d0": d0, "d1": d1, **({"cat_id": cat_id} if cat_id else {})}
+        )).mappings().all()
+        rows.extend([dict(r) for r in recs])
+
+    # Consolidar: mismo plato puede aparecer de facturas y recibos
+    merged: dict[str, dict] = {}
+    for r in rows:
+        key = f"{r['categoria']}|{r['plato']}"
+        if key in merged:
+            merged[key]["cantidad"] += float(r["cantidad"] or 0)
+            merged[key]["total"]    += float(r["total"]    or 0)
+        else:
+            merged[key] = {
+                "categoria": r["categoria"],
+                "plato":     r["plato"],
+                "cantidad":  float(r["cantidad"] or 0),
+                "total":     float(r["total"]    or 0),
+            }
+
+    result = sorted(merged.values(), key=lambda x: (x["categoria"], -x["total"]))
+    return result
+
+
+# ─── 6. Consumo de insumos agrupado por periodo ───────────────────────────────
+
+@router.get("/ventas-insumo")
+async def get_ventas_insumo(
+    desde:      Optional[str] = None,
+    hasta:      Optional[str] = None,
+    tipo:       Optional[str] = "ambos",
+    cat_id:     Optional[int] = None,
+    company_id: Optional[int] = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid  = await _resolve_cid(user, company_id, db)
+    hoy  = _today()
+    d0   = desde or hoy
+    d1   = hasta or hoy
+    cat_filter = "AND dc.id = :cat_id" if cat_id else ""
+
+    rows = []
+
+    if tipo in ("factura", "ambos"):
+        fact = (await db.execute(text(f"""
+            SELECT
+                COALESCE(dc.name, 'Sin categoría')         AS categoria_plato,
+                COALESCE(d.name, dp.dish_id)               AS plato,
+                dp.item_id,
+                COALESCE(si.description, dp.item_id)       AS insumo,
+                COALESCE(mu.name, '')                      AS unidad,
+                SUM(dp.quantity)                           AS cantidad
+            FROM pos_order_detail_products dp
+            JOIN pos_invoices i
+                ON i.invoice_number = dp.invoice_number
+               AND i.company_id     = dp.company_id
+               AND i.date           = dp.date
+               AND i.voided         = 0
+            LEFT JOIN pos_dishes d
+                ON d.id = dp.dish_id AND d.company_id = dp.company_id
+            LEFT JOIN pos_dish_categories dc
+                ON dc.id = d.category_id AND dc.company_id = dp.company_id
+            LEFT JOIN supply_items si
+                ON si.id_item = dp.item_id AND si.company_id = dp.company_id
+            LEFT JOIN pos_measure_forms mu
+                ON mu.id = si.unit_id AND mu.company_id = dp.company_id
+            WHERE dp.company_id = :cid
+              AND dp.date BETWEEN :d0 AND :d1
+              {cat_filter}
+            GROUP BY dc.name, d.id, d.name, dp.dish_id, dp.item_id, si.description, mu.name
+        """), {"cid": cid, "d0": d0, "d1": d1, **({"cat_id": cat_id} if cat_id else {})}
+        )).mappings().all()
+        rows.extend([dict(r) for r in fact])
+
+    if tipo in ("recibo", "ambos"):
+        recs = (await db.execute(text(f"""
+            SELECT
+                COALESCE(dc.name, 'Sin categoría')         AS categoria_plato,
+                COALESCE(d.name, dp.dish_id)               AS plato,
+                dp.item_id,
+                COALESCE(si.description, dp.item_id)       AS insumo,
+                COALESCE(mu.name, '')                      AS unidad,
+                SUM(dp.quantity)                           AS cantidad
+            FROM pos_receipt_order_detail_products dp
+            JOIN pos_receipts rc
+                ON rc.receipt_number = dp.invoice_number
+               AND rc.company_id     = dp.company_id
+               AND rc.date           = dp.date
+               AND rc.voided         = 0
+            LEFT JOIN pos_dishes d
+                ON d.id = dp.dish_id AND d.company_id = dp.company_id
+            LEFT JOIN pos_dish_categories dc
+                ON dc.id = d.category_id AND dc.company_id = dp.company_id
+            LEFT JOIN supply_items si
+                ON si.id_item = dp.item_id AND si.company_id = dp.company_id
+            LEFT JOIN pos_measure_forms mu
+                ON mu.id = si.unit_id AND mu.company_id = dp.company_id
+            WHERE dp.company_id = :cid
+              AND dp.date BETWEEN :d0 AND :d1
+              {cat_filter}
+            GROUP BY dc.name, d.id, d.name, dp.dish_id, dp.item_id, si.description, mu.name
+        """), {"cid": cid, "d0": d0, "d1": d1, **({"cat_id": cat_id} if cat_id else {})}
+        )).mappings().all()
+        rows.extend([dict(r) for r in recs])
+
+    # Consolidar por insumo+plato+unidad
+    merged: dict[str, dict] = {}
+    for r in rows:
+        key = f"{r['categoria_plato']}|{r['plato']}|{r['item_id']}|{r['insumo']}"
+        if key in merged:
+            merged[key]["cantidad"] += float(r["cantidad"] or 0)
+        else:
+            merged[key] = {
+                "categoria_plato": r["categoria_plato"],
+                "plato":           r["plato"],
+                "insumo":          r["insumo"],
+                "unidad":          r["unidad"],
+                "cantidad":        float(r["cantidad"] or 0),
+            }
+
+    result = sorted(merged.values(), key=lambda x: (x["categoria_plato"], x["plato"], x["insumo"]))
+    return result
+
+
+# ─── 7. Exportar a Excel ───────────────────────────────────────────────────────
 
 @router.get("/export-excel")
 async def export_excel(

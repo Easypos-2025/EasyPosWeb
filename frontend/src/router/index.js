@@ -960,6 +960,20 @@ const routes = [
         meta: { title: "Consulta de Ventas" }
       },
       {
+        path: "/pos/consultas/ventas-producto",
+        name: "VentasProductoView",
+        component: () => import("@/views/pos/VentasProductoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Venta x Producto" }
+      },
+      {
+        path: "/pos/consultas/ventas-insumo",
+        name: "VentasInsumoView",
+        component: () => import("@/views/pos/VentasInsumoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Venta x Insumo" }
+      },
+      {
         path: "/pos/consultas/eliminadas",
         name: "PosHistoricoEliminadasView",
         component: () => import("@/views/pos/PosHistoricoEliminadasView.vue"),
