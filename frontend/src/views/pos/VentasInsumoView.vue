@@ -66,9 +66,15 @@
             <button class="btn btn-outline-primary vi-btn-refresh" @click="buscar" :disabled="cargando" title="Actualizar">
               <i class="bi bi-arrow-clockwise" :class="{ spin: cargando }"></i>
             </button>
-            <button class="btn btn-dark vi-btn-print" @click="abrirImprimir" :disabled="!lista.length" title="Imprimir resumen">
-              <i class="bi bi-printer-fill"></i>
-            </button>
+            <ExportToolbar
+              v-if="lista.length"
+              :data="lista"
+              :columns="exportColumns"
+              :filename="`venta-insumo_${filtro.desde}_${filtro.hasta}`"
+              :title="`Venta x Insumo — ${fmtFecha(filtro.desde)} al ${fmtFecha(filtro.hasta)}`"
+              :companyId="selectedCid"
+              :companyName="companyStore.selectedCompany?.name || 'EasyPOS'"
+            />
           </div>
         </div>
       </div>
@@ -145,14 +151,6 @@
       </template>
     </div>
 
-    <!-- ── Componente impresión ──────────────────────────── -->
-    <ImprimirResumenProductos
-      v-if="showImprimir"
-      modo="insumo"
-      :datos="lista"
-      :filtros="filtroImprimir"
-      @close="showImprimir = false"
-    />
 
   </div>
 </template>
@@ -162,7 +160,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
-import ImprimirResumenProductos from '@/components/billing/ImprimirResumenProductos.vue'
+import ExportToolbar from '@/components/common/ExportToolbar.vue'
 
 const companyStore = useCompanyStore()
 const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
@@ -190,7 +188,6 @@ const cargando       = ref(false)
 const lista          = ref([])
 const categorias     = ref([])
 const busqueda       = ref('')
-const showImprimir   = ref(false)
 
 // Sort
 const sortCol = ref('plato')
@@ -228,14 +225,13 @@ const insumosDistintos = computed(() => {
   return new Set(lista.value.map(r => r.insumo)).size
 })
 
-const filtroImprimir = computed(() => ({
-  desde:          filtro.value.desde,
-  hasta:          filtro.value.hasta,
-  tipo:           filtro.value.tipo,
-  categoriaNombre: filtro.value.catId
-    ? (categorias.value.find(c => c.id === filtro.value.catId)?.name || '')
-    : '',
-}))
+const exportColumns = [
+  { key: 'categoria_plato', label: 'Cat. Plato' },
+  { key: 'plato',           label: 'Plato' },
+  { key: 'insumo',          label: 'Insumo' },
+  { key: 'unidad',          label: 'Unidad' },
+  { key: 'cantidad',        label: 'Cant.', align: 'right' },
+]
 
 async function cargarCategorias() {
   try {
@@ -273,7 +269,6 @@ function irHoy() {
   buscar()
 }
 
-function abrirImprimir() { showImprimir.value = true }
 
 onMounted(async () => {
   await cargarCategorias()

@@ -142,3 +142,45 @@ async def eliminar(
     ), {"id": printer_id, "cid": cid})
     await db.commit()
     return {"ok": True}
+
+
+# ─── Endpoint genérico: enviar bytes ESC/POS a impresora de red ────────────────
+
+@router.post("/print-raw")
+async def print_raw(
+    body: dict,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recibe bytes ESC/POS en base64 y los envía a una impresora de red (TCP 9100)."""
+    import socket as _socket
+    import base64 as _b64
+
+    printer_id = body.get("printer_id")
+    company_id = body.get("company_id")
+    data_b64   = body.get("data_b64", "")
+
+    if not printer_id or not company_id or not data_b64:
+        raise HTTPException(status_code=422, detail="printer_id, company_id y data_b64 son requeridos")
+
+    user = await _get_user(authorization, db)
+    cid  = company_id
+
+    printer = (await db.execute(text("""
+        SELECT name, ip, port FROM pos_printers
+        WHERE id = :pid AND company_id = :cid AND is_active = 1
+    """), {"pid": printer_id, "cid": cid})).mappings().first()
+
+    if not printer or not printer["ip"]:
+        raise HTTPException(status_code=404, detail="Impresora no encontrada o sin IP configurada")
+
+    try:
+        raw   = _b64.b64decode(data_b64)
+        port  = int(printer["port"] or 9100)
+        sock  = _socket.create_connection((printer["ip"], port), timeout=5)
+        sock.sendall(raw)
+        sock.close()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error al enviar a impresora: {e}")
+
+    return {"ok": True, "printer": printer["name"]}

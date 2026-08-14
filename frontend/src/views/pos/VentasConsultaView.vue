@@ -54,10 +54,15 @@
             <button class="btn btn-outline-primary vc-btn-refresh" @click="refrescarLista" :disabled="cargandoLista" title="Actualizar lista sin perder selección">
               <i class="bi bi-arrow-clockwise" :class="{ spin: cargandoLista }"></i>
             </button>
-            <button class="btn btn-success vc-btn-excel" @click="descargarExcel" :disabled="descargando" title="Descargar Excel">
-              <span v-if="descargando" class="spinner-border spinner-border-sm me-1"></span>
-              <i v-else class="bi bi-file-earmark-excel"></i>
-            </button>
+            <ExportToolbar
+              v-if="lista.length"
+              :data="lista"
+              :columns="exportColumns"
+              :filename="`ventas_${filtro.desde}_${filtro.hasta}_${filtro.tipo}`"
+              :title="`Consulta Ventas — ${fmtFecha(filtro.desde)} al ${fmtFecha(filtro.hasta)}`"
+              :companyId="selectedCid"
+              :companyName="companyStore.selectedCompany?.name || 'EasyPOS'"
+            />
           </div>
         </div>
       </div>
@@ -291,6 +296,7 @@ import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
+import ExportToolbar from '@/components/common/ExportToolbar.vue'
 
 const router       = useRouter()
 const companyStore = useCompanyStore()
@@ -403,34 +409,19 @@ const totalVentaReal  = computed(() => lista.value.reduce((s,r)=>s+ventaReal(r),
 const totalPropinas   = computed(() => lista.value.reduce((s,r)=>s+(r.propina||0),0))
 const totalDomicilios = computed(() => lista.value.reduce((s,r)=>s+(r.domicilio||0),0))
 
-const descargando = ref(false)
-async function descargarExcel() {
-  descargando.value = true
-  try {
-    const params = new URLSearchParams({
-      desde: filtro.value.desde,
-      hasta: filtro.value.hasta,
-      tipo:  filtro.value.tipo,
-      ...(selectedCid.value ? { company_id: selectedCid.value } : {}),
-    })
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token') || ''
-    const res = await fetch(`/api/pos-consultas/export-excel?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) throw new Error('Error al generar Excel')
-    const blob = await res.blob()
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    a.download = `ventas_${filtro.value.desde}_${filtro.value.hasta}_${filtro.value.tipo}.xlsx`
-    a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) {
-    console.error(e)
-  } finally {
-    descargando.value = false
-  }
-}
+const fmtCOPRaw = v => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', minimumFractionDigits:0 }).format(v || 0)
+const ventaRealFn = r => (r.valor||0)-(r.propina||0)-(r.domicilio||0)
+
+const exportColumns = [
+  { key: 'tipo',   label: 'Tipo', fmt: v => v === 'factura' ? 'FAC' : 'REC' },
+  { key: 'numero', label: 'Número' },
+  { key: 'date',   label: 'Fecha' },
+  { key: 'hora',   label: 'Hora' },
+  { key: 'mesa',   label: 'Mesa' },
+  { key: 'valor',  label: 'Venta Real', align: 'right', fmt: (v, r) => fmtCOPRaw(ventaRealFn(r)) },
+  { key: 'propina',   label: 'Propina',   align: 'right', fmt: v => fmtCOPRaw(v) },
+  { key: 'domicilio', label: 'Domicilio', align: 'right', fmt: v => fmtCOPRaw(v) },
+]
 
 async function buscar() {
   cargandoLista.value  = true

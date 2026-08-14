@@ -66,9 +66,15 @@
             <button class="btn btn-outline-primary vp-btn-refresh" @click="buscar" :disabled="cargando" title="Actualizar">
               <i class="bi bi-arrow-clockwise" :class="{ spin: cargando }"></i>
             </button>
-            <button class="btn btn-dark vp-btn-print" @click="abrirImprimir" :disabled="!lista.length" title="Imprimir resumen">
-              <i class="bi bi-printer-fill"></i>
-            </button>
+            <ExportToolbar
+              v-if="lista.length"
+              :data="lista"
+              :columns="exportColumns"
+              :filename="`venta-producto_${filtro.desde}_${filtro.hasta}`"
+              :title="`Venta x Producto — ${fmtFecha(filtro.desde)} al ${fmtFecha(filtro.hasta)}`"
+              :companyId="selectedCid"
+              :companyName="companyStore.selectedCompany?.name || 'EasyPOS'"
+            />
           </div>
         </div>
       </div>
@@ -151,14 +157,6 @@
       </template>
     </div>
 
-    <!-- ── Componente impresión ──────────────────────────── -->
-    <ImprimirResumenProductos
-      v-if="showImprimir"
-      modo="producto"
-      :datos="lista"
-      :filtros="filtroImprimir"
-      @close="showImprimir = false"
-    />
 
   </div>
 </template>
@@ -168,7 +166,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
-import ImprimirResumenProductos from '@/components/billing/ImprimirResumenProductos.vue'
+import ExportToolbar from '@/components/common/ExportToolbar.vue'
 
 const companyStore = useCompanyStore()
 const selectedCid  = computed(() => companyStore.selectedCompany?.id || undefined)
@@ -197,7 +195,6 @@ const cargando       = ref(false)
 const lista          = ref([])
 const categorias     = ref([])
 const busqueda       = ref('')
-const showImprimir   = ref(false)
 
 // Sort
 const sortCol = ref('total')
@@ -232,14 +229,14 @@ const listaFiltrada = computed(() => {
 const totalCantidad = computed(() => lista.value.reduce((s, r) => s + (r.cantidad || 0), 0))
 const totalDinero   = computed(() => lista.value.reduce((s, r) => s + (r.total    || 0), 0))
 
-const filtroImprimir = computed(() => ({
-  desde:          filtro.value.desde,
-  hasta:          filtro.value.hasta,
-  tipo:           filtro.value.tipo,
-  categoriaNombre: filtro.value.catId
-    ? (categorias.value.find(c => c.id === filtro.value.catId)?.name || '')
-    : '',
-}))
+const fmtCOPRaw = v => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', minimumFractionDigits:0 }).format(v || 0)
+
+const exportColumns = [
+  { key: 'categoria', label: 'Categoría' },
+  { key: 'plato',     label: 'Plato / Producto' },
+  { key: 'cantidad',  label: 'Cant.', align: 'right' },
+  { key: 'total',     label: 'Total', align: 'right', fmt: v => fmtCOPRaw(v) },
+]
 
 async function cargarCategorias() {
   try {
@@ -277,7 +274,6 @@ function irHoy() {
   buscar()
 }
 
-function abrirImprimir() { showImprimir.value = true }
 
 onMounted(async () => {
   await cargarCategorias()
