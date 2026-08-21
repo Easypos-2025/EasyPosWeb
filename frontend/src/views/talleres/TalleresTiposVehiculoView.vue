@@ -103,7 +103,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
+import { ref, watch, computed } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -179,6 +179,9 @@ async function toggleActivo(t) {
   try {
     const { data } = await api.put(`/api/talleres/tipos-vehiculo/${t.id}`, {
       company_id: companyId.value,
+      nombre: t.nombre,
+      icono:  t.icono,
+      orden:  t.orden,
       activo: t.activo ? 0 : 1,
     })
     const idx = tipos.value.findIndex(x => x.id === t.id)
@@ -186,7 +189,7 @@ async function toggleActivo(t) {
   } catch { showToast("Error actualizando", "error") }
 }
 
-onMounted(load)
+watch(companyId, (v) => { if (v) load() }, { immediate: true })
 </script>
 
 <style scoped>

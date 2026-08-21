@@ -689,7 +689,10 @@ async def actualizar_tipo_vehiculo(
         "act": payload.get("activo", 1),
     })
     await db.commit()
-    return {"ok": True}
+    row = (await db.execute(text(
+        "SELECT * FROM vehicle_types WHERE id=:id"
+    ), {"id": tipo_id})).mappings().first()
+    return dict(row) if row else {"ok": True}
 
 
 @router.delete("/tipos-vehiculo/{tipo_id}")

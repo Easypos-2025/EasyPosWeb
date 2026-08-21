@@ -144,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -220,7 +220,7 @@ function avatarColor(name = "") {
   return COLORS[h % COLORS.length]
 }
 
-onMounted(load)
+watch(companyId, (v) => { if (v) load() }, { immediate: true })
 </script>
 
 <style scoped>
