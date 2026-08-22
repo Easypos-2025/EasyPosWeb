@@ -650,10 +650,9 @@ function dismissVersion(action) {
   if (v) localStorage.setItem("app_version", v)
   newVersionAvailable.value = false
   if (action === "reload") {
-    // Mantener la ruta actual + timestamp único → browser descarga HTML fresco sin afectar sesión
-    const path = window.location.pathname
-    const dest = (path && path !== "/" ? path : "/dashboard") + "?_v=" + Date.now()
-    window.location.href = dest
+    // Ir a / con timestamp único → Nginx sirve index.html fresco desde directorio raíz (no-cache)
+    // El router redirige a /dashboard si el usuario está autenticado
+    window.location.href = "/?_v=" + Date.now()
   } else if (action === "logout") logout()
 }
 

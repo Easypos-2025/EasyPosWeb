@@ -1156,6 +1156,11 @@ router.beforeEach(async (to, from, next) => {
   /* =========================================
      🔥 EXCEPCIONES PÚBLICAS
   ========================================= */
+  // Usuario autenticado en landing → ir directo al dashboard
+  if (to.path === "/" && token) {
+    return next("/dashboard")
+  }
+
   if (
     to.path === "/" ||
     to.path === "/login" ||
