@@ -106,7 +106,7 @@ const moraClass = d => {
 async function cargar() {
   loading.value = true
   try {
-    const { data } = await api.get('/parqueadero/morosos', { params: { company_id: cid() } })
+    const { data } = await api.get('/api/parqueadero/morosos', { params: { company_id: cid() } })
     morosos.value = data
   } catch { showToast('Error al cargar morosos', 'error') }
   finally { loading.value = false }

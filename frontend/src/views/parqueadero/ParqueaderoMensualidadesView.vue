@@ -187,7 +187,7 @@ async function cargar() {
     const params = { company_id: cid() }
     if (filtroActivo.value) params.estado = filtroActivo.value
     if (busqueda.value.trim()) params.q = busqueda.value.trim()
-    const { data } = await api.get('/parqueadero/mensualidades', { params })
+    const { data } = await api.get('/api/parqueadero/mensualidades', { params })
     mensualidades.value = data
   } catch { showToast('Error al cargar', 'error') }
   finally { loading.value = false }
@@ -216,7 +216,7 @@ async function guardar() {
     if (form.value.id) {
       await api.put(`/parqueadero/mensualidades/${form.value.id}`, payload, { params: { company_id: cid() } })
     } else {
-      await api.post('/parqueadero/mensualidades', payload, { params: { company_id: cid() } })
+      await api.post('/api/parqueadero/mensualidades', payload, { params: { company_id: cid() } })
     }
     showToast('Guardado correctamente', 'success')
     modal.value = false

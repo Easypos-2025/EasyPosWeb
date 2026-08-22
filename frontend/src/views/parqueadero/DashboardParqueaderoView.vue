@@ -139,7 +139,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import { useModuleName } from '@/composables/useModuleName'
 import { showToast } from '@/utils/toast'
@@ -176,18 +176,16 @@ function formatMinutos(min) {
 }
 
 async function cargar(silent = false) {
+  if (!cid()) return
   if (!silent) loading.value = true
   try {
-    console.log('[PQ-DEBUG] company_id usado:', cid())
     const [statsR, activosR] = await Promise.all([
-      api.get('/parqueadero/stats', { params: { company_id: cid() } }),
-      api.get('/parqueadero/ingresos', { params: { company_id: cid(), estado: 'activo' } }),
+      api.get('/api/parqueadero/stats', { params: { company_id: cid() } }),
+      api.get('/api/parqueadero/ingresos', { params: { company_id: cid(), estado: 'activo' } }),
     ])
-    console.log('[PQ-DEBUG] stats API response:', statsR.data)
-    console.log('[PQ-DEBUG] activos API response (total):', activosR.data?.length, activosR.data)
     stats.value = statsR.data
     activos.value = activosR.data
-  } catch (err) { console.error('[PQ-DEBUG] ERROR en cargar:', err) }
+  } catch { /* silencioso */ }
   finally { if (!silent) loading.value = false }
 }
 
@@ -204,7 +202,7 @@ async function buscarVehiculo() {
         item = found
       } else {
         try {
-          const { data } = await api.get(`/parqueadero/ingresos/by-qr/${q}`, { params: { company_id: cid() } })
+          const { data } = await api.get(`/api/parqueadero/ingresos/by-qr/${q}`, { params: { company_id: cid() } })
           item = data
         } catch { /* no es QR */ }
       }
@@ -253,9 +251,12 @@ async function ejecutarCancelacion() {
   } catch { showToast('Error al cancelar', 'error') }
 }
 
+// Espera que el store tenga la empresa antes de cargar
+watch(() => companyStore.selectedCompany?.id_company, (id) => {
+  if (id) cargar()
+}, { immediate: true })
+
 onMounted(() => {
-  cargar()
-  // Auto-refresh silencioso cada 90 segundos (sin spinner)
   timer = setInterval(() => cargar(true), 90000)
 })
 

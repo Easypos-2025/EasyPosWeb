@@ -175,8 +175,8 @@ async function cargar() {
   loading.value = true
   try {
     const [svcs, cats] = await Promise.all([
-      api.get('/parqueadero/servicios', { params: { company_id: cid() } }),
-      api.get('/parqueadero/categorias', { params: { company_id: cid() } }),
+      api.get('/api/parqueadero/servicios', { params: { company_id: cid() } }),
+      api.get('/api/parqueadero/categorias', { params: { company_id: cid() } }),
     ])
     servicios.value = svcs.data
     categorias.value = cats.data.filter(c => c.is_active)
@@ -205,7 +205,7 @@ async function guardar() {
     if (form.value.id) {
       await api.put(`/parqueadero/servicios/${form.value.id}`, payload, { params: { company_id: cid() } })
     } else {
-      await api.post('/parqueadero/servicios', payload, { params: { company_id: cid() } })
+      await api.post('/api/parqueadero/servicios', payload, { params: { company_id: cid() } })
     }
     showToast('Guardado correctamente', 'success')
     modal.value = false

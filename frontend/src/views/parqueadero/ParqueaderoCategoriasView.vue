@@ -120,7 +120,7 @@ const cid = () => companyStore.selectedCompany?.id_company
 async function cargar() {
   loading.value = true
   try {
-    const { data } = await api.get('/parqueadero/categorias', { params: { company_id: cid() } })
+    const { data } = await api.get('/api/parqueadero/categorias', { params: { company_id: cid() } })
     categorias.value = data
   } catch { showToast('Error al cargar categorías', 'error') }
   finally { loading.value = false }
@@ -142,7 +142,7 @@ async function guardar() {
     if (form.value.id) {
       await api.put(`/parqueadero/categorias/${form.value.id}`, payload, { params: { company_id: cid() } })
     } else {
-      await api.post('/parqueadero/categorias', payload, { params: { company_id: cid() } })
+      await api.post('/api/parqueadero/categorias', payload, { params: { company_id: cid() } })
     }
     showToast('Guardado correctamente', 'success')
     modal.value = false

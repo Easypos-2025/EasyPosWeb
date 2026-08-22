@@ -197,7 +197,7 @@ function formatMinutos(min) {
 
 async function cargarServicios() {
   try {
-    const { data } = await api.get('/parqueadero/servicios', { params: { company_id: cid() } })
+    const { data } = await api.get('/api/parqueadero/servicios', { params: { company_id: cid() } })
     servicios.value = data.filter(s => s.is_active && s.tipo_cobro !== 'mensualidad')
   } catch { /* silencioso */ }
 }
@@ -205,7 +205,7 @@ async function cargarServicios() {
 async function cargarActivos() {
   loadingActivos.value = true
   try {
-    const { data } = await api.get('/parqueadero/ingresos', { params: { company_id: cid(), estado: 'activo' } })
+    const { data } = await api.get('/api/parqueadero/ingresos', { params: { company_id: cid(), estado: 'activo' } })
     activos.value = data
   } catch { /* silencioso */ }
   finally { loadingActivos.value = false }
@@ -215,7 +215,7 @@ async function buscarMensualidad() {
   if (!form.value.placa || form.value.placa.length < 4) return
   mensualidadActiva.value = null
   try {
-    const { data } = await api.get('/parqueadero/mensualidades', {
+    const { data } = await api.get('/api/parqueadero/mensualidades', {
       params: { company_id: cid(), estado: 'activo', q: form.value.placa }
     })
     const match = data.find(m => m.placa === form.value.placa && m.dias_restantes >= 0)
@@ -233,7 +233,7 @@ async function onFotoChange(e) {
   const fd = new FormData()
   fd.append('file', file)
   try {
-    const { data } = await api.post('/parqueadero/ingresos/foto', fd, {
+    const { data } = await api.post('/api/parqueadero/ingresos/foto', fd, {
       params: { company_id: cid() },
       headers: { 'Content-Type': 'multipart/form-data' },
     })
@@ -246,7 +246,7 @@ async function registrar() {
   if (!form.value.placa.trim()) return showToast('Ingresa la placa', 'warn')
   saving.value = true
   try {
-    const { data } = await api.post('/parqueadero/ingresos', {
+    const { data } = await api.post('/api/parqueadero/ingresos', {
       placa: form.value.placa, servicio_id: form.value.servicio_id, foto_url: form.value.foto_url,
     }, { params: { company_id: cid() } })
     nuevoIngreso.value = data
