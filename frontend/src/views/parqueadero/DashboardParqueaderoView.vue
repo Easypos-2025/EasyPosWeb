@@ -178,13 +178,16 @@ function formatMinutos(min) {
 async function cargar(silent = false) {
   if (!silent) loading.value = true
   try {
+    console.log('[PQ-DEBUG] company_id usado:', cid())
     const [statsR, activosR] = await Promise.all([
       api.get('/parqueadero/stats', { params: { company_id: cid() } }),
       api.get('/parqueadero/ingresos', { params: { company_id: cid(), estado: 'activo' } }),
     ])
+    console.log('[PQ-DEBUG] stats API response:', statsR.data)
+    console.log('[PQ-DEBUG] activos API response (total):', activosR.data?.length, activosR.data)
     stats.value = statsR.data
     activos.value = activosR.data
-  } catch { /* silencioso */ }
+  } catch (err) { console.error('[PQ-DEBUG] ERROR en cargar:', err) }
   finally { if (!silent) loading.value = false }
 }
 
