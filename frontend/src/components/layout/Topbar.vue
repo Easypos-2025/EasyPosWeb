@@ -649,8 +649,10 @@ function dismissVersion(action) {
   const v = newVersionValue.value
   if (v) localStorage.setItem("app_version", v)
   newVersionAvailable.value = false
-  if (action === "reload") window.location.reload()
-  else if (action === "logout") logout()
+  if (action === "reload") {
+    // URL única con timestamp: el browser NUNCA la tiene en caché → descarga fresca garantizada
+    window.location.href = "/?_v=" + Date.now()
+  } else if (action === "logout") logout()
 }
 
 // ── Plan ────────────────────────────────────────────
