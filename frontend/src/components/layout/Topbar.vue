@@ -650,8 +650,10 @@ function dismissVersion(action) {
   if (v) localStorage.setItem("app_version", v)
   newVersionAvailable.value = false
   if (action === "reload") {
-    // URL única con timestamp: el browser NUNCA la tiene en caché → descarga fresca garantizada
-    window.location.href = "/?_v=" + Date.now()
+    // Mantener la ruta actual + timestamp único → browser descarga HTML fresco sin afectar sesión
+    const path = window.location.pathname
+    const dest = (path && path !== "/" ? path : "/dashboard") + "?_v=" + Date.now()
+    window.location.href = dest
   } else if (action === "logout") logout()
 }
 
