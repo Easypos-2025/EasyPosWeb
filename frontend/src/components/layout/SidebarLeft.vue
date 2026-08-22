@@ -131,7 +131,6 @@ function filterByFeatureFlags(items) {
 
   const featureMap = [
     { prefix: '/parking',                        flag: 'has_parking' },
-    { prefix: '/parqueadero',                    flag: 'has_parking' },
     { prefix: '/pos/facturas-electronicas',      flag: 'has_pos_electronico' },
     { prefix: '/pos/utilitarios/pantallas-tv',   flag: 'has_tv_cocina' },
   ]

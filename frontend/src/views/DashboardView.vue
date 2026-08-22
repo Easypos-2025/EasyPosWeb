@@ -37,6 +37,7 @@ import DashboardHipotecas     from "@/views/dashboards/DashboardHipotecas.vue"
 import DashboardPanaderia     from "@/views/dashboards/DashboardPanaderia.vue"
 import DashboardServicecar    from "@/views/dashboards/DashboardServicecar.vue"
 import DashboardFerreterias   from "@/views/dashboards/DashboardFerreterias.vue"
+import DashboardParqueadero   from "@/views/parqueadero/DashboardParqueaderoView.vue"
 
 // business_profile_id → componente de dashboard
 const DASHBOARD_MAP = {
@@ -57,6 +58,7 @@ const DASHBOARD_MAP = {
   17: DashboardHipotecas,      // Hipotecas - Cobros
   19: DashboardCompraventa,    // Compraventas - Joyerías
   20: DashboardFerreterias,    // Ferreterías
+  24: DashboardParqueadero,    // Parqueadero
 }
 
 const router       = useRouter()

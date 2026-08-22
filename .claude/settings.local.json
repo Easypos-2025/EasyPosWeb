@@ -196,7 +196,23 @@
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"test -f /var/www/easyposweb/frontend/dist/index.html\")",
       "Bash(sed -i \"s|from '@/services/api'|from '@/services/apis'|g\" DashboardParqueaderoView.vue ParqueaderoCategoriasView.vue ParqueaderoIngresoView.vue ParqueaderoMensualidadDetalleView.vue ParqueaderoMensualidadesView.vue ParqueaderoMorososView.vue ParqueaderoServiciosView.vue)",
       "Bash(sed -i \"s|from '@/components/CustomDatePicker.vue'|from '@/components/common/CustomDatePicker.vue'|g\" ParqueaderoMensualidadDetalleView.vue ParqueaderoMensualidadesView.vue)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@209.38.152.254 \"rm -rf /var/www/easyposweb/frontend/dist\")",
+      "Bash(scp -r -i /c/Users/Personal/.ssh/id_ed25519 \"d:/AAA Proyectos Claude-Code/EasyPosWeb/frontend/dist\" root@209.38.152.254:/var/www/easyposweb/frontend/)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"until test -f /var/www/easyposweb/frontend/dist/index.html; do sleep 2; done && cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && systemctl restart easyposweb && echo 'restart ok'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT r.id, r.name, c.company_name FROM roles r JOIN companies c ON c.id_company = r.company_id WHERE c.business_profile_id = 24 LIMIT 10'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SHOW COLUMNS FROM roles'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT r.id, r.name, c.company_name FROM roles r JOIN companies c ON c.id_company = r.company_id WHERE c.business_profile_id = 24'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 'mysql -u root -p123456 easyposweb -e \"SELECT r.id, r.name, c.company_name FROM roles r JOIN companies c ON c.id_company = r.company_id WHERE c.business_profile_id = 24\"')",
+      "Bash(ssh -i *)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT id, name FROM roles LIMIT 5'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT r.id, r.name, c.company_name FROM roles r INNER JOIN companies c ON c.id_company = r.company_id WHERE c.business_profile_id = 24'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SHOW COLUMNS FROM companies' 2>&1 | grep -i name\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT r.id AS role_id, r.name AS role_name, c.name AS company FROM roles r INNER JOIN companies c ON c.id_company = r.company_id WHERE c.business_profile_id = 24'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT rm.module_id, sm.route, rm.can_view FROM role_modules rm JOIN system_modules sm ON sm.id = rm.module_id WHERE rm.role_id = 110 AND sm.route LIKE \\\\\"/parqueadero%\\\\\"'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT bpm.id AS bpm_id, sm.name, sm.route, bpm.parent_id AS parent_bpm_id, sm.parent_id AS sm_parent_id FROM business_profile_modules bpm JOIN system_modules sm ON sm.id = bpm.module_id WHERE bpm.business_profile_id = 24 AND sm.route LIKE \\\\\"/parqueadero%\\\\\" ORDER BY bpm.id'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT id_company, name, business_profile_id FROM companies WHERE business_profile_id = 24'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e 'SELECT has_parking, has_pos_electronico, has_tv_cocina FROM company_configs WHERE company_id = 90'\")"
     ]
   }
 }
