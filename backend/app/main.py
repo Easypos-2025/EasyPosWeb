@@ -86,6 +86,7 @@ from app.routers.compraventa_router import router as compraventa_router
 from app.routers.hipotecas_router import router as hipotecas_router
 from app.routers.talleres_router import router as talleres_router
 from app.routers.parking_router import router as parking_router
+from app.routers.parking_parqueadero_router import router as parking_parqueadero_router
 from app.routers.vehicles_router import router as vehicles_router
 from app.routers.pos_consultas_router import router as pos_consultas_router
 from app.routers.pos_categorias_router import router as pos_categorias_router
@@ -931,6 +932,122 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
+        # ── TABLAS MÓDULO PARQUEADERO (perfil autónomo de parqueo) ────────────
+        _parqueadero_tables = [
+            """CREATE TABLE IF NOT EXISTS parqueadero_categorias (
+                id         INT AUTO_INCREMENT PRIMARY KEY,
+                company_id INT NOT NULL,
+                nombre     VARCHAR(100) NOT NULL,
+                icono      VARCHAR(50)  NOT NULL DEFAULT 'bi-car-front-fill',
+                color      VARCHAR(10)  NOT NULL DEFAULT '#3b82f6',
+                orden      INT          NOT NULL DEFAULT 0,
+                is_active  TINYINT      NOT NULL DEFAULT 1,
+                FOREIGN KEY (company_id) REFERENCES companies(id_company),
+                INDEX idx_pcat_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS parqueadero_servicios (
+                id                 INT AUTO_INCREMENT PRIMARY KEY,
+                company_id         INT NOT NULL,
+                categoria_id       INT NULL,
+                nombre             VARCHAR(100) NOT NULL,
+                tipo_cobro         ENUM('tarifa_plana','por_minuto','mensualidad') NOT NULL DEFAULT 'tarifa_plana',
+                tarifa_base        DECIMAL(12,2) NOT NULL DEFAULT 0,
+                periodo_horas      INT           NULL,
+                tarifa_adicional   DECIMAL(12,2) NOT NULL DEFAULT 0,
+                tarifa_minuto      DECIMAL(12,4) NOT NULL DEFAULT 0,
+                plazas_total       INT           NOT NULL DEFAULT 0,
+                is_active          TINYINT       NOT NULL DEFAULT 1,
+                FOREIGN KEY (company_id) REFERENCES companies(id_company),
+                INDEX idx_psvc_company   (company_id),
+                INDEX idx_psvc_categoria (categoria_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS parqueadero_ingresos (
+                id             INT AUTO_INCREMENT PRIMARY KEY,
+                company_id     INT NOT NULL,
+                placa          VARCHAR(20)  NOT NULL,
+                servicio_id    INT          NOT NULL,
+                hora_ingreso   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                foto_url       TEXT         NULL,
+                qr_token       VARCHAR(100) NULL,
+                estado         ENUM('activo','pagado','cancelado') NOT NULL DEFAULT 'activo',
+                registrado_por INT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id)     REFERENCES companies(id_company),
+                FOREIGN KEY (servicio_id)    REFERENCES parqueadero_servicios(id),
+                FOREIGN KEY (registrado_por) REFERENCES users(id),
+                INDEX idx_ping_company_estado (company_id, estado),
+                INDEX idx_ping_placa          (company_id, placa)
+            )""",
+            """CREATE TABLE IF NOT EXISTS parqueadero_pagos (
+                id                   INT AUTO_INCREMENT PRIMARY KEY,
+                ingreso_id           INT          NOT NULL,
+                company_id           INT          NOT NULL,
+                hora_salida          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                minutos_transcurridos INT         NOT NULL DEFAULT 0,
+                valor_cobrado        DECIMAL(12,2) NOT NULL DEFAULT 0,
+                forma_pago           ENUM('efectivo','transferencia','otro') NOT NULL DEFAULT 'efectivo',
+                registrado_por       INT NULL,
+                created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ingreso_id)     REFERENCES parqueadero_ingresos(id),
+                FOREIGN KEY (registrado_por) REFERENCES users(id),
+                INDEX idx_ppago_ingreso (ingreso_id),
+                INDEX idx_ppago_company (company_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS parqueadero_mensualidades (
+                id                INT AUTO_INCREMENT PRIMARY KEY,
+                company_id        INT NOT NULL,
+                client_id         INT NULL,
+                placa             VARCHAR(20)  NOT NULL,
+                tipo_vehiculo     VARCHAR(50)  NOT NULL DEFAULT 'auto',
+                nombre_titular    VARCHAR(100) NOT NULL,
+                documento         VARCHAR(30)  NULL,
+                telefono          VARCHAR(30)  NULL,
+                fecha_inicio      DATE         NOT NULL,
+                fecha_fin         DATE         NOT NULL,
+                valor_mensualidad DECIMAL(12,2) NOT NULL DEFAULT 0,
+                estado            ENUM('activo','moroso','retirado') NOT NULL DEFAULT 'activo',
+                observaciones     TEXT NULL,
+                created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES companies(id_company),
+                FOREIGN KEY (client_id)  REFERENCES clients(id),
+                INDEX idx_pmen_company (company_id),
+                INDEX idx_pmen_placa   (company_id, placa),
+                INDEX idx_pmen_estado  (company_id, estado)
+            )""",
+            """CREATE TABLE IF NOT EXISTS parqueadero_mensualidad_pagos (
+                id             INT AUTO_INCREMENT PRIMARY KEY,
+                mensualidad_id INT          NOT NULL,
+                company_id     INT          NOT NULL,
+                fecha_pago     DATE         NOT NULL,
+                periodo_desde  DATE         NOT NULL,
+                periodo_hasta  DATE         NOT NULL,
+                valor_pagado   DECIMAL(12,2) NOT NULL DEFAULT 0,
+                forma_pago     ENUM('efectivo','transferencia','otro') NOT NULL DEFAULT 'efectivo',
+                registrado_por INT NULL,
+                observacion    TEXT NULL,
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (mensualidad_id) REFERENCES parqueadero_mensualidades(id) ON DELETE CASCADE,
+                FOREIGN KEY (registrado_por) REFERENCES users(id),
+                INDEX idx_pmp_mensualidad (mensualidad_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS parqueadero_mensualidad_fotos (
+                id             INT AUTO_INCREMENT PRIMARY KEY,
+                mensualidad_id INT  NOT NULL,
+                url            TEXT NOT NULL,
+                tipo           VARCHAR(50) NOT NULL DEFAULT 'evidencia',
+                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (mensualidad_id) REFERENCES parqueadero_mensualidades(id) ON DELETE CASCADE,
+                INDEX idx_pmf_mensualidad (mensualidad_id)
+            )""",
+        ]
+        for _sql in _parqueadero_tables:
+            try:
+                await db.execute(text(_sql))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
         # ── Migrar service_convenios: renombrar columnas antiguas si existen ───
         _convenio_migrations = [
             # Renombrar columnas antiguas (solo ejecuta si la columna antigua existe)
@@ -1066,6 +1183,36 @@ async def _init_db_data():
                     name=_n, route=_r, icon=_ic,
                     parent_id=_pk_parent.id, is_active=True, order_index=_ord, is_sysadmin=False
                 ))
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
+        # ── Registrar módulos Perfil Parqueadero en system_modules ─────────────
+        async def _ensure_module(name, route, icon, parent_id=None):
+            r = await db.execute(select(SystemModule).where(SystemModule.route == route))
+            if not r.scalars().first():
+                db.add(SystemModule(
+                    name=name, route=route, icon=icon,
+                    parent_id=parent_id, is_active=True, order_index=0, is_sysadmin=False
+                ))
+
+        pq_root = await db.execute(select(SystemModule).where(SystemModule.route == "/parqueadero"))
+        pq_root = pq_root.scalars().first()
+        if not pq_root:
+            pq_root = SystemModule(
+                name="Parqueadero", route="/parqueadero", icon="bi-sign-parking-fill",
+                parent_id=None, is_active=True, order_index=0, is_sysadmin=False
+            )
+            db.add(pq_root)
+            await db.flush()
+
+        await _ensure_module("Dashboard Parqueadero",  "/parqueadero/dashboard",       "bi-speedometer2",          pq_root.id)
+        await _ensure_module("Ingreso Vehículos",       "/parqueadero/ingreso",          "bi-box-arrow-in-right",    pq_root.id)
+        await _ensure_module("Mensualidades",           "/parqueadero/mensualidades",    "bi-calendar-month-fill",   pq_root.id)
+        await _ensure_module("Morosos",                 "/parqueadero/morosos",          "bi-exclamation-triangle-fill", pq_root.id)
+        await _ensure_module("Categorías Parqueadero",  "/parqueadero/categorias",       "bi-tags-fill",             pq_root.id)
+        await _ensure_module("Servicios Parqueadero",   "/parqueadero/servicios",        "bi-gear-fill",             pq_root.id)
         try:
             await db.commit()
         except Exception:
@@ -2192,6 +2339,7 @@ routers = [
     hipotecas_router,
     talleres_router,
     parking_router,
+    parking_parqueadero_router,
     vehicles_router,
     pos_consultas_router,
     pos_categorias_router,

@@ -113,7 +113,8 @@ const ready = ref(false)
 
 
 const filteredMenu = computed(() => {
-  return filterMenuByPermissions(menu.value, permStore.perms)
+  const byPerms = filterMenuByPermissions(menu.value, permStore.perms)
+  return filterByFeatureFlags(byPerms)
 })
 
 
@@ -124,15 +125,50 @@ const handleNavigate = () => {
   }
 }
 
+function filterByFeatureFlags(items) {
+  if (permStore.isSystem) return items
+  const flags = companyStore.billingConfig ?? {}
+
+  const featureMap = [
+    { prefix: '/parking',                        flag: 'has_parking' },
+    { prefix: '/parqueadero',                    flag: 'has_parking' },
+    { prefix: '/pos/facturas-electronicas',      flag: 'has_pos_electronico' },
+    { prefix: '/pos/utilitarios/pantallas-tv',   flag: 'has_tv_cocina' },
+  ]
+
+  const routeBlocked = (route) => {
+    if (!route) return false
+    for (const { prefix, flag } of featureMap) {
+      if (route === prefix || route.startsWith(prefix + '/')) {
+        return !flags[flag]
+      }
+    }
+    return false
+  }
+
+  return items
+    .map(item => {
+      if (routeBlocked(item.route)) return null
+      const children = (item.children || []).filter(c => !routeBlocked(c.route))
+      if (!item.route && item.children?.length && children.length === 0) return null
+      return { ...item, children }
+    })
+    .filter(Boolean)
+}
+
 function filterMenuByPermissions(menu, permissions) {
   if (permStore.isSystem) return menu
 
-  const findPerm = (permissions, item) =>
-    permissions.find(p =>
+  const findPerm = (permissions, item) => {
+    const matches = permissions.filter(p =>
       item.route
         ? p.module_route === item.route
         : p.module_name?.toLowerCase().trim() === item.name?.toLowerCase().trim()
     )
+    if (!matches.length) return undefined
+    // Si varios módulos comparten la misma ruta, preferir el que tenga can_view=true
+    return matches.find(p => p.can_view) ?? matches[0]
+  }
 
   return menu
     .map(item => {

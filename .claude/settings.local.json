@@ -186,7 +186,17 @@
       "PowerShell(ssh -i C:\\\\Users\\\\Personal\\\\.ssh\\\\id_ed25519 root@209.38.152.254 'mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value=''26.06.10.39b4f16'' WHERE config_key=''app_version'';\"')",
       "PowerShell(ssh -i C:\\\\Users\\\\Personal\\\\.ssh\\\\id_ed25519 root@209.38.152.254 \"mysql -uroot -p123456 easyposweb -e \\\\\"UPDATE system_config SET config_value='26.06.10.39b4f16' WHERE config_key='app_version')",
       "PowerShell(\\\\\"\")",
-      "PowerShell(ssh -i C:\\\\Users\\\\Personal\\\\.ssh\\\\id_ed25519 root@209.38.152.254 \"cd /var/www/easyposweb/frontend && npm run build && systemctl restart easyposweb\")"
+      "PowerShell(ssh -i C:\\\\Users\\\\Personal\\\\.ssh\\\\id_ed25519 root@209.38.152.254 \"cd /var/www/easyposweb/frontend && npm run build && systemctl restart easyposweb\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 'mysql -u root -p123456 easyposweb -e \" *)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e \\\\\"SELECT config_value FROM system_config WHERE config_key='app_version';\\\\\"\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"rm -rf /var/www/easyposweb/frontend/dist\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"systemctl restart easyposweb && sleep 2 && systemctl is-active easyposweb\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e \\\\\"UPDATE system_config SET config_value='26.08.13·8082dac' WHERE config_key='app_version'; SELECT config_value FROM system_config WHERE config_key='app_version';\\\\\"\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"test -f /var/www/easyposweb/frontend/dist/index.html && echo OK || echo INCOMPLETO\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"test -f /var/www/easyposweb/frontend/dist/index.html\")",
+      "Bash(sed -i \"s|from '@/services/api'|from '@/services/apis'|g\" DashboardParqueaderoView.vue ParqueaderoCategoriasView.vue ParqueaderoIngresoView.vue ParqueaderoMensualidadDetalleView.vue ParqueaderoMensualidadesView.vue ParqueaderoMorososView.vue ParqueaderoServiciosView.vue)",
+      "Bash(sed -i \"s|from '@/components/CustomDatePicker.vue'|from '@/components/common/CustomDatePicker.vue'|g\" ParqueaderoMensualidadDetalleView.vue ParqueaderoMensualidadesView.vue)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

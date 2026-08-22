@@ -886,6 +886,50 @@ const routes = [
         meta: { requiresAuth: true, title: "Parking — Métricas" }
       },
 
+      // ── Perfil Parqueadero ────────────────────────────────────────────────
+      {
+        path: "/parqueadero/dashboard",
+        name: "ParqueaderoDashboardView",
+        component: () => import("@/views/parqueadero/DashboardParqueaderoView.vue"),
+        meta: { requiresAuth: true, title: "Dashboard Parqueadero" }
+      },
+      {
+        path: "/parqueadero/ingreso",
+        name: "ParqueaderoIngresoView",
+        component: () => import("@/views/parqueadero/ParqueaderoIngresoView.vue"),
+        meta: { requiresAuth: true, title: "Ingreso Vehículos" }
+      },
+      {
+        path: "/parqueadero/categorias",
+        name: "ParqueaderoCategoriasView",
+        component: () => import("@/views/parqueadero/ParqueaderoCategoriasView.vue"),
+        meta: { requiresAuth: true, title: "Categorías Parqueadero" }
+      },
+      {
+        path: "/parqueadero/servicios",
+        name: "ParqueaderoServiciosView",
+        component: () => import("@/views/parqueadero/ParqueaderoServiciosView.vue"),
+        meta: { requiresAuth: true, title: "Servicios Parqueadero" }
+      },
+      {
+        path: "/parqueadero/mensualidades",
+        name: "ParqueaderoMensualidadesView",
+        component: () => import("@/views/parqueadero/ParqueaderoMensualidadesView.vue"),
+        meta: { requiresAuth: true, title: "Mensualidades" }
+      },
+      {
+        path: "/parqueadero/mensualidades/:id",
+        name: "ParqueaderoMensualidadDetalleView",
+        component: () => import("@/views/parqueadero/ParqueaderoMensualidadDetalleView.vue"),
+        meta: { requiresAuth: true, title: "Detalle Mensualidad" }
+      },
+      {
+        path: "/parqueadero/morosos",
+        name: "ParqueaderoMorososView",
+        component: () => import("@/views/parqueadero/ParqueaderoMorososView.vue"),
+        meta: { requiresAuth: true, title: "Morosos" }
+      },
+
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
         path: "/restaurante",

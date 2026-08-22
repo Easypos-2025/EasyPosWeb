@@ -132,7 +132,14 @@
       "Bash(ssh root@209.38.152.254 \"grep -E 'SMTP|EMAIL|email' /var/www/easyposweb/.env 2>/dev/null | grep -v PASSWORD || echo 'No .env en raiz'; grep -E 'SMTP|EMAIL|email' /var/www/easyposweb/backend/.env 2>/dev/null | grep -v PASSWORD || echo 'No .env en backend'\")",
       "Bash(ssh root@209.38.152.254 'python3 -c \" *)",
       "Bash(ssh root@209.38.152.254 'cd /var/www/easyposweb && source backend/venv/bin/activate && python3 -c \" *)",
-      "Bash(ssh root@209.38.152.254 \"nc -zv smtp.gmail.com 587 2>&1; nc -zv smtp-relay.brevo.com 587 2>&1; nc -zv smtp.resend.com 465 2>&1\")"
+      "Bash(ssh root@209.38.152.254 \"nc -zv smtp.gmail.com 587 2>&1; nc -zv smtp-relay.brevo.com 587 2>&1; nc -zv smtp.resend.com 465 2>&1\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 'mysql -u root -p123456 easyposweb -e \" *)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e \\\\\"SELECT id_company, name, business_profile_id FROM companies WHERE business_profile_id = 24;\\\\\"\")",
+      "Read(//var/www/easyposweb/backend/app/routers/**)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cat /var/www/easyposweb/backend/app/routers/menu_router.py\")",
+      "Bash(grep -rn \"modules\" /var/www/easyposweb/backend/app/routers/ --include=\"*.py\" -l 2>&1 | head -5)",
+      "Read(//var/www/easyposweb/backend/app/**)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"grep -rn 'role_id.*modules\\\\|modules.*role_id\\\\|roleId/modules\\\\|/roles.*modules' /var/www/easyposweb/backend/app/ --include='*.py' -l\")"
     ]
   }
 }
