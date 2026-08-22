@@ -624,14 +624,11 @@ async function checkAppVersion() {
   try {
     const res = await api.get("/system-config/app_version")
     const serverVersion = res.data?.config_value || ""
-    const storedVersion = localStorage.getItem("app_version") || ""
-    if (serverVersion && serverVersion !== storedVersion) {
-      localStorage.setItem("app_version", serverVersion)
-      if (storedVersion) {
-        // Había versión anterior: recargar automáticamente
-        showToast(`Nueva versión ${serverVersion} — actualizando...`, 'info')
-        setTimeout(() => window.location.reload(), 1500)
-      }
+    if (!serverVersion) return
+    localStorage.setItem("app_version", serverVersion)
+    // Comparar el build en ejecución (constante compilada) contra la versión del servidor
+    if (typeof __APP_BUILD__ !== "undefined" && __APP_BUILD__ !== serverVersion) {
+      setTimeout(() => window.location.reload(), 1500)
     }
   } catch {}
 }
