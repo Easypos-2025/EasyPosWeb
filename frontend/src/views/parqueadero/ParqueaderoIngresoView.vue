@@ -121,6 +121,8 @@
           <button class="btn-close" @click="modalQR = false"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="pq-modal-body" style="text-align:center">
+          <div class="qr-recibo-label">Nro. Recibo</div>
+          <div class="qr-recibo-num">#{{ nuevoIngreso?.id }}</div>
           <div class="qr-placa">{{ nuevoIngreso?.placa }}</div>
           <div class="qr-token">Token: <strong>{{ nuevoIngreso?.qr_token }}</strong></div>
           <div class="qr-servicio">{{ servicioSeleccionado?.nombre }}</div>
@@ -460,7 +462,9 @@ watch(() => companyStore.selectedCompany?.id, id => { if (id) cargarServicios() 
 .pq-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 .pq-modal-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border, #e2e8f0); }
 
-.qr-placa   { font-size: 40px; font-weight: 900; letter-spacing: 4px; margin: 10px 0 4px; }
+.qr-recibo-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; margin-top: 10px; }
+.qr-recibo-num   { font-size: 28px; font-weight: 900; color: #1e3a5f; letter-spacing: 2px; margin-bottom: 8px; }
+.qr-placa   { font-size: 40px; font-weight: 900; letter-spacing: 4px; margin: 4px 0; }
 .qr-token   { font-size: 13px; color: #64748b; margin-bottom: 6px; }
 .qr-servicio { font-size: 16px; font-weight: 600; }
 .qr-hora    { font-size: 13px; color: #64748b; margin-top: 4px; }
