@@ -21,7 +21,6 @@
             <th>Categoría</th>
             <th>Tipo Cobro</th>
             <th>Tarifa</th>
-            <th>Plazas</th>
             <th>Estado</th>
             <th></th>
           </tr>
@@ -37,7 +36,6 @@
             </td>
             <td><span class="tag-tipo" :class="`tipo-${svc.tipo_cobro}`">{{ labelTipo(svc.tipo_cobro) }}</span></td>
             <td class="td-tarifa">{{ resumenTarifa(svc) }}</td>
-            <td>{{ svc.plazas_total || '∞' }}</td>
             <td><span class="pq-badge" :class="svc.is_active ? 'badge-activo' : 'badge-inactivo'">{{ svc.is_active ? 'Activo' : 'Inactivo' }}</span></td>
             <td class="td-actions">
               <button class="btn-icon" @click="abrirModal(svc)"><i class="bi bi-pencil-fill"></i></button>
@@ -78,10 +76,6 @@
                 <option value="por_minuto">Por Minuto</option>
                 <option value="mensualidad">Mensualidad</option>
               </select>
-            </div>
-            <div class="form-col">
-              <label>Plazas Totales (0 = ilimitado)</label>
-              <input type="number" v-model.number="form.plazas_total" class="pq-input" min="0" />
             </div>
           </div>
 

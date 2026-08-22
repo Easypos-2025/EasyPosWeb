@@ -35,6 +35,7 @@ Public Sub DescargarTodo(lblEstado As Label)
     If SyncEnProceso() Then Exit Sub
     MarcarSyncInicio()
 
+    
     On Error GoTo ErrCiclo
 
     ' 1. Comandas (encabezados de pedidos web)

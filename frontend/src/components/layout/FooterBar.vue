@@ -12,10 +12,10 @@
         />
       </router-link>
 
-      <a :href="siteUrl" target="_blank" rel="noopener" class="footer-website-link" title="Ir al sitio web">
+      <router-link to="/" class="footer-website-link" title="Ir al sitio web">
         <i class="bi bi-globe2"></i>
         <span><span class="fw-easy">Easy</span><span class="fw-pos">Pos</span><span class="fw-web">Web</span></span>
-      </a>
+      </router-link>
 
       <span class="footer-sep">|</span>
       <span class="footer-version">v{{ version }}</span>

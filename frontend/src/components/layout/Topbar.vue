@@ -652,7 +652,7 @@ function dismissVersion(action) {
   if (action === "reload") {
     // Ir a / con timestamp único → Nginx sirve index.html fresco desde directorio raíz (no-cache)
     // El router redirige a /dashboard si el usuario está autenticado
-    window.location.href = "/?_v=" + Date.now()
+    window.location.href = "/?_r=1&_v=" + Date.now()
   } else if (action === "logout") logout()
 }
 

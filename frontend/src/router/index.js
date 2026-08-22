@@ -929,6 +929,12 @@ const routes = [
         component: () => import("@/views/parqueadero/ParqueaderoMorososView.vue"),
         meta: { requiresAuth: true, title: "Morosos" }
       },
+      {
+        path: "/parqueadero/configuracion",
+        name: "ParqueaderoConfigView",
+        component: () => import("@/views/parqueadero/ParqueaderoConfigView.vue"),
+        meta: { requiresAuth: true, title: "Configuración Parqueadero" }
+      },
 
       // ── Dashboard Restaurante ─────────────────────────────────────────────
       {
@@ -1156,8 +1162,8 @@ router.beforeEach(async (to, from, next) => {
   /* =========================================
      🔥 EXCEPCIONES PÚBLICAS
   ========================================= */
-  // Usuario autenticado en landing → ir directo al dashboard
-  if (to.path === "/" && token) {
+  // Recarga forzada desde "Recargar ahora" (_r=1) → ir al dashboard
+  if (to.path === "/" && token && to.query._r === "1") {
     return next("/dashboard")
   }
 

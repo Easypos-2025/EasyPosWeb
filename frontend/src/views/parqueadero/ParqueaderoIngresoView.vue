@@ -4,25 +4,79 @@
       <h2 class="pq-title"><i class="bi bi-box-arrow-in-right"></i> {{ moduleName }}</h2>
     </div>
 
-    <!-- Formulario de ingreso -->
-    <div class="ingreso-grid">
-      <!-- Panel registro -->
+    <div class="ingreso-layout">
+      <!-- ══ PASO 1: Seleccionar servicio ══ -->
+      <div class="pq-card">
+        <h3 class="step-title"><span class="step-num">1</span> Seleccionar Servicio</h3>
+        <div v-if="loadingSvcs" class="pq-loader-sm">Cargando servicios...</div>
+        <div v-else-if="!servicios.length" class="pq-empty-sm">Sin servicios activos</div>
+        <div v-else class="svc-grid">
+          <div
+            v-for="svc in servicios" :key="svc.id"
+            class="svc-card"
+            :class="{
+              'svc-selected': form.servicio_id === svc.id,
+              [`cat-color-${svc.id % 6}`]: true
+            }"
+            :style="svc.categoria_color ? { '--cat-color': svc.categoria_color } : {}"
+            @click="form.servicio_id = svc.id"
+          >
+            <div class="svc-cat" v-if="svc.categoria_nombre">{{ svc.categoria_nombre }}</div>
+            <div class="svc-nombre">{{ svc.nombre }}</div>
+            <div class="svc-tipo">{{ labelTipo(svc.tipo_cobro) }}</div>
+            <div class="svc-tarifa">{{ resumenTarifa(svc) }}</div>
+            <div v-if="form.servicio_id === svc.id" class="svc-check">
+              <i class="bi bi-check-circle-fill"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PASO 2: Datos del vehículo ══ -->
       <div class="pq-card ingreso-form">
-        <h3 class="card-title"><i class="bi bi-plus-circle-fill"></i> Registrar Ingreso</h3>
+        <h3 class="step-title"><span class="step-num">2</span> Datos del Vehículo</h3>
 
-        <label>Servicio *</label>
-        <select v-model="form.servicio_id" class="pq-input">
-          <option :value="null" disabled>— Seleccionar servicio —</option>
-          <option v-for="svc in servicios" :key="svc.id" :value="svc.id">
-            {{ svc.nombre }} ({{ labelTipo(svc.tipo_cobro) }})
-          </option>
-        </select>
+        <!-- Placa con autocomplete -->
+        <label class="field-label">Placa *</label>
+        <div class="placa-wrap">
+          <input
+            v-model="form.placa"
+            class="pq-input pq-input-placa"
+            placeholder="AAA000"
+            maxlength="10"
+            autocomplete="off"
+            @input="onPlacaInput"
+            @keydown.down.prevent="sugerenciaIdx = Math.min(sugerenciaIdx + 1, sugerencias.length - 1)"
+            @keydown.up.prevent="sugerenciaIdx = Math.max(sugerenciaIdx - 1, 0)"
+            @keydown.enter.prevent="seleccionarSugerencia(sugerencias[sugerenciaIdx])"
+            @keydown.escape="sugerencias = []"
+            @blur="cerrarSugerencias"
+          />
+          <div v-if="sugerencias.length" class="sugerencias">
+            <div
+              v-for="(s, i) in sugerencias" :key="s.placa + i"
+              class="sugerencia-row"
+              :class="{ active: i === sugerenciaIdx }"
+              @mousedown.prevent="seleccionarSugerencia(s)"
+            >
+              <span class="sg-placa">{{ s.placa }}</span>
+              <span v-if="s.nombre_titular" class="sg-nombre">{{ s.nombre_titular }}</span>
+              <span class="sg-badge" :class="s.origen === 'mensualidad' ? 'badge-men' : 'badge-ing'">
+                {{ s.origen === 'mensualidad' ? 'Abonado' : 'Hist.' }}
+              </span>
+            </div>
+          </div>
+        </div>
 
-        <label>Placa del Vehículo *</label>
-        <input v-model="form.placa" class="pq-input pq-input-placa"
-               placeholder="AAA000" maxlength="10"
-               @input="form.placa = form.placa.toUpperCase()"
-               @keydown.enter="buscarMensualidad" />
+        <!-- Info cliente / mensualidad -->
+        <div v-if="clienteInfo" class="cliente-card">
+          <img v-if="clienteInfo.foto_url" :src="clienteInfo.foto_url" class="cli-foto" />
+          <div class="cli-data">
+            <div class="cli-nombre">{{ clienteInfo.nombre_titular || 'Consumidor Final' }}</div>
+            <div v-if="clienteInfo.telefono" class="cli-tel"><i class="bi bi-telephone-fill"></i> {{ clienteInfo.telefono }}</div>
+            <div v-if="clienteInfo.origen === 'mensualidad'" class="cli-men"><i class="bi bi-calendar-check-fill"></i> Abonado mensual activo</div>
+          </div>
+        </div>
 
         <!-- Alerta mensualidad activa -->
         <div v-if="mensualidadActiva" class="alert-mensualidad">
@@ -34,7 +88,7 @@
         </div>
 
         <!-- Foto -->
-        <label>Foto del Vehículo</label>
+        <label class="field-label">Foto del Vehículo</label>
         <div class="foto-area" @click="triggerFoto" :class="{ 'foto-cargada': fotoPreview }">
           <img v-if="fotoPreview" :src="fotoPreview" class="foto-preview" />
           <div v-else class="foto-placeholder">
@@ -48,39 +102,18 @@
           <i class="bi bi-x-circle"></i> Quitar foto
         </button>
 
-        <button class="btn-pq-primary btn-registrar" :disabled="saving || !form.servicio_id || !form.placa"
-                @click="registrar">
+        <button
+          class="btn-pq-primary btn-registrar"
+          :disabled="saving || !form.servicio_id || !form.placa"
+          @click="registrar"
+        >
           <i class="bi" :class="saving ? 'bi-hourglass-split' : 'bi-box-arrow-in-right'"></i>
           {{ saving ? 'Registrando...' : 'Registrar Ingreso' }}
         </button>
       </div>
-
-      <!-- Panel vehículos activos hoy -->
-      <div class="pq-card activos-panel">
-        <div class="activos-head">
-          <h3 class="card-title"><i class="bi bi-car-front-fill"></i> Activos Hoy ({{ activos.length }})</h3>
-          <button class="btn-refresh" @click="cargarActivos" :disabled="loadingActivos">
-            <i class="bi bi-arrow-clockwise"></i>
-          </button>
-        </div>
-
-        <div v-if="loadingActivos" class="pq-loader-sm">Cargando...</div>
-        <div v-else-if="!activos.length" class="pq-empty-sm">Sin vehículos activos</div>
-
-        <div v-else class="activos-list">
-          <div v-for="v in activos" :key="v.id" class="activo-row" @click="abrirSalida(v)">
-            <div class="activo-placa">{{ v.placa }}</div>
-            <div class="activo-info">
-              <span class="activo-servicio">{{ v.servicio_nombre }}</span>
-              <span class="activo-tiempo">{{ formatTiempo(v.hora_ingreso) }}</span>
-            </div>
-            <div class="activo-valor">${{ (v.valor_actual || 0).toLocaleString() }}</div>
-          </div>
-        </div>
-      </div>
     </div>
 
-    <!-- Modal QR / Recibo -->
+    <!-- ══ Modal QR / Recibo ══ -->
     <div v-if="modalQR" class="pq-overlay" @click.self="modalQR = false">
       <div class="pq-modal">
         <div class="pq-modal-head">
@@ -105,47 +138,11 @@
         </div>
       </div>
     </div>
-
-    <!-- Modal cobro / salida -->
-    <div v-if="modalSalida" class="pq-overlay" @click.self="modalSalida = false">
-      <div class="pq-modal">
-        <div class="pq-modal-head">
-          <h3><i class="bi bi-cash-coin" style="color:#f59e0b"></i> Registrar Salida</h3>
-          <button class="btn-close" @click="modalSalida = false"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <div v-if="ingresoSeleccionado" class="pq-modal-body">
-          <div class="resumen-salida">
-            <div class="rs-row"><span>Placa</span><strong>{{ ingresoSeleccionado.placa }}</strong></div>
-            <div class="rs-row"><span>Servicio</span><span>{{ ingresoSeleccionado.servicio_nombre }}</span></div>
-            <div class="rs-row"><span>Ingreso</span><span>{{ formatFechaHora(ingresoSeleccionado.hora_ingreso) }}</span></div>
-            <div class="rs-row"><span>Tiempo</span><span>{{ formatMinutos(ingresoSeleccionado.minutos_transcurridos) }}</span></div>
-            <div class="rs-row rs-total"><span>Valor a Cobrar</span><strong>${{ (ingresoSeleccionado.valor_actual || 0).toLocaleString() }}</strong></div>
-          </div>
-
-          <label>Forma de Pago</label>
-          <select v-model="pagoForm.forma_pago" class="pq-input">
-            <option value="efectivo">Efectivo</option>
-            <option value="transferencia">Transferencia</option>
-            <option value="otro">Otro</option>
-          </select>
-
-          <label>Valor Cobrado</label>
-          <input type="number" v-model.number="pagoForm.valor_cobrado" class="pq-input" />
-        </div>
-        <div class="pq-modal-foot">
-          <button class="btn-pq-ghost" @click="modalSalida = false">Cancelar</button>
-          <button class="btn-pq-primary" :disabled="pagando" @click="confirmarSalida">
-            <i class="bi" :class="pagando ? 'bi-hourglass-split' : 'bi-cash-coin'"></i>
-            {{ pagando ? 'Procesando...' : 'Confirmar Pago y Salida' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import { useModuleName } from '@/composables/useModuleName'
 import { showToast } from '@/utils/toast'
@@ -155,20 +152,21 @@ const companyStore = useCompanyStore()
 const { moduleName } = useModuleName()
 const fotoInput = ref(null)
 
-const servicios = ref([])
-const activos = ref([])
-const loadingActivos = ref(false)
-const saving = ref(false)
-const pagando = ref(false)
-const modalQR = ref(false)
-const modalSalida = ref(false)
-const nuevoIngreso = ref(null)
-const ingresoSeleccionado = ref(null)
+const servicios     = ref([])
+const loadingSvcs   = ref(false)
+const saving        = ref(false)
+const modalQR       = ref(false)
+const nuevoIngreso  = ref(null)
 const mensualidadActiva = ref(null)
-const fotoPreview = ref(null)
+const fotoPreview   = ref(null)
+const clienteInfo   = ref(null)
+
+// Autocomplete placa
+const sugerencias   = ref([])
+const sugerenciaIdx = ref(0)
+let buscarTimer     = null
 
 const form = ref({ servicio_id: null, placa: '', foto_url: null })
-const pagoForm = ref({ forma_pago: 'efectivo', valor_cobrado: 0 })
 
 const cid = () => companyStore.selectedCompany?.id
 
@@ -176,52 +174,71 @@ const servicioSeleccionado = computed(() =>
   servicios.value.find(s => s.id === form.value.servicio_id)
 )
 
-const labelTipo = t => ({ tarifa_plana: 'Tarifa Plana', por_minuto: '/min', mensualidad: 'Mensual' }[t] || t)
+const labelTipo = t => ({
+  tarifa_plana: 'Tarifa Plana',
+  por_minuto: '/min',
+  mensualidad: 'Mensualidad'
+}[t] || t)
 
-function formatTiempo(hora) {
-  const h = new Date(hora)
-  const diff = Math.floor((Date.now() - h) / 60000)
-  if (diff < 60) return `${diff} min`
-  return `${Math.floor(diff / 60)}h ${diff % 60}min`
+function resumenTarifa(svc) {
+  const fmt = v => `$${Number(v || 0).toLocaleString('es-CO')}`
+  if (svc.tipo_cobro === 'tarifa_plana') {
+    const base = fmt(svc.tarifa_base)
+    const h    = svc.periodo_horas || 12
+    return `${base} / ${h}h`
+  }
+  if (svc.tipo_cobro === 'por_minuto') return `${fmt(svc.tarifa_minuto)} / min`
+  return 'Ver al registrar'
 }
 
-function formatFechaHora(dt) {
-  return new Date(dt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
+// ── Autocomplete placa ──────────────────────────────────────────────────────
+
+function onPlacaInput(e) {
+  form.value.placa = e.target.value.toUpperCase()
+  clienteInfo.value  = null
+  mensualidadActiva.value = null
+  sugerencias.value  = []
+  sugerenciaIdx.value = 0
+
+  if (buscarTimer) clearTimeout(buscarTimer)
+  if (form.value.placa.length < 3) return
+  buscarTimer = setTimeout(buscarPlaca, 300)
 }
 
-function formatMinutos(min) {
-  if (!min) return '0 min'
-  if (min < 60) return `${min} min`
-  return `${Math.floor(min / 60)}h ${min % 60}min`
-}
-
-async function cargarServicios() {
+async function buscarPlaca() {
   try {
-    const { data } = await api.get('/api/parqueadero/servicios', { params: { company_id: cid() } })
-    servicios.value = data.filter(s => s.is_active && s.tipo_cobro !== 'mensualidad')
+    const { data } = await api.get('/api/parqueadero/vehiculos/buscar', {
+      params: { company_id: cid(), q: form.value.placa }
+    })
+    sugerencias.value  = data
+    sugerenciaIdx.value = 0
   } catch { /* silencioso */ }
 }
 
-async function cargarActivos() {
-  loadingActivos.value = true
-  try {
-    const { data } = await api.get('/api/parqueadero/ingresos', { params: { company_id: cid(), estado: 'activo' } })
-    activos.value = data
-  } catch { /* silencioso */ }
-  finally { loadingActivos.value = false }
+function seleccionarSugerencia(s) {
+  if (!s) return
+  form.value.placa = s.placa
+  sugerencias.value = []
+  clienteInfo.value = s.nombre_titular || s.foto_url ? s : null
+  if (s.origen === 'mensualidad') verificarMensualidad(s.placa)
 }
 
-async function buscarMensualidad() {
-  if (!form.value.placa || form.value.placa.length < 4) return
+function cerrarSugerencias() {
+  setTimeout(() => { sugerencias.value = [] }, 150)
+}
+
+async function verificarMensualidad(placa) {
   mensualidadActiva.value = null
   try {
     const { data } = await api.get('/api/parqueadero/mensualidades', {
-      params: { company_id: cid(), estado: 'activo', q: form.value.placa }
+      params: { company_id: cid(), estado: 'activo', q: placa }
     })
-    const match = data.find(m => m.placa === form.value.placa && m.dias_restantes >= 0)
+    const match = data.find(m => m.placa === placa && m.dias_restantes >= 0)
     mensualidadActiva.value = match || null
   } catch { /* silencioso */ }
 }
+
+// ── Foto ──────────────────────────────────────────────────────────────────
 
 function triggerFoto() { fotoInput.value?.click() }
 
@@ -229,7 +246,6 @@ async function onFotoChange(e) {
   const file = e.target.files?.[0]
   if (!file) return
   fotoPreview.value = URL.createObjectURL(file)
-  // Subir inmediatamente
   const fd = new FormData()
   fd.append('file', file)
   try {
@@ -241,78 +257,184 @@ async function onFotoChange(e) {
   } catch { showToast('Error al subir foto', 'error') }
 }
 
+// ── Registrar ingreso ──────────────────────────────────────────────────────
+
 async function registrar() {
   if (!form.value.servicio_id) return showToast('Selecciona un servicio', 'warn')
   if (!form.value.placa.trim()) return showToast('Ingresa la placa', 'warn')
   saving.value = true
   try {
     const { data } = await api.post('/api/parqueadero/ingresos', {
-      placa: form.value.placa, servicio_id: form.value.servicio_id, foto_url: form.value.foto_url,
+      placa:       form.value.placa,
+      servicio_id: form.value.servicio_id,
+      foto_url:    form.value.foto_url,
     }, { params: { company_id: cid() } })
     nuevoIngreso.value = data
-    modalQR.value = true
-    // Reset form
-    form.value = { servicio_id: null, placa: '', foto_url: null }
-    fotoPreview.value = null
+    modalQR.value      = true
+    form.value         = { servicio_id: null, placa: '', foto_url: null }
+    fotoPreview.value  = null
+    clienteInfo.value  = null
     mensualidadActiva.value = null
-    cargarActivos()
+    sugerencias.value  = []
   } catch { showToast('Error al registrar ingreso', 'error') }
   finally { saving.value = false }
 }
 
-function abrirSalida(v) {
-  ingresoSeleccionado.value = v
-  pagoForm.value = { forma_pago: 'efectivo', valor_cobrado: v.valor_actual || 0 }
-  modalSalida.value = true
-}
+function imprimirRecibo() { window.print() }
 
-async function confirmarSalida() {
-  pagando.value = true
+// ── Carga inicial ──────────────────────────────────────────────────────────
+
+async function cargarServicios() {
+  loadingSvcs.value = true
   try {
-    await api.post(`/parqueadero/ingresos/${ingresoSeleccionado.value.id}/pagar`, pagoForm.value, {
-      params: { company_id: cid() }
-    })
-    showToast('Pago registrado — vehículo salió', 'success')
-    modalSalida.value = false
-    cargarActivos()
-  } catch { showToast('Error al registrar pago', 'error') }
-  finally { pagando.value = false }
+    const { data } = await api.get('/api/parqueadero/servicios', { params: { company_id: cid() } })
+    servicios.value  = data.filter(s => s.is_active && s.tipo_cobro !== 'mensualidad')
+  } catch { /* silencioso */ }
+  finally { loadingSvcs.value = false }
 }
 
-function imprimirRecibo() {
-  window.print()
-}
-
-onMounted(() => {
-  cargarServicios()
-  cargarActivos()
-})
+watch(() => companyStore.selectedCompany?.id, id => { if (id) cargarServicios() }, { immediate: true })
 </script>
 
 <style scoped>
-.pq-view { padding: 16px; }
-.pq-header { margin-bottom: 20px; }
-.pq-title { font-size: 20px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
+.pq-view    { padding: 16px; }
+.pq-header  { margin-bottom: 20px; }
+.pq-title   { font-size: 20px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
 
-.ingreso-grid {
+/* ── Layout principal ── */
+.ingreso-layout {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 1fr 380px;
   gap: 16px;
   align-items: start;
 }
 
-.pq-card { background: var(--card-bg, #fff); border-radius: 12px; padding: 20px; box-shadow: 0 1px 8px rgba(0,0,0,.07); }
-.card-title { font-size: 15px; font-weight: 700; margin: 0 0 16px; display: flex; align-items: center; gap: 7px; }
+.pq-card {
+  background: var(--card-bg, #fff);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 8px rgba(0,0,0,.07);
+}
 
+/* ── Pasos ── */
+.step-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.step-num {
+  width: 24px; height: 24px;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ── Grilla de servicios ── */
+.svc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.svc-card {
+  position: relative;
+  border: 2px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all .2s;
+  background: var(--card-bg, #fff);
+  overflow: hidden;
+}
+.svc-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--cat-color, #3b82f6);
+  opacity: .7;
+}
+.svc-card:hover { border-color: #93c5fd; background: #eff6ff; transform: translateY(-2px); }
+.svc-card.svc-selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+}
+.svc-cat   { font-size: 10px; font-weight: 700; color: var(--cat-color, #3b82f6); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.svc-nombre { font-size: 15px; font-weight: 700; margin-bottom: 4px; line-height: 1.2; }
+.svc-tipo  { font-size: 11px; color: #64748b; margin-bottom: 6px; }
+.svc-tarifa { font-size: 18px; font-weight: 800; color: #1d4ed8; }
+.svc-check {
+  position: absolute;
+  top: 10px; right: 10px;
+  color: #3b82f6;
+  font-size: 18px;
+}
+
+/* ── Formulario ingreso ── */
 .ingreso-form { display: flex; flex-direction: column; gap: 10px; }
-.ingreso-form label { font-size: 12px; font-weight: 600; color: #475569; }
+.field-label  { font-size: 12px; font-weight: 600; color: #475569; }
 
 .pq-input { width: 100%; padding: 9px 12px; border: 1.5px solid var(--border, #e2e8f0); border-radius: 8px; font-size: 14px; background: var(--input-bg, #f8fafc); box-sizing: border-box; }
 .pq-input:focus { outline: none; border-color: #3b82f6; }
 .pq-input-placa { font-size: 22px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; }
 
+/* ── Autocomplete placa ── */
+.placa-wrap { position: relative; }
+.sugerencias {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--modal-bg, #fff);
+  border: 1.5px solid #93c5fd;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 50;
+  overflow: hidden;
+}
+.sugerencia-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.sugerencia-row:hover, .sugerencia-row.active { background: #eff6ff; }
+.sg-placa  { font-size: 16px; font-weight: 800; letter-spacing: 2px; flex: 1; }
+.sg-nombre { font-size: 12px; color: #475569; flex: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg-badge  { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+.badge-men { background: #d1fae5; color: #065f46; }
+.badge-ing { background: #dbeafe; color: #1e40af; }
+
+/* ── Info cliente ── */
+.cliente-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 12px;
+}
+.cli-foto  { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.cli-data  { display: flex; flex-direction: column; gap: 3px; }
+.cli-nombre { font-weight: 700; font-size: 14px; }
+.cli-tel, .cli-men { font-size: 12px; color: #0369a1; display: flex; align-items: center; gap: 5px; }
+
 .alert-mensualidad { background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #065f46; display: flex; align-items: flex-start; gap: 10px; }
 
+/* ── Foto ── */
 .foto-area { border: 2px dashed var(--border, #e2e8f0); border-radius: 10px; min-height: 120px; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; transition: border-color .2s; }
 .foto-area:hover { border-color: #3b82f6; }
 .foto-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #94a3b8; font-size: 13px; }
@@ -327,20 +449,9 @@ onMounted(() => {
 .btn-pq-primary:disabled { opacity: .6; cursor: not-allowed; }
 .btn-pq-ghost { background: transparent; border: 1.5px solid #94a3b8; color: inherit; border-radius: 8px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
 
-.activos-panel { min-height: 200px; }
-.activos-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.btn-refresh { background: none; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 16px; }
 .pq-loader-sm, .pq-empty-sm { text-align: center; padding: 30px 20px; opacity: .5; font-size: 14px; }
-.activos-list { display: flex; flex-direction: column; gap: 8px; }
-.activo-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--border, #e2e8f0); cursor: pointer; transition: background .15s; }
-.activo-row:hover { background: #eff6ff; border-color: #93c5fd; }
-.activo-placa { font-size: 18px; font-weight: 800; letter-spacing: 2px; min-width: 90px; }
-.activo-info { flex: 1; min-width: 0; }
-.activo-servicio { display: block; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.activo-tiempo { font-size: 11px; color: #64748b; }
-.activo-valor { font-weight: 700; color: #16a34a; font-size: 15px; white-space: nowrap; }
 
-/* Modal */
+/* ── Modal ── */
 .pq-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .pq-modal { background: var(--modal-bg, #fff); border-radius: 14px; width: 100%; max-width: 420px; overflow: hidden; }
 .pq-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border, #e2e8f0); }
@@ -349,23 +460,20 @@ onMounted(() => {
 .pq-modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 .pq-modal-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border, #e2e8f0); }
 
-.qr-placa { font-size: 40px; font-weight: 900; letter-spacing: 4px; margin: 10px 0 4px; }
-.qr-token { font-size: 13px; color: #64748b; margin-bottom: 6px; }
+.qr-placa   { font-size: 40px; font-weight: 900; letter-spacing: 4px; margin: 10px 0 4px; }
+.qr-token   { font-size: 13px; color: #64748b; margin-bottom: 6px; }
 .qr-servicio { font-size: 16px; font-weight: 600; }
-.qr-hora { font-size: 13px; color: #64748b; margin-top: 4px; }
-.qr-code { margin-top: 16px; }
+.qr-hora    { font-size: 13px; color: #64748b; margin-top: 4px; }
+.qr-code    { margin-top: 16px; }
 
-.resumen-salida { background: #f8fafc; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-.rs-row { display: flex; justify-content: space-between; font-size: 14px; }
-.rs-row span:first-child { color: #64748b; }
-.rs-total { border-top: 1.5px solid #e2e8f0; padding-top: 8px; font-size: 16px; }
-.rs-total strong { color: #16a34a; font-size: 20px; }
-
+/* ── Responsive ── */
 @media (max-width: 768px) {
-  .ingreso-grid { grid-template-columns: 1fr; }
+  .ingreso-layout { grid-template-columns: 1fr; }
+  .svc-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 576px) {
-  .pq-view { padding: 10px; }
+  .pq-view  { padding: 10px; }
+  .svc-grid { grid-template-columns: 1fr; }
   .pq-modal { border-radius: 0; max-width: 100%; }
 }
 </style>
