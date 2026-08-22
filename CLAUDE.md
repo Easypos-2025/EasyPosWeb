@@ -15,13 +15,12 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
 
 - **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
 - **Auto-Deploy**: Cuando el usuario escriba la palabra **"commit"**, ejecutar el siguiente flujo completo en orden:
-  1. `npm run build` en frontend (local) — si hay errores, detener y reportar.
-  2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
+  1. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"` — **COMMIT PRIMERO** para que el gitHash se bakee correctamente en el build.
+  2. `npm run build` en frontend (local) — si hay errores, detener y reportar. El `__APP_BUILD__` tomará el hash del commit recién creado.
   3. `git push origin master`
-  4. **scp** del `dist/` local al servidor (borrar primero el dist/ viejo, luego subir el nuevo):
+  4. **Transferir dist via tar+SSH** (un solo archivo comprimido, ~10× más rápido que scp -r):
      ```bash
-     ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "rm -rf /var/www/easyposweb/frontend/dist"
-     scp -r -i /c/Users/Personal/.ssh/id_ed25519 "/d/AAA Proyectos Claude-Code/EasyPosWeb/frontend/dist" root@209.38.152.254:/var/www/easyposweb/frontend/
+     tar -czf - -C "/d/AAA Proyectos Claude-Code/EasyPosWeb/frontend" dist | ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb/frontend && rm -rf dist && tar -xzf -"
      ```
   5. SSH al servidor — solo git pull (backend) + restart (sin `npm run build` en servidor):
      ```bash
@@ -30,7 +29,7 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
   6. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
      `ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
   7. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
-  - El build de Vite se hace **solo en local**; el servidor recibe el `dist/` listo vía rsync. Esto elimina el rebuild en servidor y acelera el deploy.
+  - El build de Vite se hace **solo en local**; el servidor recibe el `dist/` comprimido vía tar pipe. ~30s de transferencia vs ~3min con scp -r.
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
 - Todos los campos donde se describa un valor de pesos debe tener el formato de moneda correspondiente al país del Asociado.
 - La aplicación está enfocada a que todo se haga en un 80% desde móvil; siempre tener en cuenta los dos media queries: dos tamaños de móvil, tablet y PC.
