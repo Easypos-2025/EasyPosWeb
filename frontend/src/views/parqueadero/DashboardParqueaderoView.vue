@@ -175,8 +175,8 @@ function formatMinutos(min) {
   return `${Math.floor(min / 60)}h ${min % 60}min`
 }
 
-async function cargar() {
-  loading.value = true
+async function cargar(silent = false) {
+  if (!silent) loading.value = true
   try {
     const [statsR, activosR] = await Promise.all([
       api.get('/parqueadero/stats', { params: { company_id: cid() } }),
@@ -185,7 +185,7 @@ async function cargar() {
     stats.value = statsR.data
     activos.value = activosR.data
   } catch { /* silencioso */ }
-  finally { loading.value = false }
+  finally { if (!silent) loading.value = false }
 }
 
 async function buscarVehiculo() {
@@ -252,8 +252,8 @@ async function ejecutarCancelacion() {
 
 onMounted(() => {
   cargar()
-  // Auto-refresh cada 90 segundos
-  timer = setInterval(cargar, 90000)
+  // Auto-refresh silencioso cada 90 segundos (sin spinner)
+  timer = setInterval(() => cargar(true), 90000)
 })
 
 onUnmounted(() => clearInterval(timer))

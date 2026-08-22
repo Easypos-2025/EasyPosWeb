@@ -416,6 +416,18 @@
     </div>
 
   </header>
+
+  <!-- Barra de nueva versión — visible, no oculta en dropdown -->
+  <div v-if="newVersionAvailable" class="version-update-bar">
+    <i class="bi bi-arrow-up-circle-fill vub-icon"></i>
+    <span>Nueva versión {{ newVersionValue }} disponible.</span>
+    <button class="vub-btn-reload" @click="dismissVersion('reload')">
+      <i class="bi bi-arrow-clockwise"></i> Recargar ahora
+    </button>
+    <button class="vub-btn-close" @click="newVersionAvailable = false">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
 </template>
 
 <script setup>
@@ -626,9 +638,9 @@ async function checkAppVersion() {
     const serverVersion = res.data?.config_value || ""
     if (!serverVersion) return
     localStorage.setItem("app_version", serverVersion)
-    // Comparar el build en ejecución (constante compilada) contra la versión del servidor
     if (typeof __APP_BUILD__ !== "undefined" && __APP_BUILD__ !== serverVersion) {
-      setTimeout(() => window.location.reload(), 1500)
+      newVersionAvailable.value = true
+      newVersionValue.value = serverVersion
     }
   } catch {}
 }
@@ -1590,4 +1602,47 @@ onUnmounted(() => {
   color: #93c5fd;
   width: fit-content;
 }
+
+/* ── Barra nueva versión ── */
+.version-update-bar {
+  position: fixed;
+  top: 54px;
+  left: 0; right: 0;
+  z-index: 9999;
+  background: #1d4ed8;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.vub-icon { font-size: 16px; flex-shrink: 0; }
+.version-update-bar span { flex: 1; }
+.vub-btn-reload {
+  background: #fff;
+  color: #1d4ed8;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 5px;
+  white-space: nowrap;
+}
+.vub-btn-reload:hover { background: #dbeafe; }
+.vub-btn-close {
+  background: rgba(255,255,255,.15);
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.vub-btn-close:hover { background: rgba(255,255,255,.25); }
 </style>
