@@ -161,7 +161,7 @@ const formBase = () => ({
 })
 const form = ref(formBase())
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 
 const labelTipo = t => ({ tarifa_plana: 'Tarifa Plana', por_minuto: 'Por Minuto', mensualidad: 'Mensualidad' }[t] || t)
 

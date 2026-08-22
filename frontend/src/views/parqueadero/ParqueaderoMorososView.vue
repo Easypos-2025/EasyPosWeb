@@ -95,7 +95,7 @@ const morosos = ref([])
 const loading = ref(true)
 const confirmActivar = ref(null)
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 
 const moraClass = d => {
   const n = Number(d)

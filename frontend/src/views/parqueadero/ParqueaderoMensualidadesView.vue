@@ -173,7 +173,7 @@ const formBase = () => ({
 })
 const form = ref(formBase())
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 
 const diasClass = d => {
   const n = Number(d)

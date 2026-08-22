@@ -158,7 +158,7 @@ const ingresoSeleccionado = ref(null)
 const busqueda = ref('')
 const pagoForm = ref({ forma_pago: 'efectivo', valor_cobrado: 0 })
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 
 let timer = null
 
@@ -252,7 +252,7 @@ async function ejecutarCancelacion() {
 }
 
 // Espera que el store tenga la empresa antes de cargar
-watch(() => companyStore.selectedCompany?.id_company, (id) => {
+watch(() => companyStore.selectedCompany?.id, (id) => {
   if (id) cargar()
 }, { immediate: true })
 

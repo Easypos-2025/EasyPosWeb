@@ -115,7 +115,7 @@ const confirmEliminar = ref(null)
 const formBase = () => ({ id: null, nombre: '', icono: 'bi-car-front-fill', color: '#3b82f6', orden: 0, is_active: 1 })
 const form = ref(formBase())
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 
 async function cargar() {
   loading.value = true

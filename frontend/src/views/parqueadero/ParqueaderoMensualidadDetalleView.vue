@@ -160,7 +160,7 @@ const pagoFormBase = () => ({
 })
 const pagoForm = ref(pagoFormBase())
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 const menId = () => route.params.id
 
 const diasClass = d => d < 0 ? 'dias-mora' : d <= 5 ? 'dias-alerta' : 'dias-ok'

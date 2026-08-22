@@ -170,7 +170,7 @@ const fotoPreview = ref(null)
 const form = ref({ servicio_id: null, placa: '', foto_url: null })
 const pagoForm = ref({ forma_pago: 'efectivo', valor_cobrado: 0 })
 
-const cid = () => companyStore.selectedCompany?.id_company
+const cid = () => companyStore.selectedCompany?.id
 
 const servicioSeleccionado = computed(() =>
   servicios.value.find(s => s.id === form.value.servicio_id)
