@@ -33,7 +33,7 @@
             <tr v-for="m in morosos" :key="m.id">
               <td>
                 <span class="mora-badge" :class="moraClass(m.dias_mora)">
-                  {{ m.dias_mora }} días
+                  {{ m.dias_mora != null && !isNaN(Number(m.dias_mora)) ? Number(m.dias_mora) : '?' }} días
                 </span>
               </td>
               <td class="td-placa">{{ m.placa }}</td>
@@ -46,7 +46,7 @@
               </td>
               <td>{{ m.fecha_fin }}</td>
               <td>{{ m.ultimo_pago || '—' }}</td>
-              <td class="td-mono">${{ Number(m.valor_mensualidad).toLocaleString() }}</td>
+              <td class="td-mono">${{ (Number(m.valor_mensualidad) || 0).toLocaleString() }}</td>
               <td class="td-actions">
                 <router-link :to="`/parqueadero/mensualidades/${m.id}`" class="btn-icon" title="Ver detalle">
                   <i class="bi bi-eye-fill"></i>
@@ -58,6 +58,24 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Confirm activar -->
+    <div v-if="confirmActivar" class="pq-overlay" @click.self="confirmActivar = null">
+      <div class="pq-modal" style="max-width:340px">
+        <div class="pq-modal-head">
+          <h3>Confirmar activación</h3>
+          <button class="btn-icon" @click="confirmActivar = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div style="padding:20px;font-size:14px;line-height:1.5">
+          ¿Confirmar que <strong>{{ confirmActivar.nombre_titular || 'este abonado' }}</strong> realizó el pago?
+          Se marcará como <strong>activo</strong>.
+        </div>
+        <div class="pq-modal-foot">
+          <button class="btn-pq-ghost" @click="confirmActivar = null">No</button>
+          <button class="btn-pq-primary" @click="ejecutarMarcarActivo"><i class="bi bi-check2"></i> Sí, activar</button>
+        </div>
       </div>
     </div>
   </div>
@@ -75,10 +93,15 @@ const { moduleName } = useModuleName()
 
 const morosos = ref([])
 const loading = ref(true)
+const confirmActivar = ref(null)
 
 const cid = () => companyStore.selectedCompany?.id_company
 
-const moraClass = d => d > 30 ? 'mora-alta' : d > 10 ? 'mora-media' : 'mora-baja'
+const moraClass = d => {
+  const n = Number(d)
+  if (isNaN(n)) return 'mora-baja'
+  return n > 30 ? 'mora-alta' : n > 10 ? 'mora-media' : 'mora-baja'
+}
 
 async function cargar() {
   loading.value = true
@@ -89,8 +112,14 @@ async function cargar() {
   finally { loading.value = false }
 }
 
-async function marcarActivo(m) {
-  if (!confirm(`¿Confirmar que ${m.nombre_titular} pagó? Se marcará como activo.`)) return
+function marcarActivo(m) {
+  confirmActivar.value = m
+}
+
+async function ejecutarMarcarActivo() {
+  const m = confirmActivar.value
+  if (!m) return
+  confirmActivar.value = null
   try {
     await api.patch(`/parqueadero/mensualidades/${m.id}/estado`, null, {
       params: { company_id: cid(), estado: 'activo' }
@@ -138,4 +167,12 @@ onMounted(cargar)
 @media (max-width: 576px) {
   .pq-view { padding: 10px; }
 }
+
+.pq-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.pq-modal { background: var(--modal-bg, #fff); border-radius: 14px; width: 100%; overflow: hidden; }
+.pq-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border, #e2e8f0); }
+.pq-modal-head h3 { margin: 0; font-size: 16px; }
+.pq-modal-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 18px; border-top: 1px solid var(--border, #e2e8f0); }
+.btn-pq-primary { background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.btn-pq-ghost { background: transparent; border: 1.5px solid #94a3b8; color: inherit; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
 </style>

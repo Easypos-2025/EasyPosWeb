@@ -36,6 +36,25 @@
       </div>
     </div>
 
+    <!-- Confirm eliminar -->
+    <div v-if="confirmEliminar" class="pq-overlay" @click.self="confirmEliminar = null">
+      <div class="pq-modal" style="max-width:340px">
+        <div class="pq-modal-head">
+          <h3>Eliminar categoría</h3>
+          <button class="btn-close" @click="confirmEliminar = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div style="padding:20px;font-size:14px;line-height:1.5">
+          ¿Eliminar la categoría <strong>"{{ confirmEliminar.nombre }}"</strong>? Esta acción no se puede deshacer.
+        </div>
+        <div class="pq-modal-foot">
+          <button class="btn-pq-ghost" @click="confirmEliminar = null">Cancelar</button>
+          <button class="btn-pq-primary" style="background:#dc2626" @click="ejecutarEliminar">
+            <i class="bi bi-trash3-fill"></i> Eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal -->
     <div v-if="modal" class="pq-overlay" @click.self="modal = false">
       <div class="pq-modal">
@@ -91,6 +110,7 @@ const categorias = ref([])
 const loading = ref(true)
 const modal = ref(false)
 const saving = ref(false)
+const confirmEliminar = ref(null)
 
 const formBase = () => ({ id: null, nombre: '', icono: 'bi-car-front-fill', color: '#3b82f6', orden: 0, is_active: 1 })
 const form = ref(formBase())
@@ -131,8 +151,14 @@ async function guardar() {
   finally { saving.value = false }
 }
 
-async function eliminar(cat) {
-  if (!confirm(`¿Eliminar categoría "${cat.nombre}"?`)) return
+function eliminar(cat) {
+  confirmEliminar.value = cat
+}
+
+async function ejecutarEliminar() {
+  const cat = confirmEliminar.value
+  if (!cat) return
+  confirmEliminar.value = null
   try {
     await api.delete(`/parqueadero/categorias/${cat.id}`, { params: { company_id: cid() } })
     showToast('Categoría eliminada', 'success')

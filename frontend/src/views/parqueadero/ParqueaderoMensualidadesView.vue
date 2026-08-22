@@ -44,11 +44,12 @@
             <td>{{ m.telefono || '—' }}</td>
             <td>{{ m.fecha_fin }}</td>
             <td :class="diasClass(m.dias_restantes)">
-              <span v-if="m.dias_restantes > 0">{{ m.dias_restantes }} días</span>
+              <span v-if="m.dias_restantes != null && !isNaN(Number(m.dias_restantes)) && Number(m.dias_restantes) > 0">{{ Number(m.dias_restantes) }} días</span>
               <span v-else-if="m.dias_restantes === 0">Hoy</span>
-              <span v-else>{{ Math.abs(m.dias_restantes) }} días mora</span>
+              <span v-else-if="m.dias_restantes != null && !isNaN(Number(m.dias_restantes))">{{ Math.abs(Number(m.dias_restantes)) }} días mora</span>
+              <span v-else>—</span>
             </td>
-            <td class="td-mono">${{ Number(m.valor_mensualidad).toLocaleString() }}</td>
+            <td class="td-mono">${{ (Number(m.valor_mensualidad) || 0).toLocaleString() }}</td>
             <td>
               <span class="pq-badge" :class="`badge-${m.estado}`">{{ m.estado }}</span>
             </td>
@@ -174,7 +175,11 @@ const form = ref(formBase())
 
 const cid = () => companyStore.selectedCompany?.id_company
 
-const diasClass = d => d < 0 ? 'dias-mora' : d <= 5 ? 'dias-alerta' : 'dias-ok'
+const diasClass = d => {
+  const n = Number(d)
+  if (d == null || isNaN(n)) return 'dias-mora'
+  return n < 0 ? 'dias-mora' : n <= 5 ? 'dias-alerta' : 'dias-ok'
+}
 
 async function cargar() {
   loading.value = true

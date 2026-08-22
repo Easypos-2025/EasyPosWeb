@@ -77,7 +77,7 @@
             {{ v.categoria_nombre || v.servicio_nombre }}
           </span>
         </div>
-        <div class="vc-tiempo"><i class="bi bi-clock"></i> {{ formatTiempo(v.hora_ingreso) }}</div>
+        <div class="vc-tiempo"><i class="bi bi-clock"></i> {{ formatMinutos(v.minutos_transcurridos) }}</div>
         <div class="vc-valor">${{ (v.valor_actual || 0).toLocaleString() }}</div>
         <div class="vc-action">
           <button class="btn-cobrar" @click.stop="abrirSalida(v)">
@@ -88,11 +88,11 @@
     </div>
 
     <!-- Modal cobro / salida -->
-    <div v-if="modalSalida" class="pq-overlay" @click.self="modalSalida = false">
+    <div v-if="modalSalida" class="pq-overlay" @click.self="cerrarModalSalida">
       <div class="pq-modal">
         <div class="pq-modal-head">
           <h3><i class="bi bi-cash-coin" style="color:#f59e0b"></i> Registrar Salida</h3>
-          <button class="btn-close" @click="modalSalida = false"><i class="bi bi-x-lg"></i></button>
+          <button class="btn-close" @click="cerrarModalSalida"><i class="bi bi-x-lg"></i></button>
         </div>
         <div v-if="ingresoSeleccionado" class="pq-modal-body">
           <div v-if="ingresoSeleccionado.foto_url" class="foto-resumen">
@@ -117,14 +117,21 @@
           <input type="number" v-model.number="pagoForm.valor_cobrado" class="pq-input" />
         </div>
         <div class="pq-modal-foot">
-          <button class="btn-pq-ghost btn-danger-ghost" @click="cancelarIngreso">
-            <i class="bi bi-x-circle"></i> Cancelar Ingreso
-          </button>
-          <button class="btn-pq-ghost" @click="modalSalida = false">Cerrar</button>
-          <button class="btn-pq-primary" :disabled="pagando" @click="confirmarSalida">
-            <i class="bi" :class="pagando ? 'bi-hourglass-split' : 'bi-check2-circle'"></i>
-            {{ pagando ? 'Procesando...' : 'Confirmar Pago' }}
-          </button>
+          <template v-if="!confirmandoCancelar">
+            <button class="btn-pq-ghost btn-danger-ghost" @click="confirmandoCancelar = true">
+              <i class="bi bi-x-circle"></i> Cancelar Ingreso
+            </button>
+            <button class="btn-pq-ghost" @click="cerrarModalSalida">Cerrar</button>
+            <button class="btn-pq-primary" :disabled="pagando" @click="confirmarSalida">
+              <i class="bi" :class="pagando ? 'bi-hourglass-split' : 'bi-check2-circle'"></i>
+              {{ pagando ? 'Procesando...' : 'Confirmar Pago' }}
+            </button>
+          </template>
+          <template v-else>
+            <span class="confirm-warn">¿Cancelar este ingreso sin cobrar?</span>
+            <button class="btn-pq-ghost" @click="confirmandoCancelar = false">No</button>
+            <button class="btn-pq-ghost btn-danger-ghost" @click="ejecutarCancelacion">Sí, cancelar</button>
+          </template>
         </div>
       </div>
     </div>
@@ -146,6 +153,7 @@ const activos = ref([])
 const loading = ref(true)
 const pagando = ref(false)
 const modalSalida = ref(false)
+const confirmandoCancelar = ref(false)
 const ingresoSeleccionado = ref(null)
 const busqueda = ref('')
 const pagoForm = ref({ forma_pago: 'efectivo', valor_cobrado: 0 })
@@ -154,15 +162,11 @@ const cid = () => companyStore.selectedCompany?.id_company
 
 let timer = null
 
-function formatTiempo(hora) {
-  const h = new Date(hora)
-  const diff = Math.floor((Date.now() - h) / 60000)
-  if (diff < 60) return `${diff} min`
-  return `${Math.floor(diff / 60)}h ${diff % 60}min`
-}
-
 function formatFechaHora(dt) {
-  return new Date(dt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
+  if (!dt) return '—'
+  const d = new Date(String(dt).replace(' ', 'T'))
+  if (isNaN(d.getTime())) return String(dt)
+  return d.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
 }
 
 function formatMinutos(min) {
@@ -210,9 +214,15 @@ async function buscarVehiculo() {
   } catch { showToast('Error en búsqueda', 'error') }
 }
 
+function cerrarModalSalida() {
+  modalSalida.value = false
+  confirmandoCancelar.value = false
+}
+
 function abrirSalida(v) {
   ingresoSeleccionado.value = v
   pagoForm.value = { forma_pago: 'efectivo', valor_cobrado: v.valor_actual || 0 }
+  confirmandoCancelar.value = false
   modalSalida.value = true
 }
 
@@ -229,14 +239,13 @@ async function confirmarSalida() {
   finally { pagando.value = false }
 }
 
-async function cancelarIngreso() {
-  if (!confirm('¿Cancelar este ingreso? No se registrará pago.')) return
+async function ejecutarCancelacion() {
   try {
     await api.put(`/parqueadero/ingresos/${ingresoSeleccionado.value.id}/cancelar`, {}, {
       params: { company_id: cid() }
     })
     showToast('Ingreso cancelado', 'success')
-    modalSalida.value = false
+    cerrarModalSalida()
     cargar()
   } catch { showToast('Error al cancelar', 'error') }
 }
@@ -348,4 +357,5 @@ onUnmounted(() => clearInterval(timer))
   .pq-modal-foot { justify-content: stretch; }
   .pq-modal-foot > * { flex: 1; justify-content: center; }
 }
+.confirm-warn { flex: 1; font-size: 13px; color: #dc2626; font-weight: 600; display: flex; align-items: center; }
 </style>
