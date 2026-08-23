@@ -48,7 +48,7 @@
 
           <!-- Categoría del plato -->
           <div class="vi-filter-group">
-            <label class="vi-label">Categoría Plato</label>
+            <label class="vi-label">Categoría Producto</label>
             <select class="vi-select" v-model="filtro.catId" @change="buscar">
               <option :value="null">Todas</option>
               <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -121,10 +121,10 @@
             <thead>
               <tr>
                 <th @click="sortBy('categoria_plato')" class="sortable">
-                  Cat. Plato <i :class="sortIcon('categoria_plato')"></i>
+                  Cat. Producto <i :class="sortIcon('categoria_plato')"></i>
                 </th>
                 <th @click="sortBy('plato')" class="sortable">
-                  Plato <i :class="sortIcon('plato')"></i>
+                  Producto <i :class="sortIcon('plato')"></i>
                 </th>
                 <th @click="sortBy('insumo')" class="sortable">
                   Insumo <i :class="sortIcon('insumo')"></i>
@@ -226,8 +226,8 @@ const insumosDistintos = computed(() => {
 })
 
 const exportColumns = [
-  { key: 'categoria_plato', label: 'Cat. Plato' },
-  { key: 'plato',           label: 'Plato' },
+  { key: 'categoria_plato', label: 'Cat. Producto' },
+  { key: 'plato',           label: 'Producto' },
   { key: 'insumo',          label: 'Insumo' },
   { key: 'unidad',          label: 'Unidad' },
   { key: 'cantidad',        label: 'Cant.', align: 'right' },

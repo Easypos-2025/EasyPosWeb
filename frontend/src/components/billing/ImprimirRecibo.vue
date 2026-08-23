@@ -174,9 +174,11 @@ import { useCompanyStore } from "@/stores/companyStore"
 import { showToast } from "@/utils/toast"
 
 const props = defineProps({
-  receiptData: { type: Object, required: true },
-  placa:       { type: String, default: "" },
-  companyId:   { type: Number, required: true },
+  receiptData:  { type: Object, required: true },
+  placa:        { type: String, default: "" },
+  companyId:    { type: Number, required: true },
+  printersPath: { type: String, default: "/api/talleres/printers" },
+  printPath:    { type: String, default: "/api/talleres/imprimir-pos" },
 })
 
 const emit = defineEmits(["close"])
@@ -195,7 +197,7 @@ const nombreEmpresa = computed(
 async function loadPrinters() {
   loadingPrinters.value = true
   try {
-    const res = await api.get("/api/talleres/printers", {
+    const res = await api.get(props.printersPath, {
       params: { company_id: props.companyId },
     })
     printers.value = res.data || []
@@ -218,7 +220,7 @@ async function imprimirPos(printer) {
   }
   imprimiendoPosId.value = printer.id
   try {
-    await api.post("/api/talleres/imprimir-pos", {
+    await api.post(props.printPath, {
       company_id:     props.companyId,
       printer_id:     printer.id,
       receipt_number: props.receiptData.receipt_number,

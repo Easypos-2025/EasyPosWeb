@@ -234,7 +234,7 @@
                 <table class="vc-table">
                   <thead>
                     <tr>
-                      <th>Plato / Novedades</th>
+                      <th>Producto / Novedades</th>
                       <th class="text-center">Cant</th>
                       <th class="text-end">Precio</th>
                       <th class="text-end">Subtotal</th>

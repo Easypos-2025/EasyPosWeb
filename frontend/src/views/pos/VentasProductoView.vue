@@ -128,7 +128,7 @@
                   Categoría <i :class="sortIcon('categoria')"></i>
                 </th>
                 <th @click="sortBy('plato')" class="sortable">
-                  Plato / Producto <i :class="sortIcon('plato')"></i>
+                  Producto <i :class="sortIcon('plato')"></i>
                 </th>
                 <th class="ta-r" @click="sortBy('cantidad')" style="cursor:pointer">
                   Cant. <i :class="sortIcon('cantidad')"></i>
@@ -233,7 +233,7 @@ const fmtCOPRaw = v => new Intl.NumberFormat('es-CO', { style:'currency', curren
 
 const exportColumns = [
   { key: 'categoria', label: 'Categoría' },
-  { key: 'plato',     label: 'Plato / Producto' },
+  { key: 'plato',     label: 'Producto' },
   { key: 'cantidad',  label: 'Cant.', align: 'right' },
   { key: 'total',     label: 'Total', align: 'right', fmt: v => fmtCOPRaw(v) },
 ]
