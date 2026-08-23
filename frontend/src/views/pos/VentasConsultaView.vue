@@ -248,7 +248,7 @@
                           <div class="vc-item-name">{{ group.plato }}</div>
                           <div class="vc-item-tags" v-if="group.assembly?.length || group.notes || group.changes">
                             <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
-                            <span v-if="group.notes" class="ci-tag ci-note">{{ group.notes }}</span>
+                            <span v-if="group.notes && group.notes !== group.plato" class="ci-tag ci-note">{{ group.notes }}</span>
                             <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
                           </div>
                         </td>
