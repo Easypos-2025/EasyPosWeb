@@ -30,6 +30,14 @@
           <span class="kpi-label">Recaudo Hoy</span>
         </div>
       </div>
+      <!-- KPI Valor en Pista (calculado en tiempo real) -->
+      <div class="kpi-card kpi-pista" v-if="activos.length">
+        <i class="bi bi-stopwatch-fill kpi-icon"></i>
+        <div class="kpi-body">
+          <span class="kpi-val">${{ valorEnPista.toLocaleString('es-CO') }}</span>
+          <span class="kpi-label">En Pista</span>
+        </div>
+      </div>
       <div class="kpi-card kpi-warn" v-if="stats.morosos">
         <i class="bi bi-exclamation-triangle-fill kpi-icon"></i>
         <div class="kpi-body">
@@ -67,15 +75,23 @@
     <!-- Vehículos activos -->
     <div class="section-title">
       <h3><i class="bi bi-car-front-fill"></i> Vehículos en Parqueadero</h3>
-      <button class="btn-refresh" @click="cargar" :disabled="loading">
-        <i class="bi bi-arrow-clockwise"></i>
-      </button>
+      <div class="section-actions">
+        <router-link to="/parqueadero/ingreso" class="btn-nuevo-ingreso">
+          <i class="bi bi-box-arrow-in-right"></i> Ingresar Vehículo
+        </router-link>
+        <button class="btn-refresh" @click="cargar" :disabled="loading" title="Refrescar">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="pq-loader">Cargando...</div>
     <div v-else-if="!activos.length" class="pq-empty">
       <i class="bi bi-car-front" style="font-size:2.5rem;opacity:.3"></i>
       <p>No hay vehículos activos en este momento</p>
+      <router-link to="/parqueadero/ingreso" class="btn-nuevo-ingreso btn-nuevo-ingreso-lg">
+        <i class="bi bi-box-arrow-in-right"></i> Ingresar primer vehículo
+      </router-link>
     </div>
 
     <div v-else class="vehiculos-grid">
@@ -91,9 +107,12 @@
             {{ v.categoria_nombre || v.servicio_nombre }}
           </span>
         </div>
-        <div class="vc-tiempo"><i class="bi bi-clock"></i> {{ formatMinutos(v.minutos_transcurridos) }}</div>
-        <div class="vc-valor">${{ (v.valor_actual || 0).toLocaleString('es-CO') }}</div>
-        <div class="vc-action">
+        <div class="vc-tiempo"><i class="bi bi-clock"></i> {{ formatMinutos(minsTranscurridos(v)) }}</div>
+        <div class="vc-valor">${{ calcValor(v).toLocaleString('es-CO') }}</div>
+        <div class="vc-actions">
+          <button class="btn-reimprimir" @click.stop="reimprimir(v)" title="Reimprimir ticket">
+            <i class="bi bi-printer"></i>
+          </button>
           <button class="btn-cobrar" @click.stop="abrirSalida(v)">
             <i class="bi bi-cash-coin"></i> Cobrar
           </button>
@@ -121,8 +140,8 @@
             <div class="rs-row"><span>Placa</span><strong>{{ ingresoSeleccionado.placa }}</strong></div>
             <div class="rs-row"><span>Servicio</span><span>{{ ingresoSeleccionado.servicio_nombre }}</span></div>
             <div class="rs-row"><span>Ingreso</span><span>{{ formatFechaHora(ingresoSeleccionado.hora_ingreso) }}</span></div>
-            <div class="rs-row"><span>Tiempo</span><span>{{ formatMinutos(ingresoSeleccionado.minutos_transcurridos) }}</span></div>
-            <div class="rs-row rs-total"><span>Valor a Cobrar</span><strong>${{ (ingresoSeleccionado.valor_actual || 0).toLocaleString('es-CO') }}</strong></div>
+            <div class="rs-row"><span>Tiempo</span><span>{{ formatMinutos(minsTranscurridos(ingresoSeleccionado)) }}</span></div>
+            <div class="rs-row rs-total"><span>Valor a Cobrar</span><strong>${{ calcValor(ingresoSeleccionado).toLocaleString('es-CO') }}</strong></div>
           </div>
 
           <!-- Tipo documento: Factura / Recibo -->
@@ -167,7 +186,7 @@
         <div class="pq-modal-foot">
           <template v-if="!confirmandoCancelar">
             <button class="btn-pq-ghost btn-danger-ghost" @click="confirmandoCancelar = true">
-              <i class="bi bi-x-circle"></i> Cancelar Ingreso
+              <i class="bi bi-slash-circle"></i> Anular Ingreso
             </button>
             <button class="btn-pq-ghost" @click="cerrarModalSalida">Cerrar</button>
             <button class="btn-pq-primary" :disabled="pagando" @click="confirmarSalida">
@@ -176,13 +195,20 @@
             </button>
           </template>
           <template v-else>
-            <span class="confirm-warn">¿Cancelar este ingreso sin cobrar?</span>
+            <span class="confirm-warn">¿Anular #{{ ingresoSeleccionado?.id }}? El registro se conserva como "Anulado".</span>
             <button class="btn-pq-ghost" @click="confirmandoCancelar = false">No</button>
-            <button class="btn-pq-ghost btn-danger-ghost" @click="ejecutarCancelacion">Sí, cancelar</button>
+            <button class="btn-pq-ghost btn-danger-ghost" @click="ejecutarCancelacion">Sí, anular</button>
           </template>
         </div>
       </div>
     </div>
+
+    <!-- ══ Componente reimprimir ticket ══ -->
+    <ImprimirReciboParqueadero
+      v-if="mostrarReimpresion && ingresoReimprimir"
+      :datos="ingresoReimprimir"
+      @close="mostrarReimpresion = false"
+    />
   </div>
 </template>
 
@@ -192,6 +218,7 @@ import { useCompanyStore } from '@/stores/companyStore'
 import { useModuleName } from '@/composables/useModuleName'
 import { showToast } from '@/utils/toast'
 import api from '@/services/apis'
+import ImprimirReciboParqueadero from '@/components/parqueadero/ImprimirReciboParqueadero.vue'
 
 const companyStore = useCompanyStore()
 const { moduleName } = useModuleName()
@@ -200,9 +227,13 @@ const stats   = ref({})
 const activos = ref([])
 const loading = ref(true)
 const pagando = ref(false)
-const modalSalida        = ref(false)
+const modalSalida         = ref(false)
 const confirmandoCancelar = ref(false)
 const ingresoSeleccionado = ref(null)
+
+// Reimprimir
+const mostrarReimpresion = ref(false)
+const ingresoReimprimir  = ref(null)
 
 // Búsqueda
 const busQR    = ref('')
@@ -214,7 +245,38 @@ const pagoForm = ref({ forma_pago: 'efectivo', valor_cobrado: 0, tipo_documento:
 const cid   = () => companyStore.selectedCompany?.id
 const hasPE = computed(() => !!companyStore.billingConfig?.has_pos_electronico)
 
-let timer = null
+// ── Tiempo real ──────────────────────────────────────────────────────────────
+
+const ahora = ref(Date.now())
+
+function minsTranscurridos(v) {
+  if (!v?.hora_ingreso) return 0
+  const ingreso = new Date(String(v.hora_ingreso).replace(' ', 'T'))
+  return Math.max(0, Math.floor((ahora.value - ingreso.getTime()) / 60000))
+}
+
+function calcValor(v) {
+  const mins = minsTranscurridos(v)
+  if (v.tipo_cobro === 'por_minuto') {
+    return Math.round((v.tarifa_minuto || 0) * mins)
+  }
+  if (v.tipo_cobro === 'tarifa_plana') {
+    const periodoMins = (v.periodo_horas || 12) * 60
+    const periodos    = Math.max(1, Math.ceil(mins / periodoMins))
+    return Math.round((v.tarifa_base || 0) + Math.max(0, periodos - 1) * (v.tarifa_adicional || 0))
+  }
+  if (v.tipo_cobro === 'mensualidad') return 0
+  return v.valor_actual || 0
+}
+
+const valorEnPista = computed(() =>
+  activos.value.reduce((sum, v) => sum + calcValor(v), 0)
+)
+
+let timerLocal    = null
+let timerRefresh  = null
+
+// ── Formateo ─────────────────────────────────────────────────────────────────
 
 function formatFechaHora(dt) {
   if (!dt) return '—'
@@ -228,6 +290,8 @@ function formatMinutos(min) {
   if (min < 60) return `${min} min`
   return `${Math.floor(min / 60)}h ${min % 60}min`
 }
+
+// ── Carga de datos ────────────────────────────────────────────────────────────
 
 async function cargar(silent = false) {
   if (!cid()) return
@@ -243,7 +307,7 @@ async function cargar(silent = false) {
   finally { if (!silent) loading.value = false }
 }
 
-// ── Búsqueda ────────────────────────────────────────────────────────────────
+// ── Búsqueda ──────────────────────────────────────────────────────────────────
 
 async function buscarPor(tipo, valor) {
   const q = String(valor || '').trim().toUpperCase()
@@ -278,19 +342,19 @@ async function buscarPor(tipo, valor) {
   }
 }
 
-// ── Modal salida ─────────────────────────────────────────────────────────────
+// ── Modal salida ──────────────────────────────────────────────────────────────
 
 function cerrarModalSalida() {
-  modalSalida.value          = false
-  confirmandoCancelar.value  = false
+  modalSalida.value         = false
+  confirmandoCancelar.value = false
 }
 
 function abrirSalida(v) {
   ingresoSeleccionado.value = v
   pagoForm.value = {
-    forma_pago:      'efectivo',
-    valor_cobrado:   v.valor_actual || 0,
-    tipo_documento:  'recibo',
+    forma_pago:     'efectivo',
+    valor_cobrado:  calcValor(v),
+    tipo_documento: 'recibo',
   }
   confirmandoCancelar.value = false
   modalSalida.value         = true
@@ -315,15 +379,40 @@ async function ejecutarCancelacion() {
     await api.put(`/api/parqueadero/ingresos/${ingresoSeleccionado.value.id}/cancelar`, {}, {
       params: { company_id: cid() }
     })
-    showToast('Ingreso cancelado', 'success')
+    showToast(`Ingreso #${ingresoSeleccionado.value.id} anulado — el registro queda conservado`, 'success')
     cerrarModalSalida()
     cargar()
   } catch { showToast('Error al cancelar', 'error') }
 }
 
+// ── Reimprimir ticket ─────────────────────────────────────────────────────────
+
+function reimprimir(v) {
+  ingresoReimprimir.value = {
+    id:                   v.id,
+    placa:                v.placa,
+    servicio_nombre:      v.servicio_nombre,
+    hora_ingreso:         v.hora_ingreso,
+    minutos_transcurridos: minsTranscurridos(v),
+    valor_cobrado:        calcValor(v),
+    forma_pago:           null,
+    qr_token:             v.qr_token,
+  }
+  mostrarReimpresion.value = true
+}
+
+// ── Ciclo de vida ─────────────────────────────────────────────────────────────
+
 watch(() => companyStore.selectedCompany?.id, id => { if (id) cargar() }, { immediate: true })
-onMounted(() => { timer = setInterval(() => cargar(true), 90000) })
-onUnmounted(() => clearInterval(timer))
+
+onMounted(() => {
+  timerLocal   = setInterval(() => { ahora.value = Date.now() }, 30000)
+  timerRefresh = setInterval(() => cargar(true), 90000)
+})
+onUnmounted(() => {
+  clearInterval(timerLocal)
+  clearInterval(timerRefresh)
+})
 </script>
 
 <style scoped>
@@ -336,12 +425,14 @@ onUnmounted(() => clearInterval(timer))
 .kpi-info    { border-top-color: #06b6d4; }
 .kpi-success { border-top-color: #22c55e; }
 .kpi-money   { border-top-color: #f59e0b; }
+.kpi-pista   { border-top-color: #8b5cf6; }
 .kpi-warn    { border-top-color: #ef4444; }
 .kpi-icon { font-size: 26px; }
 .kpi-primary .kpi-icon { color: #3b82f6; }
 .kpi-info    .kpi-icon { color: #06b6d4; }
 .kpi-success .kpi-icon { color: #22c55e; }
 .kpi-money   .kpi-icon { color: #f59e0b; }
+.kpi-pista   .kpi-icon { color: #8b5cf6; }
 .kpi-warn    .kpi-icon { color: #ef4444; }
 .kpi-body  { display: flex; flex-direction: column; }
 .kpi-val   { font-size: 22px; font-weight: 800; line-height: 1; }
@@ -362,10 +453,23 @@ onUnmounted(() => clearInterval(timer))
 /* ── Section title ── */
 .section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .section-title h3 { margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.section-actions { display: flex; align-items: center; gap: 8px; }
 .btn-refresh { background: none; border: 1px solid var(--border,#e2e8f0); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 16px; }
 
+/* Botón acceso rápido a Ingresar */
+.btn-nuevo-ingreso {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #3b82f6; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600;
+  cursor: pointer; text-decoration: none;
+  transition: background .15s;
+}
+.btn-nuevo-ingreso:hover { background: #2563eb; color: #fff; }
+.btn-nuevo-ingreso-lg { margin-top: 16px; padding: 12px 24px; font-size: 15px; }
+
 .pq-loader { text-align: center; padding: 60px; opacity: .5; }
-.pq-empty  { text-align: center; padding: 60px 20px; opacity: .5; }
+.pq-empty  { text-align: center; padding: 60px 20px; opacity: .5; display: flex; flex-direction: column; align-items: center; }
 .pq-empty i { display: block; margin-bottom: 12px; }
 
 /* ── Grilla vehículos ── */
@@ -384,10 +488,23 @@ onUnmounted(() => clearInterval(timer))
 .vc-servicio { padding: 0 14px 6px; }
 .vc-tiempo   { font-size: 12px; color: #64748b; padding: 0 14px 4px; display: flex; align-items: center; gap: 4px; }
 .vc-valor    { font-size: 20px; font-weight: 800; color: #16a34a; padding: 0 14px 10px; }
-.vc-action   { width: 100%; padding: 0 14px 14px; }
+.vc-actions  { width: 100%; padding: 0 14px 14px; display: flex; gap: 6px; }
 .tag-cat { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-.btn-cobrar { width: 100%; background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+.btn-cobrar {
+  flex: 1; background: #3b82f6; color: #fff; border: none;
+  border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
 .btn-cobrar:hover { background: #2563eb; }
+
+.btn-reimprimir {
+  background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 9px 10px; font-size: 14px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .15s; flex-shrink: 0;
+}
+.btn-reimprimir:hover { background: #e2e8f0; color: #1e293b; }
 
 /* ── Buttons ── */
 .btn-pq-primary { background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -448,6 +565,7 @@ onUnmounted(() => clearInterval(timer))
   .vehiculos-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .search-bar { gap: 8px; }
   .search-sep { display: none; }
+  .btn-nuevo-ingreso span { display: none; }
 }
 @media (max-width: 576px) {
   .pq-view { padding: 10px; }
@@ -456,5 +574,6 @@ onUnmounted(() => clearInterval(timer))
   .pq-modal-foot { justify-content: stretch; }
   .pq-modal-foot > * { flex: 1; justify-content: center; }
   .search-group { min-width: 100%; }
+  .btn-nuevo-ingreso { padding: 8px 12px; }
 }
 </style>

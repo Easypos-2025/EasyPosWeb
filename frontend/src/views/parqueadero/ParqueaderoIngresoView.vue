@@ -78,6 +78,16 @@
           </div>
         </div>
 
+        <!-- Alerta placa ya activa en parqueadero -->
+        <div v-if="placaEnUso" class="alert-placa-uso">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <div>
+            <strong>Placa ya está en parqueadero</strong><br>
+            Esta placa tiene un ingreso activo <strong>#{{ placaEnUso.id }}</strong>.
+            Búscala en el dashboard para cobrar.
+          </div>
+        </div>
+
         <!-- Alerta mensualidad activa -->
         <div v-if="mensualidadActiva" class="alert-mensualidad">
           <i class="bi bi-calendar-check-fill"></i>
@@ -88,23 +98,17 @@
         </div>
 
         <!-- Foto -->
-        <label class="field-label">Foto del Vehículo</label>
-        <div class="foto-area" @click="triggerFoto" :class="{ 'foto-cargada': fotoPreview }">
-          <img v-if="fotoPreview" :src="fotoPreview" class="foto-preview" />
-          <div v-else class="foto-placeholder">
-            <i class="bi bi-camera-fill"></i>
-            <span>Tomar / Subir Foto</span>
-          </div>
-          <input ref="fotoInput" type="file" accept="image/*" capture="environment"
-                 style="display:none" @change="onFotoChange" />
-        </div>
-        <button v-if="fotoPreview" class="btn-ghost-sm" @click="fotoPreview = null; form.foto_url = null">
-          <i class="bi bi-x-circle"></i> Quitar foto
-        </button>
+        <ImageUploaderPro
+          :currentUrl="form.foto_url"
+          label="Foto del Vehículo"
+          :showRemove="true"
+          @change="onFotoReady"
+          @remove="quitarFoto"
+        />
 
         <button
           class="btn-pq-primary btn-registrar"
-          :disabled="saving || !form.servicio_id || !form.placa"
+          :disabled="saving || !form.servicio_id || !form.placa || !!placaEnUso"
           @click="registrar"
         >
           <i class="bi" :class="saving ? 'bi-hourglass-split' : 'bi-box-arrow-in-right'"></i>
@@ -112,6 +116,13 @@
         </button>
       </div>
     </div>
+
+    <!-- ══ Componente impresión parqueadero ══ -->
+    <ImprimirReciboParqueadero
+      v-if="mostrarImpresion && nuevoIngreso"
+      :datos="nuevoIngreso"
+      @close="mostrarImpresion = false"
+    />
 
     <!-- ══ Modal QR / Recibo ══ -->
     <div v-if="modalQR" class="pq-overlay" @click.self="modalQR = false">
@@ -125,7 +136,7 @@
           <div class="qr-recibo-num">#{{ nuevoIngreso?.id }}</div>
           <div class="qr-placa">{{ nuevoIngreso?.placa }}</div>
           <div class="qr-token">Token: <strong>{{ nuevoIngreso?.qr_token }}</strong></div>
-          <div class="qr-servicio">{{ servicioSeleccionado?.nombre }}</div>
+          <div class="qr-servicio">{{ nuevoIngreso?.servicio_nombre }}</div>
           <div class="qr-hora">Ingreso: {{ new Date().toLocaleTimeString('es-CO') }}</div>
           <div class="qr-code">
             <i class="bi bi-qr-code" style="font-size:80px;color:#1e3a5f"></i>
@@ -144,24 +155,26 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import { useModuleName } from '@/composables/useModuleName'
 import { showToast } from '@/utils/toast'
 import api from '@/services/apis'
+import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
+import ImprimirReciboParqueadero from '@/components/parqueadero/ImprimirReciboParqueadero.vue'
 
 const companyStore = useCompanyStore()
 const { moduleName } = useModuleName()
-const fotoInput = ref(null)
 
-const servicios     = ref([])
-const loadingSvcs   = ref(false)
-const saving        = ref(false)
-const modalQR       = ref(false)
-const nuevoIngreso  = ref(null)
+const servicios         = ref([])
+const loadingSvcs       = ref(false)
+const saving            = ref(false)
+const modalQR           = ref(false)
+const nuevoIngreso      = ref(null)
 const mensualidadActiva = ref(null)
-const fotoPreview   = ref(null)
-const clienteInfo   = ref(null)
+const clienteInfo       = ref(null)
+const mostrarImpresion  = ref(false)
+const placaEnUso        = ref(null)   // objeto con {id, placa} si hay ingreso activo
 
 // Autocomplete placa
 const sugerencias   = ref([])
@@ -197,10 +210,11 @@ function resumenTarifa(svc) {
 
 function onPlacaInput(e) {
   form.value.placa = e.target.value.toUpperCase()
-  clienteInfo.value  = null
+  clienteInfo.value       = null
   mensualidadActiva.value = null
-  sugerencias.value  = []
-  sugerenciaIdx.value = 0
+  placaEnUso.value        = null
+  sugerencias.value       = []
+  sugerenciaIdx.value     = 0
 
   if (buscarTimer) clearTimeout(buscarTimer)
   if (form.value.placa.length < 3) return
@@ -209,24 +223,37 @@ function onPlacaInput(e) {
 
 async function buscarPlaca() {
   try {
-    const { data } = await api.get('/api/parqueadero/vehiculos/buscar', {
-      params: { company_id: cid(), q: form.value.placa }
-    })
-    sugerencias.value  = data
+    const [sugR] = await Promise.all([
+      api.get('/api/parqueadero/vehiculos/buscar', { params: { company_id: cid(), q: form.value.placa } }),
+      verificarPlacaActiva(form.value.placa),
+    ])
+    sugerencias.value   = sugR.data
     sugerenciaIdx.value = 0
   } catch { /* silencioso */ }
 }
 
 function seleccionarSugerencia(s) {
   if (!s) return
-  form.value.placa = s.placa
+  form.value.placa  = s.placa
   sugerencias.value = []
   clienteInfo.value = s.nombre_titular || s.foto_url ? s : null
   if (s.origen === 'mensualidad') verificarMensualidad(s.placa)
+  verificarPlacaActiva(s.placa)
 }
 
 function cerrarSugerencias() {
   setTimeout(() => { sugerencias.value = [] }, 150)
+}
+
+async function verificarPlacaActiva(placa) {
+  placaEnUso.value = null
+  if (!placa || placa.length < 4) return
+  try {
+    const { data } = await api.get('/api/parqueadero/ingresos', {
+      params: { company_id: cid(), estado: 'activo', placa }
+    })
+    if (data && data.length > 0) placaEnUso.value = data[0]
+  } catch { /* silencioso */ }
 }
 
 async function verificarMensualidad(placa) {
@@ -240,49 +267,55 @@ async function verificarMensualidad(placa) {
   } catch { /* silencioso */ }
 }
 
-// ── Foto ──────────────────────────────────────────────────────────────────
+// ── Foto (usa ImageUploaderPro, recibe Blob directamente) ─────────────────
 
-function triggerFoto() { fotoInput.value?.click() }
-
-async function onFotoChange(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  fotoPreview.value = URL.createObjectURL(file)
+async function onFotoReady(blob) {
   const fd = new FormData()
-  fd.append('file', file)
+  fd.append('file', blob, 'foto.webp')
   try {
     const { data } = await api.post('/api/parqueadero/ingresos/foto', fd, {
-      params: { company_id: cid() },
-      headers: { 'Content-Type': 'multipart/form-data' },
+      params: { company_id: cid() }
+      // Sin Content-Type manual — Axios lo pone automáticamente con el boundary correcto
     })
     form.value.foto_url = data.url
   } catch { showToast('Error al subir foto', 'error') }
 }
+
+function quitarFoto() { form.value.foto_url = null }
 
 // ── Registrar ingreso ──────────────────────────────────────────────────────
 
 async function registrar() {
   if (!form.value.servicio_id) return showToast('Selecciona un servicio', 'warn')
   if (!form.value.placa.trim()) return showToast('Ingresa la placa', 'warn')
+  if (placaEnUso.value) return showToast(`Esta placa ya tiene un ingreso activo (#${placaEnUso.value.id})`, 'warn')
   saving.value = true
+  const svcNombre = servicioSeleccionado.value?.nombre || ''
   try {
     const { data } = await api.post('/api/parqueadero/ingresos', {
       placa:       form.value.placa,
       servicio_id: form.value.servicio_id,
       foto_url:    form.value.foto_url,
     }, { params: { company_id: cid() } })
-    nuevoIngreso.value = data
+    nuevoIngreso.value = { ...data, servicio_nombre: svcNombre }
     modalQR.value      = true
     form.value         = { servicio_id: null, placa: '', foto_url: null }
-    fotoPreview.value  = null
+    placaEnUso.value   = null
     clienteInfo.value  = null
     mensualidadActiva.value = null
     sugerencias.value  = []
-  } catch { showToast('Error al registrar ingreso', 'error') }
+  } catch (err) {
+    const msg = err?.response?.data?.detail || 'Error al registrar ingreso'
+    showToast(msg, 'error')
+    // Si el backend devuelve 409, también marcamos la placa como en uso
+    if (err?.response?.status === 409) {
+      await verificarPlacaActiva(form.value.placa)
+    }
+  }
   finally { saving.value = false }
 }
 
-function imprimirRecibo() { window.print() }
+function imprimirRecibo() { mostrarImpresion.value = true }
 
 // ── Carga inicial ──────────────────────────────────────────────────────────
 
@@ -434,6 +467,7 @@ watch(() => companyStore.selectedCompany?.id, id => { if (id) cargarServicios() 
 .cli-nombre { font-weight: 700; font-size: 14px; }
 .cli-tel, .cli-men { font-size: 12px; color: #0369a1; display: flex; align-items: center; gap: 5px; }
 
+.alert-placa-uso   { background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #9a3412; display: flex; align-items: flex-start; gap: 10px; }
 .alert-mensualidad { background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #065f46; display: flex; align-items: flex-start; gap: 10px; }
 
 /* ── Foto ── */
