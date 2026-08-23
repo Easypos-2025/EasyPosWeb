@@ -188,6 +188,9 @@
             <button class="btn-pq-ghost btn-danger-ghost" @click="confirmandoCancelar = true">
               <i class="bi bi-slash-circle"></i> Anular Ingreso
             </button>
+            <button class="btn-pq-ghost" @click="ingresoSeleccionado && reimprimir(ingresoSeleccionado)" title="Reimprimir ticket">
+              <i class="bi bi-printer"></i>
+            </button>
             <button class="btn-pq-ghost" @click="cerrarModalSalida">Cerrar</button>
             <button class="btn-pq-primary" :disabled="pagando" @click="confirmarSalida">
               <i class="bi" :class="pagando ? 'bi-hourglass-split' : 'bi-check2-circle'"></i>

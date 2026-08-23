@@ -298,7 +298,8 @@
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 -o ConnectTimeout=20 root@209.38.152.254 \"sed -n '228,262p' /var/www/easyposweb/backend/app/routers/parking_parqueadero_router.py\")",
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 -o ConnectTimeout=20 root@209.38.152.254 'mysql -u root -p123456 easyposweb 2>/dev/null -e \" *)",
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 -o ConnectTimeout=20 root@209.38.152.254 \"cd /var/www/easyposweb && git pull origin master --quiet && systemctl restart easyposweb && echo OK\")",
-      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"sed -n '220,400p' /var/www/easyposweb/backend/app/routers/parking_parqueadero_router.py\")"
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"sed -n '220,400p' /var/www/easyposweb/backend/app/routers/parking_parqueadero_router.py\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e \\\\\"DESCRIBE pos_receipt_orders; DESCRIBE pos_receipt_payment_methods;\\\\\"\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Personal\\.claude"

@@ -638,6 +638,9 @@ async function checkAppVersion() {
     const serverVersion = res.data?.config_value || ""
     if (!serverVersion) return
     localStorage.setItem("app_version", serverVersion)
+    // No mostrar el banner si el usuario ya descartó esta versión específica
+    const dismissed = localStorage.getItem("dismissed_build_version")
+    if (dismissed === serverVersion) return
     if (typeof __APP_BUILD__ !== "undefined" && __APP_BUILD__ !== serverVersion) {
       newVersionAvailable.value = true
       newVersionValue.value = serverVersion
@@ -647,7 +650,10 @@ async function checkAppVersion() {
 
 function dismissVersion(action) {
   const v = newVersionValue.value
-  if (v) localStorage.setItem("app_version", v)
+  if (v) {
+    localStorage.setItem("app_version", v)
+    localStorage.setItem("dismissed_build_version", v)   // no volver a mostrar este banner
+  }
   newVersionAvailable.value = false
   if (action === "reload") {
     // Ir a / con timestamp único → Nginx sirve index.html fresco desde directorio raíz (no-cache)
