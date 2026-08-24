@@ -1276,19 +1276,20 @@ router.beforeEach(async (to, from, next) => {
 
     const hasAccess = (items, path) => {
       for (const item of items) {
-        if (!item.route) continue
+        if (item.route) {
+          // Coincidencia exacta
+          if (item.route === path) return true
 
-        // Coincidencia exacta
-        if (item.route === path) return true
-
-        // Coincidencia por patrón dinámico (ej: /talleres/orden/:id → /talleres/orden/123)
-        if (item.route.includes(':')) {
-          try {
-            const pattern = '^' + item.route.replace(/:[\w]+/g, '[^/]+') + '$'
-            if (new RegExp(pattern).test(path)) return true
-          } catch { /* regex inválida, ignorar */ }
+          // Coincidencia por patrón dinámico (ej: /talleres/orden/:id → /talleres/orden/123)
+          if (item.route.includes(':')) {
+            try {
+              const pattern = '^' + item.route.replace(/:[\w]+/g, '[^/]+') + '$'
+              if (new RegExp(pattern).test(path)) return true
+            } catch { /* regex inválida, ignorar */ }
+          }
         }
 
+        // Siempre revisar hijos aunque el padre no tenga ruta (nodos contenedor)
         if (item.children && item.children.length) {
           if (hasAccess(item.children, path)) return true
         }
