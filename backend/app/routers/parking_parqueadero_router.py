@@ -229,10 +229,13 @@ async def list_ingresos(
     company_id: int = Query(...),
     estado: str = Query("activo"),
     fecha: Optional[str] = Query(None),
+    placa: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    fecha_filtro = fecha or bogota_today()
+    placa_filter = placa.upper().strip() if placa else None
+    # Si se filtra por placa específica no limitar por fecha (busca en todos los activos)
+    fecha_filtro = fecha or (None if placa_filter else bogota_today())
     rows = await db.execute(text("""
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
                s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
@@ -244,9 +247,10 @@ async def list_ingresos(
         LEFT JOIN users u ON u.id = i.registrado_por
         WHERE i.company_id = :cid
           AND i.estado = :est
-          AND DATE(i.hora_ingreso) = :fecha
+          AND (:placa IS NULL OR i.placa = :placa)
+          AND (:fecha IS NULL OR DATE(i.hora_ingreso) = :fecha)
         ORDER BY i.hora_ingreso DESC
-    """), {"cid": company_id, "est": estado, "fecha": fecha_filtro})
+    """), {"cid": company_id, "est": estado, "fecha": fecha_filtro, "placa": placa_filter})
     items = [dict(r) for r in rows.mappings()]
     # Calcular valor en tiempo real para activos
     for item in items:
