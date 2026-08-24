@@ -276,7 +276,7 @@ async def create_ingreso(
     """), {
         "cid": company_id, "pl": body.placa.upper().strip(), "svc": body.servicio_id,
         "hi": bogota_now(), "fu": body.foto_url, "qr": qr_token,
-        "usr": current_user["id"],
+        "usr": current_user.id,
     })
     await db.commit()
     ingreso_id = r.lastrowid
@@ -371,7 +371,7 @@ async def pagar_ingreso(
     """), {
         "iid": ingreso_id, "cid": company_id, "hs": hora_salida,
         "min": minutos, "val": body.valor_cobrado, "fp": body.forma_pago,
-        "usr": current_user["id"],
+        "usr": current_user.id,
     })
     # Marcar ingreso como pagado
     await db.execute(text(
@@ -658,7 +658,7 @@ async def registrar_pago_mensualidad(
         "mid": men_id, "cid": company_id, "fp": body.fecha_pago,
         "pd": body.periodo_desde, "ph": body.periodo_hasta,
         "val": body.valor_pagado, "fpa": body.forma_pago,
-        "usr": current_user["id"], "obs": body.observacion,
+        "usr": current_user.id, "obs": body.observacion,
     })
     # Si pagó, mover a activo automáticamente
     await db.execute(text(
