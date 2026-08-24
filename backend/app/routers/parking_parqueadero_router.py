@@ -11,7 +11,7 @@ from pathlib import Path
 
 router = APIRouter(prefix="/api/parqueadero", tags=["parqueadero"])
 
-UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads" / "parqueadero"
+UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads" / "parqueadero"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -236,10 +236,12 @@ async def list_ingresos(
     rows = await db.execute(text("""
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
                s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
-               c.nombre AS categoria_nombre, c.color AS categoria_color
+               c.nombre AS categoria_nombre, c.color AS categoria_color,
+               u.name AS registrado_por_nombre
         FROM parqueadero_ingresos i
         JOIN parqueadero_servicios s ON s.id = i.servicio_id
         LEFT JOIN parqueadero_categorias c ON c.id = s.categoria_id
+        LEFT JOIN users u ON u.id = i.registrado_por
         WHERE i.company_id = :cid
           AND i.estado = :est
           AND DATE(i.hora_ingreso) = :fecha
@@ -290,9 +292,11 @@ async def get_ingreso(
 ):
     row = await db.execute(text("""
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
-               s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto
+               s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
+               u.name AS registrado_por_nombre
         FROM parqueadero_ingresos i
         JOIN parqueadero_servicios s ON s.id = i.servicio_id
+        LEFT JOIN users u ON u.id = i.registrado_por
         WHERE i.id = :id AND i.company_id = :cid
     """), {"id": ingreso_id, "cid": company_id})
     item = row.mappings().first()
@@ -316,9 +320,11 @@ async def get_ingreso_by_qr(
 ):
     row = await db.execute(text("""
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
-               s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto
+               s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
+               u.name AS registrado_por_nombre
         FROM parqueadero_ingresos i
         JOIN parqueadero_servicios s ON s.id = i.servicio_id
+        LEFT JOIN users u ON u.id = i.registrado_por
         WHERE i.qr_token = :qr AND i.company_id = :cid AND i.estado = 'activo'
     """), {"qr": qr_token.upper(), "cid": company_id})
     item = row.mappings().first()

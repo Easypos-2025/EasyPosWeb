@@ -30,6 +30,29 @@
       </div>
     </div>
 
+    <!-- ══ BARRA DE BÚSQUEDA ════════════════════════════════════════════════ -->
+    <div class="pk-search-bar">
+      <div class="pk-search-group">
+        <i class="bi bi-hash pk-search-icon"></i>
+        <input v-model="busId" type="number" class="pk-search-input" placeholder="Nro Recibo"
+               @keydown.enter="aplicarBusqueda" />
+      </div>
+      <div class="pk-search-group">
+        <i class="bi bi-car-front-fill pk-search-icon"></i>
+        <input v-model="busPlaca" class="pk-search-input" placeholder="Placa"
+               @input="busPlaca = busPlaca.toUpperCase()" @keydown.enter="aplicarBusqueda" />
+      </div>
+      <div class="pk-search-group">
+        <i class="bi bi-qr-code-scan pk-search-icon"></i>
+        <input v-model="busQR" class="pk-search-input" placeholder="Código QR / Token"
+               @keydown.enter="aplicarBusqueda" />
+      </div>
+      <button class="pk-btn-buscar" @click="aplicarBusqueda"><i class="bi bi-search"></i></button>
+      <button v-if="busId || busPlaca || busQR" class="pk-btn-clear" @click="limpiarBusqueda">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
     <!-- ══ FILTRO FECHA ══════════════════════════════════════════════════════ -->
     <div class="pk-filtro-bar">
       <div class="pk-filtro-fecha">
@@ -54,14 +77,19 @@
     </div>
     <div v-else class="pk-grid">
       <div
-        v-for="o in ordenes" :key="o.id"
+        v-for="o in ordenesFiltradas" :key="o.id"
         :class="['pk-card', `pk-card--${o.estado}`]"
         @click="onClickCard(o)"
       >
+        <!-- Foto miniatura -->
+        <div class="pk-card-foto" v-if="o.foto_url">
+          <img :src="o.foto_url" alt="Foto vehículo" class="pk-card-foto-img" />
+        </div>
         <div class="pk-card-top">
           <span :class="['pk-badge', `pk-badge--${o.estado}`]">{{ LABELS_ESTADO[o.estado] }}</span>
           <span class="pk-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
         </div>
+        <div class="pk-card-id">#{{ o.id }}</div>
         <div class="pk-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pk-card-tipo">{{ o.tipo_vehiculo }}</div>
         <div class="pk-card-personas">
@@ -205,8 +233,14 @@
         </div>
 
         <div class="pk-modal-body" v-if="ordenSeleccionada">
+          <!-- Foto del vehículo -->
+          <div v-if="ordenSeleccionada.foto_url" class="pk-modal-foto">
+            <img :src="ordenSeleccionada.foto_url" alt="Foto vehículo" class="pk-modal-foto-img" />
+          </div>
           <div class="pk-ord-placa-big">{{ ordenSeleccionada.placa }}</div>
-          <p class="pk-ord-sub">{{ ordenSeleccionada.numero_orden }} · {{ fmtHora(ordenSeleccionada.hora_ingreso) }}</p>
+          <p class="pk-ord-sub">
+            <strong>#{{ ordenSeleccionada.id }}</strong> · {{ ordenSeleccionada.numero_orden }} · {{ fmtHora(ordenSeleccionada.hora_ingreso) }}
+          </p>
           <p class="pk-obs-portero-label" v-if="ordenSeleccionada.obs_portero">
             <i class="bi bi-info-circle"></i> Obs. portero: {{ ordenSeleccionada.obs_portero }}
           </p>
@@ -269,7 +303,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
@@ -308,6 +342,23 @@ const ordenParaImprimir = ref(null)
 const showModalMesero  = ref(false)
 const confirmando      = ref(false)
 const ordenSeleccionada = ref(null)
+
+// Búsqueda
+const busId    = ref('')
+const busPlaca = ref('')
+const busQR    = ref('')
+const busActivo = ref({ id: '', placa: '', qr: '' })
+
+const ordenesFiltradas = computed(() => {
+  const { id, placa, qr } = busActivo.value
+  if (!id && !placa && !qr) return ordenes.value
+  return ordenes.value.filter(o => {
+    if (id && String(o.id) !== id.trim()) return false
+    if (placa && !o.placa?.includes(placa.trim().toUpperCase())) return false
+    if (qr && !o.numero_orden?.toUpperCase().includes(qr.trim().toUpperCase())) return false
+    return true
+  })
+})
 
 const form = ref({
   placa:           '',
@@ -474,6 +525,21 @@ async function confirmarMesero() {
   confirmando.value = false
 }
 
+// ── Búsqueda ─────────────────────────────────────────────────────────────────
+function aplicarBusqueda() {
+  busActivo.value = { id: busId.value, placa: busPlaca.value, qr: busQR.value }
+}
+
+function limpiarBusqueda() {
+  busId.value = ''
+  busPlaca.value = ''
+  busQR.value = ''
+  busActivo.value = { id: '', placa: '', qr: '' }
+}
+
+// Limpiar búsqueda cuando se recarga la lista
+watch(ordenes, () => { busActivo.value = { id: '', placa: '', qr: '' } })
+
 // ── Utilidades ────────────────────────────────────────────────────────────────
 function fmtHora(dt) {
   if (!dt) return ''
@@ -505,6 +571,43 @@ function fmtHora(dt) {
 .pk-kpi-disponibles { background: #198754; }
 .pk-kpi-ocupadas    { background: #dc3545; }
 .pk-kpi-total       { background: #6c757d; }
+
+/* ── Búsqueda ── */
+.pk-search-bar {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+  background: #f8f9fa; border-radius: 10px; padding: 10px 14px; border: 1px solid #e9ecef;
+}
+.pk-search-group {
+  display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px;
+}
+.pk-search-icon { color: #6c757d; font-size: .9rem; flex-shrink: 0; }
+.pk-search-input {
+  border: 1px solid #dee2e6; border-radius: 6px; padding: 6px 10px;
+  font-size: .85rem; outline: none; width: 100%; background: #fff;
+}
+.pk-search-input:focus { border-color: #0d6efd; }
+.pk-btn-buscar {
+  padding: 7px 14px; border: none; border-radius: 8px;
+  background: #0d6efd; color: #fff; cursor: pointer; font-size: .9rem; flex-shrink: 0;
+}
+.pk-btn-buscar:hover { background: #0b5ed7; }
+.pk-btn-clear {
+  padding: 7px 10px; border: 1px solid #ced4da; border-radius: 8px;
+  background: #fff; color: #6c757d; cursor: pointer; font-size: .9rem; flex-shrink: 0;
+}
+.pk-btn-clear:hover { background: #f1f3f5; }
+
+/* ── Foto en tarjeta ── */
+.pk-card-foto { width: 100%; height: 80px; overflow: hidden; border-radius: 8px; margin-bottom: 6px; }
+.pk-card-foto-img { width: 100%; height: 100%; object-fit: cover; }
+.pk-card-id {
+  font-size: .78rem; font-weight: 800; color: #0d6efd;
+  text-align: center; letter-spacing: 1px;
+}
+
+/* ── Foto en modal ── */
+.pk-modal-foto { width: 100%; }
+.pk-modal-foto-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; }
 
 /* ── Filtro barra ── */
 .pk-filtro-bar {

@@ -109,6 +109,9 @@
         </div>
         <div class="vc-tiempo"><i class="bi bi-clock"></i> {{ formatMinutos(minsTranscurridos(v)) }}</div>
         <div class="vc-valor">${{ calcValor(v).toLocaleString('es-CO') }}</div>
+        <div v-if="v.registrado_por_nombre" class="vc-registrador">
+          <i class="bi bi-person-check"></i> {{ v.registrado_por_nombre }}
+        </div>
         <div class="vc-actions">
           <button class="btn-reimprimir" @click.stop="reimprimir(v)" title="Reimprimir ticket">
             <i class="bi bi-printer"></i>
@@ -142,6 +145,9 @@
             <div class="rs-row"><span>Ingreso</span><span>{{ formatFechaHora(ingresoSeleccionado.hora_ingreso) }}</span></div>
             <div class="rs-row"><span>Tiempo</span><span>{{ formatMinutos(minsTranscurridos(ingresoSeleccionado)) }}</span></div>
             <div class="rs-row rs-total"><span>Valor a Cobrar</span><strong>${{ calcValor(ingresoSeleccionado).toLocaleString('es-CO') }}</strong></div>
+            <div v-if="ingresoSeleccionado.registrado_por_nombre" class="rs-row">
+              <span>Registrado por</span><span>{{ ingresoSeleccionado.registrado_por_nombre }}</span>
+            </div>
           </div>
 
           <!-- Tipo documento: Factura / Recibo -->
@@ -490,8 +496,9 @@ onUnmounted(() => {
 .vc-placa { font-size: 24px; font-weight: 900; letter-spacing: 3px; padding: 2px 14px 4px; }
 .vc-servicio { padding: 0 14px 6px; }
 .vc-tiempo   { font-size: 12px; color: #64748b; padding: 0 14px 4px; display: flex; align-items: center; gap: 4px; }
-.vc-valor    { font-size: 20px; font-weight: 800; color: #16a34a; padding: 0 14px 10px; }
-.vc-actions  { width: 100%; padding: 0 14px 14px; display: flex; gap: 6px; }
+.vc-valor        { font-size: 20px; font-weight: 800; color: #16a34a; padding: 0 14px 6px; }
+.vc-registrador  { font-size: 11px; color: #64748b; padding: 0 14px 8px; display: flex; align-items: center; gap: 4px; }
+.vc-actions      { width: 100%; padding: 0 14px 14px; display: flex; gap: 6px; }
 .tag-cat { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 
 .btn-cobrar {

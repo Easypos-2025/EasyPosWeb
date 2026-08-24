@@ -32,6 +32,10 @@
             <div class="cpi-divider">- - - - - - - - - - - - - - - - - -</div>
 
             <div class="cpi-row-kv">
+              <span class="cpi-k">Recibo</span>
+              <span class="cpi-v cpi-recibo-id">#{{ orden.id }}</span>
+            </div>
+            <div class="cpi-row-kv">
               <span class="cpi-k">Orden N°</span>
               <span class="cpi-v cpi-orden">{{ orden.numero_orden }}</span>
             </div>
@@ -176,6 +180,7 @@ function buildESCPOS() {
   push(ESC, 0x61, 0x00)                        // LEFT
 
   const o = props.orden
+  line(`Recibo: #${o.id}`)
   line(`Orden:  ${o.numero_orden}`)
   const fechaLabel = props.tipo === 'salida' ? 'Salida:' : 'Ingreso:'
   const fechaVal   = props.tipo === 'salida' ? (o.hora_salida || new Date().toISOString()) : o.hora_ingreso
@@ -417,7 +422,8 @@ function imprimirSistema() {
       .cpi-row-kv       { display:flex; justify-content:space-between; gap:8px; margin:2px 0; font-size:11px; }
       .cpi-k            { color:#555; flex-shrink:0; }
       .cpi-v            { font-weight:600; text-align:right; }
-      .cpi-orden        { font-size:13px; font-weight:900; }
+      .cpi-recibo-id    { font-size:16px; font-weight:900; }
+      .cpi-orden        { font-size:11px; font-weight:700; }
       .cpi-placa-box    { font-size:30px; font-weight:900; letter-spacing:4px; text-align:center;
                           border:2px solid #000; padding:4px 8px; margin:4px auto; display:inline-block; }
       .cpi-total-personas { font-size:11px; font-weight:bold; margin-top:4px; }
@@ -488,7 +494,8 @@ function imprimirSistema() {
 .cpi-row-kv       { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; font-size: 13px; }
 .cpi-k            { color: #555; flex-shrink: 0; }
 .cpi-v            { font-weight: 700; text-align: right; }
-.cpi-orden        { font-size: 15px; font-weight: 900; }
+.cpi-recibo-id    { font-size: 18px; font-weight: 900; color: #0d6efd; }
+.cpi-orden        { font-size: 13px; font-weight: 700; }
 .cpi-placa-box    { font-size: 34px; font-weight: 900; letter-spacing: 5px; text-align: center;
                     border: 2px solid #000; padding: 8px 12px; margin: 8px auto; display: inline-block; }
 .cpi-total-personas { font-size: 13px; font-weight: bold; margin-top: 5px; }
