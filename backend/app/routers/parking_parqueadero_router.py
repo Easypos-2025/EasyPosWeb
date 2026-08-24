@@ -237,7 +237,7 @@ async def list_ingresos(
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
                s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
                c.nombre AS categoria_nombre, c.color AS categoria_color,
-               u.name AS registrado_por_nombre
+               u.nombre AS registrado_por_nombre
         FROM parqueadero_ingresos i
         JOIN parqueadero_servicios s ON s.id = i.servicio_id
         LEFT JOIN parqueadero_categorias c ON c.id = s.categoria_id
@@ -293,7 +293,7 @@ async def get_ingreso(
     row = await db.execute(text("""
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
                s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
-               u.name AS registrado_por_nombre
+               u.nombre AS registrado_por_nombre
         FROM parqueadero_ingresos i
         JOIN parqueadero_servicios s ON s.id = i.servicio_id
         LEFT JOIN users u ON u.id = i.registrado_por
@@ -321,7 +321,7 @@ async def get_ingreso_by_qr(
     row = await db.execute(text("""
         SELECT i.*, s.nombre AS servicio_nombre, s.tipo_cobro, s.tarifa_base,
                s.periodo_horas, s.tarifa_adicional, s.tarifa_minuto,
-               u.name AS registrado_por_nombre
+               u.nombre AS registrado_por_nombre
         FROM parqueadero_ingresos i
         JOIN parqueadero_servicios s ON s.id = i.servicio_id
         LEFT JOIN users u ON u.id = i.registrado_por
@@ -576,7 +576,7 @@ async def get_mensualidad(
 
     # Pagos
     pagos_r = await db.execute(text("""
-        SELECT p.*, u.name AS registrado_por_nombre
+        SELECT p.*, u.nombre AS registrado_por_nombre
         FROM parqueadero_mensualidad_pagos p
         LEFT JOIN users u ON u.id = p.registrado_por
         WHERE p.mensualidad_id = :id
