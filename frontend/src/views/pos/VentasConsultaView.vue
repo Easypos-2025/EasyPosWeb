@@ -328,7 +328,7 @@ const groupedDetalle = computed(() => {
   const groups = []
   const map    = new Map()
   for (const item of detalle.value.items) {
-    const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
+    const k = `${item.dish_id}|${item.plato}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
     if (map.has(k)) {
       const g = map.get(k)
       g.qty     += item.quantity
