@@ -8,6 +8,37 @@ from datetime import datetime, timezone, timedelta
 router = APIRouter(prefix="/api/vehicles", tags=["vehicles"])
 
 
+# ── Búsqueda global de placa (autocomplete) ──────────────────────────────────
+
+@router.get("/search")
+async def buscar_por_placa(
+    company_id: int  = Query(...),
+    q: str           = Query(..., min_length=3),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Devuelve hasta 10 vehículos cuya placa empieza con `q` (mín 3 chars)."""
+    rows = await db.execute(text("""
+        SELECT
+            v.id, v.placa, v.foto_url,
+            v.vehicle_type_id,
+            COALESCE(vt.nombre, v.vehicle_type_name) AS tipo_vehiculo,
+            v.marca, v.modelo, v.color, v.anio,
+            pr.id         AS propietario_id,
+            pr.nombre     AS propietario_nombre,
+            pr.documento  AS propietario_documento,
+            pr.telefono   AS propietario_telefono
+        FROM vehicles v
+        LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id AND vt.company_id = v.company_id
+        LEFT JOIN propietarios pr  ON pr.id = v.propietario_id
+        WHERE v.company_id = :cid
+          AND v.placa LIKE :q
+        ORDER BY v.placa
+        LIMIT 10
+    """), {"cid": company_id, "q": f"{q.upper()}%"})
+    return [dict(r) for r in rows.mappings()]
+
+
 # ── Tipos de vehículo (compartido entre todos los perfiles) ──────────────────
 
 @router.get("/tipos")

@@ -100,17 +100,15 @@
           <!-- Placa -->
           <div class="pk-field pk-field--required">
             <label>Placa <span class="req">*</span></label>
-            <div class="pk-placa-wrap">
-              <input v-model="form.placa" class="pk-input pk-placa-input"
-                placeholder="Ej: ABC123" maxlength="10" autocomplete="off"
-                @input="form.placa = form.placa.toUpperCase(); buscarPlaca()" />
-              <span v-if="buscandoPlaca" class="pk-placa-hint pk-placa-buscando">
-                <i class="bi bi-arrow-repeat spin"></i> Buscando…
-              </span>
-              <span v-else-if="vehicleFound" class="pk-placa-hint pk-placa-ok">
-                <i class="bi bi-check-circle-fill"></i> Vehículo encontrado
-              </span>
-            </div>
+            <PlacaAutocomplete
+              v-model="form.placa"
+              placeholder="Ej: ABC123"
+              @vehiculo-seleccionado="onVehiculoSeleccionado"
+              @update:modelValue="onPlacaChange"
+            />
+            <span v-if="vehicleFound" class="pk-placa-hint pk-placa-ok" style="margin-top:4px;display:flex;align-items:center;gap:5px;font-size:.78rem;color:#198754;">
+              <i class="bi bi-check-circle-fill"></i> Vehículo encontrado
+            </span>
           </div>
 
           <!-- Tipo vehículo — read-only si el vehículo ya fue encontrado -->
@@ -310,6 +308,7 @@ import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
 import ParkingOrderCard from '@/components/parking/ParkingOrderCard.vue'
+import PlacaAutocomplete from '@/components/common/PlacaAutocomplete.vue'
 
 const companyStore = useCompanyStore()
 const companyId = computed(() => companyStore.selectedCompany?.id)
@@ -361,9 +360,7 @@ const ordenesFiltradas = computed(() => {
   })
 })
 
-const buscandoPlaca = ref(false)
 const vehicleFound  = ref(false)
-let _placaTimer = null
 
 const form = ref({
   placa:           '',
@@ -421,26 +418,16 @@ onMounted(() => {
 })
 
 // ── Nuevo ingreso ─────────────────────────────────────────────────────────────
-function buscarPlaca() {
+function onVehiculoSeleccionado(v) {
+  vehicleFound.value = true
+  if (v.vehicle_type_id) form.value.vehicle_type_id = v.vehicle_type_id
+  if (v.foto_url)        form.value.foto_url = v.foto_url
+}
+
+function onPlacaChange() {
   vehicleFound.value = false
-  clearTimeout(_placaTimer)
-  const p = form.value.placa.trim()
-  if (p.length < 5) return
-  _placaTimer = setTimeout(async () => {
-    if (!companyId.value) return
-    buscandoPlaca.value = true
-    try {
-      const { data } = await api.get('/api/parking/vehicle', {
-        params: { placa: p, company_id: companyId.value },
-      })
-      if (data && data.placa) {
-        vehicleFound.value = true
-        if (data.vehicle_type_id) form.value.vehicle_type_id = data.vehicle_type_id
-        if (data.foto_url)        form.value.foto_url = data.foto_url
-      }
-    } catch {}
-    buscandoPlaca.value = false
-  }, 500)
+  form.value.vehicle_type_id = null
+  form.value.foto_url = null
 }
 
 function abrirModalNuevo() {
@@ -457,7 +444,6 @@ function abrirModalNuevo() {
     obs_portero:     '',
   }
   vehicleFound.value  = false
-  buscandoPlaca.value = false
   showModalNuevo.value = true
 }
 
