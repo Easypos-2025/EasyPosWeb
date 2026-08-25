@@ -442,7 +442,7 @@ async function onFotoChange(e) {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    const res = await api.post(`/api/vehicle-photos/upload?company_id=${companyId.value}`, formData, {
+    const res = await api.post(`/api/parking/photos/upload?company_id=${companyId.value}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     form.value.foto_url = res.data.url

@@ -191,11 +191,6 @@
         </div>
         <div class="pkc-cobro-id">#{{ ordenCobro?.id }}</div>
         <div class="pkc-cobro-placa">{{ ordenCobro?.placa }}</div>
-        <div class="pkc-cobro-personas">
-          <span><i class="bi bi-person-fill"></i> {{ ordenCobro?.adultos }} adulto{{ ordenCobro?.adultos !== 1 ? 's' : '' }}</span>
-          <span v-if="ordenCobro?.ninos > 0"><i class="bi bi-person-hearts"></i> {{ ordenCobro?.ninos }} niño{{ ordenCobro?.ninos !== 1 ? 's' : '' }}</span>
-          <span v-if="ordenCobro?.mascotas > 0"><i class="bi bi-circle-fill" style="font-size:.5rem"></i> {{ ordenCobro?.mascotas }} mascota{{ ordenCobro?.mascotas !== 1 ? 's' : '' }}</span>
-        </div>
         <div v-if="ordenCobro?.mesero_nombre" class="pkc-cobro-confirmado">
           <i class="bi bi-check2-circle"></i> Confirmado por: {{ ordenCobro.mesero_nombre }}
         </div>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
@@ -6,12 +6,35 @@ from app.auth.dependencies import get_current_user
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional, List
+from pathlib import Path
+import uuid, shutil
 
 def bogota_now() -> str:
     """Hora actual en Colombia (UTC-5) como string para MySQL."""
     return datetime.now(timezone(timedelta(hours=-5))).strftime('%Y-%m-%d %H:%M:%S')
 
+_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads" / "parking"
+_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
 router = APIRouter(prefix="/api/parking", tags=["parking"])
+
+
+# ── Upload foto de vehículo ───────────────────────────────────────────────────
+
+@router.post("/photos/upload")
+async def upload_foto_parking(
+    company_id: int   = Query(...),
+    file: UploadFile  = File(...),
+    _=Depends(get_current_user),
+):
+    ext = Path(file.filename).suffix.lower() if file.filename else ".jpg"
+    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(400, "Formato no permitido")
+    fname = f"{uuid.uuid4().hex}{ext}"
+    dest = _UPLOADS_DIR / fname
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"url": f"/uploads/parking/{fname}"}
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -498,6 +521,21 @@ async def pagar_orden(
         "rn": receipt_number, "fecha": fecha, "cid": company_id,
         "total": total_cobrado, "uid": current_user.id, "hora": hora,
     })
+
+    for idx, item in enumerate(body.items, start=1):
+        await db.execute(text("""
+            INSERT INTO pos_receipt_order_details
+                (order_number, date, receipt_number, dish_id, item,
+                 quantity, amount, notes, complimentary, depends_on, synced, company_id)
+            VALUES
+                (:orden, :fecha, :rn, :dish_id, :item,
+                 :qty, :amount, :notes, 0, 0, 0, :cid)
+        """), {
+            "orden": str(order_id), "fecha": fecha, "rn": receipt_number,
+            "dish_id": int(item.product_id or 0), "item": idx,
+            "qty": float(item.cantidad), "amount": int(item.subtotal),
+            "notes": item.nombre, "cid": company_id,
+        })
 
     await db.commit()
     return {"ok": True, "estado": "pagado", "receipt_number": receipt_number}
