@@ -368,6 +368,7 @@ const mesasPorZona = (zoneId) => mesas.value.filter(m => (m.zone_id ?? '') === z
 async function _silentKpis() { try { const { data } = await api.get('/api/pos-dashboard/kpis', { params: { fecha: fechaKpi.value, company_id: selectedCid.value, _t: Date.now() } }); kpiData.value = data } catch { } }
 async function _silentMesas() { try { const { data } = await api.get('/api/pos-dashboard/mesas', { params: { company_id: selectedCid.value, _t: Date.now() } }); mesas.value = data } catch { } }
 async function _silentTV() {
+  if (!companyStore.billingConfig?.has_tv_cocina) return
   try {
     localStorage.setItem('waiter_company_id', String(selectedCid.value))
     const { data } = await apiComanda.get('/api/pos/comanda/cocina-pedidos')

@@ -130,20 +130,32 @@
           <!-- Placa -->
           <div class="pk-field pk-field--required">
             <label>Placa <span class="req">*</span></label>
-            <input v-model="form.placa" class="pk-input pk-placa-input"
-              placeholder="Ej: ABC123" maxlength="10" autocomplete="off"
-              @input="form.placa = form.placa.toUpperCase()" />
+            <div class="pk-placa-wrap">
+              <input v-model="form.placa" class="pk-input pk-placa-input"
+                placeholder="Ej: ABC123" maxlength="10" autocomplete="off"
+                @input="form.placa = form.placa.toUpperCase(); buscarPlaca()" />
+              <span v-if="buscandoPlaca" class="pk-placa-hint pk-placa-buscando">
+                <i class="bi bi-arrow-repeat spin"></i> Buscando…
+              </span>
+              <span v-else-if="vehicleFound" class="pk-placa-hint pk-placa-ok">
+                <i class="bi bi-check-circle-fill"></i> Vehículo encontrado
+              </span>
+            </div>
           </div>
 
-          <!-- Tipo vehículo -->
-          <div class="pk-field">
+          <!-- Tipo vehículo — cards -->
+          <div v-if="vehicleTypes.length" class="pk-field">
             <label>Tipo de Vehículo</label>
-            <select v-model="form.vehicle_type_id" class="pk-input">
-              <option :value="null">— Seleccionar —</option>
-              <option v-for="t in vehicleTypes" :key="t.id" :value="t.id">
-                {{ t.nombre }}
-              </option>
-            </select>
+            <div class="pk-vtype-grid">
+              <button
+                v-for="t in vehicleTypes" :key="t.id" type="button"
+                :class="['pk-vtype-card', { 'pk-vtype-selected': form.vehicle_type_id === t.id }]"
+                @click="form.vehicle_type_id = t.id"
+              >
+                <i :class="`bi ${t.icono || 'bi-car-front-fill'}`"></i>
+                <span>{{ t.nombre }}</span>
+              </button>
+            </div>
           </div>
 
           <!-- Hora ingreso -->
@@ -296,7 +308,7 @@
     v-if="ordenParaImprimir"
     :orden="ordenParaImprimir"
     :company-name="companyStore.selectedCompany?.name || ''"
-    :company-id="companyStore.selectedCompany?.id_company"
+    :company-id="companyStore.selectedCompany?.id"
     tipo="ingreso"
     @close="ordenParaImprimir = null"
   />
@@ -311,7 +323,7 @@ import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
 
 const companyStore = useCompanyStore()
-const companyId = computed(() => companyStore.selectedCompany?.id_company)
+const companyId = computed(() => companyStore.selectedCompany?.id)
 
 const FILTROS = [
   { val: 'activos',    label: 'Activos' },
@@ -359,6 +371,10 @@ const ordenesFiltradas = computed(() => {
     return true
   })
 })
+
+const buscandoPlaca = ref(false)
+const vehicleFound  = ref(false)
+let _placaTimer = null
 
 const form = ref({
   placa:           '',
@@ -416,6 +432,28 @@ onMounted(() => {
 })
 
 // ── Nuevo ingreso ─────────────────────────────────────────────────────────────
+function buscarPlaca() {
+  vehicleFound.value = false
+  clearTimeout(_placaTimer)
+  const p = form.value.placa.trim()
+  if (p.length < 5) return
+  _placaTimer = setTimeout(async () => {
+    if (!companyId.value) return
+    buscandoPlaca.value = true
+    try {
+      const { data } = await api.get('/api/parking/vehicle', {
+        params: { placa: p, company_id: companyId.value },
+      })
+      if (data && data.placa) {
+        vehicleFound.value = true
+        if (data.vehicle_type_id) form.value.vehicle_type_id = data.vehicle_type_id
+        if (data.foto_url)        form.value.foto_url = data.foto_url
+      }
+    } catch {}
+    buscandoPlaca.value = false
+  }, 500)
+}
+
 function abrirModalNuevo() {
   const now = new Date()
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
@@ -429,6 +467,8 @@ function abrirModalNuevo() {
     foto_url:        null,
     obs_portero:     '',
   }
+  vehicleFound.value  = false
+  buscandoPlaca.value = false
   showModalNuevo.value = true
 }
 
@@ -468,16 +508,21 @@ async function guardarNuevo() {
   }
   guardando.value = true
   try {
+    const vtype = vehicleTypes.value.find(t => t.id === form.value.vehicle_type_id)
+    const items = []
+    if (form.value.adultos > 0)  items.push({ nombre: 'Adulto',  cantidad: form.value.adultos })
+    if (form.value.ninos > 0)    items.push({ nombre: 'Niño',    cantidad: form.value.ninos   })
+    if (form.value.mascotas > 0) items.push({ nombre: 'Mascota', cantidad: form.value.mascotas })
+    if (!items.length) items.push({ nombre: 'Adulto', cantidad: 1 })
+
     const res = await api.post('/api/parking/orders', {
-      company_id:      companyId.value,
-      placa:           form.value.placa.trim().toUpperCase(),
-      vehicle_type_id: form.value.vehicle_type_id,
-      adultos:         form.value.adultos,
-      ninos:           form.value.ninos,
-      mascotas:        form.value.mascotas,
-      hora_ingreso:    form.value.hora_ingreso + ':00',
-      foto_url:        form.value.foto_url,
-      obs_portero:     form.value.obs_portero || null,
+      company_id:        companyId.value,
+      placa:             form.value.placa.trim().toUpperCase(),
+      vehicle_type_name: vtype?.nombre || null,
+      hora_ingreso:      form.value.hora_ingreso + ':00',
+      foto_url:          form.value.foto_url,
+      obs_portero:       form.value.obs_portero || null,
+      items,
     })
     showToast('Ingreso registrado', 'success', 2000)
     cerrarModalNuevo()
@@ -596,6 +641,29 @@ function fmtHora(dt) {
   background: #fff; color: #6c757d; cursor: pointer; font-size: .9rem; flex-shrink: 0;
 }
 .pk-btn-clear:hover { background: #f1f3f5; }
+
+/* ── Búsqueda placa ── */
+.pk-placa-wrap { position: relative; }
+.pk-placa-hint { display: block; font-size: .75rem; margin-top: 4px; }
+.pk-placa-buscando { color: #6c757d; }
+.pk-placa-ok       { color: #198754; font-weight: 600; }
+
+/* ── Tarjetas tipo vehículo ── */
+.pk-vtype-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px; margin-top: 6px;
+}
+.pk-vtype-card {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 8px; border: 2px solid #dee2e6; border-radius: 10px;
+  background: #fff; cursor: pointer; font-size: .78rem; color: #495057;
+  transition: all .15s; line-height: 1.2;
+}
+.pk-vtype-card i { font-size: 1.4rem; color: #6c757d; }
+.pk-vtype-card:hover { border-color: #0d6efd; color: #0d6efd; }
+.pk-vtype-card:hover i { color: #0d6efd; }
+.pk-vtype-selected { border-color: #0d6efd !important; background: #e7f1ff; color: #0d6efd !important; }
+.pk-vtype-selected i { color: #0d6efd !important; }
 
 /* ── Foto en tarjeta ── */
 .pk-card-foto { width: 100%; height: 80px; overflow: hidden; border-radius: 8px; margin-bottom: 6px; }

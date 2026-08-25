@@ -177,9 +177,9 @@ async def get_vehicle(
     _=Depends(get_current_user),
 ):
     row = await db.execute(text("""
-        SELECT v.placa, v.vehicle_type_name, v.foto_url,
-               vt.nombre AS tipo_nombre,
-               p.nombre  AS propietario_nombre,
+        SELECT v.placa, v.vehicle_type_id, v.vehicle_type_name, v.foto_url,
+               COALESCE(vt.nombre, v.vehicle_type_name) AS tipo_nombre,
+               p.nombre   AS propietario_nombre,
                p.telefono AS propietario_telefono
         FROM vehicles v
         LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id

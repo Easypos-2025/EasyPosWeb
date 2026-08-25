@@ -515,6 +515,7 @@ async function _silentMesas() {
   } catch { }
 }
 async function _silentTV() {
+  if (!companyStore.billingConfig?.has_tv_cocina) return
   try {
     localStorage.setItem('waiter_company_id', String(selectedCid.value))
     const { data } = await apiComanda.get('/api/pos/comanda/cocina-pedidos')
