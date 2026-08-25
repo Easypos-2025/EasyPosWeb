@@ -2,8 +2,11 @@
   <div :class="['pkcard', `pkcard--${orden.estado}`]" @click="handleClick">
 
     <!-- Foto -->
-    <div v-if="orden.foto_url" class="pkcard-foto">
-      <img :src="orden.foto_url" alt="Foto vehículo" class="pkcard-foto-img" />
+    <div class="pkcard-foto">
+      <img v-if="orden.foto_url" :src="orden.foto_url" alt="Foto vehículo" class="pkcard-foto-img" />
+      <div v-else class="pkcard-foto-placeholder">
+        <i class="bi bi-car-front-fill"></i>
+      </div>
     </div>
 
     <!-- Badge + hora -->
@@ -200,6 +203,11 @@ function handleClick() {
 /* Foto */
 .pkcard-foto { width: 100%; height: 80px; overflow: hidden; border-radius: 8px; margin-bottom: 2px; }
 .pkcard-foto-img { width: 100%; height: 100%; object-fit: cover; }
+.pkcard-foto-placeholder {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  background: #f1f3f5; color: #ced4da; font-size: 2.2rem;
+  border: 2px dashed #dee2e6; border-radius: 8px;
+}
 
 /* Top */
 .pkcard-top { display: flex; align-items: center; justify-content: space-between; }

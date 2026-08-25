@@ -377,7 +377,7 @@ async function cargar(silent = false) {
   try {
     const [r1, r2, r3] = await Promise.all([
       api.get('/api/parking/orders', {
-        params: { company_id: companyId.value, estado: filtroEstado.value },
+        params: { company_id: companyId.value, estado: filtroEstado.value, fecha: fechaFiltro.value },
       }),
       api.get('/api/parking/stats', {
         params: { company_id: companyId.value, fecha: fechaFiltro.value },
