@@ -67,6 +67,29 @@
       </span>
     </div>
 
+    <!-- ══ BARRA DE BÚSQUEDA ════════════════════════════════════════════════ -->
+    <div class="pkc-search-bar">
+      <div class="pkc-search-group">
+        <i class="bi bi-hash pkc-search-icon"></i>
+        <input v-model="busId" type="number" class="pkc-search-input" placeholder="Nro Recibo"
+               @keydown.enter="aplicarBusqueda" />
+      </div>
+      <div class="pkc-search-group">
+        <i class="bi bi-car-front-fill pkc-search-icon"></i>
+        <input v-model="busPlaca" class="pkc-search-input" placeholder="Placa"
+               @input="busPlaca = busPlaca.toUpperCase()" @keydown.enter="aplicarBusqueda" />
+      </div>
+      <div class="pkc-search-group">
+        <i class="bi bi-qr-code-scan pkc-search-icon"></i>
+        <input v-model="busQR" class="pkc-search-input" placeholder="QR / Nro Orden"
+               @keydown.enter="aplicarBusqueda" />
+      </div>
+      <button class="pkc-btn-buscar" @click="aplicarBusqueda"><i class="bi bi-search"></i></button>
+      <button v-if="busId || busPlaca || busQR" class="pkc-btn-clear" @click="limpiarBusqueda">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
     <!-- ══ GRID DE TARJETAS ══════════════════════════════════════════════════ -->
     <div v-if="loading" class="pkc-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
@@ -76,16 +99,25 @@
       <p>No hay órdenes pendientes de cobro</p>
       <small>Las órdenes aparecen aquí cuando el mesero confirma las personas</small>
     </div>
+    <div v-else-if="ordenesFiltradas.length === 0" class="pkc-empty">
+      <i class="bi bi-search"></i>
+      <p>Sin resultados para la búsqueda</p>
+      <small>Verifica el Nro Recibo, Placa o QR ingresado</small>
+    </div>
     <div v-else class="pkc-grid">
       <div
-        v-for="o in ordenes" :key="o.id"
+        v-for="o in ordenesFiltradas" :key="o.id"
         :class="['pkc-card', `pkc-card--${o.estado}`]"
       >
+        <!-- Foto miniatura -->
+        <div v-if="o.foto_url" class="pkc-card-foto">
+          <img :src="o.foto_url" alt="Foto vehículo" class="pkc-card-foto-img" />
+        </div>
         <div class="pkc-card-top">
           <span :class="['pkc-badge', `pkc-badge--${o.estado}`]">{{ LABELS_ESTADO[o.estado] }}</span>
           <span class="pkc-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
         </div>
-
+        <div class="pkc-card-id">#{{ o.id }}</div>
         <div class="pkc-card-placa">{{ o.placa }}</div>
         <div v-if="o.tipo_vehiculo" class="pkc-card-tipo">{{ o.tipo_vehiculo }}</div>
 
@@ -151,6 +183,10 @@
 
       <!-- Info orden -->
       <div class="pkc-cobro-info">
+        <div v-if="ordenCobro?.foto_url" class="pkc-cobro-foto">
+          <img :src="ordenCobro.foto_url" alt="Foto vehículo" class="pkc-cobro-foto-img" />
+        </div>
+        <div class="pkc-cobro-id">#{{ ordenCobro?.id }}</div>
         <div class="pkc-cobro-placa">{{ ordenCobro?.placa }}</div>
         <div class="pkc-cobro-personas">
           <span><i class="bi bi-person-fill"></i> {{ ordenCobro?.adultos }} adulto{{ ordenCobro?.adultos !== 1 ? 's' : '' }}</span>
@@ -306,6 +342,35 @@ const LABELS_ESTADO = {
   registrado: 'Pendiente cobro',
   pagado:     'Pagado',
   cancelado:  'Cancelado',
+}
+
+// ── Búsqueda ─────────────────────────────────────────────────────────────────
+const busId    = ref('')
+const busPlaca = ref('')
+const busQR    = ref('')
+const busActivo = ref({ id: '', placa: '', qr: '' })
+
+const ordenesFiltradas = computed(() => {
+  const { id, placa, qr } = busActivo.value
+  if (!id && !placa && !qr) return ordenes.value
+  return ordenes.value.filter(o => {
+    if (id && String(o.id) !== id.trim()) return false
+    if (placa && !o.placa?.includes(placa.trim().toUpperCase())) return false
+    if (qr) {
+      const q = qr.trim().toUpperCase()
+      if (!o.numero_orden?.toUpperCase().includes(q) && !o.qr_token?.toUpperCase().includes(q)) return false
+    }
+    return true
+  })
+})
+
+function aplicarBusqueda() {
+  busActivo.value = { id: busId.value, placa: busPlaca.value, qr: busQR.value }
+}
+
+function limpiarBusqueda() {
+  busId.value = ''; busPlaca.value = ''; busQR.value = ''
+  busActivo.value = { id: '', placa: '', qr: '' }
 }
 
 // ── Estado principal ──────────────────────────────────────────────────────────
@@ -551,7 +616,41 @@ onUnmounted(() => clearInterval(_autoRefresh))
 .pkc-kpi-active       { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px rgba(0,0,0,.25); }
 
 /* ── Filtro ── */
-.pkc-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.pkc-filtro-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+
+/* ── Búsqueda ── */
+.pkc-search-bar {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
+  background: #f8f9fa; border-radius: 10px; padding: 10px 14px; border: 1px solid #e9ecef;
+}
+.pkc-search-group { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 110px; }
+.pkc-search-icon  { color: #6c757d; font-size: .9rem; flex-shrink: 0; }
+.pkc-search-input {
+  border: 1px solid #dee2e6; border-radius: 6px; padding: 6px 10px;
+  font-size: .85rem; outline: none; width: 100%; background: #fff;
+}
+.pkc-search-input:focus { border-color: #0d6efd; }
+.pkc-btn-buscar {
+  padding: 7px 14px; border: none; border-radius: 8px;
+  background: #0d6efd; color: #fff; cursor: pointer; font-size: .9rem; flex-shrink: 0;
+}
+.pkc-btn-buscar:hover { background: #0b5ed7; }
+.pkc-btn-clear {
+  padding: 7px 10px; border: 1px solid #ced4da; border-radius: 8px;
+  background: #fff; color: #6c757d; cursor: pointer; font-size: .9rem; flex-shrink: 0;
+}
+
+/* ── Foto en tarjeta ── */
+.pkc-card-foto { width: 100%; height: 80px; overflow: hidden; border-radius: 8px; }
+.pkc-card-foto-img { width: 100%; height: 100%; object-fit: cover; }
+.pkc-card-id {
+  font-size: .78rem; font-weight: 800; color: #0d6efd; letter-spacing: 1px;
+}
+
+/* ── Foto en modal cobro ── */
+.pkc-cobro-foto { width: 100%; margin-bottom: 8px; }
+.pkc-cobro-foto-img { width: 100%; max-height: 160px; object-fit: cover; border-radius: 8px; }
+.pkc-cobro-id { font-size: .85rem; font-weight: 800; color: #0d6efd; text-align: center; margin-bottom: 2px; }
 .pkc-filtro-hint { font-size: .78rem; color: #6c757d; display: flex; align-items: center; gap: 4px; }
 .pkc-tab {
   padding: 6px 16px; border-radius: 20px; border: 1px solid #dee2e6;
@@ -796,6 +895,8 @@ onUnmounted(() => clearInterval(_autoRefresh))
   .pkc-grid     { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
   .pkc-card-placa { font-size: 1.5rem; }
   .pkc-modal { max-height: 95vh; border-radius: 12px 12px 0 0; margin-top: auto; }
+  .pkc-search-bar { gap: 6px; padding: 8px 10px; }
+  .pkc-search-group { min-width: 90px; }
 }
 @media (max-width: 576px) {
   .pkc-page { padding: 10px; }
@@ -803,7 +904,7 @@ onUnmounted(() => clearInterval(_autoRefresh))
   .pkc-kpi-card { padding: 8px 10px; gap: 6px; min-width: unset; }
   .pkc-kpi-card i { font-size: 1.1rem; }
   .pkc-kpi-val { font-size: 1.1rem; }
-  .pkc-grid { grid-template-columns: 1fr; gap: 10px; }
+  .pkc-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .pkc-filtro-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
   .pkc-cobro-personas { flex-direction: column; gap: 6px; }
   .pkc-modal-footer { flex-direction: column; }
@@ -813,6 +914,8 @@ onUnmounted(() => clearInterval(_autoRefresh))
   .pkc-svc-kpi-card { padding: 8px 12px; min-width: 90px; }
   .pkc-svc-kpi-nom { font-size: 0.65rem; }
   .pkc-svc-kpi-val { font-size: 1.1rem; }
+  .pkc-search-bar { flex-direction: column; }
+  .pkc-search-group { width: 100%; }
 }
 
 /* ── KPI Servicios ── */
