@@ -84,15 +84,36 @@
       <span class="pkcard-orden">{{ orden.numero_orden }}</span>
       <div class="pkcard-acciones">
 
-        <!-- PORTERO: botón reimprimir en todos los estados excepto cancelado/anulado -->
-        <button
-          v-if="mode === 'portero' && !['cancelado','anulado'].includes(orden.estado)"
-          class="pkcard-btn pkcard-btn--print"
-          title="Reimprimir ticket"
-          @click.stop="emit('reprint', orden)"
-        >
-          <i class="bi bi-printer"></i>
-        </button>
+        <!-- PORTERO: salida para pagados, reimprimir para el resto -->
+        <template v-if="mode === 'portero'">
+          <button
+            v-if="orden.estado === 'pagado'"
+            class="pkcard-btn pkcard-btn--salida"
+            :disabled="loadingAction"
+            @click.stop="emit('salida', orden)"
+          >
+            <i v-if="loadingAction" class="bi bi-arrow-repeat spin"></i>
+            <i v-else class="bi bi-door-open-fill"></i> Salida
+          </button>
+          <button
+            v-else-if="!['cancelado','anulado'].includes(orden.estado)"
+            class="pkcard-btn pkcard-btn--print"
+            title="Reimprimir ticket"
+            @click.stop="emit('reprint', orden)"
+          >
+            <i class="bi bi-printer"></i>
+          </button>
+        </template>
+
+        <!-- MESERO: indicador táctil según estado -->
+        <template v-if="mode === 'mesero'">
+          <span v-if="orden.estado === 'ingresado'" class="pkcard-tap-hint">
+            <i class="bi bi-hand-index"></i> Toca para confirmar
+          </span>
+          <span v-else-if="orden.estado === 'pagado'" class="pkcard-pagado-txt">
+            <i class="bi bi-cash-coin"></i> Pagado
+          </span>
+        </template>
 
         <!-- CAJERO: acciones según estado -->
         <template v-if="mode === 'cajero'">
@@ -128,12 +149,14 @@
 <script setup>
 const props = defineProps({
   orden: { type: Object, required: true },
-  // 'portero' → muestra botón reimprimir; clic abre confirm si ingresado
-  // 'cajero'  → muestra Cobrar / Anular / Reimprimir según estado
+  // 'portero' → reimprimir (no-pagado) / Salida (pagado); clic emite card-click
+  // 'mesero'  → clic emite card-click; indicador táctil en footer
+  // 'cajero'  → Cobrar / Anular / Reimprimir según estado
   mode: { type: String, default: 'portero' },
+  loadingAction: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['card-click', 'reprint', 'cobrar', 'anular'])
+const emit = defineEmits(['card-click', 'reprint', 'cobrar', 'anular', 'salida'])
 
 const LABELS = {
   ingresado:  'Ingresado',
@@ -271,6 +294,19 @@ function handleClick() {
   background: #fff3cd; color: #856404; border: 1px solid #ffc107;
 }
 .pkcard-btn--anular:hover { background: #ffc107; color: #fff; }
+.pkcard-btn--salida {
+  background: #198754; color: #fff;
+}
+.pkcard-btn--salida:hover { background: #157347; }
+.pkcard-tap-hint {
+  font-size: .72rem; color: #fd7e14; display: flex; align-items: center; gap: 4px; font-weight: 600;
+}
+.pkcard-pagado-txt {
+  font-size: .72rem; color: #0d6efd; display: flex; align-items: center; gap: 4px; font-weight: 600;
+}
+
+.spin { animation: pkcard-spin .8s linear infinite; }
+@keyframes pkcard-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
   .pkcard-placa { font-size: 1.4rem; letter-spacing: 2px; }

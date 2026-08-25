@@ -51,41 +51,12 @@
       <small>Las tarjetas aparecen aquí cuando el portero registra un ingreso</small>
     </div>
     <div v-else class="pkm-grid">
-      <div
+      <ParkingOrderCard
         v-for="o in ordenesFiltradas" :key="o.id"
-        :class="['pkm-card', { 'pkm-card--sinconf': o.estado === 'ingresado', 'pkm-card--confirmado': o.estado === 'registrado', 'pkm-card--pagado': o.estado === 'pagado' }]"
-        @click="o.estado !== 'pagado' && abrirConfirmar(o)"
-      >
-        <div class="pkm-card-top">
-          <span :class="['pkm-badge-nuevo',
-            o.estado === 'registrado' && 'pkm-badge-confirmado',
-            o.estado === 'pagado' && 'pkm-badge-pagado']">
-            {{ o.estado === 'pagado' ? 'Pagado' : o.estado === 'registrado' ? 'Confirmado' : 'Pendiente confirmación' }}
-          </span>
-          <span class="pkm-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
-        </div>
-        <div class="pkm-card-placa">{{ o.placa }}</div>
-        <div v-if="o.tipo_vehiculo" class="pkm-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pkm-card-items">
-          <template v-if="o.items && o.items.length">
-            <span v-for="it in o.items" :key="it.nombre" class="pkm-svc-pill">
-              {{ it.nombre }} <strong>×{{ it.cantidad }}</strong>
-            </span>
-          </template>
-          <span v-else class="pkm-svc-pill">
-            <i class="bi bi-list-check"></i> {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
-          </span>
-        </div>
-        <div v-if="o.obs_portero" class="pkm-card-obs">
-          <i class="bi bi-door-open"></i> {{ o.obs_portero }}
-        </div>
-        <div class="pkm-card-footer">
-          <span class="pkm-card-orden">{{ o.numero_orden }}</span>
-          <span v-if="o.estado === 'ingresado'" class="pkm-tap-hint"><i class="bi bi-hand-index"></i> Toca para confirmar</span>
-          <span v-else-if="o.estado === 'pagado'" class="pkm-confirmado-por pkm-pagado-txt"><i class="bi bi-cash-coin"></i> Pagado en caja</span>
-          <span v-else class="pkm-confirmado-por"><i class="bi bi-check2-all"></i> {{ o.mesero_nombre || 'Confirmado' }}</span>
-        </div>
-      </div>
+        :orden="o"
+        mode="mesero"
+        @card-click="onCardClick"
+      />
     </div>
 
   </div>
@@ -171,6 +142,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
+import ParkingOrderCard from '@/components/parking/ParkingOrderCard.vue'
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
@@ -233,6 +205,10 @@ onMounted(() => {
   _autoRefresh = setInterval(() => { if (!showModal.value) cargar(true) }, 30000)
 })
 onUnmounted(() => clearInterval(_autoRefresh))
+
+function onCardClick(orden) {
+  if (orden.estado !== 'pagado') abrirConfirmar(orden)
+}
 
 async function abrirConfirmar(orden) {
   ordenSeleccionada.value = orden

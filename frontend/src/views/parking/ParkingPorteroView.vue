@@ -53,43 +53,14 @@
       <p>No hay ingresos activos</p>
     </div>
     <div v-else class="pk-grid">
-      <div v-for="o in ordenes" :key="o.id" :class="['pk-card', `pk-card--${o.estado}`]">
-        <div class="pk-card-top">
-          <span :class="['pk-badge', `pk-badge--${o.estado}`]">{{ LABELS_ESTADO[o.estado] }}</span>
-          <span class="pk-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
-        </div>
-        <div class="pk-card-placa">{{ o.placa }}</div>
-        <div v-if="o.tipo_vehiculo" class="pk-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pk-card-items">
-          <template v-if="o.items && o.items.length">
-            <span v-for="it in o.items" :key="it.nombre" class="pk-svc-pill">
-              {{ it.nombre }} <strong>×{{ it.cantidad }}</strong>
-            </span>
-          </template>
-          <span v-else class="pk-svc-pill">
-            <i class="bi bi-list-check"></i> {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
-          </span>
-        </div>
-        <div v-if="o.obs_portero" class="pk-card-obs">
-          <i class="bi bi-chat-left-text"></i> {{ o.obs_portero }}
-        </div>
-        <div class="pk-card-footer">
-          <span class="pk-card-orden">{{ o.numero_orden }}</span>
-          <div class="pk-card-acciones">
-            <button v-if="o.estado === 'ingresado'" class="pk-btn-reimprimir" title="Reimprimir comprobante"
-              @click="ordenParaImprimir = o">
-              <i class="bi bi-printer"></i>
-            </button>
-            <button v-if="o.estado === 'pagado'" class="pk-btn-salida" title="Confirmar salida"
-              :disabled="marcandoSalida === o.id"
-              @click="confirmarSalida(o)">
-              <i v-if="marcandoSalida === o.id" class="bi bi-arrow-repeat spin"></i>
-              <i v-else class="bi bi-door-open-fill"></i>
-              Salida
-            </button>
-          </div>
-        </div>
-      </div>
+      <ParkingOrderCard
+        v-for="o in ordenes" :key="o.id"
+        :orden="o"
+        mode="portero"
+        :loading-action="marcandoSalida === o.id"
+        @reprint="ordenParaImprimir = $event"
+        @salida="confirmarSalida"
+      />
     </div>
 
   </div>
@@ -252,6 +223,7 @@ import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
+import ParkingOrderCard from '@/components/parking/ParkingOrderCard.vue'
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
