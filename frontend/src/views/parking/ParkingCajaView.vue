@@ -105,69 +105,14 @@
       <small>Verifica el Nro Recibo, Placa o QR ingresado</small>
     </div>
     <div v-else class="pkc-grid">
-      <div
+      <ParkingOrderCard
         v-for="o in ordenesFiltradas" :key="o.id"
-        :class="['pkc-card', `pkc-card--${o.estado}`]"
-      >
-        <!-- Foto miniatura -->
-        <div v-if="o.foto_url" class="pkc-card-foto">
-          <img :src="o.foto_url" alt="Foto vehículo" class="pkc-card-foto-img" />
-        </div>
-        <div class="pkc-card-top">
-          <span :class="['pkc-badge', `pkc-badge--${o.estado}`]">{{ LABELS_ESTADO[o.estado] }}</span>
-          <span class="pkc-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
-        </div>
-        <div class="pkc-card-id">#{{ o.id }}</div>
-        <div class="pkc-card-placa">{{ o.placa }}</div>
-        <div v-if="o.tipo_vehiculo" class="pkc-card-tipo">{{ o.tipo_vehiculo }}</div>
-
-        <div class="pkc-card-items">
-          <template v-if="o.items && o.items.length">
-            <span v-for="it in o.items" :key="it.nombre" class="pkc-item-pill">
-              {{ it.nombre }} <strong>×{{ it.cantidad }}</strong>
-            </span>
-          </template>
-          <span v-else class="pkc-item-pill">
-            <i class="bi bi-list-check"></i> {{ o.adultos }} servicio{{ o.adultos !== 1 ? 's' : '' }}
-          </span>
-        </div>
-
-        <div v-if="o.obs_portero || o.obs_mesero" class="pkc-obs-wrap">
-          <div v-if="o.obs_portero" class="pkc-obs">
-            <i class="bi bi-door-open"></i> {{ o.obs_portero }}
-          </div>
-          <div v-if="o.obs_mesero" class="pkc-obs pkc-obs-mesero">
-            <i class="bi bi-person-badge"></i> {{ o.obs_mesero }}
-          </div>
-        </div>
-
-        <div v-if="o.portero_nombre" class="pkc-portero-nombre">
-          <i class="bi bi-person-check"></i> {{ o.portero_nombre }}
-        </div>
-        <div v-if="o.mesero_nombre" class="pkc-confirmado-por">
-          <i class="bi bi-check2"></i> {{ o.mesero_nombre }}
-        </div>
-
-        <div class="pkc-card-footer">
-          <span class="pkc-card-orden">{{ o.numero_orden }}</span>
-          <div class="pkc-card-acciones">
-            <button
-              v-if="o.estado === 'ingresado'"
-              class="pkc-btn-eliminar"
-              title="Cancelar ingreso"
-              @click="abrirCancelacion(o)"
-            >
-              <i class="bi bi-trash3"></i>
-            </button>
-            <button v-if="o.estado === 'registrado'" class="pkc-btn-pagar" @click="abrirCobro(o)">
-              <i class="bi bi-cash-coin"></i> Cobrar
-            </button>
-            <button v-else-if="o.estado === 'pagado'" class="pkc-btn-reimprimir" @click="abrirReimpresion(o)">
-              <i class="bi bi-printer-fill"></i> Reimprimir
-            </button>
-          </div>
-        </div>
-      </div>
+        :orden="o"
+        mode="cajero"
+        @cobrar="abrirCobro"
+        @anular="abrirCancelacion"
+        @reprint="abrirReimpresion"
+      />
     </div>
 
   </div>
@@ -277,17 +222,18 @@
     <div class="pkc-modal pkc-modal--cancel">
       <div class="pkc-modal-header">
         <div>
-          <h5><i class="bi bi-trash3 me-2" style="color:#dc3545"></i>Cancelar Ingreso</h5>
+          <h5><i class="bi bi-x-octagon me-2" style="color:#856404"></i>Anular Ingreso</h5>
           <span class="pkc-modal-sub">{{ ordenCancelacion?.numero_orden }} · {{ ordenCancelacion?.placa }}</span>
         </div>
         <button class="pkc-btn-close" @click="showCancelacion = false"><i class="bi bi-x-lg"></i></button>
       </div>
       <div class="pkc-cancel-body">
         <div class="pkc-cancel-warn">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          Esta acción cancelará el ingreso y quedará registrado en el historial de cancelaciones.
+          <i class="bi bi-info-circle-fill"></i>
+          El ingreso quedará <strong>anulado</strong> y se conserva en el historial con su número consecutivo.
+          No se elimina el registro.
         </div>
-        <label class="pkc-cancel-label">Motivo de cancelación <span style="color:#dc3545">*</span></label>
+        <label class="pkc-cancel-label">Motivo de anulación <span style="color:#dc3545">*</span></label>
         <textarea
           v-model="motivoCancelacion"
           class="pkc-cancel-textarea"
@@ -305,8 +251,8 @@
           @click="confirmarCancelacion"
         >
           <i v-if="cancelando" class="bi bi-arrow-repeat spin"></i>
-          <i v-else class="bi bi-trash3"></i>
-          {{ cancelando ? 'Cancelando…' : 'Confirmar cancelación' }}
+          <i v-else class="bi bi-x-octagon"></i>
+          {{ cancelando ? 'Anulando…' : 'Confirmar anulación' }}
         </button>
       </div>
     </div>
@@ -331,6 +277,7 @@ import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
+import ParkingOrderCard from '@/components/parking/ParkingOrderCard.vue'
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)

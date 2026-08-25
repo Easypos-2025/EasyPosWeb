@@ -302,7 +302,7 @@ async def crear_orden(
     r_activo = await db.execute(text("""
         SELECT id FROM parking_orders
         WHERE company_id = :cid AND placa = :placa
-          AND estado NOT IN ('salido', 'cancelado')
+          AND estado IN ('ingresado', 'registrado')
         LIMIT 1
     """), {"cid": body.company_id, "placa": placa_up})
     if r_activo.scalar():

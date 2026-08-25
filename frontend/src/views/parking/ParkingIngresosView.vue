@@ -76,43 +76,13 @@
       <p>No hay ingresos para esta fecha</p>
     </div>
     <div v-else class="pk-grid">
-      <div
+      <ParkingOrderCard
         v-for="o in ordenesFiltradas" :key="o.id"
-        :class="['pk-card', `pk-card--${o.estado}`]"
-        @click="onClickCard(o)"
-      >
-        <!-- Foto miniatura -->
-        <div class="pk-card-foto" v-if="o.foto_url">
-          <img :src="o.foto_url" alt="Foto vehículo" class="pk-card-foto-img" />
-        </div>
-        <div class="pk-card-top">
-          <span :class="['pk-badge', `pk-badge--${o.estado}`]">{{ LABELS_ESTADO[o.estado] }}</span>
-          <span class="pk-card-hora">{{ fmtHora(o.hora_ingreso) }}</span>
-        </div>
-        <div class="pk-card-id">#{{ o.id }}</div>
-        <div class="pk-card-placa">{{ o.placa }}</div>
-        <div v-if="o.tipo_vehiculo" class="pk-card-tipo">{{ o.tipo_vehiculo }}</div>
-        <div class="pk-card-personas">
-          <span class="pk-persona-pill">
-            <i class="bi bi-person-fill"></i> {{ o.adultos }}
-          </span>
-          <span v-if="o.ninos > 0" class="pk-persona-pill pk-nino">
-            <i class="bi bi-person-hearts"></i> {{ o.ninos }}
-          </span>
-          <span v-if="o.mascotas > 0" class="pk-persona-pill pk-mascota">
-            <i class="bi bi-circle-fill" style="font-size:.6rem"></i> {{ o.mascotas }}
-          </span>
-        </div>
-        <div v-if="o.obs_portero" class="pk-card-obs">
-          <i class="bi bi-chat-left-text"></i> {{ o.obs_portero }}
-        </div>
-        <div class="pk-card-footer">
-          <span class="pk-card-orden">{{ o.numero_orden }}</span>
-          <span v-if="o.portero_nombre" class="pk-card-quien">
-            <i class="bi bi-person"></i> {{ o.portero_nombre }}
-          </span>
-        </div>
-      </div>
+        :orden="o"
+        mode="portero"
+        @card-click="onClickCard"
+        @reprint="abrirReimpresion"
+      />
     </div>
 
   </div>
@@ -143,8 +113,22 @@
             </div>
           </div>
 
-          <!-- Tipo vehículo — cards -->
-          <div v-if="vehicleTypes.length" class="pk-field">
+          <!-- Tipo vehículo — read-only si el vehículo ya fue encontrado -->
+          <div v-if="vehicleFound && form.vehicle_type_id" class="pk-field">
+            <label>Tipo de Vehículo</label>
+            <div class="pk-vtype-found">
+              <template v-for="t in vehicleTypes" :key="t.id">
+                <span v-if="t.id === form.vehicle_type_id" class="pk-vtype-found-badge">
+                  <i :class="`bi ${t.icono || 'bi-car-front-fill'}`"></i>
+                  {{ t.nombre }}
+                  <span class="pk-vtype-found-lock"><i class="bi bi-lock-fill"></i></span>
+                </span>
+              </template>
+            </div>
+          </div>
+
+          <!-- Tipo vehículo — seleccionable si vehículo nuevo -->
+          <div v-else-if="vehicleTypes.length && !vehicleFound" class="pk-field">
             <label>Tipo de Vehículo</label>
             <div class="pk-vtype-grid">
               <button
@@ -194,7 +178,11 @@
 
           <!-- Foto -->
           <div class="pk-field">
-            <label>Foto del Vehículo</label>
+            <label>Foto del Vehículo
+              <span v-if="vehicleFound && form.foto_url" class="pk-foto-label-hint">
+                <i class="bi bi-check-circle-fill" style="color:#198754"></i> foto registrada
+              </span>
+            </label>
             <div class="pk-foto-area">
               <img v-if="form.foto_url" :src="form.foto_url" class="pk-foto-preview" alt="Foto vehículo" />
               <div v-else class="pk-foto-placeholder">
@@ -321,6 +309,7 @@ import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
+import ParkingOrderCard from '@/components/parking/ParkingOrderCard.vue'
 
 const companyStore = useCompanyStore()
 const companyId = computed(() => companyStore.selectedCompany?.id)
@@ -534,6 +523,11 @@ async function guardarNuevo() {
   guardando.value = false
 }
 
+// ── Reimprimir ────────────────────────────────────────────────────────────────
+function abrirReimpresion(orden) {
+  ordenParaImprimir.value = orden
+}
+
 // ── Click en tarjeta ──────────────────────────────────────────────────────────
 function onClickCard(orden) {
   if (orden.estado !== 'ingresado') return
@@ -647,6 +641,17 @@ function fmtHora(dt) {
 .pk-placa-hint { display: block; font-size: .75rem; margin-top: 4px; }
 .pk-placa-buscando { color: #6c757d; }
 .pk-placa-ok       { color: #198754; font-weight: 600; }
+
+/* Tipo de vehículo auto-detectado (read-only) */
+.pk-vtype-found { display: flex; gap: 8px; margin-top: 4px; }
+.pk-vtype-found-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border: 2px solid #198754; border-radius: 10px;
+  background: #d1e7dd; color: #0a3622; font-weight: 700; font-size: .9rem;
+}
+.pk-vtype-found-badge i { font-size: 1.2rem; }
+.pk-vtype-found-lock { font-size: .7rem; opacity: .7; margin-left: 2px; }
+.pk-foto-label-hint { font-size: .75rem; font-weight: 400; margin-left: 6px; }
 
 /* ── Tarjetas tipo vehículo ── */
 .pk-vtype-grid {
