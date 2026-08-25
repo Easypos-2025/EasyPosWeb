@@ -432,7 +432,7 @@ async def pagar_orden(
     current_user=Depends(get_current_user),
 ):
     row = await db.execute(text(
-        "SELECT id, estado FROM parking_orders WHERE id = :id"
+        "SELECT id, estado, company_id FROM parking_orders WHERE id = :id"
     ), {"id": order_id})
     orden = row.mappings().first()
     if not orden:
@@ -463,6 +463,11 @@ async def pagar_orden(
             "sub": item.subtotal,
         })
 
+    now_dt   = datetime.now(timezone(timedelta(hours=-5)))
+    fecha    = now_dt.date().isoformat()
+    hora     = now_dt.strftime("%H:%M:%S")
+    now_str  = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
     await db.execute(text("""
         UPDATE parking_orders
         SET estado      = 'pagado',
@@ -470,9 +475,32 @@ async def pagar_orden(
             pagado_por  = :uid,
             updated_at  = :now
         WHERE id = :id
-    """), {"uid": current_user.id, "id": order_id, "now": bogota_now()})
+    """), {"uid": current_user.id, "id": order_id, "now": now_str})
+
+    # Generar e insertar recibo en pos_receipts
+    company_id = orden["company_id"]
+    total_cobrado = int(sum(item.subtotal for item in body.items))
+
+    rn_row = (await db.execute(text("""
+        SELECT COALESCE(MAX(CAST(receipt_number AS UNSIGNED)), 0) + 1 AS next_rn
+        FROM pos_receipts WHERE company_id = :cid
+    """), {"cid": company_id})).mappings().first()
+    receipt_number = str(int(rn_row["next_rn"]))
+
+    await db.execute(text("""
+        INSERT INTO pos_receipts
+            (receipt_number, date, company_id, cash_amount, amount_without_tip,
+             tip, employee_id, shift, time, time_text, voided, synced)
+        VALUES
+            (:rn, :fecha, :cid, :total, :total,
+             0, :uid, 1, :hora, :hora, 0, 0)
+    """), {
+        "rn": receipt_number, "fecha": fecha, "cid": company_id,
+        "total": total_cobrado, "uid": current_user.id, "hora": hora,
+    })
+
     await db.commit()
-    return {"ok": True, "estado": "pagado"}
+    return {"ok": True, "estado": "pagado", "receipt_number": receipt_number}
 
 
 # ── Cancelar orden (cajero elimina con motivo obligatorio) ───────────────────

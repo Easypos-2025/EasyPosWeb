@@ -141,6 +141,9 @@
           </div>
         </div>
 
+        <div v-if="o.portero_nombre" class="pkc-portero-nombre">
+          <i class="bi bi-person-check"></i> {{ o.portero_nombre }}
+        </div>
         <div v-if="o.mesero_nombre" class="pkc-confirmado-por">
           <i class="bi bi-check2"></i> {{ o.mesero_nombre }}
         </div>
@@ -713,6 +716,7 @@ onUnmounted(() => clearInterval(_autoRefresh))
 }
 .pkc-obs-mesero { background: #e8f4fd; color: #055160; }
 
+.pkc-portero-nombre { font-size: .75rem; color: #64748b; display: flex; align-items: center; gap: 5px; padding: 2px 0; }
 .pkc-confirmado-por { font-size: .75rem; color: #198754; display: flex; align-items: center; gap: 5px; }
 
 .pkc-card-footer {
