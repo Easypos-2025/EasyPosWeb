@@ -377,12 +377,10 @@ async function cargar(silent = false) {
   try {
     const [r1, r2, r3] = await Promise.all([
       api.get('/api/parking/orders', {
-        params: {
-          company_id: companyId.value,
-          estado: filtroEstado.value,
-          // Solo pagadas usan filtro de fecha; ingresado/registrado son "activos" sin importar el día
-          ...(filtroEstado.value === 'pagado' ? { fecha: fechaFiltro.value } : {}),
-        },
+        // Las órdenes activas (ingresado/registrado/pagado) no filtran por fecha:
+        // un vehículo puede haber entrado ayer y pagar hoy.
+        // La fecha solo aplica a stats/KPI.
+        params: { company_id: companyId.value, estado: filtroEstado.value },
       }),
       api.get('/api/parking/stats', {
         params: { company_id: companyId.value, fecha: fechaFiltro.value },
