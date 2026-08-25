@@ -538,7 +538,8 @@ async def pagar_orden(
                  :qty, :amount, :notes, 0, 0, 0, :cid)
         """), {
             "orden": str(order_id), "fecha": fecha, "rn": receipt_number,
-            "dish_id": int(item.product_id or 0), "item": idx,
+            # dish_id=0 porque es un servicio de parking, no un plato de pos_dishes
+            "dish_id": 0, "item": idx,
             "qty": float(item.cantidad), "amount": int(item.subtotal),
             "notes": item.nombre, "cid": company_id,
         })

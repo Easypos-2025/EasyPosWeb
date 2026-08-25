@@ -258,16 +258,20 @@ async def get_venta_detalle(
         items = (await db.execute(text("""
             SELECT
                 od.dish_id,
-                COALESCE(d.name, od.dish_id)              AS plato,
+                CASE
+                    WHEN d.name IS NOT NULL THEN d.name
+                    WHEN od.dish_id = 0    THEN COALESCE(od.notes, '')
+                    ELSE CAST(od.dish_id AS CHAR)
+                END                                       AS plato,
                 od.quantity,
                 COALESCE(d.price, 0)                      AS price,
                 COALESCE(od.amount, 0)                    AS subtotal,
                 od.item,
-                COALESCE(od.notes, '')                    AS notes,
+                CASE WHEN od.dish_id = 0 THEN '' ELSE COALESCE(od.notes, '') END AS notes,
                 COALESCE(od.changes, '')                  AS changes,
                 od.custom_product
             FROM pos_receipt_order_details od
-            LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid
+            LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = :cid AND od.dish_id > 0
             WHERE od.company_id     = :cid
               AND od.receipt_number  = :numero
               AND od.date           = :fecha
