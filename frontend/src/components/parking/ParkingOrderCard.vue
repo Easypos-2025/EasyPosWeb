@@ -20,8 +20,24 @@
     <!-- Placa -->
     <div class="pkcard-placa">{{ orden.placa }}</div>
 
-    <!-- Tipo vehículo -->
-    <div v-if="orden.tipo_vehiculo" class="pkcard-tipo">{{ orden.tipo_vehiculo }}</div>
+    <!-- Fecha ingreso -->
+    <div class="pkcard-fecha">{{ fmtFecha(orden.hora_ingreso) }}</div>
+
+    <!-- Tipo vehículo + datos técnicos -->
+    <div v-if="orden.tipo_vehiculo || orden.marca" class="pkcard-tipo-wrap">
+      <span v-if="orden.tipo_vehiculo" class="pkcard-tipo">{{ orden.tipo_vehiculo }}</span>
+      <span v-if="orden.marca || orden.modelo" class="pkcard-vehiculo-det">
+        {{ [orden.marca, orden.modelo, orden.color, orden.anio].filter(Boolean).join(' · ') }}
+      </span>
+    </div>
+
+    <!-- Cliente / propietario -->
+    <div v-if="orden.cliente_nombre" class="pkcard-cliente">
+      <i class="bi bi-person-fill"></i> {{ orden.cliente_nombre }}
+      <span v-if="orden.cliente_telefono" class="pkcard-cliente-tel">
+        · <i class="bi bi-telephone"></i> {{ orden.cliente_telefono }}
+      </span>
+    </div>
 
     <!-- Items / personas -->
     <div class="pkcard-items">
@@ -132,6 +148,11 @@ function fmtHora(dt) {
   return new Date(dt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
 
+function fmtFecha(dt) {
+  if (!dt) return ''
+  return new Date(dt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 function handleClick() {
   emit('card-click', props.orden)
 }
@@ -183,8 +204,23 @@ function handleClick() {
   border: 2px solid #212529; border-radius: 6px; padding: 4px 0;
 }
 
-/* Tipo */
+/* Fecha ingreso */
+.pkcard-fecha { text-align: center; font-size: .72rem; color: #6c757d; letter-spacing: .2px; }
+
+/* Tipo + datos vehículo */
+.pkcard-tipo-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .pkcard-tipo { text-align: center; font-size: .78rem; color: #6c757d; }
+.pkcard-vehiculo-det {
+  text-align: center; font-size: .72rem; color: #adb5bd; font-style: italic;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+/* Cliente */
+.pkcard-cliente {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  font-size: .78rem; color: #0d6efd; font-weight: 600; justify-content: center;
+}
+.pkcard-cliente-tel { font-weight: 400; color: #6c757d; font-size: .72rem; }
 
 /* Items */
 .pkcard-items { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; }

@@ -471,14 +471,16 @@ async function onFotoChange(e) {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    const res = await api.post(`/api/parking/photos/upload?company_id=${companyId.value}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    // No poner Content-Type manualmente: axios necesita setear el boundary automáticamente
+    const res = await api.post(`/api/parking/photos/upload?company_id=${companyId.value}`, formData)
     form.value.foto_url = res.data.url
   } catch {
-    const reader = new FileReader()
-    reader.onload = (ev) => { form.value.foto_url = ev.target.result }
-    reader.readAsDataURL(file)
+    // Fallback base64 — se espera con Promise para evitar race condition al guardar
+    await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (ev) => { form.value.foto_url = ev.target.result; resolve() }
+      reader.readAsDataURL(file)
+    })
   }
 }
 

@@ -231,18 +231,24 @@ async def listar_orders(
             COALESCE(vt.nombre, v.vehicle_type_name) AS tipo_vehiculo,
             po.adultos, po.ninos, po.mascotas,
             po.hora_ingreso, po.hora_salida,
-            po.foto_url, po.obs_portero, po.obs_mesero,
+            COALESCE(po.foto_url, v.foto_url) AS foto_url,
+            po.obs_portero, po.obs_mesero,
             po.estado,
             po.registrado_por, ur.nombre AS portero_nombre,
             po.confirmado_por, uc.nombre AS mesero_nombre,
             po.pagado_por,     up.nombre AS cajero_nombre,
-            po.created_at
+            po.created_at,
+            pr.nombre    AS cliente_nombre,
+            pr.documento AS cliente_documento,
+            pr.telefono  AS cliente_telefono,
+            v.marca, v.modelo, v.color, v.anio
         FROM parking_orders po
-        LEFT JOIN vehicle_types vt ON vt.id  = po.vehicle_type_id
-        LEFT JOIN vehicles v       ON v.placa = po.placa
-        LEFT JOIN users ur         ON ur.id  = po.registrado_por
-        LEFT JOIN users uc         ON uc.id  = po.confirmado_por
-        LEFT JOIN users up         ON up.id  = po.pagado_por
+        LEFT JOIN vehicle_types vt ON vt.id   = po.vehicle_type_id
+        LEFT JOIN vehicles v       ON v.placa  = po.placa AND v.company_id = po.company_id
+        LEFT JOIN propietarios pr  ON pr.id    = v.propietario_id
+        LEFT JOIN users ur         ON ur.id   = po.registrado_por
+        LEFT JOIN users uc         ON uc.id   = po.confirmado_por
+        LEFT JOIN users up         ON up.id   = po.pagado_por
         WHERE {where_sql}
         ORDER BY po.hora_ingreso DESC
     """), filtros)
