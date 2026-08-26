@@ -580,13 +580,23 @@ async def stock_alertas(
     cid = await _resolve_cid(user, company_id, db)
 
     rows = (await db.execute(text("""
-        SELECT s.id, s.description AS name, s.stock_qty, s.min_stock, u.name AS unit_name
-        FROM supply_items s
-        LEFT JOIN measurement_units u ON u.id = s.unit_id
-        WHERE s.company_id=:cid AND s.is_active=1
-          AND s.control_stock=1 AND s.min_stock > 0
-          AND s.stock_qty <= s.min_stock
-        ORDER BY (s.stock_qty / s.min_stock) ASC
+        SELECT COALESCE(si.id, 0)                             AS id,
+               iap.id_item                                     AS id_item,
+               COALESCE(si.description, iap.descripcion, '')  AS name,
+               iap.cantidad_actual                             AS stock_qty,
+               COALESCE(iap.stock_minimo, si.min_stock, 0)    AS min_stock,
+               COALESCE(mu.name, '')                           AS unit_name
+        FROM inventario_actual_porciones iap
+        LEFT JOIN supply_items si
+               ON si.id_item = iap.id_item AND si.company_id = iap.company_id
+        LEFT JOIN pos_measure_forms mu
+               ON mu.id = si.unit_id AND mu.company_id = iap.company_id
+        WHERE iap.company_id = :cid
+          AND (si.is_active IS NULL OR si.is_active = 1)
+          AND COALESCE(iap.controlar, si.control_stock, 0) = 1
+          AND COALESCE(iap.stock_minimo, si.min_stock, 0) > 0
+          AND iap.cantidad_actual <= COALESCE(iap.stock_minimo, si.min_stock, 0)
+        ORDER BY (iap.cantidad_actual / COALESCE(iap.stock_minimo, si.min_stock, 1)) ASC
         LIMIT 10
     """), {"cid": cid})).mappings().all()
 

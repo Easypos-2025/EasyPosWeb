@@ -10,6 +10,7 @@ from app.models.supplier_model import Supplier
 from app.models.stock_movement_model import StockMovement
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.services.stock import nudge_iap_quantity
 
 router = APIRouter(prefix="/purchase-orders", tags=["PurchaseOrders"])
 
@@ -98,6 +99,8 @@ async def confirm_order(oid: int, current_user: User = Depends(get_current_user)
                                   qty_before=qty_before, qty_after=float(si.stock_qty),
                                   reference_type="purchase_order", reference_id=o.id,
                                   notes=f"Factura {o.invoice_no or 'S/N'}", created_by=current_user.id))
+            await db.flush()
+            await nudge_iap_quantity(db, current_user.company_id, si.id_item, float(it.qty))
     o.status = "confirmed"
     await db.commit()
     return {"ok": True, "message": "Entrada confirmada y stock actualizado"}

@@ -43,7 +43,11 @@
         <i class="bi bi-bag-check"></i>
         <span>Para Llevar</span>
       </button>
-      <button class="action-btn action-btn--stock" @click="abrirModalStock">
+      <button
+        class="action-btn action-btn--stock"
+        :class="{ 'action-btn--stock-critical': stockAlertas.length > 0 }"
+        @click="abrirModalStock"
+      >
         <i class="bi bi-exclamation-triangle"></i>
         <span>Stock</span>
         <span v-if="stockAlertas.length" class="action-btn__badge">{{ stockAlertas.length }}</span>
@@ -365,6 +369,7 @@ const kpiData      = ref(null)
 const mesas        = ref([])
 const meseros      = ref([])
 const stockAlertas = ref([])
+let stockAlertaVistos = new Set()
 const pedidosTV    = ref([])
 
 const showStockModal = ref(false)
@@ -594,12 +599,35 @@ async function cargarMeseros() {
   } catch { meseros.value = [] }
 }
 
+function reproducirBeepStock() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 880
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.01)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.4)
+    osc.onended = () => ctx.close()
+  } catch { /* audio no disponible en este navegador */ }
+}
+
 async function cargarStock() {
   cargandoStock.value = true
   try {
     const { data } = await api.get('/api/pos-dashboard/stock-alertas', {
       params: { company_id: selectedCid.value }
     })
+    const nuevos = data.some(item => !stockAlertaVistos.has(item.id_item ?? item.id))
+    if (nuevos && data.length) reproducirBeepStock()
+    stockAlertaVistos = new Set(data.map(item => item.id_item ?? item.id))
     stockAlertas.value = data
   } catch { stockAlertas.value = [] }
   finally { cargandoStock.value = false }
@@ -881,6 +909,13 @@ async function guardarNuevoMesero() {
   border: 2px solid #fca5a5;
 }
 .action-btn--stock:hover { background: #fee2e2; }
+.action-btn--stock-critical {
+  animation: stock-blink 1.1s ease-in-out infinite;
+}
+@keyframes stock-blink {
+  0%, 100% { background: #fff5f5; border-color: #fca5a5; box-shadow: none; }
+  50%      { background: #fecaca; border-color: #dc2626; box-shadow: 0 0 0 4px rgba(220,38,38,.18); }
+}
 .action-btn--tv {
   background: #eff6ff;
   color: #1d4ed8;

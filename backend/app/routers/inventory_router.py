@@ -11,63 +11,12 @@ from sqlalchemy import text
 from app.database import get_db, AsyncSessionLocal
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.services.stock import apply_stock_move, set_min_stock
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
 
 # Almacén en memoria para jobs de auto-snapshot (operación poco frecuente)
 _snapshot_jobs: dict = {}
-
-
-# ── helpers ────────────────────────────────────────────────────────────────────
-
-async def _stock_move(
-    db: AsyncSession, company_id: int, id_item: int,
-    qty: float, mtype: str, ref_type: str, ref_id: Optional[int],
-    mdate: Optional[str], notes: Optional[str] = None, user_id: int = None,
-):
-    si = (await db.execute(text("""
-        SELECT id, stock_qty, control_stock
-        FROM supply_items WHERE company_id=:cid AND id_item=:item LIMIT 1
-    """), {"cid": company_id, "item": id_item})).mappings().first()
-
-    if not si or not si["control_stock"]:
-        return
-
-    old_qty = float(si["stock_qty"] or 0)
-    new_qty = qty if mtype in ("physical", "physical_snapshot") else old_qty + qty
-
-    await db.execute(text("""
-        INSERT INTO stock_movements
-            (company_id, supply_item_id, movement_type, qty, qty_before, qty_after,
-             reference_type, reference_id, movement_date, notes, created_by)
-        VALUES
-            (:cid, :sid, :mtype, :dq, :qb, :qa, :rtype, :rid, :mdate, :notes, :uid)
-    """), {
-        "cid": company_id, "sid": si["id"], "mtype": mtype,
-        "dq": (new_qty - old_qty) if mtype in ("physical", "physical_snapshot") else qty,
-        "qb": old_qty, "qa": new_qty,
-        "rtype": ref_type, "rid": ref_id, "mdate": mdate,
-        "notes": notes, "uid": user_id,
-    })
-
-    if mtype != "physical_snapshot":
-        await db.execute(text(
-            "UPDATE supply_items SET stock_qty=:q WHERE id=:id"
-        ), {"q": new_qty, "id": si["id"]})
-
-    # Actualizar inventario_actual_porciones en paralelo
-    if mtype in ("physical",):
-        await db.execute(text("""
-            UPDATE inventario_actual_porciones
-            SET cantidad_actual = :q, enviada_mysql = 0, updated_at = NOW()
-            WHERE company_id = :cid AND id_item = :item
-        """), {"q": new_qty, "cid": company_id, "item": id_item})
-    elif mtype != "physical_snapshot":
-        await db.execute(text("""
-            UPDATE inventario_actual_porciones
-            SET cantidad_actual = cantidad_actual + :q, enviada_mysql = 0, updated_at = NOW()
-            WHERE company_id = :cid AND id_item = :item
-        """), {"q": qty, "cid": company_id, "item": id_item})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -134,9 +83,9 @@ async def get_stock(
     critical_clause = ""
     if critical:
         critical_clause = (
-            "AND COALESCE(si.control_stock, iap.controlar, 0) = 1 "
-            "AND COALESCE(si.min_stock, iap.stock_minimo, 0) > 0 "
-            "AND iap.cantidad_actual <= COALESCE(si.min_stock, iap.stock_minimo, 0)"
+            "AND COALESCE(iap.controlar, si.control_stock, 0) = 1 "
+            "AND COALESCE(iap.stock_minimo, si.min_stock, 0) > 0 "
+            "AND iap.cantidad_actual <= COALESCE(iap.stock_minimo, si.min_stock, 0)"
         )
 
     rows = (await db.execute(text(f"""
@@ -146,8 +95,8 @@ async def get_stock(
             COALESCE(si.code,  iap.codigo_insumo, '')             AS code,
             COALESCE(si.description, iap.descripcion, '')         AS description,
             iap.cantidad_actual                                    AS stock_qty,
-            COALESCE(si.min_stock,   iap.stock_minimo,  0)        AS min_stock,
-            COALESCE(si.control_stock, iap.controlar,   0)        AS control_stock,
+            COALESCE(iap.stock_minimo,   si.min_stock,  0)        AS min_stock,
+            COALESCE(iap.controlar, si.control_stock,   0)        AS control_stock,
             COALESCE(si.is_active,   1)                           AS is_active,
             COALESCE(si.agrupar,     iap.agrupar,       0)        AS category_id,
             COALESCE(mu.name,  '')                                 AS unit_name,
@@ -179,13 +128,10 @@ async def update_min_stock(
     if min_stock < 0:
         raise HTTPException(400, "min_stock no puede ser negativo")
 
-    res = await db.execute(text("""
-        UPDATE supply_items SET min_stock = :ms, updated_at = NOW()
-        WHERE id_item = :item AND company_id = :cid
-    """), {"ms": min_stock, "item": id_item, "cid": current_user.company_id})
+    updated = await set_min_stock(db, current_user.company_id, id_item, min_stock)
     await db.commit()
 
-    if res.rowcount == 0:
+    if not updated:
         raise HTTPException(404, "Insumo no encontrado")
     return {"ok": True}
 
@@ -709,34 +655,14 @@ async def create_physical_bulk(
     # Construir mapa de conteos
     conteo = {int(it["id_item"]): float(it.get("cantidad") or 0) for it in items}
 
-    # Paso 1: Snapshot del stock actual de todos los ítems del conteo
+    # Paso 1: Snapshot del stock actual de todos los ítems del conteo (no aplica cambios)
     for id_item, cantidad in conteo.items():
-        si = (await db.execute(text("""
-            SELECT id, stock_qty, control_stock
-            FROM supply_items WHERE company_id=:cid AND id_item=:item LIMIT 1
-        """), {"cid": cid, "item": id_item})).mappings().first()
-
-        if not si or not si["control_stock"]:
-            continue
-
-        old_qty = float(si["stock_qty"] or 0)
-
-        # Snapshot: solo registra en stock_movements, no toca stock_qty
-        await db.execute(text("""
-            INSERT INTO stock_movements
-                (company_id, supply_item_id, movement_type, qty, qty_before, qty_after,
-                 reference_type, reference_id, movement_date, notes, created_by)
-            VALUES
-                (:cid, :sid, 'physical_snapshot', :dq, :qb, :qa,
-                 'physical_bulk', NULL, :mdate, :notes, :uid)
-        """), {
-            "cid": cid, "sid": si["id"],
-            "dq": cantidad - old_qty,
-            "qb": old_qty, "qa": cantidad,
-            "mdate": fecha,
-            "notes": f"Snapshot pre-corte inv. físico — {observacion or 'sin observación'}",
-            "uid": current_user.id,
-        })
+        await apply_stock_move(
+            db, cid, id_item, cantidad, "physical_snapshot",
+            "physical_bulk", None, fecha,
+            f"Snapshot pre-corte inv. físico — {observacion or 'sin observación'}",
+            current_user.id,
+        )
 
     await db.flush()
 
@@ -747,12 +673,10 @@ async def create_physical_bulk(
 
     saved = 0
     for id_item, cantidad in conteo.items():
-        si = (await db.execute(text("""
-            SELECT id, stock_qty, control_stock
-            FROM supply_items WHERE company_id=:cid AND id_item=:item LIMIT 1
-        """), {"cid": cid, "item": id_item})).mappings().first()
-
-        if not si:
+        exists = (await db.execute(text(
+            "SELECT 1 FROM supply_items WHERE company_id=:cid AND id_item=:item LIMIT 1"
+        ), {"cid": cid, "item": id_item})).scalar()
+        if not exists:
             continue
 
         # Insertar en inventory_physical
@@ -771,27 +695,12 @@ async def create_physical_bulk(
         new_id = res.lastrowid
         await db.flush()
 
-        # Aplicar stock (movement physical)
-        if si["control_stock"]:
-            old_qty = float(si["stock_qty"] or 0)
-            await db.execute(text("""
-                INSERT INTO stock_movements
-                    (company_id, supply_item_id, movement_type, qty, qty_before, qty_after,
-                     reference_type, reference_id, movement_date, notes, created_by)
-                VALUES
-                    (:cid, :sid, 'physical', :dq, :qb, :qa,
-                     'physical_bulk', :rid, :mdate, :notes, :uid)
-            """), {
-                "cid": cid, "sid": si["id"],
-                "dq": cantidad - old_qty,
-                "qb": old_qty, "qa": cantidad,
-                "rid": new_id, "mdate": fecha,
-                "notes": f"Inventario físico web — {observacion or 'sin observación'}",
-                "uid": current_user.id,
-            })
-            await db.execute(text(
-                "UPDATE supply_items SET stock_qty=:q, updated_at=NOW() WHERE id=:id"
-            ), {"q": cantidad, "id": si["id"]})
+        await apply_stock_move(
+            db, cid, id_item, cantidad, "physical",
+            "physical_bulk", new_id, fecha,
+            f"Inventario físico web — {observacion or 'sin observación'}",
+            current_user.id,
+        )
 
         next_id_fisico += 1
         saved += 1
@@ -889,7 +798,7 @@ async def authorize_physical(
         WHERE company_id=:cid AND reference_type='physical' AND reference_id=:rid LIMIT 1
     """), {"cid": current_user.company_id, "rid": row["id_fisico"]})).fetchone()
     if not already:
-        await _stock_move(
+        await apply_stock_move(
             db, current_user.company_id, row["id_item"],
             float(row["cantidad"]), "physical",
             "physical", row["id_fisico"], str(row["fecha"]),
@@ -1251,7 +1160,7 @@ async def create_entry(
     new_id = res.lastrowid
     await db.flush()
 
-    await _stock_move(
+    await apply_stock_move(
         db, current_user.company_id, id_item,
         cantidad, "entry",
         "entry_web", new_id, fecha,
@@ -1277,7 +1186,7 @@ async def delete_entry(
         raise HTTPException(404, "Registro no encontrado")
 
     await db.execute(text("DELETE FROM inventory_entries WHERE id=:eid"), {"eid": eid})
-    await _stock_move(
+    await apply_stock_move(
         db, current_user.company_id, row["id_item"],
         -(float(row["cantidad"])), "entry",
         "entry_web_del", eid, str(row["fecha"]),
@@ -1348,7 +1257,7 @@ async def create_exit(
     new_id = res.lastrowid
     await db.flush()
 
-    await _stock_move(
+    await apply_stock_move(
         db, current_user.company_id, id_item,
         -(cantidad), "exit",
         "exit_web", new_id, fecha,
@@ -1374,7 +1283,7 @@ async def delete_exit(
         raise HTTPException(404, "Registro no encontrado")
 
     await db.execute(text("DELETE FROM inventory_exits WHERE id=:xid"), {"xid": xid})
-    await _stock_move(
+    await apply_stock_move(
         db, current_user.company_id, row["id_item"],
         float(row["cantidad"]), "exit",
         "exit_web_del", xid, str(row["fecha"]),

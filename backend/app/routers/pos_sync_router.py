@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.database import get_db, get_datatemppos_db
 from app.services.plan_limits_service import get_limits
+from app.services.stock import apply_stock_move
 
 router = APIRouter(prefix="/api/pos", tags=["POS Sync"])
 
@@ -1697,7 +1698,7 @@ async def push_order_detail_products(
             """), r.dict())
 
             if existing is None and (r.quantity or 0) > 0:
-                await _stock_move(
+                await apply_stock_move(
                     db, r.company_id, r.item_id,
                     -(r.quantity), "sale",
                     "sale", None, r.date,
@@ -1780,7 +1781,7 @@ async def push_receipt_order_detail_products(
             """), r.dict())
 
             if existing is None and (r.quantity or 0) > 0:
-                await _stock_move(
+                await apply_stock_move(
                     db, r.company_id, r.item_id,
                     -(r.quantity), "sale",
                     "sale", None, r.date,
@@ -3282,47 +3283,6 @@ router.get("/sync/pull/inventory-exits")(
     _pull("inventory_exits", "inventory_exits"))
 
 
-# ═════════════════════════════════════════
-# STOCK MOVEMENT HELPER
-# ═════════════════════════════════════════
-async def _stock_move(
-    db: AsyncSession,
-    company_id: int,
-    id_item: int,
-    qty: float,
-    mtype: str,
-    ref_type: str,
-    ref_id: Optional[int],
-    mdate: Optional[str],
-    notes: Optional[str] = None,
-):
-    si = (await db.execute(text("""
-        SELECT id, stock_qty, control_stock
-        FROM supply_items WHERE company_id = :cid AND id_item = :item LIMIT 1
-    """), {"cid": company_id, "item": id_item})).mappings().first()
-
-    if not si or not si["control_stock"]:
-        return
-
-    old_qty = float(si["stock_qty"] or 0)
-    new_qty = qty if mtype == "physical" else old_qty + qty
-
-    await db.execute(text("""
-        INSERT INTO stock_movements
-            (company_id, supply_item_id, movement_type, qty, qty_before, qty_after,
-             reference_type, reference_id, movement_date, notes)
-        VALUES
-            (:cid, :sid, :mtype, :dq, :qb, :qa, :rtype, :rid, :mdate, :notes)
-    """), {
-        "cid": company_id, "sid": si["id"], "mtype": mtype,
-        "dq": (new_qty - old_qty) if mtype == "physical" else qty,
-        "qb": old_qty, "qa": new_qty,
-        "rtype": ref_type, "rid": ref_id, "mdate": mdate, "notes": notes,
-    })
-    await db.execute(text(
-        "UPDATE supply_items SET stock_qty = :q WHERE id = :id"
-    ), {"q": new_qty, "id": si["id"]})
-
 
 # ═════════════════════════════════════════
 # INVENTORY PHYSICAL (inventarios_fisicos)
@@ -3376,7 +3336,7 @@ async def push_inventory_physical(
                     WHERE company_id=:cid AND reference_type='physical' AND reference_id=:rid LIMIT 1
                 """), {"cid": it.company_id, "rid": it.id_fisico})).fetchone()
                 if not already:
-                    await _stock_move(
+                    await apply_stock_move(
                         db, it.company_id, it.id_item,
                         it.cantidad or 0, "physical",
                         "physical", it.id_fisico, it.fecha,
@@ -3441,7 +3401,7 @@ async def push_inventory_entries(
                 WHERE company_id=:cid AND reference_type='entry' AND reference_id=:rid LIMIT 1
             """), {"cid": it.company_id, "rid": it.id_entrada})).fetchone()
             if not already and (it.cantidad or 0) > 0:
-                await _stock_move(
+                await apply_stock_move(
                     db, it.company_id, it.id_item,
                     it.cantidad, "entry",
                     "entry", it.id_entrada, it.fecha,
@@ -3506,7 +3466,7 @@ async def push_inventory_exits(
                 WHERE company_id=:cid AND reference_type='exit' AND reference_id=:rid LIMIT 1
             """), {"cid": it.company_id, "rid": it.id_salida})).fetchone()
             if not already and (it.cantidad or 0) > 0:
-                await _stock_move(
+                await apply_stock_move(
                     db, it.company_id, it.id_item,
                     -(it.cantidad), "exit",
                     "exit", it.id_salida, it.fecha,
