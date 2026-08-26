@@ -524,7 +524,7 @@ async function _silentTV() {
   } catch { }
 }
 
-function _tick() { _silentKpis(); _silentMesas(); _silentTV() }
+function _tick() { _silentKpis(); _silentMesas(); _silentTV(); _silentStock() }
 let _timer = null
 function _startRefresh() { _stopRefresh(); _timer = setInterval(_tick, 15000) }
 function _stopRefresh()  { if (_timer) { clearInterval(_timer); _timer = null } }
@@ -584,11 +584,19 @@ async function cargarStock() {
   cargandoStock.value = true
   try {
     const { data } = await api.get('/api/pos-dashboard/stock-alertas', {
-      params: { company_id: selectedCid.value }
+      params: { company_id: selectedCid.value, _t: Date.now() }
     })
     stockAlertas.value = data
   } catch { stockAlertas.value = [] }
   finally { cargandoStock.value = false }
+}
+async function _silentStock() {
+  try {
+    const { data } = await api.get('/api/pos-dashboard/stock-alertas', {
+      params: { company_id: selectedCid.value, _t: Date.now() }
+    })
+    stockAlertas.value = data
+  } catch { /* silencioso */ }
 }
 
 async function cargarPedidosTV() {

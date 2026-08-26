@@ -536,6 +536,7 @@ function _tick() {
   _silentKpis()
   _silentMesas()
   _silentTV()
+  _silentStock()
 }
 
 let _timer = null
@@ -619,18 +620,25 @@ function reproducirBeepStock() {
   } catch { /* audio no disponible en este navegador */ }
 }
 
+async function _fetchStock() {
+  const { data } = await api.get('/api/pos-dashboard/stock-alertas', {
+    params: { company_id: selectedCid.value, _t: Date.now() }
+  })
+  const nuevos = data.some(item => !stockAlertaVistos.has(item.id_item ?? item.id))
+  if (nuevos && data.length) reproducirBeepStock()
+  stockAlertaVistos = new Set(data.map(item => item.id_item ?? item.id))
+  stockAlertas.value = data
+}
+
 async function cargarStock() {
   cargandoStock.value = true
-  try {
-    const { data } = await api.get('/api/pos-dashboard/stock-alertas', {
-      params: { company_id: selectedCid.value }
-    })
-    const nuevos = data.some(item => !stockAlertaVistos.has(item.id_item ?? item.id))
-    if (nuevos && data.length) reproducirBeepStock()
-    stockAlertaVistos = new Set(data.map(item => item.id_item ?? item.id))
-    stockAlertas.value = data
-  } catch { stockAlertas.value = [] }
+  try { await _fetchStock() }
+  catch { stockAlertas.value = [] }
   finally { cargandoStock.value = false }
+}
+
+async function _silentStock() {
+  try { await _fetchStock() } catch { /* silencioso */ }
 }
 
 async function cargarPedidosTV() {
