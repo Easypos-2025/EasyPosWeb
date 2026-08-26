@@ -43,12 +43,15 @@ async def get_kpi(
         convenios = r4.scalar() or 0
 
         r5 = await db.execute(text("""
-            SELECT COUNT(*) FROM products
-            WHERE company_id = :cid AND is_active = 1 AND min_stock > 0
-              AND id NOT IN (
-                SELECT DISTINCT id_item FROM inventory_entries
-                WHERE company_id = :cid AND cantidad > 0
-              )
+            SELECT COUNT(*)
+            FROM inventario_actual_porciones iap
+            LEFT JOIN supply_items si
+                   ON si.id_item = iap.id_item AND si.company_id = iap.company_id
+            WHERE iap.company_id = :cid
+              AND (si.is_active IS NULL OR si.is_active = 1)
+              AND COALESCE(iap.controlar, si.control_stock, 0) = 1
+              AND COALESCE(iap.stock_minimo, si.min_stock, 0) > 0
+              AND iap.cantidad_actual <= COALESCE(iap.stock_minimo, si.min_stock, 0)
         """), {"cid": company_id})
         bajo_stock = r5.scalar() or 0
 
