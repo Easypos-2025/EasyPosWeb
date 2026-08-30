@@ -70,22 +70,12 @@ const SlotPiece = defineComponent({
       if (!props.piece?.youtube_id) return ""
       return `https://www.youtube.com/embed/${props.piece.youtube_id}?autoplay=1&loop=1&playlist=${props.piece.youtube_id}&controls=0&rel=0&enablejsapi=1&mute=1`
     })
-    const fbSrc = computed(() => {
-      if (!props.piece?.media_url) return ""
-      const href = encodeURIComponent(props.piece.media_url)
-      return `https://www.facebook.com/plugins/video.php?href=${href}&show_text=false&autoplay=true&mute=1`
-    })
-    return { ytSrc, fbSrc }
+    return { ytSrc }
   },
   render() {
     const p = this.piece
     if (!p) return null
     const { piece_type, media_url, text_content, social_platform } = p
-
-    if (piece_type === "social" && social_platform === "facebook")
-      return h("div", { class: "slot-yt-wrap" }, [
-        h("iframe", { key: `fb-${media_url}`, src: this.fbSrc, frameborder: "0", allow: "autoplay; encrypted-media; picture-in-picture; web-share", allowfullscreen: true, class: "slot-yt" })
-      ])
 
     if (piece_type === "image")
       return h("img", { src: media_url, alt: this.title || "Pauta", class: "slot-media", loading: "lazy" })

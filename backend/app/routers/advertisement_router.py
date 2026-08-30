@@ -72,6 +72,25 @@ def _detect_social_platform(url: str) -> tuple[str, str | None]:
     return "social", None
 
 
+def _clean_facebook_url(url: str) -> str:
+    """Reduce un link de Facebook (reel/video/watch, con o sin parámetros de share) a su permalink canónico."""
+    try:
+        p = urlparse(url.strip())
+        m = re.search(r"/reel/(\d+)", p.path)
+        if m:
+            return f"https://www.facebook.com/reel/{m.group(1)}/"
+        m = re.search(r"/videos/(\d+)", p.path)
+        if m:
+            return f"https://www.facebook.com/watch/?v={m.group(1)}"
+        qs = parse_qs(p.query)
+        v = qs.get("v", [None])[0]
+        if v and v.isdigit():
+            return f"https://www.facebook.com/watch/?v={v}"
+        return f"{p.scheme}://{p.netloc}{p.path}"
+    except Exception:
+        return url
+
+
 def _validate_url(url: str | None) -> str | None:
     if not url:
         return None
@@ -570,9 +589,10 @@ async def add_social_piece(
     else:
         if not platform or platform == "social":
             raise HTTPException(status_code=400, detail="Plataforma no reconocida. Acepta YouTube, Instagram, TikTok o Facebook")
+        clean_url = _clean_facebook_url(url) if platform == "facebook" else url
         piece = AdPiece(
             advertisement_id=ad_id, piece_type="social",
-            media_url=url, social_platform=platform, order_index=count,
+            media_url=clean_url, social_platform=platform, order_index=count,
         )
     db.add(piece)
     await db.commit()
