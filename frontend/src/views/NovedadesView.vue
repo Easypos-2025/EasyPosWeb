@@ -151,18 +151,16 @@
             <div v-if="!editMode" class="form-photo-section">
               <div class="form-photo-header">
                 <span class="form-photo-label"><i class="bi bi-images"></i> Evidencias fotográficas <small>(opcional)</small></span>
-                <label class="btn-upload-ev" title="Agregar foto">
-                  <i class="bi bi-camera"></i>
-                  <span>Foto</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style="display:none"
-                    ref="formFileInput"
-                    @change="onFormFileChange"
-                  />
-                </label>
               </div>
+              <ImageUploaderPro
+                :key="pendingPhotoKey"
+                label="Agregar foto"
+                :show-remove="false"
+                :output-width="1200"
+                output-format="jpeg"
+                :output-quality="0.85"
+                @change="onPendingPhotoReady"
+              />
               <div v-if="pendingPhotos.length" class="evidence-grid" style="margin-top:10px">
                 <div v-for="(p, i) in pendingPhotos" :key="i" class="ev-item">
                   <img :src="p.previewUrl" class="ev-thumb" alt="Foto" />
@@ -170,10 +168,6 @@
                     <i class="bi bi-trash3"></i>
                   </button>
                 </div>
-              </div>
-              <div v-else class="no-evidence" style="padding:14px 0 0">
-                <i class="bi bi-camera"></i>
-                <p>Presiona <strong>Foto</strong> para adjuntar imágenes</p>
               </div>
             </div>
           </div>
@@ -184,41 +178,6 @@
               <span v-if="saving"><i class="bi bi-hourglass-split"></i> Guardando...</span>
               <span v-else><i class="bi bi-check-lg"></i> {{ editMode ? 'Actualizar' : 'Registrar' }}</span>
             </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Cropper inline del formulario -->
-    <Teleport to="body">
-      <div v-if="showFormCropper" class="cropper-overlay">
-        <div class="cropper-modal">
-          <div class="cropper-header">
-            <span class="cropper-title"><i class="bi bi-crop me-2"></i>Recortar imagen</span>
-            <div class="cropper-ratio-btns">
-              <button :class="{ active: formCropRatio === 0 }"    @click="formCropRatio = 0">Libre</button>
-              <button :class="{ active: formCropRatio === 1 }"    @click="formCropRatio = 1">1:1</button>
-              <button :class="{ active: formCropRatio === 16/9 }" @click="formCropRatio = 16/9">16:9</button>
-              <button :class="{ active: formCropRatio === 4/3 }"  @click="formCropRatio = 4/3">4:3</button>
-            </div>
-            <button class="cropper-close" @click="cancelFormCrop"><i class="bi bi-x-lg"></i></button>
-          </div>
-          <div class="cropper-area">
-            <Cropper
-              ref="formCropperRef"
-              :src="formRawSrc"
-              image-restriction="none"
-              :auto-zoom="true"
-              :stencil-props="{ movable: true, resizable: true, aspectRatio: formCropRatio || undefined }"
-            />
-          </div>
-          <div class="cropper-footer">
-            <div class="cropper-actions">
-              <button class="btn-cancel-crop" @click="cancelFormCrop">Cancelar</button>
-              <button class="btn-confirm-crop" @click="confirmFormCrop">
-                <i class="bi bi-check-lg me-1"></i> Agregar foto
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -373,8 +332,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
-import { Cropper } from "vue-advanced-cropper"
-import "vue-advanced-cropper/dist/style.css"
+import ImageUploaderPro from "@/components/common/ImageUploaderPro.vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -419,13 +377,9 @@ const replies       = ref([])
 const replyText     = ref("")
 const sendingReply  = ref(false)
 
-// ── Cropper inline del formulario ───────────────────
-const pendingPhotos    = ref([])
-const showFormCropper  = ref(false)
-const formRawSrc       = ref("")
-const formCropperRef   = ref(null)
-const formFileInput    = ref(null)
-const formCropRatio    = ref(0)
+// ── Fotos pendientes del formulario ──────────────────
+const pendingPhotos   = ref([])
+const pendingPhotoKey = ref(0)
 
 const errors = ref({ title: "" })
 const selectedNoveltyId = ref(null)
@@ -523,37 +477,16 @@ function openEditFromDetail() {
 function closeFormModal() {
   showFormModal.value = false
   for (const p of pendingPhotos.value) URL.revokeObjectURL(p.previewUrl)
-  pendingPhotos.value   = []
-  showFormCropper.value = false
-  formRawSrc.value      = ""
+  pendingPhotos.value  = []
+  pendingPhotoKey.value++
 }
 
-// ── Cropper inline ───────────────────────────────────
-function onFormFileChange(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  if (formRawSrc.value) URL.revokeObjectURL(formRawSrc.value)
-  formRawSrc.value      = URL.createObjectURL(file)
-  showFormCropper.value = true
-  formCropRatio.value   = 0
-  e.target.value        = ""
-}
-
-async function confirmFormCrop() {
-  if (!formCropperRef.value) return
-  const { canvas } = formCropperRef.value.getResult()
-  if (!canvas) return
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.88))
+// ── Fotos pendientes ──────────────────────────────────
+function onPendingPhotoReady(blob) {
+  if (!blob) return
   const previewUrl = URL.createObjectURL(blob)
   pendingPhotos.value.push({ blob, previewUrl })
-  cancelFormCrop()
-}
-
-function cancelFormCrop() {
-  showFormCropper.value = false
-  URL.revokeObjectURL(formRawSrc.value)
-  formRawSrc.value    = ""
-  formCropRatio.value = 0
+  pendingPhotoKey.value++
 }
 
 function removePendingPhoto(index) {
@@ -1136,68 +1069,6 @@ onMounted(async () => {
 }
 .form-photo-label small { font-weight: 400; opacity: 0.6; }
 
-/* Cropper overlay */
-.cropper-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.75);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9000; padding: 16px;
-}
-.cropper-modal {
-  background: #fff; border-radius: 16px;
-  width: 100%; max-width: 680px; max-height: 92vh;
-  display: flex; flex-direction: column;
-  box-shadow: 0 25px 70px rgba(0,0,0,0.4); overflow: hidden;
-}
-.cropper-header {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 18px; border-bottom: 1px solid #f1f5f9;
-  flex-shrink: 0; flex-wrap: wrap;
-}
-.cropper-title {
-  font-size: 15px; font-weight: 700; color: #1e293b;
-  display: flex; align-items: center; flex-shrink: 0;
-}
-.cropper-ratio-btns { display: flex; gap: 5px; flex: 1; }
-.cropper-ratio-btns button {
-  padding: 4px 11px; border-radius: 20px;
-  border: 1px solid #e2e8f0; background: #f8fafc;
-  font-size: 12px; font-weight: 500; cursor: pointer;
-  transition: all 0.15s; color: #475569;
-}
-.cropper-ratio-btns button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-.cropper-ratio-btns button:hover:not(.active) { border-color: #94a3b8; }
-.cropper-close {
-  background: none; border: none; font-size: 17px;
-  cursor: pointer; color: #94a3b8; margin-left: auto; flex-shrink: 0;
-}
-.cropper-close:hover { color: #1e293b; }
-.cropper-area {
-  flex: 1; min-height: 300px; max-height: 55vh;
-  background: #1e293b; overflow: hidden; position: relative;
-}
-.cropper-footer {
-  padding: 12px 18px; border-top: 1px solid #f1f5f9;
-  display: flex; justify-content: flex-end;
-  flex-shrink: 0; gap: 8px;
-}
-.cropper-actions { display: flex; gap: 8px; }
-.btn-cancel-crop {
-  padding: 7px 16px; border-radius: 8px;
-  border: 1px solid #e2e8f0; background: #f8fafc;
-  color: #475569; font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: background 0.15s;
-}
-.btn-cancel-crop:hover { background: #e2e8f0; }
-.btn-confirm-crop {
-  padding: 7px 18px; border-radius: 8px;
-  background: #3b82f6; color: #fff;
-  border: none; font-size: 13px; font-weight: 600;
-  cursor: pointer; display: flex; align-items: center; gap: 5px;
-  transition: background 0.15s;
-}
-.btn-confirm-crop:hover { background: #2563eb; }
-
 /* Formulario */
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group label { font-size: 13px; font-weight: 600; color: var(--text-main, #374151); }
@@ -1299,22 +1170,6 @@ onMounted(async () => {
   align-items: center;
   gap: 7px;
 }
-
-.btn-upload-ev {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: var(--primary, #3b82f6);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.btn-upload-ev:hover { background: #2563eb; }
-.btn-upload-ev.loading { background: #94a3b8; cursor: default; }
 
 .evidence-grid {
   display: grid;
