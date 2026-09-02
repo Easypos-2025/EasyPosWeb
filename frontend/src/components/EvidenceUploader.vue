@@ -38,99 +38,93 @@
         <span>{{ limitsInfo }}</span>
       </div>
 
-      <!-- Zona de drop / selector -->
-      <div v-if="!selectedFile && !previewUrl" class="eu-field">
-        <label
-          class="drop-zone"
-          :class="{ dragging: isDragging }"
-          @dragover.prevent="isDragging = true"
-          @dragleave="isDragging = false"
-          @drop.prevent="onDrop"
-        >
-          <i class="bi" :class="dropIcon"></i>
-          <span class="dz-title">Arrastra aquí o toca para seleccionar</span>
-          <span class="dz-hint">{{ dropHint }}</span>
-          <input
-            ref="fileInput"
-            type="file"
-            :accept="acceptAttr"
-            @change="onFileChange"
-            hidden
-          />
-        </label>
+      <!-- IMAGEN: componente unificado (archivo + cámara + pegar + recorte) -->
+      <ImageUploaderPro
+        v-if="currentType === 'image'"
+        :key="imageUploaderKey"
+        label="Foto de la evidencia"
+        :show-remove="false"
+        :output-width="1200"
+        output-format="jpeg"
+        :output-quality="0.85"
+        @change="onImageReady"
+      />
 
-        <!-- Captura directa desde cámara / micrófono (solo móvil) -->
-        <label v-if="isMobile" class="camera-capture-btn">
-          <i class="bi" :class="cameraIcon"></i>
-          {{ cameraBtnLabel }}
-          <input
-            ref="cameraInput"
-            type="file"
-            :accept="captureAcceptAttr"
-            :capture="captureAttr"
-            @change="onFileChange"
-            hidden
-          />
-        </label>
-      </div>
+      <template v-else>
 
-      <!-- Preview imagen -->
-      <div v-if="currentType === 'image' && previewUrl" class="img-preview-wrap">
-        <img :src="previewUrl" class="img-preview-thumb" />
-        <div class="img-meta">
-          <span v-if="originalSize" class="meta-badge meta-original">
-            Original: {{ originalSize }}
-          </span>
-          <span v-if="compressedSize" class="meta-badge meta-compressed">
-            Comprimida: {{ compressedSize }}
-            <span v-if="savings > 0" class="savings">–{{ savings }}%</span>
-          </span>
+        <!-- Zona de drop / selector (video / audio) -->
+        <div v-if="!selectedFile" class="eu-field">
+          <label
+            class="drop-zone"
+            :class="{ dragging: isDragging }"
+            @dragover.prevent="isDragging = true"
+            @dragleave="isDragging = false"
+            @drop.prevent="onDrop"
+          >
+            <i class="bi" :class="dropIcon"></i>
+            <span class="dz-title">Arrastra aquí o toca para seleccionar</span>
+            <span class="dz-hint">{{ dropHint }}</span>
+            <input
+              ref="fileInput"
+              type="file"
+              :accept="acceptAttr"
+              @change="onFileChange"
+              hidden
+            />
+          </label>
+
+          <!-- Captura directa desde cámara / micrófono (solo móvil) -->
+          <label v-if="isMobile" class="camera-capture-btn">
+            <i class="bi" :class="cameraIcon"></i>
+            {{ cameraBtnLabel }}
+            <input
+              ref="cameraInput"
+              type="file"
+              :accept="captureAcceptAttr"
+              :capture="captureAttr"
+              @change="onFileChange"
+              hidden
+            />
+          </label>
         </div>
-        <div class="img-actions">
-          <button class="btn-change" @click="openCropper">
-            <i class="bi bi-crop"></i> Recortar
-          </button>
+
+        <!-- Preview video -->
+        <div v-if="currentType === 'video' && selectedFile" class="media-preview-wrap">
+          <video :src="previewUrl" controls class="video-preview" />
+          <div class="media-info">
+            <span class="meta-badge">{{ selectedFile.name }}</span>
+            <span class="meta-badge" :class="fileSizeClass">{{ fileSize }}</span>
+            <span v-if="mediaDuration" class="meta-badge">{{ mediaDuration }}</span>
+          </div>
+          <div v-if="sizeExceeded" class="size-warning">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            El video pesa <strong>{{ fileSize }}</strong> y supera el límite de
+            <strong>{{ SIZE_LIMITS.video }} MB</strong>. Recórtalo en tu dispositivo antes de subirlo.
+          </div>
           <button class="btn-change" @click="resetFile">
-            <i class="bi bi-arrow-repeat"></i> Cambiar imagen
+            <i class="bi bi-arrow-repeat"></i> Cambiar video
           </button>
         </div>
-      </div>
 
-      <!-- Preview video -->
-      <div v-if="currentType === 'video' && selectedFile" class="media-preview-wrap">
-        <video :src="previewUrl" controls class="video-preview" />
-        <div class="media-info">
-          <span class="meta-badge">{{ selectedFile.name }}</span>
-          <span class="meta-badge" :class="fileSizeClass">{{ fileSize }}</span>
-          <span v-if="mediaDuration" class="meta-badge">{{ mediaDuration }}</span>
+        <!-- Preview audio -->
+        <div v-if="currentType === 'audio' && selectedFile" class="media-preview-wrap">
+          <audio :src="previewUrl" controls class="audio-preview" @loadedmetadata="onAudioMeta" />
+          <div class="media-info">
+            <span class="meta-badge">{{ selectedFile.name }}</span>
+            <span class="meta-badge" :class="fileSizeClass">{{ fileSize }}</span>
+            <span v-if="mediaDuration" class="meta-badge">{{ mediaDuration }}</span>
+          </div>
+          <div v-if="sizeExceeded" class="size-warning">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            El audio pesa <strong>{{ fileSize }}</strong> y supera el límite de
+            <strong>{{ SIZE_LIMITS.audio }} MB</strong>. Recórtalo en tu dispositivo antes de subirlo.
+          </div>
+          <button class="btn-change" @click="resetFile">
+            <i class="bi bi-arrow-repeat"></i> Cambiar audio
+          </button>
         </div>
-        <div v-if="sizeExceeded" class="size-warning">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          El video pesa <strong>{{ fileSize }}</strong> y supera el límite de
-          <strong>{{ SIZE_LIMITS.video }} MB</strong>. Recórtalo en tu dispositivo antes de subirlo.
-        </div>
-        <button class="btn-change" @click="resetFile">
-          <i class="bi bi-arrow-repeat"></i> Cambiar video
-        </button>
-      </div>
 
-      <!-- Preview audio -->
-      <div v-if="currentType === 'audio' && selectedFile" class="media-preview-wrap">
-        <audio :src="previewUrl" controls class="audio-preview" @loadedmetadata="onAudioMeta" />
-        <div class="media-info">
-          <span class="meta-badge">{{ selectedFile.name }}</span>
-          <span class="meta-badge" :class="fileSizeClass">{{ fileSize }}</span>
-          <span v-if="mediaDuration" class="meta-badge">{{ mediaDuration }}</span>
-        </div>
-        <div v-if="sizeExceeded" class="size-warning">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          El audio pesa <strong>{{ fileSize }}</strong> y supera el límite de
-          <strong>{{ SIZE_LIMITS.audio }} MB</strong>. Recórtalo en tu dispositivo antes de subirlo.
-        </div>
-        <button class="btn-change" @click="resetFile">
-          <i class="bi bi-arrow-repeat"></i> Cambiar audio
-        </button>
-      </div>
+      </template>
 
     </template>
 
@@ -152,47 +146,14 @@
       <slot name="extra-actions" />
     </div>
 
-    <!-- MODAL RECORTE DE IMAGEN -->
-    <div v-if="showCropper" class="crop-overlay" @click.self="cancelCrop">
-      <div class="crop-box">
-        <div class="crop-header">
-          <span class="crop-title"><i class="bi bi-crop"></i> Recortar imagen</span>
-          <div class="crop-ratio-btns">
-            <button :class="{ active: cropRatio === 0 }"    @click="cropRatio = 0">Libre</button>
-            <button :class="{ active: cropRatio === 1 }"    @click="cropRatio = 1">1:1</button>
-            <button :class="{ active: cropRatio === 16/9 }" @click="cropRatio = 16/9">16:9</button>
-            <button :class="{ active: cropRatio === 4/3 }"  @click="cropRatio = 4/3">4:3</button>
-          </div>
-        </div>
-        <div class="crop-area">
-          <Cropper
-            ref="cropperRef"
-            :src="rawImageUrl"
-            imageRestriction="none"
-            :autoZoom="true"
-            :stencil-props="{ movable: true, resizable: true, aspectRatio: cropRatio }"
-          />
-        </div>
-        <div class="crop-actions">
-          <button class="btn btn-secondary btn-sm" @click="skipCrop">
-            <i class="bi bi-skip-forward"></i> Sin recorte
-          </button>
-          <button class="btn btn-primary btn-sm" @click="confirmCrop">
-            <i class="bi bi-check-lg"></i> Confirmar recorte
-          </button>
-        </div>
-      </div>
-    </div>
-
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from "vue"
-import { Cropper } from "vue-advanced-cropper"
-import "vue-advanced-cropper/dist/style.css"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import ImageUploaderPro from "@/components/common/ImageUploaderPro.vue"
 
 // ── Props / Emits ────────────────────────────────────────────
 const props = defineProps({
@@ -214,10 +175,8 @@ const currentType    = ref("image")
 const description    = ref("")
 const selectedFile   = ref(null)
 const previewUrl     = ref("")
-const compressedBlob = ref(null)
-const originalSize   = ref("")
-const compressedSize = ref("")
-const savings        = ref(0)
+const imageFile      = ref(null)
+const imageUploaderKey = ref(0)
 const uploading      = ref(false)
 const progress       = ref(0)
 const isDragging     = ref(false)
@@ -225,12 +184,6 @@ const mediaDuration  = ref("")
 const fileInput      = ref(null)
 const cameraInput    = ref(null)
 const isMobile       = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-
-// ── Estado del cropper ───────────────────────────────────────
-const showCropper  = ref(false)
-const rawImageUrl  = ref("")
-const cropperRef   = ref(null)
-const cropRatio    = ref(0)
 
 // ── Tipos de evidencia ────────────────────────────────────────
 const types = [
@@ -306,6 +259,7 @@ const sizeExceeded = computed(() => {
 
 const canSubmit = computed(() => {
   if (currentType.value === "text") return description.value.trim().length > 0
+  if (currentType.value === "image") return !!imageFile.value
   if (!selectedFile.value) return false
   if (sizeExceeded.value) return false
   return true
@@ -343,29 +297,24 @@ function onFileChange(e) {
 async function processFile(file) {
   if (!isValidFormat(file)) return
 
-  selectedFile.value   = file
-  compressedBlob.value = null
-  previewUrl.value     = ""
-  originalSize.value   = ""
-  compressedSize.value = ""
-  savings.value        = 0
-  mediaDuration.value  = ""
+  selectedFile.value  = file
+  previewUrl.value    = ""
+  mediaDuration.value = ""
 
-  if (currentType.value === "image") {
-    originalSize.value = formatBytes(file.size)
-    rawImageUrl.value  = URL.createObjectURL(file)
-    cropRatio.value    = 0
-    showCropper.value  = true
-  } else {
-    previewUrl.value = URL.createObjectURL(file)
-    if (sizeExceeded.value) {
-      const limit = SIZE_LIMITS[currentType.value]
-      showToast(
-        `El archivo pesa ${formatBytes(file.size)} y supera el límite de ${limit} MB. Debes recortarlo antes de subirlo.`,
-        "warning"
-      )
-    }
+  previewUrl.value = URL.createObjectURL(file)
+  if (sizeExceeded.value) {
+    const limit = SIZE_LIMITS[currentType.value]
+    showToast(
+      `El archivo pesa ${formatBytes(file.size)} y supera el límite de ${limit} MB. Debes recortarlo antes de subirlo.`,
+      "warning"
+    )
   }
+}
+
+// ── Imagen: recibe blob ya recortado/comprimido de ImageUploaderPro ──
+function onImageReady(blob) {
+  if (!blob) return
+  imageFile.value = new File([blob], `evidencia_${Date.now()}.jpg`, { type: blob.type || "image/jpeg" })
 }
 
 function onAudioMeta(e) {
@@ -376,112 +325,13 @@ function onAudioMeta(e) {
 }
 
 function resetFile() {
-  selectedFile.value   = null
-  previewUrl.value     = ""
-  rawImageUrl.value    = ""
-  compressedBlob.value = null
-  originalSize.value   = ""
-  compressedSize.value = ""
-  savings.value        = 0
-  mediaDuration.value  = ""
-  showCropper.value    = false
+  selectedFile.value = null
+  previewUrl.value    = ""
+  imageFile.value     = null
+  imageUploaderKey.value++
+  mediaDuration.value = ""
   if (fileInput.value)   fileInput.value.value   = ""
   if (cameraInput.value) cameraInput.value.value = ""
-}
-
-// ── Cropper ───────────────────────────────────────────────────
-function openCropper() {
-  cropRatio.value   = 0
-  showCropper.value = true
-}
-
-function cancelCrop() {
-  // Cerrar sin cambios si ya hay preview
-  if (previewUrl.value) {
-    showCropper.value = false
-  } else {
-    resetFile()
-  }
-}
-
-async function confirmCrop() {
-  if (!cropperRef.value) return
-  const { canvas } = cropperRef.value.getResult()
-  if (!canvas) return
-  await applyCanvas(canvas)
-  showCropper.value = false
-}
-
-async function skipCrop() {
-  // Comprimir sin recortar
-  try {
-    const { blob, url } = await compressImage(selectedFile.value)
-    compressedBlob.value = blob
-    previewUrl.value     = url
-    compressedSize.value = formatBytes(blob.size)
-    savings.value = Math.round((1 - blob.size / selectedFile.value.size) * 100)
-  } catch {
-    previewUrl.value    = rawImageUrl.value
-    compressedBlob.value = null
-  }
-  showCropper.value = false
-}
-
-async function applyCanvas(canvas) {
-  const MAX = 1200
-  let { width, height } = canvas
-  if (width > MAX) {
-    height = Math.round(height * (MAX / width))
-    width  = MAX
-  }
-  const resized = document.createElement("canvas")
-  resized.width  = width
-  resized.height = height
-  resized.getContext("2d").drawImage(canvas, 0, 0, width, height)
-
-  await new Promise((resolve) => {
-    resized.toBlob((blob) => {
-      if (!blob) { resolve(); return }
-      compressedBlob.value = blob
-      previewUrl.value     = URL.createObjectURL(blob)
-      compressedSize.value = formatBytes(blob.size)
-      savings.value = Math.round((1 - blob.size / selectedFile.value.size) * 100)
-      resolve()
-    }, "image/jpeg", 0.82)
-  })
-}
-
-// ── Compresión de imagen (full, sin recorte) ──────────────────
-function compressImage(file, maxWidth = 1200, quality = 0.82) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxWidth) {
-          height = Math.round(height * (maxWidth / width))
-          width  = maxWidth
-        }
-        const canvas = document.createElement("canvas")
-        canvas.width  = width
-        canvas.height = height
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height)
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) { reject(new Error("No blob")); return }
-            resolve({ blob, url: URL.createObjectURL(blob) })
-          },
-          "image/jpeg",
-          quality
-        )
-      }
-      img.onerror = reject
-      img.src = e.target.result
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
 }
 
 // ── Submit ───────────────────────────────────────────────────
@@ -497,9 +347,7 @@ async function submit() {
     fd.append("description", description.value.trim())
 
     if (currentType.value !== "text") {
-      const toUpload = (currentType.value === "image" && compressedBlob.value)
-        ? new File([compressedBlob.value], selectedFile.value.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" })
-        : selectedFile.value
+      const toUpload = currentType.value === "image" ? imageFile.value : selectedFile.value
       fd.append("file", toUpload)
     }
 
@@ -604,13 +452,6 @@ function formatBytes(bytes) {
 .camera-capture-btn .bi { font-size: 18px; }
 .camera-capture-btn:active { background: #3b82f6; color: #fff; }
 
-/* PREVIEW IMAGEN */
-.img-preview-wrap { display: flex; flex-direction: column; gap: 8px; }
-.img-preview-thumb { width: 100%; max-height: 220px; object-fit: contain;
-  border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; }
-.img-meta { display: flex; gap: 8px; flex-wrap: wrap; }
-.img-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
 /* ADVERTENCIA TAMAÑO */
 .size-warning {
   display: flex; align-items: flex-start; gap: 8px;
@@ -624,11 +465,8 @@ function formatBytes(bytes) {
   font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
   background: #f1f5f9; color: #475569;
 }
-.meta-original   { background: #fef9c3; color: #854d0e; }
-.meta-compressed { background: #dcfce7; color: #166534; }
 .meta-ok         { background: #dcfce7; color: #166534; }
 .meta-warn       { background: #fef2f2; color: #b91c1c; }
-.savings { font-weight: 700; margin-left: 4px; }
 
 /* PREVIEW MEDIA */
 .media-preview-wrap { display: flex; flex-direction: column; gap: 8px; }
@@ -652,39 +490,6 @@ function formatBytes(bytes) {
 /* ACCIONES */
 .eu-actions { display: flex; gap: 10px; align-items: center; }
 
-/* MODAL RECORTE */
-.crop-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.75);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9000; padding: 16px;
-}
-.crop-box {
-  background: #fff; border-radius: 16px; width: 100%; max-width: 680px;
-  max-height: 90vh; display: flex; flex-direction: column;
-  box-shadow: 0 25px 60px rgba(0,0,0,0.35); overflow: hidden;
-}
-.crop-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; gap: 8px;
-}
-.crop-title { font-size: 15px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 7px; }
-.crop-ratio-btns { display: flex; gap: 6px; }
-.crop-ratio-btns button {
-  padding: 4px 12px; border-radius: 20px; border: 1px solid #e2e8f0;
-  background: #f8fafc; font-size: 12px; font-weight: 500; cursor: pointer;
-  transition: all 0.15s;
-}
-.crop-ratio-btns button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-.crop-area {
-  flex: 1; min-height: 300px; max-height: 55vh;
-  background: #1e293b; overflow: hidden; position: relative;
-}
-.crop-area :deep(.vue-advanced-cropper) { width: 100% !important; height: 100% !important; }
-.crop-actions {
-  display: flex; justify-content: flex-end; gap: 10px;
-  padding: 14px 18px; border-top: 1px solid #f1f5f9;
-}
-
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
@@ -692,6 +497,5 @@ function formatBytes(bytes) {
   .type-btn span { display: none; }
   .type-btn { padding: 8px 12px; border-radius: 50%; }
   .type-btn .bi { font-size: 16px; }
-  .crop-area { min-height: 220px; }
 }
 </style>

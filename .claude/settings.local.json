@@ -299,7 +299,14 @@
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 -o ConnectTimeout=20 root@209.38.152.254 'mysql -u root -p123456 easyposweb 2>/dev/null -e \" *)",
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 -o ConnectTimeout=20 root@209.38.152.254 \"cd /var/www/easyposweb && git pull origin master --quiet && systemctl restart easyposweb && echo OK\")",
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"sed -n '220,400p' /var/www/easyposweb/backend/app/routers/parking_parqueadero_router.py\")",
-      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e \\\\\"DESCRIBE pos_receipt_orders; DESCRIBE pos_receipt_payment_methods;\\\\\"\")"
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"mysql -u root -p123456 easyposweb -e \\\\\"DESCRIBE pos_receipt_orders; DESCRIBE pos_receipt_payment_methods;\\\\\"\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"sed -i \\\\\"s/COALESCE\\(d\\\\.name, od\\\\.dish_id\\)              AS plato/COALESCE\\(d.name, NULLIF\\(od.notes,''\\), od.dish_id\\)              AS plato/g; s/COALESCE\\(d\\\\.name, od\\\\.dish_id\\)               AS plato/COALESCE\\(d.name, NULLIF\\(od.notes,''\\), od.dish_id\\)               AS plato/g\\\\\" /var/www/easyposweb/backend/app/routers/pos_consultas_router.py && grep -n 'AS plato' /var/www/easyposweb/backend/app/routers/pos_consultas_router.py\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"systemctl restart easyposweb && echo OK\")",
+      "Bash(tar -czf - -C \"/d/AAA Proyectos Claude-Code/EasyPosWeb/frontend\" dist)",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cd /var/www/easyposweb/frontend && rm -rf dist && tar -xzf -\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && systemctl restart easyposweb && echo OK\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cat /etc/nginx/sites-enabled/easyposweb 2>/dev/null || cat /etc/nginx/conf.d/easyposweb.conf 2>/dev/null || nginx -T 2>/dev/null | grep -A 80 'server_name easyposweb'\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"ls /var/www/easyposweb/frontend/dist/index.html && cd /var/www/easyposweb && git pull origin master && systemctl restart easyposweb && echo OK\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Personal\\.claude"

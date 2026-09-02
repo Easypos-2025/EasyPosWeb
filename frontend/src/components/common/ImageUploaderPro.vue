@@ -4,16 +4,19 @@
     <!-- Zona de preview / drop -->
     <div
       class="iup-preview"
+      tabindex="0"
       :class="{ 'iup-preview--drag': isDragging }"
       @click="triggerFile"
       @dragover.prevent="isDragging = true"
       @dragleave.prevent="isDragging = false"
       @drop.prevent="onDrop"
+      @paste.prevent="onPaste"
     >
       <img v-if="displayUrl" :src="displayUrl" class="iup-preview__img" :alt="label" />
       <div v-else class="iup-preview__empty">
         <i class="bi bi-image"></i>
         <span>{{ label }}</span>
+        <span class="iup-preview__paste-hint">o pega una captura con Ctrl+V</span>
       </div>
       <div class="iup-preview__hover">
         <i class="bi bi-camera-fill"></i>
@@ -151,6 +154,18 @@ function onFileSelected(e) {
   props.autoFit ? autoProcess(file) : openEditor(file)
 }
 
+function onPaste(e) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) props.autoFit ? autoProcess(file) : openEditor(file)
+      return
+    }
+  }
+}
+
 function openEditor(file) {
   if (rawSrc.value) URL.revokeObjectURL(rawSrc.value)
   rawSrc.value    = URL.createObjectURL(file)
@@ -273,7 +288,9 @@ function removePhoto() {
   background: #f1f5f9; border: 2px dashed #cbd5e1; transition: border-color .15s;
 }
 .iup-preview:hover,
+.iup-preview:focus-visible,
 .iup-preview--drag { border-color: #1d4ed8; background: #eff6ff; }
+.iup-preview:focus { outline: none; }
 .iup-preview__img  { width: 100%; height: 100%; object-fit: cover; display: block; }
 .iup-preview__empty {
   display: flex; flex-direction: column; align-items: center;
@@ -281,6 +298,7 @@ function removePhoto() {
 }
 .iup-preview__empty i    { font-size: 32px; }
 .iup-preview__empty span { font-size: 13px; }
+.iup-preview__paste-hint { font-size: 11px; color: #b6c2d1; }
 .iup-preview__hover {
   position: absolute; inset: 0; background: rgba(0,0,0,.45);
   display: flex; flex-direction: column; align-items: center;
