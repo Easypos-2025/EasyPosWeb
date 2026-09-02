@@ -575,9 +575,24 @@ async def stock_alertas(
     company_id: Optional[int] = None,
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
+    """
+    Stock crítico = cantidad_actual (fuente real) menos lo ya comprometido en
+    pedidos montados sin facturar (datatemppos.temp_plato_producto_parcial).
+    Este descuento es solo para la alerta/visualización: NO se escribe en
+    inventario_actual_porciones — eso solo ocurre al facturar/generar el recibo.
+    """
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
+
+    comprometido_rows = (await db_temp.execute(text("""
+        SELECT Id_Item AS id_item, SUM(Cantidad) AS comprometido
+        FROM temp_plato_producto_parcial
+        WHERE company_id = :cid AND Nro_Factura = '0'
+        GROUP BY Id_Item
+    """), {"cid": cid})).mappings().all()
+    comprometido = {int(r["id_item"]): float(r["comprometido"] or 0) for r in comprometido_rows}
 
     rows = (await db.execute(text("""
         SELECT COALESCE(si.id, 0)                             AS id,
@@ -595,12 +610,19 @@ async def stock_alertas(
           AND (si.is_active IS NULL OR si.is_active = 1)
           AND COALESCE(iap.controlar, si.control_stock, 0) = 1
           AND COALESCE(iap.stock_minimo, si.min_stock, 0) > 0
-          AND iap.cantidad_actual <= COALESCE(iap.stock_minimo, si.min_stock, 0)
-        ORDER BY (iap.cantidad_actual / COALESCE(iap.stock_minimo, si.min_stock, 1)) ASC
-        LIMIT 10
     """), {"cid": cid})).mappings().all()
 
-    return [dict(r) for r in rows]
+    alertas = []
+    for r in rows:
+        item = dict(r)
+        disponible = float(item["stock_qty"] or 0) - comprometido.get(int(item["id_item"] or 0), 0)
+        min_stock = float(item["min_stock"] or 0)
+        if disponible <= min_stock:
+            item["stock_qty"] = disponible
+            alertas.append(item)
+
+    alertas.sort(key=lambda x: (float(x["stock_qty"]) / (float(x["min_stock"]) or 1)))
+    return alertas[:10]
 
 
 # ─── Estilo de tarjetas de mesa (company_configs.pos_card_style) ──────────────
