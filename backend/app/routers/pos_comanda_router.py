@@ -1054,12 +1054,13 @@ async def cancelar_orden(
     mesa_name = str(mesa_row["name"])
 
     # Buscar pedido activo en datatemppos (con Salio para saber si ya fue a cocina)
+    # Sin filtro de fecha: puede haber pedidos pendientes de días anteriores (igual que /mesas).
     order = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Fecha, Mesa, Hora, Mesero, Valor, Salio FROM temp_comanda
-        WHERE Mesa=:mesa AND company_id=:cid AND Fecha=:today
+        WHERE Mesa=:mesa AND company_id=:cid
           AND Nro_Factura='0' AND Cancelado=0
         LIMIT 1
-    """), {"mesa": mesa_name, "cid": cid, "today": today})).mappings().first()
+    """), {"mesa": mesa_name, "cid": cid})).mappings().first()
     if not order:
         raise HTTPException(status_code=404, detail="No hay orden activa para esta mesa")
 

@@ -86,6 +86,17 @@ async def temp_status(
 
 # ═══════════════════════════════════════════════════════════════
 # POST /api/pos/utilitarios/cleanup-temp
+#
+# Dos pasadas de limpieza, ambas acotadas a company_id:
+#   1) Pedidos "ya resueltos" en el mundo facturado (Cancelado=1,
+#      archivado, ya facturado en pos_orders/pos_receipt_orders).
+#      El set de huérfanos se calcula UNA sola vez y se reutiliza
+#      para archivar + los 4 DELETE (antes se recalculaba 5 veces).
+#   2) Huérfanos por integridad referencial dentro de datatemppos
+#      (tablas chicas, sin tocar pos_orders/pos_receipt_orders):
+#        - hijo sin padre → se borra siempre, sin importar antigüedad
+#        - temp_comanda sin ítems → solo si Salio=1 (ya se confirmó
+#          y envió a cocina; Salio=0 = mesa recién abierta, no tocar)
 # ═══════════════════════════════════════════════════════════════
 @router.post("/cleanup-temp")
 async def cleanup_temp(
@@ -96,7 +107,9 @@ async def cleanup_temp(
     user = await _get_admin_user(authorization, db)
     cid = user.company_id
 
-    # Identificar huérfanos antes de borrar para archivar
+    result_tables = {t["name"]: 0 for t in TEMP_TABLES}
+
+    # ── Pasada 1: pedidos ya resueltos (facturados/cancelados/archivados) ──
     try:
         orphan_rows = (await db_temp.execute(text(f"""
             SELECT DISTINCT Nro_Pedido FROM temp_comanda
@@ -104,40 +117,100 @@ async def cleanup_temp(
               AND Nro_Pedido IN ({ORPHAN_SUBQUERY})
         """), {"cid": cid})).fetchall()
         orphan_ids = [r[0] for r in orphan_rows]
-        if orphan_ids:
-            await archive_commands_to_history(db_temp, db, cid, orphan_ids, "manual_cleanup")
     except Exception:
-        pass  # Archivado best-effort; la limpieza continúa igual
+        orphan_ids = []
 
-    result_tables = []
-    for t in TEMP_TABLES:
-        if t["name"] == "temp_comanda":
-            r = await db_temp.execute(text(f"""
-                DELETE FROM temp_comanda
-                WHERE company_id = :cid
-                  AND Nro_Pedido IN ({ORPHAN_SUBQUERY})
-            """), {"cid": cid})
-        else:
+    if orphan_ids:
+        try:
+            await archive_commands_to_history(db_temp, db, cid, orphan_ids, "manual_cleanup")
+        except Exception:
+            pass  # Archivado best-effort; la limpieza continúa igual
+
+        ph = ",".join(f":oid_{i}" for i in range(len(orphan_ids)))
+        params: dict = {"cid": cid}
+        params.update({f"oid_{i}": v for i, v in enumerate(orphan_ids)})
+        for t in TEMP_TABLES:
             r = await db_temp.execute(text(f"""
                 DELETE FROM {t['name']}
-                WHERE company_id = :cid
-                  AND {t['col']} IN ({ORPHAN_SUBQUERY})
-            """), {"cid": cid})
-        result_tables.append({
-            "name":    t["name"],
-            "label":   t["label"],
-            "deleted": r.rowcount,
-        })
+                WHERE company_id = :cid AND {t['col']} IN ({ph})
+            """), params)
+            result_tables[t["name"]] += r.rowcount
+
+    # ── Pasada 2: huérfanos por integridad referencial (dentro de datatemppos) ──
+
+    # 2a. Detalle sin cabecera padre en temp_comanda
+    r = await db_temp.execute(text("""
+        DELETE d FROM temp_detalle_comanda_parcial d
+        LEFT JOIN temp_comanda tc
+               ON tc.company_id = d.company_id
+              AND tc.Nro_Pedido = d.Nro_pedido
+              AND tc.Fecha      = d.Fecha
+        WHERE d.company_id = :cid AND tc.company_id IS NULL
+    """), {"cid": cid})
+    result_tables["temp_detalle_comanda_parcial"] += r.rowcount
+
+    # 2b. Novedades sin cabecera padre en temp_comanda
+    r = await db_temp.execute(text("""
+        DELETE n FROM temp_novedades_plato_pedido n
+        LEFT JOIN temp_comanda tc
+               ON tc.company_id = n.company_id
+              AND tc.Nro_Pedido = n.Nro_Pedido
+        WHERE n.company_id = :cid AND tc.company_id IS NULL
+    """), {"cid": cid})
+    result_tables["temp_novedades_plato_pedido"] += r.rowcount
+
+    # 2c. Armado/modificadores sin ítem padre en temp_detalle_comanda_parcial
+    #     (se ejecuta después de 2a para atrapar también los que quedaron
+    #      huérfanos por la limpieza de detalle sin cabecera).
+    r = await db_temp.execute(text("""
+        DELETE p FROM temp_plato_producto_parcial p
+        LEFT JOIN temp_detalle_comanda_parcial d
+               ON d.company_id = p.company_id
+              AND d.Nro_pedido = p.Nro_Pedido
+              AND d.Fecha      = p.Fecha
+              AND d.Id_Plato   = p.Id_Plato
+              AND d.Item       = p.Item
+        WHERE p.company_id = :cid AND d.company_id IS NULL
+    """), {"cid": cid})
+    result_tables["temp_plato_producto_parcial"] += r.rowcount
+
+    # 2d. Cabeceras confirmadas (Salio=1) que se quedaron sin ítems
+    empty_rows = (await db_temp.execute(text("""
+        SELECT tc.Nro_Pedido FROM temp_comanda tc
+        LEFT JOIN temp_detalle_comanda_parcial d
+               ON d.company_id = tc.company_id
+              AND d.Nro_pedido = tc.Nro_Pedido
+              AND d.Fecha      = tc.Fecha
+        WHERE tc.company_id = :cid AND tc.Salio = 1 AND d.company_id IS NULL
+    """), {"cid": cid})).fetchall()
+    empty_ids = [r[0] for r in empty_rows]
+    if empty_ids:
+        try:
+            await archive_commands_to_history(db_temp, db, cid, empty_ids, "manual_cleanup_empty")
+        except Exception:
+            pass
+        ph2 = ",".join(f":eid_{i}" for i in range(len(empty_ids)))
+        params2: dict = {"cid": cid}
+        params2.update({f"eid_{i}": v for i, v in enumerate(empty_ids)})
+        r = await db_temp.execute(text(f"""
+            DELETE FROM temp_comanda
+            WHERE company_id = :cid AND Nro_Pedido IN ({ph2})
+        """), params2)
+        result_tables["temp_comanda"] += r.rowcount
 
     await db_temp.commit()
 
-    total_headers = next((x["deleted"] for x in result_tables if x["name"] == "temp_comanda"), 0)
-    total_details = sum(x["deleted"] for x in result_tables if x["name"] != "temp_comanda")
+    result_list = [
+        {"name": t["name"], "label": t["label"], "deleted": result_tables[t["name"]]}
+        for t in TEMP_TABLES
+    ]
+    total_headers = result_tables["temp_comanda"]
+    total_details = sum(v for k, v in result_tables.items() if k != "temp_comanda")
 
     return {
         "deleted_headers": total_headers,
         "deleted_details": total_details,
-        "tables": result_tables,
+        "tables": result_list,
     }
 
 

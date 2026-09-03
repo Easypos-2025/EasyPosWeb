@@ -228,7 +228,7 @@ async def get_mesas(
     # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
     order_rows = (await db_temp.execute(text("""
         SELECT Nro_Pedido AS order_number, Mesa, Hora AS hora_apertura,
-               Valor AS amount, Nro_Comenzales AS guests_count, Mesero
+               Valor AS amount, Nro_Comenzales AS guests_count, Mesero, Movil
         FROM temp_comanda
         WHERE company_id=:cid AND Nro_Factura='0'
           AND Cancelado=0 AND Domicilio=0
@@ -270,6 +270,7 @@ async def get_mesas(
             "guests_count": order_info["guests_count"] if order_info else None,
             "waiter_name":  waiter_names.get(int(order_info["Mesero"] or 0)) if order_info else None,
             "daily_seq":    order_info["daily_seq"] if order_info else None,
+            "is_web":       bool(order_info and int(order_info["Movil"] or 0) == 1),
             "editing_by":   locks_dash.get(tid),
         }
         result.append(row)
