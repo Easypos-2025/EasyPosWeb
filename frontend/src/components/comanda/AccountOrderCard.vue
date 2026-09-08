@@ -5,12 +5,10 @@
     <div v-if="editingBy" class="aoc-lock-badge aoc-lock-badge--oval">
       <i class="bi bi-pencil-fill"></i> {{ editingBy }}
     </div>
-    <div v-if="d.isWeb" class="aoc-web-badge" title="Pedido desde carta digital (web)">
-      <i class="bi bi-globe2"></i> WEB
-    </div>
     <div class="aoc-oval__timer" :class="{ 'aoc-oval__timer--alert': isAlert }">
       <i class="bi bi-clock"></i>
       <span>{{ timeDisplay }}</span>
+      <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido desde carta digital (web)"></i>
     </div>
     <button v-if="showDelete" class="aoc-oval__btn aoc-oval__btn--del"
       @click.stop="$emit('eliminar')" title="Eliminar pedido">
@@ -41,13 +39,11 @@
     <div v-if="editingBy" class="aoc-lock-badge">
       <i class="bi bi-pencil-fill"></i> {{ editingBy }}
     </div>
-    <div v-if="d.isWeb" class="aoc-web-badge" title="Pedido desde carta digital (web)">
-      <i class="bi bi-globe2"></i> WEB
-    </div>
     <!-- Fila superior: timer + botón eliminar -->
     <div class="aoc__top">
       <span class="aoc__timer" :class="{ 'aoc__timer--alert': isAlert }">
         <i class="bi bi-clock-fill"></i>{{ timeDisplay }}
+        <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido desde carta digital (web)"></i>
       </span>
       <button v-if="showDelete" class="aoc__del" @click.stop="$emit('eliminar')" title="Eliminar">
         <i class="bi bi-trash"></i>
@@ -549,22 +545,9 @@ function fmt(v) {
 .aoc { padding-bottom: 14px; }
 .aoc--circular-gold { padding-bottom: 0; }
 
-/* ── Badge origen: pedido web ── */
-.aoc-web-badge {
-  position: absolute;
-  top: -6px;
-  left: 6px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  background: #0ea5e9;
-  color: #fff;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: .4px;
-  padding: 2px 7px;
-  border-radius: 9px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.35);
-  z-index: 10;
+/* ── Ícono origen: pedido web, dentro del chip de hora (no se recorta por overflow) ── */
+.aoc-web-icon {
+  color: #38bdf8;
+  margin-left: 1px;
 }
 </style>

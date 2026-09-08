@@ -2,15 +2,11 @@
   <!-- El óvalo ES el componente — todo va dentro, clip elíptico -->
   <div class="mtc-oval" @click="$emit('click')">
 
-    <!-- Badge origen: pedido web (carta digital) -->
-    <div v-if="mesa.is_web" class="mtc-web-badge" title="Pedido desde carta digital (web)">
-      <i class="bi bi-globe2"></i> WEB
-    </div>
-
-    <!-- Comensal SUPERIOR: hora del pedido -->
+    <!-- Comensal SUPERIOR: hora del pedido + origen (web/local) -->
     <div class="mtc-cm mtc-cm--top" :class="{ 'mtc-cm--alerta': esAlerta }">
       <i class="bi bi-clock"></i>
       <span>{{ horaDisplay }}</span>
+      <i v-if="mesa.is_web" class="bi bi-globe2 mtc-web-icon" title="Pedido desde carta digital (web)"></i>
     </div>
 
     <!-- Comensal IZQUIERDO: eliminar -->
@@ -203,23 +199,10 @@ const esAlerta = computed(() => {
   max-width: 72px;
 }
 
-/* Badge origen: pedido web */
-.mtc-web-badge {
-  position: absolute;
-  top: -6px;
-  left: 6px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  background: #0ea5e9;
-  color: #fff;
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: .4px;
-  padding: 2px 7px;
-  border-radius: 9px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.35);
-  z-index: 3;
+/* Ícono origen: pedido web, dentro del chip de hora (no se recorta por overflow) */
+.mtc-web-icon {
+  color: #38bdf8;
+  margin-left: 1px;
 }
 
 /* Alerta: pedido > 60 min */
