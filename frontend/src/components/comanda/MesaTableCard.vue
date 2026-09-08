@@ -1,16 +1,17 @@
 <template>
   <!-- El óvalo ES el componente — todo va dentro, clip elíptico -->
-  <div class="mtc-oval" @click="$emit('click')">
+  <div class="mtc-oval" @click="onClick">
 
     <!-- Comensal SUPERIOR: hora del pedido + origen (web/local) -->
     <div class="mtc-cm mtc-cm--top" :class="{ 'mtc-cm--alerta': esAlerta }">
       <i class="bi bi-clock"></i>
       <span>{{ horaDisplay }}</span>
       <i v-if="mesa.is_web" class="bi bi-globe2 mtc-web-icon" title="Pedido desde carta digital (web)"></i>
+      <i v-if="tipoIcon" :class="['bi', tipoIcon, 'mtc-tipo-icon']" :title="tipoTitle"></i>
     </div>
 
     <!-- Comensal IZQUIERDO: eliminar -->
-    <button class="mtc-cm mtc-cm--left mtc-cm--del"
+    <button v-if="!mesa.es_dinamica" class="mtc-cm mtc-cm--left mtc-cm--del"
       @click.stop="$emit('eliminar')"
       title="Eliminar pedido (irreversible)">
       <i class="bi bi-trash"></i>
@@ -43,18 +44,32 @@
 
 <script setup>
 import { computed } from 'vue'
+import { showToast } from '@/utils/toast'
 
 const props = defineProps({
   mesa: { type: Object, required: true }
 })
 
-defineEmits(['click', 'eliminar', 'facturar'])
+const emit = defineEmits(['click', 'eliminar', 'facturar'])
 
 const fmtCOP = new Intl.NumberFormat('es-CO', {
   style: 'currency', currency: 'COP',
   minimumFractionDigits: 0, maximumFractionDigits: 0,
 })
 const fmt = (v) => fmtCOP.format(v || 0)
+
+/* ── Cuentas dinámicas (domicilio/plazoleta, sin mesa fija en el catálogo)
+       aún no soportan abrir detalle/editar/cancelar desde esta grilla — eso
+       requiere direccionar por order_number en vez de table_id en el backend
+       de toma de pedido. Se muestran informativas; su gestión completa vive
+       en Utilitarios > Cuentas Abiertas. ────────────────────────────────── */
+function onClick() {
+  if (props.mesa.es_dinamica) {
+    showToast('Cuenta dinámica: gestiónala desde Utilitarios > Cuentas Abiertas', 'info', 2200)
+    return
+  }
+  emit('click')
+}
 
 const horaDisplay = computed(() => {
   if (!props.mesa.hora_apertura) return '—'
@@ -74,6 +89,13 @@ const esAlerta = computed(() => {
     return (now - open) > 60 * 60 * 1000
   } catch { return false }
 })
+
+const TIPO_ICONS = {
+  domicilio: { icon: 'bi-bicycle',         title: 'Domicilio' },
+  dinamica:  { icon: 'bi-signpost-2-fill', title: 'Cuenta dinámica (sin mesa fija)' },
+}
+const tipoIcon  = computed(() => TIPO_ICONS[props.mesa.tipo_cuenta]?.icon || null)
+const tipoTitle = computed(() => TIPO_ICONS[props.mesa.tipo_cuenta]?.title || '')
 </script>
 
 <style scoped>
@@ -202,6 +224,10 @@ const esAlerta = computed(() => {
 /* Ícono origen: pedido web, dentro del chip de hora (no se recorta por overflow) */
 .mtc-web-icon {
   color: #38bdf8;
+  margin-left: 1px;
+}
+.mtc-tipo-icon {
+  color: #fde68a;
   margin-left: 1px;
 }
 

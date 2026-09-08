@@ -382,3 +382,205 @@ async def command_history(
         })
 
     return {"ventas": ventas}
+
+
+# ═══════════════════════════════════════════════════════════════
+# CUENTAS ABIERTAS — pedidos montados (sin facturar) en datatemppos.
+# Se lee directo de temp_comanda: no depende de pos_tables_layout, así
+# que las cuentas dinámicas (Id_Mesa >= 1000: domicilios, plazoleta,
+# nombre del cliente) aparecen igual que las de mesa fija. Aplica para
+# cualquier perfil de negocio que monte pedidos en datatemppos.
+# ═══════════════════════════════════════════════════════════════
+@router.get("/cuentas-abiertas")
+async def cuentas_abiertas(
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    user = await _get_admin_user(authorization, db)
+    cid = user.company_id
+
+    order_rows = (await db_temp.execute(text("""
+        SELECT Nro_Pedido AS order_number, Mesa AS table_name, Id_Mesa AS id_mesa,
+               Mesero, Hora AS hora_apertura, Valor AS amount,
+               Nro_Comenzales AS guests_count, Novedad AS notes,
+               Domicilio AS is_delivery, Movil AS is_web
+        FROM temp_comanda
+        WHERE company_id = :cid AND Nro_Factura = '0' AND Cancelado = 0
+        ORDER BY Hora ASC
+    """), {"cid": cid})).mappings().all()
+
+    if not order_rows:
+        return []
+
+    order_numbers = [r["order_number"] for r in order_rows]
+    on_quoted = ",".join(f"'{o}'" for o in order_numbers)
+
+    item_rows = (await db_temp.execute(text(
+        f"SELECT Nro_pedido, COUNT(*) AS cnt FROM temp_detalle_comanda_parcial "
+        f"WHERE company_id=:cid AND Nro_Factura='0' AND Mostrar=1 "
+        f"AND Nro_pedido IN ({on_quoted}) GROUP BY Nro_pedido"
+    ), {"cid": cid})).mappings().all()
+    item_count_map = {r["Nro_pedido"]: int(r["cnt"]) for r in item_rows}
+
+    waiter_ids = {int(r["Mesero"]) for r in order_rows if r["Mesero"]}
+    waiter_names: dict = {}
+    if waiter_ids:
+        wrows = (await db.execute(text(
+            f"SELECT id, name FROM pos_waiters WHERE company_id=:cid "
+            f"AND id IN ({','.join(str(w) for w in waiter_ids)})"
+        ), {"cid": cid})).mappings().all()
+        waiter_names = {int(r["id"]): r["name"] for r in wrows}
+
+    result = []
+    for r in order_rows:
+        id_mesa     = int(r["id_mesa"] or 0)
+        is_delivery = bool(r["is_delivery"])
+        if is_delivery:
+            tipo_cuenta = "domicilio"
+        elif id_mesa >= 1000:
+            tipo_cuenta = "dinamica"
+        else:
+            tipo_cuenta = "fija"
+        result.append({
+            "order_number":  r["order_number"],
+            "table_name":    r["table_name"],
+            "id_mesa":       id_mesa,
+            "tipo_cuenta":   tipo_cuenta,
+            "is_web":        bool(r["is_web"]),
+            "hora_apertura": str(r["hora_apertura"] or ""),
+            "amount":        int(r["amount"] or 0),
+            "guests_count":  int(r["guests_count"] or 0),
+            "notes":         r["notes"],
+            "waiter_name":   waiter_names.get(int(r["Mesero"] or 0)),
+            "item_count":    item_count_map.get(r["order_number"], 0),
+        })
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/pos/utilitarios/cuenta-detalle/{order_number}
+# Header + ítems de una cuenta abierta puntual (aún sin facturar).
+# ═══════════════════════════════════════════════════════════════
+@router.get("/cuenta-detalle/{order_number}")
+async def cuenta_detalle(
+    order_number: str,
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    user = await _get_admin_user(authorization, db)
+    cid = user.company_id
+
+    hdr = (await db_temp.execute(text("""
+        SELECT Nro_Pedido AS numero, Fecha AS fecha, Mesa AS mesa, Id_Mesa AS id_mesa,
+               Hora AS hora, Mesero, Valor AS total, Nro_Comenzales AS comensales,
+               Novedad AS novedad, Domicilio AS is_delivery, Movil AS is_web
+        FROM temp_comanda
+        WHERE company_id=:cid AND Nro_Pedido=:on AND Nro_Factura='0' AND Cancelado=0
+        LIMIT 1
+    """), {"cid": cid, "on": order_number})).mappings().one_or_none()
+
+    if not hdr:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada o ya facturada")
+    hdr = dict(hdr)
+
+    waiter_name = None
+    if hdr.get("Mesero"):
+        wr = (await db.execute(text(
+            "SELECT name FROM pos_waiters WHERE id=:wid AND company_id=:cid"
+        ), {"wid": hdr["Mesero"], "cid": cid})).mappings().first()
+        waiter_name = wr["name"] if wr else None
+
+    items = (await db_temp.execute(text("""
+        SELECT Id_Plato AS dish_id, Item AS item, Descripcion AS plato,
+               Cantidad AS quantity, Valor AS subtotal,
+               Novedad AS notes, Cambios AS changes, Cortesia AS complimentary
+        FROM temp_detalle_comanda_parcial
+        WHERE company_id=:cid AND Nro_pedido=:on AND Fecha=:fecha
+          AND Nro_Factura='0' AND Mostrar=1
+        ORDER BY Item ASC
+    """), {"cid": cid, "on": order_number, "fecha": str(hdr["fecha"])})).mappings().all()
+
+    return {
+        "header": {
+            "numero":      hdr["numero"],
+            "fecha":       str(hdr["fecha"]),
+            "hora":        str(hdr["hora"] or ""),
+            "mesa":        hdr["mesa"],
+            "id_mesa":     int(hdr["id_mesa"] or 0),
+            "mesero":      waiter_name,
+            "comensales":  int(hdr["comensales"] or 0),
+            "novedad":     hdr["novedad"],
+            "total":       int(hdr["total"] or 0),
+            "is_delivery": bool(hdr["is_delivery"]),
+            "is_web":      bool(hdr["is_web"]),
+        },
+        "items": [
+            {
+                "dish_id":       it["dish_id"],
+                "item":          it["item"],
+                "plato":         it["plato"],
+                "quantity":      float(it["quantity"] or 0),
+                "subtotal":      int(it["subtotal"] or 0),
+                "notes":         it["notes"],
+                "changes":       it["changes"],
+                "complimentary": bool(it["complimentary"]),
+            }
+            for it in items
+        ],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/pos/utilitarios/cuenta-insumos
+# Insumos que se están comprometiendo para una línea de plato dentro
+# de una cuenta abierta (aún no se descuenta inventario real — eso solo
+# ocurre al facturar/generar recibo; esto es la proyección en vivo).
+# ═══════════════════════════════════════════════════════════════
+@router.get("/cuenta-insumos")
+async def cuenta_insumos(
+    order_number: str = Query(...),
+    fecha: str = Query(...),
+    dish_id: int = Query(...),
+    item: int = Query(...),
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    user = await _get_admin_user(authorization, db)
+    cid = user.company_id
+
+    rows = (await db_temp.execute(text("""
+        SELECT Id_Item AS id_item, Cantidad AS quantity
+        FROM temp_plato_producto_parcial
+        WHERE company_id=:cid AND Nro_Pedido=:on AND Fecha=:fecha
+          AND Nro_Factura='0' AND Id_Plato=:dish_id AND Item=:item
+        ORDER BY Id_Grupo, Id_Item
+    """), {"cid": cid, "on": order_number, "fecha": fecha, "dish_id": dish_id, "item": item})).mappings().all()
+
+    if not rows:
+        return []
+
+    item_ids = [int(r["id_item"]) for r in rows]
+    ph = ",".join(str(i) for i in item_ids)
+    si_rows = (await db.execute(text(f"""
+        SELECT si.id_item, COALESCE(si.description, si.id_item) AS insumo,
+               COALESCE(mu.name, '') AS unidad
+        FROM supply_items si
+        LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = si.company_id
+        WHERE si.company_id=:cid AND si.id_item IN ({ph})
+    """), {"cid": cid})).mappings().all()
+    si_map = {int(r["id_item"]): r for r in si_rows}
+
+    result = []
+    for r in rows:
+        iid = int(r["id_item"])
+        si  = si_map.get(iid)
+        result.append({
+            "item_id":  iid,
+            "insumo":   si["insumo"] if si else str(iid),
+            "quantity": float(r["quantity"] or 0),
+            "unidad":   si["unidad"] if si else "",
+        })
+    return result

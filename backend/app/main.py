@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func, text
 
-from app.database import AsyncSessionLocal, init_db
+from app.database import AsyncSessionLocal, DatatempposSession, init_db
 from app import models
 
 # ===============================
@@ -2170,6 +2170,52 @@ async def _init_db_data():
             await db.commit()
         except Exception:
             await db.rollback()
+
+        # ── DATATEMPPOS: completar temp_mesas como espejo fiel de escritorio.mesas
+        #    (fijas Id_Mesa<1000 y dinámicas Id_Mesa>=1000: domicilios, plazoleta,
+        #    cuentas con nombre de cliente). No reemplaza pos_tables_layout, que
+        #    sigue siendo el catálogo curado por el admin para el plano visual;
+        #    temp_mesas es el espejo que usa el dashboard para resolver nombre/tipo
+        #    de cuenta sin depender de que la mesa esté en ese catálogo curado.
+        try:
+            async with DatatempposSession() as db_temp:
+                try:
+                    await db_temp.execute(text(
+                        "ALTER TABLE temp_mesas ADD COLUMN IF NOT EXISTS company_id INT NOT NULL DEFAULT 0"
+                    ))
+                    await db_temp.commit()
+                except Exception:
+                    await db_temp.rollback()
+                try:
+                    # Limpia filas huérfanas del stub previo (sin company_id real)
+                    await db_temp.execute(text("DELETE FROM temp_mesas WHERE company_id = 0"))
+                    await db_temp.commit()
+                except Exception:
+                    await db_temp.rollback()
+                try:
+                    await db_temp.execute(text(
+                        "ALTER TABLE temp_mesas ADD UNIQUE KEY uq_temp_mesas_cid_mesa (company_id, Id_Mesa)"
+                    ))
+                    await db_temp.commit()
+                except Exception:
+                    await db_temp.rollback()
+        except Exception:
+            pass
+
+        # ── SEED: "Cuentas Abiertas" bajo Utilitarios (todos los perfiles) ─────
+        try:
+            _util_parent_row = await db.execute(text(
+                "SELECT parent_id FROM system_modules "
+                "WHERE route='/pos/utilitarios/limpiar-temporales' LIMIT 1"
+            ))
+            _util_parent = _util_parent_row.scalar()
+            if _util_parent:
+                await _get_or_create_module(
+                    "Cuentas Abiertas", "/pos/utilitarios/cuentas-abiertas",
+                    "bi-receipt-cutoff", _util_parent
+                )
+        except Exception:
+            pass
 
 
 # ===============================

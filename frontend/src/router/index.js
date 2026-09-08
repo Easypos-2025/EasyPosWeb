@@ -1038,6 +1038,13 @@ const routes = [
         meta: { title: "Limpiar Temporales" }
       },
       {
+        path: "/pos/utilitarios/cuentas-abiertas",
+        name: "PosUtilitariosCuentasAbiertasView",
+        component: () => import("@/views/pos/PosUtilitariosCuentasAbiertasView.vue"),
+        requiresAuth: true,
+        meta: { title: "Cuentas Abiertas" }
+      },
+      {
         path: "/pos/utilitarios/historico-comandado",
         name: "PosHistoricoComandadoView",
         component: () => import("@/views/pos/PosHistoricoComandadoView.vue"),

@@ -16,4 +16,26 @@ apiComanda.interceptors.request.use((config) => {
   return config
 })
 
+// Si un waiter_token viejo/inválido queda guardado (ej. sesión de mesero
+// expirada), bloquea silenciosamente todas las acciones de comanda del admin
+// con 401, aunque su token normal siga vigente. Al recibir 401 con un
+// waiter_token puesto, lo descarta y reintenta una vez con el token del admin.
+apiComanda.interceptors.response.use(
+  res => res,
+  async err => {
+    const original = err.config
+    const usedWaiterToken = !!localStorage.getItem("waiter_token")
+    const adminToken = localStorage.getItem("token")
+
+    if (err.response?.status === 401 && usedWaiterToken && adminToken && !original._retriedWithAdminToken) {
+      localStorage.removeItem("waiter_token")
+      original._retriedWithAdminToken = true
+      original.headers.Authorization = `Bearer ${adminToken}`
+      return apiComanda(original)
+    }
+
+    return Promise.reject(err)
+  }
+)
+
 export default apiComanda

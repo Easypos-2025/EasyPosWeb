@@ -82,9 +82,9 @@
               <span class="mesa-mesero">{{ mesa.waiter_name || '—' }}</span>
               <span class="mesa-monto">{{ fmt(mesa.amount) }}</span>
             </div>
-            <div class="mesa-estado">Ocupada</div>
+            <div class="mesa-estado">{{ mesa.es_dinamica ? 'Dinámica' : 'Ocupada' }}</div>
             <div class="mesa-acciones">
-              <button class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
+              <button v-if="!mesa.es_dinamica" class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
                 title="Eliminar pedido (irreversible)">
                 <i class="bi bi-trash"></i>
               </button>
@@ -628,6 +628,10 @@ async function despacharPedido(pedido) {
 }
 
 function irAMesaExistente(mesa) {
+  if (mesa.es_dinamica) {
+    showToast('Cuenta dinámica: gestiónala desde Utilitarios > Cuentas Abiertas', 'info', 2200)
+    return
+  }
   localStorage.setItem('waiter_company_id', String(selectedCid.value))
   detailMesa.value = {
     id:           mesa.id,

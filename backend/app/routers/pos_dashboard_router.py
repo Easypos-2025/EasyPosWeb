@@ -225,13 +225,15 @@ async def get_mesas(
         if r.get("editing_waiter_name") and _lock_active(r.get("editing_since"))
     }
 
-    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de días anteriores)
+    # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de
+    # días anteriores). Sin filtro de Domicilio: las cuentas dinámicas (domicilio,
+    # plazoleta, nombre de cliente) también deben verse en el dashboard.
     order_rows = (await db_temp.execute(text("""
-        SELECT Nro_Pedido AS order_number, Mesa, Hora AS hora_apertura,
-               Valor AS amount, Nro_Comenzales AS guests_count, Mesero, Movil
+        SELECT Nro_Pedido AS order_number, Mesa, Id_Mesa, Hora AS hora_apertura,
+               Valor AS amount, Nro_Comenzales AS guests_count, Mesero, Movil, Domicilio
         FROM temp_comanda
         WHERE company_id=:cid AND Nro_Factura='0'
-          AND Cancelado=0 AND Domicilio=0
+          AND Cancelado=0
         ORDER BY Hora ASC
     """), {"cid": cid})).mappings().all()
 
@@ -241,8 +243,9 @@ async def get_mesas(
         if key and key not in order_by_mesa:
             order_by_mesa[key] = dict(o) | {"daily_seq": i}
 
-    # Nombres de meseros desde easyposweb
-    waiter_ids = {int(v["Mesero"]) for v in order_by_mesa.values() if v.get("Mesero")}
+    # Nombres de meseros desde easyposweb (de TODOS los pedidos abiertos, no solo
+    # los que calzan con una mesa fija del layout)
+    waiter_ids = {int(o["Mesero"]) for o in order_rows if o["Mesero"]}
     waiter_names: dict = {}
     if waiter_ids:
         wrows = (await db.execute(text(
@@ -252,6 +255,7 @@ async def get_mesas(
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
     result = []
+    matched_order_numbers: set = set()
     for t in layout:
         tid = int(t["id"])
         order_info = order_by_mesa.get(str(t["name"]).strip())
@@ -272,8 +276,44 @@ async def get_mesas(
             "daily_seq":    order_info["daily_seq"] if order_info else None,
             "is_web":       bool(order_info and int(order_info["Movil"] or 0) == 1),
             "editing_by":   locks_dash.get(tid),
+            "tipo_cuenta":  "fija",
+            "es_dinamica":  False,
         }
         result.append(row)
+        if order_info:
+            matched_order_numbers.add(order_info["order_number"])
+
+    # Cuentas que no calzaron con ninguna mesa del layout (dinámicas: domicilio,
+    # plazoleta, nombre de cliente, o mesas nuevas de escritorio aún no
+    # registradas en el catálogo curado): se agregan igual como tarjetas extra,
+    # en vez de perderse silenciosamente.
+    for i, o in enumerate(order_rows, start=1):
+        if o["order_number"] in matched_order_numbers:
+            continue
+        id_mesa     = int(o["Id_Mesa"] or 0)
+        is_delivery = bool(o["Domicilio"])
+        tipo_cuenta = "domicilio" if is_delivery else ("dinamica" if id_mesa >= 1000 else "sin_asignar")
+        result.append({
+            "id":            f"din-{o['order_number']}",
+            "name":          str(o["Mesa"] or "").strip() or o["order_number"],
+            "location":      None,
+            "seats":         None,
+            "zone_id":       None,
+            "zone_name":     None,
+            "ocupada":       1,
+            "order_number":  o["order_number"],
+            "amount":        int(o["amount"] or 0),
+            "hora_apertura": str(o["hora_apertura"] or ""),
+            "guests_count":  o["guests_count"],
+            "waiter_name":   waiter_names.get(int(o["Mesero"] or 0)),
+            "daily_seq":     i,
+            "is_web":        bool(int(o["Movil"] or 0) == 1),
+            "editing_by":    None,
+            "tipo_cuenta":   tipo_cuenta,
+            "es_dinamica":   True,
+        })
+        matched_order_numbers.add(o["order_number"])
+
     return result
 
 

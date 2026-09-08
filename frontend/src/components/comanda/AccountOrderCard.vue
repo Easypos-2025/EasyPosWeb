@@ -1,7 +1,7 @@
 <template>
 
   <!-- ═══ ESTILO: oval-wood (mesa elíptica de madera) ══════════════════════ -->
-  <div v-if="cardStyle === 'oval-wood'" class="aoc-oval" @click="$emit('click')">
+  <div v-if="cardStyle === 'oval-wood'" class="aoc-oval" @click="onClick">
     <div v-if="editingBy" class="aoc-lock-badge aoc-lock-badge--oval">
       <i class="bi bi-pencil-fill"></i> {{ editingBy }}
     </div>
@@ -9,8 +9,9 @@
       <i class="bi bi-clock"></i>
       <span>{{ timeDisplay }}</span>
       <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido desde carta digital (web)"></i>
+      <i v-if="d.tipoIcon" :class="['bi', d.tipoIcon, 'aoc-tipo-icon']" :title="d.tipoTitle"></i>
     </div>
-    <button v-if="showDelete" class="aoc-oval__btn aoc-oval__btn--del"
+    <button v-if="showDelete && !d.esDinamica" class="aoc-oval__btn aoc-oval__btn--del"
       @click.stop="$emit('eliminar')" title="Eliminar pedido">
       <i class="bi bi-trash"></i>
     </button>
@@ -34,7 +35,7 @@
   <button v-else
     class="aoc"
     :class="[`aoc--${cardStyle}`, { 'aoc--bill': d.billRequested }]"
-    @click="$emit('click')"
+    @click="onClick"
   >
     <div v-if="editingBy" class="aoc-lock-badge">
       <i class="bi bi-pencil-fill"></i> {{ editingBy }}
@@ -44,8 +45,9 @@
       <span class="aoc__timer" :class="{ 'aoc__timer--alert': isAlert }">
         <i class="bi bi-clock-fill"></i>{{ timeDisplay }}
         <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido desde carta digital (web)"></i>
+        <i v-if="d.tipoIcon" :class="['bi', d.tipoIcon, 'aoc-tipo-icon']" :title="d.tipoTitle"></i>
       </span>
-      <button v-if="showDelete" class="aoc__del" @click.stop="$emit('eliminar')" title="Eliminar">
+      <button v-if="showDelete && !d.esDinamica" class="aoc__del" @click.stop="$emit('eliminar')" title="Eliminar">
         <i class="bi bi-trash"></i>
       </button>
     </div>
@@ -69,6 +71,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { showToast } from '@/utils/toast'
 
 const props = defineProps({
   order:      { type: Object,  required: true },
@@ -78,19 +81,43 @@ const props = defineProps({
   editingBy:  { type: String,  default: null },
 })
 
-defineEmits(['click', 'eliminar'])
+const emit = defineEmits(['click', 'eliminar'])
+
+/* ── Cuentas dinámicas (domicilio/plazoleta, sin mesa fija en el catálogo)
+       aún no soportan abrir detalle/editar/cancelar desde esta grilla — eso
+       requiere direccionar por order_number en vez de table_id en el backend
+       de toma de pedido. Se muestran informativas; su gestión completa vive
+       en Utilitarios > Cuentas Abiertas. ────────────────────────────────── */
+function onClick() {
+  if (props.order.es_dinamica) {
+    showToast('Cuenta dinámica: gestiónala desde Utilitarios > Cuentas Abiertas', 'info', 2200)
+    return
+  }
+  emit('click')
+}
 
 /* ── Normalización: acepta datos de dashboard (hora_apertura/ocupada)
        y de comanda (order_time/status) ────────────────────────────── */
-const d = computed(() => ({
-  name:         props.order.name || '—',
-  amount:       props.order.amount || 0,
-  time:         props.order.order_time || props.order.hora_apertura || '',
-  waiterName:   props.order.waiter_name || '—',
-  seq:          props.order.daily_seq || null,
-  billRequested: props.order.status === 'bill_requested',
-  isWeb:        !!props.order.is_web,
-}))
+const TIPO_ICONS = {
+  domicilio: { icon: 'bi-bicycle',      title: 'Domicilio' },
+  dinamica:  { icon: 'bi-signpost-2-fill', title: 'Cuenta dinámica (sin mesa fija)' },
+}
+
+const d = computed(() => {
+  const tipo = TIPO_ICONS[props.order.tipo_cuenta] || null
+  return {
+    name:         props.order.name || '—',
+    amount:       props.order.amount || 0,
+    time:         props.order.order_time || props.order.hora_apertura || '',
+    waiterName:   props.order.waiter_name || '—',
+    seq:          props.order.daily_seq || null,
+    billRequested: props.order.status === 'bill_requested',
+    isWeb:        !!props.order.is_web,
+    tipoIcon:     tipo?.icon || null,
+    tipoTitle:    tipo?.title || '',
+    esDinamica:   !!props.order.es_dinamica,
+  }
+})
 
 /* ── Hora formateada ─────────────────────────────────────────────── */
 const timeDisplay = computed(() => {
@@ -548,6 +575,12 @@ function fmt(v) {
 /* ── Ícono origen: pedido web, dentro del chip de hora (no se recorta por overflow) ── */
 .aoc-web-icon {
   color: #38bdf8;
+  margin-left: 1px;
+}
+
+/* ── Ícono tipo de cuenta: domicilio / dinámica (sin mesa fija) ── */
+.aoc-tipo-icon {
+  color: #fde68a;
   margin-left: 1px;
 }
 </style>

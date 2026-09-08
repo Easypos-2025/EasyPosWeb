@@ -956,6 +956,58 @@ async def push_tables(
             "total_sent": len(tables), "total_saved": len(saved), "total_failed": len(failed)}
 
 
+class TempMesaIn(BaseModel):
+    id: int
+    company_id: int
+    zone_id: Optional[int] = 0
+    name: str
+    capacity: Optional[int] = 0
+    is_active: Optional[int] = 0
+    is_dynamic: Optional[int] = 0
+    customer_id: Optional[int] = 0
+
+
+@router.post("/sync/push/temp-mesas")
+async def push_temp_mesas(
+    tables: List[TempMesaIn],
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+    _: str = Depends(verify_api_key),
+):
+    """
+    Espejo fiel de escritorio.mesas (fijas Id_Mesa<1000 y dinámicas Id_Mesa>=1000:
+    domicilios, plazoleta, cuentas con nombre de cliente) en datatemppos.temp_mesas.
+    A diferencia de /sync/push/tables (→ pos_tables_layout, catálogo curado por
+    el admin en "Configurar Mesas"), aquí se sube TODO lo que exista en la tabla
+    local `mesas`, para que el dashboard resuelva nombre/tipo de cuenta sin
+    depender de que la mesa esté en ese catálogo curado.
+    """
+    saved, failed = [], []
+    for t in tables:
+        try:
+            await db_temp.execute(text("""
+                INSERT INTO temp_mesas (
+                    Id_Mesa, company_id, Id_Zona, Mesa, Nro_Puestos,
+                    Id_Cliente, Zona_Dinamica, Activa
+                ) VALUES (
+                    :id, :company_id, :zone_id, :name, :capacity,
+                    :customer_id, :is_dynamic, :is_active
+                )
+                ON DUPLICATE KEY UPDATE
+                    Mesa          = VALUES(Mesa),
+                    Id_Zona       = VALUES(Id_Zona),
+                    Nro_Puestos   = VALUES(Nro_Puestos),
+                    Id_Cliente    = VALUES(Id_Cliente),
+                    Zona_Dinamica = VALUES(Zona_Dinamica),
+                    Activa        = VALUES(Activa)
+            """), t.dict())
+            saved.append(t.id)
+        except Exception as e:
+            failed.append({"id": t.id, "error": str(e)})
+    await db_temp.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(tables), "total_saved": len(saved), "total_failed": len(failed)}
+
+
 @router.get("/sync/pull/tables")
 async def pull_tables(
     company_id: int = Query(...),
