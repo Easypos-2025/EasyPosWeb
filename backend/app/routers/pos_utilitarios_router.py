@@ -386,10 +386,11 @@ async def command_history(
 
 # ═══════════════════════════════════════════════════════════════
 # CUENTAS ABIERTAS — pedidos montados (sin facturar) en datatemppos.
-# Se lee directo de temp_comanda: no depende de pos_tables_layout, así
-# que las cuentas dinámicas (Id_Mesa >= 1000: domicilios, plazoleta,
-# nombre del cliente) aparecen igual que las de mesa fija. Aplica para
-# cualquier perfil de negocio que monte pedidos en datatemppos.
+# Se lee directo de temp_comanda: no depende de pos_tables_layout para
+# LISTAR (solo para clasificar fija/dinámica por nombre), así que las
+# cuentas dinámicas (domicilios, plazoleta, nombre del cliente) aparecen
+# igual que las de mesa fija. Aplica para cualquier perfil de negocio
+# que monte pedidos en datatemppos.
 # ═══════════════════════════════════════════════════════════════
 @router.get("/cuentas-abiertas")
 async def cuentas_abiertas(
@@ -401,7 +402,7 @@ async def cuentas_abiertas(
     cid = user.company_id
 
     order_rows = (await db_temp.execute(text("""
-        SELECT Nro_Pedido AS order_number, Mesa AS table_name, Id_Mesa AS id_mesa,
+        SELECT Nro_Pedido AS order_number, Mesa AS table_name,
                Mesero, Hora AS hora_apertura, Valor AS amount,
                Nro_Comenzales AS guests_count, Novedad AS notes,
                Domicilio AS is_delivery, Movil AS is_web
@@ -432,20 +433,26 @@ async def cuentas_abiertas(
         ), {"cid": cid})).mappings().all()
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
+    # Mesas fijas registradas en el catálogo curado — cualquier otro nombre
+    # es una cuenta dinámica (plazoleta, nombre de cliente, mesa no registrada)
+    layout_rows = (await db.execute(text(
+        "SELECT name FROM pos_tables_layout WHERE company_id=:cid"
+    ), {"cid": cid})).mappings().all()
+    layout_names = {str(r["name"] or "").strip() for r in layout_rows}
+
     result = []
     for r in order_rows:
-        id_mesa     = int(r["id_mesa"] or 0)
         is_delivery = bool(r["is_delivery"])
+        table_name  = str(r["table_name"] or "").strip()
         if is_delivery:
             tipo_cuenta = "domicilio"
-        elif id_mesa >= 1000:
-            tipo_cuenta = "dinamica"
-        else:
+        elif table_name in layout_names:
             tipo_cuenta = "fija"
+        else:
+            tipo_cuenta = "dinamica"
         result.append({
             "order_number":  r["order_number"],
             "table_name":    r["table_name"],
-            "id_mesa":       id_mesa,
             "tipo_cuenta":   tipo_cuenta,
             "is_web":        bool(r["is_web"]),
             "hora_apertura": str(r["hora_apertura"] or ""),
@@ -473,7 +480,7 @@ async def cuenta_detalle(
     cid = user.company_id
 
     hdr = (await db_temp.execute(text("""
-        SELECT Nro_Pedido AS numero, Fecha AS fecha, Mesa AS mesa, Id_Mesa AS id_mesa,
+        SELECT Nro_Pedido AS numero, Fecha AS fecha, Mesa AS mesa,
                Hora AS hora, Mesero, Valor AS total, Nro_Comenzales AS comensales,
                Novedad AS novedad, Domicilio AS is_delivery, Movil AS is_web
         FROM temp_comanda
@@ -508,7 +515,6 @@ async def cuenta_detalle(
             "fecha":       str(hdr["fecha"]),
             "hora":        str(hdr["hora"] or ""),
             "mesa":        hdr["mesa"],
-            "id_mesa":     int(hdr["id_mesa"] or 0),
             "mesero":      waiter_name,
             "comensales":  int(hdr["comensales"] or 0),
             "novedad":     hdr["novedad"],

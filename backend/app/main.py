@@ -2204,18 +2204,32 @@ async def _init_db_data():
 
         # ── SEED: "Cuentas Abiertas" bajo Utilitarios (todos los perfiles) ─────
         try:
-            _util_parent_row = await db.execute(text(
-                "SELECT parent_id FROM system_modules "
+            _sibling_row = await db.execute(text(
+                "SELECT id, parent_id FROM system_modules "
                 "WHERE route='/pos/utilitarios/limpiar-temporales' LIMIT 1"
             ))
-            _util_parent = _util_parent_row.scalar()
-            if _util_parent:
-                await _get_or_create_module(
+            _sibling = _sibling_row.mappings().first()
+            if _sibling:
+                _cuentas_mod = await _get_or_create_module(
                     "Cuentas Abiertas", "/pos/utilitarios/cuentas-abiertas",
-                    "bi-receipt-cutoff", _util_parent
+                    "bi-receipt-cutoff", _sibling["parent_id"]
                 )
+                # Crear el modulo no otorga permisos por rol — heredar los mismos
+                # roles que ya ven "Limpiar Temporales" (idempotente: solo agrega
+                # los que falten, nunca duplica ni quita).
+                await db.execute(text("""
+                    INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete, can_view_all)
+                    SELECT rm.role_id, :new_id, rm.can_view, rm.can_create, rm.can_edit, rm.can_delete, rm.can_view_all
+                    FROM role_modules rm
+                    WHERE rm.module_id = :sibling_id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM role_modules rm2
+                          WHERE rm2.role_id = rm.role_id AND rm2.module_id = :new_id
+                      )
+                """), {"new_id": _cuentas_mod.id, "sibling_id": _sibling["id"]})
+                await db.commit()
         except Exception:
-            pass
+            await db.rollback()
 
 
 # ===============================

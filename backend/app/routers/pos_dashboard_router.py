@@ -229,7 +229,7 @@ async def get_mesas(
     # días anteriores). Sin filtro de Domicilio: las cuentas dinámicas (domicilio,
     # plazoleta, nombre de cliente) también deben verse en el dashboard.
     order_rows = (await db_temp.execute(text("""
-        SELECT Nro_Pedido AS order_number, Mesa, Id_Mesa, Hora AS hora_apertura,
+        SELECT Nro_Pedido AS order_number, Mesa, Hora AS hora_apertura,
                Valor AS amount, Nro_Comenzales AS guests_count, Mesero, Movil, Domicilio
         FROM temp_comanda
         WHERE company_id=:cid AND Nro_Factura='0'
@@ -290,9 +290,8 @@ async def get_mesas(
     for i, o in enumerate(order_rows, start=1):
         if o["order_number"] in matched_order_numbers:
             continue
-        id_mesa     = int(o["Id_Mesa"] or 0)
         is_delivery = bool(o["Domicilio"])
-        tipo_cuenta = "domicilio" if is_delivery else ("dinamica" if id_mesa >= 1000 else "sin_asignar")
+        tipo_cuenta = "domicilio" if is_delivery else "dinamica"
         result.append({
             "id":            f"din-{o['order_number']}",
             "name":          str(o["Mesa"] or "").strip() or o["order_number"],
