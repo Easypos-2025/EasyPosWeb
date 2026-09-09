@@ -509,6 +509,17 @@ async def cuenta_detalle(
         ORDER BY Item ASC
     """), {"cid": cid, "on": order_number, "fecha": str(hdr["fecha"])})).mappings().all()
 
+    # Descripcion casi nunca viene poblada en temp_detalle_comanda_parcial —
+    # el nombre real del plato se resuelve por Id_Plato contra pos_dishes.
+    dish_ids = {int(it["dish_id"]) for it in items if it["dish_id"]}
+    dish_names: dict = {}
+    if dish_ids:
+        drows = (await db.execute(text(
+            f"SELECT id, name FROM pos_dishes WHERE company_id=:cid "
+            f"AND id IN ({','.join(str(d) for d in dish_ids)})"
+        ), {"cid": cid})).mappings().all()
+        dish_names = {int(r["id"]): r["name"] for r in drows}
+
     return {
         "header": {
             "numero":      hdr["numero"],
@@ -526,7 +537,7 @@ async def cuenta_detalle(
             {
                 "dish_id":       it["dish_id"],
                 "item":          it["item"],
-                "plato":         it["plato"],
+                "plato":         it["plato"] or dish_names.get(int(it["dish_id"] or 0)) or f"Plato {it['dish_id']}",
                 "quantity":      float(it["quantity"] or 0),
                 "subtotal":      int(it["subtotal"] or 0),
                 "notes":         it["notes"],
