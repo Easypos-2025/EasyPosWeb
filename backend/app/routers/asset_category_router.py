@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.models.asset_category_model import AssetCategory
@@ -98,5 +99,12 @@ async def delete_category(
     if not category:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     await db.delete(category)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede eliminar: hay activos asociados a esta categoría"
+        )
     return {"message": "Categoría eliminada"}

@@ -520,20 +520,21 @@ function categoryName(id) {
 }
 
 async function load() {
-  try {
-    const [aRes, cRes, clRes, sRes] = await Promise.all([
-      api.get("/assets/"),
-      api.get("/asset-categories/"),
-      api.get("/clients"),
-      api.get("/asset-sectors/"),
-    ])
-    assets.value     = aRes.data
-    categories.value = cRes.data
-    clients.value    = clRes.data
-    sectors.value    = sRes.data
-  } catch {
-    showToast("Error cargando activos", "error")
-  }
+  const results = await Promise.allSettled([
+    api.get("/assets/"),
+    api.get("/asset-categories/"),
+    api.get("/clients"),
+    api.get("/asset-sectors/"),
+  ])
+  const [aRes, cRes, clRes, sRes] = results
+
+  if (aRes.status === "fulfilled") assets.value     = aRes.value.data
+  if (cRes.status === "fulfilled") categories.value = cRes.value.data
+  if (clRes.status === "fulfilled") clients.value   = clRes.value.data
+  if (sRes.status === "fulfilled") sectors.value    = sRes.value.data
+
+  const failed = results.some(r => r.status === "rejected")
+  if (failed) showToast("Algunos datos no se pudieron cargar, intenta recargar la página", "error")
 }
 
 function resetPubCache() {
