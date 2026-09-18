@@ -239,19 +239,14 @@
       <div class="desktop-inner">
         <div class="desktop-left">
           <span class="section-badge purple">También disponible</span>
-          <h2>EasyPosWeb en tu PC<br><span class="desktop-accent">Versión de Escritorio</span></h2>
-          <p>Además de la plataforma web, EasyPosWeb cuenta con una aplicación de escritorio instalable. Sin navegador, sin dependencia de internet constante — acceso directo desde tu computador con toda la potencia del sistema.</p>
+          <h2>{{ sections.desktop?.title || 'EasyPosWeb en tu PC · Versión de Escritorio' }}</h2>
+          <p>{{ sections.desktop?.subtitle || 'Además de la plataforma web, EasyPosWeb cuenta con una aplicación de escritorio instalable. Sin navegador, sin dependencia de internet constante — acceso directo desde tu computador con toda la potencia del sistema.' }}</p>
           <ul class="desktop-list">
-            <li><i class="bi bi-check-circle-fill"></i> Funciona sin internet (modo offline)</li>
-            <li><i class="bi bi-check-circle-fill"></i> Instalación directa en Windows</li>
-            <li><i class="bi bi-check-circle-fill"></i> Rendimiento nativo en tu equipo</li>
-            <li><i class="bi bi-check-circle-fill"></i> Sincronización automática al recuperar conexión</li>
-            <li><i class="bi bi-check-circle-fill"></i> Ideal para negocios con internet inestable</li>
-            <li><i class="bi bi-check-circle-fill"></i> Misma interfaz que la versión web</li>
+            <li v-for="item in desktopItems" :key="item"><i class="bi bi-check-circle-fill"></i> {{ item }}</li>
           </ul>
           <div class="desktop-cta-wrap">
             <a href="#contacto" class="btn-desktop-cta">
-              <i class="bi bi-envelope-fill me-2"></i>Solicitar versión escritorio
+              <i class="bi bi-envelope-fill me-2"></i>{{ sections.desktop?.cta_text || 'Solicitar versión escritorio' }}
             </a>
             <a href="#planes" class="btn-desktop-outline">
               Ver Plan Escritorio <i class="bi bi-arrow-down ms-1"></i>
@@ -350,7 +345,7 @@
             {{ sections.free_plan?.cta_text || 'Registrarse Gratis' }}
           </a>
           <p class="free-plan-note">
-            Sin tarjeta de crédito · Sin contrato · Empieza en minutos
+            {{ sections.free_plan_note?.title || 'Sin tarjeta de crédito · Sin contrato · Empieza en minutos' }}
           </p>
         </div>
       </div>
@@ -362,8 +357,8 @@
     <section id="planes" class="section-planes">
       <div class="section-header text-center">
         <span class="section-badge green">Precios</span>
-        <h2 class="section-title">Planes para cada etapa de tu negocio</h2>
-        <p class="section-subtitle">Comienza gratis y escala cuando lo necesites · También disponible en versión escritorio</p>
+        <h2 class="section-title">{{ sections.pricing?.title || 'Planes para cada etapa de tu negocio' }}</h2>
+        <p class="section-subtitle">{{ sections.pricing?.subtitle || 'Comienza gratis y escala cuando lo necesites · También disponible en versión escritorio' }}</p>
       </div>
 
       <!-- Cards planes web/cloud -->
@@ -451,18 +446,14 @@
           <!-- Plan Escritorio -->
           <div class="desktop-plan-card">
             <div class="dplan-icon"><i class="bi bi-laptop"></i></div>
-            <div class="dplan-name">Plan Escritorio</div>
+            <div class="dplan-name">{{ sections.desktop_plan_solo?.title || 'Plan Escritorio' }}</div>
             <div class="dplan-tag">Solo app instalada</div>
-            <p class="dplan-desc">Aplicación instalada directamente en tu PC. Opera sin internet, sincroniza cuando se conecta. Ideal para negocios con conectividad limitada o inestable.</p>
+            <p class="dplan-desc">{{ sections.desktop_plan_solo?.subtitle || 'Aplicación instalada directamente en tu PC. Opera sin internet, sincroniza cuando se conecta. Ideal para negocios con conectividad limitada o inestable.' }}</p>
             <ul class="dplan-features">
-              <li><i class="bi bi-check-circle-fill"></i> Acceso sin internet (offline)</li>
-              <li><i class="bi bi-check-circle-fill"></i> Instalación en Windows</li>
-              <li><i class="bi bi-check-circle-fill"></i> Sincronización automática</li>
-              <li><i class="bi bi-check-circle-fill"></i> Actualizaciones incluidas</li>
-              <li><i class="bi bi-check-circle-fill"></i> Soporte técnico</li>
+              <li v-for="item in dplanSoloParts" :key="item"><i class="bi bi-check-circle-fill"></i> {{ item }}</li>
             </ul>
             <a href="#contacto" class="btn-dplan">
-              Consultar precio <i class="bi bi-arrow-right ms-1"></i>
+              {{ sections.desktop_plan_solo?.cta_text || 'Consultar precio' }} <i class="bi bi-arrow-right ms-1"></i>
             </a>
           </div>
 
@@ -476,18 +467,14 @@
               <i class="bi bi-plus-lg mx-1 plus-icon"></i>
               <i class="bi bi-cloud-fill"></i>
             </div>
-            <div class="dplan-name">Plan Mixto</div>
+            <div class="dplan-name">{{ sections.desktop_plan_mixed?.title || 'Plan Mixto' }}</div>
             <div class="dplan-tag featured-tag">Escritorio + Web</div>
-            <p class="dplan-desc">Lo mejor de ambos mundos: app de escritorio instalada en tu PC más acceso web completo desde cualquier dispositivo. Sincronización en tiempo real.</p>
+            <p class="dplan-desc">{{ sections.desktop_plan_mixed?.subtitle || 'Lo mejor de ambos mundos: app de escritorio instalada en tu PC más acceso web completo desde cualquier dispositivo. Sincronización en tiempo real.' }}</p>
             <ul class="dplan-features">
-              <li><i class="bi bi-check-circle-fill"></i> App escritorio + acceso web</li>
-              <li><i class="bi bi-check-circle-fill"></i> Múltiples dispositivos simultáneos</li>
-              <li><i class="bi bi-check-circle-fill"></i> Sincronización en tiempo real</li>
-              <li><i class="bi bi-check-circle-fill"></i> Opera offline y en línea</li>
-              <li><i class="bi bi-check-circle-fill"></i> Soporte prioritario</li>
+              <li v-for="item in dplanMixedParts" :key="item"><i class="bi bi-check-circle-fill"></i> {{ item }}</li>
             </ul>
             <a href="#contacto" class="btn-dplan featured">
-              Consultar precio <i class="bi bi-arrow-right ms-1"></i>
+              {{ sections.desktop_plan_mixed?.cta_text || 'Consultar precio' }} <i class="bi bi-arrow-right ms-1"></i>
             </a>
           </div>
 
@@ -516,8 +503,8 @@
     <section class="section-payment">
       <div class="section-header text-center">
         <span class="section-badge orange">Pagos</span>
-        <h2 class="section-title">Paga de forma segura</h2>
-        <p class="section-subtitle">Múltiples métodos de pago disponibles próximamente</p>
+        <h2 class="section-title">{{ sections.payment?.title || 'Paga de forma segura' }}</h2>
+        <p class="section-subtitle">{{ sections.payment?.subtitle || 'Múltiples métodos de pago disponibles próximamente' }}</p>
       </div>
       <div class="payment-methods">
         <div class="payment-card coming-soon">
@@ -553,17 +540,9 @@
           <h2 class="contact-title">{{ sections.contact?.title }}</h2>
           <p class="contact-subtitle">{{ sections.contact?.subtitle }}</p>
           <div class="contact-details">
-            <div class="contact-item">
-              <i class="bi bi-envelope-fill"></i>
-              <span>easypos.co@gmail.com</span>
-            </div>
-            <div class="contact-item">
-              <i class="bi bi-globe"></i>
-              <span>easyposweb.com</span>
-            </div>
-            <div class="contact-item">
-              <i class="bi bi-clock-fill"></i>
-              <span>Respuesta en menos de 24 horas</span>
+            <div v-for="(item, idx) in contactDetailsItems" :key="item" class="contact-item">
+              <i :class="`bi ${CONTACT_ICONS[idx] || 'bi-dot'}`"></i>
+              <span>{{ item }}</span>
             </div>
           </div>
         </div>
@@ -618,8 +597,8 @@
       <div class="pauta-inner">
         <div class="pauta-header text-center">
           <span class="section-badge orange"><i class="bi bi-megaphone-fill me-1"></i>Publicidad</span>
-          <h2 class="section-title">Paute con Nosotros</h2>
-          <p class="section-subtitle">Llega a miles de emprendedores y empresarios. Completa el formulario y te contactamos.</p>
+          <h2 class="section-title">{{ sections.pauta?.title || 'Paute con Nosotros' }}</h2>
+          <p class="section-subtitle">{{ sections.pauta?.subtitle || 'Llega a miles de emprendedores y empresarios. Completa el formulario y te contactamos.' }}</p>
         </div>
 
         <div class="pauta-grid">
@@ -852,6 +831,18 @@ const FEATURE_ICONS = [
   "bi-percent"
 ]
 
+// Íconos fijos por posición (no editables desde Gestión Landing Page)
+const CONTACT_ICONS = ["bi-envelope-fill", "bi-globe", "bi-clock-fill"]
+
+// Defaults usados mientras no exista el registro en landing_sections (o si se borra)
+const DEFAULT_DESKTOP_ITEMS =
+  "Funciona sin internet (modo offline)|Instalación directa en Windows|Rendimiento nativo en tu equipo|Sincronización automática al recuperar conexión|Ideal para negocios con internet inestable|Misma interfaz que la versión web"
+const DEFAULT_DPLAN_SOLO =
+  "Acceso sin internet (offline)|Instalación en Windows|Sincronización automática|Actualizaciones incluidas|Soporte técnico"
+const DEFAULT_DPLAN_MIXED =
+  "App escritorio + acceso web|Múltiples dispositivos simultáneos|Sincronización en tiempo real|Opera offline y en línea|Soporte prioritario"
+const DEFAULT_CONTACT_DETAILS = "easypos.co@gmail.com|easyposweb.com|Respuesta en menos de 24 horas"
+
 // Gradientes de respaldo cuando el perfil no tiene imagen
 const SLIDE_GRADIENTS = [
   "linear-gradient(145deg, #0f2460 0%, #1a3a8a 50%, #1565c0 100%)",
@@ -1008,6 +999,18 @@ export default {
       (sections.multidevice?.body_text || "").split("|").map(s => s.trim()).filter(Boolean)
     )
     const featureIcons = computed(() => FEATURE_ICONS)
+    const desktopItems = computed(() =>
+      (sections.desktop?.body_text || DEFAULT_DESKTOP_ITEMS).split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const dplanSoloParts = computed(() =>
+      (sections.desktop_plan_solo?.body_text || DEFAULT_DPLAN_SOLO).split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const dplanMixedParts = computed(() =>
+      (sections.desktop_plan_mixed?.body_text || DEFAULT_DPLAN_MIXED).split("|").map(s => s.trim()).filter(Boolean)
+    )
+    const contactDetailsItems = computed(() =>
+      (sections.contact_details?.body_text || DEFAULT_CONTACT_DETAILS).split("|").map(s => s.trim()).filter(Boolean)
+    )
 
     // ── Helpers de formato ────────────────────────────────────
     function formatPrice(price) {
@@ -1194,6 +1197,7 @@ export default {
       sections, profiles, planData, activeSlide, isPaused, lastUpdated, mobileOpen,
       featuresGrid, featureItems, freePlanItems, aboutItems,
       multideviceItems, featureIcons, form, formErrors,
+      desktopItems, dplanSoloParts, dplanMixedParts, contactDetailsItems, CONTACT_ICONS,
       submitting, contactSuccess, contactError, currentYear,
       displayProfiles, realActiveIndex, trackStyle,
       getSlideBackground, goToSlide, nextSlide, prevSlide, pauseTimer, onTransitionEnd,
