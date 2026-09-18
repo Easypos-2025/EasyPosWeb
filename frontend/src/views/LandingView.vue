@@ -377,7 +377,6 @@
           <div class="pricing-price">
             <span v-if="plan.price === 0" class="price-free">GRATIS</span>
             <template v-else>
-              <span class="price-currency">$</span>
               <span class="price-amount">{{ formatPrice(plan.price) }}</span>
               <span class="price-period">/mes</span>
             </template>
@@ -1835,6 +1834,7 @@ export default {
   background: #fff; border-radius: 16px; padding: 28px 20px;
   text-align: center; border: 1px solid #e2e8f0;
   box-shadow: var(--shadow); position: relative; transition: all .25s;
+  display: flex; flex-direction: column; height: 100%;
 }
 .pricing-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
 .pricing-card.featured {
@@ -1850,17 +1850,16 @@ export default {
 }
 .pricing-name { font-size: .85rem; font-weight: 700; text-transform: uppercase;
   letter-spacing: .08em; margin-bottom: 12px; opacity: .8; }
-.pricing-price { margin-bottom: 20px; }
+.pricing-price { margin-bottom: 20px; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; }
 .price-free { font-size: 1.8rem; font-weight: 900; color: var(--accent); }
 .pricing-card.featured .price-free { color: #a7f3d0; }
-.price-currency { font-size: 1.1rem; font-weight: 700; vertical-align: top; margin-top: 6px; display: inline-block; }
 .price-amount  { font-size: 2rem; font-weight: 900; }
 .price-period  { font-size: .82rem; opacity: .7; }
 .btn-pricing {
   display: block; width: 100%; padding: 10px; border-radius: 8px;
   background: var(--light); color: var(--primary); font-weight: 700;
   text-decoration: none; font-size: .88rem; transition: all .2s;
-  border: 2px solid var(--primary);
+  border: 2px solid var(--primary); margin-top: auto;
 }
 .btn-pricing:hover { background: var(--primary); color: #fff; }
 .btn-pricing-featured {
