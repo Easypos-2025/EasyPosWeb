@@ -27,6 +27,7 @@ class Plan(Base):
 
     price: Mapped[float] = mapped_column(Float, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    button_text: Mapped[str] = mapped_column(String(50), nullable=True)
 
     created_at: Mapped[str] = mapped_column(TIMESTAMP, server_default=func.now())
     updated_at: Mapped[str] = mapped_column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

@@ -115,6 +115,16 @@
             <textarea v-model="form.description" class="form-input" rows="2" />
           </div>
 
+          <div class="form-group">
+            <label>Texto del botón en landing <small>(opcional)</small></label>
+            <input
+              v-model="form.button_text"
+              class="form-input"
+              maxlength="50"
+              :placeholder="defaultButtonText(form)"
+            />
+          </div>
+
           <!-- Sección: Acceso y roles -->
           <div class="limits-section">
             <div class="limits-section-title">
@@ -308,7 +318,7 @@ const emptyForm = () => ({
   max_tasks: -1, max_daily_invoices: -1, max_assets: -1,
   max_waiters: -1, max_daily_receipts: -1, max_daily_tasks: -1,
   max_roles: 1,
-  price: 0, is_active: true,
+  price: 0, is_active: true, button_text: "",
 })
 
 const form = ref(emptyForm())
@@ -316,6 +326,10 @@ const form = ref(emptyForm())
 watch(() => form.value.max_users, (val) => {
   form.value.max_roles = val
 })
+
+function defaultButtonText(plan) {
+  return plan.price > 0 ? "Comenzar" : "Empezar Gratis"
+}
 
 function lv(v) {
   if (v === -1 || v === undefined || v === null) return "∞"

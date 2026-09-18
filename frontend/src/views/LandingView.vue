@@ -388,7 +388,7 @@
             </template>
           </div>
           <a href="/register" class="btn-pricing" :class="{ 'btn-pricing-featured': i === 2 }">
-            {{ i === 0 ? 'Empezar Gratis' : 'Comenzar' }}
+            {{ plan.button_text || (i === 0 ? 'Empezar Gratis' : 'Comenzar') }}
           </a>
         </div>
       </div>

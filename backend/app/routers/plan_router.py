@@ -28,6 +28,7 @@ def _fields(data):
         "description": data.get("description", ""),
         "price":       float(data.get("price", 0)),
         "is_active":   bool(data.get("is_active", True)),
+        "button_text": (data.get("button_text") or "").strip() or None,
     }
     defaults = {"max_users": 1}
     for f in LIMIT_FIELDS:
@@ -38,7 +39,7 @@ def _fields(data):
 def _serialize(p):
     base = {
         "id": p.id, "name": p.name, "description": p.description,
-        "price": p.price, "is_active": p.is_active,
+        "price": p.price, "is_active": p.is_active, "button_text": p.button_text,
     }
     for f in LIMIT_FIELDS:
         base[f] = getattr(p, f, -1)
