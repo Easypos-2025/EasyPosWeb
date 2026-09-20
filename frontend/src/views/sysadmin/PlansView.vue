@@ -24,7 +24,7 @@
             <tr>
               <th>#</th>
               <th>Nombre</th>
-              <th class="text-right">Precio/mes</th>
+              <th class="text-right">Precio</th>
               <th class="text-center" title="Usuarios">Usrs</th>
               <th class="text-center" title="Roles">Roles</th>
               <th class="text-center" title="Productos">Prods</th>
@@ -46,7 +46,7 @@
             <tr v-for="plan in plans" :key="plan.id">
               <td class="text-muted">{{ plan.id }}</td>
               <td><strong>{{ plan.name }}</strong></td>
-              <td class="text-right">{{ plan.price > 0 ? '$' + plan.price.toLocaleString('es-CO') : 'Gratis' }}</td>
+              <td class="text-right">{{ plan.price > 0 ? '$' + plan.price.toLocaleString('es-CO') + '/' + plan.billing_period : 'Gratis' }}</td>
               <td class="text-center lim-cell">{{ lv(plan.max_users) }}</td>
               <td class="text-center lim-cell">{{ lv(plan.max_roles) }}</td>
               <td class="text-center lim-cell">{{ lv(plan.max_products) }}</td>
@@ -98,15 +98,24 @@
         </div>
 
         <div class="modal-body">
-          <!-- Fila 1: nombre + precio -->
-          <div class="form-row two">
+          <!-- Fila 1: nombre + precio + periodo -->
+          <div class="form-row three">
             <div class="form-group">
               <label>Nombre *</label>
               <input v-model="form.name" class="form-input" placeholder="Ej: Premium" />
             </div>
             <div class="form-group">
-              <label>Precio mensual ($)</label>
+              <label>Precio ($)</label>
               <input v-model.number="form.price" type="number" min="0" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label>Periodo de cobro</label>
+              <select v-model="form.billing_period" class="form-input">
+                <option value="mes">Mensual (/mes)</option>
+                <option value="trimestre">Trimestral (/trimestre)</option>
+                <option value="semestre">Semestral (/semestre)</option>
+                <option value="año">Anual (/año)</option>
+              </select>
             </div>
           </div>
 
@@ -318,7 +327,7 @@ const emptyForm = () => ({
   max_tasks: -1, max_daily_invoices: -1, max_assets: -1,
   max_waiters: -1, max_daily_receipts: -1, max_daily_tasks: -1,
   max_roles: 1,
-  price: 0, is_active: true, button_text: "",
+  price: 0, is_active: true, button_text: "", billing_period: "mes",
 })
 
 const form = ref(emptyForm())

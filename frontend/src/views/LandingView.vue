@@ -378,7 +378,7 @@
             <span v-if="plan.price === 0" class="price-free">GRATIS</span>
             <template v-else>
               <span class="price-amount">{{ formatPrice(plan.price) }}</span>
-              <span class="price-period">/mes</span>
+              <span class="price-period">/{{ plan.billing_period || 'mes' }}</span>
             </template>
           </div>
           <a href="/register" class="btn-pricing" :class="{ 'btn-pricing-featured': i === 2 }">

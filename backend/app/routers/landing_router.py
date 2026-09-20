@@ -102,7 +102,8 @@ async def get_plans_with_features(db: AsyncSession = Depends(get_db)):
         categories.setdefault(f.category, []).append(_ser_feature(f))
 
     def _plan_ser(p):
-        base = {"id": p.id, "name": p.name, "price": p.price, "button_text": p.button_text}
+        base = {"id": p.id, "name": p.name, "price": p.price, "button_text": p.button_text,
+                 "billing_period": p.billing_period or "mes"}
         for f in SVC_LIMIT_FIELDS:
             base[f] = getattr(p, f, -1)
         return base

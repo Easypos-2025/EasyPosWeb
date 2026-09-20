@@ -10,6 +10,8 @@ from app.services.plan_limits_service import LIMIT_FIELDS
 
 router = APIRouter(prefix="/plans", tags=["Plans"])
 
+BILLING_PERIODS = {"mes", "trimestre", "semestre", "año"}
+
 
 async def _require_sysadmin(current_user, db: AsyncSession):
     role = await db.get(Role, current_user.role_id)
@@ -29,6 +31,7 @@ def _fields(data):
         "price":       float(data.get("price", 0)),
         "is_active":   bool(data.get("is_active", True)),
         "button_text": (data.get("button_text") or "").strip() or None,
+        "billing_period": data.get("billing_period") if data.get("billing_period") in BILLING_PERIODS else "mes",
     }
     defaults = {"max_users": 1}
     for f in LIMIT_FIELDS:
@@ -40,6 +43,7 @@ def _serialize(p):
     base = {
         "id": p.id, "name": p.name, "description": p.description,
         "price": p.price, "is_active": p.is_active, "button_text": p.button_text,
+        "billing_period": p.billing_period or "mes",
     }
     for f in LIMIT_FIELDS:
         base[f] = getattr(p, f, -1)
