@@ -22,7 +22,7 @@
 
       <!-- Desktop: select normal -->
       <select
-        v-if="!isParkingRole && companyStore.companies.length > 1"
+        v-if="!isParkingRole && isAdminUser && companyStore.companies.length > 1"
         :value="companyStore.selectedCompany?.id"
         @change="onCompanyChange"
         class="company-select company-select-desktop"
@@ -35,7 +35,7 @@
 
       <!-- Móvil: icono compacto + dropdown -->
       <div
-        v-if="!isParkingRole && companyStore.companies.length > 1"
+        v-if="!isParkingRole && isAdminUser && companyStore.companies.length > 1"
         class="company-select-mobile"
         ref="companyDropRef"
       >
