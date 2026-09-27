@@ -37,12 +37,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import api from '@/services/apis'
 
 const companyStore = useCompanyStore()
-const companyId    = computed(() => companyStore.selectedCompany?.id_company)
+const companyId    = computed(() => companyStore.selectedCompany?.id)
 
 const loading    = ref(false)
 const pendientes = ref(0)
@@ -72,6 +72,7 @@ onMounted(() => {
   _timer = setInterval(cargar, 60000)
 })
 onUnmounted(() => { if (_timer) clearInterval(_timer) })
+watch(companyId, () => { cargar() })
 </script>
 
 <style scoped>

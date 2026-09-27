@@ -5,7 +5,7 @@
     <!-- Widget Parking: visible cuando el módulo Parking Service está activo -->
     <ParkingWidget v-if="hasParking" />
 
-    <component :is="activeDashboard" v-if="activeDashboard" />
+    <component :is="activeDashboard" v-if="activeDashboard" :key="companyStore.selectedCompany?.id" />
     <div v-else class="dash-empty">
       <i class="bi bi-grid-3x3-gap"></i>
       <p>Sin dashboard configurado para este perfil.</p>
