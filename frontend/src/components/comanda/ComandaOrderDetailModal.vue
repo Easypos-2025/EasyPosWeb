@@ -74,9 +74,9 @@
           <i class="bi bi-plus-circle"></i>
           <span>Agregar más</span>
         </button>
-        <button class="od-btn od-btn--success" disabled title="Próximamente">
+        <button class="od-btn od-btn--success" :disabled="!order" title="Pagar" @click="irAPagar">
           <i class="bi bi-receipt"></i>
-          <span>Facturar</span>
+          <span>PAGAR</span>
         </button>
         <button class="od-btn od-btn--danger" @click="eliminarPedido" :disabled="cancelando">
           <span v-if="cancelando" class="spinner-border spinner-border-sm"></span>
@@ -222,6 +222,11 @@ async function eliminarPedido() {
 }
 
 function reimprimir() { /* placeholder */ }
+
+function irAPagar() {
+  if (!order.value) return
+  router.push(`/pos/pago/${order.value.order_number}`)
+}
 </script>
 
 <style scoped>

@@ -633,6 +633,13 @@ const routes = [
         meta: { title: "Conceptos de Gasto" }
       },
       {
+        path: "/pos/pago/:orderNumber",
+        name: "PosPagoView",
+        component: () => import("@/views/pos/PosPagoView.vue"),
+        requiresAuth: true,
+        meta: { title: "Pago" }
+      },
+      {
         path: "/configuration/tipificaciones-descuento",
         name: "DiscountTypesView",
         component: () => import("@/views/DiscountTypesView.vue"),
