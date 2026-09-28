@@ -92,6 +92,14 @@
               >
                 <i class="bi bi-chat-text"></i>
               </button>
+              <button
+                class="cart-item__btn cart-item__btn--descuento"
+                :disabled="group.hasNew"
+                :title="group.hasNew ? 'Envía el pedido antes de aplicar descuento' : 'Aplicar descuento'"
+                @click="openDescuentoModal(group.allItems[group.allItems.length - 1])"
+              >
+                <i class="bi bi-percent"></i>
+              </button>
               <button class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
@@ -99,11 +107,12 @@
             <!-- Segunda fila: pills de armado · notas · estado -->
             <div
               class="cart-item__tags"
-              v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent"
+              v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent || group.hasDiscount"
             >
               <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
               <span v-if="group.notes" class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
+              <span v-if="group.hasDiscount" class="ci-tag ci-descuento"><i class="bi bi-percent"></i> Descuento</span>
               <span v-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
             </div>
           </div>
@@ -183,6 +192,15 @@
       @save="onNotasSave"
     />
 
+    <!-- Descuento modal -->
+    <ComandaDescuentoModal
+      v-if="descuentoItem"
+      :item="descuentoItem"
+      :order-number="order?.order_number"
+      @close="descuentoItem = null"
+      @applied="onDescuentoApplied"
+    />
+
   </div>
 </template>
 
@@ -193,6 +211,7 @@ import apiComanda from '@/services/apiComanda'
 import ComandaProductCard from '@/components/comanda/ComandaProductCard.vue'
 import ComandaAssemblyModal from '@/components/comanda/ComandaAssemblyModal.vue'
 import ComandaNotasModal from '@/components/comanda/ComandaNotasModal.vue'
+import ComandaDescuentoModal from '@/components/comanda/ComandaDescuentoModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
@@ -221,6 +240,7 @@ const preloadedNotes = ref([])
 const cartOpen       = ref(false)
 const assemblyDish   = ref(null)
 const notasItem      = ref(null)
+const descuentoItem  = ref(null)
 const sending        = ref(false)
 const catTabsRef     = ref(null)
 let _tempId = -1
@@ -268,8 +288,9 @@ const groupedItems = computed(() => {
     }
   }
   for (const g of groups) {
-    g.lastSent  = g.allItems.every(i => i.sent && !i.isNew)
-    g.unitPrice = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
+    g.lastSent    = g.allItems.every(i => i.sent && !i.isNew)
+    g.unitPrice   = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
+    g.hasDiscount = !!g.allItems[g.allItems.length - 1]?.typification_id
   }
   return groups
 })
@@ -446,6 +467,20 @@ function onNotasSave({ notes, changes }) {
     if (!original.isNew) original._dirty = true
   }
   notasItem.value = null
+}
+
+function openDescuentoModal(item) {
+  if (!item || item.isNew) return
+  descuentoItem.value = item
+}
+
+function onDescuentoApplied({ item, valor, typification_id }) {
+  const original = items.value.find(i => i.item === item.item && i.dish_id === item.dish_id)
+  if (original) {
+    original.amount = valor
+    original.typification_id = typification_id
+  }
+  descuentoItem.value = null
 }
 
 // ── Submit / Cancel ────────────────────────────────────────────────────────
@@ -803,6 +838,21 @@ function cancelOrder() {
   border-color: #e2e8f0;
   cursor: not-allowed;
 }
+.cart-item__btn--descuento {
+  color: #16a34a;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.cart-item__btn--descuento:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+.cart-item__btn--descuento:disabled {
+  color: #cbd5e1;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
 .cart-item__btn--del {
   color: #dc2626;
   background: #fff1f2;
@@ -831,8 +881,9 @@ function cancelOrder() {
   text-transform: uppercase;
   letter-spacing: .02em;
 }
-.ci-note   { background: #fef3c7; color: #92400e; border-color: #fcd34d; font-style: italic; font-weight: 400; text-transform: none; }
-.ci-change { background: #fff7ed; color: #c2410c; border-color: #fed7aa; font-weight: 700; text-transform: none; }
+.ci-note      { background: #fef3c7; color: #92400e; border-color: #fcd34d; font-style: italic; font-weight: 400; text-transform: none; }
+.ci-change    { background: #fff7ed; color: #c2410c; border-color: #fed7aa; font-weight: 700; text-transform: none; }
+.ci-descuento { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 700; text-transform: none; }
 .ci-sent   { color: #16a34a; font-size: .65rem; font-weight: 700; align-self: center; }
 
 .cart-empty {

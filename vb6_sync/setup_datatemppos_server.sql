@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS `temp_detalle_comanda_parcial` (
   `Cortesia`                TINYINT(4)     DEFAULT 0,
   `Porc_Descuento_Plato`    FLOAT          DEFAULT 0,
   `Porc_Descuento_General`  FLOAT          DEFAULT 0,
+  `Id_Tipificacion`         INT(11)        NOT NULL DEFAULT 0,
   `Impreso`                 TINYINT(4)     DEFAULT 0,
   `Cambios`                 VARCHAR(255)   DEFAULT NULL,
   `Mostrar`                 TINYINT(4)     DEFAULT 0,
@@ -128,4 +129,25 @@ CREATE TABLE IF NOT EXISTS `temp_novedades_plato_pedido` (
   `updated_at`     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`company_id`, `Id_Consecutivo`, `Nro_Pedido`, `Item`, `Depende`, `Cod_Categoria`, `Id_Novedad`),
   KEY `idx_pedido`  (`company_id`, `Nro_Pedido`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ── temp_tipificaciones_descuentos ────────────────────────────
+-- Catálogo de tipificaciones de descuento (Cortesía, Empleados, 2x1...)
+-- usado al aplicar descuento a un ítem del pedido y, tras registrar
+-- el recibo, referenciado desde easyposweb.pos_receipt_discounts.typification_id
+CREATE TABLE IF NOT EXISTS `temp_tipificaciones_descuentos` (
+  `Id_Tipificacion`            INT(11)      NOT NULL DEFAULT 0,
+  `company_id`                 INT(11)      NOT NULL DEFAULT 0,
+  `Nombre`                     VARCHAR(100) DEFAULT NULL,
+  `Info_Adicional`             TINYINT(4)   DEFAULT 0,
+  `Enviar_Correo`               TINYINT(4)   DEFAULT 0,
+  `Enviada_MySql`               TINYINT(4)   DEFAULT 0,
+  `Desactivada`                 TINYINT(4)   DEFAULT 0,
+  `Texto`                       TINYINT(4)   DEFAULT 0,
+  `Combo`                       TINYINT(4)   DEFAULT 0,
+  `Exigir_Info_Cliente`         TINYINT(4)   DEFAULT 0,
+  `Valor_Descuento_Pesos`       DOUBLE       DEFAULT 0,
+  `Valor_Descuento_Porcentaje`  INT(11)      DEFAULT 0,
+  PRIMARY KEY (`company_id`, `Id_Tipificacion`),
+  KEY `idx_ttd_company` (`company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

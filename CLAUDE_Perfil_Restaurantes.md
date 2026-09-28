@@ -111,3 +111,149 @@ Los productos no están limitados a una sola tiquetera. Al crearse o editarse un
 
 ### 7.7 No hacer commit + deploy hasta que no se diga o acepte con un Ok
 Presentar siempre una propuesta de diseño antes de hacer cualquier cambio, no inventar ni suponer nada, siempre preguntar.
+
+---
+
+## 8. PROCESO: REGISTRO DE RECIBO
+
+Existen dos modalidades para asentar el pago de un pedido:
+
+- **Opción Cuentas**: se usa para asentar el recibo de una cuenta previamente abierta al montar el pedido. **Este es el flujo que se está desarrollando/revisando actualmente.**
+- **Opción Plazoleta**: se monta el pedido y, en la misma pantalla, se hace el registro de Recibo/Factura. **Pendiente de desarrollo.**
+
+### 8.1 Tabla `clientes`
+- Todo recibo debe tener SIEMPRE un cliente asignado por defecto.
+- Cliente por defecto: `id = 1`, `cedula_nit = 222222222222`, `Nombres = "Consumidor Final"`.
+- Si no existe en la tabla, se debe crear la primera vez que se necesite.
+- La misma regla aplica para la función **Registrar Factura**.
+
+### 8.2 Tabla `consecutivo_factura_manual`
+- Primer paso del registro del recibo: insertar un registro enviando `Nro_Pedido` y `Fecha`.
+- `Nro_Pedido` se calcula como `nombre_equipo + fecha-hora` (garantiza que nunca se repita).
+- Tras el insert, se consulta el consecutivo autoincremental que le tocó → ese valor es el `Nro_Factura` que relaciona todas las demás tablas involucradas en el registro del recibo.
+- Si el `Nro_Pedido` ya existe: se debe mostrar un mensaje y NO continuar con el registro.
+  - Solución: eliminar el `Nro_Pedido` actual (actualizando en todas las tablas temporales de `datatemppos` involucradas) y reenviar el insert.
+
+### 8.3 Tabla `caja_recibos`
+- Guarda un registro por cada recibo.
+- `Nro_Caja`: identifica el número de caja (relacionada con la tabla `Cajas`, ej. caja uno, dos, tres).
+- `Id_Caja`: id de la apertura de esa caja (ej. la caja 2 pudo ser abierta por un usuario X, quien luego cerró turno; otro usuario pudo abrir turno después en la misma caja). Esta información se almacena en `cajas_cierres` (`Cierre = 0` = turno abierto).
+- Permite identificar: usuarios que iniciaron sesión y tuvieron venta en la caja que abrieron, venta de un usuario X en una caja/sesión específica, o toda la venta de una caja. (Aplica igual para el proceso de Registro de Facturas).
+- Un usuario puede volver a abrir turno en otra caja, siempre que no tenga sesiones de caja abiertas.
+- Todo movimiento que involucre dinero (gastos, compras, ingresos, etc.) debe tener un campo `id_caja` para poder determinar a cuál caja y por ende a cuál usuario corresponde, igual que `caja_recibos.id_caja`.
+
+### 8.4 Tabla `cajas_cierres`
+- Registra cada inicio de turno de un usuario en un `cajas.Nro_Caja`. **Proceso pendiente de implementar.**
+- Flujo esperado:
+  - Al ingresar, cada usuario debe seleccionar una caja disponible.
+  - Esa caja se bloquea automáticamente (`cajas.Abierta`) para que no pueda ser abierta por otro usuario en otro PC u otra sesión.
+  - Se genera de forma autoincremental el `id_caja` que usará ese usuario para todos los movimientos de su turno.
+- Campos relevantes:
+  - `Nro_Caja` seleccionada.
+  - `Fecha`.
+  - `Base_Inicial`: valor entregado al cajero para las vueltas/devueltas.
+  - `Venta_Clientes` (campo reciclado): código del usuario.
+  - `Pc_Abierta`: nombre del dispositivo donde se abrió la caja.
+  - `Fecha_Hora_Apertura`.
+  - `Cierre`: `0` = caja abierta, `1` = caja cerrada.
+  - `Fecha_Hora_Cierre`: se actualiza al momento de cerrar.
+
+### 8.5 Tabla `recibos`
+- Guarda la información del encabezado del recibo. **Este proceso ya se está haciendo — revisar para confirmar que esté correcto.**
+
+### 8.6 Tabla `recibos_comanda`
+- Guarda información relevante del encabezado del pedido. **Ya implementado — revisar.**
+
+### 8.7 Tabla `recibos_detalle_comanda`
+- Guarda información relevante del detalle del pedido. **Ya implementado — revisar.**
+
+### 8.8 Tabla `recibos_detalle_factura`
+- Guarda información relevante del detalle del recibo/factura. **Ya implementado — revisar.**
+
+### 8.9 Tabla `recibos_forma_pago`
+- Guarda el detalle de la forma de pago: un registro por cada forma de pago usada.
+- Solo se pueden seleccionar formas de pago con `forma_pago.Activo = 1`.
+- Se puede seleccionar una o varias formas de pago hasta completar el valor total del recibo (el valor que debe pagar el cliente).
+- No se debe permitir registrar el pago hasta que el total quede completamente cubierto por las formas de pago seleccionadas.
+
+### 8.10 Tabla `forma_pago`
+Catálogo de formas de pago con sus variantes:
+- `Seleccionar_Tarjeta`: al seleccionar esta forma de pago, debe aparecer la opción de escoger la tarjeta usada de una lista (`tarjetas_baucher.Activa = 1`).
+- `Pedir_Observacion`: exige capturar una observación para poder continuar con el proceso.
+- `Pedir_Cliente`: obliga a seleccionar un cliente de la tabla `clientes`.
+- `Forma_Pago_Default`: identifica la forma de pago por defecto (generalmente EFECTIVO), la cual el sistema usa automáticamente al momento de liquidar un recibo. El usuario puede cambiarla a una o varias, pero siempre debe quedar una marcada como default.
+
+Debe existir una forma de pago **CREDITO** (`forma_pago.Descripcion_Forma_Pago = "CREDITO"`), que obligatoriamente debe tener activo `Pedir_Cliente` para seleccionar el cliente al que se le asigna el crédito.
+- Al marcar el recibo como CREDITO: suma en venta, pero NO suma en dinero en efectivo para el cuadre de caja — solo suma en venta y en la casilla del cuadre "Venta a Crédito".
+- Se guarda el registro correspondiente en la tabla `recibos_credito`.
+- Un recibo puede tener un abono en efectivo u otra forma de pago, y el restante asignarlo a la forma de pago CREDITO. Ese restante es el valor que se guarda en `recibos_credito`, y el detalle del pago en otros medios se guarda en `recibos_credito_pagos`, de forma que la suma de ambos dé el total de la factura.
+
+**Pendiente**: crear el CRUD de `forma_pago` y ubicarlo en Configuración del sidebar, ya que se utiliza en todos los perfiles.
+
+### 8.11 Tabla `recibos_credito`
+Encabezado del crédito generado al escoger la forma de pago "CREDITO" al momento de pagar un recibo:
+- `Id_Credito`: incremental.
+- `Nro_Factura`: número del recibo.
+- `Fecha`.
+- `Id_Cliente`: cliente al que se le asignó el crédito (deudor).
+- `Valor_Inicial`: valor de la deuda.
+- `Valor_Actual`: valor de la deuda; inicia igual al `Valor_Inicial` y se va descontando con cada abono. `Valor_Actual = 0` indica que el crédito está cancelado en su totalidad.
+- `Observaciones`: observación adicional relacionada con el crédito.
+
+### 8.12 Tabla `recibos_credito_pagos`
+- Guarda los registros de los pagos/abonos hechos al crédito: un registro por abono, hasta completar el `Valor_Inicial` del recibo y poder cambiar el estado a `recibos_credito.Cancelado = 1`.
+- Se llena en dos situaciones:
+  1. Cuando se registra el recibo y se hizo un abono parcial en otro medio de pago.
+  2. Cuando se hacen abonos posteriores al crédito.
+
+### 8.13 Tabla `recibos_descuentos`
+- Guarda los descuentos generados a un recibo: un registro por cada descuento (`recibos_detalle_comanda.item`).
+- Cada descuento tiene una tipificación de la tabla `tipificaciones_descuentos` (ej. descuento en pesos a un ítem, descuento del 10% a otro, cortesía 100% a otro, etc.).
+
+### 8.14 Tabla `recibos_detalle_comanda_producto`
+- Se usa para el descuento de inventarios: registra qué se debe descontar de inventario por cada ítem de `recibos_detalle_comanda`.
+- Ejemplo: el producto-plato "HAMBURGUESA" es el ítem del recibo en `recibos_detalle_comanda`, pero debe descontar de inventario (`inventario_actual_porciones`) cada insumo relacionado registrado en esta tabla (Pan-Ham, Carne-Hamb, Ripio-Pap, etc.) cada vez que se venda.
+
+### 8.15 Tabla `recibos_domicilio`
+- Cuando el pedido es para domicilio, al generar el recibo se debe registrar en esta tabla: el valor cobrado por el domicilio, el `nro_recibo` (`nro_factura`), `fecha`, `nro_pedido`, el domiciliario (o el vendedor/usuario que abrió caja, en caso de no asignarse ni domiciliario ni vendedor), y el `id_cliente` al que se le lleva el domicilio.
+- Si ese cliente no está en base de datos, se debe agregar al momento de registrar el pago.
+
+### 8.16 Tabla `bonos`
+Registra un bono generado en distintos escenarios:
+- **Bono_x_Separado**: se genera al momento de asentar el abono inicial de un separado (módulo pendiente de desarrollo). El cliente lo presenta para ser descontado al pagar la compra total del separado. Tiene detalle en la tabla `separados` y `separados_detalle`.
+- **Bono_x_Recompra**: se usa en campañas de descuento en la próxima compra (módulo pendiente de desarrollo).
+- **Bono_x_Cambio**: ocurre cuando el cliente hace un cambio de prenda/producto y le queda dinero a favor; el bono se usa en su próxima compra o al momento de asentar el cambio.
+- `bonos.Redimido = false` indica que el bono está disponible.
+- Los bonos deben aparecer en un selector al momento de realizar un recibo, pero solo si previamente se escogió un cliente en la ventana de pago. Los bonos se manejan como una forma de pago, por lo que los distintos conceptos de bono deben existir también en `forma_pago`.
+- Cuando un bono se redime, se cambia el estado a `Redimido = true` (cancelado), para que no vuelva a ser usado.
+- Solo `Bono_x_Separado` genera detalle (en `separados`/`separados_detalle`); los bonos por otro concepto no generan detalle, solo los datos de la tabla `bonos`.
+
+### 8.17 Tablas `separados` / `separados_detalle`
+- **Pendientes de desarrollo.** Se abordarán cuando se trabaje ese módulo.
+
+### 8.18 Tabla `Cajas`
+- Cajas disponibles registradas por cada `company`.
+- Se usa al abrir una caja: el `Nro_Caja` seleccionado por el usuario se registra en `cajas_cierres`, permitiendo identificar en cuál caja abrió turno cada usuario.
+
+### 8.19 Funciones a ejecutar al registrar el recibo
+Al momento de registrar el recibo se deben ejecutar, en este orden:
+1. `Call DescontarStockRecibo(conn, Var_Nro_Recibo, Var_Fecha_Facturacion)`
+2. `Call Imprimir_Recibo(Var_Nro_Recibo, Var_Nro_Pedido_Pos, False, False, False)`
+3. `Call Enviar_Pedido_Impresion(Var_Nro_Pedido_Facturar_Pos, Var_Pedido_Nuevo, False, 0)`
+4. `Call Imprimir_comanda_Corta(Var_Nro_Pedido_Facturar_Pos)`
+
+### 8.20 Notas y alcance del desarrollo
+- Revisar el proceso ya existente de toma del pedido, ya que es el punto de partida para asentar el pago del recibo.
+- **Alcance inicial**: solo se hará Registro de Recibo sobre los pedidos tomados desde la web. Los de escritorio se seguirán manejando desde el programa de VB de escritorio.
+- **Flujo esperado**:
+  1. Se monta el pedido (revisar procesos ya existentes).
+  2. Al momento de registrar el recibo, se debe escoger entre los pedidos montados (web).
+  3. Se abre la pantalla de pago (revisar lo que ya se tiene al respecto) — aplica tanto para Recibos como para Facturas (inicialmente se desarrolla para Recibos).
+- **La vista de pago (Recibo/Factura) debe permitir**:
+  - Selectores de: vendedor, domiciliario, cliente, forma de pago, separado (si aplica), bono (si el separado tiene uno asociado, o por otro concepto).
+  - Pagos parciales: pagar todos los ítems del pedido o seleccionar solo algunos (ej. cuando en una cuenta deciden pagar todos los comensales por separado).
+  - Aplicar tipificación de descuento — **no se permite descuento sobre descuento** (si un ítem ya tiene descuento aplicado al montar el pedido, no se le puede aplicar un descuento adicional al recibo).
+  - Calcular la propina si la `company` tiene habilitada la opción de liquidar propina, mostrando el % de la propina sobre la base de la cuenta a cancelar. El valor de la propina debe poder modificarse.
+  - Opción **FACTURA** (si está habilitada la opción de POS electrónico).
+  - Opción **RECIBO CUENTA_PREVIA**: mismo formato del recibo, pero solo informativo — NO asienta el recibo, es únicamente para mostrarle al cliente en cuánto va su cuenta.
+  - Poder modificar el valor del domicilio.

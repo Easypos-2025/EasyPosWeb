@@ -1,13 +1,10 @@
-# CLAUDE.md — Perfil 15: Talleres Mecánica - Lavaderos - Latonería y Pintura
-# business_profile_id = 15
 
 Nota: Actúa como un Arquitecto de Software Senior. Antes de tocar el código, analiza el problema y dame la informacion para poder proceder con el arreglo y recuerda que todo debe seguir con todos los standares de seguridad, anti robots y todo posible ataque debe estar controlado
 
----
-
 ## 1. OBJETIVO
+Porceso de Registro de Recibos-Facturas Opcion Pedidos Montados desde toma de pedido. usaremos el perfil restaurante.
 
-Sistema ERP integral para el taller mecánico, centro de estética automotriz y centro de colisión **"Perfil Serví-Cars"**. Gestiona servicios para autos y motos, venta de repuestos, taller mecánico, lavado/aspirado, y latonería y pintura. Soporta flujos de trabajo con roles específicos, gestión de convenios empresariales con reglas contables especiales, pago diario de mano de obra a operarios y venta cruzada mediante combos de servicios.
+Este sistema es un ecosistema de software para restaurantes enfocado en la omnicanalidad (Mesa, Llevar, Web Propia) y el control hiperpreciso de inventarios a través de recetas y configuraciones híbridas. Interactúa directamente con la estructura de datos existente del software de escritorio y añade interfaces web dinámicas tanto para la toma de pedidos como para la visualización en cocina.
 
 ---
 
@@ -15,24 +12,18 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
 
 - **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
 - **Auto-Deploy**: Cuando el usuario escriba la palabra **"commit"**, ejecutar el siguiente flujo completo en orden:
-  1. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"` — **COMMIT PRIMERO** para que el gitHash se bakee correctamente en el build.
-  2. `npm run build` en frontend (local) — si hay errores, detener y reportar. El `__APP_BUILD__` tomará el hash del commit recién creado.
+  1. `npm run build` en frontend — si hay errores, detener y reportar.
+  2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
   3. `git push origin master`
-  4. **Transferir dist via tar+SSH** (un solo archivo comprimido, ~10× más rápido que scp -r):
-     ```bash
-     tar -czf - -C "/d/AAA Proyectos Claude-Code/EasyPosWeb/frontend" dist | ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb/frontend && rm -rf dist && tar -xzf -"
-     ```
-  5. SSH al servidor — solo git pull (backend) + restart (sin `npm run build` en servidor):
-     ```bash
-     ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && systemctl restart easyposweb"
-     ```
-  6. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
-     `ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
-  7. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
-  - El build de Vite se hace **solo en local**; el servidor recibe el `dist/` comprimido vía tar pipe. ~30s de transferencia vs ~3min con scp -r.
+  4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb`
+     Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb"`
+  5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
+     `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
+  6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
+  - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.
 - Todos los campos donde se describa un valor de pesos debe tener el formato de moneda correspondiente al país del Asociado.
-- La aplicación está enfocada a que todo se haga en un 80% desde móvil; siempre tener en cuenta los dos media queries: dos tamaños de móvil, tablet y PC.
+- La aplicación esta enfocada todo se haga en un 80% desde movil, entonces siempre tener en cuenta los dos media querys, para los dos tamaños de movil, para tablet y para pc
 
 ---
 
@@ -57,17 +48,9 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
 
 ---
 
-## 5. REGLA: NUEVO PERFIL DE NEGOCIO → BARRA DE INDICADORES OBLIGATORIA
-
-- **Auto-KPI-Bar**: Todo dashboard de perfil de negocio nuevo (incluyendo SYSADMIN) debe incluir una barra de indicadores (KPI bar) al inicio de la vista.
-- La barra muestra tarjetas de métricas clave del perfil (ej: totales, pendientes, alertas).
-- Todos los perfiles actuales ya la tienen; es regla global para perfiles futuros.
-- La barra de indicadores debe ser responsive y alineada al diseño del perfil activo.
-- Crear texto de bienvenida en la tabla correspondiente con información relacionada con el perfil actual, que sea de guía para el nuevo asociado. La vista ya está creada; solo es llenar la tabla con la información del perfil.
-
 ---
 
-## 6. REGLA: CAPTIONS DINÁMICOS DESDE BD
+## 5. REGLA: CAPTIONS DINÁMICOS DESDE BD
 
 - **Dynamic-Captions**: Ningún caption visible (títulos, botones, placeholders, mensajes vacíos) debe tener quemado el nombre de un módulo o entidad que provenga de `system_modules`.
 - Usar siempre el composable `useModuleName()` (`@/composables/useModuleName.js`):
@@ -79,114 +62,189 @@ Sistema ERP integral para el taller mecánico, centro de estética automotriz y 
 
 ---
 
-## 7. NO HACER COMMIT + DEPLOY SIN APROBACIÓN EXPLÍCITA
+## 7. HOJA DE RUTA
 
-Presentar siempre una propuesta de diseño antes de hacer cualquier cambio. No inventar ni suponer nada; siempre preguntar.
+### 7.1 Origen y Estado de los Pedidos (Canales)
+- **Servicio a la Mesa**: Comandado por meseros desde su interfaz web móvil. Vinculado a zonas y mesas.
+- **Para Llevar (Takeout)**: Facturado o comandado directamente desde caja.
+- **Compra Online (Web Propia)**: Los pedidos ingresan al sistema en estado "Pendiente". El sistema debe emitir una notificación/alerta en pantalla. No se envían a producción hasta que el pago sea confirmado y el pedido sea explícitamente "Aceptado" por el administrador.
+- Nota: No se contempla integración nativa con plataformas externas (Rappi, etc.) en esta etapa.
 
----
+### 7.2 Control de Inventario y Recetas (Lógica de Descuento)
+El motor de inventario descuenta insumos del almacén basándose en el costo y cantidad de la receta. Un producto descuenta existencias según dos posibles orígenes:
+- **Insumos Fijos**: Ingredientes obligatorios predefinidos en la receta (Ej: El pan y la carne de una hamburguesa).
+- **Insumos Dinámicos (Opciones de Armado / Modificadores)**: Opciones que el cliente elige al momento (Ej: Tamaño de pizza, ingredientes extra, adiciones). Cada opción suma/resta sus respectivos insumos.
 
-## 8. ROLES Y ACTORES DEL SISTEMA
+**Menú Ejecutivo / Diario (Estructura Híbrida):**
+- **Regla de Bloqueo**: Si el administrador no "arma" el menú del día por la mañana (asignando qué sopa, qué principio y qué proteína aplican para la fecha), el producto queda bloqueado y no se puede comandar.
+- **Descuento Combinado**: Al venderse, descuenta los insumos fijos (Ej: Arroz, jugo) MÁS los insumos de las opciones seleccionadas por el cliente en la mesa para ese día específico.
+- **Validación de Captura**: Si el artículo está tipificado para requerir Peso exacto o Cantidad, la interfaz de la comanda exige obligatoriamente esta información antes de permitir el guardado.
+- **Stocks**: Control estricto de stocks mínimos por insumo (asociados a sus unidades de medida).
 
-| Rol | Responsabilidades |
-|---|---|
-| **Administrador / Caja** | Gestión de inventarios, facturación, CxC, egresos de nómina diaria y reportes financieros |
-| **Jefe de Taller** | Apertura de órdenes, asignación de mecánicos y control de calidad en taller |
-| **Jefe de Patio** | Apertura de órdenes, asignación de lavadores y control de calidad en lavado |
-| **Jefe de Latonería** | Diagnóstico de colisiones, preparación, pintura y ensamble de piezas |
-| **Mecánico** | Operario de ejecución en órdenes de trabajo mecánico |
-| **Lavador** | Operario de ejecución en órdenes de lavado y aspirado |
-| **Latonero** | Operario de reparación de piezas de carrocería |
-| **Pintor** | Operario de preparación y acabado (pintura, fondo, transparente) |
-| **Cliente Convenio** | Empresa aliada con condiciones de pago diferido (crédito / acumulación de órdenes) |
+### 7.3 Listas de Precios Contextuales
+Un mismo artículo de venta debe soportar múltiples precios simultáneos. El sistema aplica el precio correcto de forma automática según la tipificación del pedido:
+- **Lista 1**: Consumo en Mesa (Local).
+- **Lista 2**: Para Llevar (Takeout).
+- **Lista 3**: Compra por Plataforma Web Propia.
 
----
+### 7.4 Sistema Multimpresión de Comandas
+Los productos no están limitados a una sola tiquetera. Al crearse o editarse un producto, el administrador puede seleccionar una o múltiples impresoras de destino.
+- **Regla de Ruteo**: Al confirmar una comanda, el sistema fragmenta el pedido y envía las copias en paralelo a todas las impresoras seleccionadas (Ej: Un combo de hamburguesa con cerveza imprime simultáneamente el pedido completo en la tiquetera de Cocina y solo la bebida en la tiquetera de la Barra).
 
-## 9. REGLAS DE NEGOCIO CRÍTICAS
 
-### 9.1 Gestión de Convenios Empresariales (Flujo de Crédito Colectivo)
-- **Operación sin Pago Inmediato:** Los vehículos vinculados a un convenio empresarial ingresan al servicio, se les genera una Orden de Servicio (OS) normal, pero se retiran **sin liquidar pago** en el momento.
-- **Acumulación de Órdenes:** El sistema agrupa y mantiene en estado "Pendiente por Facturar" todas las órdenes asociadas a una misma empresa/convenio.
-- **Facturación Consolidada:** El administrador puede seleccionar múltiples órdenes acumuladas (mezclando lavados, mecánicas, latonería, repuestos, etc.) y unificarlas en **una única factura o relación de cobro** detallada.
+### 7.6 Integración de Datos y Conectividad
+- **Estructura de Base de Datos**: No diseñar un esquema nuevo. El sistema debe acoplarse, leer y escribir respetando estrictamente la estructura de datos preexistente en el software de escritorio actual.
+- **Sincronización**: Toda transacción hecha en la web de meseros, caja o plataforma web debe actualizar el inventario, los estados de mesas y las colas de impresión de la base de datos unificada del software de escritorio.
 
-### 9.2 Lógica Contable de Caja: Convenios vs. Flujo de Efectivo Diario
-- **Reconocimiento de la Venta:** Los servicios de convenios o créditos **ingresan y se registran como venta del día** (ingreso operativo / contabilidad de devengo).
-- **Control de Caja Chica:** Estas ventas por convenio **NO suman en el dinero físico/efectivo del día** ni alteran el saldo real de la caja del turno; se marcan como "Cuenta por Cobrar (CxC) de Convenio".
-- **Egreso por Pago Diario a Operarios:** El personal (lavadores, mecánicos, latoneros, pintores) recibe su pago por mano de obra **de forma diaria**, independientemente de si el vehículo era de convenio o particular. El sistema registra salidas de dinero diarias bajo el concepto *"Egreso: Pago de Mano de Obra Diaria"*, descontando el efectivo real de la caja del día.
-
-### 9.3 Módulo Dinámico de Combos (Paquetes de Servicios)
-Paquetes comerciales parametrizables que unifiquen mano de obra, repuestos, latonería y estética:
-
-| Combo | Servicios incluidos |
-|---|---|
-| **Lavado** | Lavado sencillo + Aspirado + Polichado |
-| **Revisión** | Revisión General Mecánica + Lavado Especial |
-| **Mantenimiento** | Cambio de Aceite + Filtros + Lavado Sencillo |
-| **Estético** | Pintura de Pieza + Lavado Especial |
+### 7.7 No hacer commit + deploy hasta que no se diga o acepte con un Ok
+Presentar siempre una propuesta de diseño antes de hacer cualquier cambio, no inventar ni suponer nada, siempre preguntar.
 
 ---
 
-## 10. ARQUITECTURA DE MÓDULOS
+## 8. PROCESO: REGISTRO DE RECIBO
 
-### 10.1 Módulo de Clientes, Vehículos e Historial (Core)
-- **Ficha Única por Placa:** El vehículo es la entidad central. Al digitar la placa se despliega el expediente completo.
-- **Datos del Vehículo:** Tipo (Auto / Moto), Modelo, Año, Kilometraje, Color, Propietario (Nombre, Documento, Teléfono, Vínculo a Convenio).
-- **Historial Clínico Integral:** Trazabilidad intermodular: qué se le hizo (Mecánica / Lavado / Latonería), repuestos instalados, operario asignado, jefe responsable, fecha/hora de entrada y salida.
-- **Métrica de Frecuencia:** Indicadores automáticos de comportamiento (ej. "Este vehículo asiste cada 3 meses" / "Última visita: 15/03/2026").
-- **Motor de Búsqueda Global:** Filtros por Placa, Nombre del cliente, Documento, Mecánico, Lavador, Latonero/Pintor, Jefe de patio, Jefe de taller, Rango de fechas o Mes específico.
+Existen dos modalidades para asentar el pago de un pedido:
 
-### 10.2 Módulo de Órdenes de Trabajo — Taller Mecánico
-- **Apertura de Orden:** Registro mandatorio mediante Placa del vehículo.
-- **Evidencia Gráfica:** Captura obligatoria de fotografías del estado del vehículo al ingresar (registro visual de daños previos).
-- **Asignación de Personal:** Mecánico ejecutor + Jefe de Taller supervisor.
-- **Detalle Operativo:** Diagnóstico inicial, trabajo realizado, mano de obra aplicada y repuestos utilizados.
-- **Línea de Tiempo:** Fecha/Hora de Entrada, Promesa de Entrega y Entrega Real.
-- **Salida Documental:** Impresión de Orden de Trabajo (física/digital) y pre-factura.
+- **Opción Cuentas**: se usa para asentar el recibo de una cuenta previamente abierta al montar el pedido. **Este es el flujo que se está desarrollando/revisando actualmente.**
+- **Opción Plazoleta**: se monta el pedido y, en la misma pantalla, se hace el registro de Recibo/Factura. **Pendiente de desarrollo.**
 
-### 10.3 Módulo de Lavado y Aspirado — Centro de Estética
-- **Apertura de Orden:** Registro inicial mediante Placa del vehículo.
-- **Evidencia Gráfica:** Captura de fotos de ingreso para control de reclamaciones.
-- **Asignación de Personal:** Jefe de Patio supervisor + Lavador ejecutor.
-- **Selección de Servicios / Combos:** Catálogo parametrizado (Lavado sencillo, lavado especial, combos).
-- **Tiempos:** Control de Fecha/Hora de Entrada y de Entrega.
-- **Salida Documental:** Comprobante de servicio o factura directa.
+### 8.1 Tabla `clientes`
+- Todo recibo debe tener SIEMPRE un cliente asignado por defecto.
+- Cliente por defecto: `id = 1`, `cedula_nit = 222222222222`, `Nombres = "Consumidor Final"`.
+- Si no existe en la tabla, se debe crear la primera vez que se necesite.
+- La misma regla aplica para la función **Registrar Factura**.
 
-### 10.4 Módulo de Latonería y Pintura — Centro de Colisión
-- **Apertura de Orden:** Registro mandatorio mediante Placa + toma de kilometraje.
-- **Evidencia Gráfica Rigurosa:** Fotos obligatorias de ingreso (latas, rayones, abolladuras) y registro visual **Antes / Durante / Después**.
-- **Asignación de Personal:** Jefe de Latonería + Latonero (reparación de piezas) + Pintor (preparación y acabado).
-- **Detalle del Servicio:** Inventario de piezas a reparar / cambiar, tipo de pintura (general, por piezas, retoque), materiales e insumos (masilla, fondo, pintura, transparente).
-- **Tiempos de Proceso:** Fecha/Hora de Entrada, tiempo de preparación, tiempo de cabina/secado y Entrega Real.
-- **Salida Documental:** Orden de servicio técnica y presupuesto/factura detallada.
+### 8.2 Tabla `consecutivo_factura_manual`
+- Primer paso del registro del recibo: insertar un registro enviando `Nro_Pedido` y `Fecha`.
+- `Nro_Pedido` se calcula como `nombre_equipo + fecha-hora` (garantiza que nunca se repita).
+- Tras el insert, se consulta el consecutivo autoincremental que le tocó → ese valor es el `Nro_Factura` que relaciona todas las demás tablas involucradas en el registro del recibo.
+- Si el `Nro_Pedido` ya existe: se debe mostrar un mensaje y NO continuar con el registro.
+  - Solución: eliminar el `Nro_Pedido` actual (actualizando en todas las tablas temporales de `datatemppos` involucradas) y reenviar el insert.
 
-### 10.5 Módulo de Inventario de Auto Repuestos
-- **Control por Codificación:** Catálogo con Código único, Marca, Precio de Compra y Precio de Venta (Correas, filtros, aceites, insumos de pintura, etc.).
-- **Descuento de Stock en Tiempo Real:** Resta automática del inventario al añadir a cualquier orden (Mecánica o Latonería) o vender por mostrador.
-- **Sistema de Alertas:** Notificaciones visuales de Stock Mínimo (ej. "Quedan 2 tarros de transparente, reponer mercancía").
-- **Auditoría de Inventario:** Interfaz para cuadre físico vs. sistema.
-- **Módulo de Compras:** Registro formal de entrada de mercancía e insumos indexados por proveedor.
+### 8.3 Tabla `caja_recibos`
+- Guarda un registro por cada recibo.
+- `Nro_Caja`: identifica el número de caja (relacionada con la tabla `Cajas`, ej. caja uno, dos, tres).
+- `Id_Caja`: id de la apertura de esa caja (ej. la caja 2 pudo ser abierta por un usuario X, quien luego cerró turno; otro usuario pudo abrir turno después en la misma caja). Esta información se almacena en `cajas_cierres` (`Cierre = 0` = turno abierto).
+- Permite identificar: usuarios que iniciaron sesión y tuvieron venta en la caja que abrieron, venta de un usuario X en una caja/sesión específica, o toda la venta de una caja. (Aplica igual para el proceso de Registro de Facturas).
+- Un usuario puede volver a abrir turno en otra caja, siempre que no tenga sesiones de caja abiertas.
+- Todo movimiento que involucre dinero (gastos, compras, ingresos, etc.) debe tener un campo `id_caja` para poder determinar a cuál caja y por ende a cuál usuario corresponde, igual que `caja_recibos.id_caja`.
 
-### 10.6 Reportes Financieros y Gestión de Caja
-- **Cierre de Caja Diario:** Resumen dividido en: Total Ventas del Día (Efectivo + Convenios) vs. Total Dinero Real Recaudado (solo Efectivo/Transferencias).
-- **Módulo de Egresos Diarios:** Panel para registrar pagos en efectivo del día a operarios (Mecánicos, Lavadores, Latoneros), restando el valor del saldo neto de la caja física.
-- **Productividad de Personal:** Reporte de rendimiento por operario (mano de obra / servicios en el mes) para cálculo de comisiones o destajo diario.
-- **Trazabilidad Financiera por Placa:** Reporte consolidado de todo el dinero facturado a un vehículo específico.
-- **Cartera (CxC):** Panel de seguimiento de saldos acumulados de Convenios Empresariales y alertas de facturación masiva.
+### 8.4 Tabla `cajas_cierres`
+- Registra cada inicio de turno de un usuario en un `cajas.Nro_Caja`. **Proceso pendiente de implementar.**
+- Flujo esperado:
+  - Al ingresar, cada usuario debe seleccionar una caja disponible.
+  - Esa caja se bloquea automáticamente (`cajas.Abierta`) para que no pueda ser abierta por otro usuario en otro PC u otra sesión.
+  - Se genera de forma autoincremental el `id_caja` que usará ese usuario para todos los movimientos de su turno.
+- Campos relevantes:
+  - `Nro_Caja` seleccionada.
+  - `Fecha`.
+  - `Base_Inicial`: valor entregado al cajero para las vueltas/devueltas.
+  - `Venta_Clientes` (campo reciclado): código del usuario.
+  - `Pc_Abierta`: nombre del dispositivo donde se abrió la caja.
+  - `Fecha_Hora_Apertura`.
+  - `Cierre`: `0` = caja abierta, `1` = caja cerrada.
+  - `Fecha_Hora_Cierre`: se actualiza al momento de cerrar.
 
----
+### 8.5 Tabla `recibos`
+- Guarda la información del encabezado del recibo. **Este proceso ya se está haciendo — revisar para confirmar que esté correcto.**
 
-## 11. REQUERIMIENTOS TÉCNICOS Y USABILIDAD
+### 8.6 Tabla `recibos_comanda`
+- Guarda información relevante del encabezado del pedido. **Ya implementado — revisar.**
 
-- **Módulo de Alertas de Fidelización:** Recordatorios automáticos de mantenimiento preventivo (ej. "Cambio de aceite en 5,000 km") para estrategias de telemercadeo.
-- **Gestión Multimedia:** Soporte para almacenamiento local/nube de fotos de inspección (Antes / Durante / Después).
-- **Arquitectura Híbrida (Offline First):** El sistema debe garantizar operatividad local (apertura de órdenes, consulta de fichas e inventario) aun sin conexión a internet.
-- **Respaldos:** Automatización de copias de seguridad en la nube para contingencias de hardware.
+### 8.7 Tabla `recibos_detalle_comanda`
+- Guarda información relevante del detalle del pedido. **Ya implementado — revisar.**
 
----
+### 8.8 Tabla `recibos_detalle_factura`
+- Guarda información relevante del detalle del recibo/factura. **Ya implementado — revisar.**
 
-## 12. REGLA CONTABLE FORMAL DE CAJA
+### 8.9 Tabla `recibos_forma_pago`
+- Guarda el detalle de la forma de pago: un registro por cada forma de pago usada.
+- Solo se pueden seleccionar formas de pago con `forma_pago.Activo = 1`.
+- Se puede seleccionar una o varias formas de pago hasta completar el valor total del recibo (el valor que debe pagar el cliente).
+- No se debe permitir registrar el pago hasta que el total quede completamente cubierto por las formas de pago seleccionadas.
 
-Se define formalmente la separación contable entre:
-- **Ingreso Devengado**: venta del día de convenios (registrada, no cobrada en efectivo).
-- **Flujo de Caja Real**: dinero físico disponible en caja.
+### 8.10 Tabla `forma_pago`
+Catálogo de formas de pago con sus variantes:
+- `Seleccionar_Tarjeta`: al seleccionar esta forma de pago, debe aparecer la opción de escoger la tarjeta usada de una lista (`tarjetas_baucher.Activa = 1`).
+- `Pedir_Observacion`: exige capturar una observación para poder continuar con el proceso.
+- `Pedir_Cliente`: obliga a seleccionar un cliente de la tabla `clientes`.
+- `Forma_Pago_Default`: identifica la forma de pago por defecto (generalmente EFECTIVO), la cual el sistema usa automáticamente al momento de liquidar un recibo. El usuario puede cambiarla a una o varias, pero siempre debe quedar una marcada como default.
 
-El sistema registra los egresos en efectivo para el pago diario de mano de obra de latoneros y lavadores **sin descuadrar la caja principal**.
+Debe existir una forma de pago **CREDITO** (`forma_pago.Descripcion_Forma_Pago = "CREDITO"`), que obligatoriamente debe tener activo `Pedir_Cliente` para seleccionar el cliente al que se le asigna el crédito.
+- Al marcar el recibo como CREDITO: suma en venta, pero NO suma en dinero en efectivo para el cuadre de caja — solo suma en venta y en la casilla del cuadre "Venta a Crédito".
+- Se guarda el registro correspondiente en la tabla `recibos_credito`.
+- Un recibo puede tener un abono en efectivo u otra forma de pago, y el restante asignarlo a la forma de pago CREDITO. Ese restante es el valor que se guarda en `recibos_credito`, y el detalle del pago en otros medios se guarda en `recibos_credito_pagos`, de forma que la suma de ambos dé el total de la factura.
+
+### Crear Crud Tabla forma_pago: crear el CRUD de `forma_pago` y ubicarlo en Configuración del sidebar, ya que se utiliza en todos los perfiles.
+
+### 8.11 Tabla `recibos_credito`
+Encabezado del crédito generado al escoger la forma de pago "CREDITO" al momento de pagar un recibo:
+- `Id_Credito`: incremental.
+- `Nro_Factura`: número del recibo.
+- `Fecha`.
+- `Id_Cliente`: cliente al que se le asignó el crédito (deudor).
+- `Valor_Inicial`: valor de la deuda.
+- `Valor_Actual`: valor de la deuda; inicia igual al `Valor_Inicial` y se va descontando con cada abono. `Valor_Actual = 0` indica que el crédito está cancelado en su totalidad.
+- `Observaciones`: observación adicional relacionada con el crédito.
+
+### 8.12 Tabla `recibos_credito_pagos`
+- Guarda los registros de los pagos/abonos hechos al crédito: un registro por abono, hasta completar el `Valor_Inicial` del recibo y poder cambiar el estado a `recibos_credito.Cancelado = 1`.
+- Se llena en dos situaciones:
+  1. Cuando se registra el recibo y se hizo un abono parcial en otro medio de pago.
+  2. Cuando se hacen abonos posteriores al crédito.
+
+### 8.13 Tabla `recibos_descuentos`
+- Guarda los descuentos generados a un recibo: un registro por cada descuento (`recibos_detalle_comanda.item`).
+- Cada descuento tiene una tipificación de la tabla `tipificaciones_descuentos` (ej. descuento en pesos a un ítem, descuento del 10% a otro, cortesía 100% a otro, etc.).
+
+### 8.14 Tabla `recibos_detalle_comanda_producto`
+- Se usa para el descuento de inventarios: registra qué se debe descontar de inventario por cada ítem de `recibos_detalle_comanda`.
+- Ejemplo: el producto-plato "HAMBURGUESA" es el ítem del recibo en `recibos_detalle_comanda`, pero debe descontar de inventario (`inventario_actual_porciones`) cada insumo relacionado registrado en esta tabla (Pan-Ham, Carne-Hamb, Ripio-Pap, etc.) cada vez que se venda.
+
+### 8.15 Tabla `recibos_domicilio`
+- Cuando el pedido es para domicilio, al generar el recibo se debe registrar en esta tabla: el valor cobrado por el domicilio, el `nro_recibo` (`nro_factura`), `fecha`, `nro_pedido`, el domiciliario (o el vendedor/usuario que abrió caja, en caso de no asignarse ni domiciliario ni vendedor), y el `id_cliente` al que se le lleva el domicilio.
+- Si ese cliente no está en base de datos, se debe agregar al momento de registrar el pago.
+
+### 8.16 Tabla `bonos`
+Registra un bono generado en distintos escenarios:
+- **Bono_x_Separado**: se genera al momento de asentar el abono inicial de un separado (módulo pendiente de desarrollo). El cliente lo presenta para ser descontado al pagar la compra total del separado. Tiene detalle en la tabla `separados` y `separados_detalle`.
+- **Bono_x_Recompra**: se usa en campañas de descuento en la próxima compra (módulo pendiente de desarrollo).
+- **Bono_x_Cambio**: ocurre cuando el cliente hace un cambio de prenda/producto y le queda dinero a favor; el bono se usa en su próxima compra o al momento de asentar el cambio.
+- `bonos.Redimido = false` indica que el bono está disponible.
+- Los bonos deben aparecer en un selector al momento de realizar un recibo, pero solo si previamente se escogió un cliente en la ventana de pago. Los bonos se manejan como una forma de pago, por lo que los distintos conceptos de bono deben existir también en `forma_pago`.
+- Cuando un bono se redime, se cambia el estado a `Redimido = true` (cancelado), para que no vuelva a ser usado.
+- Solo `Bono_x_Separado` genera detalle (en `separados`/`separados_detalle`); los bonos por otro concepto no generan detalle, solo los datos de la tabla `bonos`.
+
+### 8.17 Tablas `separados` / `separados_detalle`
+- **Pendientes de desarrollo.** Se abordarán cuando se trabaje ese módulo.
+
+### 8.18 Tabla `Cajas`
+- Cajas disponibles registradas por cada `company`.
+- Se usa al abrir una caja: el `Nro_Caja` seleccionado por el usuario se registra en `cajas_cierres`, permitiendo identificar en cuál caja abrió turno cada usuario.
+
+### 8.19 Funciones a ejecutar al registrar el recibo
+Al momento de registrar el recibo se deben ejecutar, en este orden:
+1. `Call DescontarStockRecibo(conn, Var_Nro_Recibo, Var_Fecha_Facturacion)`
+2. `Call Imprimir_Recibo(Var_Nro_Recibo, Var_Nro_Pedido_Pos, False, False, False)`
+3. `Call Enviar_Pedido_Impresion(Var_Nro_Pedido_Facturar_Pos, Var_Pedido_Nuevo, False, 0)`
+4. `Call Imprimir_comanda_Corta(Var_Nro_Pedido_Facturar_Pos)`
+
+### 8.20 Notas y alcance del desarrollo
+- Revisar el proceso ya existente de toma del pedido, ya que es el punto de partida para asentar el pago del recibo.
+- **Alcance inicial**: solo se hará Registro de Recibo sobre los pedidos tomados desde la web. Los de escritorio se seguirán manejando desde el programa de VB de escritorio.
+- **Flujo esperado**:
+  1. Se monta el pedido (revisar procesos ya existentes).
+  2. Al momento de registrar el recibo, se debe escoger entre los pedidos montados (web).
+  3. Se abre la pantalla de pago (revisar lo que ya se tiene al respecto) — aplica tanto para Recibos como para Facturas (inicialmente se desarrolla para Recibos).
+- **La vista de pago (Recibo/Factura) debe permitir**:
+  - Selectores de: vendedor, domiciliario, cliente, forma de pago, separado (si aplica), bono (si el separado tiene uno asociado, o por otro concepto).
+  - Pagos parciales: pagar todos los ítems del pedido o seleccionar solo algunos (ej. cuando en una cuenta deciden pagar todos los comensales por separado).
+  - Aplicar tipificación de descuento — **no se permite descuento sobre descuento** (si un ítem ya tiene descuento aplicado al montar el pedido, no se le puede aplicar un descuento adicional al recibo).
+  - Calcular la propina si la `company` tiene habilitada la opción de liquidar propina, mostrando el % de la propina sobre la base de la cuenta a cancelar. El valor de la propina debe poder modificarse.
+  - Opción **FACTURA** (si está habilitada la opción de POS electrónico).
+  - Opción **RECIBO CUENTA_PREVIA**: mismo formato del recibo, pero solo informativo — NO asienta el recibo, es únicamente para mostrarle al cliente en cuánto va su cuenta.
+  - Poder modificar el valor del domicilio.
+
+### Notas Adicionales.
+- revisar la estructura de las Tablas en localhost DB maduritos, y comparar con las tablas web DB EasyPosWeb Restaurante Test company_id=68, esta es la base de datos que usaremos para hacer las pruebas
+- 

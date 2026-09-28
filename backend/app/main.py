@@ -104,6 +104,8 @@ from app.routers.advertisement_router import router as advertisement_router
 from app.routers.welcome_steps_router import router as welcome_steps_router
 from app.routers.company_configs_router import router as company_configs_router
 from app.routers.pos_payment_types_router import router as pos_payment_types_router
+from app.routers.pos_shift_router import router as pos_shift_router
+from app.routers.pos_discount_types_router import router as pos_discount_types_router
 from app.routers.metricas_router import router as metricas_router
 from app import models  # asegura que plan_model se registre en Base
 
@@ -2513,6 +2515,8 @@ routers = [
     welcome_steps_router,
     company_configs_router,
     pos_payment_types_router,
+    pos_shift_router,
+    pos_discount_types_router,
     metricas_router,
 ]
 

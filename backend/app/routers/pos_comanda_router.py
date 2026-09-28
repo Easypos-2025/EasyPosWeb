@@ -115,6 +115,15 @@ class ActualizarItemIn(BaseModel):
     changes: Optional[str] = None
 
 
+class AplicarDescuentoItemIn(BaseModel):
+    order_number: str
+    dish_id: int
+    item: int
+    id_tipificacion: int  # 0 = "QUITAR DESCUENTO" (restaura el valor original)
+    observacion: Optional[str] = None
+    monto_pesos: Optional[int] = None  # requerido cuando la tipificación es "Descuento en Pesos" (% = 0, id != 0)
+
+
 class EliminarItemIn(BaseModel):
     order_number: str
     date: str
@@ -458,7 +467,7 @@ async def get_orden_mesa(
     # No filtramos por Fecha — Nro_pedido+company_id es suficiente y evita mismatch DATETIME
     items_rows = (await db_temp.execute(text("""
         SELECT Id_Plato, Item, Depende, Cantidad, Valor, Novedad,
-               Cambios, Producto_Personalizado, Hora_Plato
+               Cambios, Producto_Personalizado, Hora_Plato, Id_Tipificacion
         FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND Nro_Factura='0'
           AND company_id=:cid AND Mostrar=1
@@ -497,6 +506,7 @@ async def get_orden_mesa(
             "assembly":  assembly,
             "dish_time": hora_plato,
             "sent":      sent,
+            "typification_id": int(r["Id_Tipificacion"] or 0),
         })
 
     return {
@@ -933,6 +943,107 @@ async def actualizar_item(
         await db_temp.commit()
 
     return {"ok": True}
+
+
+# ── 9b. TIPIFICACIONES DE DESCUENTO (catálogo, solo lectura para comanda) ──────
+
+@router.get("/tipificaciones-descuento")
+async def listar_tipificaciones_descuento(
+    payload: dict = Depends(_auth_comanda),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    rows = (await db_temp.execute(text("""
+        SELECT Id_Tipificacion, Nombre, Valor_Descuento_Pesos,
+               Valor_Descuento_Porcentaje, Exigir_Info_Cliente
+        FROM temp_tipificaciones_descuentos
+        WHERE company_id = :cid AND Desactivada = 0
+        ORDER BY Id_Tipificacion = 0 DESC, Nombre
+    """), {"cid": payload["company_id"]})).mappings().all()
+    return [{
+        "id": r["Id_Tipificacion"],
+        "name": r["Nombre"],
+        "discount_pesos": float(r["Valor_Descuento_Pesos"] or 0),
+        "discount_percentage": int(r["Valor_Descuento_Porcentaje"] or 0),
+        "ask_customer_info": bool(r["Exigir_Info_Cliente"]),
+    } for r in rows]
+
+
+# ── 9c. APLICAR / QUITAR DESCUENTO DE UN ÍTEM ───────────────────────────────────
+# Tres tipos de tipificación, según sus campos (siempre sobre el ítem clicado
+# únicamente — el reparto de un descuento en pesos entre TODOS los ítems del
+# recibo es exclusivo de la pantalla de pago/PAGAR, no de aquí):
+#   • id_tipificacion = 0 ("QUITAR DESCUENTO")  → restaura Porc_Descuento_General.
+#   • id != 0 y Valor_Descuento_Porcentaje > 0 (ej. "Cortesía 100%",
+#     "Descuento Empleados 20%")                → % sobre el valor original del ítem.
+#   • id != 0 y Valor_Descuento_Porcentaje = 0 ("Descuento en Pesos")
+#                                                → se pide el monto por pantalla
+#     (monto_pesos) y se resta del valor original del ítem.
+# Porc_Descuento_General siempre guarda el valor antes de esta aplicación
+# (punto de restauración), y se recalcula el total del pedido igual que
+# cualquier otra edición de ítem.
+
+@router.post("/orden/item/descuento")
+async def aplicar_descuento_item(
+    data: AplicarDescuentoItemIn,
+    payload: dict = Depends(_auth_comanda),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    cid = payload["company_id"]
+
+    current = (await db_temp.execute(text("""
+        SELECT Valor, Porc_Descuento_General, Id_Tipificacion
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Nro_Factura='0'
+          AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1
+    """), {"on": data.order_number, "did": data.dish_id, "item": data.item, "cid": cid})).mappings().first()
+    if not current:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+
+    tiene_descuento = int(current["Id_Tipificacion"] or 0) != 0
+    original = int(current["Porc_Descuento_General"]) if tiene_descuento else int(current["Valor"])
+
+    params = {"on": data.order_number, "did": data.dish_id, "item": data.item, "cid": cid}
+
+    if data.id_tipificacion == 0:
+        nuevo_valor = original
+        sets = "Valor=:v, Porc_Descuento_Plato=:v, Porc_Descuento_General=:orig, Id_Tipificacion=0"
+        params.update({"v": nuevo_valor, "orig": original})
+    else:
+        tip = (await db_temp.execute(text("""
+            SELECT Nombre, Valor_Descuento_Porcentaje, Exigir_Info_Cliente
+            FROM temp_tipificaciones_descuentos
+            WHERE Id_Tipificacion=:tid AND company_id=:cid AND Desactivada=0
+        """), {"tid": data.id_tipificacion, "cid": cid})).mappings().first()
+        if not tip:
+            raise HTTPException(status_code=404, detail="Tipificación no encontrada o inactiva")
+        if tip["Exigir_Info_Cliente"] and not (data.observacion or "").strip():
+            raise HTTPException(status_code=422, detail=f'"{tip["Nombre"]}" requiere una observación')
+
+        porcentaje = int(tip["Valor_Descuento_Porcentaje"] or 0)
+        if porcentaje > 0:
+            nuevo_valor = max(0, round(original * (1 - porcentaje / 100)))
+        else:
+            monto = int(data.monto_pesos or 0)
+            if monto <= 0:
+                raise HTTPException(status_code=422, detail=f'"{tip["Nombre"]}" requiere el valor a descontar')
+            nuevo_valor = max(0, original - monto)
+
+        sets = "Valor=:v, Porc_Descuento_Plato=:v, Porc_Descuento_General=:orig, Id_Tipificacion=:tid"
+        params.update({"v": nuevo_valor, "orig": original, "tid": data.id_tipificacion})
+
+    if data.observacion:
+        sets += ", Novedad=:obs"
+        params["obs"] = data.observacion[:250]
+
+    await db_temp.execute(text(
+        f"UPDATE temp_detalle_comanda_parcial SET {sets} "
+        "WHERE Nro_pedido=:on AND Nro_Factura='0' "
+        "AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1"
+    ), params)
+
+    await _recalc_total(db_temp, data.order_number, cid)
+    await db_temp.commit()
+    return {"ok": True, "valor": params["v"]}
 
 
 # ── 10. ELIMINAR ÍTEM ─────────────────────────────────────────────────────────

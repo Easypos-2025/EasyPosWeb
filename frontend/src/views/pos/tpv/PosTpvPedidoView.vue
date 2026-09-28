@@ -143,14 +143,23 @@
               >
                 <i class="bi bi-chat-text"></i>
               </button>
+              <button
+                v-if="!group.hasNew"
+                class="cart-item__btn cart-item__btn--descuento"
+                title="Aplicar descuento"
+                @click="openDescuentoModal(group.allItems[group.allItems.length - 1])"
+              >
+                <i class="bi bi-percent"></i>
+              </button>
               <button v-if="group.hasUnsent" class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
-            <div class="cart-item__tags" v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent">
+            <div class="cart-item__tags" v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent || group.hasDiscount">
               <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
               <span v-if="group.notes"   class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
+              <span v-if="group.hasDiscount" class="ci-tag ci-descuento"><i class="bi bi-percent"></i> Descuento</span>
               <span v-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
             </div>
           </div>
@@ -221,6 +230,15 @@
       @save="onNotasSave"
     />
 
+    <!-- Modal descuento -->
+    <ComandaDescuentoModal
+      v-if="descuentoItem"
+      :item="descuentoItem"
+      :order-number="order?.order_number"
+      @close="descuentoItem = null"
+      @applied="onDescuentoApplied"
+    />
+
   </div>
 </template>
 
@@ -230,6 +248,7 @@ import { useRoute, useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaAssemblyModal from '@/components/comanda/ComandaAssemblyModal.vue'
 import ComandaNotasModal from '@/components/comanda/ComandaNotasModal.vue'
+import ComandaDescuentoModal from '@/components/comanda/ComandaDescuentoModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
@@ -258,6 +277,7 @@ const cartOpen       = ref(false)
 const catMenuOpen    = ref(false)
 const assemblyDish   = ref(null)
 const notasItem      = ref(null)
+const descuentoItem  = ref(null)
 const sending        = ref(false)
 let _tempId = -1
 
@@ -299,20 +319,23 @@ const groupedItems = computed(() => {
       g.totalAmount += item.amount
       g.allItems.push(item)
       if (!item.sent || item.isNew) g.hasUnsent = true
+      if (item.isNew) g.hasNew = true
     } else {
       map.set(k, {
         key: k, dish_id: item.dish_id, dish_name: item.dish_name,
         qty: item.quantity, totalAmount: item.amount,
         assembly: item.assembly, notes: item.notes, changes: item.changes,
         hasUnsent: !item.sent || item.isNew,
+        hasNew: item.isNew,
         allItems: [item],
       })
       groups.push(map.get(k))
     }
   }
   for (const g of groups) {
-    g.lastSent  = g.allItems.every(i => i.sent && !i.isNew)
-    g.unitPrice = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
+    g.lastSent    = g.allItems.every(i => i.sent && !i.isNew)
+    g.unitPrice   = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
+    g.hasDiscount = !!g.allItems[g.allItems.length - 1]?.typification_id
   }
   return groups
 })
@@ -511,6 +534,20 @@ function onNotasSave({ notes, changes }) {
     if (!original.isNew) original._dirty = true
   }
   notasItem.value = null
+}
+
+function openDescuentoModal(item) {
+  if (!item || item.isNew) return
+  descuentoItem.value = item
+}
+
+function onDescuentoApplied({ item, valor, typification_id }) {
+  const original = items.value.find(i => i.item === item.item && i.dish_id === item.dish_id)
+  if (original) {
+    original.amount = valor
+    original.typification_id = typification_id
+  }
+  descuentoItem.value = null
 }
 
 async function submitOrder() {
@@ -1009,6 +1046,8 @@ function cancelOrder() {
 .cart-item__btn--notes { color: #2563eb; background: #eff6ff; border-color: #bfdbfe; }
 .cart-item__btn--notes:hover:not(:disabled) { background: #dbeafe; }
 .cart-item__btn--notes:disabled { color: #cbd5e1; background: #f8fafc; border-color: #e2e8f0; cursor: not-allowed; }
+.cart-item__btn--descuento { color: #16a34a; background: #f0fdf4; border-color: #bbf7d0; }
+.cart-item__btn--descuento:hover:not(:disabled) { background: #dcfce7; }
 .cart-item__btn--del { color: #dc2626; background: #fff1f2; border-color: #fecaca; }
 .cart-item__btn--del:hover { background: #fee2e2; }
 
@@ -1018,8 +1057,9 @@ function cancelOrder() {
   padding: 1px 5px; border-radius: 4px; border: 1px solid #e2e8f0;
   text-transform: uppercase;
 }
-.ci-note   { background: #fef3c7; color: #92400e; border-color: #fcd34d; font-style: italic; font-weight: 400; text-transform: none; }
-.ci-change { background: #fff7ed; color: #c2410c; border-color: #fed7aa; text-transform: none; }
+.ci-note      { background: #fef3c7; color: #92400e; border-color: #fcd34d; font-style: italic; font-weight: 400; text-transform: none; }
+.ci-change    { background: #fff7ed; color: #c2410c; border-color: #fed7aa; text-transform: none; }
+.ci-descuento { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 700; text-transform: none; }
 .ci-sent   { color: #16a34a; font-size: .65rem; font-weight: 700; align-self: center; }
 
 .tpv-cart__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }

@@ -1,4 +1,6 @@
 <template>
+  <TurnoCajaModal v-if="!checkingTurno && !turnoAbierto" @opened="onTurnoAbierto" />
+
   <div class="crud-view ca-wrap">
     <div class="crud-header">
       <div>
@@ -164,8 +166,28 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/services/apis.js'
 import { useModuleName } from '@/composables/useModuleName'
+import TurnoCajaModal from '@/components/pos/TurnoCajaModal.vue'
 
 const { moduleName } = useModuleName()
+
+// ── Turno de caja (prerrequisito) ────────────────────────────────────────
+const checkingTurno = ref(true)
+const turnoAbierto   = ref(false)
+
+async function verificarTurno() {
+  checkingTurno.value = true
+  try {
+    const { data } = await api.get('/api/pos/turno/actual')
+    turnoAbierto.value = !!data?.id
+  } catch {
+    turnoAbierto.value = false
+  }
+  checkingTurno.value = false
+}
+
+function onTurnoAbierto() {
+  turnoAbierto.value = true
+}
 
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 const fmt = v => fmtCOP.format(v || 0)
@@ -260,6 +282,7 @@ async function verInsumos(it) {
 
 let timer = null
 onMounted(() => {
+  verificarTurno()
   cargarLista()
   timer = setInterval(refrescarLista, 15000)
 })
