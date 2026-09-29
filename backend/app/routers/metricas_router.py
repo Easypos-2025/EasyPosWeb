@@ -1,3 +1,6 @@
+from fastapi import Depends
+from app.auth.tenant import tenant_guard
+from app.auth import tenant
 import calendar
 from math import ceil
 from collections import defaultdict
@@ -15,8 +18,8 @@ from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.utils.excel_ventas import build_ventas_excel
 
-router = APIRouter(prefix="/api/metricas", tags=["Métricas"])
-
+# Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
+router = APIRouter(prefix="/api/metricas", tags=["Métricas"], dependencies=[Depends(tenant_guard)])
 _MESES_ES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
     5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
@@ -88,7 +91,7 @@ async def ventas_anual(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await tenant.resolve_company(db, user, company_id)
 
     if tipo == "facturas":
         sql = _sql_anual_por_tabla("pos_invoices")
@@ -139,7 +142,7 @@ async def ventas_mensual(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await tenant.resolve_company(db, user, company_id)
 
     if tipo == "facturas":
         sql = f"{_sql_mensual_por_tabla('pos_invoices')} ORDER BY fecha"
@@ -234,7 +237,7 @@ async def forma_pago_anual(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await tenant.resolve_company(db, user, company_id)
 
     sql = _fp_sql(tipo, "mes", "")
     rows = (await db.execute(text(sql), {"cid": cid, "year": year})).mappings().all()
@@ -286,7 +289,7 @@ async def forma_pago_mensual(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await tenant.resolve_company(db, user, company_id)
 
     sql = _fp_sql(tipo, "dia", "AND MONTH(pm.date) = :month")
     rows = (await db.execute(text(sql), {"cid": cid, "year": year, "month": month})).mappings().all()
@@ -415,7 +418,7 @@ async def productos_abc_anual(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await tenant.resolve_company(db, user, company_id)
 
     sql = _abc_sql(tipo)
     rows = (await db.execute(text(sql), {"cid": cid, "year": year})).mappings().all()
@@ -447,7 +450,7 @@ async def productos_abc_mensual(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = _resolve_cid(user, company_id)
+    cid = await tenant.resolve_company(db, user, company_id)
 
     sql = _abc_sql(tipo, "AND MONTH(pid.date) = :month")
     rows = (await db.execute(text(sql), {"cid": cid, "year": year, "month": month})).mappings().all()
@@ -653,7 +656,7 @@ async def export_excel(
     db: AsyncSession           = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid  = _resolve_cid(user, company_id)
+    cid  = await tenant.resolve_company(db, user, company_id)
 
     if month:
         desde = f"{year}-{month:02d}-01"

@@ -17,10 +17,11 @@ para no consultar la BD en cada petición.
 import time
 from typing import Optional
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
@@ -90,6 +91,64 @@ async def user_from_token(db: AsyncSession, token: str) -> User:
 async def resolve_company(db: AsyncSession, user: User, requested: Optional[int]) -> int:
     own, allowed = await allowed_companies(db, user)
     return check_company(own, allowed, requested)
+
+
+async def _requested_companies(request: Request) -> set:
+    """company_id solicitados por el navegador: query, header X-Company-Id y cuerpo JSON."""
+    found = set()
+    for raw in (request.query_params.get("company_id"), request.headers.get("x-company-id")):
+        if raw not in (None, ""):
+            try:
+                found.add(int(raw))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="company_id inválido")
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and \
+            "application/json" in (request.headers.get("content-type") or ""):
+        try:
+            body = await request.json()          # Starlette lo deja en caché para el endpoint
+        except Exception:
+            body = None
+        items = body if isinstance(body, list) else [body]
+        for it in items:
+            if isinstance(it, dict) and it.get("company_id") not in (None, ""):
+                try:
+                    found.add(int(it["company_id"]))
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=400, detail="company_id inválido")
+    return found
+
+
+async def tenant_guard(request: Request, db: AsyncSession = Depends(get_db)) -> None:
+    """Dependencia de ROUTER: rechaza (403) cualquier company_id del navegador al que el
+    usuario no tenga acceso. Uso: APIRouter(..., dependencies=[Depends(tenant_guard)]).
+    No reemplaza la autenticación de cada ruta: si no hay token, la ruta responde 401."""
+    requested = await _requested_companies(request)
+    if not requested:
+        return
+    auth = request.headers.get("authorization") or ""
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Token requerido")
+    token = auth[7:].strip()
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    if payload.get("type") == "waiter" or (payload.get("company_id") and not payload.get("user_id")):
+        own = int(payload.get("company_id") or 0)
+        for cid in requested:
+            check_company(own, frozenset({own}), cid)
+        return
+
+    user = None
+    if payload.get("user_id"):
+        user = await db.get(User, int(payload["user_id"]))
+    elif payload.get("sub"):
+        user = (await db.execute(select(User).where(User.email == payload["sub"]))).scalars().first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no encontrado")
+    own, allowed = await allowed_companies(db, user)
+    for cid in requested:
+        check_company(own, allowed, cid)
 
 
 def clear_cache(user_id: Optional[int] = None) -> None:

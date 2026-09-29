@@ -1,3 +1,5 @@
+from fastapi import Depends
+from app.auth.tenant import tenant_guard
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -9,8 +11,8 @@ from typing import Optional, List
 import os, uuid, shutil
 from pathlib import Path
 
-router = APIRouter(prefix="/api/parqueadero", tags=["parqueadero"])
-
+# Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
+router = APIRouter(prefix="/api/parqueadero", tags=["parqueadero"], dependencies=[Depends(tenant_guard)])
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads" / "parqueadero"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 

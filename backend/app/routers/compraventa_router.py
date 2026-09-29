@@ -1,3 +1,5 @@
+from fastapi import Depends
+from app.auth.tenant import tenant_guard
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
@@ -9,9 +11,8 @@ from app.models.compraventa_foto_model import CompraventaFoto
 from app.utils.storage import upload_file, delete_file
 from app.auth.dependencies import get_current_user
 
-router = APIRouter(prefix="/api/compraventa", tags=["compraventa"])
-
-
+# Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
+router = APIRouter(prefix="/api/compraventa", tags=["compraventa"], dependencies=[Depends(tenant_guard)])
 # ── Helper: obtener sesión BD externa ────────────────────────────────────────
 
 async def _get_ext(company_id: int, db: AsyncSession):
@@ -37,7 +38,7 @@ async def _get_ext(company_id: int, db: AsyncSession):
 async def get_movimientos(
     company_id: int = Query(...),
     fecha: str      = Query(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),    _=Depends(get_current_user),          # antes era pública
 ):
     ext = await _get_ext(company_id, db)
     async with ext as session:
@@ -230,7 +231,7 @@ async def guardar_observacion(
 async def list_fotos(
     company_id: int   = Query(...),
     nro_contrato: str = Query(...),
-    db: AsyncSession  = Depends(get_db),
+    db: AsyncSession  = Depends(get_db),    _=Depends(get_current_user),          # antes era pública
 ):
     rows = await db.execute(
         select(CompraventaFoto).where(

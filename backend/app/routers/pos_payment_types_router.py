@@ -1,3 +1,5 @@
+from fastapi import Depends
+from app.auth.tenant import tenant_guard
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -5,9 +7,8 @@ from sqlalchemy import text
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 
-router = APIRouter(prefix="/api/payment-types", tags=["Payment Types"])
-
-
+# Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
+router = APIRouter(prefix="/api/payment-types", tags=["Payment Types"], dependencies=[Depends(tenant_guard)])
 # ─── Listar ────────────────────────────────────────────────────────────────────
 @router.get("")
 async def list_payment_types(

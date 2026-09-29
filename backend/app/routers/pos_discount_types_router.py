@@ -10,6 +10,8 @@ Vive en `datatemppos` (no en `easyposweb`) porque así lo usa hoy el
 software de escritorio; aquí se le agregó `company_id` para aislar cada
 empresa dentro de la base compartida.
 """
+from fastapi import Depends
+from app.auth.tenant import tenant_guard
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -17,9 +19,8 @@ from sqlalchemy import text
 from app.database import get_datatemppos_db
 from app.auth.dependencies import get_current_user
 
-router = APIRouter(prefix="/api/pos/tipificaciones-descuento", tags=["POS Tipificaciones de Descuento"])
-
-
+# Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
+router = APIRouter(prefix="/api/pos/tipificaciones-descuento", tags=["POS Tipificaciones de Descuento"], dependencies=[Depends(tenant_guard)])
 def _row_out(r: dict) -> dict:
     return {
         "id": r["Id_Tipificacion"],

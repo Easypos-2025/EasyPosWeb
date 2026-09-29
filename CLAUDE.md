@@ -69,6 +69,10 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
   - `tenant.resolve_company(db, user, company_id_solicitado)` → devuelve la empresa efectiva o lanza **403**.
   - `tenant.allowed_companies(db, user)` → empresas permitidas (para filtrar listados).
   - Tokens de mesero: solo la empresa de su token (`tenant.check_company`).
+  - **Todo router nuevo** que reciba `company_id` del navegador se declara con el guardián:
+    `router = APIRouter(prefix=..., dependencies=[Depends(tenant_guard)])`
+    (valida `company_id` en query, header `X-Company-Id` y cuerpo JSON → 403 si no tiene acceso).
+  - Excepción: routers de sincronización con escritorio (API key) no usan el guardián.
 - Regla de acceso:
   - **Mesero** → solo la empresa de su token.
   - **Rol ADMIN** → su empresa + las de su mismo NIT (selector del topbar).
