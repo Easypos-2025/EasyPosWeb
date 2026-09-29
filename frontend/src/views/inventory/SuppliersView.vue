@@ -33,7 +33,7 @@
             <td><strong>{{ s.name }}</strong></td>
             <td class="text-muted">{{ s.nit || '—' }}</td>
             <td>{{ s.contact_name || '—' }}</td>
-            <td>{{ s.phone || '—' }}</td>
+            <td>{{ s.telefono_celular || s.phone || '—' }}</td>
             <td>{{ s.email || '—' }}</td>
             <td class="text-center">
               <span class="badge-status" :class="s.is_active ? 'active' : 'inactive'">
@@ -80,9 +80,13 @@
               <input v-model="form.contact_name" class="form-control" placeholder="Nombre del contacto" />
             </div>
             <div class="fg">
-              <label>Teléfono</label>
-              <input v-model="form.phone" class="form-control" placeholder="300 000 0000" />
+              <label>Teléfono fijo</label>
+              <input v-model="form.phone" class="form-control" placeholder="602 000 0000" />
             </div>
+          </div>
+          <div class="fg">
+            <label>Celular</label>
+            <input v-model="form.telefono_celular" class="form-control" placeholder="300 000 0000" />
           </div>
           <div class="fg">
             <label>Email</label>
@@ -138,7 +142,7 @@ async function load() {
 
 function openCreate() {
   editing.value = null
-  form.value = { name: "", nit: "", contact_name: "", phone: "", email: "", address: "", notes: "" }
+  form.value = { name: "", nit: "", contact_name: "", phone: "", telefono_celular: "", email: "", address: "", notes: "" }
   showModal.value = true
 }
 

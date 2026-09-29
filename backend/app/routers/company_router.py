@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, or_
 from app.database import get_db, test_ext_connection, invalidate_ext_engine
 from app.auth.dependencies import get_current_user
+from app.auth import tenant
 from app.models.business_profile_module import BusinessProfileModule
 from app.models.company_model import Company
 from app.models.business_profile_model import BusinessProfile
@@ -207,9 +208,24 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
+_EXT_DB_FIELDS = ("ext_db_host", "ext_db_port", "ext_db_name", "ext_db_user", "ext_db_has_password")
+
+
+async def _role(db: AsyncSession, user: User):
+    return await db.get(Role, user.role_id) if user.role_id else None
+
+
+async def _require_sysadmin(db: AsyncSession, user: User) -> None:
+    role = await _role(db, user)
+    if not (role and role.is_system):
+        raise HTTPException(status_code=403, detail="Solo SYSADMIN")
+
 
 @router.post("/")
-async def create_company(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
+async def create_company(data: dict = Body(...), db: AsyncSession = Depends(get_db),
+                         current_user: User = Depends(get_current_user)):
+    await _require_sysadmin(db, current_user)
+    tenant.clear_cache()
     data.pop("ext_db_has_password", None)   # campo virtual del frontend, no es columna
     company = Company(**data)
     db.add(company)
@@ -241,12 +257,15 @@ async def create_company(data: dict = Body(...), db: AsyncSession = Depends(get_
 
 
 @router.get("/{company_id:int}")
-async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
+async def get_company(company_id: int, db: AsyncSession = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    await tenant.resolve_company(db, current_user, company_id)       # 403 si no tiene acceso
     result = await db.execute(select(Company).where(Company.id_company == company_id))
     company = result.scalar_one_or_none()
     if not company:
         return {"message": "Empresa no encontrada"}
-    return {"id": company.id_company, "name": company.name,
+    role = await _role(db, current_user)
+    out = {"id": company.id_company, "name": company.name,
             "identification_number": company.identification_number, "dv": company.dv,
             "address": company.address, "phone": company.phone, "email": company.email,
             "description": company.description, "state": company.state,
@@ -260,14 +279,33 @@ async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
             "ext_db_user":     company.ext_db_user,
             "ext_db_has_password": bool(company.ext_db_password),
             "show_sidebar_right": company.show_sidebar_right if company.show_sidebar_right is not None else 1}
+    if not (role and role.is_system):
+        for f in _EXT_DB_FIELDS:
+            out.pop(f, None)
+    return out
 
 
 @router.put("/{company_id}")
-async def update_company(company_id: int, data: dict, db: AsyncSession = Depends(get_db)):
+async def update_company(company_id: int, data: dict, db: AsyncSession = Depends(get_db),
+                         current_user: User = Depends(get_current_user)):
+    role = await _role(db, current_user)
+    is_sys = bool(role and role.is_system)
+    if not is_sys and "ADMIN" not in ((role.name if role else "") or "").upper():
+        raise HTTPException(status_code=403, detail="Solo el administrador puede modificar la empresa")
+    await tenant.resolve_company(db, current_user, company_id)       # 403 si no tiene acceso
     result = await db.execute(select(Company).where(Company.id_company == company_id))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    if not is_sys:
+        # El NIT define a qué empresas accede un ADMIN: cambiarlo le daría acceso a empresas ajenas.
+        if str(data.get("identification_number") or "").strip() != str(company.identification_number or "").strip():
+            raise HTTPException(status_code=403, detail="El NIT solo lo puede cambiar el administrador del sistema")
+        for f in ("business_profile_id", "state", "show_sidebar_right", "ext_db_host", "ext_db_port",
+                  "ext_db_name", "ext_db_user", "ext_db_password"):
+            data.pop(f, None)
+        data["state"] = company.state
 
     # Validar solo los campos editables en el formulario de perfil
     text_required = ["name", "identification_number", "address", "phone", "email"]
@@ -316,6 +354,7 @@ async def update_company(company_id: int, data: dict, db: AsyncSession = Depends
     if "show_sidebar_right" in data:
         company.show_sidebar_right = 1 if data["show_sidebar_right"] else 0
     await db.commit()
+    tenant.clear_cache()          # el NIT pudo cambiar → recalcular accesos
     return {"message": "Empresa actualizada correctamente"}
 
 
@@ -366,11 +405,17 @@ async def delete_company(company_id: int, db: AsyncSession = Depends(get_db), cu
 
 
 @router.get("/")
-async def get_companies(db: AsyncSession = Depends(get_db)):
+async def get_companies(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     from app.models.company_plan_model import CompanyPlan
     from app.models.plan_model import Plan
 
-    result = await db.execute(select(Company).order_by(Company.id_company))
+    _own, allowed = await tenant.allowed_companies(db, current_user)   # None = SYSADMIN (todas)
+    q = select(Company).order_by(Company.id_company)
+    if allowed is not None:
+        if not allowed:
+            return []
+        q = q.where(Company.id_company.in_(list(allowed)))
+    result = await db.execute(q)
     companies = result.scalars().all()
 
     result = await db.execute(select(BusinessProfile))
@@ -382,7 +427,7 @@ async def get_companies(db: AsyncSession = Depends(get_db)):
     plan_res = await db.execute(select(Plan))
     plan_names = {p.id: p.name for p in plan_res.scalars().all()}
 
-    return [
+    rows = [
         {
             "id": c.id_company,
             "name": c.name,
@@ -406,3 +451,8 @@ async def get_companies(db: AsyncSession = Depends(get_db)):
         }
         for c in companies
     ]
+    if allowed is not None:
+        for r in rows:
+            for f in _EXT_DB_FIELDS:
+                r.pop(f, None)
+    return rows

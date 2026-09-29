@@ -306,7 +306,8 @@
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cd /var/www/easyposweb/frontend && rm -rf dist && tar -xzf -\")",
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cd /var/www/easyposweb && git pull origin master && backend/venv/bin/pip install -r backend/requirements.txt --quiet && systemctl restart easyposweb && echo OK\")",
       "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cat /etc/nginx/sites-enabled/easyposweb 2>/dev/null || cat /etc/nginx/conf.d/easyposweb.conf 2>/dev/null || nginx -T 2>/dev/null | grep -A 80 'server_name easyposweb'\")",
-      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"ls /var/www/easyposweb/frontend/dist/index.html && cd /var/www/easyposweb && git pull origin master && systemctl restart easyposweb && echo OK\")"
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"ls /var/www/easyposweb/frontend/dist/index.html && cd /var/www/easyposweb && git pull origin master && systemctl restart easyposweb && echo OK\")",
+      "Bash(ssh -i /c/Users/Personal/.ssh/id_ed25519 root@209.38.152.254 \"cp /root/easyposweb.nginx.new /etc/nginx/sites-enabled/easyposweb && nginx -t && systemctl reload nginx\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Personal\\.claude"

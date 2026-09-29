@@ -3052,9 +3052,208 @@ async def push_customer_price_list(
                     synced          = 1,
                     updated_at      = NOW()
             """), item.dict())
-            saved.append(item.id_lista)
+            # Llave compuesta por fila: el escritorio marca Enviada_MySql=1 solo lo confirmado
+            saved.append(f"{item.id_lista}|{item.id_cliente}|{item.id_producto}|{item.id_presentacion or 0}")
         except Exception as e:
             failed.append({"key": item.id_lista, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# inventario_porciones_plato → inventario_porciones_plato  (insumos FIJOS del plato)
+# Variante A: el escritorio envía solo Enviada_MySql=0.
+# saved retorna Id_Plato únicamente si TODAS sus filas del lote se guardaron,
+# para que el escritorio no marque como enviado un plato con filas fallidas.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DishPortionIn(BaseModel):
+    company_id:             int
+    id_plato:               int
+    id_grupo:               int
+    id_item:                int
+    cantidad:               Optional[float] = 0
+    unidad_minima:          Optional[float] = 0
+    porciones_a_desccontar: Optional[float] = 0
+    posicion:               Optional[int]   = 0
+    opcion_cambiar:         Optional[int]   = 0
+
+
+@router.post("/sync/push/dish-portions")
+async def push_dish_portions(
+    items: List[DishPortionIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    ok_platos, bad_platos, failed = set(), set(), []
+    for it in items:
+        try:
+            await db.execute(text("""
+                INSERT INTO inventario_porciones_plato
+                    (company_id, id_plato, id_grupo, id_item, cantidad, unidad_minima,
+                     porciones_a_desccontar, posicion, opcion_cambiar, enviada_mysql)
+                VALUES
+                    (:company_id, :id_plato, :id_grupo, :id_item, :cantidad, :unidad_minima,
+                     :porciones_a_desccontar, :posicion, :opcion_cambiar, 1)
+                ON DUPLICATE KEY UPDATE
+                    cantidad               = VALUES(cantidad),
+                    unidad_minima          = VALUES(unidad_minima),
+                    porciones_a_desccontar = VALUES(porciones_a_desccontar),
+                    posicion               = VALUES(posicion),
+                    opcion_cambiar         = VALUES(opcion_cambiar),
+                    enviada_mysql          = 1,
+                    updated_at             = NOW()
+            """), it.dict())
+            ok_platos.add(it.id_plato)
+        except Exception as e:
+            bad_platos.add(it.id_plato)
+            failed.append({"key": f"{it.id_plato}|{it.id_grupo}|{it.id_item}", "error": str(e)})
+    await db.commit()
+    saved = sorted(ok_platos - bad_platos)
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(items) - len(failed), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# proveedores → suppliers  (Variante A: el escritorio envía Enviada_MySql=0)
+# Llave: (company_id, id_proveedor). saved = id_proveedor confirmados.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SupplierSyncIn(BaseModel):
+    company_id:        int
+    id_proveedor:      int
+    nit:               Optional[str] = None
+    empresa:           Optional[str] = None
+    mail_empresa:      Optional[str] = None
+    direccion:         Optional[str] = None
+    telefono_fijo:     Optional[str] = None
+    telefono_celular:  Optional[str] = None
+    observaciones:     Optional[str] = None
+    activo:            Optional[int] = 1
+
+
+@router.post("/sync/push/suppliers")
+async def push_suppliers(
+    items: List[SupplierSyncIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        try:
+            await db.execute(text("""
+                INSERT INTO suppliers
+                    (company_id, id_proveedor, name, nit, email, address, phone,
+                     telefono_celular, notes, is_active, synced, updated_at)
+                VALUES
+                    (:company_id, :id_proveedor, :empresa, :nit, :mail_empresa, :direccion, :telefono_fijo,
+                     :telefono_celular, :observaciones, :activo, 1, NOW())
+                ON DUPLICATE KEY UPDATE
+                    name             = VALUES(name),
+                    nit              = VALUES(nit),
+                    email            = VALUES(email),
+                    address          = VALUES(address),
+                    phone            = VALUES(phone),
+                    telefono_celular = VALUES(telefono_celular),
+                    notes            = VALUES(notes),
+                    is_active        = VALUES(is_active),
+                    synced           = 1,
+                    updated_at       = NOW()
+            """), {**it.dict(), "empresa": (it.empresa or "").strip() or f"PROVEEDOR {it.id_proveedor}"})
+            saved.append(it.id_proveedor)
+        except Exception as e:
+            failed.append({"key": it.id_proveedor, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# insumos_proveedor / insumos_forma_medida  (Variante A: Enviada_MySql=0)
+# Id_Insumo = Id_Item del insumo. saved = "id_a|id_b" por fila confirmada.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SupplySupplierIn(BaseModel):
+    company_id:                int
+    id_proveedor:              int
+    id_insumo:                 int
+    fecha_inicial_negociacion: Optional[str] = None
+    fecha_final_negociacion:   Optional[str] = None
+    precio_pactado:            Optional[int] = 0
+    id_forma_medida:           Optional[int] = 0
+    nombre_forma_medida:       Optional[str] = None
+    observacion:               Optional[str] = None
+
+
+@router.post("/sync/push/supply-suppliers")
+async def push_supply_suppliers(
+    items: List[SupplySupplierIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.id_proveedor}|{it.id_insumo}"
+        try:
+            await db.execute(text("""
+                INSERT INTO insumos_proveedor
+                    (company_id, id_proveedor, id_insumo, fecha_inicial_negociacion,
+                     fecha_final_negociacion, precio_pactado, id_forma_medida,
+                     nombre_forma_medida, observacion, enviada_mysql)
+                VALUES
+                    (:company_id, :id_proveedor, :id_insumo, :fecha_inicial_negociacion,
+                     :fecha_final_negociacion, :precio_pactado, :id_forma_medida,
+                     :nombre_forma_medida, :observacion, 1)
+                ON DUPLICATE KEY UPDATE
+                    fecha_inicial_negociacion = VALUES(fecha_inicial_negociacion),
+                    fecha_final_negociacion   = VALUES(fecha_final_negociacion),
+                    precio_pactado            = VALUES(precio_pactado),
+                    id_forma_medida           = VALUES(id_forma_medida),
+                    nombre_forma_medida       = VALUES(nombre_forma_medida),
+                    observacion               = VALUES(observacion),
+                    enviada_mysql             = 1,
+                    updated_at                = NOW()
+            """), {**it.dict(),
+                   "fecha_inicial_negociacion": it.fecha_inicial_negociacion or None,
+                   "fecha_final_negociacion":   it.fecha_final_negociacion or None})
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+class SupplyMeasureIn(BaseModel):
+    company_id:            int
+    id_insumo:             int
+    id_forma_medida:       int
+    cant_unidades_minimas: Optional[float] = 0
+
+
+@router.post("/sync/push/supply-measures")
+async def push_supply_measures(
+    items: List[SupplyMeasureIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.id_forma_medida}|{it.id_insumo}"
+        try:
+            await db.execute(text("""
+                INSERT INTO insumos_forma_medida
+                    (company_id, id_insumo, id_forma_medida, cant_unidades_minimas, enviada_mysql)
+                VALUES (:company_id, :id_insumo, :id_forma_medida, :cant_unidades_minimas, 1)
+                ON DUPLICATE KEY UPDATE
+                    cant_unidades_minimas = VALUES(cant_unidades_minimas),
+                    enviada_mysql         = 1,
+                    updated_at            = NOW()
+            """), it.dict())
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3319,6 +3518,16 @@ router.get("/sync/pull/measure-forms")(
     _pull("pos_measure_forms", "measure_forms"))
 router.get("/sync/pull/customer-price-list")(
     _pull("pos_customer_price_list", "customer_price_list"))
+router.get("/sync/pull/customer-price-list-header")(
+    _pull("pos_customer_price_list_header", "customer_price_list_header"))
+router.get("/sync/pull/dish-portions")(
+    _pull("inventario_porciones_plato", "dish_portions"))
+router.get("/sync/pull/suppliers")(
+    _pull("suppliers", "suppliers"))
+router.get("/sync/pull/supply-suppliers")(
+    _pull("insumos_proveedor", "supply_suppliers"))
+router.get("/sync/pull/supply-measures")(
+    _pull("insumos_forma_medida", "supply_measures"))
 router.get("/sync/pull/dish-note-categories")(
     _pull("pos_dish_note_categories", "dish_note_categories"))
 router.get("/sync/pull/order-notes")(

@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.database import get_db, get_datatemppos_db
+from app.services import comanda_armado as armado_svc
+from app.auth import tenant
 from app.auth.jwt_handler import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/api/pos/comanda", tags=["POS Comanda"])
@@ -53,8 +55,11 @@ def _parse_table_id_from_order(order_number: str) -> int:
 async def _auth_comanda(
     authorization: str = Header(None),
     x_company_id: Optional[int] = Header(None, alias="X-Company-Id"),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Acepta tokens de mesero Y tokens de usuario regular (admin desde dashboard)."""
+    """Acepta tokens de mesero Y tokens de usuario regular (admin desde dashboard).
+    La empresa se resuelve con la regla central (app.auth.tenant): X-Company-Id solo
+    se acepta si el usuario tiene acceso a esa empresa."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Token requerido")
     token = authorization.replace("Bearer ", "")
@@ -62,10 +67,18 @@ async def _auth_comanda(
     if not payload:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
     payload = dict(payload)
-    if x_company_id:
-        payload["company_id"] = x_company_id
-    if not payload.get("company_id"):
-        raise HTTPException(status_code=400, detail="company_id requerido")
+
+    if payload.get("type") == "waiter" or (payload.get("company_id") and not payload.get("user_id")):
+        # Mesero: la empresa es la de su token firmado; no puede pedir otra
+        own = int(payload.get("company_id") or 0)
+        if not own:
+            raise HTTPException(status_code=400, detail="company_id requerido")
+        payload["company_id"] = tenant.check_company(own, frozenset({own}), x_company_id)
+    else:
+        # Usuario del sistema: sesión activa + empresa permitida (propia, mismo NIT si es ADMIN, todas si SYSADMIN)
+        user = await tenant.user_from_token(db, token)
+        payload["company_id"] = await tenant.resolve_company(db, user, x_company_id)
+
     if "waiter_id" not in payload:
         payload["waiter_id"] = 0
     return payload
@@ -86,9 +99,11 @@ class AbrirMesaIn(BaseModel):
 
 
 class AssemblySelection(BaseModel):
+    # Solo se usan category_code + item_id: nombre, cantidad y valor adicional los
+    # toma el servidor de la configuración del plato (nunca del navegador).
     category_code: int
     item_id: int
-    item_name: str
+    item_name: Optional[str] = None
     discount_qty: Optional[float] = 1.0
 
 
@@ -98,11 +113,12 @@ class AgregarItemIn(BaseModel):
     table_id: int
     dish_id: int
     quantity: float = 1
-    amount: Optional[int] = 0
+    amount: Optional[int] = 0          # IGNORADO: el precio lo calcula el servidor
     notes: Optional[str] = None
     changes: Optional[str] = None
     assembly_selections: Optional[List[AssemblySelection]] = []
     customer_id: Optional[int] = 0
+    custom_description: Optional[str] = None   # platos.Pedir_Descripcion_Producto (IMEI, detalle de trabajo...)
 
 
 class ActualizarItemIn(BaseModel):
@@ -484,13 +500,14 @@ async def get_orden_mesa(
         ), {"cid": cid})).mappings().all()
         dish_names = {int(r["id"]): r["name"] for r in drows}
 
+    assembly_map = await armado_svc.assembly_structured(db, db_temp, cid, on, dish_ids)
+
     items = []
     for r in items_rows:
-        assembly = []
-        if r["Producto_Personalizado"]:
-            try:
-                cp = json.loads(r["Producto_Personalizado"])
-                assembly = cp.get("assembly", [])
+        assembly = assembly_map.get(int(r["Item"]), [])
+        if not assembly and r["Producto_Personalizado"]:
+            try:   # pedidos antiguos: el armado quedó como JSON en Producto_Personalizado
+                assembly = json.loads(r["Producto_Personalizado"]).get("assembly", [])
             except Exception:
                 pass
         hora_plato = str(r["Hora_Plato"] or "")
@@ -507,6 +524,9 @@ async def get_orden_mesa(
             "dish_time": hora_plato,
             "sent":      sent,
             "typification_id": int(r["Id_Tipificacion"] or 0),
+            # Nombre de lo que se vende (nombre + descripción personalizada); pedidos antiguos traían JSON
+            "custom_product": None if str(r["Producto_Personalizado"] or "").startswith("{")
+                              else (r["Producto_Personalizado"] or None),
         })
 
     return {
@@ -546,6 +566,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
                     WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
                 )) AS has_assembly,
                 COALESCE(d.preparation_time, 0) AS no_print,
+                COALESCE(d.ask_product_description, 0) AS ask_description,
                 c.name AS category_name
            FROM pos_dishes d
            INNER JOIN pos_dish_categories c
@@ -615,6 +636,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
             "tax":         float(d["tax"]) if d["tax"] else 0,
             "has_assembly": bool(d["has_assembly"]),
             "no_print":    bool(d["no_print"]),
+            "ask_description": bool(d.get("ask_description") or 0),
             "printer_ids": ip_map.get(int(d["id"]), []),
         })
 
@@ -632,131 +654,17 @@ async def get_menu_diario(
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
+    """Opciones de armado del plato para hoy (item_id = supply_items.id_item) + insumos fijos."""
     cid = payload["company_id"]
-    today = _today()
-
-    # ── Verificar si es plato de Menú del Día (offer_priority=1) ──────────────
-    dish_row = (await db.execute(text(
-        "SELECT COALESCE(offer_priority,0) AS offer_priority FROM pos_dishes WHERE id=:did AND company_id=:cid"
-    ), {"did": dish_id, "cid": cid})).mappings().first()
-    is_daily_menu = bool(dish_row and int(dish_row["offer_priority"]) == 1)
-
-    # ── Categorías de armado desde pos_dish_assembly ───────────────────────────
-    assembly_cats = None
-    for sql_cats in [
-        """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
-                  (SELECT pc2.name FROM pos_product_categories pc2
-                   WHERE pc2.id = da.category_code AND pc2.company_id = :cid LIMIT 1) AS category_name
-           FROM pos_dish_assembly da
-           WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
-           ORDER BY da.category_code""",
-        """SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
-                  NULL AS category_name
-           FROM pos_dish_assembly da
-           WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
-           ORDER BY da.category_code""",
-    ]:
-        try:
-            rows = (await db.execute(text(sql_cats), {"did": dish_id, "cid": cid})).mappings().all()
-            assembly_cats = rows
-            break
-        except Exception:
-            continue
-
-    if not assembly_cats:
-        return {"categories": [], "fixed_products": []}
-
-    category_codes = [int(r["category_code"]) for r in assembly_cats]
-    placeholders = ", ".join([f":cc{i}" for i in range(len(category_codes))])
-    params: dict = {"did": dish_id, "cid": cid, "today": today}
-    for i, cc in enumerate(category_codes):
-        params[f"cc{i}"] = cc
-
-    options_by_cat: dict[int, list] = {}
-
-    if is_daily_menu:
-        # Para Menú del Día: las opciones vienen directamente de pos_daily_menu
-        # agrupadas por menu_id (= pos_product_categories.id = category_code).
-        # Solo se muestran los ítems que el admin seleccionó para hoy.
-        daily_rows = (await db.execute(text(f"""
-            SELECT dm.menu_id AS category_code,
-                   dm.item_id,
-                   dm.description AS item_name
-            FROM pos_daily_menu dm
-            WHERE dm.company_id = :cid
-              AND dm.date       = :today
-              AND dm.menu_id    IN ({placeholders})
-            ORDER BY dm.menu_id, dm.description
-        """), params)).mappings().all()
-
-        for row in daily_rows:
-            cc = int(row["category_code"])
-            options_by_cat.setdefault(cc, []).append({
-                "item_id":         row["item_id"],
-                "item_name":       row["item_name"] or f"Opción {row['item_id']}",
-                "discount_qty":    1.0,
-                "is_default":      False,
-                "available_today": True,
-            })
-    else:
-        # Para platos con armado fijo: pos_dish_assembly_detail + filtro daily_menu
-        # JOIN correcto: dm.item_id = dad.position (supply_items.id_item)
-        options_rows = (await db.execute(text(f"""
-            SELECT
-                dad.category_code,
-                dad.item                                        AS item_id,
-                dad.discount_qty,
-                dad.is_default,
-                dad.position,
-                COALESCE(si.description, si.description)        AS item_name,
-                IF(dm.id IS NOT NULL, 1, 0)                     AS available_today
-            FROM pos_dish_assembly_detail dad
-            LEFT JOIN pos_daily_menu dm
-                   ON dm.item_id    = dad.position
-                  AND dm.company_id = :cid
-                  AND dm.date       = :today
-            LEFT JOIN supply_items si
-                   ON si.id_item    = dad.position
-                  AND si.company_id = :cid
-            WHERE dad.dish_id = :did AND dad.company_id = :cid
-              AND dad.category_code IN ({placeholders})
-            ORDER BY dad.category_code, dad.position
-        """), params)).mappings().all()
-
-        for row in options_rows:
-            cc = int(row["category_code"])
-            options_by_cat.setdefault(cc, []).append({
-                "item_id":         row["item_id"],
-                "item_name":       row["item_name"] or f"Opción {row['item_id']}",
-                "discount_qty":    float(row["discount_qty"]) if row["discount_qty"] else 1.0,
-                "is_default":      bool(row["is_default"]),
-                "available_today": bool(row["available_today"]),
-            })
-
-    fixed = (await db.execute(text("""
-        SELECT dp.supplier_id AS item_id, dp.minimum_units AS quantity, dp.description
-        FROM pos_dish_products dp
-        WHERE dp.dish_id = :did AND dp.company_id = :cid AND dp.active = 1
-    """), {"did": dish_id, "cid": cid})).mappings().all()
-
-    result = []
-    for cat in assembly_cats:
-        cc = int(cat["category_code"])
-        result.append({
-            "category_code":        cc,
-            "category_name":        cat["category_name"] or f"Categoría {cc}",
-            "max_choices":          cat["max_choices"],
-            "is_required":          bool(cat["is_required"]),
-            "print_on_change_only": bool(cat["print_on_change_only"]),
-            "options":              options_by_cat.get(cc, []),
-        })
-
+    cats = await armado_svc.build_assembly(db, cid, dish_id, _today())
+    fixed = await armado_svc.fixed_products(db, cid, dish_id)
+    for c in cats:
+        for o in c["options"]:
+            o["available_today"] = True
     return {
-        "categories":     result,
-        "fixed_products": [
-            {"item_id": f["item_id"], "quantity": f["quantity"], "description": f["description"]}
-            for f in fixed
-        ],
+        "categories": cats,
+        "fixed_products": [{"item_id": f["item_id"], "quantity": f["quantity"], "description": f["description"]}
+                           for f in fixed],
     }
 
 
@@ -808,12 +716,44 @@ async def agregar_item(
     # Usar la Fecha real de la DB para todos los INSERT/SELECT posteriores
     real_fecha = order_row["Fecha"]
 
-    # Info del plato desde easyposweb
-    dish = (await db.execute(text(
-        "SELECT id, price, tax FROM pos_dishes WHERE id=:did AND company_id=:cid"
-    ), {"did": data.dish_id, "cid": cid})).mappings().first()
-    if not dish:
+    # Info del plato desde easyposweb (active=0 → disponible, convención VB6)
+    dish = (await db.execute(text("""
+        SELECT id, name, price, tax, category_id, COALESCE(active,0) AS active,
+               COALESCE(ask_product_description,0) AS ask_description
+        FROM pos_dishes WHERE id=:did AND company_id=:cid
+    """), {"did": data.dish_id, "cid": cid})).mappings().first()
+    if not dish or int(dish["active"]) != 0:
         raise HTTPException(status_code=404, detail="Plato no encontrado o inactivo")
+    if not (0 < data.quantity <= 1000):
+        raise HTTPException(status_code=400, detail="Cantidad no válida")
+
+    # ── Armado: validar contra la configuración del plato ────────────────────
+    cats = await armado_svc.build_assembly(db, cid, data.dish_id, _today())
+    opts = {c["category_code"]: {o["item_id"]: o for o in c["options"]} for c in cats}
+    selected, per_cat, seen = [], {}, set()
+    for sel in (data.assembly_selections or []):
+        key = (sel.category_code, sel.item_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        opt = opts.get(sel.category_code, {}).get(sel.item_id)
+        if not opt:
+            raise HTTPException(status_code=400, detail="Opción de armado no disponible para este plato")
+        selected.append(opt)
+        per_cat[sel.category_code] = per_cat.get(sel.category_code, 0) + 1
+    # Exigir cantidad (Exgir_Seleccion) = 1 → exactamente "Opciones permitidas" (Cantidad_Elegir);
+    # = 0 → libre: ninguna, una, varias o todas las opciones de la categoría.
+    for c in cats:
+        n = per_cat.get(c["category_code"], 0)
+        if c["is_required"] and n != c["max_choices"]:
+            raise HTTPException(status_code=400,
+                detail=f"{c['category_name']}: debe seleccionar {c['max_choices']} opción(es)")
+
+    # ── Descripción personalizada (Pedir_Descripcion_Producto) ───────────────
+    custom = armado_svc.clean_text(data.custom_description, 200)
+    if int(dish["ask_description"]) and not custom:
+        raise HTTPException(status_code=400, detail="Este producto requiere una descripción")
+    producto_personalizado = armado_svc.clean_text(f"{dish['name']} {custom}" if custom else dish["name"], 1000)
 
     # Siguiente número de ítem en datatemppos
     max_item = (await db_temp.execute(text(
@@ -822,17 +762,19 @@ async def agregar_item(
     ), {"on": data.order_number, "cid": cid})).scalar() or 0
     item_num = int(max_item) + 1
 
-    amount = data.amount if data.amount else int(dish["price"] * data.quantity)
+    # ── Precio: SIEMPRE calculado en el servidor ─────────────────────────────
+    #   lista de precios del cliente del pedido (o platos.Valor) + valor adicional del armado
+    cust = (await db_temp.execute(text(
+        "SELECT COALESCE(Id_Cliente,0) FROM temp_comanda WHERE Nro_Pedido=:on AND company_id=:cid LIMIT 1"
+    ), {"on": data.order_number, "cid": cid})).scalar() or 0
+    base = await armado_svc.client_price(db, cid, int(cust), data.dish_id, dish["price"])
+    unit = base + sum(o["supply_price"] for o in selected)
+    amount = int(round(unit * data.quantity))
     tax_pct = float(dish["tax"]) if dish["tax"] else 0
     pays_tax = 1 if tax_pct > 0 else 0
     tax_val  = int(amount * tax_pct / 100) if pays_tax else 0
-
-    custom_product = None
-    if data.assembly_selections:
-        custom_product = json.dumps(
-            {"assembly": [s.model_dump() for s in data.assembly_selections]},
-            ensure_ascii=False,
-        )
+    notes = armado_svc.clean_text(data.notes, 250) or None
+    changes = armado_svc.clean_text(data.changes, 255) or None
 
     # Insertar ítem en datatemppos (Mostrar=1 = registro maestro)
     await db_temp.execute(text("""
@@ -852,34 +794,21 @@ async def agregar_item(
         "item":     item_num,
         "qty":      data.quantity,
         "amount":   amount,
-        "notes":    data.notes,
-        "changes":  data.changes,
+        "notes":    notes,
+        "changes":  changes,
         "pays_tax": pays_tax,
         "tax":      tax_val,
-        "custom":   custom_product,
+        "custom":   producto_personalizado,
         "hora":     _time_str(),
     })
 
-    # Armado → temp_plato_producto_parcial
-    for sel in (data.assembly_selections or []):
-        await db_temp.execute(text("""
-            INSERT INTO temp_plato_producto_parcial
-                (company_id, Nro_Pedido, Fecha, Nro_Factura,
-                 Id_Plato, Item, Id_Grupo, Id_Item, Cantidad, updated_at)
-            VALUES
-                (:cid, :on, :fecha, '0',
-                 :did, :item, :gid, :iid, :qty, NOW())
-            ON DUPLICATE KEY UPDATE Cantidad = VALUES(Cantidad)
-        """), {
-            "cid":   cid,
-            "on":    data.order_number,
-            "fecha": real_fecha,
-            "did":  data.dish_id,
-            "item": item_num,
-            "gid":  sel.category_code,
-            "iid":  sel.item_id,
-            "qty":  sel.discount_qty,
-        })
+    # Insumos a descontar (fijos + seleccionados) y novedades (armado + notas)
+    fixed = await armado_svc.fixed_products(db, cid, data.dish_id)
+    await armado_svc.write_item_products(db_temp, cid, data.order_number, real_fecha,
+                                         data.dish_id, item_num, fixed, selected)
+    await armado_svc.write_item_armado(db_temp, cid, data.order_number, item_num, bool(cats), selected)
+    await armado_svc.write_item_notes(db, db_temp, cid, data.order_number, item_num,
+                                      int(dish["category_id"] or 0), notes)
 
     await _recalc_total(db_temp, data.order_number, cid)
     await db_temp.commit()
@@ -889,8 +818,9 @@ async def agregar_item(
         "dish_id":  data.dish_id,
         "quantity": data.quantity,
         "amount":   amount,
-        "notes":    data.notes,
-        "changes":  data.changes,
+        "notes":    notes,
+        "changes":  changes,
+        "custom_product": producto_personalizado,
     }
 
 
@@ -900,6 +830,7 @@ async def agregar_item(
 async def actualizar_item(
     data: ActualizarItemIn,
     payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
@@ -926,12 +857,21 @@ async def actualizar_item(
         sets += ["Cantidad = :qty", "Valor = :amount"]
         params["qty"]    = data.quantity
         params["amount"] = unit_price * data.quantity
+    if data.quantity is not None and not (0 < data.quantity <= 1000):
+        raise HTTPException(status_code=400, detail="Cantidad no válida")
     if data.notes is not None:
         sets.append("Novedad = :notes")
-        params["notes"] = data.notes
+        params["notes"] = armado_svc.clean_text(data.notes, 250) or None
     if data.changes is not None:
         sets.append("Cambios = :changes")
-        params["changes"] = data.changes
+        params["changes"] = armado_svc.clean_text(data.changes, 255) or None
+
+    if data.notes is not None:
+        dish_cat = (await db.execute(text(
+            "SELECT COALESCE(category_id,0) FROM pos_dishes WHERE id=:did AND company_id=:cid"
+        ), {"did": data.dish_id, "cid": cid})).scalar() or 0
+        await armado_svc.write_item_notes(db, db_temp, cid, data.order_number, data.item,
+                                          int(dish_cat), params["notes"])
 
     if sets:
         await db_temp.execute(text(
@@ -1056,14 +996,8 @@ async def eliminar_item(
 ):
     cid = payload["company_id"]
 
-    # Borrar armado del ítem
-    await db_temp.execute(text("""
-        DELETE FROM temp_plato_producto_parcial
-        WHERE Nro_Pedido=:on AND Id_Plato=:did AND Item=:item AND company_id=:cid
-    """), {
-        "on": data.order_number, "did": data.dish_id,
-        "item": data.item, "cid": cid,
-    })
+    # Borrar insumos (armado + fijos) y novedades del ítem
+    await armado_svc.delete_item_temp(db_temp, cid, data.order_number, data.dish_id, data.item)
 
     # Borrar ítem principal — solo por Nro_pedido sin Fecha (evita mismatch DATETIME)
     await db_temp.execute(text("""
@@ -1760,6 +1694,9 @@ async def get_cocina(
     batch_items: dict = {}  # (on, hp) → [item_data]
     batch_meta: dict  = {}  # (on, hp) → {mesa, order_hora, mesero, printers}
 
+    # Armado elegido: registro 1/1 de temp_novedades_plato_pedido (formato escritorio)
+    armado_map = await armado_svc.armado_names(db_temp, cid, list({r["Nro_Pedido"] for r in order_rows}))
+
     for row in order_rows:
         on  = row["Nro_Pedido"]
         did = int(row["Id_Plato"])
@@ -1799,9 +1736,9 @@ async def get_cocina(
                 batch_meta[key]["max_hp"] = cur_hp
         batch_meta[key]["printers"].update(printers_for_dish)
 
-        assembly = []
-        if row["Producto_Personalizado"]:
-            try:
+        assembly = [{"item_name": n} for n in armado_map.get((on, int(row["Item"])), [])]
+        if not assembly and row["Producto_Personalizado"]:
+            try:   # pedidos antiguos con el armado en JSON
                 assembly = json.loads(row["Producto_Personalizado"]).get("assembly", [])
             except Exception:
                 pass

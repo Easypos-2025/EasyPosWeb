@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.database import get_db
 from app.models.supplier_model import Supplier
 from app.auth.dependencies import get_current_user
@@ -12,6 +12,8 @@ router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 def _ser(s: Supplier) -> dict:
     return {
         "id":           s.id,
+        "id_proveedor": s.id_proveedor,
+        "telefono_celular": s.telefono_celular,
         "company_id":   s.company_id,
         "name":         s.name,
         "nit":          s.nit,
@@ -37,8 +39,15 @@ async def list_suppliers(current_user: User = Depends(get_current_user), db: Asy
 async def create_supplier(data: dict = Body(...), current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if not (data.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
+    # Consecutivo por empresa (= Id_Proveedor del escritorio); FOR UPDATE evita repetidos en concurrencia
+    max_prov = (await db.execute(text(
+        "SELECT COALESCE(MAX(id_proveedor), 0) FROM suppliers WHERE company_id = :cid FOR UPDATE"
+    ), {"cid": current_user.company_id})).scalar() or 0
     s = Supplier(
         company_id=current_user.company_id,
+        id_proveedor=int(max_prov) + 1,
+        telefono_celular=(data.get("telefono_celular") or "").strip() or None,
+        synced=0,
         name=data["name"].strip(),
         nit=(data.get("nit") or "").strip() or None,
         contact_name=(data.get("contact_name") or "").strip() or None,
@@ -69,6 +78,8 @@ async def update_supplier(sid: int, data: dict = Body(...), current_user: User =
     if "address"      in data: s.address      = (data["address"] or "").strip() or None
     if "notes"        in data: s.notes        = (data["notes"] or "").strip() or None
     if "is_active"    in data: s.is_active    = int(data["is_active"])
+    if "telefono_celular" in data: s.telefono_celular = (data["telefono_celular"] or "").strip() or None
+    s.synced = 0
     await db.commit()
     await db.refresh(s)
     return _ser(s)
@@ -83,5 +94,6 @@ async def delete_supplier(sid: int, current_user: User = Depends(get_current_use
     if not s:
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
     s.is_active = 0
+    s.synced = 0
     await db.commit()
     return {"ok": True}

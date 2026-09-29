@@ -110,6 +110,7 @@
               v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent || group.hasDiscount"
             >
               <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
+              <span v-if="group.custom_description" class="ci-tag ci-custom"><i class="bi bi-pencil-square"></i> {{ group.custom_description }}</span>
               <span v-if="group.notes" class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
               <span v-if="group.hasDiscount" class="ci-tag ci-descuento"><i class="bi bi-percent"></i> Descuento</span>
@@ -267,7 +268,7 @@ const groupedItems = computed(() => {
   const map    = new Map()
   for (const item of items.value) {
     if (item._deleted) continue
-    const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
+    const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}|${item.custom_description || ''}`
     if (map.has(k)) {
       const g = map.get(k)
       g.qty        += item.quantity
@@ -277,7 +278,7 @@ const groupedItems = computed(() => {
       if (item.isNew) g.hasNew = true
     } else {
       map.set(k, {
-        key: k, dish_id: item.dish_id, dish_name: item.dish_name,
+        key: k, dish_id: item.dish_id, dish_name: item.dish_name, custom_description: item.custom_description || null,
         qty: item.quantity, totalAmount: item.amount,
         assembly: item.assembly, notes: item.notes, changes: item.changes,
         hasUnsent: !item.sent || item.isNew,
@@ -327,6 +328,7 @@ async function loadOrder() {
       order.value = res.data.order
       items.value = res.data.items.map(i => ({
         ...i,
+        custom_description: _customFrom(i),
         isNew:        false,
         _deleted:     false,
         _dirty:       false,
@@ -377,36 +379,74 @@ function selectCategory(catId) {
 }
 
 // ── Local item management (no API calls) ───────────────────────────────────
-function onDishSelect(dish) {
-  if (dish.has_assembly) assemblyDish.value = dish
-  else addSimpleDish(dish)
+// Pedir_Descripcion_Producto: descripción adicional (IMEI, detalle del trabajo...) por ítem
+async function askDescription(dishName) {
+  const { value, isConfirmed } = await Swal.fire({
+    title: dishName,
+    input: 'text',
+    inputLabel: 'Descripción adicional del producto',
+    inputAttributes: { maxlength: 200, autocapitalize: 'characters' },
+    showCancelButton: true,
+    confirmButtonText: 'Agregar',
+    cancelButtonText: 'Cancelar',
+    inputValidator: v => (!v || !v.trim()) ? 'La descripción es obligatoria' : undefined,
+  })
+  return isConfirmed ? value.trim() : null
 }
 
-function addSimpleDish(dish) {
+function _customFrom(i) {
+  const cp = (i.custom_product || '').trim()
+  const name = (i.dish_name || '').trim()
+  if (!cp || cp === name) return null
+  return cp.startsWith(name) ? cp.slice(name.length).trim() || null : cp
+}
+
+let pendingCustom = null
+
+async function onDishSelect(dish) {
+  pendingCustom = null
+  if (dish.ask_description) {
+    pendingCustom = await askDescription(dish.name)
+    if (!pendingCustom) return
+  }
+  if (dish.has_assembly) assemblyDish.value = dish
+  else addSimpleDish(dish, pendingCustom)
+}
+
+function addSimpleDish(dish, custom = null) {
   items.value.push({
     dish_id: dish.id, item: _tempId--,
     dish_name: dish.name, quantity: 1, amount: dish.price || 0,
-    notes: null, changes: null, assembly: [],
+    notes: null, changes: null, assembly: [], custom_description: custom,
     sent: false, isNew: true, _deleted: false, _dirty: false,
   })
 }
 
 function onItemAdded({ dish, assemblySelections, qty }) {
   assemblyDish.value = null
+  // Precio mostrado = base + valor adicional del armado (el definitivo lo calcula el servidor)
+  const extra = (assemblySelections || []).reduce((s, a) => s + (Number(a.supply_price) || 0), 0)
   items.value.push({
     dish_id: dish.id, item: _tempId--,
-    dish_name: dish.name, quantity: qty, amount: (dish.price || 0) * qty,
-    notes: null, changes: null, assembly: assemblySelections,
+    dish_name: dish.name, quantity: qty, amount: ((dish.price || 0) + extra) * qty,
+    notes: null, changes: null, assembly: assemblySelections, custom_description: pendingCustom,
     sent: false, isNew: true, _deleted: false, _dirty: false,
   })
+  pendingCustom = null
 }
 
-function addGroupItem(group) {
+async function addGroupItem(group) {
+  // Con descripción personalizada cada unidad lleva la suya (ej. un IMEI por equipo)
+  let custom = group.custom_description || null
+  if (custom) {
+    custom = await askDescription(group.dish_name)
+    if (!custom) return
+  }
   items.value.push({
     dish_id: group.dish_id, item: _tempId--,
     dish_name: group.dish_name, quantity: 1, amount: group.unitPrice,
     notes: group.notes || null, changes: group.changes || null,
-    assembly: group.assembly || [],
+    assembly: group.assembly || [], custom_description: custom,
     sent: false, isNew: true, _deleted: false, _dirty: false,
   })
 }
@@ -498,6 +538,7 @@ async function submitOrder() {
         dish_id:             ni.dish_id,
         quantity:            ni.quantity,
         assembly_selections: ni.assembly || [],
+        custom_description:  ni.custom_description || null,
         notes:               ni.notes || null,
         changes:             ni.changes || null,
       })
@@ -540,6 +581,7 @@ function cancelOrder() {
 </script>
 
 <style scoped>
+.ci-custom { background: #ede9fe; color: #5b21b6; }
 .pedido-view {
   display: flex;
   flex-direction: column;

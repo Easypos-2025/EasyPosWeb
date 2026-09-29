@@ -3,13 +3,14 @@ import uuid
 from datetime import date, datetime, timezone, timedelta
 
 _BOG = timezone(timedelta(hours=-5))
+
 def _today() -> str:
     return datetime.now(_BOG).date().isoformat()
-from typing import Optional, List
+from typing import Annotated, Optional, List
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
@@ -43,6 +44,28 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     return user
 
 
+async def _check_dish(db: AsyncSession, cid: int, dish_id: int) -> None:
+    """Verifica que el plato exista y pertenezca a la empresa del usuario."""
+    ok = (await db.execute(text(
+        "SELECT 1 FROM pos_dishes WHERE id=:id AND company_id=:cid"
+    ), {"id": dish_id, "cid": cid})).scalar()
+    if not ok:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+
+
+async def _get_supply(db: AsyncSession, cid: int, id_item: int):
+    """Insumo activo de la empresa por id_item (= Posicion del escritorio)."""
+    row = (await db.execute(text("""
+        SELECT id_grupo, id_item, posicion, description
+        FROM supply_items
+        WHERE company_id=:cid AND id_item=:iid AND is_active=1
+        LIMIT 1
+    """), {"cid": cid, "iid": id_item})).mappings().first()
+    if not row:
+        raise HTTPException(status_code=400, detail="Insumo no válido para esta empresa")
+    return row
+
+
 def _process_image(content: bytes) -> bytes:
     """Redimensiona y recorta la imagen a 800x800 WebP centrado."""
     img = Image.open(io.BytesIO(content)).convert("RGB")
@@ -62,27 +85,85 @@ def _process_image(content: bytes) -> bytes:
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
-class ItemIn(BaseModel):
-    name: str
-    price: Optional[int] = 0
-    compare_price: Optional[int] = None
-    category_id: Optional[int] = None
-    description: Optional[str] = None
-    tax: Optional[float] = 0
-    active: Optional[int] = 1
+Flag   = Annotated[int, Field(ge=0, le=1)]
+Money  = Annotated[float, Field(ge=0, le=2_000_000_000)]
+Qty    = Annotated[float, Field(gt=0, le=1_000_000)]
+Name   = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=250)]
+Code   = Annotated[str, StringConstraints(strip_whitespace=True, max_length=250)]
+Text   = Annotated[str, StringConstraints(max_length=5000)]
 
-class IngredientIn(BaseModel):
-    supply_item_id: int
-    quantity: float = 1
-    unit_id: Optional[int] = None
-    description: Optional[str] = None
+
+# Campos de pos_dishes (= platos del escritorio). Varios son campos REUTILIZADOS:
+#   wholesale_price  (Precio_x_Mayor)       → Precio Mínimo
+#   pre_preparation  (Preparacion_Previa)   → Pedir Peso
+#   offer            (Ofrecer)              → No Sumar en Venta
+#   preparation_time (Tiempo)               → No Imprime Comanda
+#   extra_print      (Impresion_Extra)      → Desactivar al Vender ('1'/'0')
+#   offer_priority   (Prioridad_Ofrecer)    → Armar Producto
+#   active           (Activo)               → Desactivar  (0 = activo, 1 = desactivado)
+class ItemUpdate(BaseModel):
+    name:                    Optional[Name]  = None
+    product_code:            Optional[Code]  = None
+    price:                   Optional[Annotated[int, Field(ge=0, le=2_000_000_000)]] = None
+    compare_price:           Optional[Annotated[int, Field(ge=0, le=2_000_000_000)]] = None
+    category_id:             Optional[int]   = None
+    description:             Optional[Text]  = None
+    procedure:               Optional[Text]  = None
+    tax:                     Optional[Annotated[float, Field(ge=0, le=100)]] = None
+    wholesale_price:         Optional[Money] = None
+    product_cost:            Optional[Money] = None
+    minimum_stock:           Optional[Annotated[float, Field(ge=0, le=1_000_000_000)]] = None
+    ask_sale_price:          Optional[Flag]  = None
+    ask_product_description: Optional[Flag]  = None
+    pre_preparation:         Optional[Flag]  = None
+    offer:                   Optional[Flag]  = None
+    preparation_time:        Optional[Flag]  = None
+    extra_print:             Optional[Flag]  = None
+    offer_priority:          Optional[Flag]  = None
+    active:                  Optional[Flag]  = None
+
+
+class ItemIn(ItemUpdate):
+    name: Name
+    price: Annotated[int, Field(ge=0, le=2_000_000_000)] = 0
+
+
+# Columnas editables de pos_dishes (lista blanca para el UPDATE dinámico)
+_DISH_COLUMNS = (
+    "name", "product_code", "price", "compare_price", "category_id", "description",
+    "procedure", "tax", "wholesale_price", "product_cost", "minimum_stock",
+    "ask_sale_price", "ask_product_description", "pre_preparation", "offer",
+    "preparation_time", "extra_print", "offer_priority", "active",
+)
+
+
+class PortionIn(BaseModel):
+    id_item:   Annotated[int, Field(ge=1)]
+    porciones: Qty = 1
+
+
+class PortionUpdate(BaseModel):
+    porciones: Qty
+
+
+class PresentationIn(BaseModel):
+    measure_id:         Annotated[int, Field(ge=1)]
+    supplier_id:        Annotated[int, Field(ge=0)] = 0
+    minimum_units:      Qty = 1
+    presentation_value: Money = 0
+
+
+class PresentationUpdate(BaseModel):
+    minimum_units:      Qty
+    presentation_value: Money
+
 
 class PrinterAssignIn(BaseModel):
-    printer_id: int
-    print_copies: int = 1
+    printer_id:   Annotated[int, Field(ge=1)]
+    print_copies: Annotated[int, Field(ge=1, le=10)] = 1
 
 class PrintersIn(BaseModel):
-    printers: List[PrinterAssignIn]
+    printers: Annotated[List[PrinterAssignIn], Field(max_length=50)]
 
 class ModifierGroupIn(BaseModel):
     name: str
@@ -109,6 +190,36 @@ class OrderIn(BaseModel):
     ids: List[int]
 
 
+def _dish_params(values: dict) -> dict:
+    """Normaliza valores antes de grabar en pos_dishes."""
+    out = dict(values)
+    if "extra_print" in out and out["extra_print"] is not None:
+        out["extra_print"] = str(int(out["extra_print"]))   # columna varchar en VB6
+    return out
+
+
+async def _check_category(db: AsyncSession, cid: int, category_id: Optional[int]) -> None:
+    if category_id is None:
+        return
+    ok = (await db.execute(text(
+        "SELECT 1 FROM pos_dish_categories WHERE id=:id AND company_id=:cid"
+    ), {"id": category_id, "cid": cid})).scalar()
+    if not ok:
+        raise HTTPException(status_code=400, detail="Categoría no válida para esta empresa")
+
+
+async def _upsert_general_price(db: AsyncSession, cid: int, dish_id: int, price: int) -> None:
+    """Lista general (id_lista=0, id_cliente=0) = espejo de platos.Valor."""
+    await db.execute(text("""
+        INSERT INTO pos_customer_price_list
+            (id_lista, id_cliente, id_producto, id_presentacion,
+             precio_producto, fecha, activa, company_id)
+        VALUES (0, 0, :id, 0, :precio, :fecha, 1, :cid)
+        ON DUPLICATE KEY UPDATE
+            precio_producto=VALUES(precio_producto), fecha=VALUES(fecha), updated_at=NOW()
+    """), {"id": dish_id, "precio": price, "fecha": _today(), "cid": cid})
+
+
 # ─── CRUD Artículos ────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -117,26 +228,26 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
     rows = (await db.execute(text("""
         SELECT
             d.id, d.name, d.price, d.compare_price, d.category_id, d.active,
-            d.description, d.tax, d.photo_path, d.product_code,
+            d.description, d.procedure, d.tax, d.photo_path, d.product_code,
+            d.wholesale_price, d.product_cost, d.minimum_stock,
+            d.ask_sale_price, d.ask_product_description, d.pre_preparation,
+            d.offer, d.preparation_time, d.offer_priority,
+            IF(COALESCE(d.extra_print,'0') = '1', 1, 0) AS extra_print,
             COALESCE(d.order_index, 0) AS order_index,
             c.name  AS category_name,
-            NULL    AS category_color,
-            0       AS category_order,
+            (SELECT COUNT(*) FROM inventario_porciones_plato ip
+             WHERE ip.id_plato=d.id AND ip.company_id=d.company_id)                  AS portion_count,
             (SELECT COUNT(*) FROM pos_dish_products dp
-             WHERE dp.dish_id=d.id AND dp.company_id=d.company_id AND dp.active=1)   AS ingredient_count,
+             WHERE dp.dish_id=d.id AND dp.company_id=d.company_id)                   AS presentation_count,
             (SELECT COUNT(*) FROM pos_item_printers ip
              WHERE ip.item_id=d.id AND ip.company_id=d.company_id)                   AS printer_count,
-            (SELECT COUNT(*) FROM pos_item_modifiers m
-             WHERE m.item_id=d.id AND m.company_id=d.company_id AND m.is_active=1)   AS modifier_count,
+            (SELECT COUNT(*) FROM pos_dish_assembly da
+             WHERE da.dish_id=d.id AND da.company_id=d.company_id)                   AS assembly_count,
             (SELECT COUNT(*) FROM pos_dish_variants v
-             WHERE v.dish_id=d.id AND v.company_id=d.company_id AND v.is_active=1)   AS variant_count,
-            cpl.precio_producto AS list_price
+             WHERE v.dish_id=d.id AND v.company_id=d.company_id AND v.is_active=1)   AS variant_count
         FROM pos_dishes d
         LEFT JOIN pos_dish_categories c
                ON c.id=d.category_id AND c.company_id=d.company_id
-        LEFT JOIN pos_customer_price_list cpl
-               ON cpl.id_producto=d.id AND cpl.company_id=d.company_id
-              AND cpl.id_lista=0 AND cpl.id_cliente=0
         WHERE d.company_id=:cid
         ORDER BY c.name, COALESCE(d.order_index,0), d.name
     """), {"cid": user.company_id})).mappings().all()
@@ -147,75 +258,73 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
 async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid  = user.company_id
-    today = _today()
+    await _check_category(db, cid, data.category_id)
 
     max_id = (await db.execute(text(
-        "SELECT COALESCE(MAX(id), 0) FROM pos_dishes WHERE company_id=:cid"
+        "SELECT COALESCE(MAX(id), 0) FROM pos_dishes WHERE company_id=:cid FOR UPDATE"
     ), {"cid": cid})).scalar() or 0
     new_id = int(max_id) + 1
 
-    await db.execute(text("""
-        INSERT INTO pos_dishes
-            (id, name, price, compare_price, category_id, description,
-             tax, active, product_code, synced, company_id, updated_at)
-        VALUES
-            (:id, :name, :price, :cp, :cat, :desc,
-             :tax, :active, :code, 0, :cid, NOW())
-    """), {
-        "id": new_id, "name": data.name, "price": data.price, "cp": data.compare_price,
-        "cat": data.category_id, "desc": data.description,
-        "tax": data.tax, "active": data.active,
-        "code": f"WEB-{new_id}", "cid": cid,
-    })
+    values = _dish_params({k: getattr(data, k) for k in _DISH_COLUMNS})
+    for k in ("tax", "wholesale_price", "product_cost", "minimum_stock",
+              "ask_sale_price", "ask_product_description", "pre_preparation",
+              "offer", "preparation_time", "offer_priority", "active"):
+        if values[k] is None:
+            values[k] = 0            # active=0 → producto ACTIVO (convención VB6)
+    if values["extra_print"] is None:
+        values["extra_print"] = "0"
+    if not values["product_code"]:
+        values["product_code"] = f"WEB-{new_id}"
 
-    await db.execute(text("""
-        INSERT INTO pos_customer_price_list
-            (id_lista, id_cliente, id_producto, id_presentacion,
-             precio_producto, fecha, activa, company_id)
-        VALUES (0, 0, :id, NULL, :precio, :fecha, 1, :cid)
-        ON DUPLICATE KEY UPDATE
-            precio_producto=VALUES(precio_producto), activa=1, updated_at=NOW()
-    """), {"id": new_id, "precio": data.price, "fecha": today, "cid": cid})
+    cols = ", ".join(f"`{c}`" for c in _DISH_COLUMNS)
+    phs  = ", ".join(f":{c}" for c in _DISH_COLUMNS)
+    await db.execute(text(f"""
+        INSERT INTO pos_dishes (id, company_id, synced, updated_at, {cols})
+        VALUES (:id, :cid, 0, NOW(), {phs})
+    """), {"id": new_id, "cid": cid, **values})
 
+    await _upsert_general_price(db, cid, new_id, data.price)
     await db.commit()
     return {"ok": True, "id": new_id}
 
 
-# PUT /orden debe ir ANTES de PUT /{item_id} para no ser capturado como parámetro
 @router.put("/orden")
 async def actualizar_orden(data: OrderIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    for idx, item_id in enumerate(data.ids):
+    for idx, iid in enumerate(data.ids):
         await db.execute(text(
             "UPDATE pos_dishes SET order_index=:ord WHERE id=:id AND company_id=:cid"
-        ), {"ord": idx, "id": item_id, "cid": user.company_id})
+        ), {"ord": idx, "id": iid, "cid": user.company_id})
     await db.commit()
     return {"ok": True}
 
 
 @router.put("/{item_id}")
 async def actualizar(
-    item_id: int, data: ItemIn,
+    item_id: int, data: ItemUpdate,
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
+    """Actualización parcial: solo se graban los campos enviados."""
     user = await _get_user(authorization, db)
     cid  = user.company_id
+    await _check_dish(db, cid, item_id)
 
-    await db.execute(text("""
-        UPDATE pos_dishes
-        SET name=:name, price=:price, compare_price=:cp, category_id=:cat,
-            description=:desc, tax=:tax, active=:active, updated_at=NOW()
-        WHERE id=:id AND company_id=:cid
-    """), {"id": item_id, "cid": cid, "name": data.name, "price": data.price,
-           "cp": data.compare_price, "cat": data.category_id,
-           "desc": data.description, "tax": data.tax, "active": data.active})
+    values = _dish_params(data.model_dump(exclude_unset=True))
+    if "name" in values and not values["name"]:
+        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    if "category_id" in values:
+        await _check_category(db, cid, values["category_id"])
+    values = {k: v for k, v in values.items() if k in _DISH_COLUMNS}
+    if not values:
+        return {"ok": True}
 
-    await db.execute(text("""
-        UPDATE pos_customer_price_list
-        SET precio_producto=:precio, fecha=:fecha, updated_at=NOW()
-        WHERE id_producto=:id AND id_lista=0 AND id_cliente=0 AND company_id=:cid
-    """), {"id": item_id, "precio": data.price,
-           "fecha": _today(), "cid": cid})
+    sets = ", ".join(f"`{k}`=:{k}" for k in values)
+    await db.execute(text(
+        f"UPDATE pos_dishes SET {sets}, synced=0, updated_at=NOW() WHERE id=:id AND company_id=:cid"
+    ), {"id": item_id, "cid": cid, **values})
+
+    if values.get("price") is not None:
+        await _upsert_general_price(db, cid, item_id, values["price"])
 
     await db.commit()
     return {"ok": True}
@@ -223,12 +332,11 @@ async def actualizar(
 
 @router.delete("/{item_id}")
 async def eliminar(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    """Desactivar (soft): active=1 = desactivado en la convención VB6."""
     user = await _get_user(authorization, db)
+    await _check_dish(db, user.company_id, item_id)
     await db.execute(text(
-        "UPDATE pos_dishes SET active=0, updated_at=NOW() WHERE id=:id AND company_id=:cid"
-    ), {"id": item_id, "cid": user.company_id})
-    await db.execute(text(
-        "UPDATE pos_customer_price_list SET activa=0 WHERE id_producto=:id AND company_id=:cid"
+        "UPDATE pos_dishes SET active=1, synced=0, updated_at=NOW() WHERE id=:id AND company_id=:cid"
     ), {"id": item_id, "cid": user.company_id})
     await db.commit()
     return {"ok": True}
@@ -238,6 +346,7 @@ async def eliminar(item_id: int, authorization: str = Header(None), db: AsyncSes
 async def eliminar_definitivo(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     cid = user.company_id
+    await _check_dish(db, cid, item_id)
 
     # Bloquear si tiene ventas facturadas
     ventas = (await db.execute(text(
@@ -259,19 +368,73 @@ async def eliminar_definitivo(item_id: int, authorization: str = Header(None), d
 
     # Eliminar en cascada (sin dependencias externas)
     for sql in [
-        "DELETE FROM pos_dish_assembly_detail WHERE dish_id=:id AND company_id=:cid",
-        "DELETE FROM pos_dish_assembly       WHERE dish_id=:id AND company_id=:cid",
-        "DELETE FROM pos_dish_products       WHERE dish_id=:id AND company_id=:cid",
-        "DELETE FROM pos_item_printers       WHERE item_id=:id AND company_id=:cid",
-        "DELETE FROM pos_dish_variants       WHERE dish_id=:id AND company_id=:cid",
-        "DELETE FROM pos_item_modifiers      WHERE item_id=:id AND company_id=:cid",
-        "DELETE FROM pos_customer_price_list WHERE id_producto=:id AND company_id=:cid",
-        "DELETE FROM pos_dishes              WHERE id=:id AND company_id=:cid",
+        "DELETE FROM pos_dish_assembly_detail   WHERE dish_id=:id  AND company_id=:cid",
+        "DELETE FROM pos_dish_assembly          WHERE dish_id=:id  AND company_id=:cid",
+        "DELETE FROM pos_dish_products          WHERE dish_id=:id  AND company_id=:cid",
+        "DELETE FROM inventario_porciones_plato WHERE id_plato=:id AND company_id=:cid",
+        "DELETE FROM pos_item_printers          WHERE item_id=:id  AND company_id=:cid",
+        "DELETE FROM pos_dish_variants          WHERE dish_id=:id  AND company_id=:cid",
+        "DELETE FROM pos_item_modifiers         WHERE item_id=:id  AND company_id=:cid",
+        "DELETE FROM pos_customer_price_list    WHERE id_producto=:id AND company_id=:cid",
+        "DELETE FROM pos_dishes                 WHERE id=:id       AND company_id=:cid",
     ]:
         await db.execute(text(sql), {"id": item_id, "cid": cid})
 
     await db.commit()
     return {"ok": True}
+
+
+# ─── Catálogos de apoyo (insumos, formas de medida, proveedores) ──────────────
+
+@router.get("/insumos/buscar")
+async def buscar_insumos(
+    categoria: Optional[int] = Query(None, ge=0),
+    q: Optional[str] = Query(None, max_length=60),
+    limit: int = Query(100, ge=1, le=300),
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db),
+):
+    """Insumos activos de la empresa por categoría (supply_items.agrupar) y/o nombre."""
+    user = await _get_user(authorization, db)
+    sql = """
+        SELECT si.id_item, si.id_grupo, si.posicion, si.description, si.code,
+               si.agrupar AS category_id, pc.name AS category_name
+        FROM supply_items si
+        LEFT JOIN pos_product_categories pc
+               ON pc.id = si.agrupar AND pc.company_id = si.company_id
+        WHERE si.company_id = :cid AND si.is_active = 1
+    """
+    params: dict = {"cid": user.company_id, "lim": limit}
+    if categoria:
+        sql += " AND si.agrupar = :cat"
+        params["cat"] = categoria
+    term = (q or "").strip()
+    if term:
+        # Escapar comodines de LIKE para que el texto se busque literal
+        term = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        sql += " AND si.description LIKE :q"
+        params["q"] = f"%{term}%"
+    sql += " ORDER BY si.description LIMIT :lim"
+    rows = (await db.execute(text(sql), params)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/catalogos/formas-medida")
+async def get_formas_medida(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    rows = (await db.execute(text(
+        "SELECT id, name FROM pos_measure_forms WHERE company_id=:cid ORDER BY name"
+    ), {"cid": user.company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/catalogos/proveedores")
+async def get_proveedores(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    rows = (await db.execute(text(
+        "SELECT id_proveedor AS id, name FROM suppliers "
+        "WHERE company_id=:cid AND is_active=1 AND id_proveedor IS NOT NULL ORDER BY name"
+    ), {"cid": user.company_id})).mappings().all()
+    return [dict(r) for r in rows]
 
 
 # ─── Foto (photo_path) ────────────────────────────────────────────────────────
@@ -387,70 +550,164 @@ async def eliminar_variante(
     return {"ok": True}
 
 
-# ─── Ingredientes / Receta ────────────────────────────────────────────────────
+# ─── Insumos FIJOS (inventario_porciones_plato) ───────────────────────────────
+# Se descuentan SIEMPRE al vender el plato (además de lo que se elija al armar).
+# Convención escritorio: Cantidad = Unidad_Minima = Porciones_A_Desccontar,
+# Posicion = supply_items.posicion.
 
-@router.get("/{item_id}/ingredientes")
-async def get_ingredientes(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+@router.get("/{item_id}/insumos-fijos")
+async def get_insumos_fijos(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     rows = (await db.execute(text("""
-        SELECT
-            dp.supplier_id  AS insumo_id,
-            dp.minimum_units AS cantidad,
-            dp.measure_id   AS unit_id,
-            dp.description,
-            dp.active,
-            s.description   AS insumo_nombre,
-            s.code          AS insumo_code,
-            mu.name         AS unit_nombre,
-            mu.abreviatura  AS unit_abrev
-        FROM pos_dish_products dp
-        JOIN supply_items s ON s.id = dp.supplier_id AND s.company_id = :cid
-        LEFT JOIN measurement_units mu ON mu.id = dp.measure_id
-        WHERE dp.dish_id=:pid AND dp.company_id=:cid AND dp.active=1
-        ORDER BY s.name
-    """), {"pid": item_id, "cid": user.company_id})).mappings().all()
+        SELECT ipp.id_item, ipp.id_grupo, ipp.porciones_a_desccontar AS porciones, ipp.posicion,
+               si.description AS insumo_nombre, si.code AS insumo_code,
+               pc.name AS category_name
+        FROM inventario_porciones_plato ipp
+        LEFT JOIN supply_items si
+               ON si.company_id = ipp.company_id AND si.id_item = ipp.id_item AND si.id_grupo = ipp.id_grupo
+        LEFT JOIN pos_product_categories pc
+               ON pc.id = si.agrupar AND pc.company_id = ipp.company_id
+        WHERE ipp.id_plato = :did AND ipp.company_id = :cid
+        ORDER BY si.description
+    """), {"did": item_id, "cid": user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 
 
-@router.post("/{item_id}/ingredientes", status_code=201)
-async def add_ingrediente(
-    item_id: int, data: IngredientIn,
+@router.post("/{item_id}/insumos-fijos", status_code=201)
+async def add_insumo_fijo(
+    item_id: int, data: PortionIn,
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    valid = (await db.execute(text(
-        "SELECT id FROM supply_items WHERE id=:sid AND company_id=:cid AND is_active=1"
-    ), {"sid": data.supply_item_id, "cid": user.company_id})).fetchone()
-    if not valid:
-        raise HTTPException(status_code=400, detail="Insumo no válido para esta empresa")
+    cid = user.company_id
+    await _check_dish(db, cid, item_id)
+    sup = await _get_supply(db, cid, data.id_item)
     await db.execute(text("""
-        INSERT INTO pos_dish_products
-            (dish_id, supplier_id, measure_id, minimum_units, description, active, synced, company_id)
-        VALUES (:dish, :sup, :measure, :qty, :desc, 1, 0, :cid)
+        INSERT INTO inventario_porciones_plato
+            (company_id, id_plato, id_grupo, id_item, cantidad, unidad_minima,
+             porciones_a_desccontar, posicion, opcion_cambiar, enviada_mysql)
+        VALUES (:cid, :did, :gid, :iid, :p, :p, :p, :pos, 0, 0)
         ON DUPLICATE KEY UPDATE
-            minimum_units=VALUES(minimum_units),
-            measure_id=VALUES(measure_id),
-            description=VALUES(description),
-            active=1
-    """), {
-        "dish": item_id, "sup": data.supply_item_id,
-        "measure": data.unit_id or 0, "qty": data.quantity,
-        "desc": data.description or "", "cid": user.company_id,
-    })
+            cantidad=VALUES(cantidad), unidad_minima=VALUES(unidad_minima),
+            porciones_a_desccontar=VALUES(porciones_a_desccontar),
+            posicion=VALUES(posicion), enviada_mysql=0, updated_at=NOW()
+    """), {"cid": cid, "did": item_id, "gid": sup["id_grupo"], "iid": sup["id_item"],
+           "p": data.porciones, "pos": sup["posicion"] or sup["id_item"]})
     await db.commit()
     return {"ok": True}
 
 
-@router.delete("/{item_id}/ingredientes/{insumo_id}")
-async def del_ingrediente(
-    item_id: int, insumo_id: int,
+@router.put("/{item_id}/insumos-fijos/{id_item}")
+async def upd_insumo_fijo(
+    item_id: int, id_item: int, data: PortionUpdate,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    res = await db.execute(text("""
+        UPDATE inventario_porciones_plato
+        SET cantidad=:p, unidad_minima=:p, porciones_a_desccontar=:p, enviada_mysql=0, updated_at=NOW()
+        WHERE id_plato=:did AND id_item=:iid AND company_id=:cid
+    """), {"p": data.porciones, "did": item_id, "iid": id_item, "cid": user.company_id})
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Insumo no asignado a este artículo")
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{item_id}/insumos-fijos/{id_item}")
+async def del_insumo_fijo(
+    item_id: int, id_item: int,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    await db.execute(text(
+        "DELETE FROM inventario_porciones_plato WHERE id_plato=:did AND id_item=:iid AND company_id=:cid"
+    ), {"did": item_id, "iid": id_item, "cid": user.company_id})
+    await db.commit()
+    return {"ok": True}
+
+
+# ─── Presentaciones (pos_dish_products = plato_producto) ──────────────────────
+# PK: (company_id, dish_id, supplier_id, measure_id). active=0 → activa (convención VB6).
+# supplier_id = suppliers.id_proveedor (= proveedores.Id_Proveedor del escritorio).
+
+@router.get("/{item_id}/presentaciones")
+async def get_presentaciones(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    rows = (await db.execute(text("""
+        SELECT dp.measure_id, dp.supplier_id, dp.minimum_units, dp.presentation_value,
+               COALESCE(mf.name, dp.description) AS measure_name,
+               s.name AS supplier_name
+        FROM pos_dish_products dp
+        LEFT JOIN pos_measure_forms mf ON mf.id = dp.measure_id AND mf.company_id = dp.company_id
+        LEFT JOIN suppliers s          ON s.id_proveedor = dp.supplier_id AND s.company_id = dp.company_id
+        WHERE dp.dish_id = :did AND dp.company_id = :cid
+        ORDER BY dp.measure_id
+    """), {"did": item_id, "cid": user.company_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.post("/{item_id}/presentaciones", status_code=201)
+async def add_presentacion(
+    item_id: int, data: PresentationIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await _check_dish(db, cid, item_id)
+    measure_name = (await db.execute(text(
+        "SELECT name FROM pos_measure_forms WHERE id=:id AND company_id=:cid"
+    ), {"id": data.measure_id, "cid": cid})).scalar()
+    if not measure_name:
+        raise HTTPException(status_code=400, detail="Presentación no válida para esta empresa")
+    if data.supplier_id:
+        ok = (await db.execute(text(
+            "SELECT 1 FROM suppliers WHERE id_proveedor=:id AND company_id=:cid"
+        ), {"id": data.supplier_id, "cid": cid})).scalar()
+        if not ok:
+            raise HTTPException(status_code=400, detail="Proveedor no válido para esta empresa")
+    await db.execute(text("""
+        INSERT INTO pos_dish_products
+            (company_id, dish_id, supplier_id, measure_id, minimum_units,
+             presentation_value, description, active, synced)
+        VALUES (:cid, :did, :sup, :mid, :mu, :pv, :desc, 0, 0)
+        ON DUPLICATE KEY UPDATE
+            minimum_units=VALUES(minimum_units), presentation_value=VALUES(presentation_value),
+            description=VALUES(description), active=0, synced=0, updated_at=NOW()
+    """), {"cid": cid, "did": item_id, "sup": data.supplier_id, "mid": data.measure_id,
+           "mu": data.minimum_units, "pv": data.presentation_value, "desc": measure_name[:50]})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/{item_id}/presentaciones/{measure_id}/{supplier_id}")
+async def upd_presentacion(
+    item_id: int, measure_id: int, supplier_id: int, data: PresentationUpdate,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    res = await db.execute(text("""
+        UPDATE pos_dish_products
+        SET minimum_units=:mu, presentation_value=:pv, synced=0, updated_at=NOW()
+        WHERE dish_id=:did AND measure_id=:mid AND supplier_id=:sup AND company_id=:cid
+    """), {"mu": data.minimum_units, "pv": data.presentation_value, "did": item_id,
+           "mid": measure_id, "sup": supplier_id, "cid": user.company_id})
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Presentación no encontrada")
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{item_id}/presentaciones/{measure_id}/{supplier_id}")
+async def del_presentacion(
+    item_id: int, measure_id: int, supplier_id: int,
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
     await db.execute(text("""
-        UPDATE pos_dish_products SET active=0
-        WHERE dish_id=:dish AND supplier_id=:sup AND company_id=:cid
-    """), {"dish": item_id, "sup": insumo_id, "cid": user.company_id})
+        DELETE FROM pos_dish_products
+        WHERE dish_id=:did AND measure_id=:mid AND supplier_id=:sup AND company_id=:cid
+    """), {"did": item_id, "mid": measure_id, "sup": supplier_id, "cid": user.company_id})
     await db.commit()
     return {"ok": True}
 
@@ -480,6 +737,12 @@ async def set_impresoras(
 ):
     user = await _get_user(authorization, db)
     cid  = user.company_id
+    await _check_dish(db, cid, item_id)
+    valid = {int(r[0]) for r in (await db.execute(text(
+        "SELECT id FROM pos_printers WHERE company_id=:cid"
+    ), {"cid": cid})).all()}
+    if any(p.printer_id not in valid for p in data.printers):
+        raise HTTPException(status_code=400, detail="Impresora no válida para esta empresa")
     await db.execute(text(
         "DELETE FROM pos_item_printers WHERE item_id=:iid AND company_id=:cid"
     ), {"iid": item_id, "cid": cid})
@@ -584,67 +847,44 @@ async def eliminar_opcion(
     return {"ok": True}
 
 
-# ─── Armado VB6 (pos_dish_assembly) ──────────────────────────────────────────
+# ─── Armado VB6 (pos_dish_assembly = plato_armar / pos_dish_assembly_detail = plato_armar_detalle) ──
+#   max_choices          = Cantidad_Elegir            (Opciones Permitidas)
+#   is_required          = Exgir_Seleccion            (Exigir Cantidad)
+#   print_on_change_only = Imprimir_Armar_Solo_Cambio (Imprimir si hay cambios)
+#   position             = Posicion  = supply_items.id_item
+#   discount_qty         = Cantidad_Descontar
+#   supply_price         = Precio_Insumo               (Valor Adicional)
+#   is_default           = Por_Default
 
-@router.get("/{item_id}/armado")
-async def get_armado(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    user = await _get_user(authorization, db)
-    cid = user.company_id
-
-    cats = None
-    for sql_cats in [
-        # Nivel 1: con nombre desde pos_product_categories
-        """SELECT da.category_code, da.max_choices, da.is_required, da.is_active,
-                  (SELECT pc.name FROM pos_product_categories pc
-                   WHERE pc.id = da.category_code AND pc.company_id = :cid LIMIT 1) AS category_name
-           FROM pos_dish_assembly da
-           WHERE da.dish_id = :did AND da.company_id = :cid
-           ORDER BY da.category_code""",
-        # Nivel 2: sin nombre (fallback)
-        """SELECT da.category_code, da.max_choices, da.is_required, da.is_active,
-                  NULL AS category_name
-           FROM pos_dish_assembly da
-           WHERE da.dish_id = :did AND da.company_id = :cid
-           ORDER BY da.category_code""",
-    ]:
-        try:
-            rows = (await db.execute(text(sql_cats), {"did": item_id, "cid": cid})).mappings().all()
-            cats = rows
-            break
-        except Exception:
-            continue
-
-    if not cats:
-        return []
-
-    result = []
-    for cat in cats:
-        cc = int(cat["category_code"])
-        options = (await db.execute(text("""
-            SELECT dad.item AS item_id, dad.discount_qty, dad.position, dad.is_default,
-                   COALESCE(si.description, CONCAT('Opción ', dad.position)) AS item_name
-            FROM pos_dish_assembly_detail dad
-            LEFT JOIN supply_items si
-                   ON si.id_item = dad.position AND si.company_id = :cid
-            WHERE dad.dish_id = :did AND dad.company_id = :cid AND dad.category_code = :cc
-            ORDER BY dad.position
-        """), {"did": item_id, "cid": cid, "cc": cc})).mappings().all()
-
-        result.append({
-            "category_code": cc,
-            "category_name": cat["category_name"] or f"Categoría {cc}",
-            "max_choices":   int(cat["max_choices"] or 1),
-            "is_required":   bool(cat["is_required"]),
-            "is_active":     bool(cat["is_active"]),
-            "options":       [dict(o) for o in options],
-        })
-
-    return result
+class ArmadoCategoriaIn(BaseModel):
+    category_code:        Annotated[int, Field(ge=1)]
+    max_choices:          Annotated[int, Field(ge=1, le=50)] = 1
+    is_required:          Flag = 0
+    print_on_change_only: Flag = 0
 
 
-# Lista de categorías disponibles para armado (pos_product_categories)
+class ArmadoCategoriaUpdate(BaseModel):
+    max_choices:          Annotated[int, Field(ge=1, le=50)]
+    is_required:          Flag = 0
+    print_on_change_only: Flag = 0
+
+
+class ArmadoOpcionIn(BaseModel):
+    position:     Annotated[int, Field(ge=1)]      # supply_items.id_item
+    discount_qty: Qty = 1
+    supply_price: Money = 0
+    is_default:   Flag = 0
+
+
+class ArmadoOpcionUpdate(BaseModel):
+    discount_qty: Qty = 1
+    supply_price: Money = 0
+    is_default:   Flag = 0
+
+
 @router.get("/armado/categorias-disponibles")
 async def get_categorias_armado(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    """Categorías de insumos (pos_product_categories = categoria_productos)."""
     user = await _get_user(authorization, db)
     rows = (await db.execute(text(
         "SELECT id, name FROM pos_product_categories WHERE company_id=:cid ORDER BY name"
@@ -652,16 +892,51 @@ async def get_categorias_armado(authorization: str = Header(None), db: AsyncSess
     return [{"id": int(r["id"]), "name": r["name"]} for r in rows]
 
 
-class ArmadoCategoriaIn(BaseModel):
-    category_code: int
-    max_choices: Optional[int] = 1
-    is_required: Optional[int] = 0
+@router.get("/{item_id}/armado")
+async def get_armado(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
+    cid = user.company_id
 
+    cats = (await db.execute(text("""
+        SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
+               pc.name AS category_name
+        FROM pos_dish_assembly da
+        LEFT JOIN pos_product_categories pc
+               ON pc.id = da.category_code AND pc.company_id = da.company_id
+        WHERE da.dish_id = :did AND da.company_id = :cid
+        ORDER BY da.category_code
+    """), {"did": item_id, "cid": cid})).mappings().all()
+    if not cats:
+        return []
 
-class ArmadoOpcionIn(BaseModel):
-    position: int        # supply_items.id_item
-    discount_qty: Optional[float] = 1
-    is_default: Optional[int] = 0
+    opts = (await db.execute(text("""
+        SELECT dad.category_code, dad.position, dad.discount_qty, dad.supply_price, dad.is_default,
+               COALESCE(si.description, CONCAT('Insumo ', dad.position)) AS item_name
+        FROM pos_dish_assembly_detail dad
+        LEFT JOIN supply_items si
+               ON si.id_item = dad.position AND si.company_id = dad.company_id
+        WHERE dad.dish_id = :did AND dad.company_id = :cid
+        ORDER BY dad.category_code, item_name
+    """), {"did": item_id, "cid": cid})).mappings().all()
+
+    by_cat: dict = {}
+    for o in opts:
+        by_cat.setdefault(int(o["category_code"]), []).append({
+            "position":     int(o["position"]),
+            "item_name":    o["item_name"],
+            "discount_qty": float(o["discount_qty"] or 1),
+            "supply_price": float(o["supply_price"] or 0),
+            "is_default":   bool(o["is_default"]),
+        })
+
+    return [{
+        "category_code":        int(c["category_code"]),
+        "category_name":        c["category_name"] or f"Categoría {c['category_code']}",
+        "max_choices":          int(c["max_choices"] or 1),
+        "is_required":          bool(c["is_required"]),
+        "print_on_change_only": bool(c["print_on_change_only"]),
+        "options":              by_cat.get(int(c["category_code"]), []),
+    } for c in cats]
 
 
 @router.post("/{item_id}/armado/categoria", status_code=201)
@@ -671,14 +946,39 @@ async def add_armado_categoria(
 ):
     user = await _get_user(authorization, db)
     cid = user.company_id
+    await _check_dish(db, cid, item_id)
+    ok = (await db.execute(text(
+        "SELECT 1 FROM pos_product_categories WHERE id=:id AND company_id=:cid"
+    ), {"id": data.category_code, "cid": cid})).scalar()
+    if not ok:
+        raise HTTPException(status_code=400, detail="Categoría no válida para esta empresa")
     await db.execute(text("""
         INSERT INTO pos_dish_assembly
-            (dish_id, company_id, category_code, max_choices, is_required, is_active, print_on_change_only)
-        VALUES (:did, :cid, :cc, :mc, :req, 1, 0)
+            (dish_id, company_id, category_code, max_choices, is_required, is_active, print_on_change_only, synced)
+        VALUES (:did, :cid, :cc, :mc, :req, 1, :poc, 0)
         ON DUPLICATE KEY UPDATE
-            max_choices=VALUES(max_choices), is_required=VALUES(is_required), is_active=1
+            max_choices=VALUES(max_choices), is_required=VALUES(is_required),
+            print_on_change_only=VALUES(print_on_change_only), is_active=1, synced=0
     """), {"did": item_id, "cid": cid, "cc": data.category_code,
-           "mc": data.max_choices, "req": data.is_required})
+           "mc": data.max_choices, "req": data.is_required, "poc": data.print_on_change_only})
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/{item_id}/armado/categoria/{category_code}")
+async def upd_armado_categoria(
+    item_id: int, category_code: int, data: ArmadoCategoriaUpdate,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    res = await db.execute(text("""
+        UPDATE pos_dish_assembly
+        SET max_choices=:mc, is_required=:req, print_on_change_only=:poc, synced=0
+        WHERE dish_id=:did AND company_id=:cid AND category_code=:cc
+    """), {"mc": data.max_choices, "req": data.is_required, "poc": data.print_on_change_only,
+           "did": item_id, "cid": user.company_id, "cc": category_code})
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Categoría de armado no encontrada")
     await db.commit()
     return {"ok": True}
 
@@ -707,20 +1007,49 @@ async def add_armado_opcion(
 ):
     user = await _get_user(authorization, db)
     cid = user.company_id
+    cat = (await db.execute(text(
+        "SELECT 1 FROM pos_dish_assembly WHERE dish_id=:did AND company_id=:cid AND category_code=:cc"
+    ), {"did": item_id, "cid": cid, "cc": category_code})).scalar()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Categoría de armado no encontrada")
+    sup = await _get_supply(db, cid, data.position)
+    dup = (await db.execute(text(
+        "SELECT 1 FROM pos_dish_assembly_detail "
+        "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos"
+    ), {"did": item_id, "cid": cid, "cc": category_code, "pos": sup["id_item"]})).scalar()
+    if dup:
+        raise HTTPException(status_code=409, detail="El insumo ya está en esta categoría")
     max_item = (await db.execute(text(
         "SELECT COALESCE(MAX(item),0) FROM pos_dish_assembly_detail "
         "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc"
     ), {"did": item_id, "cid": cid, "cc": category_code})).scalar() or 0
-    new_item = int(max_item) + 1
     await db.execute(text("""
         INSERT INTO pos_dish_assembly_detail
-            (dish_id, company_id, category_code, item, position, discount_qty, is_default, is_active)
-        VALUES (:did, :cid, :cc, :itm, :pos, :dq, :def, 1)
-    """), {"did": item_id, "cid": cid, "cc": category_code,
-           "itm": new_item, "pos": data.position,
-           "dq": data.discount_qty, "def": data.is_default})
+            (dish_id, company_id, category_code, item, position, supply_price, discount_qty, is_default, synced)
+        VALUES (:did, :cid, :cc, :itm, :pos, :sp, :dq, :def, 0)
+    """), {"did": item_id, "cid": cid, "cc": category_code, "itm": int(max_item) + 1,
+           "pos": sup["id_item"], "sp": data.supply_price, "dq": data.discount_qty,
+           "def": data.is_default})
     await db.commit()
-    return {"ok": True, "item": new_item}
+    return {"ok": True}
+
+
+@router.put("/{item_id}/armado/categoria/{category_code}/opcion/{position}")
+async def update_armado_opcion(
+    item_id: int, category_code: int, position: int, data: ArmadoOpcionUpdate,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user(authorization, db)
+    res = await db.execute(text("""
+        UPDATE pos_dish_assembly_detail
+        SET discount_qty=:dq, supply_price=:sp, is_default=:def, synced=0
+        WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos
+    """), {"did": item_id, "cid": user.company_id, "cc": category_code, "pos": position,
+           "dq": data.discount_qty, "sp": data.supply_price, "def": data.is_default})
+    if res.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Opción de armado no encontrada")
+    await db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{item_id}/armado/categoria/{category_code}/opcion/{position}")
@@ -729,27 +1058,9 @@ async def del_armado_opcion(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    cid = user.company_id
     await db.execute(text(
         "DELETE FROM pos_dish_assembly_detail "
         "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos"
-    ), {"did": item_id, "cid": cid, "cc": category_code, "pos": position})
-    await db.commit()
-    return {"ok": True}
-
-
-@router.put("/{item_id}/armado/categoria/{category_code}/opcion/{position}")
-async def update_armado_opcion(
-    item_id: int, category_code: int, position: int, data: ArmadoOpcionIn,
-    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
-):
-    user = await _get_user(authorization, db)
-    cid = user.company_id
-    await db.execute(text("""
-        UPDATE pos_dish_assembly_detail
-        SET discount_qty=:dq, is_default=:def
-        WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos
-    """), {"did": item_id, "cid": cid, "cc": category_code,
-           "pos": position, "dq": data.discount_qty, "def": data.is_default})
+    ), {"did": item_id, "cid": user.company_id, "cc": category_code, "pos": position})
     await db.commit()
     return {"ok": True}

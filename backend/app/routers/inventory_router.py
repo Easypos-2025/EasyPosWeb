@@ -12,6 +12,13 @@ from app.database import get_db, AsyncSessionLocal
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
 from app.services.stock import apply_stock_move, set_min_stock
+from app.services.supply_keys import (
+    assign_missing_keys, CATALOG_SELECT, CATALOG_UPDATE, CATALOG_SOURCE,
+)
+from app.models.role_model import Role
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
 
@@ -151,7 +158,7 @@ async def _recalc_execute(db: AsyncSession, cid: int, where_sql: str, params: di
     2. Calcula el stock real y actualiza inventario_actual_porciones.cantidad_actual.
     """
     # Paso 1 — insertar ítems faltantes (WHERE sobre si.* para evitar NULLs del LEFT JOIN)
-    insert_where = "si.company_id = :cid"
+    insert_where = "si.company_id = :cid AND si.id_item > 0 AND si.id_grupo > 0"
     if cat_id is not None:
         insert_where += " AND si.agrupar = :cat_id"
     await db.execute(text(f"""
@@ -262,12 +269,16 @@ async def recalculate_stock_all(
     db: AsyncSession = Depends(get_db),
 ):
     """Recalcula cantidad_actual para TODOS los productos de la empresa."""
-    updated = await _recalc_execute(
-        db, current_user.company_id,
-        "iap.company_id = :cid",
-        {"cid": current_user.company_id},
-        cat_id=None,
-    )
+    try:
+        updated = await _recalc_execute(
+            db, current_user.company_id,
+            "iap.company_id = :cid",
+            {"cid": current_user.company_id},
+            cat_id=None,
+        )
+    except Exception:
+        logger.exception("recalculate_stock_all company=%s", current_user.company_id)
+        raise HTTPException(500, "No se pudo recalcular el stock. Intente de nuevo o contacte soporte.")
     return {"ok": True, "updated": updated}
 
 
@@ -282,13 +293,114 @@ async def recalculate_stock_category(
     if not category_id:
         raise HTTPException(400, "category_id es requerido")
     cat = int(category_id)
-    updated = await _recalc_execute(
-        db, current_user.company_id,
-        "iap.company_id = :cid AND iap.agrupar = :cat_id",
-        {"cid": current_user.company_id, "cat_id": cat},
-        cat_id=cat,
-    )
+    try:
+        updated = await _recalc_execute(
+            db, current_user.company_id,
+            "iap.company_id = :cid AND iap.agrupar = :cat_id",
+            {"cid": current_user.company_id, "cat_id": cat},
+            cat_id=cat,
+        )
+    except Exception:
+        logger.exception("recalculate_stock_category company=%s", current_user.company_id)
+        raise HTTPException(500, "No se pudo recalcular el stock. Intente de nuevo o contacte soporte.")
     return {"ok": True, "updated": updated}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SINCRONIZAR CATÁLOGO → STOCK
+#   supply_items (= inventario_porciones) es la tabla MAESTRA de insumos.
+#   inventario_actual_porciones queda con los MISMOS registros y campos; solo
+#   cantidad_actual es propio del stock (los nuevos entran en 0 y el recálculo lo llena).
+#   1. Asigna llaves (id_grupo/id_item/posicion) a insumos que no las tengan.
+#   2. Inserta en stock los insumos que falten.
+#   3. Actualiza en stock los campos de catálogo.
+#   4. Elimina del stock los registros que no existen en el catálogo.
+#   5. Recalcula cantidad_actual.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _require_inventory_admin(current_user: User, db: AsyncSession) -> None:
+    role = await db.get(Role, current_user.role_id) if current_user.role_id else None
+    if role and not role.is_system and "ADMIN" not in (role.name or "").upper():
+        raise HTTPException(403, "Requiere rol ADMIN")
+
+
+@router.post("/stock/sync-catalog")
+async def sync_catalog_to_stock(
+    data: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """dry_run=true (por defecto) → solo cuenta lo que se haría, para confirmar en pantalla."""
+    await _require_inventory_admin(current_user, db)
+    cid = current_user.company_id
+    dry_run = data.get("dry_run", True) is not False
+    p = {"cid": cid}
+
+    sin_llave = (await db.execute(text(
+        "SELECT COUNT(*) FROM supply_items WHERE company_id=:cid AND (COALESCE(id_item,0) = 0 OR COALESCE(id_grupo,0) = 0)"
+    ), p)).scalar() or 0
+    a_insertar = (await db.execute(text(f"""
+        SELECT COUNT(*) FROM {CATALOG_SOURCE} si
+        LEFT JOIN inventario_actual_porciones iap ON iap.company_id = :cid AND iap.id_item = si.id_item
+        WHERE iap.id IS NULL
+    """), p)).scalar() or 0
+    eliminar_rows = (await db.execute(text("""
+        SELECT iap.id_item, iap.descripcion
+        FROM inventario_actual_porciones iap
+        WHERE iap.company_id = :cid
+          AND NOT EXISTS (SELECT 1 FROM supply_items si
+                          WHERE si.company_id = :cid AND si.id_item = iap.id_item)
+        ORDER BY iap.descripcion
+    """), p)).mappings().all()
+    en_catalogo = (await db.execute(text(
+        "SELECT COUNT(*) FROM supply_items WHERE company_id=:cid"
+    ), p)).scalar() or 0
+
+    resumen = {
+        "en_catalogo": int(en_catalogo),
+        "sin_llave":   int(sin_llave),
+        # los insumos sin llave también entran como nuevos al stock
+        "a_insertar":  int(a_insertar) + int(sin_llave),
+        "a_eliminar":  len(eliminar_rows),
+        "muestra_eliminar": [r["descripcion"] for r in eliminar_rows[:20]],
+    }
+    if dry_run:
+        return {"ok": True, "dry_run": True, **resumen}
+
+    try:
+        await assign_missing_keys(db, cid)
+        await db.execute(text(f"""
+            INSERT INTO inventario_actual_porciones
+                (company_id, id_grupo, id_item, codigo_insumo, descripcion, costo,
+                 und_compra, valor_und_compra, und_min_utilizadas, agrupar,
+                 compras, controlar, opcion_cambios, und_uso, centro_produccion,
+                 bodega, insumo_cp, fecha_vence, stock_minimo, cantidad_actual, enviada_mysql)
+            SELECT {CATALOG_SELECT}, 0, 0
+            FROM {CATALOG_SOURCE} si
+            LEFT JOIN inventario_actual_porciones iap ON iap.company_id = :cid AND iap.id_item = si.id_item
+            WHERE iap.id IS NULL
+        """), p)
+        await db.execute(text(f"""
+            UPDATE inventario_actual_porciones iap
+            JOIN {CATALOG_SOURCE} si ON si.id_item = iap.id_item
+            SET {CATALOG_UPDATE}, iap.enviada_mysql = 0
+            WHERE iap.company_id = :cid
+        """), p)
+        deleted = (await db.execute(text("""
+            DELETE iap FROM inventario_actual_porciones iap
+            WHERE iap.company_id = :cid
+              AND NOT EXISTS (SELECT 1 FROM supply_items si
+                              WHERE si.company_id = :cid AND si.id_item = iap.id_item)
+        """), p)).rowcount
+        await db.commit()
+        recalculados = await _recalc_execute(db, cid, "iap.company_id = :cid", p, cat_id=None)
+    except Exception:
+        await db.rollback()
+        logger.exception("sync_catalog_to_stock company=%s", cid)
+        raise HTTPException(500, "No se pudo sincronizar el stock con el inventario de porciones.")
+
+    logger.info("sync_catalog_to_stock company=%s user=%s eliminados=%s", cid, current_user.id, deleted)
+    return {"ok": True, "dry_run": False, **resumen, "eliminados": deleted, "recalculados": recalculados}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -360,8 +472,11 @@ async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
             "id_fisico":   next_fisico,
             "fecha":       str(date_type.today()),
         }
-    except Exception as e:
-        _snapshot_jobs[job_id] = {"status": "error", "error": str(e)}
+    except Exception:
+        # No exponer SQL ni detalles internos al usuario; queda en el log del servidor
+        logger.exception("auto_snapshot company=%s", company_id)
+        _snapshot_jobs[job_id] = {"status": "error",
+                                  "error": "No se pudo completar el corte automático. Intente de nuevo o contacte soporte."}
 
 
 @router.get("/snapshot-status")

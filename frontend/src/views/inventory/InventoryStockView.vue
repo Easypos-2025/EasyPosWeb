@@ -75,6 +75,12 @@
         title="Stocks Actuales"
       />
 
+      <!-- Sincronizar con inventario de porciones (catálogo maestro) -->
+      <button class="btn-rc" @click="openSyncModal" :disabled="syncModal.phase === 'running'"
+              title="Dejar el stock con los mismos insumos del inventario de porciones">
+        <i class="bi bi-arrow-left-right"></i> Sincronizar
+      </button>
+
       <!-- Recalcular dropdown -->
       <div class="rc-wrap" ref="rcWrap">
         <button class="btn-rc" @click="rcOpen = !rcOpen" :disabled="recalculating">
@@ -197,6 +203,67 @@
         </div>
       </template>
     </template>
+
+    <!-- Sincronizar catálogo → stock -->
+    <teleport to="body">
+      <div v-if="syncModal.show" class="modal-bg">
+        <div class="snap-panel">
+          <div class="snap-panel-hdr">
+            <i class="bi bi-arrow-left-right snap-panel-ico"></i>
+            <div>
+              <div class="snap-panel-title">Sincronizar con inventario de porciones</div>
+              <div class="snap-panel-sub">El stock quedará con los mismos insumos y datos del inventario de porciones. Solo se conserva la cantidad actual.</div>
+            </div>
+          </div>
+
+          <div v-if="syncModal.phase === 'loading' || syncModal.phase === 'running'" class="snap-body snap-center">
+            <div class="snap-spinner"></div>
+            <div class="snap-prog-lbl">{{ syncModal.phase === 'loading' ? 'Analizando diferencias...' : 'Sincronizando y recalculando...' }}</div>
+          </div>
+
+          <div v-else-if="syncModal.phase === 'confirm'" class="snap-body">
+            <ul class="snap-steps">
+              <li><i class="bi bi-box-seam"></i> Insumos en inventario de porciones: <strong>{{ syncModal.data.en_catalogo }}</strong></li>
+              <li><i class="bi bi-plus-circle-fill"></i> Se agregarán al stock: <strong>{{ syncModal.data.a_insertar }}</strong></li>
+              <li><i class="bi bi-trash-fill sync-del"></i> Se eliminarán del stock: <strong>{{ syncModal.data.a_eliminar }}</strong></li>
+            </ul>
+            <div v-if="syncModal.data.a_eliminar" class="sync-list">
+              <div class="sync-list-ttl">No existen en inventario de porciones:</div>
+              <span v-for="(n, i) in syncModal.data.muestra_eliminar" :key="i" class="sync-chip">{{ n }}</span>
+              <span v-if="syncModal.data.a_eliminar > syncModal.data.muestra_eliminar.length" class="sync-more">
+                y {{ syncModal.data.a_eliminar - syncModal.data.muestra_eliminar.length }} más…
+              </span>
+            </div>
+            <p class="snap-warn">
+              <i class="bi bi-exclamation-triangle"></i>
+              Los registros eliminados del stock no se pueden recuperar. Los insumos nuevos entran con cantidad 0 y al final se recalcula el stock.
+            </p>
+            <div class="snap-footer">
+              <button class="btn-snap-cancel" @click="syncModal.show = false">Cancelar</button>
+              <button class="btn-snap-ok" @click="runSync">Sincronizar</button>
+            </div>
+          </div>
+
+          <div v-else-if="syncModal.phase === 'done'" class="snap-body snap-center">
+            <i class="bi bi-check-circle-fill snap-done-ico"></i>
+            <div class="snap-done-title">¡Sincronización completada!</div>
+            <div class="snap-done-info">
+              Agregados: <strong>{{ syncModal.data.a_insertar }}</strong> ·
+              Eliminados: <strong>{{ syncModal.data.eliminados }}</strong> ·
+              Recalculados: <strong>{{ syncModal.data.recalculados }}</strong>
+            </div>
+            <button class="btn-snap-ok" @click="syncModal.show = false">Aceptar</button>
+          </div>
+
+          <div v-else-if="syncModal.phase === 'error'" class="snap-body snap-center">
+            <i class="bi bi-x-circle-fill snap-err-ico"></i>
+            <div class="snap-done-title">Error en el proceso</div>
+            <div class="snap-done-info snap-err-msg">{{ syncModal.errorMsg }}</div>
+            <button class="btn-snap-cancel" @click="syncModal.show = false">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <!-- Auto-Snapshot Modal -->
     <teleport to="body">
@@ -523,6 +590,34 @@ async function openMov(r) {
   finally { mov.value.loading = false }
 }
 
+// ── Sincronizar catálogo (inventario de porciones) → stock ───────────────────
+const syncModal = ref({ show: false, phase: 'loading', data: {}, errorMsg: '' })
+
+async function openSyncModal() {
+  syncModal.value = { show: true, phase: 'loading', data: {}, errorMsg: '' }
+  try {
+    const { data } = await api.post('/api/inventory/stock/sync-catalog', { dry_run: true })
+    syncModal.value.data  = data
+    syncModal.value.phase = 'confirm'
+  } catch (e) {
+    syncModal.value.phase    = 'error'
+    syncModal.value.errorMsg = e.response?.data?.detail || 'No se pudo analizar la sincronización'
+  }
+}
+
+async function runSync() {
+  syncModal.value.phase = 'running'
+  try {
+    const { data } = await api.post('/api/inventory/stock/sync-catalog', { dry_run: false })
+    syncModal.value.data  = data
+    syncModal.value.phase = 'done'
+    await load()
+  } catch (e) {
+    syncModal.value.phase    = 'error'
+    syncModal.value.errorMsg = e.response?.data?.detail || 'No se pudo sincronizar'
+  }
+}
+
 async function runRecalc(scope) {
   rcOpen.value = false
   recalculating.value = true
@@ -535,8 +630,8 @@ async function runRecalc(scope) {
     }
     showToast(`${res.data.updated} insumo${res.data.updated !== 1 ? 's' : ''} actualizados`, 'success')
     await load()
-  } catch {
-    showToast('Error al recalcular', 'error')
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error al recalcular', 'error')
   } finally {
     recalculating.value = false
   }
@@ -648,7 +743,12 @@ onUnmounted(() => {
 .snap-err-ico  { font-size: 3rem; color: #dc2626; }
 .snap-done-title { font-weight: 700; font-size: 1rem; color: #111827; }
 .snap-done-info  { font-size: .84rem; color: #374151; line-height: 1.6; }
-.snap-err-msg    { color: #dc2626; font-family: monospace; font-size: .78rem; }
+.snap-err-msg    { color: #dc2626; font-size: .85rem; }
+.sync-del        { color: #dc2626 !important; }
+.sync-list       { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; max-height: 160px; overflow-y: auto; }
+.sync-list-ttl   { font-size: .78rem; font-weight: 600; color: #991b1b; margin-bottom: 6px; }
+.sync-chip       { display: inline-block; font-size: .75rem; background: #fff; border: 1px solid #fecaca; color: #7f1d1d; border-radius: 999px; padding: 2px 8px; margin: 0 4px 4px 0; }
+.sync-more       { font-size: .75rem; color: #991b1b; }
 
 /* Agrupamiento por categoría */
 .cat-group { margin-bottom: 10px; }

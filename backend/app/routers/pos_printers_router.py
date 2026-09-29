@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
+from app.auth import tenant
 from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
@@ -48,7 +49,7 @@ async def listar(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = company_id or user.company_id
+    cid = await tenant.resolve_company(db, user, company_id)   # valida acceso a la empresa
     rows = (await db.execute(text(
         "SELECT * FROM pos_printers WHERE company_id=:cid ORDER BY name"
     ), {"cid": cid})).mappings().all()
@@ -58,7 +59,7 @@ async def listar(
 @router.post("", status_code=201)
 async def crear(data: PrinterIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
-    cid = data.company_id or user.company_id
+    cid = await tenant.resolve_company(db, user, data.company_id)   # valida acceso a la empresa
     await db.execute(text("""
         INSERT INTO pos_printers
             (company_id, name, connection_type, ip, bluetooth_address, usb_device_id, is_active)
@@ -86,7 +87,7 @@ async def actualizar(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    cid = data.company_id or user.company_id
+    cid = await tenant.resolve_company(db, user, data.company_id)   # valida acceso a la empresa
     await db.execute(text("""
         UPDATE pos_printers
         SET name=:name, connection_type=:ctype, ip=:ip,
@@ -114,7 +115,7 @@ async def toggle_activa(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = company_id or user.company_id
+    cid = await tenant.resolve_company(db, user, company_id)   # valida acceso a la empresa
     await db.execute(text(
         "UPDATE pos_printers SET is_active = 1 - is_active WHERE id=:id AND company_id=:cid"
     ), {"id": printer_id, "cid": cid})
@@ -133,7 +134,7 @@ async def eliminar(
     db: AsyncSession = Depends(get_db),
 ):
     user = await _get_user(authorization, db)
-    cid = company_id or user.company_id
+    cid = await tenant.resolve_company(db, user, company_id)   # valida acceso a la empresa
     await db.execute(text(
         "DELETE FROM pos_item_printers WHERE printer_id=:id AND company_id=:cid"
     ), {"id": printer_id, "cid": cid})

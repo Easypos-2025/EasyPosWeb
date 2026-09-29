@@ -4,12 +4,12 @@
     <!-- HEADER -->
     <div class="crud-header">
       <div>
-        <h5 class="crud-titulo">Artículos de Venta</h5>
+        <h5 class="crud-titulo">{{ moduleName }}</h5>
         <p class="crud-sub">Catálogo de platos, bebidas y servicios del menú.</p>
       </div>
       <div class="header-tools">
         <input v-model="busqueda" class="inp-buscar" placeholder="Buscar…" />
-        <button class="btn-nuevo" @click="abrirModalItem()">
+        <button class="btn-nuevo" @click="abrirEditor()">
           <i class="bi bi-plus-lg me-1"></i>Nuevo
         </button>
       </div>
@@ -75,7 +75,7 @@
           <div
             v-for="item in grupo.items" :key="item.id"
             class="item-card"
-            :class="{ 'item-card--inactivo': !item.active, 'item-card--dragging': dragId === item.id }"
+            :class="{ 'item-card--inactivo': !isActivo(item), 'item-card--dragging': dragId === item.id }"
             draggable="true"
             @dragstart="onDragStart($event, item)"
             @dragover.prevent="onDragOver($event, item)"
@@ -94,8 +94,8 @@
                 <span class="item-cat" :style="{ background: (item.category_color||'#1d4ed8')+'22', color: item.category_color||'#1d4ed8' }">
                   {{ item.category_name || 'Sin categoría' }}
                 </span>
-                <span :class="item.active ? 'badge-activo' : 'badge-inactivo'">
-                  {{ item.active ? 'Activo' : 'Inactivo' }}
+                <span :class="isActivo(item) ? 'badge-activo' : 'badge-inactivo'">
+                  {{ isActivo(item) ? 'Activo' : 'Inactivo' }}
                 </span>
               </div>
               <div class="item-nombre">{{ item.name }}</div>
@@ -104,26 +104,27 @@
                 <span class="item-precio">{{ fmt(item.price) }}</span>
               </div>
               <div class="item-meta">
-                <span title="Ingredientes"><i class="bi bi-list-ul"></i> {{ item.ingredient_count }}</span>
+                <span title="Insumos fijos"><i class="bi bi-list-check"></i> {{ item.portion_count }}</span>
                 <span title="Impresoras"><i class="bi bi-printer"></i> {{ item.printer_count }}</span>
-                <span v-if="item.modifier_count" title="Modificadores/Armado"><i class="bi bi-sliders"></i> {{ item.modifier_count }}</span>
+                <span v-if="item.assembly_count" title="Categorías de armado" :class="{ 'badge-armar': item.offer_priority }"><i class="bi bi-sliders"></i> {{ item.assembly_count }}</span>
+                <span v-if="item.presentation_count" title="Presentaciones"><i class="bi bi-box"></i> {{ item.presentation_count }}</span>
                 <span v-if="item.variant_count" title="Variantes de precio" class="badge-variants"><i class="bi bi-tags"></i> {{ item.variant_count }}</span>
                 <span v-if="item.tax" title="IVA"><i class="bi bi-percent"></i> {{ item.tax }}%</span>
               </div>
               <div class="item-acciones">
-                <button class="btn-accion btn-accion--edit"   @click="abrirModalItem(item)">
+                <button class="btn-accion btn-accion--edit"   @click="abrirEditor(item, 'general')">
                   <i class="bi bi-pencil-fill"></i><span>Editar</span>
                 </button>
-                <button class="btn-accion btn-accion--recipe" @click="abrirPanel(item,'ingredientes')">
-                  <i class="bi bi-list-ul"></i><span>Receta</span>
-                </button>
-                <button class="btn-accion btn-accion--print"  @click="abrirPanel(item,'impresoras')">
-                  <i class="bi bi-printer-fill"></i><span>Imprimir</span>
-                </button>
-                <button class="btn-accion btn-accion--build"  @click="abrirPanel(item,'modificadores')">
+                <button class="btn-accion btn-accion--build"  @click="abrirEditor(item, 'armar')">
                   <i class="bi bi-sliders"></i><span>Armado</span>
                 </button>
-                <button class="btn-accion btn-accion--variants" @click="abrirPanel(item,'variantes')">
+                <button class="btn-accion btn-accion--recipe" @click="abrirEditor(item, 'fijos')">
+                  <i class="bi bi-list-check"></i><span>Insumos</span>
+                </button>
+                <button class="btn-accion btn-accion--print"  @click="abrirEditor(item, 'aux')">
+                  <i class="bi bi-image"></i><span>Foto</span>
+                </button>
+                <button class="btn-accion btn-accion--variants" @click="abrirEditor(item, 'variantes')">
                   <i class="bi bi-tags-fill"></i><span>Variantes</span>
                 </button>
                 <button class="btn-accion btn-accion--danger" @click="eliminar(item)">
@@ -136,263 +137,249 @@
       </template>
     </div>
 
-    <!-- ─── MODAL CREAR/EDITAR ──────────────────────────────────────────────── -->
-    <div v-if="modalItem.visible" class="modal-overlay" @click.self="cerrarModalItem">
-      <div class="modal-card">
+    <!-- ═══ EDITOR DEL PRODUCTO (pestañas como el escritorio) ═══ -->
+    <div v-if="ed.visible" class="modal-overlay" @click.self="cerrarEditor">
+      <div class="ed-card">
         <div class="modal-hdr">
-          <span><i class="bi bi-box-seam me-2"></i>{{ modalItem.id ? 'Editar' : 'Nuevo' }} Artículo</span>
-          <button class="btn-x" @click="cerrarModalItem"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <div class="modal-body">
-
-          <!-- Foto -->
-          <div class="campo">
-            <label>Foto del artículo</label>
-            <ImageUploader
-              :current-url="modalItem.photo_path"
-              @change="onFotoChanged"
-              @remove="onFotoRemoved"
-            />
+          <div class="ed-hdr-info">
+            <span class="ed-code" v-if="form.id">CÓDIGO {{ form.id }}</span>
+            <span class="ed-title">{{ form.id ? (form.name || '—') : `Nuevo — ${moduleName}` }}</span>
           </div>
-
-          <div class="campo">
-            <label>Nombre *</label>
-            <input v-model="modalItem.name" class="inp" placeholder="Nombre del artículo" />
-          </div>
-
-          <div class="campo-row">
-            <div class="campo">
-              <label>Precio</label>
-              <input type="number" v-model.number="modalItem.price" class="inp" placeholder="0" min="0" />
-            </div>
-            <div class="campo">
-              <label>Precio tachado <span class="label-hint">(opcional)</span></label>
-              <input type="number" v-model.number="modalItem.compare_price" class="inp" placeholder="Precio anterior" min="0" />
-            </div>
-          </div>
-
-          <div class="campo-row">
-            <div class="campo">
-              <label>IVA %</label>
-              <input type="number" v-model.number="modalItem.tax" class="inp" placeholder="0" min="0" max="100" />
-            </div>
-            <div class="campo">
-              <label>Categoría</label>
-              <select v-model="modalItem.category_id" class="inp">
-                <option :value="null">— Sin categoría —</option>
-                <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.name }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="campo">
-            <label>Descripción</label>
-            <textarea v-model="modalItem.description" class="inp" rows="2" placeholder="Descripción opcional"></textarea>
-          </div>
-
-          <div class="campo-check">
-            <input type="checkbox" v-model="modalItem.active" :true-value="1" :false-value="0" id="chkA" />
-            <label for="chkA">Activo en catálogo</label>
-          </div>
-        </div>
-        <div class="modal-ftr">
-          <button class="btn-cancel" @click="cerrarModalItem">Cancelar</button>
-          <button class="btn-save" :disabled="guardando || !modalItem.name" @click="guardarItem">
-            <span v-if="guardando"><span class="spinner-border spinner-border-sm me-1"></span></span>
-            <i v-else class="bi bi-check-lg me-1"></i>Guardar
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ─── PANEL LATERAL ────────────────────────────────────────────────────── -->
-    <div v-if="panel.visible" class="panel-overlay" @click.self="cerrarPanel">
-      <div class="panel-lateral">
-        <div class="panel-hdr">
-          <div class="panel-hdr-info">
-            <img v-if="panel.item?.photo_path" :src="imgSrc(panel.item.photo_path)" class="panel-thumb" alt="" />
-            <div>
-              <div class="panel-titulo">{{ panel.item?.name }}</div>
-              <div class="panel-sub">{{ fmt(panel.item?.price) }}</div>
-            </div>
-          </div>
-          <button class="btn-x" @click="cerrarPanel"><i class="bi bi-x-lg"></i></button>
+          <button class="btn-x" @click="cerrarEditor"><i class="bi bi-x-lg"></i></button>
         </div>
 
         <div class="panel-tabs">
-          <button :class="['ptab', { active: panel.tab==='ingredientes' }]" @click="changeTab('ingredientes')">
-            <i class="bi bi-list-ul"></i><span>Receta</span>
-          </button>
-          <button :class="['ptab', { active: panel.tab==='impresoras' }]" @click="changeTab('impresoras')">
-            <i class="bi bi-printer"></i><span>Impresoras</span>
-          </button>
-          <button :class="['ptab', { active: panel.tab==='modificadores' }]" @click="changeTab('modificadores')">
-            <i class="bi bi-sliders"></i><span>Armado</span>
-          </button>
-          <button :class="['ptab', { active: panel.tab==='variantes' }]" @click="changeTab('variantes')">
-            <i class="bi bi-tags"></i><span>Variantes</span>
+          <button v-for="t in tabs" :key="t.key" :class="['ptab', { active: ed.tab === t.key }]"
+                  :disabled="t.needsId && !form.id" :title="t.needsId && !form.id ? 'Guarde primero la información general' : ''"
+                  @click="cambiarTab(t.key)">
+            <i :class="t.icon"></i><span>{{ t.label }}</span>
           </button>
         </div>
 
-        <div class="panel-body">
-
-          <!-- TAB INGREDIENTES -->
-          <div v-if="panel.tab==='ingredientes'">
-            <div class="sub-header">
-              <span>Insumos que descuenta del inventario</span>
-              <button class="btn-mini" @click="formIngrediente.visible=true"><i class="bi bi-plus"></i> Agregar</button>
-            </div>
-            <div v-if="panel.loadingIngredientes" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
-            <div v-else-if="!ingredientes.length" class="mini-vacio"><i class="bi bi-list-ul"></i> Sin ingredientes</div>
-            <div v-else class="receta-lista">
-              <div v-for="ing in ingredientes" :key="ing.insumo_id" class="receta-item">
-                <div class="receta-info">
-                  <span class="receta-nombre">{{ ing.insumo_nombre }}</span>
-                  <span class="receta-qty">{{ ing.cantidad }} {{ ing.unit_abrev || ing.unit_nombre || '' }}</span>
+        <div class="ed-body">
+          <!-- ── TAB: INFORMACIÓN GENERAL ── -->
+          <div v-show="ed.tab === 'general'" class="gen-grid">
+            <div class="gen-col">
+              <div class="campo">
+                <label>Nombre *</label>
+                <input v-model="form.name" class="inp inp-strong" maxlength="250" />
+              </div>
+              <div class="campo-row">
+                <div class="campo">
+                  <label>Categoría</label>
+                  <select v-model="form.category_id" class="inp">
+                    <option :value="null">— Sin categoría —</option>
+                    <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.name }}</option>
+                  </select>
                 </div>
-                <button class="btn-x-sm" @click="eliminarIngrediente(ing.insumo_id)"><i class="bi bi-x"></i></button>
+                <div class="campo">
+                  <label>Código producto</label>
+                  <input v-model="form.product_code" class="inp" maxlength="250" />
+                </div>
+              </div>
+              <div class="campo-row">
+                <div class="campo campo-money">
+                  <label>Precio venta</label>
+                  <CurrencyInput v-model="form.price" class="inp text-right" />
+                </div>
+                <div class="campo campo-money">
+                  <label>Precio mínimo</label>
+                  <CurrencyInput v-model="form.wholesale_price" class="inp text-right" />
+                </div>
+                <div class="campo campo-money">
+                  <label>Costo producto</label>
+                  <CurrencyInput v-model="form.product_cost" class="inp text-right" />
+                </div>
+              </div>
+              <div v-if="form.wholesale_price > form.price" class="warn-line">
+                <i class="bi bi-exclamation-triangle"></i> El precio mínimo es mayor que el precio de venta.
+              </div>
+              <div class="campo-row">
+                <div class="campo">
+                  <label>Impuesto %</label>
+                  <input type="number" v-model.number="form.tax" class="inp" min="0" max="100" />
+                </div>
+                <div class="campo">
+                  <label>Stock mínimo</label>
+                  <input type="number" v-model.number="form.minimum_stock" class="inp" min="0" step="0.001" />
+                </div>
+                <div class="campo">
+                  <label>Precio tachado <span class="label-hint">(web)</span></label>
+                  <CurrencyInput v-model="form.compare_price" class="inp text-right" />
+                </div>
+              </div>
+
+              <!-- Presentaciones (plato_producto) -->
+              <div class="sec">
+                <div class="sec-ttl">Presentaciones</div>
+                <div class="pres-add">
+                  <select v-model="presForm.measure_id" class="inp-sm">
+                    <option :value="null">— Presentación —</option>
+                    <option v-for="m in formasMedida" :key="m.id" :value="m.id">{{ m.name }}</option>
+                  </select>
+                  <select v-model="presForm.supplier_id" class="inp-sm">
+                    <option :value="0">— Proveedor —</option>
+                    <option v-for="p in proveedores" :key="p.id" :value="p.id">{{ p.name }}</option>
+                  </select>
+                  <input type="number" v-model.number="presForm.minimum_units" class="inp-sm" min="0.001" step="0.001" title="Unidades mínimas" placeholder="Und. mín." />
+                  <CurrencyInput v-model="presForm.presentation_value" class="inp-sm text-right" title="Valor venta" />
+                  <button class="btn-mini" :disabled="!presForm.measure_id" @click="agregarPresentacion"><i class="bi bi-plus"></i></button>
+                </div>
+                <div v-if="!presentaciones.length" class="mini-vacio">Sin presentaciones</div>
+                <table v-else class="tbl-mini">
+                  <thead><tr><th>Presentación</th><th>Proveedor</th><th class="text-right">Und. mín.</th><th class="text-right">Valor venta</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="p in presentaciones" :key="p.measure_id + '-' + p.supplier_id">
+                      <td>{{ p.measure_name }}</td>
+                      <td class="text-muted">{{ p.supplier_name || '—' }}</td>
+                      <td class="text-right">
+                        <input type="number" class="inp-qty-sm" :value="p.minimum_units" min="0.001" step="0.001"
+                               @change="editarPresentacion(p, { minimum_units: +$event.target.value })" />
+                      </td>
+                      <td class="text-right">{{ fmt(p.presentation_value) }}</td>
+                      <td><button class="btn-x-sm" @click="quitarPresentacion(p)" title="Quitar"><i class="bi bi-x-lg"></i></button></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div v-if="formIngrediente.visible" class="mini-modal">
-              <select v-model="formIngrediente.supply_item_id" class="inp-sm">
-                <option :value="null">— Insumo —</option>
-                <option v-for="s in insumos" :key="s.id" :value="s.id">{{ s.name }}</option>
+
+            <div class="gen-col">
+              <!-- Impresoras -->
+              <div class="sec">
+                <div class="sec-ttl">Impresoras</div>
+                <div v-if="!impresoras.length" class="mini-vacio">Sin impresoras configuradas</div>
+                <label v-for="imp in impresoras" :key="imp.id" class="chk-row">
+                  <input type="checkbox" v-model="imp.assigned" :true-value="1" :false-value="0" />
+                  <span>{{ imp.name }}</span>
+                </label>
+              </div>
+
+              <!-- Opciones (campos reutilizados de platos) -->
+              <div class="sec flags-sec">
+                <label class="flag-row"><span>Pedir descripción producto</span><input type="checkbox" v-model="form.ask_product_description" :true-value="1" :false-value="0" /></label>
+                <label class="flag-row"><span>Armar producto</span><input type="checkbox" v-model="form.offer_priority" :true-value="1" :false-value="0" /></label>
+                <label class="flag-row"><span>Pedir peso</span><input type="checkbox" v-model="form.pre_preparation" :true-value="1" :false-value="0" /></label>
+                <label class="flag-row"><span>No sumar en venta</span><input type="checkbox" v-model="form.offer" :true-value="1" :false-value="0" /></label>
+                <label class="flag-row"><span>No imprime comanda</span><input type="checkbox" v-model="form.preparation_time" :true-value="1" :false-value="0" /></label>
+                <label class="flag-row"><span>Desactivar al vender</span><input type="checkbox" v-model="form.extra_print" :true-value="1" :false-value="0" /></label>
+                <label class="flag-row flag-row--danger"><span>Desactivar</span><input type="checkbox" v-model="form.active" :true-value="1" :false-value="0" /></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── TAB: OPCIONES ADICIONALES ARMAR ── -->
+          <div v-if="ed.tab === 'armar' && form.id">
+            <div v-if="!form.offer_priority" class="info-line">
+              <i class="bi bi-info-circle"></i> "Armar producto" está desmarcado. Las opciones configuradas se ofrecen igual al comandar si existen.
+            </div>
+            <div class="armar-add">
+              <select v-model="armarCat" class="inp-sm">
+                <option :value="null">— Seleccione categoría de armado —</option>
+                <option v-for="c in categoriasInsumo" :key="c.id" :value="c.id" :disabled="armado.some(g => g.category_code === c.id)">{{ c.name }}</option>
               </select>
-              <div class="mini-row">
-                <input type="number" v-model.number="formIngrediente.quantity" class="inp-sm" placeholder="Cantidad" min="0.001" step="0.001" />
-                <select v-model="formIngrediente.unit_id" class="inp-sm">
-                  <option :value="null">— Unidad —</option>
-                  <option v-for="u in unidades" :key="u.id" :value="u.id">{{ u.abreviatura || u.name }}</option>
-                </select>
-              </div>
-              <div class="mini-modal-btns">
-                <button class="btn-mini btn-mini--cancel" @click="formIngrediente.visible=false">Cancelar</button>
-                <button class="btn-mini" @click="agregarIngrediente">Agregar</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB IMPRESORAS -->
-          <div v-if="panel.tab==='impresoras'">
-            <div class="sub-header"><span>Destinos de impresión al comandar</span></div>
-            <div v-if="panel.loadingImpresoras" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
-            <div v-else-if="!impresoras.length" class="mini-vacio"><i class="bi bi-printer"></i> Sin impresoras configuradas</div>
-            <div v-else class="imp-lista">
-              <div
-                v-for="imp in impresoras" :key="imp.id"
-                class="imp-item" :class="{ 'imp-item--sel': imp.assigned }"
-                @click="imp.assigned = imp.assigned ? 0 : 1; guardarImpresoras()"
-              >
-                <i class="bi bi-printer imp-icon-print"></i>
-                <div class="imp-info">
-                  <div class="imp-nombre">{{ imp.name }}</div>
-                  <div class="imp-tipo">{{ imp.connection_type || '—' }} · {{ imp.ip || 'Sin IP' }}</div>
-                </div>
-                <span class="imp-check-indicator">
-                  <i :class="imp.assigned ? 'bi bi-check-circle-fill' : 'bi bi-circle'"></i>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB ARMADO (CRUD sobre pos_dish_assembly) -->
-          <div v-if="panel.tab==='modificadores'">
-            <div class="sub-header">
-              <span>Opciones de armado al comandar</span>
-              <button class="btn-mini" @click="formCat.visible=true"><i class="bi bi-plus"></i> Categoría</button>
+              <button class="btn-mini" :disabled="!armarCat" @click="agregarCategoriaArmado"><i class="bi bi-plus"></i> Agregar categoría</button>
             </div>
 
-            <div v-if="panel.loadingModificadores" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
-            <div v-else-if="!modificadores.length" class="mini-vacio"><i class="bi bi-sliders"></i> Sin opciones de armado configuradas</div>
-
-            <div v-else class="grupos-lista">
-              <div v-for="g in modificadores" :key="g.category_code" class="grupo-card">
-                <!-- Header categoría -->
-                <div class="grupo-hdr">
+            <div v-if="!armado.length" class="mini-vacio"><i class="bi bi-sliders"></i> Sin categorías de armado</div>
+            <div class="armar-grid">
+              <div v-for="g in armado" :key="g.category_code" class="grupo-card">
+                <div class="grupo-hdr grupo-hdr--armar">
                   <span class="grupo-nombre">{{ g.category_name }}</span>
-                  <div class="grupo-badges">
-                    <span v-if="g.is_required" class="badge-req">Requerido</span>
-                    <span class="badge-mul">Máx {{ g.max_choices }}</span>
-                  </div>
-                  <div class="grupo-acc">
-                    <button class="btn-mini btn-mini--sm" @click="abrirFormOpcionArmado(g)" title="Agregar insumo"><i class="bi bi-plus"></i></button>
-                    <button class="btn-x-sm" @click="eliminarCat(g)" title="Quitar categoría"><i class="bi bi-trash"></i></button>
-                  </div>
+                  <button class="btn-mini btn-mini--sm" @click="abrirPicker('armar', g)" title="Agregar insumos"><i class="bi bi-plus"></i> Insumo</button>
                 </div>
-
-                <!-- Opciones de la categoría -->
-                <div class="detalles-lista">
-                  <div v-for="o in g.options" :key="o.position" class="detalle-item detalle-item--armado">
-                    <span class="det-nombre">{{ o.item_name }}</span>
-                    <label class="det-default" :title="'Por defecto'">
-                      <input type="checkbox" :checked="!!o.is_default"
-                        @change="toggleDefault(g, o, $event.target.checked)" />
-                      <span class="default-label">Def.</span>
-                    </label>
-                    <input type="number" class="inp-qty-sm" :value="o.discount_qty" min="0" step="0.1"
-                      @change="actualizarQty(g, o, $event.target.value)" title="Cant. descuento" />
-                    <button class="btn-x-sm" @click="eliminarOpcionArmado(g, o)"><i class="bi bi-x"></i></button>
-                  </div>
-                  <div v-if="!g.options.length" class="text-muted small ps-1 pb-1">Sin insumos — agrega con el botón +</div>
+                <table class="tbl-mini">
+                  <thead><tr><th>Insumo</th><th class="text-center">Cant. desc.</th><th class="text-right">Valor adic.</th><th class="text-center">Def.</th><th></th></tr></thead>
+                  <tbody>
+                    <tr v-for="o in g.options" :key="o.position">
+                      <td>{{ o.item_name }}</td>
+                      <td class="text-center">
+                        <input type="number" class="inp-qty-sm" :value="o.discount_qty" min="0.001" step="0.1"
+                               @change="editarOpcion(g, o, { discount_qty: +$event.target.value })" />
+                      </td>
+                      <td class="text-right">
+                        <CurrencyInput :model-value="o.supply_price" class="inp-qty-sm inp-money-sm"
+                                       @update:model-value="v => editarOpcion(g, o, { supply_price: v })" />
+                      </td>
+                      <td class="text-center">
+                        <input type="checkbox" :checked="o.is_default" @change="editarOpcion(g, o, { is_default: $event.target.checked ? 1 : 0 })" />
+                      </td>
+                      <td><button class="btn-x-sm" @click="quitarOpcion(g, o)"><i class="bi bi-x-lg"></i></button></td>
+                    </tr>
+                    <tr v-if="!g.options.length"><td colspan="5" class="text-muted text-center">Sin insumos</td></tr>
+                  </tbody>
+                </table>
+                <div class="grupo-ftr">
+                  <label class="mini-field-inline">Opciones permitidas
+                    <input type="number" class="inp-qty-sm" v-model.number="g.max_choices" min="1" max="50" @change="editarCategoria(g)" />
+                  </label>
+                  <label class="mini-check-inline"><input type="checkbox" v-model="g.is_required" @change="editarCategoria(g)" /> Exigir cantidad</label>
+                  <label class="mini-check-inline"><input type="checkbox" v-model="g.print_on_change_only" @change="editarCategoria(g)" /> Imprimir si hay cambios</label>
+                  <button class="btn-quitar-cat" @click="quitarCategoria(g)"><i class="bi bi-trash"></i> Quitar categoría</button>
                 </div>
-              </div>
-            </div>
-
-            <!-- Form nueva categoría -->
-            <div v-if="formCat.visible" class="mini-modal">
-              <label class="mini-label-b">Nueva categoría de armado</label>
-              <select v-model="formCat.category_code" class="inp-sm">
-                <option :value="null">— Selecciona categoría —</option>
-                <option v-for="c in categoriasArmado" :key="c.id" :value="c.id">{{ c.name }}</option>
-              </select>
-              <div class="mini-row">
-                <div class="mini-field">
-                  <label class="mini-label-s">Máx. opciones</label>
-                  <input type="number" v-model.number="formCat.max_choices" class="inp-sm" min="1" max="20" />
-                </div>
-                <label class="mini-check-inline">
-                  <input type="checkbox" v-model="formCat.is_required" :true-value="1" :false-value="0" />
-                  Requerido
-                </label>
-              </div>
-              <div class="mini-modal-btns">
-                <button class="btn-mini btn-mini--cancel" @click="formCat.visible=false">Cancelar</button>
-                <button class="btn-mini" :disabled="!formCat.category_code" @click="crearCat">Agregar</button>
-              </div>
-            </div>
-
-            <!-- Form nueva opción (insumo) -->
-            <div v-if="formOpArmado.visible" class="mini-modal">
-              <label class="mini-label-b">Agregar insumo a <b>{{ formOpArmado.groupName }}</b></label>
-              <select v-model="formOpArmado.position" class="inp-sm">
-                <option :value="null">— Selecciona insumo —</option>
-                <option v-for="s in insumos" :key="s.id_item ?? s.id" :value="s.id_item ?? s.id">{{ s.name ?? s.description }}</option>
-              </select>
-              <div class="mini-row">
-                <div class="mini-field">
-                  <label class="mini-label-s">Cant. descuento</label>
-                  <input type="number" v-model.number="formOpArmado.discount_qty" class="inp-sm" min="0" step="0.1" />
-                </div>
-                <label class="mini-check-inline">
-                  <input type="checkbox" v-model="formOpArmado.is_default" :true-value="1" :false-value="0" />
-                  Por defecto
-                </label>
-              </div>
-              <div class="mini-modal-btns">
-                <button class="btn-mini btn-mini--cancel" @click="formOpArmado.visible=false">Cancelar</button>
-                <button class="btn-mini" :disabled="!formOpArmado.position" @click="crearOpcionArmado">Agregar</button>
               </div>
             </div>
           </div>
 
-          <!-- TAB VARIANTES DE PRECIO -->
-          <div v-if="panel.tab==='variantes'">
+          <!-- ── TAB: DETALLE PRODUCTO - INSUMO (fijos) ── -->
+          <div v-if="ed.tab === 'fijos' && form.id" class="fijos-grid">
+            <div>
+              <div class="sec-ttl">Seleccione el insumo que descuenta siempre este producto</div>
+              <InsumoPicker :categorias="categoriasInsumo" :excluded="fijos.map(f => f.id_item)" @select="seleccionarFijo" />
+              <div v-if="fijoSel" class="fijo-confirm">
+                <span class="fijo-name">{{ fijoSel.description }}</span>
+                <label>Porciones a descontar
+                  <input type="number" v-model.number="fijoPorciones" class="inp-qty-sm" min="0.001" step="0.001" />
+                </label>
+                <button class="btn-mini btn-mini--cancel" @click="fijoSel = null">Cancelar</button>
+                <button class="btn-mini" @click="agregarFijo">Aceptar / Guardar</button>
+              </div>
+            </div>
+            <div>
+              <div class="sec-ttl">Insumos fijos ({{ fijos.length }})</div>
+              <div v-if="!fijos.length" class="mini-vacio">Sin insumos fijos</div>
+              <table v-else class="tbl-mini">
+                <thead><tr><th>Insumo</th><th>Categoría</th><th class="text-center">Porciones</th><th></th></tr></thead>
+                <tbody>
+                  <tr v-for="f in fijos" :key="f.id_item">
+                    <td>{{ f.insumo_nombre || `Insumo ${f.id_item}` }}</td>
+                    <td class="text-muted">{{ f.category_name || '—' }}</td>
+                    <td class="text-center">
+                      <input type="number" class="inp-qty-sm" :value="f.porciones" min="0.001" step="0.001"
+                             @change="editarFijo(f, +$event.target.value)" />
+                    </td>
+                    <td><button class="btn-x-sm" @click="quitarFijo(f)"><i class="bi bi-x-lg"></i></button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ── TAB: INFO. AUX. (foto y descripción) ── -->
+          <div v-show="ed.tab === 'aux'" class="aux-grid">
+            <div class="campo">
+              <label>Foto</label>
+              <ImageUploader :current-url="form.photo_path ? imgSrc(form.photo_path) : null" @change="onFotoChanged" @remove="onFotoRemoved" />
+            </div>
+            <div class="aux-col">
+              <div class="campo">
+                <label>Descripción <span class="label-hint">(se muestra en la carta)</span></label>
+                <textarea v-model="form.description" class="inp" rows="4" maxlength="5000"></textarea>
+              </div>
+              <div class="campo">
+                <label>Procedimiento / emplatado</label>
+                <textarea v-model="form.procedure" class="inp" rows="6" maxlength="5000"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── TAB: VARIANTES (solo web) ── -->
+          <div v-if="ed.tab === 'variantes' && form.id">
             <div class="sub-header">
               <span>Versiones con precio propio (Pequeña, Familiar…)</span>
               <button class="btn-mini" @click="abrirFormVariante()"><i class="bi bi-plus"></i> Agregar</button>
             </div>
-            <div v-if="panel.loadingVariantes" class="mini-carga"><div class="spinner-border spinner-border-sm"></div></div>
-            <div v-else-if="!variantes.length" class="mini-vacio"><i class="bi bi-tags"></i> Sin variantes de precio</div>
+            <div v-if="!variantes.length" class="mini-vacio"><i class="bi bi-tags"></i> Sin variantes de precio</div>
             <div v-else class="variantes-lista">
               <div v-for="v in variantes" :key="v.id" class="variante-item">
                 <div class="variante-info">
@@ -409,39 +396,68 @@
               </div>
             </div>
             <div v-if="formVariante.visible" class="mini-modal">
-              <input v-model="formVariante.name" class="inp-sm" placeholder="Nombre (Pequeña, Mediana, Familiar…)" />
+              <input v-model="formVariante.name" class="inp-sm" maxlength="100" placeholder="Nombre (Pequeña, Mediana, Familiar…)" />
               <div class="mini-row">
-                <input type="number" v-model.number="formVariante.price" class="inp-sm" placeholder="Precio" min="0" />
-                <input type="number" v-model.number="formVariante.compare_price" class="inp-sm" placeholder="Precio tachado" min="0" />
+                <CurrencyInput v-model="formVariante.price" class="inp-sm text-right" />
+                <CurrencyInput v-model="formVariante.compare_price" class="inp-sm text-right" />
               </div>
               <div class="mini-modal-btns">
                 <button class="btn-mini btn-mini--cancel" @click="formVariante.visible=false">Cancelar</button>
-                <button class="btn-mini" @click="guardarVariante">
-                  {{ formVariante.id ? 'Actualizar' : 'Agregar' }}
-                </button>
+                <button class="btn-mini" @click="guardarVariante">{{ formVariante.id ? 'Actualizar' : 'Agregar' }}</button>
               </div>
             </div>
           </div>
-
         </div>
+
+        <div class="modal-ftr">
+          <button v-if="form.id" class="btn-del" @click="eliminar(form)"><i class="bi bi-trash"></i> Eliminar</button>
+          <button class="btn-cancel" @click="cerrarEditor">Salir</button>
+          <button v-if="['general','aux'].includes(ed.tab)" class="btn-save" :disabled="guardando || !form.name?.trim()" @click="guardarGeneral">
+            <span v-if="guardando" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-check-lg me-1"></i>{{ form.id ? 'Guardar cambios' : 'Guardar producto' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Selector de insumos para una categoría de armado -->
+    <div v-if="picker.visible" class="modal-overlay modal-top" @click.self="picker.visible = false">
+      <div class="ed-card ed-card--sm">
+        <div class="modal-hdr">
+          <span>Agregar insumos a {{ picker.grupo?.category_name }}</span>
+          <button class="btn-x" @click="picker.visible = false"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="ed-body">
+          <InsumoPicker :categorias="categoriasInsumo" :default-category="picker.grupo?.category_code"
+                        :excluded="picker.grupo?.options.map(o => o.position) || []" @select="agregarOpcion" />
+        </div>
+        <div class="modal-ftr"><button class="btn-cancel" @click="picker.visible = false">Listo</button></div>
       </div>
     </div>
   </div>
 </template>
+
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
 import ImageUploader from '@/components/ImageUploader.vue'
+import InsumoPicker from '@/components/pos/InsumoPicker.vue'
+import { useModuleName } from '@/composables/useModuleName'
 
 const BASE = '/api/pos-catalogo/platos'
 const API_BASE = import.meta.env.VITE_API_URL || ''
+const { moduleName } = useModuleName()
 
-const items      = ref([])
-const categorias = ref([])
-const insumos    = ref([])
-const unidades   = ref([])
+// Convención VB6 (platos.Activo reutilizado como "Desactivar"): active 0 = activo, 1 = desactivado
+const isActivo = item => Number(item.active) === 0
+
+const items            = ref([])
+const categorias       = ref([])   // pos_dish_categories (categoría del producto)
+const categoriasInsumo = ref([])   // pos_product_categories (categorías de armado / insumos)
+const formasMedida     = ref([])
+const proveedores      = ref([])
 const loading    = ref(true)
 const guardando  = ref(false)
 const busqueda   = ref('')
@@ -449,11 +465,6 @@ const categoriaTab  = ref(null)
 const filtroEstado  = ref(null)
 const filtroFoto    = ref(null)
 
-// Estado de foto pendiente (no subida aún)
-const fotoPendiente  = ref(null)   // Blob
-const fotoEliminada  = ref(false)
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtCOP = new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', minimumFractionDigits:0 })
 const fmt = v => fmtCOP.format(v || 0)
 
@@ -463,11 +474,11 @@ function imgSrc(path) {
   return API_BASE + path
 }
 
-// ── Filtrado ──────────────────────────────────────────────────────────────────
+// ── Filtrado / agrupado ───────────────────────────────────────────────────────
 const filtrados = computed(() => {
   let r = items.value
   if (categoriaTab.value !== null) r = r.filter(i => i.category_id === categoriaTab.value)
-  if (filtroEstado.value !== null) r = r.filter(i => filtroEstado.value === 1 ? i.active == 1 : i.active != 1)
+  if (filtroEstado.value !== null) r = r.filter(i => filtroEstado.value === 1 ? isActivo(i) : !isActivo(i))
   if (filtroFoto.value !== null)   r = r.filter(i => filtroFoto.value === 'con' ? !!i.photo_path : !i.photo_path)
   if (busqueda.value) {
     const q = busqueda.value.toLowerCase()
@@ -480,14 +491,7 @@ const itemsAgrupados = computed(() => {
   const map = new Map()
   for (const item of filtrados.value) {
     const key = item.category_id ?? '__none__'
-    if (!map.has(key)) {
-      map.set(key, {
-        id:    item.category_id,
-        name:  item.category_name || 'Sin categoría',
-        color: item.category_color || '#94a3b8',
-        items: []
-      })
-    }
+    if (!map.has(key)) map.set(key, { id: item.category_id, name: item.category_name || 'Sin categoría', color: '#1d4ed8', items: [] })
     map.get(key).items.push(item)
   }
   const arr = []
@@ -500,7 +504,6 @@ const itemsAgrupados = computed(() => {
 const catTrackRef    = ref(null)
 const canScrollLeft  = ref(false)
 const canScrollRight = ref(false)
-
 function updateArrows() {
   const el = catTrackRef.value
   if (!el) return
@@ -514,44 +517,14 @@ function scrollCats(dir) {
   setTimeout(updateArrows, 320)
 }
 watch(categorias, async () => { await nextTick(); updateArrows() })
+const setCategoria    = id => { categoriaTab.value = id }
+const setFiltroEstado = v  => { filtroEstado.value = v }
+const setFiltroFoto   = v  => { filtroFoto.value = v }
 
-const setCategoria = (id) => {
-  categoriaTab.value = id
-}
-const setFiltroEstado = (v) => { filtroEstado.value = v }
-const setFiltroFoto   = (v) => { filtroFoto.value = v }
-
-// ── Panel y modales ───────────────────────────────────────────────────────────
-const modalItem = ref({
-  visible:false, id:null, name:'', price:0, compare_price:null,
-  category_id:null, description:'', tax:0, active:1, photo_path:null,
-})
-const panel = ref({
-  visible:false, item:null, tab:'ingredientes',
-  loadingIngredientes:false, loadingImpresoras:false,
-  loadingModificadores:false, loadingVariantes:false,
-})
-
-const ingredientes  = ref([])
-const impresoras    = ref([])
-const modificadores = ref([])
-const variantes     = ref([])
-
-const formIngrediente  = ref({ visible:false, supply_item_id:null, quantity:1, unit_id:null })
-const formVariante     = ref({ visible:false, id:null, name:'', price:0, compare_price:null })
-const formCat          = ref({ visible:false, category_code:null, max_choices:1, is_required:0 })
-const formOpArmado     = ref({ visible:false, groupCode:null, groupName:'', position:null, discount_qty:1, is_default:0 })
-const categoriasArmado = ref([])
-
-// ── Drag-and-drop ─────────────────────────────────────────────────────────────
+// ── Drag-and-drop (orden de la carta) ─────────────────────────────────────────
 let dragFromItem = null
 const dragId = ref(null)
-
-function onDragStart(e, item) {
-  dragFromItem = item
-  dragId.value = item.id
-  e.dataTransfer.effectAllowed = 'move'
-}
+function onDragStart(e, item) { dragFromItem = item; dragId.value = item.id; e.dataTransfer.effectAllowed = 'move' }
 function onDragOver(e, targetItem) {
   if (!dragFromItem || dragFromItem.id === targetItem.id) return
   const fromIdx = items.value.findIndex(i => i.id === dragFromItem.id)
@@ -563,20 +536,18 @@ function onDragOver(e, targetItem) {
 }
 async function onDrop() {
   if (!dragFromItem) return
-  dragId.value = null
-  dragFromItem = null
-  try {
-    await api.put(`${BASE}/orden`, { ids: items.value.map(i => i.id) })
-  } catch { showToast('Error al guardar orden', 'error') }
+  dragId.value = null; dragFromItem = null
+  try { await api.put(`${BASE}/orden`, { ids: items.value.map(i => i.id) }) }
+  catch { showToast('Error al guardar orden', 'error') }
 }
 function onDragEnd() { dragId.value = null; dragFromItem = null }
 
 // ── Carga inicial ─────────────────────────────────────────────────────────────
-onMounted(() => Promise.all([cargarItems(), cargarCategorias(), cargarInsumos(), cargarUnidades(), cargarCategoriasArmado()]))
+onMounted(() => Promise.all([cargarItems(), cargarCategorias(), cargarCatalogos()]))
 
 async function cargarItems() {
   loading.value = true
-  try { const{data} = await api.get(BASE); items.value = data }
+  try { const { data } = await api.get(BASE); items.value = data }
   catch { items.value = [] }
   finally { loading.value = false }
 }
@@ -588,311 +559,310 @@ async function cargarCategorias() {
     if (activas.length > 0) categoriaTab.value = activas[0].id
   } catch { categorias.value = [] }
 }
-async function cargarInsumos() {
-  try {
-    const { data } = await api.get('/supply-items/')
-    const all = Array.isArray(data) ? data : (data?.items || [])
-    insumos.value = all.filter(i => i.is_active !== false)
-  } catch { insumos.value = [] }
-}
-async function cargarUnidades() {
-  try { const{data} = await api.get('/unidades-medida/'); unidades.value = data }
-  catch { unidades.value = [] }
-}
-async function cargarCategoriasArmado() {
-  try { const{data} = await api.get(`${BASE}/armado/categorias-disponibles`); categoriasArmado.value = data }
-  catch { categoriasArmado.value = [] }
+async function cargarCatalogos() {
+  const [ci, fm, pr] = await Promise.allSettled([
+    api.get(`${BASE}/armado/categorias-disponibles`),
+    api.get(`${BASE}/catalogos/formas-medida`),
+    api.get(`${BASE}/catalogos/proveedores`),
+  ])
+  categoriasInsumo.value = ci.status === 'fulfilled' ? ci.value.data : []
+  formasMedida.value     = fm.status === 'fulfilled' ? fm.value.data : []
+  proveedores.value      = pr.status === 'fulfilled' ? pr.value.data : []
 }
 
-// ── Foto ──────────────────────────────────────────────────────────────────────
-function onFotoChanged(blob)  { fotoPendiente.value = blob;  fotoEliminada.value = false }
-function onFotoRemoved()      { fotoPendiente.value = null;  fotoEliminada.value = true  }
+// ── Editor ────────────────────────────────────────────────────────────────────
+const tabs = [
+  { key: 'general',   label: 'Información general', icon: 'bi bi-card-text' },
+  { key: 'armar',     label: 'Op. adicionales armar', icon: 'bi bi-sliders', needsId: true },
+  { key: 'fijos',     label: 'Detalle producto - insumo', icon: 'bi bi-list-check', needsId: true },
+  { key: 'aux',       label: 'Info. aux. (foto, desc.)', icon: 'bi bi-image' },
+  { key: 'variantes', label: 'Variantes', icon: 'bi bi-tags', needsId: true },
+]
+const ed   = ref({ visible: false, tab: 'general' })
+const form = ref({})
+const impresoras     = ref([])
+const presentaciones = ref([])     // guardadas (o pendientes si el producto es nuevo)
+const presForm       = ref({ measure_id: null, supplier_id: 0, minimum_units: 1, presentation_value: 0 })
+const armado   = ref([])
+const armarCat = ref(null)
+const fijos    = ref([])
+const fijoSel  = ref(null)
+const fijoPorciones = ref(1)
+const variantes     = ref([])
+const formVariante  = ref({ visible:false, id:null, name:'', price:0, compare_price:0 })
+const picker   = ref({ visible: false, grupo: null })
+const fotoPendiente = ref(null)
+const fotoEliminada = ref(false)
 
-// ── CRUD Artículo ─────────────────────────────────────────────────────────────
-function abrirModalItem(item = null) {
-  fotoPendiente.value = null
-  fotoEliminada.value = false
-  modalItem.value = item
-    ? { visible:true, id:item.id, name:item.name, price:item.price,
-        compare_price:item.compare_price || null, category_id:item.category_id,
-        description:item.description || '', tax:item.tax || 0,
-        active:item.active, photo_path:item.photo_path || null }
-    : { visible:true, id:null, name:'', price:0, compare_price:null,
-        category_id:null, description:'', tax:0, active:1, photo_path:null }
+const CAMPOS = ['name','product_code','price','compare_price','category_id','description','procedure','tax',
+                'wholesale_price','product_cost','minimum_stock','ask_product_description','pre_preparation',
+                'offer','preparation_time','extra_print','offer_priority','active']
+
+function formVacio() {
+  return { id: null, name: '', product_code: '', price: 0, compare_price: 0, category_id: categoriaTab.value,
+           description: '', procedure: '', tax: 0, wholesale_price: 0, product_cost: 0, minimum_stock: 0,
+           ask_product_description: 0, pre_preparation: 0, offer: 0, preparation_time: 0, extra_print: 0,
+           offer_priority: 0, active: 0, photo_path: null }
 }
-function cerrarModalItem() { modalItem.value.visible = false }
 
-async function guardarItem() {
-  if (!modalItem.value.name) return
+async function abrirEditor(item = null, tab = 'general') {
+  fotoPendiente.value = null; fotoEliminada.value = false
+  presentaciones.value = []; armado.value = []; fijos.value = []; variantes.value = []; fijoSel.value = null
+  presForm.value = { measure_id: null, supplier_id: 0, minimum_units: 1, presentation_value: 0 }
+  form.value = item
+    ? { ...formVacio(), ...Object.fromEntries(CAMPOS.map(k => [k, item[k] ?? formVacio()[k]])), id: item.id, photo_path: item.photo_path }
+    : formVacio()
+  ed.value = { visible: true, tab: item ? tab : 'general' }
+  await cargarImpresoras()
+  if (item) {
+    await cargarPresentaciones()
+    await cargarTab(ed.value.tab)
+  }
+}
+function cerrarEditor() { ed.value.visible = false; picker.value.visible = false }
+
+async function cambiarTab(tab) {
+  ed.value.tab = tab
+  await cargarTab(tab)
+}
+async function cargarTab(tab) {
+  if (!form.value.id) return
+  if (tab === 'armar')     await cargarArmado()
+  if (tab === 'fijos')     await cargarFijos()
+  if (tab === 'variantes') await cargarVariantes()
+}
+
+// ── Guardar información general + foto + impresoras + presentaciones pendientes
+async function guardarGeneral() {
+  const f = form.value
+  if (!f.name?.trim()) { showToast('El nombre es obligatorio', 'warning'); ed.value.tab = 'general'; return }
   guardando.value = true
   try {
-    const p = {
-      name:          modalItem.value.name,
-      price:         modalItem.value.price,
-      compare_price: modalItem.value.compare_price || null,
-      category_id:   modalItem.value.category_id,
-      description:   modalItem.value.description || modalItem.value.name,
-      tax:           modalItem.value.tax,
-      active:        modalItem.value.active,
-    }
-    const isNew = !modalItem.value.id
-    let itemId = modalItem.value.id
-    if (itemId) {
-      await api.put(`${BASE}/${itemId}`, p)
-    } else {
-      const { data } = await api.post(BASE, p)
-      itemId = data.id
-    }
+    const payload = Object.fromEntries(CAMPOS.map(k => [k, f[k]]))
+    payload.name = f.name.trim()
+    payload.product_code = (f.product_code || '').trim() || null
+    payload.compare_price = f.compare_price || null
+    const nuevo = !f.id
+    let id = f.id
+    if (nuevo) { const { data } = await api.post(BASE, payload); id = data.id; form.value.id = id }
+    else       { await api.put(`${BASE}/${id}`, payload) }
 
+    await api.put(`${BASE}/${id}/impresoras`, {
+      printers: impresoras.value.filter(i => i.assigned).map(i => ({ printer_id: i.id, print_copies: i.print_copies || 1 })),
+    })
+    if (nuevo) {
+      for (const p of presentaciones.value) {
+        await api.post(`${BASE}/${id}/presentaciones`, {
+          measure_id: p.measure_id, supplier_id: p.supplier_id, minimum_units: p.minimum_units, presentation_value: p.presentation_value,
+        })
+      }
+      await cargarPresentaciones()
+    }
     if (fotoPendiente.value) {
       const fd = new FormData()
       fd.append('file', fotoPendiente.value, 'photo.webp')
-      await api.post(`${BASE}/${itemId}/foto`, fd)
+      const { data } = await api.post(`${BASE}/${id}/foto`, fd)
+      form.value.photo_path = data.url
       fotoPendiente.value = null
     } else if (fotoEliminada.value) {
-      await api.delete(`${BASE}/${itemId}/foto`)
+      await api.delete(`${BASE}/${id}/foto`)
+      form.value.photo_path = null
       fotoEliminada.value = false
     }
-
-    showToast('Artículo guardado', 'success')
-    cerrarModalItem()
+    showToast('Guardado', 'success')
     await cargarItems()
-
-    // Al crear nuevo, abrir panel automáticamente para configurar impresoras/armado/receta
-    if (isNew) {
-      const newItem = items.value.find(i => i.id === itemId)
-      if (newItem) await abrirPanel(newItem, 'impresoras')
-    }
-  } catch(e) {
+    if (nuevo && f.offer_priority) await cambiarTab('armar')
+  } catch (e) {
     showToast(e?.response?.data?.detail || 'Error al guardar', 'error')
   } finally { guardando.value = false }
 }
 
+function onFotoChanged(blob) { fotoPendiente.value = blob; fotoEliminada.value = false }
+function onFotoRemoved()     { fotoPendiente.value = null; fotoEliminada.value = true }
+
+// ── Impresoras ────────────────────────────────────────────────────────────────
+async function cargarImpresoras() {
+  try {
+    if (form.value.id) {
+      impresoras.value = (await api.get(`${BASE}/${form.value.id}/impresoras`)).data
+    } else {
+      const { data } = await api.get('/api/pos-catalogo/impresoras')
+      impresoras.value = data.map(p => ({ id: p.id, name: p.name, assigned: 0, print_copies: 1 }))
+    }
+  } catch { impresoras.value = [] }
+}
+
+// ── Presentaciones ────────────────────────────────────────────────────────────
+async function cargarPresentaciones() {
+  try { presentaciones.value = (await api.get(`${BASE}/${form.value.id}/presentaciones`)).data }
+  catch { presentaciones.value = [] }
+}
+async function agregarPresentacion() {
+  const p = { ...presForm.value }
+  if (!p.measure_id || !(p.minimum_units > 0)) { showToast('Seleccione la presentación y las unidades mínimas', 'warning'); return }
+  if (presentaciones.value.some(x => x.measure_id === p.measure_id && x.supplier_id === p.supplier_id)) {
+    showToast('Esa presentación ya está agregada', 'warning'); return
+  }
+  if (!form.value.id) {               // producto nuevo: queda pendiente hasta guardar
+    presentaciones.value.push({ ...p,
+      measure_name: formasMedida.value.find(m => m.id === p.measure_id)?.name,
+      supplier_name: proveedores.value.find(s => s.id === p.supplier_id)?.name })
+  } else {
+    try { await api.post(`${BASE}/${form.value.id}/presentaciones`, p); await cargarPresentaciones() }
+    catch (e) { showToast(e?.response?.data?.detail || 'Error al agregar presentación', 'error'); return }
+  }
+  presForm.value = { measure_id: null, supplier_id: 0, minimum_units: 1, presentation_value: form.value.price || 0 }
+}
+async function editarPresentacion(p, cambios) {
+  const nuevo = { minimum_units: p.minimum_units, presentation_value: p.presentation_value, ...cambios }
+  if (!(nuevo.minimum_units > 0)) { showToast('Las unidades mínimas deben ser mayores a 0', 'warning'); return }
+  if (!form.value.id) { Object.assign(p, nuevo); return }
+  try { await api.put(`${BASE}/${form.value.id}/presentaciones/${p.measure_id}/${p.supplier_id}`, nuevo); Object.assign(p, nuevo) }
+  catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
+}
+async function quitarPresentacion(p) {
+  if (!form.value.id) { presentaciones.value = presentaciones.value.filter(x => x !== p); return }
+  try { await api.delete(`${BASE}/${form.value.id}/presentaciones/${p.measure_id}/${p.supplier_id}`); await cargarPresentaciones() }
+  catch { showToast('Error al quitar presentación', 'error') }
+}
+
+// ── Armado ────────────────────────────────────────────────────────────────────
+async function cargarArmado() {
+  try { armado.value = (await api.get(`${BASE}/${form.value.id}/armado`)).data }
+  catch { armado.value = [] }
+}
+async function agregarCategoriaArmado() {
+  try {
+    await api.post(`${BASE}/${form.value.id}/armado/categoria`, { category_code: armarCat.value, max_choices: 1, is_required: 0, print_on_change_only: 0 })
+    armarCat.value = null
+    await cargarArmado(); await cargarItems()
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error al agregar categoría', 'error') }
+}
+async function editarCategoria(g) {
+  const mc = parseInt(g.max_choices) || 1
+  g.max_choices = Math.min(Math.max(mc, 1), 50)
+  try {
+    await api.put(`${BASE}/${form.value.id}/armado/categoria/${g.category_code}`, {
+      max_choices: g.max_choices, is_required: g.is_required ? 1 : 0, print_on_change_only: g.print_on_change_only ? 1 : 0,
+    })
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error'); await cargarArmado() }
+}
+async function quitarCategoria(g) {
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Quitar la categoría "${g.category_name}"?`, text: 'Se quitarán también sus insumos.',
+    icon: 'warning', showCancelButton: true, confirmButtonColor: '#e11d48', confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  try { await api.delete(`${BASE}/${form.value.id}/armado/categoria/${g.category_code}`); await cargarArmado(); await cargarItems() }
+  catch { showToast('Error al quitar categoría', 'error') }
+}
+function abrirPicker(tipo, grupo) { picker.value = { visible: true, grupo } }
+async function agregarOpcion(insumo) {
+  const g = picker.value.grupo
+  try {
+    await api.post(`${BASE}/${form.value.id}/armado/categoria/${g.category_code}/opcion`,
+                   { position: insumo.id_item, discount_qty: 1, supply_price: 0, is_default: 0 })
+    await cargarArmado()
+    picker.value.grupo = armado.value.find(x => x.category_code === g.category_code) || g
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error al agregar insumo', 'error') }
+}
+async function editarOpcion(g, o, cambios) {
+  const nuevo = { discount_qty: o.discount_qty, supply_price: o.supply_price, is_default: o.is_default ? 1 : 0, ...cambios }
+  if (!(nuevo.discount_qty > 0)) { showToast('La cantidad a descontar debe ser mayor a 0', 'warning'); await cargarArmado(); return }
+  if (nuevo.discount_qty === o.discount_qty && nuevo.supply_price === o.supply_price && !!nuevo.is_default === !!o.is_default) return
+  try {
+    await api.put(`${BASE}/${form.value.id}/armado/categoria/${g.category_code}/opcion/${o.position}`, nuevo)
+    Object.assign(o, nuevo)
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error'); await cargarArmado() }
+}
+async function quitarOpcion(g, o) {
+  try { await api.delete(`${BASE}/${form.value.id}/armado/categoria/${g.category_code}/opcion/${o.position}`); await cargarArmado() }
+  catch { showToast('Error al quitar insumo', 'error') }
+}
+
+// ── Insumos fijos ─────────────────────────────────────────────────────────────
+async function cargarFijos() {
+  try { fijos.value = (await api.get(`${BASE}/${form.value.id}/insumos-fijos`)).data }
+  catch { fijos.value = [] }
+}
+function seleccionarFijo(insumo) { fijoSel.value = insumo; fijoPorciones.value = 1 }
+async function agregarFijo() {
+  if (!(fijoPorciones.value > 0)) { showToast('Las porciones deben ser mayores a 0', 'warning'); return }
+  try {
+    await api.post(`${BASE}/${form.value.id}/insumos-fijos`, { id_item: fijoSel.value.id_item, porciones: fijoPorciones.value })
+    fijoSel.value = null
+    await cargarFijos(); await cargarItems()
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error al agregar insumo', 'error') }
+}
+async function editarFijo(f, porciones) {
+  if (!(porciones > 0)) { showToast('Las porciones deben ser mayores a 0', 'warning'); await cargarFijos(); return }
+  try { await api.put(`${BASE}/${form.value.id}/insumos-fijos/${f.id_item}`, { porciones }); f.porciones = porciones }
+  catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
+}
+async function quitarFijo(f) {
+  try { await api.delete(`${BASE}/${form.value.id}/insumos-fijos/${f.id_item}`); await cargarFijos(); await cargarItems() }
+  catch { showToast('Error al quitar insumo', 'error') }
+}
+
+// ── Variantes (solo web) ──────────────────────────────────────────────────────
+async function cargarVariantes() {
+  try { variantes.value = (await api.get(`${BASE}/${form.value.id}/variantes`)).data }
+  catch { variantes.value = [] }
+}
+function abrirFormVariante(v = null) {
+  formVariante.value = v
+    ? { visible:true, id:v.id, name:v.name, price:v.price, compare_price:v.compare_price || 0 }
+    : { visible:true, id:null, name:'', price:0, compare_price:0 }
+}
+async function guardarVariante() {
+  if (!formVariante.value.name?.trim()) { showToast('El nombre es obligatorio', 'warning'); return }
+  const p = { name: formVariante.value.name.trim(), price: formVariante.value.price || 0, compare_price: formVariante.value.compare_price || null }
+  try {
+    if (formVariante.value.id) await api.put(`${BASE}/${form.value.id}/variantes/${formVariante.value.id}`, p)
+    else await api.post(`${BASE}/${form.value.id}/variantes`, p)
+    formVariante.value.visible = false; await cargarVariantes(); await cargarItems()
+  } catch { showToast('Error al guardar variante', 'error') }
+}
+async function eliminarVariante(varId) {
+  try { await api.delete(`${BASE}/${form.value.id}/variantes/${varId}`); await cargarVariantes(); await cargarItems() }
+  catch { showToast('Error', 'error') }
+}
+
+// ── Desactivar / eliminar ─────────────────────────────────────────────────────
 async function eliminar(item) {
   const { isConfirmed, isDenied } = await window.Swal.fire({
     title: item.name,
     html: '<p style="margin:0;color:#475569;font-size:14px">¿Qué deseas hacer con este artículo?</p>',
-    icon: 'warning',
-    showCancelButton: true,
-    showDenyButton: true,
-    confirmButtonColor: '#f59e0b',
-    denyButtonColor: '#e11d48',
-    confirmButtonText: 'Desactivar',
-    denyButtonText: 'Eliminar definitivamente',
-    cancelButtonText: 'Cancelar',
+    icon: 'warning', showCancelButton: true, showDenyButton: true,
+    confirmButtonColor: '#f59e0b', denyButtonColor: '#e11d48',
+    confirmButtonText: 'Desactivar', denyButtonText: 'Eliminar definitivamente', cancelButtonText: 'Cancelar',
   })
   if (isConfirmed) {
     try {
       await api.delete(`${BASE}/${item.id}`)
       showToast('Artículo desactivado', 'success')
+      if (form.value.id === item.id) form.value.active = 1
       await cargarItems()
     } catch { showToast('Error al desactivar', 'error') }
   } else if (isDenied) {
     const { isConfirmed: ok2 } = await window.Swal.fire({
       title: '¿Eliminar permanentemente?',
-      html: `<p style="margin:0;color:#475569;font-size:14px">Se borrarán la receta, impresoras, armado y variantes.<br><b>Esta acción no se puede deshacer.</b></p>`,
-      icon: 'error',
-      showCancelButton: true,
-      confirmButtonColor: '#e11d48',
-      confirmButtonText: 'Sí, eliminar',
-      cancelButtonText: 'Cancelar',
+      html: '<p style="margin:0;color:#475569;font-size:14px">Se borrarán presentaciones, insumos fijos, impresoras, armado y variantes.<br><b>Esta acción no se puede deshacer.</b></p>',
+      icon: 'error', showCancelButton: true, confirmButtonColor: '#e11d48', confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar',
     })
     if (!ok2) return
     try {
       await api.delete(`${BASE}/${item.id}/definitivo`)
       showToast('Artículo eliminado definitivamente', 'success')
+      if (form.value.id === item.id) cerrarEditor()
       await cargarItems()
-    } catch(e) {
-      window.Swal.fire({
-        title: 'No se puede eliminar',
-        text: e?.response?.data?.detail || 'Error al eliminar',
-        icon: 'error',
-      })
+    } catch (e) {
+      window.Swal.fire({ title: 'No se puede eliminar', text: e?.response?.data?.detail || 'Error al eliminar', icon: 'error' })
     }
   }
 }
-
-// ── Panel ─────────────────────────────────────────────────────────────────────
-async function abrirPanel(item, tab) {
-  panel.value = {
-    visible:true, item, tab,
-    loadingIngredientes:false, loadingImpresoras:false,
-    loadingModificadores:false, loadingVariantes:false,
-  }
-  await loadTab(tab)
-}
-function cerrarPanel() {
-  panel.value.visible = false
-  ingredientes.value = []; impresoras.value = []
-  modificadores.value = []; variantes.value = []
-}
-async function changeTab(tab) {
-  panel.value.tab = tab
-  await loadTab(tab)
-}
-async function loadTab(tab) {
-  if (tab === 'ingredientes')  await cargarIngredientes()
-  if (tab === 'impresoras')    await cargarImpresoras()
-  if (tab === 'modificadores') await cargarModificadores()
-  if (tab === 'variantes')     await cargarVariantes()
-}
-
-// ── Ingredientes ──────────────────────────────────────────────────────────────
-async function cargarIngredientes() {
-  panel.value.loadingIngredientes = true
-  try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/ingredientes`); ingredientes.value = data }
-  catch { ingredientes.value = [] }
-  finally { panel.value.loadingIngredientes = false }
-}
-async function agregarIngrediente() {
-  if (!formIngrediente.value.supply_item_id) return
-  try {
-    await api.post(`${BASE}/${panel.value.item.id}/ingredientes`, {
-      supply_item_id: formIngrediente.value.supply_item_id,
-      quantity:       formIngrediente.value.quantity,
-      unit_id:        formIngrediente.value.unit_id,
-    })
-    formIngrediente.value = { visible:false, supply_item_id:null, quantity:1, unit_id:null }
-    await cargarIngredientes(); await cargarItems()
-  } catch { showToast('Error al agregar ingrediente','error') }
-}
-async function eliminarIngrediente(insumoId) {
-  const { isConfirmed } = await window.Swal.fire({
-    title:'¿Quitar ingrediente?', icon:'warning', showCancelButton:true,
-    confirmButtonColor:'#e11d48', confirmButtonText:'Quitar', cancelButtonText:'Cancelar',
-  })
-  if (!isConfirmed) return
-  try { await api.delete(`${BASE}/${panel.value.item.id}/ingredientes/${insumoId}`); await cargarIngredientes(); await cargarItems() }
-  catch { showToast('Error','error') }
-}
-
-// ── Impresoras ────────────────────────────────────────────────────────────────
-async function cargarImpresoras() {
-  panel.value.loadingImpresoras = true
-  try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/impresoras`); impresoras.value = data }
-  catch { impresoras.value = [] }
-  finally { panel.value.loadingImpresoras = false }
-}
-async function guardarImpresoras() {
-  const printers = impresoras.value.filter(i => i.assigned).map(i => ({
-    printer_id: i.id,
-    print_copies: i.print_copies || 1
-  }))
-  try { await api.put(`${BASE}/${panel.value.item.id}/impresoras`, { printers }); showToast('Impresoras guardadas','success'); await cargarItems() }
-  catch { showToast('Error al guardar impresoras','error') }
-}
-
-// ── Modificadores ─────────────────────────────────────────────────────────────
-async function cargarModificadores() {
-  panel.value.loadingModificadores = true
-  try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/armado`); modificadores.value = data }
-  catch { modificadores.value = [] }
-  finally { panel.value.loadingModificadores = false }
-}
-
-// ── CRUD Categorías de armado ─────────────────────────────────────────────────
-async function crearCat() {
-  if (!formCat.value.category_code) return
-  try {
-    await api.post(`${BASE}/${panel.value.item.id}/armado/categoria`, {
-      category_code: formCat.value.category_code,
-      max_choices:   formCat.value.max_choices,
-      is_required:   formCat.value.is_required,
-    })
-    formCat.value = { visible:false, category_code:null, max_choices:1, is_required:0 }
-    await cargarModificadores()
-  } catch(e) { showToast(e?.response?.data?.detail || 'Error al agregar categoría', 'error') }
-}
-
-async function eliminarCat(g) {
-  const { isConfirmed } = await window.Swal.fire({
-    title: `¿Quitar categoría "${g.category_name}"?`,
-    text: 'Se eliminarán todos sus insumos configurados.',
-    icon: 'warning', showCancelButton: true,
-    confirmButtonColor: '#e11d48', confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar',
-  })
-  if (!isConfirmed) return
-  try {
-    await api.delete(`${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}`)
-    await cargarModificadores()
-  } catch { showToast('Error al quitar categoría', 'error') }
-}
-
-// ── CRUD Opciones de armado ───────────────────────────────────────────────────
-function abrirFormOpcionArmado(g) {
-  formOpArmado.value = { visible:true, groupCode:g.category_code, groupName:g.category_name, position:null, discount_qty:1, is_default:0 }
-}
-
-async function crearOpcionArmado() {
-  if (!formOpArmado.value.position) return
-  try {
-    await api.post(
-      `${BASE}/${panel.value.item.id}/armado/categoria/${formOpArmado.value.groupCode}/opcion`,
-      { position: formOpArmado.value.position, discount_qty: formOpArmado.value.discount_qty, is_default: formOpArmado.value.is_default }
-    )
-    formOpArmado.value.visible = false
-    await cargarModificadores()
-  } catch(e) { showToast(e?.response?.data?.detail || 'Error al agregar insumo', 'error') }
-}
-
-async function eliminarOpcionArmado(g, o) {
-  try {
-    await api.delete(`${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}/opcion/${o.position}`)
-    await cargarModificadores()
-  } catch { showToast('Error al quitar insumo', 'error') }
-}
-
-async function toggleDefault(g, o, checked) {
-  try {
-    await api.put(
-      `${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}/opcion/${o.position}`,
-      { position: o.position, discount_qty: o.discount_qty, is_default: checked ? 1 : 0 }
-    )
-    o.is_default = checked ? 1 : 0
-  } catch { showToast('Error', 'error') }
-}
-
-async function actualizarQty(g, o, val) {
-  const qty = parseFloat(val) || 0
-  try {
-    await api.put(
-      `${BASE}/${panel.value.item.id}/armado/categoria/${g.category_code}/opcion/${o.position}`,
-      { position: o.position, discount_qty: qty, is_default: o.is_default }
-    )
-    o.discount_qty = qty
-  } catch { showToast('Error', 'error') }
-}
-
-// ── Variantes ─────────────────────────────────────────────────────────────────
-async function cargarVariantes() {
-  panel.value.loadingVariantes = true
-  try { const{data} = await api.get(`${BASE}/${panel.value.item.id}/variantes`); variantes.value = data }
-  catch { variantes.value = [] }
-  finally { panel.value.loadingVariantes = false }
-}
-function abrirFormVariante(v = null) {
-  formVariante.value = v
-    ? { visible:true, id:v.id, name:v.name, price:v.price, compare_price:v.compare_price || null }
-    : { visible:true, id:null, name:'', price:0, compare_price:null }
-}
-async function guardarVariante() {
-  if (!formVariante.value.name) return
-  const p = {
-    name:          formVariante.value.name,
-    price:         formVariante.value.price,
-    compare_price: formVariante.value.compare_price || null,
-  }
-  try {
-    if (formVariante.value.id) await api.put(`${BASE}/${panel.value.item.id}/variantes/${formVariante.value.id}`, p)
-    else await api.post(`${BASE}/${panel.value.item.id}/variantes`, p)
-    formVariante.value.visible = false; await cargarVariantes(); await cargarItems()
-  } catch { showToast('Error al guardar variante','error') }
-}
-async function eliminarVariante(varId) {
-  try { await api.delete(`${BASE}/${panel.value.item.id}/variantes/${varId}`); await cargarVariantes(); await cargarItems() }
-  catch { showToast('Error','error') }
-}
 </script>
+
 
 <style scoped>
 .crud-view { padding:0; }
@@ -1214,5 +1184,76 @@ async function eliminarVariante(varId) {
   .cat-slider-inner { padding:0 30px; }
   .cat-pill { padding:7px 12px;font-size:11px; }
   .seccion-hdr { top:50px; }
+}
+
+/* ── Editor del producto ─────────────────────────────────────────────────────── */
+.ed-card { background:#fff;border-radius:16px;width:100%;max-width:1100px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25); }
+.ed-card--sm { max-width:720px; }
+.modal-top { z-index:1060; }
+.ed-hdr-info { display:flex;align-items:center;gap:10px;min-width:0; }
+.ed-code  { font-size:11px;background:rgba(255,255,255,.18);border-radius:6px;padding:2px 8px;white-space:nowrap; }
+.ed-title { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.ed-body  { flex:1;overflow-y:auto;padding:16px 20px; }
+.ptab:disabled { opacity:.4;cursor:not-allowed; }
+.gen-grid { display:grid;grid-template-columns:1.6fr 1fr;gap:18px; }
+.gen-col  { display:flex;flex-direction:column;gap:12px;min-width:0; }
+.inp-strong { font-weight:700;font-size:15px; }
+.text-right { text-align:right; }
+.text-center { text-align:center; }
+.text-muted { color:#94a3b8; }
+.warn-line { font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 10px; }
+.info-line { font-size:12px;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 10px;margin-bottom:10px; }
+.sec      { border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px; }
+.sec-ttl  { font-size:12px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px; }
+.chk-row  { display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#1e3a5f;cursor:pointer; }
+.chk-row input, .flag-row input { width:17px;height:17px;cursor:pointer; }
+.flags-sec { background:#f0fdf4;border-color:#bbf7d0; }
+.flag-row { display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#14532d;cursor:pointer;padding:3px 0; }
+.flag-row--danger { color:#b91c1c; }
+.pres-add { display:grid;grid-template-columns:1.3fr 1.3fr .7fr .9fr auto;gap:6px;align-items:center; }
+.tbl-mini { width:100%;border-collapse:collapse;font-size:12px; }
+.tbl-mini th { background:#f8fafc;color:#475569;font-weight:700;font-size:10px;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:left; }
+.tbl-mini td { padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle; }
+.inp-money-sm { width:90px;text-align:right; }
+.armar-add  { display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap; }
+.armar-add .inp-sm { flex:1;min-width:200px; }
+.armar-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px; }
+.grupo-hdr--armar { background:#fef2f2; }
+.grupo-ftr  { display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 12px;background:#fdf4ff;border-top:1px solid #f5d0fe; }
+.mini-field-inline { display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#701a75; }
+.grupo-ftr .mini-check-inline { margin-top:0; }
+.btn-quitar-cat { margin-left:auto;border:none;background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;border-radius:6px;padding:4px 8px;cursor:pointer; }
+.fijos-grid { display:grid;grid-template-columns:1.2fr 1fr;gap:16px; }
+.fijo-confirm { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;background:#fefce8;border:1.5px solid #fde047;border-radius:10px;padding:10px; }
+.fijo-name { font-weight:700;color:#1e3a5f;flex:1 1 100%; }
+.fijo-confirm label { display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#475569; }
+.aux-grid { display:grid;grid-template-columns:320px 1fr;gap:18px; }
+.aux-col  { display:flex;flex-direction:column;gap:12px; }
+.btn-del  { margin-right:auto;background:#fff1f2;border:1.5px solid #fecdd3;color:#e11d48;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer; }
+.badge-armar { color:#a16207;font-weight:700; }
+
+@media (max-width: 1024px) {
+  .gen-grid, .fijos-grid { grid-template-columns:1fr; }
+  .aux-grid { grid-template-columns:1fr; }
+}
+@media (max-width: 768px) {
+  .modal-overlay { padding:0;align-items:flex-end; }
+  .ed-card { max-height:100vh;height:100%;border-radius:0; }
+  .ed-card--sm { height:auto;max-height:92vh;border-radius:16px 16px 0 0; }
+  .ed-body { padding:12px 14px; }
+  .pres-add { grid-template-columns:1fr 1fr; }
+  .pres-add .btn-mini { grid-column:span 2;justify-content:center; }
+  .armar-grid { grid-template-columns:1fr; }
+  .campo-row { flex-wrap:wrap; }
+  .campo-money { min-width:130px; }
+}
+@media (max-width: 576px) {
+  .ptab span { font-size:10px; }
+  .ptab { min-width:64px;padding:8px 10px; }
+  .tbl-mini th, .tbl-mini td { padding:4px 5px; }
+  .inp-money-sm { width:72px; }
+  .modal-ftr { flex-wrap:wrap; }
+  .modal-ftr .btn-save { flex:1 1 100%; }
+  .btn-del { margin-right:0; }
 }
 </style>

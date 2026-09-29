@@ -56,6 +56,9 @@ Public Sub DescargarTodo(lblEstado As Label)
     ' 6. Generar tirillas para impresión (derivado del detalle local)
     DescargarTirilla lblEstado
 
+    ' 6b. Insumos fijos del plato + listas de precios por cliente (creados en web)
+    DescargarCatalogosPlatoPrecios lblEstado, ObtenerUltimoPull()
+
     ' 7. Actualizar timestamp del pull exitoso
     ActualizarUltimoPull()
 

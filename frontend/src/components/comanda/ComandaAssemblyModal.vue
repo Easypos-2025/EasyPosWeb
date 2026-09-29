@@ -44,28 +44,22 @@
           v-for="cat in categories"
           :key="cat.category_code"
           :class="{
-            'am-col--done':    !!selections[cat.category_code],
-            'am-col--pending': cat.is_required && !selections[cat.category_code]
+            'am-col--done':    selCount(cat) > 0,
+            'am-col--pending': cat.is_required && selCount(cat) !== cat.max_choices
           }"
         >
           <!-- Cabecera de columna -->
           <div class="am-col__head">
             <span class="am-col__title">{{ cat.category_name }}</span>
-            <span
-              v-if="cat.is_required && !selections[cat.category_code]"
-              class="am-badge am-badge--req"
-            >Obligatorio</span>
-            <span
-              v-else-if="cat.is_required && selections[cat.category_code]"
-              class="am-badge am-badge--done"
-            ><i class="bi bi-check-lg"></i></span>
+            <span v-if="cat.is_required && selCount(cat) !== cat.max_choices" class="am-badge am-badge--req">Elegir {{ cat.max_choices }} ({{ selCount(cat) }}/{{ cat.max_choices }})</span>
+            <span v-else-if="cat.is_required" class="am-badge am-badge--done"><i class="bi bi-check-lg"></i></span>
             <span v-else class="am-badge am-badge--opt">Opcional</span>
           </div>
 
-          <!-- Ítem seleccionado visible en la cabecera si ya eligió -->
-          <div class="am-col__selected-hint" v-if="selections[cat.category_code]">
+          <!-- Elegidos -->
+          <div class="am-col__selected-hint" v-if="selCount(cat)">
             <i class="bi bi-check-circle-fill text-success me-1"></i>
-            {{ selections[cat.category_code].item_name }}
+            {{ selections[cat.category_code].map(o => o.item_name).join(', ') }}
           </div>
 
           <!-- Sin opciones hoy -->
@@ -84,6 +78,7 @@
             >
               <span class="am-item__dot"></span>
               <span class="am-item__name">{{ opt.item_name }}</span>
+              <span v-if="opt.supply_price > 0" class="am-item__extra">+{{ formatPrice(opt.supply_price) }}</span>
               <i class="bi bi-check-lg am-item__check" v-if="isSelected(cat.category_code, opt.item_id)"></i>
             </button>
           </div>
@@ -92,7 +87,7 @@
 
       <!-- Footer -->
       <div class="am-footer" v-if="!loadingMenu">
-        <div class="am-footer__price">{{ formatPrice(dish?.price * qty) }}</div>
+        <div class="am-footer__price">{{ formatPrice(unitPrice * qty) }}</div>
         <button class="btn btn-outline-secondary btn-sm" @click="$emit('close')">Cancelar</button>
         <button
           class="btn btn-primary btn-sm"
@@ -111,6 +106,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import apiComanda from '@/services/apiComanda'
+import { showToast } from '@/utils/toast'
 
 const props = defineProps({
   dish:           Object,
@@ -123,17 +119,24 @@ const categories    = ref([])
 const fixedProducts = ref([])
 const loadingMenu   = ref(false)
 const loadError     = ref(false)
-const selections    = ref({})  // { category_code: { item_id, item_name, discount_qty } }
+const selections    = ref({})  // { category_code: [ { item_id, item_name, supply_price } ] }
+
+const selCount = cat => (selections.value[cat.category_code] || []).length
 
 const totalSelected = computed(() =>
-  Object.keys(selections.value).length
+  categories.value.filter(c => selCount(c) > 0).length
 )
+
+// Precio mostrado = precio base + valor adicional de lo elegido (el definitivo lo calcula el servidor)
+const extraPrice = computed(() =>
+  Object.values(selections.value).flat().reduce((s, o) => s + (Number(o.supply_price) || 0), 0)
+)
+const unitPrice = computed(() => (Number(props.dish?.price) || 0) + extraPrice.value)
 
 const isValid = computed(() => {
   if (!categories.value.length) return true
-  return categories.value
-    .filter(c => c.is_required)
-    .every(c => !!selections.value[c.category_code])
+  // Exigir cantidad → exactamente max_choices; si no, libre (0..todas)
+  return categories.value.every(c => !c.is_required || selCount(c) === c.max_choices)
 })
 
 function availableOpts(cat) {
@@ -141,19 +144,21 @@ function availableOpts(cat) {
 }
 
 function isSelected(category_code, item_id) {
-  return selections.value[category_code]?.item_id === item_id
+  return (selections.value[category_code] || []).some(o => o.item_id === item_id)
 }
 
 function toggleOption(cat, opt) {
-  if (isSelected(cat.category_code, opt.item_id)) {
-    if (!cat.is_required) delete selections.value[cat.category_code]
-  } else {
-    selections.value[cat.category_code] = {
-      item_id:      opt.item_id,
-      item_name:    opt.item_name,
-      discount_qty: opt.discount_qty,
-    }
+  const cc = cat.category_code
+  const list = selections.value[cc] || []
+  if (isSelected(cc, opt.item_id)) {
+    selections.value[cc] = list.filter(o => o.item_id !== opt.item_id)
+    return
   }
+  const pick = { item_id: opt.item_id, item_name: opt.item_name, supply_price: opt.supply_price || 0 }
+  if (!cat.is_required) { selections.value[cc] = [...list, pick]; return }   // libre: una, varias o todas
+  if (cat.max_choices <= 1) selections.value[cc] = [pick]                    // exige 1: reemplaza
+  else if (list.length < cat.max_choices) selections.value[cc] = [...list, pick]
+  else showToast(`${cat.category_name}: debe elegir exactamente ${cat.max_choices}`, 'warning')
 }
 
 function formatPrice(v) {
@@ -165,12 +170,17 @@ function formatPrice(v) {
 
 function add() {
   if (!isValid.value) return
-  const assemblySelections = Object.entries(selections.value).map(([cc, sel]) => ({
-    category_code: parseInt(cc),
-    item_id:       sel.item_id,
-    item_name:     sel.item_name,
-    discount_qty:  sel.discount_qty,
-  }))
+  const assemblySelections = []
+  for (const [cc, list] of Object.entries(selections.value)) {
+    for (const sel of list) {
+      assemblySelections.push({
+        category_code: parseInt(cc),
+        item_id:       sel.item_id,
+        item_name:     sel.item_name,
+        supply_price:  sel.supply_price || 0,
+      })
+    }
+  }
   emit('added', { dish: props.dish, assemblySelections, qty: qty.value })
 }
 
@@ -189,6 +199,14 @@ watch(() => props.dish, async (dish) => {
     const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`)
     categories.value    = res.data.categories
     fixedProducts.value = res.data.fixed_products
+    // Preseleccionar las opciones marcadas "por defecto" (Por_Default), hasta el máximo permitido
+    for (const c of categories.value) {
+      let defs = c.options.filter(o => o.is_default && o.available_today)
+      if (c.is_required) defs = defs.slice(0, c.max_choices)
+      if (defs.length) selections.value[c.category_code] = defs.map(o => ({
+        item_id: o.item_id, item_name: o.item_name, supply_price: o.supply_price || 0,
+      }))
+    }
   } catch {
     loadError.value = true
   } finally {
@@ -198,6 +216,7 @@ watch(() => props.dish, async (dish) => {
 </script>
 
 <style scoped>
+.am-item__extra { font-size: .72rem; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 1px 7px; margin-left: auto; white-space: nowrap; }
 /* ── Overlay ── */
 .modal-overlay {
   position: fixed;

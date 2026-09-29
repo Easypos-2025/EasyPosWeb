@@ -18,6 +18,7 @@ _last_cleanup: dict[int, float] = {}
 from fastapi import APIRouter, Header, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from app.services import comanda_armado as armado_svc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
 
@@ -300,6 +301,9 @@ async def _build_cards(
     batch_items: dict = {}
     batch_meta: dict  = {}
 
+    # Armado elegido: registro 1/1 de temp_novedades_plato_pedido (formato escritorio)
+    armado_map = await armado_svc.armado_names(db_temp, cid, list({r["Nro_Pedido"] for r in order_rows}))
+
     for row in order_rows:
         on  = row["Nro_Pedido"]
         did = int(row["Id_Plato"])
@@ -327,9 +331,9 @@ async def _build_cards(
                 batch_meta[key]["max_hp"] = cur_hp
         batch_meta[key]["printers"].update(active_printers)
 
-        assembly = []
-        if row["Producto_Personalizado"]:
-            try: assembly = json.loads(row["Producto_Personalizado"]).get("assembly", [])
+        assembly = [{"item_name": n} for n in armado_map.get((on, int(row["Item"])), [])]
+        if not assembly and row["Producto_Personalizado"]:
+            try: assembly = json.loads(row["Producto_Personalizado"]).get("assembly", [])   # pedidos antiguos
             except Exception: pass
 
         batch_items.setdefault(key, []).append({

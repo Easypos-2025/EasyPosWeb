@@ -62,6 +62,26 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
 
 ---
 
+## 6. REGLA: AISLAMIENTO POR EMPRESA (MULTI-TENANT) — OBLIGATORIA
+
+- **Nunca confiar en un `company_id` enviado por el navegador** (header `X-Company-Id`, query `?company_id=`, body, localStorage). El navegador lo puede modificar.
+- La empresa de toda petición se resuelve SIEMPRE en el servidor con `app/auth/tenant.py`:
+  - `tenant.resolve_company(db, user, company_id_solicitado)` → devuelve la empresa efectiva o lanza **403**.
+  - `tenant.allowed_companies(db, user)` → empresas permitidas (para filtrar listados).
+  - Tokens de mesero: solo la empresa de su token (`tenant.check_company`).
+- Regla de acceso:
+  - **Mesero** → solo la empresa de su token.
+  - **Rol ADMIN** → su empresa + las de su mismo NIT (selector del topbar).
+  - **Otros roles** → solo su empresa.
+  - **SYSADMIN** → todas.
+- Toda ruta nueva o modificada debe: exigir sesión (`get_current_user` o equivalente que valide `user_sessions`), resolver la empresa con `tenant`, y filtrar TODAS las consultas por ese `company_id`.
+- Validar que los ids recibidos (plato, insumo, impresora, categoría, proveedor, cliente…) pertenezcan a la empresa antes de usarlos.
+- Campos sensibles (NIT, perfil de negocio, estado, conexión a BD externa) solo los modifica SYSADMIN. El NIT define el acceso entre empresas: un ADMIN no puede cambiarlo.
+- Datos de conexión a BD externa (`ext_db_*`) nunca se devuelven a usuarios que no sean SYSADMIN.
+- Precios y totales los calcula el servidor; nunca se toma un valor monetario enviado por el navegador.
+
+---
+
 ## 7. HOJA DE RUTA
 
 ### 7.1 Origen y Estado de los Pedidos (Canales)

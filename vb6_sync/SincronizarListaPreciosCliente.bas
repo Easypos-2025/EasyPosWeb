@@ -8,7 +8,8 @@
 ' Columnas locales:
 '   id_lista, Id_Cliente, Id_Producto, Id_Presentacion,
 '   Precio_Producto, Fecha, Activa
-' Nota: tabla sin Enviada_MySql — se envian todos los registros
+' Variante A: solo envía Enviada_MySql = 0 y marca por fila lo confirmado.
+' Requiere columna Enviada_MySql (script 015_escritorio_...sql).
 ' ============================================================
 Public Sub SincronizarListaPreciosCliente(Var_Id_Company_Envio As Integer, Var_Limit_Registros As Variant)
     On Error GoTo ErrHandler
@@ -16,10 +17,10 @@ Public Sub SincronizarListaPreciosCliente(Var_Id_Company_Envio As Integer, Var_L
     Dim conn As Object
     Set conn = GetConn(Var_Sql_Base_Datos_Principal_Sede)
 
-    ' -- 1. Leer todos los registros -----------------------
+    ' -- 1. Leer pendientes (lotes) -------------------------
     Dim rs As Object
     Set rs = CreateObject("ADODB.Recordset")
-    rs.Open "SELECT * FROM lista_precios_cliente LIMIT " & Var_Limit_Registros, conn
+    rs.Open "SELECT * FROM lista_precios_cliente WHERE Enviada_MySql = 0 LIMIT " & Var_Limit_Registros, conn
 
     If rs.EOF Then
         rs.Close: conn.Close
@@ -55,7 +56,18 @@ Public Sub SincronizarListaPreciosCliente(Var_Id_Company_Envio As Integer, Var_L
         conn.Close: Exit Sub
     End If
 
-    ' -- 4. Mostrar estado (sin UPDATE — catálogo) ---------
+    ' -- 4. Marcar solo las filas confirmadas ---------------
+    '    saved = "id_lista|Id_Cliente|Id_Producto|Id_Presentacion"
+    Dim savedList As String
+    savedList = ParseSaved(respuesta)
+
+    If savedList <> "" Then
+        conn.Execute "UPDATE lista_precios_cliente SET Enviada_MySql = 1 " & _
+                     "WHERE Enviada_MySql = 0 AND " & _
+                     "CONCAT(id_lista,'|',Id_Cliente,'|',Id_Producto,'|',Id_Presentacion) IN (" & savedList & ")"
+    End If
+
+    ' -- 5. Mostrar estado ---------------------------------
     Dim sc As Object
     Set sc = CreateObject("ScriptControl")
     sc.language = "JScript"
