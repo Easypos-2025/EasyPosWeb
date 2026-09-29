@@ -164,7 +164,7 @@
               <span class="rf-val rf-dias">{{ resumen.diasDeuda }} días</span>
             </div>
             <div class="rf-row">
-              <span class="rf-label">Prorrogas (meses)</span>
+              <span class="rf-label">Ampliaciones Pagadas</span>
               <span class="rf-val">{{ resumen.sumaMesesProrrogados }}</span>
             </div>
             <div class="rf-row rf-row--total-meses">
