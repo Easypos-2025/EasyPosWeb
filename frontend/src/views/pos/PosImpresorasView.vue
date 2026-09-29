@@ -23,9 +23,9 @@
         <div class="printer-info">
           <span class="printer-nombre">{{ imp.name }}</span>
           <span class="printer-tipo">{{ labelForType(imp.connection_type) }}</span>
-          <span v-if="imp.ip" class="printer-detail">{{ imp.ip }}</span>
-          <span v-else-if="imp.bluetooth_address" class="printer-detail">{{ imp.bluetooth_address }}</span>
-          <span v-else-if="imp.usb_device_id" class="printer-detail">{{ imp.usb_device_id }}</span>
+          <span v-if="imp.ip" class="printer-detail" :title="imp.ip">{{ imp.ip }}</span>
+          <span v-else-if="imp.bluetooth_address" class="printer-detail" :title="imp.bluetooth_address">{{ imp.bluetooth_address }}</span>
+          <span v-else-if="imp.usb_device_id" class="printer-detail" :title="imp.usb_device_id">{{ imp.usb_device_id }}</span>
         </div>
         <div class="printer-badge-wrap">
           <button
@@ -540,18 +540,19 @@ async function imprimirPrueba() {
 .estado-carga,.estado-vacio { display:flex;flex-direction:column;align-items:center;gap:10px;padding:60px 20px;color:#94a3b8;font-size:14px; }
 .estado-vacio i { font-size:40px; }
 .printers-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px; }
-.printer-card  { display:flex;align-items:center;gap:12px;background:#fff;border:2px solid #e2e8f0;border-radius:12px;padding:14px;transition:border-color .15s; }
+.printer-card  { display:flex;align-items:center;gap:12px;background:#fff;border:2px solid #e2e8f0;border-radius:12px;padding:14px;transition:border-color .15s;min-width:0;overflow:hidden; }
 .printer-card:hover { border-color:#1d4ed8; }
-.printer-card--off { opacity:.5; }
+.printer-card--off { background:#f8fafc; }
+.printer-card--off .printer-icon, .printer-card--off .printer-info { opacity:.5; }
 .printer-icon  { width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0; }
 .printer-icon--usb       { background:#eff6ff;color:#1d4ed8; }
 .printer-icon--network   { background:#f0fdf4;color:#16a34a; }
 .printer-icon--bluetooth { background:#fdf4ff;color:#9333ea; }
-.printer-info  { flex:1;display:flex;flex-direction:column;gap:2px; }
-.printer-nombre{ font-weight:700;font-size:14px;color:#1e3a5f; }
+.printer-info  { flex:1;display:flex;flex-direction:column;gap:2px;min-width:0; }
+.printer-nombre{ font-weight:700;font-size:14px;color:#1e3a5f;overflow-wrap:anywhere; }
 .printer-tipo  { font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:#94a3b8; }
-.printer-detail{ font-size:12px;color:#64748b;font-family:monospace; }
-.printer-badge-wrap { display:flex;flex-direction:column;align-items:flex-end; }
+.printer-detail{ font-size:12px;color:#64748b;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.printer-badge-wrap { display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0; }
 .badge-on  { font-size:10px;background:#dcfce7;color:#16a34a;border-radius:10px;padding:2px 8px;font-weight:700; }
 .badge-off { font-size:10px;background:#f1f5f9;color:#94a3b8;border-radius:10px;padding:2px 8px; }
 
@@ -580,7 +581,7 @@ async function imprimirPrueba() {
   flex-shrink: 0;
   background: currentColor;
 }
-.printer-acciones { display:flex;gap:5px;flex-direction:column; }
+.printer-acciones { display:flex;gap:5px;flex-direction:column;flex-shrink:0; }
 .btn-icono { background:none;border:1px solid #e2e8f0;border-radius:6px;padding:5px 8px;cursor:pointer;color:#475569;font-size:13px; }
 .btn-icono:hover { background:#f0f4ff;color:#1d4ed8;border-color:#1d4ed8; }
 .btn-icono--danger:hover { background:#fff1f2;color:#e11d48;border-color:#e11d48; }

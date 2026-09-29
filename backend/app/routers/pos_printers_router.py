@@ -165,7 +165,7 @@ async def print_raw(
         raise HTTPException(status_code=422, detail="printer_id, company_id y data_b64 son requeridos")
 
     user = await _get_user(authorization, db)
-    cid  = company_id
+    cid  = await tenant.resolve_company(db, user, company_id)   # valida acceso a la empresa
 
     printer = (await db.execute(text("""
         SELECT name, ip, port FROM pos_printers

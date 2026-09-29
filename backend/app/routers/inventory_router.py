@@ -1245,6 +1245,102 @@ async def get_kardex(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# LIMPIEZA DE ENTRADAS / SALIDAS — eliminar por fecha y registros huérfanos
+#   Huérfano = entrada/salida de un id_item que ya no existe en el catálogo de insumos.
+#   Solo ADMIN; filtrado por empresa; recalcula el stock al terminar.
+#   (Declaradas antes de /entries/{eid} y /exits/{xid} para que no las capture esa ruta.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_MOV_TABLES = {"entries": "inventory_entries", "exits": "inventory_exits"}
+
+
+def _mov_table(kind: str) -> str:
+    t = _MOV_TABLES.get(kind)
+    if not t:
+        raise HTTPException(404, "No encontrado")
+    return t
+
+
+def _valid_date(fecha: str) -> str:
+    try:
+        return date_type.fromisoformat(fecha).isoformat()
+    except ValueError:
+        raise HTTPException(400, "Fecha inválida (use AAAA-MM-DD)")
+
+
+async def movement_dates(kind: str, current_user: User = Depends(get_current_user),
+                         db: AsyncSession = Depends(get_db)):
+    """Fechas con registros y cuántos de ellos son huérfanos."""
+    t = _mov_table(kind)
+    rows = (await db.execute(text(f"""
+        SELECT m.fecha, COUNT(*) AS registros,
+               SUM(NOT EXISTS (SELECT 1 FROM supply_items si
+                               WHERE si.company_id = m.company_id AND si.id_item = m.id_item)) AS huerfanos
+        FROM {t} m WHERE m.company_id = :cid
+        GROUP BY m.fecha ORDER BY m.fecha DESC
+    """), {"cid": current_user.company_id})).mappings().all()
+    return [{"fecha": str(r["fecha"]), "registros": int(r["registros"]), "huerfanos": int(r["huerfanos"] or 0)}
+            for r in rows]
+
+
+async def delete_movements_by_date(kind: str, fecha: str, current_user: User = Depends(get_current_user),
+                                   db: AsyncSession = Depends(get_db)):
+    t = _mov_table(kind)
+    await _require_inventory_admin(current_user, db)
+    cid = current_user.company_id
+    res = await db.execute(text(f"DELETE FROM {t} WHERE company_id = :cid AND fecha = :f"),
+                           {"cid": cid, "f": _valid_date(fecha)})
+    await db.commit()
+    await _recalc_execute(db, cid, "iap.company_id = :cid", {"cid": cid}, cat_id=None)
+    logger.info("delete %s fecha=%s company=%s user=%s rows=%s", t, fecha, cid, current_user.id, res.rowcount)
+    return {"ok": True, "deleted": res.rowcount}
+
+
+async def count_orphan_movements(kind: str, current_user: User = Depends(get_current_user),
+                                 db: AsyncSession = Depends(get_db)):
+    t = _mov_table(kind)
+    n = (await db.execute(text(f"""
+        SELECT COUNT(*) FROM {t} m
+        WHERE m.company_id = :cid
+          AND NOT EXISTS (SELECT 1 FROM supply_items si WHERE si.company_id = m.company_id AND si.id_item = m.id_item)
+    """), {"cid": current_user.company_id})).scalar() or 0
+    return {"huerfanos": int(n)}
+
+
+async def delete_orphan_movements(kind: str, current_user: User = Depends(get_current_user),
+                                  db: AsyncSession = Depends(get_db)):
+    t = _mov_table(kind)
+    await _require_inventory_admin(current_user, db)
+    cid = current_user.company_id
+    res = await db.execute(text(f"""
+        DELETE m FROM {t} m
+        WHERE m.company_id = :cid
+          AND NOT EXISTS (SELECT 1 FROM supply_items si WHERE si.company_id = m.company_id AND si.id_item = m.id_item)
+    """), {"cid": cid})
+    await db.commit()
+    await _recalc_execute(db, cid, "iap.company_id = :cid", {"cid": cid}, cat_id=None)
+    logger.info("delete huerfanos %s company=%s user=%s rows=%s", t, cid, current_user.id, res.rowcount)
+    return {"ok": True, "deleted": res.rowcount}
+
+
+
+
+# Rutas explícitas solo para entries / exits (no un comodín /{kind} que capture otras rutas)
+for _kind in ("entries", "exits"):
+    def _bind(fn, kind=_kind):
+        async def _handler(*args, **kwargs):
+            return await fn(kind, *args, **kwargs)
+        import inspect
+        sig = inspect.signature(fn)
+        _handler.__signature__ = sig.replace(parameters=[p for n, p in sig.parameters.items() if n != "kind"])
+        _handler.__name__ = f"{fn.__name__}_{kind}"
+        return _handler
+    router.add_api_route(f"/{_kind}/dates", _bind(movement_dates), methods=["GET"])
+    router.add_api_route(f"/{_kind}/date/{{fecha}}", _bind(delete_movements_by_date), methods=["DELETE"])
+    router.add_api_route(f"/{_kind}/orphans", _bind(count_orphan_movements), methods=["GET"])
+    router.add_api_route(f"/{_kind}/orphans", _bind(delete_orphan_movements), methods=["DELETE"])
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ENTRADAS
 # ═══════════════════════════════════════════════════════════════════════════════
 

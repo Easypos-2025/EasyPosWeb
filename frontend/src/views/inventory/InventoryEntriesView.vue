@@ -33,6 +33,7 @@
         filename="entradas-inventario"
         title="Entradas de Inventario"
       />
+      <LimpiezaMovimientos kind="entries" @changed="load" />
       <button class="btn-nueva" @click="openCreate">
         <i class="bi bi-plus-lg"></i><span class="btn-lbl"> Nueva Entrada</span>
       </button>
@@ -137,6 +138,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
+import LimpiezaMovimientos from '@/components/inventory/LimpiezaMovimientos.vue'
 import { showToast } from '@/utils/toast'
 import Swal from 'sweetalert2'
 

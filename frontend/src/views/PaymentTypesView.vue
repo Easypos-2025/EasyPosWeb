@@ -378,6 +378,24 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* ── Modal (no hay estilos globales para estas clases) ──────────────── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
+.modal-card    { background: #fff; border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden; }
+.modal-card.modal-lg { max-width: 680px; }
+.modal-card .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid #f1f5f9; }
+.modal-card .modal-header h3 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0; }
+.modal-close   { background: none; border: none; font-size: 16px; color: #94a3b8; cursor: pointer; }
+.modal-card .modal-body   { padding: 16px 20px; overflow-y: auto; }
+.modal-card .modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid #f1f5f9; }
+@media (max-width: 768px) {
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal-card, .modal-card.modal-lg { max-width: 100%; border-radius: 16px 16px 0 0; max-height: 94vh; }
+}
+@media (max-width: 576px) {
+  .options-grid { grid-template-columns: 1fr !important; }
+  .modal-card .modal-body { padding: 12px 14px; }
+}
+
 /* ── Opciones del modal ─────────────────────────────────────────────── */
 .options-grid {
   display: grid;

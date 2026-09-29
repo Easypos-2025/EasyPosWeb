@@ -1825,7 +1825,7 @@ async def get_printers(
     current_user=Depends(get_current_user),
 ):
     rows = (await db.execute(text("""
-        SELECT id, name, ip, port, connection_type, is_active
+        SELECT id, name, ip, port, connection_type, bluetooth_address, usb_device_id, is_active
         FROM pos_printers
         WHERE company_id = :cid AND is_active = 1
         ORDER BY id
@@ -2062,19 +2062,28 @@ async def imprimir_pos(
 
     company_id     = body.get("company_id")
     printer_id     = body.get("printer_id")
-    receipt_number = str(body.get("receipt_number", ""))
+    receipt_number = str(body.get("receipt_number", ""))[:50]
+    # raw=True → devuelve los bytes ESC/POS (base64) para que el navegador los envíe a una
+    # impresora USB/Bluetooth: el servidor en la nube no alcanza esas impresoras.
+    raw            = bool(body.get("raw"))
 
     if not company_id or not printer_id:
         raise HTTPException(status_code=422, detail="company_id y printer_id requeridos")
 
     # Datos de la impresora
     printer = (await db.execute(text("""
-        SELECT name, ip, port FROM pos_printers
+        SELECT name, ip, port, LOWER(COALESCE(connection_type, '')) AS connection_type
+        FROM pos_printers
         WHERE id = :pid AND company_id = :cid AND is_active = 1
     """), {"pid": printer_id, "cid": company_id})).mappings().first()
 
-    if not printer or not printer["ip"]:
-        raise HTTPException(status_code=404, detail="Impresora no encontrada o sin IP configurada")
+    if not printer:
+        raise HTTPException(status_code=404, detail="Impresora no encontrada o inactiva")
+    directa = printer["connection_type"] in ("bluetooth", "usb")
+    if not raw and directa:
+        raise HTTPException(status_code=400, detail="Esta impresora es USB/Bluetooth: se imprime desde el dispositivo, no por red")
+    if not raw and not printer["ip"]:
+        raise HTTPException(status_code=400, detail="La impresora de red no tiene IP configurada")
 
     # Datos del recibo
     receipt = (await db.execute(text("""
@@ -2110,13 +2119,19 @@ async def imprimir_pos(
     LF          = b'\n'
     CUT         = ESC + b'\x69'          # cut parcial
 
+    import unicodedata as _ud
+
+    def _ascii(t):
+        # Las térmicas no imprimen bien tildes/ñ en UTF-8: se pasan a ASCII (á→a, ñ→n)
+        return _ud.normalize("NFKD", str(t)).encode("ascii", "ignore")
+
     def line(txt="", bold=False, center=False):
         enc = (BOLD_ON if bold else b'') + (CENTER if center else LEFT)
-        return enc + txt.encode('utf-8', errors='replace') + LF + (BOLD_OFF if bold else b'')
+        return enc + _ascii(txt) + LF + (BOLD_OFF if bold else b'')
 
     def dline(left_txt, right_txt, width=32):
         spaces = max(1, width - len(left_txt) - len(right_txt))
-        return LEFT + (left_txt + ' ' * spaces + right_txt).encode('utf-8', errors='replace') + LF
+        return LEFT + _ascii(left_txt + ' ' * spaces + right_txt) + LF
 
     buf = bytearray()
     buf += INIT
@@ -2146,7 +2161,11 @@ async def imprimir_pos(
     buf += LF + LF + LF
     buf += CUT
 
-    # ── Enviar via socket TCP ─────────────────────────────────────────────────
+    if raw:
+        import base64 as _b64
+        return {"ok": True, "printer": printer["name"], "data_b64": _b64.b64encode(bytes(buf)).decode()}
+
+    # ── Enviar via socket TCP (impresoras de red) ─────────────────────────────
     try:
         with _socket.create_connection(
             (printer["ip"], int(printer["port"] or 9100)),

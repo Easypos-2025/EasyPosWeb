@@ -125,8 +125,9 @@
                 <div class="ir-opt-info">
                   <span class="ir-opt-label">{{ p.name }}</span>
                   <span class="ir-opt-desc">
-                    <span v-if="p.ip">{{ p.ip }}:{{ p.port }}</span>
-                    <span v-else>Sin IP configurada</span>
+                    <span v-if="isDirectPrinter(p)">{{ p.connection_type === 'usb' ? 'USB · desde este dispositivo' : 'Bluetooth · desde este dispositivo' }}</span>
+                    <span v-else-if="p.ip">{{ p.ip }}:{{ p.port }}</span>
+                    <span v-else>Red · sin IP configurada</span>
                     <span v-if="p.connection_type" class="ir-conn-chip">{{ p.connection_type }}</span>
                   </span>
                 </div>
@@ -168,6 +169,7 @@
 </template>
 
 <script setup>
+import { isDirectPrinter, printDirect, base64ToBytes, isUserCancel } from "@/utils/printerDirect"
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -213,21 +215,27 @@ function imprimirSistema() {
 }
 
 // ── Imprimir en impresora POS (via backend socket) ───────────────────────────
+// Red → lo envía el servidor (IP:9100). USB / Bluetooth → el servidor arma el recibo y
+// este dispositivo lo envía a la impresora (el servidor no puede alcanzarlas).
 async function imprimirPos(printer) {
-  if (!printer.ip) {
-    showToast(`La impresora "${printer.name}" no tiene IP configurada`, "warning", 3000)
+  const directa = isDirectPrinter(printer)
+  if (!directa && !printer.ip) {
+    showToast(`La impresora de red "${printer.name}" no tiene IP configurada`, "warning", 3000)
     return
   }
   imprimiendoPosId.value = printer.id
   try {
-    await api.post(props.printPath, {
+    const { data } = await api.post(props.printPath, {
       company_id:     props.companyId,
       printer_id:     printer.id,
       receipt_number: props.receiptData.receipt_number,
+      raw:            directa,
     })
+    if (directa) await printDirect(printer, base64ToBytes(data.data_b64))
     showToast(`Enviado a "${printer.name}"`, "success", 2000)
   } catch (e) {
-    showToast(e?.response?.data?.detail || `Error al enviar a "${printer.name}"`, "error", 3000)
+    if (isUserCancel(e)) showToast("Selección de impresora cancelada", "info", 2000)
+    else showToast(e?.response?.data?.detail || e?.message || `Error al enviar a "${printer.name}"`, "error", 4000)
   }
   imprimiendoPosId.value = null
 }

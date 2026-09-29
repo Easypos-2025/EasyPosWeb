@@ -1373,4 +1373,18 @@ router.afterEach((to) => {
 EXPORTACIÓN DEL ROUTER
 ========================================= */
 
+// Tras un deploy los archivos JS cambian de nombre (hash). Si la pestaña quedó abierta con la
+// versión anterior, al navegar pide un archivo que ya no existe → recargar UNA vez la página.
+const CHUNK_RELOAD_KEY = "chunk_reload_at"
+router.onError((error, to) => {
+  const msg = String(error?.message || "")
+  const isChunkError = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk .* failed/i.test(msg)
+  if (!isChunkError) return
+  let last = 0
+  try { last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0) } catch { /* sin storage */ }
+  if (Date.now() - last < 30000) return          // ya se recargó hace poco: evita ciclo infinito
+  try { sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now())) } catch { /* sin storage */ }
+  window.location.assign(to?.fullPath || window.location.href)
+})
+
 export default router
