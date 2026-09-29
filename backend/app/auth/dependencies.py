@@ -38,7 +38,9 @@ async def get_current_user(
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
 
-        return user
+        # Empresa elegida en el topbar (validada; solo en memoria para esta petición)
+        from app.auth.tenant import apply_selected_company
+        return await apply_selected_company(db, user)
 
     except HTTPException:
         raise

@@ -64,6 +64,11 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
 
 ## 6. REGLA: AISLAMIENTO POR EMPRESA (MULTI-TENANT) — OBLIGATORIA
 
+- **Empresa efectiva de toda petición = la seleccionada en el topbar**, validada: el frontend
+  (`services/apis.js`) envía siempre `X-Company-Id`; `SelectedCompanyMiddleware` + `tenant.apply_selected_company`
+  (llamado desde `get_current_user` y todos los `_get_user`) la aplican al usuario SOLO si tiene acceso;
+  si no, se ignora y queda su empresa propia. Nunca se guarda en `users` (se usa `set_committed_value`).
+  Todo helper de autenticación nuevo debe terminar con `return await apply_selected_company(db, user)`.
 - **Nunca confiar en un `company_id` enviado por el navegador** (header `X-Company-Id`, query `?company_id=`, body, localStorage). El navegador lo puede modificar.
 - La empresa de toda petición se resuelve SIEMPRE en el servidor con `app/auth/tenant.py`:
   - `tenant.resolve_company(db, user, company_id_solicitado)` → devuelve la empresa efectiva o lanza **403**.

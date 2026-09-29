@@ -38,6 +38,15 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
 
+    // Empresa elegida en el selector del topbar: el servidor la aplica SOLO si el usuario
+    // tiene acceso (ADMIN mismo NIT / SYSADMIN); si no, usa la empresa propia (CLAUDE.md §6).
+    if (!config.headers["X-Company-Id"]) {
+      try {
+        const sel = JSON.parse(localStorage.getItem("selected_company") || "null")
+        if (sel?.id) config.headers["X-Company-Id"] = String(sel.id)
+      } catch { /* selección inválida: se ignora */ }
+    }
+
     return config
   },
   (error) => {

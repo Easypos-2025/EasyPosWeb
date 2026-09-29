@@ -41,7 +41,8 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if not user.company_id:
         raise HTTPException(status_code=403, detail="Usuario sin empresa asignada")
-    return user
+    from app.auth.tenant import apply_selected_company
+    return await apply_selected_company(db, user)   # empresa del topbar (validada)
 
 
 async def _check_dish(db: AsyncSession, cid: int, dish_id: int) -> None:

@@ -2408,6 +2408,13 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # ===============================
+# Empresa seleccionada en el topbar (X-Company-Id) → contexto de la petición
+# (se aplica al usuario solo si tiene acceso; ver app/auth/tenant.py y CLAUDE.md §6)
+# ===============================
+from app.auth.tenant import SelectedCompanyMiddleware
+app.add_middleware(SelectedCompanyMiddleware)
+
+# ===============================
 # CORS
 # ===============================
 app.add_middleware(

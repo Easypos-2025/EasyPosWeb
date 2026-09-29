@@ -14,8 +14,12 @@ Reglas:
 Las empresas permitidas por usuario se guardan en memoria del servidor 60 s
 para no consultar la BD en cada petición.
 """
+import logging
 import time
+from contextvars import ContextVar
 from typing import Optional
+
+from sqlalchemy.orm.attributes import set_committed_value
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select, text
@@ -26,6 +30,8 @@ from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.models.role_model import Role
+
+logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 60
 _allowed_cache: dict = {}          # user_id → (expira, company_id propia, frozenset permitidas | None=todas)
@@ -94,9 +100,10 @@ async def resolve_company(db: AsyncSession, user: User, requested: Optional[int]
 
 
 async def _requested_companies(request: Request) -> set:
-    """company_id solicitados por el navegador: query, header X-Company-Id y cuerpo JSON."""
+    """company_id solicitados explícitamente por el navegador: query y cuerpo JSON.
+    (El header X-Company-Id lo aplica apply_selected_company, que lo ignora si no hay acceso.)"""
     found = set()
-    for raw in (request.query_params.get("company_id"), request.headers.get("x-company-id")):
+    for raw in (request.query_params.get("company_id"),):
         if raw not in (None, ""):
             try:
                 found.add(int(raw))
@@ -149,6 +156,54 @@ async def tenant_guard(request: Request, db: AsyncSession = Depends(get_db)) -> 
     own, allowed = await allowed_companies(db, user)
     for cid in requested:
         check_company(own, allowed, cid)
+
+
+# ─── Empresa seleccionada en el topbar (header X-Company-Id) ─────────────────
+# El frontend envía en TODA petición la empresa elegida en el selector del topbar.
+# SelectedCompanyMiddleware la guarda aquí; la autenticación la aplica al usuario
+# de esa petición SOLO si tiene acceso (ADMIN mismo NIT / SYSADMIN). Nunca se
+# persiste en la tabla users.
+_selected_company: ContextVar[Optional[int]] = ContextVar("selected_company", default=None)
+
+
+class SelectedCompanyMiddleware:
+    """Middleware ASGI puro: lee X-Company-Id y lo deja en el contexto de la petición."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            return await self.app(scope, receive, send)
+        value = None
+        for k, v in scope.get("headers") or []:
+            if k == b"x-company-id":
+                try:
+                    value = int(v.decode().strip()) or None
+                except ValueError:
+                    value = None
+                break
+        token = _selected_company.set(value)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _selected_company.reset(token)
+
+
+async def apply_selected_company(db: AsyncSession, user: User) -> User:
+    """Aplica al usuario (solo en memoria, para esta petición) la empresa del topbar
+    si tiene acceso; si no, se ignora y queda su empresa propia."""
+    requested = _selected_company.get()
+    if not requested or requested == user.company_id:
+        return user
+    own, allowed = await allowed_companies(db, user)
+    if allowed is None or requested in allowed:
+        # set_committed_value: cambia el valor SIN marcar el objeto como modificado,
+        # así un commit posterior nunca escribe este company_id en la tabla users.
+        set_committed_value(user, "company_id", requested)
+    else:
+        logger.warning("X-Company-Id %s ignorado: usuario %s sin acceso", requested, user.id)
+    return user
 
 
 def clear_cache(user_id: Optional[int] = None) -> None:

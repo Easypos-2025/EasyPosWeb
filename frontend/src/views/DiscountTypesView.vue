@@ -269,6 +269,59 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* ── Página ─────────────────────────────────────────────────────────── */
+.page-container { padding: 24px; max-width: 1100px; }
+.page-header    { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.page-title     { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 4px; display: flex; align-items: center; }
+.page-subtitle  { font-size: 13px; color: #64748b; margin: 0; }
+.search-bar     { display: flex; align-items: center; gap: 8px; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 8px 12px; max-width: 380px; margin-bottom: 14px; }
+.search-bar i   { color: #94a3b8; }
+.search-input   { border: none; outline: none; flex: 1; font-size: 14px; min-width: 0; background: transparent; }
+.empty-state    { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 50px 20px; color: #94a3b8; text-align: center; }
+.empty-state > i { font-size: 36px; }
+.sub-card       { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow: hidden; }
+.data-table     { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th  { background: #f8fafc; color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; padding: 11px 14px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; text-align: left; }
+.data-table td  { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover td { background: #f8fafc; }
+.data-table .text-center { text-align: center; }
+.action-btns    { display: inline-flex; gap: 6px; }
+.btn            { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; transition: all .15s; }
+.btn-primary    { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+.btn-secondary  { background: #fff; color: #64748b; border-color: #e2e8f0; }
+.btn-sm         { padding: 6px 10px; font-size: 12px; }
+.btn-outline-primary { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.btn-outline-danger  { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.text-muted     { color: #94a3b8; }
+
+@media (max-width: 1024px) {
+  .page-container { padding: 18px; }
+  .data-table th, .data-table td { padding: 10px; }
+}
+/* Móvil: la tabla pasa a tarjetas */
+@media (max-width: 768px) {
+  .page-container { padding: 14px; }
+  .page-header .btn { width: 100%; justify-content: center; }
+  .search-bar { max-width: none; }
+  .sub-card { background: transparent; box-shadow: none; }
+  .data-table thead { display: none; }
+  .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
+  .data-table tr { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 10px; padding: 10px 12px; }
+  .data-table td { border: none; padding: 4px 0; display: flex; align-items: center; justify-content: space-between; text-align: left !important; }
+  .data-table td:first-child { display: block; padding-bottom: 8px; border-bottom: 1px solid #f1f5f9; margin-bottom: 4px; font-weight: 700; }
+  .data-table td:nth-child(2)::before { content: "Descuento"; }
+  .data-table td:nth-child(3)::before { content: "Solicita cliente"; }
+  .data-table td:nth-child(4)::before { content: "Activo"; }
+  .data-table td:nth-child(n+2):not(:last-child)::before { font-size: 12px; font-weight: 600; color: #64748b; }
+  .data-table td:last-child { justify-content: flex-end; padding-top: 8px; }
+}
+@media (max-width: 576px) {
+  .page-title { font-size: 18px; }
+}
+
 /* ── Modal (no hay estilos globales para estas clases) ──────────────── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
 .modal-card    { background: #fff; border-radius: 16px; width: 100%; max-width: 560px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden; }

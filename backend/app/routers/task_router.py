@@ -56,7 +56,8 @@ async def _get_user(authorization: str, db: AsyncSession):
     user = await db.get(User, int(uid)) if uid else None
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return user
+    from app.auth.tenant import apply_selected_company
+    return await apply_selected_company(db, user)   # empresa del topbar (validada)
 
 
 async def _get_role(user: User, db: AsyncSession):
