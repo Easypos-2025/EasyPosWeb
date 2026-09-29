@@ -3260,6 +3260,70 @@ async def push_supply_measures(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# clientes → clientes  (Variante A: el escritorio envía Enviada_MySql=0)
+# Llave: (company_id, id_cliente). saved = Id_Cliente confirmados.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ClienteSyncIn(BaseModel):
+    company_id:        int
+    id_cliente:        int
+    cedula:            Optional[str] = None
+    nombres:           Optional[str] = None
+    apellidos:         Optional[str] = None
+    direccion:         Optional[str] = None
+    telefono:          Optional[str] = None
+    barrio:            Optional[str] = None
+    mail:              Optional[str] = None
+    dia_cumple:        Optional[str] = None
+    mes_cumple:        Optional[str] = None
+    edad:              Optional[str] = None
+    ocupacion:         Optional[str] = None
+    porc_descuento:    Optional[str] = None
+    observaciones:     Optional[str] = None
+    fecha_aniversario: Optional[str] = None
+    fecha_grado:       Optional[str] = None
+    empresa:           Optional[str] = None
+    id_klob:           Optional[str] = None
+    tarjeta_fiel:      Optional[str] = None
+    cod_barrio:        Optional[int] = 0
+    id_sede:           Optional[int] = 0
+    referencia:        Optional[str] = None
+
+
+_CLIENTE_COLS = ("cedula", "nombres", "apellidos", "direccion", "telefono", "barrio", "mail", "dia_cumple",
+                 "mes_cumple", "edad", "ocupacion", "porc_descuento", "observaciones", "fecha_aniversario",
+                 "fecha_grado", "empresa", "id_klob", "tarjeta_fiel", "cod_barrio", "id_sede", "referencia")
+
+
+@router.post("/sync/push/clientes")
+async def push_clientes(
+    items: List[ClienteSyncIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    saved, failed = [], []
+    cols = ", ".join(_CLIENTE_COLS)
+    vals = ", ".join(f":{c}" for c in _CLIENTE_COLS)
+    upd = ", ".join(f"{c} = VALUES({c})" for c in _CLIENTE_COLS)
+    for it in items:
+        try:
+            params = it.dict()
+            for f in ("fecha_aniversario", "fecha_grado"):
+                params[f] = params[f] or None
+            await db.execute(text(f"""
+                INSERT INTO clientes (company_id, id_cliente, {cols}, enviada_mysql)
+                VALUES (:company_id, :id_cliente, {vals}, 1)
+                ON DUPLICATE KEY UPDATE {upd}, enviada_mysql = 1, updated_at = NOW()
+            """), params)
+            saved.append(it.id_cliente)
+        except Exception as e:
+            failed.append({"key": it.id_cliente, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # novedades_categorias → pos_dish_note_categories  (catálogo, Variante B)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -3524,6 +3588,8 @@ router.get("/sync/pull/dish-portions")(
     _pull("inventario_porciones_plato", "dish_portions"))
 router.get("/sync/pull/suppliers")(
     _pull("suppliers", "suppliers"))
+router.get("/sync/pull/clientes")(
+    _pull("clientes", "clientes"))
 router.get("/sync/pull/supply-suppliers")(
     _pull("insumos_proveedor", "supply_suppliers"))
 router.get("/sync/pull/supply-measures")(

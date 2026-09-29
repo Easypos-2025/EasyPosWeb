@@ -94,6 +94,7 @@ from app.routers.pos_printers_router import router as pos_printers_router
 from app.routers.pos_cajas_router import router as pos_cajas_router
 from app.routers.pos_lista_precios_router import router as pos_lista_precios_router
 from app.routers.pos_platos_router import router as pos_platos_router
+from app.routers.pos_listas_cliente_router import router as pos_listas_cliente_router
 from app.routers.pos_tables_router import router as pos_tables_router
 from app.routers.pos_comanda_router import router as pos_comanda_router
 from app.routers.pos_tpv_router import router as pos_tpv_router
@@ -2506,6 +2507,7 @@ routers = [
     pos_cajas_router,
     pos_lista_precios_router,
     pos_platos_router,
+    pos_listas_cliente_router,
     pos_tables_router,
     pos_comanda_router,
     pos_tpv_router,

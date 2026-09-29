@@ -43,6 +43,12 @@ ALTER TABLE insumos_forma_medida
     ADD COLUMN Enviada_MySql TINYINT(4) NOT NULL DEFAULT 0;
 
 
+-- 6. clientes: sincronización a la web. Varias BD ya tienen la columna (ej. maduritos):
+--    si existe, esta línea dará "Duplicate column" y se ignora.
+ALTER TABLE clientes
+    ADD COLUMN Enviada_MySql TINYINT(4) DEFAULT 0;
+
+
 CREATE TABLE IF NOT EXISTS lista_precios_cliente_cabecera (
     Id_Lista      INT(11)      NOT NULL DEFAULT 0,
     Id_Cliente    INT(11)      NOT NULL DEFAULT 0,

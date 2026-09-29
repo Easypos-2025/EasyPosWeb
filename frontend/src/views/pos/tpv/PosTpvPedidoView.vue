@@ -12,6 +12,11 @@
         <span class="tpv-header__waiter">
           <i class="bi bi-person-fill me-1"></i>{{ order?.waiter_name }}
         </span>
+        <button class="cli-chip" :disabled="!order?.order_number" @click="clienteOpen = true" title="Cliente del pedido">
+          <i class="bi bi-person-badge"></i>
+          <span class="cli-chip__name">{{ order?.customer?.nombre || 'Consumidor Final' }}</span>
+          <i class="bi bi-chevron-down"></i>
+        </button>
       </div>
       <div class="tpv-header__total">{{ formatPrice(localTotal) }}</div>
     </div>
@@ -232,6 +237,14 @@
     />
 
     <!-- Modal descuento -->
+    <ComandaClienteModal
+      v-if="clienteOpen"
+      :current-id="order?.customer?.id_cliente || 1"
+      :saving="savingCliente"
+      @close="clienteOpen = false"
+      @select="cambiarCliente"
+    />
+
     <ComandaDescuentoModal
       v-if="descuentoItem"
       :item="descuentoItem"
@@ -250,6 +263,7 @@ import apiComanda from '@/services/apiComanda'
 import ComandaAssemblyModal from '@/components/comanda/ComandaAssemblyModal.vue'
 import ComandaNotasModal from '@/components/comanda/ComandaNotasModal.vue'
 import ComandaDescuentoModal from '@/components/comanda/ComandaDescuentoModal.vue'
+import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
@@ -279,6 +293,30 @@ const catMenuOpen    = ref(false)
 const assemblyDish   = ref(null)
 const notasItem      = ref(null)
 const descuentoItem  = ref(null)
+const clienteOpen    = ref(false)
+const savingCliente  = ref(false)
+
+// Cliente del pedido: el servidor recalcula los ítems guardados con su lista de precios
+async function cambiarCliente(c) {
+  if (!order.value?.order_number) return
+  if (c.id_cliente === (order.value.customer?.id_cliente || 1)) { clienteOpen.value = false; return }
+  savingCliente.value = true
+  try {
+    const { data } = await apiComanda.put('/api/pos/comanda/orden/cliente', {
+      order_number: order.value.order_number, customer_id: c.id_cliente,
+    })
+    const pendientes = items.value.filter(i => i.isNew)       // ítems aún no enviados se conservan
+    await loadOrder()
+    items.value.push(...pendientes)
+    clienteOpen.value = false
+    let msg = `Cliente: ${data.customer.nombre}`
+    if (data.kept_with_discount) msg += ` · ${data.kept_with_discount} ítem(s) con descuento conservan su valor`
+    if (pendientes.length) msg += ' · los ítems nuevos se cobrarán con su lista al enviar'
+    showToast(msg, 'success')
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'No se pudo cambiar el cliente', 'error')
+  } finally { savingCliente.value = false }
+}
 const sending        = ref(false)
 let _tempId = -1
 
@@ -641,6 +679,11 @@ function cancelOrder() {
 </script>
 
 <style scoped>
+.cli-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; border: 1.5px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 3px 10px; font-size: .78rem; font-weight: 700; cursor: pointer; }
+.cli-chip:disabled { opacity: .5; cursor: default; }
+.cli-chip__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 768px) { .cli-chip { max-width: 150px; } }
+@media (max-width: 576px) { .cli-chip { max-width: 120px; font-size: .72rem; padding: 3px 8px; } }
 .ci-custom { background: #ede9fe; color: #5b21b6; }
 .tpv-pedido {
   display: flex;

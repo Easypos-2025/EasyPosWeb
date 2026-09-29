@@ -91,8 +91,28 @@ Public Sub DescargarCatalogosPlatoPrecios(lblEstado As Label, ByVal desde As Str
         Next i
     End If
 
+    ' ── 4. Clientes creados en la web ─────────────────────────
+    '    INSERT IGNORE: nunca sobrescribe un cliente que ya exista en el escritorio.
+    respuesta = ApiGet("/sync/pull/clientes" & qs)
+    If respuesta <> "" Then
+        sc.ExecuteStatement "var r = " & respuesta & ";"
+        total = CLng(sc.Eval("r.clientes.length"))
+        For i = 0 To total - 1
+            conn.Execute "INSERT IGNORE INTO clientes " & _
+                "(Id_Cliente, cedula, nombres, Apellidos, direccion, telefono, Mail, Observaciones, Enviada_MySql) VALUES (" & _
+                CLng(sc.Eval("r.clientes[" & i & "].id_cliente")) & ", " & _
+                "'" & EscSql(CStr(sc.Eval("r.clientes[" & i & "].cedula || ''"))) & "', " & _
+                "'" & EscSql(Left(CStr(sc.Eval("r.clientes[" & i & "].nombres || ''")), 50)) & "', " & _
+                "'" & EscSql(Left(CStr(sc.Eval("r.clientes[" & i & "].apellidos || ''")), 50)) & "', " & _
+                "'" & EscSql(Left(CStr(sc.Eval("r.clientes[" & i & "].direccion || ''")), 50)) & "', " & _
+                "'" & EscSql(CStr(sc.Eval("r.clientes[" & i & "].telefono || ''"))) & "', " & _
+                "'" & EscSql(Left(CStr(sc.Eval("r.clientes[" & i & "].mail || ''")), 50)) & "', " & _
+                "'" & EscSql(Left(CStr(sc.Eval("r.clientes[" & i & "].observaciones || ''")), 255)) & "', 1)"
+        Next i
+    End If
+
     conn.Close
-    lblEstado.Caption = "Insumos fijos / listas de precios al dia: " & Now()
+    lblEstado.Caption = "Insumos fijos / listas de precios / clientes al dia: " & Now()
     Exit Sub
 
 ErrHandler:

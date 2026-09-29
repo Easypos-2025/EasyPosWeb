@@ -17,6 +17,7 @@ from typing import Optional, List
 from app.database import get_db, get_datatemppos_db
 from app.services import comanda_armado as armado_svc
 from app.auth import tenant
+from app.services import clientes as clientes_svc
 from app.auth.jwt_handler import create_access_token, decode_access_token
 
 router = APIRouter(prefix="/api/pos/comanda", tags=["POS Comanda"])
@@ -96,6 +97,20 @@ class AbrirMesaIn(BaseModel):
     table_id: int
     guests_count: Optional[int] = 1
     waiter_id: Optional[int] = None  # Admin puede pasarlo explícitamente
+    customer_id: Optional[int] = None  # clientes.id_cliente; por defecto 1 = Consumidor Final
+
+
+class CambiarClienteIn(BaseModel):
+    order_number: str
+    customer_id: int
+
+
+class ClienteRapidoIn(BaseModel):
+    nombres: str
+    cedula: Optional[str] = None
+    telefono: Optional[str] = None
+    direccion: Optional[str] = None
+    mail: Optional[str] = None
 
 
 class AssemblySelection(BaseModel):
@@ -379,6 +394,10 @@ async def abrir_mesa(
 
     order_number = _order_number(cid, data.table_id)
 
+    # Cliente del pedido: por defecto 1 = Consumidor Final; si viene otro, debe ser de la empresa
+    customer = await clientes_svc.get_cliente(db, cid, data.customer_id or clientes_svc.CONSUMIDOR_FINAL_ID)
+    await db.commit()   # por si se creó el Consumidor Final
+
     # Insertar en temp_comanda (Movil=1 = origen web)
     await db_temp.execute(text("""
         INSERT INTO temp_comanda
@@ -386,7 +405,7 @@ async def abrir_mesa(
              Mesero, Cancelado, Valor, Nro_Comenzales, Domicilio, Id_Cliente, Movil, updated_at)
         VALUES
             (:cid, :on, :date, '0', :mesa, :hora,
-             :wid, 0, 0, :guests, 0, 0, 1, NOW())
+             :wid, 0, 0, :guests, 0, :cli, 1, NOW())
     """), {
         "cid":    cid,
         "on":     order_number,
@@ -395,6 +414,7 @@ async def abrir_mesa(
         "hora":   _time_str(),
         "wid":    waiter_id,
         "guests": data.guests_count,
+        "cli":    customer["id_cliente"],
     })
 
     # Marcar mesa como abierta en temp_mesa_abierta
@@ -439,7 +459,7 @@ async def get_orden_mesa(
     # Si no: buscar por mesa, prefiriendo Movil=0 (VB6) sobre Movil=1 (web)
     if order_number:
         order = (await db_temp.execute(text("""
-            SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
+            SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa, Id_Cliente
             FROM temp_comanda
             WHERE Nro_Pedido=:on AND company_id=:cid
               AND Nro_Factura='0' AND Cancelado=0
@@ -448,7 +468,7 @@ async def get_orden_mesa(
     else:
         # Sin filtro de fecha: un pedido puede cruzar medianoche y seguir activo
         order = (await db_temp.execute(text("""
-            SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa
+            SELECT Nro_Pedido, Fecha, Valor, Hora, Nro_Comenzales, Mesero, Novedad, Mesa, Id_Cliente
             FROM temp_comanda
             WHERE Mesa=:mesa AND company_id=:cid
               AND Nro_Factura='0' AND Cancelado=0
@@ -501,6 +521,11 @@ async def get_orden_mesa(
         dish_names = {int(r["id"]): r["name"] for r in drows}
 
     assembly_map = await armado_svc.assembly_structured(db, db_temp, cid, on, dish_ids)
+    try:
+        customer_info = await clientes_svc.get_cliente(db, cid, int(order["Id_Cliente"] or 0) or clientes_svc.CONSUMIDOR_FINAL_ID)
+        await db.commit()
+    except HTTPException:
+        customer_info = {"id_cliente": int(order["Id_Cliente"] or 0), "nombre": f"Cliente {order['Id_Cliente']}"}
 
     items = []
     for r in items_rows:
@@ -540,6 +565,7 @@ async def get_orden_mesa(
             "waiter_name":  waiter_name,
             "table_name":   order["Mesa"],
             "daily_seq":    seq_map.get(on, 1),
+            "customer":     customer_info,
         },
         "items": items,
     }
@@ -666,6 +692,93 @@ async def get_menu_diario(
         "fixed_products": [{"item_id": f["item_id"], "quantity": f["quantity"], "description": f["description"]}
                            for f in fixed],
     }
+
+
+# ── 6b. CLIENTES DEL PEDIDO ───────────────────────────────────────────────────
+
+@router.get("/clientes")
+async def buscar_clientes(
+    q: Optional[str] = Query(None, max_length=60),
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clientes de la empresa (Consumidor Final siempre primero)."""
+    rows = await clientes_svc.buscar(db, payload["company_id"], q)
+    await db.commit()
+    return rows
+
+
+@router.post("/clientes", status_code=201)
+async def crear_cliente(
+    data: ClienteRapidoIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await clientes_svc.crear(db, payload["company_id"], data.nombres, data.cedula,
+                                   data.telefono, data.direccion, data.mail)
+    await db.commit()
+    return row
+
+
+@router.put("/orden/cliente")
+async def cambiar_cliente(
+    data: CambiarClienteIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    """Asigna el cliente al pedido y recalcula los ítems no facturados con su lista de
+    precios (o platos.Valor). Los ítems con descuento aplicado conservan su valor."""
+    cid = payload["company_id"]
+    order = (await db_temp.execute(text("""
+        SELECT Nro_Pedido FROM temp_comanda
+        WHERE Nro_Pedido=:on AND company_id=:cid AND Nro_Factura='0' AND Cancelado=0 LIMIT 1
+    """), {"on": data.order_number, "cid": cid})).mappings().first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Orden no encontrada o ya cerrada")
+    customer = await clientes_svc.get_cliente(db, cid, data.customer_id)
+    await db.commit()
+
+    await db_temp.execute(text(
+        "UPDATE temp_comanda SET Id_Cliente=:cli, updated_at=NOW() WHERE Nro_Pedido=:on AND company_id=:cid"
+    ), {"cli": customer["id_cliente"], "on": data.order_number, "cid": cid})
+
+    items = (await db_temp.execute(text("""
+        SELECT Id_Plato, Item, Cantidad, COALESCE(Id_Tipificacion,0) AS tip
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND company_id=:cid AND Nro_Factura='0' AND Mostrar=1
+    """), {"on": data.order_number, "cid": cid})).mappings().all()
+    extras = {int(r["Item"]): float(r["extra"] or 0) for r in (await db_temp.execute(text("""
+        SELECT Item, SUM(Valor_Adicional_Armar) AS extra FROM temp_plato_producto_parcial
+        WHERE Nro_Pedido=:on AND company_id=:cid GROUP BY Item
+    """), {"on": data.order_number, "cid": cid})).mappings().all()}
+    dish_ids = list({int(i["Id_Plato"]) for i in items})
+    dishes = {}
+    if dish_ids:
+        dishes = {int(r["id"]): r for r in (await db.execute(text(
+            f"SELECT id, price, tax FROM pos_dishes WHERE company_id=:cid AND id IN ({','.join(str(d) for d in dish_ids)})"
+        ), {"cid": cid})).mappings().all()}
+    repriced, kept = 0, 0
+    for it in items:
+        if int(it["tip"]):
+            kept += 1
+            continue
+        d = dishes.get(int(it["Id_Plato"]))
+        if not d:
+            continue
+        base = await armado_svc.client_price(db, cid, customer["id_cliente"], int(it["Id_Plato"]), d["price"])
+        amount = int(round((base + extras.get(int(it["Item"]), 0)) * float(it["Cantidad"] or 0)))
+        tax_pct = float(d["tax"] or 0)
+        tax_val = int(amount * tax_pct / 100) if tax_pct > 0 else 0
+        await db_temp.execute(text("""
+            UPDATE temp_detalle_comanda_parcial
+            SET Valor=:v, Impuesto=:t, Impuesto_Original=:t, updated_at=NOW()
+            WHERE Nro_pedido=:on AND company_id=:cid AND Item=:item AND Mostrar=1 AND Nro_Factura='0'
+        """), {"v": amount, "t": tax_val, "on": data.order_number, "cid": cid, "item": int(it["Item"])})
+        repriced += 1
+    await _recalc_total(db_temp, data.order_number, cid)
+    await db_temp.commit()
+    return {"ok": True, "customer": customer, "repriced": repriced, "kept_with_discount": kept}
 
 
 # ── 7. NOVEDADES PRECARGADAS ──────────────────────────────────────────────────
