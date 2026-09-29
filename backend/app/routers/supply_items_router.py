@@ -151,7 +151,7 @@ async def _get_item(db: AsyncSession, cid: int, iid: int) -> SupplyItem:
 @router.get("/catalogos/formas-medida")
 async def list_formas_medida(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(text(
-        "SELECT id, name FROM pos_measure_forms WHERE company_id = :cid ORDER BY name"
+        "SELECT id, name, is_active FROM pos_measure_forms WHERE company_id = :cid ORDER BY name"
     ), {"cid": current_user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 
@@ -168,10 +168,10 @@ async def create_forma_medida(data: CatalogoIn, current_user: User = Depends(get
         "SELECT COALESCE(MAX(id), 0) + 1 FROM pos_measure_forms WHERE company_id = :cid FOR UPDATE"
     ), {"cid": cid})).scalar())
     await db.execute(text(
-        "INSERT INTO pos_measure_forms (id, company_id, name, is_active, synced) VALUES (:id, :cid, :n, 0, 0)"
+        "INSERT INTO pos_measure_forms (id, company_id, name, is_active, synced) VALUES (:id, :cid, :n, 1, 0)"   # forma_medida.Activa: 1 = activa
     ), {"id": nid, "cid": cid, "n": data.name})
     await db.commit()
-    return {"id": nid, "name": data.name}
+    return {"id": nid, "name": data.name, "is_active": 1}
 
 
 @router.get("/catalogos/categorias")

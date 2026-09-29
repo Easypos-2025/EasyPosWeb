@@ -422,7 +422,7 @@ async def buscar_insumos(
 async def get_formas_medida(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     rows = (await db.execute(text(
-        "SELECT id, name FROM pos_measure_forms WHERE company_id=:cid ORDER BY name"
+        "SELECT id, name FROM pos_measure_forms WHERE company_id=:cid AND is_active=1 ORDER BY name"   # Activa: 1 = activa
     ), {"cid": user.company_id})).mappings().all()
     return [dict(r) for r in rows]
 

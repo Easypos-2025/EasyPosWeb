@@ -168,7 +168,7 @@
                 <label>Unidad uso</label>
                 <select v-model="form.unit_uso_id" class="form-select">
                   <option :value="null">— Seleccione —</option>
-                  <option v-for="m in formas" :key="m.id" :value="m.id">{{ m.name }}</option>
+                  <option v-for="m in formasUnidadUso" :key="m.id" :value="m.id">{{ m.name }}</option>
                 </select>
               </div>
               <div class="fg">
@@ -364,6 +364,11 @@ const provDisponibles = computed(() => {
   const taken = new Set(provSel.value.map(p => p.id_proveedor))
   return proveedores.value.filter(p => !taken.has(p.id_proveedor) && (!q || p.name.toLowerCase().includes(q)))
 })
+// Unidad uso: solo formas activas (forma_medida.Activa = 1); se conserva la ya asignada aunque esté inactiva
+const formasUnidadUso = computed(() =>
+  formas.value.filter(m => Number(m.is_active) === 1 || m.id === form.value.unit_uso_id)
+)
+
 const fmDisponibles = computed(() => {
   const q = fmSearch.value.toLowerCase()
   const taken = new Set(fmSel.value.map(m => m.id_forma_medida))
@@ -598,9 +603,14 @@ onMounted(load)
 .panel-prov { background: #ecfeff; border-radius: 12px; padding: 12px; }
 .panel-fm   { background: #f0fdf4; border-radius: 12px; padding: 12px; }
 .panel-ttl  { font-size: 13px; font-weight: 700; color: #1e3a5f; text-align: center; }
-.pick-list  { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
-.pick-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 240px; overflow-y: auto; }
-.pick-btn   { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 8px; font-size: 12px; font-weight: 600; color: #334155; cursor: pointer; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-list  { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; flex-shrink: 0; }
+.pick-grid  { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(36px, auto); align-content: start;
+              gap: 6px; max-height: 240px; overflow-y: auto; flex-shrink: 0; }
+.pick-btn   { display: flex; align-items: center; justify-content: center; min-height: 36px; flex-shrink: 0;
+              background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; font-size: 12px;
+              line-height: 1.2; font-weight: 600; color: #334155; cursor: pointer; text-align: center;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-list .pick-btn { justify-content: flex-start; }
 .pick-btn:hover { border-color: #3b82f6; color: #1d4ed8; }
 .sel-list   { display: flex; flex-direction: column; gap: 6px; min-height: 40px; }
 .sel-row    { display: flex; align-items: center; gap: 6px; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 6px; }
