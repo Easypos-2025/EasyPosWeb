@@ -22,8 +22,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
 
-# Almacén en memoria para jobs de auto-snapshot (operación poco frecuente)
-_snapshot_jobs: dict = {}
+# Estado de los cortes automáticos: tabla inventory_snapshot_jobs (migración 019).
+# No en memoria: con varios workers de gunicorn el polling cae en otro proceso.
+_SNAPSHOT_ERROR = "No se pudo completar el corte automático. Intente de nuevo o contacte soporte."
+
+
+async def _job_update(job_id: str, **fields) -> None:
+    """Actualiza el estado del corte en su propia sesión (visible para todos los workers)."""
+    sets = ", ".join(f"{k} = :{k}" for k in fields)
+    async with AsyncSessionLocal() as jdb:
+        await jdb.execute(text(f"UPDATE inventory_snapshot_jobs SET {sets} WHERE job_id = :job_id"),
+                          {"job_id": job_id, **fields})
+        await jdb.commit()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -414,8 +424,7 @@ async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
       2. Inserta los valores calculados en inventory_physical como corte de hoy.
     Usa su propia sesión de BD porque corre fuera del request cycle.
     """
-    _snapshot_jobs[job_id]["status"]   = "running"
-    _snapshot_jobs[job_id]["progress"] = "Recalculando stock..."
+    await _job_update(job_id, status="running", progress="Recalculando stock...")
     try:
         async with AsyncSessionLocal() as db:
             updated = await _recalc_execute(
@@ -425,7 +434,7 @@ async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
                 cat_id=None,
             )
 
-            _snapshot_jobs[job_id]["progress"] = "Guardando inventario físico..."
+            await _job_update(job_id, progress="Guardando inventario físico...")
 
             row = (await db.execute(text("""
                 SELECT COALESCE(MAX(id_fisico), 0) + 1 AS next_fisico
@@ -466,17 +475,15 @@ async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
 
             await db.commit()
 
-        _snapshot_jobs[job_id] = {
-            "status":      "done",
-            "items_saved": updated,
-            "id_fisico":   next_fisico,
-            "fecha":       str(date_type.today()),
-        }
+        await _job_update(job_id, status="done", progress="Completado", items_saved=updated,
+                          id_fisico=next_fisico, fecha=str(date_type.today()))
     except Exception:
         # No exponer SQL ni detalles internos al usuario; queda en el log del servidor
         logger.exception("auto_snapshot company=%s", company_id)
-        _snapshot_jobs[job_id] = {"status": "error",
-                                  "error": "No se pudo completar el corte automático. Intente de nuevo o contacte soporte."}
+        try:
+            await _job_update(job_id, status="error", error=_SNAPSHOT_ERROR)
+        except Exception:
+            logger.exception("auto_snapshot: no se pudo registrar el error del job %s", job_id)
 
 
 @router.get("/snapshot-status")
@@ -504,11 +511,26 @@ async def get_snapshot_status(
 @router.post("/auto-snapshot")
 async def start_auto_snapshot(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Lanza el corte automático en background. Devuelve job_id para polling."""
-    job_id = str(uuid_module.uuid4())[:8]
-    _snapshot_jobs[job_id] = {"status": "running", "progress": "Iniciando..."}
-    asyncio.create_task(_run_auto_snapshot(job_id, current_user.company_id, current_user.id))
+    """Lanza el corte automático en background. Devuelve job_id para polling.
+    Si ya hay un corte en curso para la empresa (últimos 10 min), devuelve ese mismo."""
+    cid = current_user.company_id
+    running = (await db.execute(text("""
+        SELECT job_id FROM inventory_snapshot_jobs
+        WHERE company_id = :cid AND status = 'running' AND created_at >= NOW() - INTERVAL 10 MINUTE
+        ORDER BY created_at DESC LIMIT 1
+    """), {"cid": cid})).scalar()
+    if running:
+        return {"job_id": running, "status": "running", "already_running": True}
+
+    job_id = uuid_module.uuid4().hex          # 32 caracteres: no adivinable
+    await db.execute(text("""
+        INSERT INTO inventory_snapshot_jobs (job_id, company_id, status, progress, created_by)
+        VALUES (:j, :cid, 'running', 'Iniciando...', :uid)
+    """), {"j": job_id, "cid": cid, "uid": current_user.id})
+    await db.commit()
+    asyncio.create_task(_run_auto_snapshot(job_id, cid, current_user.id))
     return {"job_id": job_id, "status": "running"}
 
 
@@ -516,12 +538,19 @@ async def start_auto_snapshot(
 async def get_snapshot_job_status(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Polling: estado actual del job de auto-snapshot."""
-    job = _snapshot_jobs.get(job_id)
+    """Polling: estado del corte (solo de la empresa del usuario)."""
+    job = (await db.execute(text("""
+        SELECT status, progress, items_saved, id_fisico, fecha, error
+        FROM inventory_snapshot_jobs WHERE job_id = :j AND company_id = :cid
+    """), {"j": job_id[:36], "cid": current_user.company_id})).mappings().first()
     if not job:
-        raise HTTPException(404, "Job no encontrado")
-    return job
+        raise HTTPException(404, "Corte no encontrado")
+    out = {k: v for k, v in dict(job).items() if v is not None}
+    if "fecha" in out:
+        out["fecha"] = str(out["fecha"])
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
