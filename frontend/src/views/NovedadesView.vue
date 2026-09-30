@@ -159,7 +159,9 @@
                 :output-width="1200"
                 output-format="jpeg"
                 :output-quality="0.85"
+                :multiple="7"
                 @change="onPendingPhotoReady"
+                @batch="blobs => blobs.forEach(onPendingPhotoReady)"
               />
               <div v-if="pendingPhotos.length" class="evidence-grid" style="margin-top:10px">
                 <div v-for="(p, i) in pendingPhotos" :key="i" class="ev-item">

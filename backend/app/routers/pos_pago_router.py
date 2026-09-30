@@ -22,7 +22,7 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Annotated, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -53,7 +53,7 @@ async def _siguiente_id_registro(db: AsyncSession, tabla: str, cid: int) -> int:
     return int(row["next"])
 
 
-async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str):
+async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str, token: Optional[str] = None):
     orden = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Fecha, Mesa, Hora, Mesero, Valor, Nro_Comenzales, Domicilio, Id_Cliente
         FROM temp_comanda
@@ -72,27 +72,38 @@ async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str):
     """), {"cid": cid, "on": order_number})).mappings().all()
     if not items:
         raise HTTPException(status_code=400, detail="La cuenta no tiene ítems por pagar")
-    await _exigir_mesa_libre(db_temp, cid, orden["Mesa"])
+    await _exigir_mesa_libre(db_temp, cid, orden["Mesa"], token)
     return orden, items
 
 
-async def _en_uso_por(db_temp: AsyncSession, cid: int, mesa) -> Optional[str]:
-    """Nombre de quien tiene la mesa-cuenta abierta en un dispositivo (o None si está libre)."""
-    row = (await db_temp.execute(text("""
-        SELECT editing_waiter_name, Abierta_Desde FROM temp_mesa_abierta
+async def _bloqueo(db_temp: AsyncSession, cid: int, mesa):
+    """Fila de temp_mesa_abierta si la mesa-cuenta está abierta en un dispositivo (Abierta=1)."""
+    return (await db_temp.execute(text("""
+        SELECT Id_Mesa, editing_waiter_name, Abierta_Desde, editing_token FROM temp_mesa_abierta
         WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa) AND Abierta = 1
         LIMIT 1
-    """), {"cid": cid, "mesa": mesa or ""})).first()
-    if not row:
-        return None
-    n, d = (row[0] or "").strip(), (row[1] or "").strip()
+    """), {"cid": cid, "mesa": mesa or ""})).mappings().first()
+
+
+def _quien(row) -> str:
+    n, d = (row["editing_waiter_name"] or "").strip(), (row["Abierta_Desde"] or "").strip()
     return f"{n} en {d}" if (n and d) else (n or (f"el dispositivo {d}" if d else "otro dispositivo"))
 
 
-async def _exigir_mesa_libre(db_temp: AsyncSession, cid: int, mesa) -> None:
-    """Una cuenta-mesa abierta en un dispositivo NO se puede pagar. Si el bloqueo es falso
-    (cierre inesperado), el administrador la libera primero en Cuentas Abiertas."""
-    quien = await _en_uso_por(db_temp, cid, mesa)
+async def _en_uso_por(db_temp: AsyncSession, cid: int, mesa, token: Optional[str] = None) -> Optional[str]:
+    """Quién tiene la mesa-cuenta abierta en OTRO dispositivo/pestaña (None si está libre o
+    si la tiene esta misma pestaña: `token`)."""
+    row = await _bloqueo(db_temp, cid, mesa)
+    if not row or (token and row["editing_token"] == token):
+        return None
+    return _quien(row)
+
+
+async def _exigir_mesa_libre(db_temp: AsyncSession, cid: int, mesa, token: Optional[str] = None) -> None:
+    """Una cuenta-mesa abierta en otro dispositivo NO se puede pagar. La pantalla de pago
+    tiene la mesa abierta (su token); si el bloqueo es falso (cierre inesperado), el
+    administrador la libera primero en Cuentas Abiertas."""
+    quien = await _en_uso_por(db_temp, cid, mesa, token)
     if quien:
         raise HTTPException(status_code=423, detail=(
             f"La cuenta {str(mesa or '').strip()} está abierta por {quien}. "
@@ -123,6 +134,8 @@ async def _config(db: AsyncSession, cid: int) -> dict:
 @router.get("/{order_number}/bloqueo")
 async def bloqueo_cuenta(
     order_number: str,
+    x_edit_token: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -132,7 +145,11 @@ async def bloqueo_cuenta(
     ), {"cid": cid, "on": order_number})).scalar()
     if mesa is None:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
-    return {"mesa": str(mesa).strip(), "editing_by": await _en_uso_por(db_temp, cid, mesa)}
+    table_id = (await db.execute(text(
+        "SELECT id FROM pos_tables_layout WHERE company_id=:cid AND TRIM(name)=TRIM(:mesa) LIMIT 1"
+    ), {"cid": cid, "mesa": mesa})).scalar()
+    return {"mesa": str(mesa).strip(), "table_id": int(table_id) if table_id is not None else None,
+            "editing_by": await _en_uso_por(db_temp, cid, mesa, x_edit_token)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -141,13 +158,14 @@ async def bloqueo_cuenta(
 @router.get("/{order_number}")
 async def datos_pago(
     order_number: str,
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
     current_user: User = Depends(get_current_user),
     turno: dict = Depends(require_open_shift),
 ):
     cid = current_user.company_id
-    orden, items = await _cargar_cuenta(db_temp, cid, order_number)
+    orden, items = await _cargar_cuenta(db_temp, cid, order_number, x_edit_token)
 
     dish_ids = list({int(i["Id_Plato"]) for i in items})
     ids = ",".join(str(d) for d in dish_ids)
@@ -217,10 +235,11 @@ async def datos_pago(
     }
 
 
-async def _calcular(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, body) -> dict:
+async def _calcular(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, body,
+                    token: Optional[str] = None) -> dict:
     """Venta, descuento, propina, domicilio y total de los ítems marcados. Lo usan el
     registro del recibo y la cuenta previa: el navegador nunca envía valores."""
-    orden, items = await _cargar_cuenta(db_temp, cid, order_number)
+    orden, items = await _cargar_cuenta(db_temp, cid, order_number, token)
 
     # ── Ítems marcados (deben seguir abiertos en esta cuenta) ────────────────
     por_item = {int(i["Item"]): i for i in items}
@@ -317,13 +336,14 @@ class PagoIn(BaseModel):
 async def registrar_recibo(
     order_number: str,
     body: PagoIn,
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
     current_user: User = Depends(get_current_user),
     turno: dict = Depends(require_open_shift),
 ):
     cid, uid = current_user.company_id, current_user.id
-    c = await _calcular(db, db_temp, cid, order_number, body)
+    c = await _calcular(db, db_temp, cid, order_number, body, x_edit_token)
     orden, items, marcados, sel = c["orden"], c["items"], c["marcados"], c["sel"]
     valores, originales, tipif = c["valores"], c["originales"], c["tipif"]
     venta, descuento_total = c["venta"], c["descuento_total"]
@@ -558,11 +578,12 @@ class PrecuentaImprimirIn(PrecuentaIn):
     raw: bool = False
 
 
-async def _datos_precuenta(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, body) -> dict:
+async def _datos_precuenta(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, body,
+                           token: Optional[str] = None) -> dict:
     fac = await cfg_facturacion.get_config(db, cid)
     if not fac["usar_precuenta"]:
         raise HTTPException(status_code=403, detail="La cuenta previa no está activa en Configuración Facturación")
-    c = await _calcular(db, db_temp, cid, order_number, body)
+    c = await _calcular(db, db_temp, cid, order_number, body, token)
     orden = c["orden"]
 
     dish_ids = ",".join(str(int(i["Id_Plato"])) for i in c["sel"]) or "0"
@@ -622,17 +643,19 @@ async def _datos_precuenta(db: AsyncSession, db_temp: AsyncSession, cid: int, or
 async def precuenta(
     order_number: str,
     body: PrecuentaIn,
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _datos_precuenta(db, db_temp, current_user.company_id, order_number, body)
+    return await _datos_precuenta(db, db_temp, current_user.company_id, order_number, body, x_edit_token)
 
 
 @router.post("/{order_number}/precuenta/imprimir")
 async def precuenta_imprimir(
     order_number: str,
     body: PrecuentaImprimirIn,
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
     current_user: User = Depends(get_current_user),
@@ -640,4 +663,4 @@ async def precuenta_imprimir(
     from app.routers.pos_recibo_impresion_router import enviar_tirilla
     cid = current_user.company_id
     return await enviar_tirilla(db, cid, body.printer_id, body.raw,
-                                lambda: _datos_precuenta(db, db_temp, cid, order_number, body))
+                                lambda: _datos_precuenta(db, db_temp, cid, order_number, body, x_edit_token))

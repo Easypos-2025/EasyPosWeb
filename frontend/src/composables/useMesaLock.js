@@ -5,6 +5,7 @@
 // servidor lo valida (header X-Edit-Token) en cada operación. Se libera al salir o enviar;
 // si el dispositivo se apaga, el administrador la libera en Cuentas Abiertas.
 import apiComanda from "@/services/apiComanda"
+import api from "@/services/apis"
 
 function nuevoToken() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID()
@@ -41,7 +42,9 @@ export function nombreDispositivo() {
 
 export function useMesaLock(getTableId) {
   let token = null
-  const clave = () => `mesa_lock_${localStorage.getItem("waiter_company_id") || ""}_${getTableId()}`
+  // Por pestaña y mesa: la ventana de detalle, "Agregar más" y PAGAR de la misma pestaña
+  // comparten el token (se pasan la mesa sin soltarla); cualquier otra pestaña es otro dispositivo
+  const clave = () => `mesa_lock_${getTableId()}`
 
   function leerToken() {
     try {
@@ -57,6 +60,7 @@ export function useMesaLock(getTableId) {
   async function tomar() {
     token = leerToken()
     apiComanda.defaults.headers.common["X-Edit-Token"] = token
+    api.defaults.headers.common["X-Edit-Token"] = token
     await apiComanda.post(`/api/pos/comanda/mesa/${getTableId()}/editar`, {
       waiter_name: nombreUsuario(), token, device_name: nombreDispositivo(),
     })
@@ -65,8 +69,12 @@ export function useMesaLock(getTableId) {
   function limpiarLocal() {
     try { sessionStorage.removeItem(clave()) } catch { /* sin almacenamiento */ }
     delete apiComanda.defaults.headers.common["X-Edit-Token"]
+    delete api.defaults.headers.common["X-Edit-Token"]
     token = null
   }
+
+  /** Pasa la mesa a la siguiente pantalla de esta pestaña (Agregar más / PAGAR) sin soltarla. */
+  function traspasar() { token = null }
 
   /** Libera la mesa (al salir o enviar). */
   async function liberar() {
@@ -96,5 +104,5 @@ export function useMesaLock(getTableId) {
     } catch { /* ignorar */ }
   }
 
-  return { tomar, liberar, liberarAlCerrar }
+  return { tomar, liberar, liberarAlCerrar, traspasar }
 }

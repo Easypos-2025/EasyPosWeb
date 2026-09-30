@@ -69,11 +69,13 @@
                 :outputWidth="1200"
                 outputFormat="jpeg"
                 :outputQuality="0.85"
+                :multiple="7"
                 @change="onImageReady"
+                @batch="onImagesBatch"
               />
               <div v-if="uploading" class="mau-saving">
                 <div class="spin-sm"></div>
-                <span>Guardando foto...</span>
+                <span>Guardando foto{{ uploadLabel ? ' ' + uploadLabel : '' }}...</span>
               </div>
               <div v-if="!archivos.length && !uploading" class="mau-empty-hint">
                 <i class="bi bi-arrow-up-circle"></i>
@@ -130,8 +132,9 @@
 <script setup>
 import { ref, watch } from 'vue'
 import api from '@/services/apis'
-import { showConfirm } from '@/utils/toast'
+import { showConfirm, showToast } from '@/utils/toast'
 import ImageUploaderPro from '@/components/common/ImageUploaderPro.vue'
+import { compressImage, blobToFile } from '@/utils/imageCompress'
 
 const props = defineProps({
   open:       { type: Boolean, default: false },
@@ -177,29 +180,42 @@ watch(() => props.open, (v) => {
   if (v) { archivos.value = []; uploaderKey.value = 0; cargar() }
 })
 
-// ── Fotos: recibe blob de ImageUploaderPro ────────────────────────────────────
-async function onImageReady(blob) {
-  if (!blob || uploading.value) return
+// ── Fotos: recibe blob(s) ya comprimidos de ImageUploaderPro ──────────────────
+async function subirAdjunto(file) {
+  const fd = new FormData()
+  fd.append('file',       file)
+  fd.append('company_id', String(props.companyId))
+  fd.append('tipo',       props.tipo)
+  const { data } = await api.post(
+    `/api/hipotecas/credito/${encodeURIComponent(props.nroCredito)}/adjuntos`,
+    fd
+  )
+  archivos.value.push(data)
+}
+
+async function subirFotos(blobs) {
+  if (!blobs.length || uploading.value) return
   uploading.value = true
+  let fallidas = 0
   try {
-    const ext  = blob.type === 'image/webp' ? '.webp' : '.jpg'
-    const file = new File([blob], `foto_${Date.now()}${ext}`, { type: blob.type || 'image/jpeg' })
-    const fd   = new FormData()
-    fd.append('file',       file)
-    fd.append('company_id', String(props.companyId))
-    fd.append('tipo',       props.tipo)
-    const { data } = await api.post(
-      `/api/hipotecas/credito/${encodeURIComponent(props.nroCredito)}/adjuntos`,
-      fd
-    )
-    archivos.value.push(data)
+    for (let i = 0; i < blobs.length; i++) {
+      uploadLabel.value = blobs.length > 1 ? `${i + 1}/${blobs.length}` : ''
+      try {
+        await subirAdjunto(blobToFile(blobs[i], 'foto'))
+      } catch (e) {
+        fallidas++
+        console.error('Error al guardar foto:', e)
+      }
+    }
+    if (fallidas) showToast(`${fallidas} foto(s) no se pudieron guardar`, 'error')
     uploaderKey.value++  // reset ImageUploaderPro para la siguiente foto
-  } catch (e) {
-    console.error('Error al guardar foto:', e)
   } finally {
-    uploading.value = false
+    uploading.value   = false
+    uploadLabel.value = ''
   }
 }
+function onImageReady(blob)   { if (blob) subirFotos([blob]) }
+function onImagesBatch(blobs) { subirFotos(blobs) }
 
 // ── Documentos: input múltiple ────────────────────────────────────────────────
 async function onFiles(e) {
@@ -209,16 +225,12 @@ async function onFiles(e) {
   uploading.value = true
   for (let i = 0; i < files.length; i++) {
     uploadLabel.value = `${i + 1}/${files.length}`
-    const fd = new FormData()
-    fd.append('file',       files[i])
-    fd.append('company_id', String(props.companyId))
-    fd.append('tipo',       props.tipo)
+    let file = files[i]
+    if (file.type.startsWith('image/')) {
+      try { file = blobToFile(await compressImage(file), 'documento') } catch { /* se sube la original */ }
+    }
     try {
-      const { data } = await api.post(
-        `/api/hipotecas/credito/${encodeURIComponent(props.nroCredito)}/adjuntos`,
-        fd
-      )
-      archivos.value.push(data)
+      await subirAdjunto(file)
     } catch { /* error silencioso por archivo */ }
   }
   uploading.value = false

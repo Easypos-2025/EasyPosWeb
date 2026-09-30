@@ -20,7 +20,7 @@ router = APIRouter(prefix="/asset-media", tags=["AssetMedia"])
 ALLOWED_IMAGE  = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 ALLOWED_VIDEO  = {".mp4", ".mov", ".avi", ".webm"}
 MAX_IMAGE_MB   = 10
-MAX_VIDEO_MB   = 100
+MAX_VIDEO_MB   = 25   # igual al límite de nginx (client_max_body_size 25M)
 MAX_PER_ASSET  = 20
 
 

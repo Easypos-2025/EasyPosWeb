@@ -256,6 +256,7 @@ import TurnoCajaModal from '@/components/pos/TurnoCajaModal.vue'
 import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 import { useCompanyStore } from '@/stores/companyStore'
+import { useMesaLock } from '@/composables/useMesaLock'
 import { showToast } from '@/utils/toast'
 
 const route  = useRoute()
@@ -302,7 +303,29 @@ async function verificarTurno() {
   catch { turnoAbierto.value = false }
   checkingTurno.value = false
 }
-function onTurnoAbierto() { turnoAbierto.value = true; cargar() }
+function onTurnoAbierto() { turnoAbierto.value = true; iniciar() }
+
+// La pantalla de pago tiene la mesa-cuenta abierta (temp_mesa_abierta.Abierta = 1): nadie más
+// puede entrar a la cuenta mientras se cobra. Si viene del detalle de la cuenta, es la misma
+// pestaña y conserva la mesa; si otro dispositivo la tiene, no se puede pagar.
+const mesaId   = ref(null)
+const mesaLock = useMesaLock(() => mesaId.value)
+async function iniciar() {
+  loading.value = true
+  try {
+    const { data } = await api.get(`/api/pos/pago/${encodeURIComponent(orderNumber)}/bloqueo`)
+    if (data.table_id != null) {
+      mesaId.value = data.table_id
+      await mesaLock.tomar()
+      window.addEventListener('pagehide', mesaLock.liberarAlCerrar)
+    }
+  } catch (e) {
+    errorCarga.value = e?.response?.data?.detail ?? 'No se pudo abrir la cuenta'
+    loading.value = false
+    return
+  }
+  await cargar()
+}
 
 // despuesDePago: tras un pago parcial la cuenta queda limpia y SIN ítems marcados
 // (el cajero marca los del siguiente pago); en la primera carga se marcan todos.
@@ -578,10 +601,14 @@ onMounted(async () => {
   window.addEventListener('resize', ajustarAlto)
   ajustarAlto()
   await verificarTurno()
-  if (turnoAbierto.value) await cargar()
+  if (turnoAbierto.value) await iniciar()
   else loading.value = false
 })
-onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', ajustarAlto) })
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey); window.removeEventListener('resize', ajustarAlto)
+  window.removeEventListener('pagehide', mesaLock.liberarAlCerrar)
+  mesaLock.liberar()
+})
 </script>
 
 <style scoped>

@@ -38,17 +38,32 @@
         <span>{{ limitsInfo }}</span>
       </div>
 
-      <!-- IMAGEN: componente unificado (archivo + cámara + pegar + recorte) -->
-      <ImageUploaderPro
-        v-if="currentType === 'image'"
-        :key="imageUploaderKey"
-        label="Foto de la evidencia"
-        :show-remove="false"
-        :output-width="1200"
-        output-format="jpeg"
-        :output-quality="0.85"
-        @change="onImageReady"
-      />
+      <!-- IMAGEN: componente unificado (archivo + cámara + pegar + recorte).
+           Se pueden acumular hasta MAX_IMAGES fotos y se suben juntas. -->
+      <template v-if="currentType === 'image'">
+        <ImageUploaderPro
+          v-if="imageFiles.length < MAX_IMAGES"
+          :key="imageUploaderKey"
+          :label="imageFiles.length ? 'Agregar otra foto' : 'Fotos de la evidencia'"
+          :show-remove="false"
+          :output-width="1200"
+          output-format="jpeg"
+          :output-quality="0.85"
+          :multiple="MAX_IMAGES - imageFiles.length"
+          @change="onImageReady"
+          @batch="onImagesBatch"
+        />
+        <div v-if="imageFiles.length" class="eu-thumbs">
+          <div v-for="(f, i) in imageFiles" :key="f.url" class="eu-thumb">
+            <img :src="f.url" alt="Foto" />
+            <span class="eu-thumb-size">{{ formatBytes(f.file.size) }}</span>
+            <button type="button" class="eu-thumb-del" :disabled="uploading" @click="removeImage(i)" title="Quitar">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+        <div class="eu-count">{{ imageFiles.length }} / {{ MAX_IMAGES }} fotos</div>
+      </template>
 
       <template v-else>
 
@@ -133,7 +148,9 @@
       <div class="progress-track">
         <div class="progress-fill" :style="{ width: progress + '%' }"></div>
       </div>
-      <span class="progress-label">{{ progress < 100 ? progress + '%' : 'Procesando...' }}</span>
+      <span class="progress-label">
+        <template v-if="batchLabel">{{ batchLabel }} · </template>{{ progress < 100 ? progress + '%' : 'Procesando...' }}
+      </span>
     </div>
 
     <!-- BOTÓN GUARDAR -->
@@ -141,7 +158,7 @@
       <button class="btn btn-primary" @click="submit" :disabled="uploading || !canSubmit">
         <i v-if="uploading" class="bi bi-arrow-repeat spin"></i>
         <i v-else class="bi bi-cloud-upload"></i>
-        {{ uploading ? 'Subiendo...' : 'Guardar evidencia' }}
+        {{ uploading ? 'Subiendo...' : submitLabel }}
       </button>
       <slot name="extra-actions" />
     </div>
@@ -162,7 +179,9 @@ const props = defineProps({
 const emit = defineEmits(["uploaded"])
 
 // ── Límites y formatos permitidos ────────────────────────────
-const SIZE_LIMITS = { image: 10, video: 50, audio: 15 }
+// Deben coincidir con el backend (task_evidence_router) y el límite de nginx (25 MB)
+const SIZE_LIMITS = { image: 10, video: 20, audio: 15 }
+const MAX_IMAGES  = 7
 
 const ALLOWED_FORMATS = {
   image: ["image/jpeg", "image/png", "image/webp", "image/gif"],
@@ -175,7 +194,8 @@ const currentType    = ref("image")
 const description    = ref("")
 const selectedFile   = ref(null)
 const previewUrl     = ref("")
-const imageFile      = ref(null)
+const imageFiles     = ref([])      // [{ file, url }] fotos ya comprimidas
+const batchLabel     = ref("")
 const imageUploaderKey = ref(0)
 const uploading      = ref(false)
 const progress       = ref(0)
@@ -259,11 +279,17 @@ const sizeExceeded = computed(() => {
 
 const canSubmit = computed(() => {
   if (currentType.value === "text") return description.value.trim().length > 0
-  if (currentType.value === "image") return !!imageFile.value
+  if (currentType.value === "image") return imageFiles.value.length > 0
   if (!selectedFile.value) return false
   if (sizeExceeded.value) return false
   return true
 })
+
+const submitLabel = computed(() =>
+  currentType.value === "image" && imageFiles.value.length > 1
+    ? `Guardar ${imageFiles.value.length} fotos`
+    : "Guardar evidencia"
+)
 
 // ── Selección de tipo ─────────────────────────────────────────
 function selectType(type) {
@@ -311,10 +337,21 @@ async function processFile(file) {
   }
 }
 
-// ── Imagen: recibe blob ya recortado/comprimido de ImageUploaderPro ──
-function onImageReady(blob) {
-  if (!blob) return
-  imageFile.value = new File([blob], `evidencia_${Date.now()}.jpg`, { type: blob.type || "image/jpeg" })
+// ── Imagen: recibe blobs ya recortados/comprimidos de ImageUploaderPro ──
+function addImageBlobs(blobs) {
+  for (const blob of blobs) {
+    if (!blob || imageFiles.value.length >= MAX_IMAGES) break
+    const file = new File([blob], `evidencia_${Date.now()}_${imageFiles.value.length}.jpg`, { type: blob.type || "image/jpeg" })
+    imageFiles.value.push({ file, url: URL.createObjectURL(file) })
+  }
+  imageUploaderKey.value++   // limpia el selector para agregar la siguiente
+}
+function onImageReady(blob)   { addImageBlobs([blob]) }
+function onImagesBatch(blobs) { addImageBlobs(blobs) }
+
+function removeImage(i) {
+  URL.revokeObjectURL(imageFiles.value[i].url)
+  imageFiles.value.splice(i, 1)
 }
 
 function onAudioMeta(e) {
@@ -327,7 +364,8 @@ function onAudioMeta(e) {
 function resetFile() {
   selectedFile.value = null
   previewUrl.value    = ""
-  imageFile.value     = null
+  imageFiles.value.forEach(f => URL.revokeObjectURL(f.url))
+  imageFiles.value    = []
   imageUploaderKey.value++
   mediaDuration.value = ""
   if (fileInput.value)   fileInput.value.value   = ""
@@ -341,24 +379,34 @@ async function submit() {
   uploading.value = true
   progress.value  = 0
 
-  try {
-    const fd = new FormData()
-    fd.append("file_type",   currentType.value)
-    fd.append("description", description.value.trim())
+  // Imágenes: una petición por foto (cada envío es liviano); texto/video/audio: una sola
+  const files = currentType.value === "image" ? imageFiles.value.map(f => f.file)
+              : currentType.value === "text"  ? [null] : [selectedFile.value]
+  let saved = 0
 
-    if (currentType.value !== "text") {
-      const toUpload = currentType.value === "image" ? imageFile.value : selectedFile.value
-      fd.append("file", toUpload)
+  try {
+    for (let i = 0; i < files.length; i++) {
+      batchLabel.value = files.length > 1 ? `${i + 1} de ${files.length}` : ""
+      progress.value   = 0
+      const fd = new FormData()
+      fd.append("file_type",   currentType.value)
+      fd.append("description", description.value.trim())
+      if (files[i]) fd.append("file", files[i])
+
+      await api.post(`/task-evidence/${props.taskId}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => {
+          if (e.total) progress.value = Math.round((e.loaded / e.total) * 100)
+        },
+      })
+      saved++
+      if (currentType.value === "image") {        // quitar de la lista lo ya subido
+        URL.revokeObjectURL(imageFiles.value[0].url)
+        imageFiles.value.shift()
+      }
     }
 
-    await api.post(`/task-evidence/${props.taskId}`, fd, {
-      headers: { "Content-Type": "multipart/form-data" },
-      onUploadProgress: (e) => {
-        if (e.total) progress.value = Math.round((e.loaded / e.total) * 100)
-      },
-    })
-
-    showToast("Evidencia guardada correctamente", "success")
+    showToast(saved > 1 ? `${saved} evidencias guardadas correctamente` : "Evidencia guardada correctamente", "success")
     reset()
     emit("uploaded")
 
@@ -380,8 +428,10 @@ async function submit() {
       showToast(`Error ${status || ""} al subir el archivo. Intenta de nuevo.`, "error")
     }
   } finally {
-    uploading.value = false
-    progress.value  = 0
+    uploading.value  = false
+    progress.value   = 0
+    batchLabel.value = ""
+    if (saved && imageFiles.value.length) emit("uploaded")   // subida parcial: refrescar lo guardado
   }
 }
 
@@ -487,11 +537,35 @@ function formatBytes(bytes) {
 .progress-fill  { height: 100%; background: #3b82f6; border-radius: 4px; transition: width 0.3s; }
 .progress-label { font-size: 13px; font-weight: 700; color: #3b82f6; min-width: 48px; text-align: right; }
 
+/* MINIATURAS DE FOTOS */
+.eu-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.eu-thumb  { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #f1f5f9; }
+.eu-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.eu-thumb-size {
+  position: absolute; left: 4px; bottom: 4px; font-size: 10px; font-weight: 600;
+  background: rgba(15,23,42,.7); color: #fff; padding: 1px 6px; border-radius: 8px;
+}
+.eu-thumb-del {
+  position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: rgba(220,38,38,.9); color: #fff; font-size: 11px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.eu-thumb-del:disabled { opacity: .5; cursor: not-allowed; }
+.eu-count { font-size: 12px; font-weight: 600; color: #64748b; text-align: right; }
+
 /* ACCIONES */
 .eu-actions { display: flex; gap: 10px; align-items: center; }
 
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+@media (max-width: 768px) {
+  .eu-thumbs { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+}
+
+@media (max-width: 576px) {
+  .eu-thumbs { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+}
 
 @media (max-width: 480px) {
   .type-btn span { display: none; }

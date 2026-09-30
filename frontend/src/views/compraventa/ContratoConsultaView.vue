@@ -209,7 +209,9 @@
               :outputWidth="1200"
               outputFormat="jpeg"
               :outputQuality="0.85"
+              :multiple="7"
               @change="onFotoChange"
+              @batch="onFotosBatch"
             />
             <p v-if="uploading" class="foto-hint">
               <span class="spinner-border spinner-border-sm me-1"></span> Subiendo...
@@ -617,16 +619,18 @@ async function guardarObs() {
   }
 }
 
-async function onFotoChange(blob) {
-  if (!detalle.value || !cid.value) return
+async function onFotosBatch(blobs) {
+  if (!detalle.value || !cid.value || uploading.value) return
   uploading.value = true
   try {
-    const fd = new FormData()
-    fd.append('file', blob, `contrato_${detalle.value.contrato.nro_contrato}.jpg`)
-    const res = await api.post('/api/compraventa/contrato/foto', fd, {
-      params: { company_id: cid.value, nro_contrato: detalle.value.contrato.nro_contrato }
-    })
-    fotos.value.push(res.data)
+    for (const blob of blobs) {         // una petición por foto (ya comprimidas)
+      const fd = new FormData()
+      fd.append('file', blob, `contrato_${detalle.value.contrato.nro_contrato}.jpg`)
+      const res = await api.post('/api/compraventa/contrato/foto', fd, {
+        params: { company_id: cid.value, nro_contrato: detalle.value.contrato.nro_contrato }
+      })
+      fotos.value.push(res.data)
+    }
     uploaderKey.value++
   } catch (e) {
     errorMsg.value = e.response?.data?.detail || 'Error subiendo foto'
@@ -634,6 +638,7 @@ async function onFotoChange(blob) {
     uploading.value = false
   }
 }
+function onFotoChange(blob) { if (blob) onFotosBatch([blob]) }
 
 async function eliminarFoto(foto) {
   if (!(await showConfirm('¿Eliminar esta foto?'))) return

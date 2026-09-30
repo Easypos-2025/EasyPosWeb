@@ -90,10 +90,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useMesaLock } from '@/composables/useMesaLock'
 import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
-import api from '@/services/apis'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
@@ -153,8 +153,27 @@ function formatCurrency(v) {
   }).format(v || 0)
 }
 
+// Abrir la cuenta = tomar la mesa (temp_mesa_abierta.Abierta = 1 + dispositivo). Si otro
+// dispositivo o pestaña la tiene, se avisa quién y dónde y la ventana se cierra.
+const mesaLock = useMesaLock(() => props.table.id)
+
 onMounted(async () => {
   loading.value = true
+  try {
+    await mesaLock.tomar()
+  } catch (e) {
+    if (e.response?.status !== 404) {          // 404 = cuenta sin mesa en el diseño (dinámica)
+      loading.value = false
+      await Swal.fire({
+        icon: 'warning', title: 'Cuenta en uso',
+        text: e.response?.data?.detail || 'La cuenta está abierta en otro dispositivo',
+        confirmButtonText: 'Entendido',
+      })
+      emit('close')
+      return
+    }
+  }
+  window.addEventListener('pagehide', mesaLock.liberarAlCerrar)
   try {
     const params = {}
     if (props.table.order_number) params.order_number = props.table.order_number
@@ -165,6 +184,11 @@ onMounted(async () => {
     }
   } catch { /* silencioso — puede no haber pedido activo */ }
   finally { loading.value = false }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pagehide', mesaLock.liberarAlCerrar)
+  mesaLock.liberar()        // no hace nada si la mesa pasó a "Agregar más" o PAGAR
 })
 
 async function enviarTV() {
@@ -195,6 +219,7 @@ function agregarMas() {
     order_number: order.value?.order_number || props.table.order_number,
     date:         order.value?.date || null,
   }))
+  mesaLock.traspasar()      // la pantalla del pedido conserva la mesa (misma pestaña)
   router.push(`/pos/comanda/pedido/${props.table.id}`)
 }
 
@@ -224,29 +249,13 @@ async function eliminarPedido() {
 
 function reimprimir() { /* placeholder */ }
 
-// Una cuenta-mesa abierta en otro dispositivo no se puede pagar: se avisa quién la tiene.
-// Si el bloqueo es falso (cierre inesperado), un administrador la libera en Cuentas Abiertas.
+// PAGAR: esta pestaña ya tiene la mesa; la pantalla de pago la conserva y nadie más puede
+// entrar mientras se cobra. (Si otro dispositivo la tuviera, esta ventana no se habría abierto.)
 const verificandoPago = ref(false)
-async function irAPagar() {
+function irAPagar() {
   if (!order.value || verificandoPago.value) return
-  verificandoPago.value = true
-  try {
-    const { data } = await api.get(`/api/pos/pago/${encodeURIComponent(order.value.order_number)}/bloqueo`)
-    if (data.editing_by) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Cuenta en uso',
-        text: `${data.mesa} está abierta por ${data.editing_by} en otro dispositivo. No se puede pagar hasta que la cierre o un administrador la libere en Cuentas Abiertas.`,
-        confirmButtonText: 'Entendido',
-      })
-      return
-    }
-    router.push(`/pos/pago/${order.value.order_number}`)
-  } catch (e) {
-    showToast(e?.response?.data?.detail || 'No se pudo verificar la cuenta', 'error', 3500)
-  } finally {
-    verificandoPago.value = false
-  }
+  mesaLock.traspasar()
+  router.push(`/pos/pago/${order.value.order_number}`)
 }
 </script>
 

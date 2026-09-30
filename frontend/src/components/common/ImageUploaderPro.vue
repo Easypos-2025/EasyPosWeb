@@ -47,8 +47,13 @@
       </button>
     </div>
 
+    <div v-if="batchTotal" class="iup-batch">
+      <i class="bi bi-arrow-repeat iup-spin"></i>
+      Comprimiendo {{ batchDone }} de {{ batchTotal }}…
+    </div>
+
     <!-- Inputs ocultos -->
-    <input ref="fileRef"   type="file" accept="image/*"                     class="iup-hidden" @change="onFileSelected" />
+    <input ref="fileRef"   type="file" accept="image/*" :multiple="multiple > 1" class="iup-hidden" @change="onFileSelected" />
     <input ref="cameraRef" type="file" accept="image/*" capture="environment" class="iup-hidden" @change="onFileSelected" />
 
     <!-- Modal editor -->
@@ -105,6 +110,7 @@
 import { ref, computed, watch } from 'vue'
 import { Cropper } from 'vue-advanced-cropper'
 import 'vue-advanced-cropper/dist/style.css'
+import { canvasToBlobUnder, compressImage, DEFAULT_MAX_BYTES } from '@/utils/imageCompress'
 
 const props = defineProps({
   currentUrl:    { type: String,  default: null  },
@@ -115,8 +121,13 @@ const props = defineProps({
   label:         { type: String,  default: 'Sin foto' },
   showRemove:    { type: Boolean, default: true   },
   autoFit:       { type: Boolean, default: true   },
+  // Peso máximo de la imagen resultante: se baja calidad/tamaño hasta cumplirlo
+  maxBytes:      { type: Number,  default: DEFAULT_MAX_BYTES },
+  // >1 = permite elegir varias fotos a la vez (máximo este número). Si se eligen
+  // varias se comprimen sin abrir el editor y se emite 'batch' con los blobs.
+  multiple:      { type: Number,  default: 1 },
 })
-const emit = defineEmits(['change', 'remove'])
+const emit = defineEmits(['change', 'remove', 'batch'])
 
 const fileRef    = ref(null)
 const cameraRef  = ref(null)
@@ -126,6 +137,8 @@ const rawSrc     = ref('')
 const editorOpen = ref(false)
 const cropRatio  = ref(0)
 const isDragging = ref(false)
+const batchTotal = ref(0)
+const batchDone  = ref(0)
 
 watch(() => props.currentUrl, v => { previewUrl.value = v })
 
@@ -142,16 +155,45 @@ function triggerCamera() { cameraRef.value?.click() }
 
 function onDrop(e) {
   isDragging.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (!file?.type.startsWith('image/')) return
-  props.autoFit ? autoProcess(file) : openEditor(file)
+  handleFiles(Array.from(e.dataTransfer?.files || []))
 }
 
 function onFileSelected(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
+  const files = Array.from(e.target.files || [])
   e.target.value = ''
+  handleFiles(files)
+}
+
+function handleFiles(files) {
+  const imgs = files.filter(f => f.type.startsWith('image/'))
+  if (!imgs.length) return
+  if (props.multiple > 1 && imgs.length > 1) return processBatch(imgs.slice(0, props.multiple))
+  const file = imgs[0]
   props.autoFit ? autoProcess(file) : openEditor(file)
+}
+
+// Varias fotos: se comprimen una a una (sin editor) y se entregan juntas
+async function processBatch(files) {
+  if (batchTotal.value) return
+  batchTotal.value = files.length
+  batchDone.value  = 0
+  const mime  = props.outputFormat === 'webp' ? 'image/webp' : 'image/jpeg'
+  const blobs = []
+  try {
+    for (const f of files) {
+      try {
+        const blob = await compressImage(f, {
+          maxWidth: props.outputWidth, maxHeight: props.outputHeight || 1600,
+          maxBytes: props.maxBytes, type: mime, quality: props.outputQuality,
+        })
+        if (blob) blobs.push(blob)
+      } catch { /* imagen ilegible: se omite */ }
+      batchDone.value++
+    }
+  } finally {
+    batchTotal.value = 0
+  }
+  if (blobs.length) emit('batch', blobs)
 }
 
 function onPaste(e) {
@@ -215,7 +257,7 @@ async function autoProcess(file) {
   out.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvasW, canvasH)
 
   const mime = props.outputFormat === 'webp' ? 'image/webp' : 'image/jpeg'
-  const blob = await new Promise(r => out.toBlob(r, mime, props.outputQuality))
+  const blob = await canvasToBlobUnder(out, { type: mime, quality: props.outputQuality, maxBytes: props.maxBytes })
   if (!blob) return
 
   // Abrir el editor con la imagen ya ajustada para que el usuario confirme, recorte o voltee
@@ -254,7 +296,7 @@ async function confirmEdit() {
   out.getContext('2d').drawImage(canvas, 0, 0, outW, outH)
 
   const mime = props.outputFormat === 'webp' ? 'image/webp' : 'image/jpeg'
-  const blob = await new Promise(r => out.toBlob(r, mime, props.outputQuality))
+  const blob = await canvasToBlobUnder(out, { type: mime, quality: props.outputQuality, maxBytes: props.maxBytes })
   if (!blob) return
 
   if (previewUrl.value?.startsWith('blob:')) URL.revokeObjectURL(previewUrl.value)
@@ -280,6 +322,10 @@ function removePhoto() {
 <style scoped>
 /* ── Root ───────────────────────────────────────────────────────────────────── */
 .iup-root { display: flex; flex-direction: column; gap: 8px; }
+
+.iup-batch { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #2563eb; }
+.iup-spin  { display: inline-block; animation: iup-spin .8s linear infinite; }
+@keyframes iup-spin { to { transform: rotate(360deg); } }
 
 /* ── Preview zone ───────────────────────────────────────────────────────────── */
 .iup-preview {

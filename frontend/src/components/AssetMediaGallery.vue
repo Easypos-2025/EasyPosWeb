@@ -46,11 +46,12 @@
       >
         <i class="bi bi-cloud-arrow-up"></i>
         <span class="dz-title">Arrastra o toca para subir</span>
-        <span class="dz-hint">JPG, PNG, WEBP, GIF — máx. 10 MB · MP4, MOV — máx. 100 MB</span>
+        <span class="dz-hint">Fotos JPG, PNG, WEBP (se comprimen solas, hasta {{ MAX_BATCH }} a la vez) · Video MP4, MOV — máx. {{ MAX_VIDEO_MB }} MB</span>
         <span class="dz-count">{{ media.length }} / {{ MAX_FILES }} archivos</span>
         <input
           ref="fileInput"
           type="file"
+          multiple
           :accept="ACCEPT"
           @change="onFileChange"
           hidden
@@ -66,7 +67,9 @@
     <!-- BARRA DE PROGRESO -->
     <div v-if="uploading" class="amg-progress-wrap">
       <div class="amg-progress-bar" :style="{ width: progress + '%' }"></div>
-      <span class="amg-progress-label">Subiendo... {{ progress }}%</span>
+      <span class="amg-progress-label">
+        {{ stageLabel }}<template v-if="batchLabel"> {{ batchLabel }}</template>… {{ progress }}%
+      </span>
     </div>
 
     <!-- LÍMITE ALCANZADO -->
@@ -102,12 +105,15 @@
 import { ref, computed, onMounted, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import { compressImage, blobToFile } from "@/utils/imageCompress"
 
 const props = defineProps({
   assetId: { type: Number, required: true },
 })
 
-const MAX_FILES = 20
+const MAX_FILES    = 20
+const MAX_BATCH    = 7    // fotos por selección
+const MAX_VIDEO_MB = 25   // igual al backend (asset_media_router) y al límite de nginx
 const ACCEPT    = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/avi"
 
 const media      = ref([])
@@ -117,6 +123,8 @@ const isDragging = ref(false)
 const lightbox   = ref(null)
 const lightboxIndex = ref(0)
 const fileInput  = ref(null)
+const batchLabel = ref("")
+const stageLabel = ref("Subiendo")
 
 const isMobile = computed(() => /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))
 
@@ -155,54 +163,79 @@ function lightboxNext() {
 
 function onDrop(e) {
   isDragging.value = false
-  const file = e.dataTransfer.files[0]
-  if (file) uploadFile(file)
+  uploadFiles(Array.from(e.dataTransfer.files || []))
 }
 
 function onFileChange(e) {
-  const file = e.target.files[0]
-  if (file) uploadFile(file)
+  const files = Array.from(e.target.files || [])
   e.target.value = ""
+  uploadFiles(files)
 }
 
-async function uploadFile(file) {
-  if (media.value.length >= MAX_FILES) {
+const ALLOWED = ["image/jpeg","image/png","image/webp","image/gif","video/mp4","video/quicktime","video/webm","video/avi"]
+
+// Varias fotos/videos: se validan, las fotos se comprimen y se suben una por una
+async function uploadFiles(files) {
+  if (!files.length || uploading.value) return
+  const room = MAX_FILES - media.value.length
+  if (room <= 0) {
     showToast(`Límite de ${MAX_FILES} archivos alcanzado`, "warning")
     return
   }
 
-  const ALLOWED = ["image/jpeg","image/png","image/webp","image/gif","video/mp4","video/quicktime","video/webm","video/avi"]
-  if (!ALLOWED.includes(file.type)) {
-    showToast("Formato no permitido. Usa JPG, PNG, WEBP, GIF, MP4 o MOV", "error")
-    return
+  const valid = files.filter(f => {
+    if (!ALLOWED.includes(f.type)) {
+      showToast(`"${f.name}": formato no permitido. Usa JPG, PNG, WEBP, GIF, MP4 o MOV`, "error")
+      return false
+    }
+    if (f.type.startsWith("video/") && f.size > MAX_VIDEO_MB * 1024 * 1024) {
+      showToast(`"${f.name}" supera el límite de ${MAX_VIDEO_MB} MB para video`, "error")
+      return false
+    }
+    return true
+  })
+  const limit = Math.min(room, MAX_BATCH)
+  if (valid.length > limit) {
+    showToast(`Se subirán ${limit} de ${valid.length} archivos (máximo ${MAX_BATCH} por vez y ${MAX_FILES} en total)`, "warning")
   }
-
-  const isVideo    = file.type.startsWith("video/")
-  const limitBytes = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024
-  if (file.size > limitBytes) {
-    showToast(`El archivo supera el límite de ${isVideo ? "100" : "10"} MB`, "error")
-    return
-  }
+  const queue = valid.slice(0, limit)
+  if (!queue.length) return
 
   uploading.value = true
-  progress.value  = 0
-
+  let ok = 0
   try {
-    const fd = new FormData()
-    fd.append("file", file)
-    await api.post(`/asset-media/${props.assetId}`, fd, {
-      headers: { "Content-Type": "multipart/form-data" },
-      onUploadProgress: (e) => {
-        if (e.total) progress.value = Math.round((e.loaded / e.total) * 100)
-      },
-    })
-    showToast("Archivo subido correctamente", "success")
+    for (let i = 0; i < queue.length; i++) {
+      batchLabel.value = queue.length > 1 ? `${i + 1} de ${queue.length}` : ""
+      progress.value   = 0
+      let file = queue[i]
+      if (file.type.startsWith("image/")) {
+        stageLabel.value = "Comprimiendo"
+        try {
+          file = blobToFile(await compressImage(file), "propiedad")
+        } catch { /* si no se puede comprimir se sube la original */ }
+      }
+      stageLabel.value = "Subiendo"
+      try {
+        const fd = new FormData()
+        fd.append("file", file)
+        await api.post(`/asset-media/${props.assetId}`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: (e) => {
+            if (e.total) progress.value = Math.round((e.loaded / e.total) * 100)
+          },
+        })
+        ok++
+      } catch (err) {
+        showToast(`"${queue[i].name}": ${err.response?.data?.detail || "error subiendo archivo"}`, "error")
+      }
+    }
+    if (ok) showToast(ok > 1 ? `${ok} archivos subidos correctamente` : "Archivo subido correctamente", "success")
     await load()
-  } catch (err) {
-    showToast(err.response?.data?.detail || "Error subiendo archivo", "error")
   } finally {
-    uploading.value = false
-    progress.value  = 0
+    uploading.value  = false
+    progress.value   = 0
+    batchLabel.value = ""
+    stageLabel.value = "Subiendo"
   }
 }
 
