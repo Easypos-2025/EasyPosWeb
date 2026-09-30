@@ -271,12 +271,12 @@
           <!-- ── TAB: OPCIONES ADICIONALES ARMAR ── -->
           <div v-if="ed.tab === 'armar' && form.id">
             <div v-if="!form.offer_priority" class="info-line">
-              <i class="bi bi-info-circle"></i> "Armar producto" está desmarcado. Las opciones configuradas se ofrecen igual al comandar si existen.
+              <i class="bi bi-info-circle"></i> "Armar producto" está desmarcado: al comandar este plato NO se piden estas opciones. Márquelo en Información general para que sea plato de armado.
             </div>
             <div class="armar-add">
               <select v-model="armarCat" class="inp-sm">
                 <option :value="null">— Seleccione categoría de armado —</option>
-                <option v-for="c in categoriasInsumo" :key="c.id" :value="c.id" :disabled="armado.some(g => g.category_code === c.id)">{{ c.name }}</option>
+                <option v-for="c in categoriasArmado" :key="c.id" :value="c.id" :disabled="armado.some(g => g.category_code === c.id)">{{ c.name }}</option>
               </select>
               <button class="btn-mini" :disabled="!armarCat" @click="agregarCategoriaArmado"><i class="bi bi-plus"></i> Agregar categoría</button>
             </div>
@@ -286,6 +286,7 @@
               <div v-for="g in armado" :key="g.category_code" class="grupo-card">
                 <div class="grupo-hdr grupo-hdr--armar">
                   <span class="grupo-nombre">{{ g.category_name }}</span>
+                  <span v-if="!g.is_assembly" class="chip-no-armado" title="Categoría sin 'Porcentaje = 1' o inactiva: no se ofrece al comandar">No es de armado</span>
                   <button class="btn-mini btn-mini--sm" @click="abrirPicker('armar', g)" title="Agregar insumos"><i class="bi bi-plus"></i> Insumo</button>
                 </div>
                 <table class="tbl-mini">
@@ -428,7 +429,8 @@
           <button class="btn-x" @click="picker.visible = false"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="ed-body">
-          <InsumoPicker :categorias="categoriasInsumo" :default-category="picker.grupo?.category_code"
+          <InsumoPicker :categorias="categoriasInsumo.filter(c => c.id === picker.grupo?.category_code)" armado
+                        :default-category="picker.grupo?.category_code"
                         :excluded="picker.grupo?.options.map(o => o.position) || []" @select="agregarOpcion" />
         </div>
         <div class="modal-ftr"><button class="btn-cancel" @click="picker.visible = false">Listo</button></div>
@@ -456,6 +458,8 @@ const isActivo = item => Number(item.active) === 0
 const items            = ref([])
 const categorias       = ref([])   // pos_dish_categories (categoría del producto)
 const categoriasInsumo = ref([])   // pos_product_categories (categorías de armado / insumos)
+// Categorías de armado: categoria_productos.Porcentaje = 1 y Activa = 1
+const categoriasArmado = computed(() => categoriasInsumo.value.filter(c => c.is_assembly))
 const formasMedida     = ref([])
 const proveedores      = ref([])
 const loading    = ref(true)
@@ -1100,6 +1104,7 @@ async function eliminar(item) {
 .grupo-card--off  { opacity:.55; }
 .grupo-hdr        { display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f8fafc; }
 .grupo-nombre     { font-weight:700;font-size:13px;color:#1e3a5f;flex:1; }
+.chip-no-armado   { font-size:10px;font-weight:700;color:#b45309;background:#fef3c7;border-radius:10px;padding:1px 7px;margin-right:6px;white-space:nowrap; }
 .grupo-badges     { display:flex;gap:4px;flex-wrap:wrap; }
 .badge-req        { font-size:10px;background:#fef3c7;color:#d97706;border-radius:6px;padding:1px 6px;font-weight:700; }
 .badge-mul        { font-size:10px;background:#ede9fe;color:#7c3aed;border-radius:6px;padding:1px 6px;font-weight:700; }

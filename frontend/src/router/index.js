@@ -996,6 +996,13 @@ const routes = [
         meta: { title: "Listas de precios por cliente" }
       },
       {
+        path: "/pos/categorias-productos",
+        name: "PosCategoriasProductosView",
+        component: () => import("@/views/pos/PosCategoriasProductosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Categorías de Productos" }
+      },
+      {
         path: "/pos/categorias",
         name: "PosCategoriasView",
         component: () => import("@/views/pos/PosCategoriasView.vue"),

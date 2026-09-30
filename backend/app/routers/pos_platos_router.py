@@ -390,6 +390,7 @@ async def eliminar_definitivo(item_id: int, authorization: str = Header(None), d
 @router.get("/insumos/buscar")
 async def buscar_insumos(
     categoria: Optional[int] = Query(None, ge=0),
+    armado: bool = Query(False),          # True = solo insumos de armado (Armar_Plato = 1)
     q: Optional[str] = Query(None, max_length=60),
     limit: int = Query(100, ge=1, le=300),
     authorization: str = Header(None), db: AsyncSession = Depends(get_db),
@@ -408,6 +409,8 @@ async def buscar_insumos(
     if categoria:
         sql += " AND si.agrupar = :cat"
         params["cat"] = categoria
+    if armado:
+        sql += " AND si.armar_plato = 1"
     term = (q or "").strip()
     if term:
         # Escapar comodines de LIKE para que el texto se busque literal
@@ -888,9 +891,12 @@ async def get_categorias_armado(authorization: str = Header(None), db: AsyncSess
     """Categorías de insumos (pos_product_categories = categoria_productos)."""
     user = await _get_user(authorization, db)
     rows = (await db.execute(text(
-        "SELECT id, name FROM pos_product_categories WHERE company_id=:cid ORDER BY name"
+        "SELECT id, name, COALESCE(percentage,0) AS percentage, COALESCE(is_active,0) AS is_active "
+        "FROM pos_product_categories WHERE company_id=:cid ORDER BY name"
     ), {"cid": user.company_id})).mappings().all()
-    return [{"id": int(r["id"]), "name": r["name"]} for r in rows]
+    # is_assembly: categoría de armado (categoria_productos.Porcentaje = 1 y Activa = 1)
+    return [{"id": int(r["id"]), "name": r["name"],
+             "is_assembly": float(r["percentage"] or 0) == 1 and int(r["is_active"] or 0) == 1} for r in rows]
 
 
 @router.get("/{item_id}/armado")
@@ -900,7 +906,8 @@ async def get_armado(item_id: int, authorization: str = Header(None), db: AsyncS
 
     cats = (await db.execute(text("""
         SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
-               pc.name AS category_name
+               pc.name AS category_name,
+               (COALESCE(pc.percentage, 0) = 1 AND COALESCE(pc.is_active, 0) = 1) AS is_assembly
         FROM pos_dish_assembly da
         LEFT JOIN pos_product_categories pc
                ON pc.id = da.category_code AND pc.company_id = da.company_id
@@ -936,6 +943,7 @@ async def get_armado(item_id: int, authorization: str = Header(None), db: AsyncS
         "max_choices":          int(c["max_choices"] or 1),
         "is_required":          bool(c["is_required"]),
         "print_on_change_only": bool(c["print_on_change_only"]),
+        "is_assembly":          bool(c["is_assembly"]),
         "options":              by_cat.get(int(c["category_code"]), []),
     } for c in cats]
 
@@ -949,10 +957,11 @@ async def add_armado_categoria(
     cid = user.company_id
     await _check_dish(db, cid, item_id)
     ok = (await db.execute(text(
-        "SELECT 1 FROM pos_product_categories WHERE id=:id AND company_id=:cid"
+        "SELECT 1 FROM pos_product_categories WHERE id=:id AND company_id=:cid "
+        "AND percentage = 1 AND is_active = 1"
     ), {"id": data.category_code, "cid": cid})).scalar()
     if not ok:
-        raise HTTPException(status_code=400, detail="Categoría no válida para esta empresa")
+        raise HTTPException(status_code=400, detail="La categoría no es de armado o está inactiva")
     await db.execute(text("""
         INSERT INTO pos_dish_assembly
             (dish_id, company_id, category_code, max_choices, is_required, is_active, print_on_change_only, synced)
@@ -1014,6 +1023,14 @@ async def add_armado_opcion(
     if not cat:
         raise HTTPException(status_code=404, detail="Categoría de armado no encontrada")
     sup = await _get_supply(db, cid, data.position)
+    # Insumo de armado de esta categoría: inventario_porciones.Armar_Plato = 1 y Agrupar = Cod_Categoria
+    es_de_categoria = (await db.execute(text(
+        "SELECT 1 FROM supply_items WHERE company_id=:cid AND id_item=:iid "
+        "AND agrupar=:cc AND armar_plato=1"
+    ), {"cid": cid, "iid": sup["id_item"], "cc": category_code})).scalar()
+    if not es_de_categoria:
+        raise HTTPException(status_code=422,
+                            detail="El insumo no es de armado de esta categoría (Armar Plato y Agrupar)")
     dup = (await db.execute(text(
         "SELECT 1 FROM pos_dish_assembly_detail "
         "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos"

@@ -12,9 +12,16 @@ Al comandar un ítem:
                                   (Id_Novedad = 0).
   temp_detalle_comanda_parcial.Producto_Personalizado → SIEMPRE el nombre de lo que se vende.
 
+Reglas del escritorio:
+  - Plato de armado  = platos.Prioridad_Ofrecer = 1 (pos_dishes.offer_priority).
+  - Categoría armado = plato_armar (pos_dish_assembly) cuya categoria_productos tenga
+                       Porcentaje = 1 y Activa = 1 (pos_product_categories.percentage / is_active).
+  - Insumos posibles = inventario_porciones.Armar_Plato = 1 y Agrupar = Cod_Categoria
+                       (supply_items.armar_plato / agrupar) — se usan al configurar el plato y el menú.
 Opciones de una categoría de armado:
-  - Si el administrador armó el menú del día (pos_daily_menu, menu_id = categoría) → esas.
-  - Si no → las configuradas en el plato (pos_dish_assembly_detail).
+  - Si el administrador armó el menú del día → menu_diario del día con Agrupar = categoría
+    (pos_daily_menu.group_by; menu_id = Id_Menu, consecutivo del menú del día).
+  - Si no → las configuradas en el plato (plato_armar_detalle / pos_dish_assembly_detail).
 """
 import re
 from typing import Optional
@@ -42,12 +49,20 @@ def parse_armado_text(novedad: Optional[str]) -> list:
 
 
 async def build_assembly(db: AsyncSession, cid: int, dish_id: int, today: str) -> list:
-    """Categorías de armado del plato con sus opciones disponibles hoy."""
+    """Categorías de armado del plato con sus opciones disponibles hoy. Solo si el plato es de
+    armado (Prioridad_Ofrecer = 1) y solo categorías de armado activas (Porcentaje = 1, Activa = 1)."""
+    es_armado = (await db.execute(text(
+        "SELECT COALESCE(offer_priority, 0) FROM pos_dishes WHERE id = :did AND company_id = :cid"
+    ), {"did": dish_id, "cid": cid})).scalar()
+    if int(es_armado or 0) != 1:
+        return []
     cats = (await db.execute(text("""
         SELECT da.category_code, da.max_choices, da.is_required, da.print_on_change_only,
                pc.name AS category_name
         FROM pos_dish_assembly da
-        LEFT JOIN pos_product_categories pc ON pc.id = da.category_code AND pc.company_id = da.company_id
+        INNER JOIN pos_product_categories pc
+                ON pc.id = da.category_code AND pc.company_id = da.company_id
+               AND pc.percentage = 1 AND pc.is_active = 1
         WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
         ORDER BY da.category_code
     """), {"did": dish_id, "cid": cid})).mappings().all()
@@ -70,15 +85,16 @@ async def build_assembly(db: AsyncSession, cid: int, dish_id: int, today: str) -
     ph = ", ".join(f":c{i}" for i in range(len(codes)))
     params = {"cid": cid, "today": today, **{f"c{i}": c for i, c in enumerate(codes)}}
     daily = (await db.execute(text(f"""
-        SELECT dm.menu_id, dm.item_id, dm.description, si.id_grupo, si.posicion
+        SELECT dm.group_by, dm.item_id, dm.description, si.id_grupo, si.posicion
         FROM pos_daily_menu dm
         LEFT JOIN supply_items si ON si.company_id = dm.company_id AND si.id_item = dm.item_id
-        WHERE dm.company_id = :cid AND dm.date = :today AND dm.menu_id IN ({ph})
+        WHERE dm.company_id = :cid AND dm.date = :today AND dm.group_by IN ({ph})
+          AND COALESCE(dm.selected, 1) = 1
         ORDER BY dm.description
     """), params)).mappings().all()
     daily_by_cat: dict = {}
     for d in daily:
-        daily_by_cat.setdefault(int(d["menu_id"]), []).append(d)
+        daily_by_cat.setdefault(int(d["group_by"]), []).append(d)
 
     result = []
     for c in cats:
@@ -267,13 +283,13 @@ async def assembly_structured(db: AsyncSession, db_temp: AsyncSession, cid: int,
     """), {"cid": cid})).mappings().all()
     cmap = {(int(r["dish_id"]), int(r["position"])): (int(r["category_code"]), r["description"]) for r in conf}
     daily = (await db.execute(text(f"""
-        SELECT da.dish_id, dm.item_id, dm.menu_id, dm.description
+        SELECT da.dish_id, dm.item_id, dm.group_by, dm.description
         FROM pos_dish_assembly da
-        JOIN pos_daily_menu dm ON dm.company_id = da.company_id AND dm.menu_id = da.category_code
+        JOIN pos_daily_menu dm ON dm.company_id = da.company_id AND dm.group_by = da.category_code
         WHERE da.company_id = :cid AND da.dish_id IN ({ids})
     """), {"cid": cid})).mappings().all()
     for r in daily:
-        cmap.setdefault((int(r["dish_id"]), int(r["item_id"])), (int(r["menu_id"]), r["description"]))
+        cmap.setdefault((int(r["dish_id"]), int(r["item_id"])), (int(r["group_by"]), r["description"]))
     out: dict = {}
     for r in rows:
         hit = cmap.get((int(r["Id_Plato"]), int(r["Id_Item"])))

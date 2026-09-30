@@ -570,16 +570,18 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
 
     # active=0 es el convenio VB6 para "producto activo" (activo=no_desactivado).
     # Intenta con columnas extendidas; si fallan, usa fallbacks progresivos.
-    # has_assembly = true si:
-    #   offer_priority=1 (menú del día) O existe en pos_dish_assembly (opciones de armado)
-    # Ambos casos son mutuamente excluyentes por diseño VB6.
+    # has_assembly = plato de armado (Prioridad_Ofrecer = 1) con al menos una categoría de
+    # armado activa en plato_armar (categoria_productos.Porcentaje = 1 y Activa = 1).
     dishes = None
     for sql in [
         # Nivel 1: columnas completas
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 COALESCE(d.tax, 0) AS tax,
-                (COALESCE(d.offer_priority, 0) = 1 OR EXISTS(
+                (COALESCE(d.offer_priority, 0) = 1 AND EXISTS(
                     SELECT 1 FROM pos_dish_assembly da
+                    JOIN pos_product_categories pc
+                      ON pc.id = da.category_code AND pc.company_id = da.company_id
+                     AND pc.percentage = 1 AND pc.is_active = 1
                     WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
                 )) AS has_assembly,
                 COALESCE(d.preparation_time, 0) AS no_print,
@@ -593,8 +595,11 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
         # Nivel 2: sin tax ni preparation_time
         """SELECT DISTINCT d.id, d.name, d.price, d.category_id, d.photo_path,
                 0 AS tax,
-                (COALESCE(d.offer_priority, 0) = 1 OR EXISTS(
+                (COALESCE(d.offer_priority, 0) = 1 AND EXISTS(
                     SELECT 1 FROM pos_dish_assembly da
+                    JOIN pos_product_categories pc
+                      ON pc.id = da.category_code AND pc.company_id = da.company_id
+                     AND pc.percentage = 1 AND pc.is_active = 1
                     WHERE da.dish_id = d.id AND da.company_id = d.company_id AND da.is_active = 1
                 )) AS has_assembly,
                 0 AS no_print,
@@ -2292,7 +2297,8 @@ async def get_menu_diario_admin(
         WHERE si.company_id = :cid
           AND si.is_active   = 1
           AND pc.percentage  = 1
-          AND si.control_stock = 1
+          AND pc.is_active   = 1
+          AND si.armar_plato = 1
         ORDER BY pc.name, si.description
     """), {"cid": cid})).mappings().all()
 
@@ -2340,6 +2346,16 @@ async def guardar_menu_diario(
     cid = payload["company_id"]
     d   = data.date
 
+    # Id_Menu (menu_id): consecutivo del menú del día. Se conserva el de la fecha si ya
+    # existe; si no, el siguiente de la empresa. Agrupar (group_by) = categoría del insumo.
+    menu_id = (await db.execute(text(
+        "SELECT MAX(menu_id) FROM pos_daily_menu WHERE company_id = :cid AND date = :d"
+    ), {"cid": cid, "d": d})).scalar()
+    if not menu_id:
+        menu_id = int((await db.execute(text(
+            "SELECT COALESCE(MAX(menu_id), 0) FROM pos_daily_menu WHERE company_id = :cid"
+        ), {"cid": cid})).scalar() or 0) + 1
+
     # Pizarra limpia para esta fecha
     await db.execute(text("""
         DELETE FROM pos_daily_menu WHERE company_id = :cid AND date = :d
@@ -2347,7 +2363,7 @@ async def guardar_menu_diario(
 
     if data.selected_ids:
         placeholders = ", ".join([f":id{i}" for i in range(len(data.selected_ids))])
-        params: dict = {"cid": cid, "d": d}
+        params: dict = {"cid": cid, "d": d, "mid": int(menu_id)}
         for i, sid in enumerate(data.selected_ids):
             params[f"id{i}"] = sid
 
@@ -2355,14 +2371,15 @@ async def guardar_menu_diario(
         await db.execute(text(f"""
             INSERT INTO pos_daily_menu
                 (company_id, menu_id, item_id, date, category, description, group_by, selected, synced, updated_at)
-            SELECT si.company_id, si.Agrupar, si.id_item, :d,
+            SELECT si.company_id, :mid, si.id_item, :d,
                    pc.name, si.description, si.Agrupar, 1, 0, NOW()
             FROM supply_items si
             INNER JOIN pos_product_categories pc
                    ON si.Agrupar = pc.id AND pc.company_id = :cid
-            WHERE si.company_id = :cid AND si.id_item IN ({placeholders})
+                  AND pc.percentage = 1 AND pc.is_active = 1
+            WHERE si.company_id = :cid AND si.armar_plato = 1 AND si.id_item IN ({placeholders})
             ON DUPLICATE KEY UPDATE date = :d, selected = 1, updated_at = NOW()
         """), params)
 
     await db.commit()
-    return {"ok": True, "date": d, "selected_count": len(data.selected_ids)}
+    return {"ok": True, "date": d, "menu_id": int(menu_id), "selected_count": len(data.selected_ids)}

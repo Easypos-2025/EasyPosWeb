@@ -37,6 +37,7 @@ const props = defineProps({
   categorias:      { type: Array,  default: () => [] },  // [{ id, name }] pos_product_categories
   defaultCategory: { type: Number, default: null },
   excluded:        { type: Array,  default: () => [] },  // id_item ya agregados
+  armado:          { type: Boolean, default: false },    // solo insumos de armado (Armar_Plato = 1)
 })
 defineEmits(['select'])
 
@@ -53,6 +54,7 @@ async function buscar() {
   try {
     const params = { limit: 200 }
     if (cat.value) params.categoria = cat.value
+    if (props.armado) params.armado = true
     if (q.value.trim()) params.q = q.value.trim()
     const { data } = await api.get('/api/pos-catalogo/platos/insumos/buscar', { params })
     if (my === seq) rows.value = data          // descarta respuestas viejas
