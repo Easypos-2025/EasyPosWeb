@@ -3,7 +3,7 @@
   <div class="cm-overlay" @click.self="$emit('close')">
     <div class="cm-box">
       <div class="cm-hdr">
-        <span><i class="bi bi-person-badge me-1"></i> Cliente del pedido</span>
+        <span><i class="bi bi-person-badge me-1"></i> {{ title }}</span>
         <button class="cm-x" @click="$emit('close')"><i class="bi bi-x-lg"></i></button>
       </div>
 
@@ -51,12 +51,18 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import apiComanda from '@/services/apiComanda'
+import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 
-defineProps({
+const props = defineProps({
   currentId: { type: Number, default: 1 },
   saving:    { type: Boolean, default: false },
+  title:     { type: String, default: 'Cliente del pedido' },
+  // Pantallas del panel (pago/caja) usan la sesión del usuario; la comanda usa la del mesero
+  panel:     { type: Boolean, default: false },
 })
+const http = () => props.panel ? api : apiComanda
+const basePath = () => props.panel ? '/api/pos-catalogo/listas-cliente/clientes' : '/api/pos/comanda/clientes'
 const emit = defineEmits(['close', 'select'])
 const vFocus = { mounted: el => el.focus() }
 
@@ -71,7 +77,7 @@ async function buscar() {
   const my = ++seq
   loading.value = true
   try {
-    const { data } = await apiComanda.get('/api/pos/comanda/clientes', { params: { q: q.value.trim() || undefined } })
+    const { data } = await http().get(basePath(), { params: { q: q.value.trim() || undefined } })
     if (my === seq) rows.value = data
   } catch (e) { if (my === seq) showToast(e?.response?.data?.detail || 'Error cargando clientes', 'error') }
   finally { if (my === seq) loading.value = false }
@@ -84,7 +90,7 @@ function abrirCrear() {
 }
 async function crear() {
   try {
-    const { data } = await apiComanda.post('/api/pos/comanda/clientes', {
+    const { data } = await http().post(basePath(), {
       nombres: nuevo.value.nombres.trim(), cedula: nuevo.value.cedula.trim() || null,
       telefono: nuevo.value.telefono.trim() || null, direccion: nuevo.value.direccion.trim() || null,
     })

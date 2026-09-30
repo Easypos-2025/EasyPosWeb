@@ -64,9 +64,7 @@ async def add_evidence(
     file: UploadFile = File(None), authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    await ensure_task(db, user, task_id)
 
     file_path = ""
     if file_type == "text":
@@ -102,11 +100,12 @@ async def add_evidence(
 
 @router.delete("/{evidence_id:int}")
 async def delete_evidence(evidence_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskEvidence).where(TaskEvidence.id == evidence_id))
     ev = result.scalar_one_or_none()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidencia no encontrada")
+    await ensure_task(db, user, ev.task_id)
     if ev.file_path:
         file_on_disk = UPLOADS_BASE.parent / ev.file_path.lstrip("/")
         if file_on_disk.exists():

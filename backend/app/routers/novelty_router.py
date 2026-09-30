@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from app.auth.access import ensure_novelty
 from app.database import get_db
 from app.models.novelty_model import Novelty, NoveltyEvidence, NoveltyReply
 from app.models.user_model import User
@@ -221,6 +222,7 @@ async def delete_novelty(novelty_id: int, authorization: str = Header(None), db:
 @router.get("/{novelty_id}/evidence")
 async def list_evidence(novelty_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_novelty(db, user, novelty_id)
     result = await db.execute(select(NoveltyEvidence).where(NoveltyEvidence.novelty_id == novelty_id).order_by(NoveltyEvidence.uploaded_at.asc()))
     return [_ser_ev(ev) for ev in result.scalars().all()]
 
@@ -228,6 +230,7 @@ async def list_evidence(novelty_id: int, authorization: str = Header(None), db: 
 @router.post("/{novelty_id}/evidence")
 async def upload_evidence(novelty_id: int, file: UploadFile = File(...), authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_novelty(db, user, novelty_id)
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXT:
         raise HTTPException(status_code=415, detail=f"Solo imágenes (jpg, png, webp, gif). Recibido: {ext}")
@@ -249,6 +252,7 @@ async def upload_evidence(novelty_id: int, file: UploadFile = File(...), authori
 @router.get("/{novelty_id}/replies")
 async def list_replies(novelty_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_novelty(db, user, novelty_id)
     result = await db.execute(select(NoveltyReply).where(NoveltyReply.novelty_id == novelty_id).order_by(NoveltyReply.created_at.asc()))
     replies = result.scalars().all()
     items = []
@@ -264,6 +268,7 @@ async def create_reply(novelty_id: int, data: dict, authorization: str = Header(
     user = await _get_user(authorization, db)
     if not await _can_manage_all(user, db):
         raise HTTPException(status_code=403, detail="Sin permiso para responder novedades")
+    await ensure_novelty(db, user, novelty_id)
     message = (data.get("message") or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío")
@@ -282,6 +287,7 @@ async def delete_reply(reply_id: int, authorization: str = Header(None), db: Asy
     r = result.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Respuesta no encontrada")
+    await ensure_novelty(db, user, r.novelty_id)
     if not can_all and r.user_id != user.id:
         raise HTTPException(status_code=403, detail="Sin permiso para eliminar esta respuesta")
     await db.delete(r)
@@ -296,6 +302,7 @@ async def delete_evidence(evidence_id: int, authorization: str = Header(None), d
     ev = result.scalar_one_or_none()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidencia no encontrada")
+    await ensure_novelty(db, user, ev.novelty_id)
     fp = UPLOADS_DIR / Path(ev.file_url).name
     fp.unlink(missing_ok=True)
     await db.delete(ev)

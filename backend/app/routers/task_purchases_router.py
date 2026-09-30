@@ -45,6 +45,7 @@ async def get_purchases(task_id: int, authorization: str = Header(None), db: Asy
 @router.post("/{task_id:int}")
 async def add_purchase(task_id: int, data: dict = Body(...), authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_task(db, user, task_id)
     concept = (data.get("concept") or "").strip()
     if not concept:
         raise HTTPException(status_code=400, detail="El concepto de la compra es obligatorio")
@@ -61,11 +62,12 @@ async def add_purchase(task_id: int, data: dict = Body(...), authorization: str 
 
 @router.delete("/{purchase_id:int}")
 async def delete_purchase(purchase_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskPurchase).where(TaskPurchase.id == purchase_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Compra no encontrada")
+    await ensure_task(db, user, item.task_id)
     await db.delete(item)
     await db.commit()
     return {"message": "Compra eliminada"}

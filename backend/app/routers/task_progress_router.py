@@ -46,6 +46,7 @@ async def get_reports(task_id: int, authorization: str = Header(None), db: Async
 @router.post("/{task_id:int}")
 async def add_report(task_id: int, data: dict = Body(...), authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_task(db, user, task_id)
     desc = data.get("description", "").strip()
     if not desc:
         raise HTTPException(status_code=400, detail="La descripción del reporte es obligatoria")
@@ -59,11 +60,12 @@ async def add_report(task_id: int, data: dict = Body(...), authorization: str = 
 
 @router.delete("/{report_id:int}")
 async def delete_report(report_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskProgressReport).where(TaskProgressReport.id == report_id))
     r = result.scalar_one_or_none()
     if not r:
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    await ensure_task(db, user, r.task_id)
     await db.delete(r)
     await db.commit()
     return {"message": "Reporte eliminado"}

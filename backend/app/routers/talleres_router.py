@@ -1,4 +1,5 @@
 from fastapi import Depends
+from app.auth.access import is_sysadmin
 from app.auth.tenant import tenant_guard
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -395,6 +396,16 @@ async def get_orden(
     }
 
 
+async def _orden_company(db: AsyncSession, orden_id: int, user) -> int:
+    """company_id de la orden si es de la empresa del usuario (SYSADMIN: cualquiera); si no, 404."""
+    cid = (await db.execute(text(
+        "SELECT company_id FROM service_orders WHERE id = :oid"
+    ), {"oid": orden_id})).scalar()
+    if cid is None or (cid != user.company_id and not await is_sysadmin(db, user)):
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+    return cid
+
+
 # ── Agregar línea de detalle a la orden ──────────────────────────────────────
 
 @router.post("/ordenes/{orden_id}/detalle")
@@ -404,6 +415,7 @@ async def agregar_detalle(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    orden_cid = await _orden_company(db, orden_id, current_user)
     cantidad  = float(payload.get("cantidad", 1))
     precio    = float(payload.get("precio_unitario", 0))
     descuento = float(payload.get("descuento", 0))
@@ -419,8 +431,8 @@ async def agregar_detalle(
     if profession_id:
         rp = await db.execute(text("""
             SELECT pct_operario FROM profession_payment_config
-            WHERE profession_id = :pid
-        """), {"pid": profession_id})
+            WHERE profession_id = :pid AND company_id = :cid
+        """), {"pid": profession_id, "cid": orden_cid})
         cfg = rp.mappings().first()
         if cfg:
             mano_obra = round(subtotal * float(cfg["pct_operario"]) / 100, 2)
@@ -467,6 +479,7 @@ async def cambiar_estado(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _orden_company(db, orden_id, current_user)
     nuevo = payload.get("estado")
     estados_validos = ("abierta", "en_proceso", "terminada", "entregada", "cancelada")
     if nuevo not in estados_validos:
@@ -1183,6 +1196,12 @@ async def agregar_foto(
         raise HTTPException(status_code=400, detail="company_id y photo_url son requeridos")
     if tipo not in ("ingreso", "proceso", "salida", "general"):
         tipo = "ingreso"
+    # el vehículo debe ser de la empresa (company_id ya validado por tenant_guard)
+    owner = (await db.execute(text(
+        "SELECT company_id FROM assets WHERE id = :aid"
+    ), {"aid": asset_id})).scalar()
+    if owner is None or int(owner) != int(company_id):
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
 
     await db.execute(text("""
         INSERT INTO vehicle_photos (company_id, asset_id, photo_url, tipo)

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from app.auth.access import is_sysadmin
 from app.database import get_db
 from app.models.asset_inquiry_model import AssetInquiry
 from app.models.asset_model import Asset
@@ -84,11 +85,12 @@ async def inquiry_new_count(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Nuevas solicitudes confirmadas (sin leer). Usado por el topbar."""
-    from sqlalchemy import text
+    """Nuevas solicitudes confirmadas (sin leer) de la empresa. Usado por el topbar."""
+    conds = [AssetInquiry.status == "confirmed", AssetInquiry.notified == False]
+    if not await is_sysadmin(db, current_user):
+        conds.append(AssetInquiry.company_id == current_user.company_id)
     count = (await db.execute(
-        select(func.count()).select_from(AssetInquiry)
-        .where(AssetInquiry.status == "confirmed", AssetInquiry.notified == False)
+        select(func.count()).select_from(AssetInquiry).where(*conds)
     )).scalar() or 0
     return {"count": count}
 
@@ -98,8 +100,11 @@ async def mark_inquiries_notified(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Marca todas las solicitudes confirmadas como notificadas."""
-    result = await db.execute(select(AssetInquiry).where(AssetInquiry.status == "confirmed", AssetInquiry.notified == False))
+    """Marca como notificadas las solicitudes confirmadas de la empresa."""
+    conds = [AssetInquiry.status == "confirmed", AssetInquiry.notified == False]
+    if not await is_sysadmin(db, current_user):
+        conds.append(AssetInquiry.company_id == current_user.company_id)
+    result = await db.execute(select(AssetInquiry).where(*conds))
     for inq in result.scalars().all():
         inq.notified = True
     await db.commit()
@@ -114,7 +119,7 @@ async def delete_inquiry(
 ):
     result = await db.execute(select(AssetInquiry).where(AssetInquiry.id == inquiry_id))
     inq = result.scalar_one_or_none()
-    if not inq:
+    if not inq or (inq.company_id != current_user.company_id and not await is_sysadmin(db, current_user)):
         raise HTTPException(status_code=404, detail="Consulta no encontrada")
     await db.delete(inq)
     await db.commit()

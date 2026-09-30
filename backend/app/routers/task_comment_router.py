@@ -71,6 +71,7 @@ async def add_comment(
     db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    await ensure_task(db, user, task_id)
     text = data.get("comment", "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="El comentario no puede estar vacío")
@@ -83,10 +84,12 @@ async def add_comment(
 
 
 @router.patch("/{comment_id}/read")
-async def mark_read(comment_id: int, db: AsyncSession = Depends(get_db)):
+async def mark_read(comment_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskComment).where(TaskComment.id == comment_id))
     c = result.scalar_one_or_none()
     if c:
+        await ensure_task(db, user, c.task_id)
         c.is_read = True
         await db.commit()
     return {"ok": True}

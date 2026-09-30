@@ -873,7 +873,12 @@ async def agregar_item(
         "SELECT COALESCE(MAX(Item), 0) FROM temp_detalle_comanda_parcial "
         "WHERE Nro_pedido=:on AND company_id=:cid"
     ), {"on": data.order_number, "cid": cid})).scalar() or 0
-    item_num = int(max_item) + 1
+    first_item = int(max_item) + 1
+
+    # Una fila por unidad, como el escritorio: permite el pago parcial por ítem.
+    # Cantidades decimales (productos por peso) quedan en una sola fila.
+    qty = float(data.quantity)
+    unidades = [1.0] * int(qty) if qty.is_integer() and qty > 1 else [qty]
 
     # ── Precio: SIEMPRE calculado en el servidor ─────────────────────────────
     #   lista de precios del cliente del pedido (o platos.Valor) + valor adicional del armado
@@ -882,15 +887,22 @@ async def agregar_item(
     ), {"on": data.order_number, "cid": cid})).scalar() or 0
     base = await armado_svc.client_price(db, cid, int(cust), data.dish_id, dish["price"])
     unit = base + sum(o["supply_price"] for o in selected)
-    amount = int(round(unit * data.quantity))
     tax_pct = float(dish["tax"]) if dish["tax"] else 0
     pays_tax = 1 if tax_pct > 0 else 0
-    tax_val  = int(amount * tax_pct / 100) if pays_tax else 0
     notes = armado_svc.clean_text(data.notes, 250) or None
     changes = armado_svc.clean_text(data.changes, 255) or None
+    fixed = await armado_svc.fixed_products(db, cid, data.dish_id)
 
-    # Insertar ítem en datatemppos (Mostrar=1 = registro maestro)
-    await db_temp.execute(text("""
+    total_amount, items_creados = 0, []
+    for n, qty_u in enumerate(unidades):
+      item_num = first_item + n
+      amount = int(round(unit * qty_u))
+      tax_val = int(amount * tax_pct / 100) if pays_tax else 0
+      total_amount += amount
+      items_creados.append(item_num)
+
+      # Insertar ítem en datatemppos (Mostrar=1 = registro maestro)
+      await db_temp.execute(text("""
         INSERT INTO temp_detalle_comanda_parcial
             (company_id, Nro_pedido, Fecha, Nro_Factura, Id_Plato, Item, Depende,
              Cantidad, Valor, Novedad, Cambios, Paga_Impuesto, Impuesto, Impuesto_Original,
@@ -905,7 +917,7 @@ async def agregar_item(
         "fecha":    real_fecha,
         "did":      data.dish_id,
         "item":     item_num,
-        "qty":      data.quantity,
+        "qty":      qty_u,
         "amount":   amount,
         "notes":    notes,
         "changes":  changes,
@@ -915,22 +927,22 @@ async def agregar_item(
         "hora":     _time_str(),
     })
 
-    # Insumos a descontar (fijos + seleccionados) y novedades (armado + notas)
-    fixed = await armado_svc.fixed_products(db, cid, data.dish_id)
-    await armado_svc.write_item_products(db_temp, cid, data.order_number, real_fecha,
-                                         data.dish_id, item_num, fixed, selected)
-    await armado_svc.write_item_armado(db_temp, cid, data.order_number, item_num, bool(cats), selected)
-    await armado_svc.write_item_notes(db, db_temp, cid, data.order_number, item_num,
-                                      int(dish["category_id"] or 0), notes)
+      # Insumos a descontar (fijos + seleccionados) y novedades (armado + notas) de esta unidad
+      await armado_svc.write_item_products(db_temp, cid, data.order_number, real_fecha,
+                                           data.dish_id, item_num, fixed, selected)
+      await armado_svc.write_item_armado(db_temp, cid, data.order_number, item_num, bool(cats), selected)
+      await armado_svc.write_item_notes(db, db_temp, cid, data.order_number, item_num,
+                                        int(dish["category_id"] or 0), notes)
 
     await _recalc_total(db_temp, data.order_number, cid)
     await db_temp.commit()
 
     return {
-        "item":     item_num,
+        "item":     items_creados[0],
+        "items":    items_creados,
         "dish_id":  data.dish_id,
         "quantity": data.quantity,
-        "amount":   amount,
+        "amount":   total_amount,
         "notes":    notes,
         "changes":  changes,
         "custom_product": producto_personalizado,

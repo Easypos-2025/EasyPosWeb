@@ -14,6 +14,26 @@
       </button>
     </div>
 
+    <!-- ── Billetes rápidos (tarjetas al pagar en efectivo) ─────────────── -->
+    <div class="billetes-card">
+      <div class="billetes-hdr">
+        <div>
+          <div class="billetes-ttl"><i class="bi bi-cash-stack me-1"></i> Billetes rápidos</div>
+          <div class="billetes-sub">Tarjetas que aparecen al pagar en efectivo (máximo 6).</div>
+        </div>
+        <button class="btn btn-primary btn-sm" :disabled="savingBilletes" @click="guardarBilletes">
+          {{ savingBilletes ? 'Guardando…' : 'Guardar' }}
+        </button>
+      </div>
+      <div class="billetes-grid">
+        <div v-for="(b, i) in billetes" :key="i" class="billete">
+          <CurrencyInput v-model="billetes[i]" class="form-control billete-inp" />
+          <button class="billete-del" @click="billetes.splice(i, 1)" title="Quitar"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <button v-if="billetes.length < 6" class="billete-add" @click="billetes.push(0)"><i class="bi bi-plus-lg"></i> Agregar</button>
+      </div>
+    </div>
+
     <!-- ── Buscador ────────────────────────────────────────────────────── -->
     <div class="search-bar">
       <i class="bi bi-search"></i>
@@ -280,6 +300,24 @@ async function load() {
   loading.value = false
 }
 
+// ── Billetes rápidos ───────────────────────────────────────────────────────────
+const billetes       = ref([])
+const savingBilletes = ref(false)
+async function cargarBilletes() {
+  try { billetes.value = (await api.get("/api/payment-types/billetes")).data }
+  catch { billetes.value = [] }
+}
+async function guardarBilletes() {
+  const values = billetes.value.map(v => Math.round(Number(v) || 0)).filter(v => v > 0)
+  savingBilletes.value = true
+  try {
+    const { data } = await api.put("/api/payment-types/billetes", { values })
+    billetes.value = data.values
+    showToast("Billetes guardados", "success")
+  } catch (e) { showToast(e?.response?.data?.detail ?? "Error al guardar billetes", "error") }
+  savingBilletes.value = false
+}
+
 // ── Abrir modal ────────────────────────────────────────────────────────────────
 function openCreate() {
   editing.value = null
@@ -374,11 +412,20 @@ async function remove(item) {
   }
 }
 
-onMounted(load)
+onMounted(() => { load(); cargarBilletes() })
 </script>
 
 <style scoped>
 /* ── Página ─────────────────────────────────────────────────────────── */
+.billetes-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); padding: 12px 14px; margin-bottom: 14px; }
+.billetes-hdr  { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.billetes-ttl  { font-weight: 700; color: #1e293b; font-size: 14px; }
+.billetes-sub  { font-size: 12px; color: #64748b; }
+.billetes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.billete       { display: flex; gap: 4px; }
+.billete-inp   { text-align: right; font-weight: 700; }
+.billete-del   { border: 1.5px solid #fecaca; background: #fef2f2; color: #dc2626; border-radius: 8px; padding: 0 8px; cursor: pointer; }
+.billete-add   { border: 1.5px dashed #93c5fd; background: #fff; color: #1d4ed8; border-radius: 8px; padding: 8px; font-weight: 700; cursor: pointer; }
 .page-container { padding: 24px; max-width: 1100px; }
 .page-header    { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-title     { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 4px; display: flex; align-items: center; }

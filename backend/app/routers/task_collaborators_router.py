@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
 
+from app.auth.access import ensure_task
 from app.database import get_db, Base
 from app.models.user_model import User
 from app.models.task_model import Task
@@ -48,7 +49,7 @@ async def _can_manage(user: User, db: AsyncSession) -> bool:
 
 @router.get("/{task_id}")
 async def list_collaborators(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    await ensure_task(db, await _get_user(authorization, db), task_id)
     result = await db.execute(select(TaskCollaborator).where(TaskCollaborator.task_id == task_id).order_by(TaskCollaborator.assigned_at.asc()))
     rows = result.scalars().all()
     items = []
@@ -69,16 +70,13 @@ async def add_collaborator(task_id: int, data: dict = Body(...), authorization: 
     requester = await _get_user(authorization, db)
     if not await _can_manage(requester, db):
         raise HTTPException(status_code=403, detail="Solo roles superiores pueden asignar colaboradores")
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    task = await ensure_task(db, requester, task_id)
     user_id = data.get("user_id")
     if not user_id:
         raise HTTPException(status_code=422, detail="user_id es requerido")
     result = await db.execute(select(User).where(User.id == user_id))
     collab_user = result.scalar_one_or_none()
-    if not collab_user:
+    if not collab_user or collab_user.company_id != task.company_id:
         raise HTTPException(status_code=404, detail="Usuario colaborador no encontrado")
     result = await db.execute(select(TaskCollaborator).where(TaskCollaborator.task_id == task_id, TaskCollaborator.user_id == user_id))
     if result.scalar_one_or_none():
@@ -101,6 +99,7 @@ async def remove_collaborator(task_id: int, user_id: int, authorization: str = H
     requester = await _get_user(authorization, db)
     if not await _can_manage(requester, db):
         raise HTTPException(status_code=403, detail="Solo roles superiores pueden quitar colaboradores")
+    await ensure_task(db, requester, task_id)
     result = await db.execute(select(TaskCollaborator).where(TaskCollaborator.task_id == task_id, TaskCollaborator.user_id == user_id))
     row = result.scalar_one_or_none()
     if not row:

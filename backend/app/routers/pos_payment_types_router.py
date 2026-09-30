@@ -9,6 +9,50 @@ from app.auth.dependencies import get_current_user
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/payment-types", tags=["Payment Types"], dependencies=[Depends(tenant_guard)])
+
+
+# ─── Billetes rápidos (pago en efectivo) — máx. 6 por empresa ─────────────────
+# Declarados antes de /{payment_id} para que esa ruta no los capture.
+_MAX_BILLETES = 6
+
+
+@router.get("/billetes")
+async def list_billetes(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    rows = (await db.execute(text(
+        "SELECT value FROM pos_cash_denominations WHERE company_id = :cid ORDER BY sort_order, value DESC"
+    ), {"cid": current_user.company_id})).all()
+    return [int(r[0]) for r in rows]
+
+
+@router.put("/billetes")
+async def set_billetes(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Reemplaza la lista de billetes de la empresa (valores enteros > 0, sin repetir)."""
+    raw = body.get("values") or []
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=422, detail="values debe ser una lista")
+    try:
+        values = [int(v) for v in raw]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Los valores deben ser números enteros")
+    values = list(dict.fromkeys(v for v in values if 0 < v <= 100_000_000))
+    if len(values) > _MAX_BILLETES:
+        raise HTTPException(status_code=422, detail=f"Máximo {_MAX_BILLETES} billetes")
+    cid = current_user.company_id
+    await db.execute(text("DELETE FROM pos_cash_denominations WHERE company_id = :cid"), {"cid": cid})
+    for i, v in enumerate(values):
+        await db.execute(text(
+            "INSERT INTO pos_cash_denominations (company_id, value, sort_order) VALUES (:cid, :v, :o)"
+        ), {"cid": cid, "v": v, "o": i})
+    await db.commit()
+    return {"ok": True, "values": values}
+
 # ─── Listar ────────────────────────────────────────────────────────────────────
 @router.get("")
 async def list_payment_types(

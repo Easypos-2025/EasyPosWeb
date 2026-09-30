@@ -4,7 +4,7 @@ from sqlalchemy import select, func, cast, Date, delete as sql_delete
 from datetime import datetime, date
 from typing import Optional
 
-from app.auth.access import ensure_task
+from app.auth.access import ensure_task, ensure_task_refs
 from app.database import get_db
 from app.models.task_model import Task
 from app.models.task_status_model import TaskStatus
@@ -260,10 +260,7 @@ async def update_progress(
     db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    task = await ensure_task(db, user, task_id)
     role = await _get_role(user, db)
     is_sys = role.is_system if role else False
     if task.assigned_to != user.id and not is_sys:
@@ -348,6 +345,8 @@ async def create_task(
                 detail=f"Límite de {max_daily} tareas diarias alcanzado en tu plan. Actualiza tu plan para crear más."
             )
 
+    await ensure_task_refs(db, user.company_id, data.get("asset_id"),
+                           data.get("assigned_to"), data.get("worker_id"))
     task = Task(
         company_id=user.company_id, title=data.get("title", "").strip(),
         description=data.get("description", ""), asset_id=data.get("asset_id") or None,
@@ -380,11 +379,14 @@ async def update_task(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
-    await _get_user(authorization, db)
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    user = await _get_user(authorization, db)
+    task = await ensure_task(db, user, task_id)
+    # Solo se validan las referencias que cambian (el formulario reenvía todo)
+    await ensure_task_refs(
+        db, task.company_id,
+        *[(data.get(f) if f in data and (data.get(f) or None) != getattr(task, f) else None)
+          for f in ("asset_id", "assigned_to", "worker_id")],
+    )
 
     for f in ["title", "description", "asset_id", "status_id", "assigned_to", "worker_id",
               "progress", "budget_labor_cost", "actual_labor_cost"]:
@@ -412,11 +414,7 @@ async def update_task(
 
 @router.delete("/{task_id:int}")
 async def delete_task(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    task = await ensure_task(db, await _get_user(authorization, db), task_id)
     for child_model in (TaskEvidence, TaskMaterial, TaskExpense,
                         TaskComment, TaskProgressReport, TaskPurchase):
         await db.execute(sql_delete(child_model).where(child_model.task_id == task_id))

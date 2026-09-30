@@ -1,5 +1,6 @@
 from fastapi import Depends
 from app.auth.tenant import tenant_guard
+import re
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
@@ -10,6 +11,7 @@ from app.models.company_model import Company
 from app.models.compraventa_foto_model import CompraventaFoto
 from app.utils.storage import upload_file, delete_file
 from app.auth.dependencies import get_current_user
+from app.auth.access import is_sysadmin
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/compraventa", tags=["compraventa"], dependencies=[Depends(tenant_guard)])
@@ -227,6 +229,9 @@ async def guardar_observacion(
 
 # ── Fotos del contrato ────────────────────────────────────────────────────────
 
+_EXT_FOTO        = {"jpg", "jpeg", "png", "webp", "gif"}
+_NRO_CONTRATO_RE = re.compile(r"[A-Za-z0-9_-]{1,50}")
+
 @router.get("/contrato/fotos")
 async def list_fotos(
     company_id: int   = Query(...),
@@ -256,7 +261,12 @@ async def upload_foto(
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Imagen demasiado grande (máx 10 MB)")
+    # extensión y nro_contrato forman la ruta pública del archivo: solo valores seguros
     ext  = (file.filename or "foto.jpg").rsplit(".", 1)[-1].lower()
+    if ext not in _EXT_FOTO:
+        raise HTTPException(status_code=400, detail="Solo se permiten imágenes JPG, PNG, WEBP o GIF")
+    if not _NRO_CONTRATO_RE.fullmatch(nro_contrato or ""):
+        raise HTTPException(status_code=400, detail="Número de contrato no válido")
     path = f"compraventa/{company_id}/{nro_contrato}/{uuid.uuid4().hex}.{ext}"
     url  = await upload_file(content, path)
     foto = CompraventaFoto(company_id=company_id, nro_contrato=nro_contrato,
@@ -271,10 +281,10 @@ async def upload_foto(
 async def delete_foto(
     foto_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
     foto = await db.get(CompraventaFoto, foto_id)
-    if not foto:
+    if not foto or (foto.company_id != user.company_id and not await is_sysadmin(db, user)):
         raise HTTPException(status_code=404, detail="Foto no encontrada")
     await delete_file(foto.file_url)
     await db.delete(foto)

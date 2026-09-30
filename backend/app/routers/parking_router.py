@@ -1,4 +1,5 @@
 from fastapi import Depends
+from app.auth.access import is_sysadmin
 from app.auth.tenant import tenant_guard
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,8 @@ _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 router = APIRouter(prefix="/api/parking", tags=["parking"], dependencies=[Depends(tenant_guard)])
 # ── Upload foto de vehículo ───────────────────────────────────────────────────
 
+_MAX_FOTO = 10 * 1024 * 1024
+
 @router.post("/photos/upload")
 async def upload_foto_parking(
     company_id: int   = Query(...),
@@ -31,10 +34,13 @@ async def upload_foto_parking(
     ext = Path(file.filename).suffix.lower() if file.filename else ".jpg"
     if ext not in (".jpg", ".jpeg", ".png", ".webp"):
         raise HTTPException(400, "Formato no permitido")
+    content = await file.read(_MAX_FOTO + 1)
+    if len(content) > _MAX_FOTO:
+        raise HTTPException(413, "La foto supera el tamaño máximo (10 MB)")
     fname = f"{uuid.uuid4().hex}{ext}"
     dest = _UPLOADS_DIR / fname
     with open(dest, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(content)
     return {"url": f"/uploads/parking/{fname}"}
 
 
@@ -381,6 +387,15 @@ async def crear_orden(
     return dict(nueva)
 
 
+async def _check_orden_empresa(db: AsyncSession, order_id: int, user) -> None:
+    """La orden debe ser de la empresa del usuario (SYSADMIN: cualquiera); si no, 404."""
+    cid = (await db.execute(text(
+        "SELECT company_id FROM parking_orders WHERE id = :id"
+    ), {"id": order_id})).scalar()
+    if cid is None or (cid != user.company_id and not await is_sysadmin(db, user)):
+        raise HTTPException(404, detail="Orden no encontrada")
+
+
 # ── Registrar (mesero confirma ingreso) ──────────────────────────────────────
 
 class RegistrarBody(BaseModel):
@@ -395,6 +410,7 @@ async def registrar_orden(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _check_orden_empresa(db, order_id, current_user)
     row = await db.execute(text(
         "SELECT id, estado FROM parking_orders WHERE id = :id"
     ), {"id": order_id})
@@ -461,6 +477,7 @@ async def pagar_orden(
     db: AsyncSession      = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _check_orden_empresa(db, order_id, current_user)
     row = await db.execute(text(
         "SELECT id, estado, company_id FROM parking_orders WHERE id = :id"
     ), {"id": order_id})
@@ -624,6 +641,7 @@ async def marcar_salida(
     db: AsyncSession      = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _check_orden_empresa(db, order_id, current_user)
     row = await db.execute(text(
         "SELECT id, estado FROM parking_orders WHERE id = :id"
     ), {"id": order_id})
@@ -649,8 +667,9 @@ async def marcar_salida(
 async def get_order_items(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
+    await _check_orden_empresa(db, order_id, current_user)
     rows = await db.execute(text("""
         SELECT poi.id, poi.product_id, poi.nombre, poi.precio_unitario,
                poi.impuesto_pct, poi.cantidad, poi.subtotal

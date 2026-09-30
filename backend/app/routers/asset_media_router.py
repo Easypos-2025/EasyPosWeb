@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.auth.access import ensure_asset
 from app.database import get_db
 from app.models.asset_media_model import AssetMedia
 from app.models.asset_model import Asset
@@ -42,6 +43,7 @@ async def list_media(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await ensure_asset(db, current_user, asset_id)
     result = await db.execute(
         select(AssetMedia)
         .where(AssetMedia.asset_id == asset_id)
@@ -57,9 +59,7 @@ async def upload_media(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    asset = await db.get(Asset, asset_id)
-    if not asset:
-        raise HTTPException(status_code=404, detail="Activo no encontrado")
+    await ensure_asset(db, current_user, asset_id)
 
     count_res = await db.execute(select(AssetMedia).where(AssetMedia.asset_id == asset_id))
     if len(count_res.scalars().all()) >= MAX_PER_ASSET:
@@ -122,6 +122,7 @@ async def delete_media(
     media = result.scalar_one_or_none()
     if not media:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    await ensure_asset(db, current_user, media.asset_id)
 
     await delete_file(media.file_url)
     await db.delete(media)
@@ -141,6 +142,7 @@ async def reorder_media(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await ensure_asset(db, current_user, asset_id)
     for item in items:
         result = await db.execute(
             select(AssetMedia).where(AssetMedia.id == item.id, AssetMedia.asset_id == asset_id)

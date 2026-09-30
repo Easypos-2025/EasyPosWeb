@@ -50,6 +50,7 @@ async def get_materials(task_id: int, authorization: str = Header(None), db: Asy
 @router.post("/{task_id:int}")
 async def add_material(task_id: int, data: dict = Body(...), authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_task(db, user, task_id)
     name = data.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="El nombre del material es obligatorio")
@@ -65,11 +66,12 @@ async def add_material(task_id: int, data: dict = Body(...), authorization: str 
 
 @router.put("/{material_id:int}")
 async def update_material(material_id: int, data: dict = Body(...), authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskMaterial).where(TaskMaterial.id == material_id))
     m = result.scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="Material no encontrado")
+    await ensure_task(db, user, m.task_id)
     m.name = data.get("name", m.name).strip()
     m.unit = data.get("unit", m.unit)
     m.quantity = float(data.get("quantity", m.quantity))
@@ -82,11 +84,12 @@ async def update_material(material_id: int, data: dict = Body(...), authorizatio
 
 @router.delete("/{material_id:int}")
 async def delete_material(material_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskMaterial).where(TaskMaterial.id == material_id))
     m = result.scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="Material no encontrado")
+    await ensure_task(db, user, m.task_id)
     await db.delete(m)
     await db.commit()
     return {"message": "Material eliminado"}
@@ -106,6 +109,7 @@ async def get_expenses(task_id: int, authorization: str = Header(None), db: Asyn
 @expenses_router.post("/{task_id}")
 async def add_expense(task_id: int, data: dict = Body(...), authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    await ensure_task(db, user, task_id)
     concept = data.get("concept", "").strip()
     if not concept:
         raise HTTPException(status_code=400, detail="El concepto del gasto es obligatorio")
@@ -121,11 +125,12 @@ async def add_expense(task_id: int, data: dict = Body(...), authorization: str =
 
 @expenses_router.delete("/{expense_id}")
 async def delete_expense(expense_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
-    await _get_user(authorization, db)
+    user = await _get_user(authorization, db)
     result = await db.execute(select(TaskExpense).where(TaskExpense.id == expense_id))
     e = result.scalar_one_or_none()
     if not e:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    await ensure_task(db, user, e.task_id)
     await db.delete(e)
     await db.commit()
     return {"message": "Gasto eliminado"}
