@@ -1,451 +1,281 @@
 <template>
   <div class="md-view">
-
-    <!-- Header sticky -->
+    <!-- Encabezado -->
     <div class="md-header">
-      <button class="md-header__back" @click="handleSalir" :disabled="saving">
+      <button class="md-back" @click="salir" :disabled="saving" title="Salir (guarda los cambios)">
         <i class="bi bi-arrow-left"></i>
       </button>
       <div class="md-header__info">
-        <h5 class="md-header__title">Menú del Día</h5>
-        <span class="md-header__date">
-          <i class="bi bi-calendar3 me-1"></i>{{ displayDate }}
+        <h5 class="md-title">{{ moduleName || 'Menú del Día' }}</h5>
+        <span class="md-date">
+          <i class="bi bi-calendar3 me-1"></i>{{ fmtFecha(hoy.date) }}
+          <span v-if="hoy.menu_id" class="md-menu-id">Menú No. {{ hoy.menu_id }}</span>
         </span>
       </div>
       <div class="md-header__actions">
-        <span class="md-header__count">
-          <i class="bi bi-check2-circle me-1 text-success"></i>
-          {{ totalSelected }} seleccionados
-        </span>
-        <button class="btn btn-primary btn-sm" @click="handleGuardar" :disabled="saving || loading">
-          <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
-          <i class="bi bi-floppy me-1" v-else></i>
-          Guardar
+        <span v-if="tab === 'hoy'" class="md-count"><i class="bi bi-check2-circle me-1 text-success"></i>{{ totalSel }} marcados</span>
+        <span v-if="saving" class="md-saving"><span class="spinner-border spinner-border-sm me-1"></span>Guardando…</span>
+      </div>
+    </div>
+
+    <!-- Pestañas -->
+    <div class="md-tabs">
+      <button :class="['md-tab', { active: tab === 'hoy' }]" @click="tab = 'hoy'"><i class="bi bi-journal-check me-1"></i>Menú de hoy</button>
+      <button :class="['md-tab', { active: tab === 'consulta' }]" @click="abrirConsulta"><i class="bi bi-search me-1"></i>Consulta</button>
+    </div>
+
+    <!-- ══ MENÚ DE HOY ══ -->
+    <section v-if="tab === 'hoy'" class="md-body">
+      <div class="md-toolbar">
+        <button class="md-btn md-btn--sec" @click="expandirTodo(!todoAbierto)">
+          <i :class="todoAbierto ? 'bi bi-arrows-collapse' : 'bi bi-arrows-expand'"></i> {{ todoAbierto ? 'Contraer' : 'Expandir' }} todo
+        </button>
+        <button class="md-btn md-btn--print" :disabled="loading || saving" @click="imprimirHoy">
+          <i class="bi bi-printer"></i> Imprimir
         </button>
       </div>
-    </div>
 
-    <!-- Loading -->
-    <div class="md-loading" v-if="loading">
-      <div class="spinner-border text-primary"></div>
-      <p class="text-muted mt-2 small">Cargando menú…</p>
-    </div>
-
-    <!-- Sin datos -->
-    <div class="md-empty" v-else-if="!categories.length">
-      <i class="bi bi-journal-x fs-1 text-muted"></i>
-      <p class="text-muted mt-2">No hay insumos configurados para menú diario.</p>
-    </div>
-
-    <!-- Columnas de categorías -->
-    <div class="md-grid" v-else>
-      <div
-        class="md-col"
-        v-for="cat in categories"
-        :key="cat.group_id"
-      >
-        <!-- Cabecera de columna -->
-        <div class="md-col__head">
-          <div class="md-col__head-top">
-            <span class="md-col__title">{{ cat.group_name }}</span>
-            <button class="md-col__toggle" @click="toggleGroupAll(cat)">
-              {{ countSelected(cat) === cat.items.length ? 'Quitar' : 'Marcar todos' }}
-            </button>
-          </div>
-          <span class="md-col__summary"
-            :class="countSelected(cat) > 0 ? 'text-success' : 'text-muted'">
-            {{ countSelected(cat) }} / {{ cat.items.length }}
-          </span>
-        </div>
-
-        <!-- Lista de ítems -->
-        <div class="md-col__body">
-          <button
-            v-for="item in cat.items"
-            :key="item.item_id"
-            class="md-item"
-            :class="{ 'md-item--on': item.is_selected }"
-            @click="toggleItem(item)"
-          >
-            <span class="md-item__dot"></span>
-            <span class="md-item__name">{{ item.item_name }}</span>
-            <i class="bi bi-check-lg md-item__check" v-if="item.is_selected"></i>
+      <div v-if="loading" class="md-state"><div class="spinner-border text-primary"></div></div>
+      <div v-else-if="!categorias.length" class="md-state">
+        <i class="bi bi-journal-x fs-1 text-muted"></i>
+        <p class="text-muted mt-2">No hay categorías de armado activas. Márquelas en Categorías de Productos.</p>
+      </div>
+      <div v-else class="md-acc">
+        <div v-for="c in categorias" :key="c.group_id" :class="['md-acc-item', { open: abiertas.has(c.group_id) }]">
+          <button class="md-acc-hdr" @click="toggleCat(c.group_id)" :aria-expanded="abiertas.has(c.group_id)">
+            <i class="bi bi-chevron-right md-acc-chev"></i>
+            <span class="md-acc-name">{{ c.group_name }}</span>
+            <span v-if="!c.items.length" class="md-acc-empty">Sin insumos de armado</span>
+            <span v-else :class="['md-acc-count', { on: nSel(c) }]">{{ nSel(c) }} / {{ c.items.length }}</span>
           </button>
+          <div v-if="abiertas.has(c.group_id)" class="md-acc-body">
+            <p v-if="!c.items.length" class="md-acc-note">Esta categoría no tiene insumos marcados como "Armar Plato".</p>
+            <label v-for="it in c.items" :key="it.item_id" :class="['md-check', { on: it.is_selected }]">
+              <input type="checkbox" v-model="it.is_selected" />
+              <span>{{ it.item_name }}</span>
+            </label>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Barra inferior acciones rápidas -->
-    <div class="md-footer" v-if="!loading && categories.length">
-      <button class="btn btn-outline-secondary btn-sm" @click="selectAll">
-        <i class="bi bi-check2-all me-1"></i>Todo
-      </button>
-      <button class="btn btn-outline-secondary btn-sm" @click="clearAll">
-        <i class="bi bi-x-lg me-1"></i>Ninguno
-      </button>
-      <span class="md-footer__total">{{ totalItems }} ítems</span>
-    </div>
+    <!-- ══ CONSULTA ══ -->
+    <section v-else class="md-body">
+      <div class="md-toolbar">
+        <div class="md-date-pick">
+          <span class="md-lbl">Fecha</span>
+          <CustomDatePicker v-model="consulta.date" @update:modelValue="cargarConsulta" style="width:150px" />
+        </div>
+        <button class="md-btn md-btn--print" :disabled="consulta.loading || !consulta.data?.categories.length" @click="imprimir(consulta.data)">
+          <i class="bi bi-printer"></i> Imprimir
+        </button>
+      </div>
+      <div v-if="consulta.loading" class="md-state"><div class="spinner-border text-primary"></div></div>
+      <div v-else-if="!consulta.data?.categories.length" class="md-state">
+        <i class="bi bi-calendar-x fs-1 text-muted"></i>
+        <p class="text-muted mt-2">No hay menú armado para el {{ fmtFecha(consulta.date) }}.</p>
+      </div>
+      <div v-else class="md-consulta">
+        <div class="md-consulta-hdr">Menú No. {{ consulta.data.menu_id }} · {{ fmtFecha(consulta.data.date) }}</div>
+        <div v-for="c in consulta.data.categories" :key="c.name" class="md-consulta-cat">
+          <div class="md-consulta-name">{{ c.name }}</div>
+          <ul><li v-for="i in c.items" :key="i">{{ i }}</li></ul>
+        </div>
+      </div>
+    </section>
 
-    <!-- Toast -->
-    <div class="md-toast" :class="{ 'md-toast--show': toastMsg }">
-      <i class="bi bi-check-circle-fill me-2 text-success"></i>{{ toastMsg }}
-    </div>
-
+    <!-- Impresión: componente propio (vista previa · impresora predeterminada · PDF · Excel) -->
+    <ImprimirRecibo
+      v-if="impresion"
+      :receiptData="impresion.data"
+      :companyId="companyId"
+      printersPath="/api/pos/recibo-impresion/impresoras"
+      printPath="/api/pos/comanda/menu-diario-admin/imprimir"
+      :printExtra="{ date: impresion.date }"
+      @close="impresion = null"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import api from '@/services/apis'
-import { showToast as showToastUtil } from '@/utils/toast'
+import { showToast } from '@/utils/toast'
+import { useModuleName } from '@/composables/useModuleName'
+import { useCompanyStore } from '@/stores/companyStore'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 
-const router   = useRouter()
-const loading  = ref(false)
-const saving   = ref(false)
-const toastMsg = ref('')
+const BASE = '/api/pos/comanda/menu-diario-admin'
+const router = useRouter()
+const { moduleName } = useModuleName()
+const companyStore = useCompanyStore()
+const companyId = computed(() => companyStore.selectedCompany?.id || 0)
 
-const targetDate  = ref('')
-const displayDate = ref('')
-const categories  = ref([])
+const tab = ref('hoy')
+const loading = ref(true)
+const saving = ref(false)
+const hoy = reactive({ date: '', menu_id: null })
+const categorias = ref([])
+const abiertas = ref(new Set())          // acordeón: todas cerradas al entrar
+let inicial = ''                          // insumos marcados al entrar (para saber si hubo cambios)
 
-const totalSelected = computed(() =>
-  categories.value.reduce((acc, cat) => acc + countSelected(cat), 0)
-)
-const totalItems = computed(() =>
-  categories.value.reduce((acc, cat) => acc + cat.items.length, 0)
-)
+const marcados = () => categorias.value.flatMap(c => c.items.filter(i => i.is_selected).map(i => i.item_id)).sort((a, b) => a - b)
+const huella = () => marcados().join(',')
+const totalSel = computed(() => categorias.value.reduce((s, c) => s + nSel(c), 0))
+const nSel = c => c.items.filter(i => i.is_selected).length
+const todoAbierto = computed(() => categorias.value.length > 0 && abiertas.value.size === categorias.value.length)
 
-function countSelected(cat) {
-  return cat.items.filter(i => i.is_selected).length
+function toggleCat(id) {
+  const s = new Set(abiertas.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  abiertas.value = s
 }
+function expandirTodo(v) { abiertas.value = new Set(v ? categorias.value.map(c => c.group_id) : []) }
 
-function toggleGroupAll(cat) {
-  const allOn = countSelected(cat) === cat.items.length
-  cat.items.forEach(i => { i.is_selected = !allOn })
-}
-
-function toggleItem(item) {
-  item.is_selected = !item.is_selected
-}
-
-function selectAll() {
-  categories.value.forEach(cat => cat.items.forEach(i => { i.is_selected = true }))
-}
-
-function clearAll() {
-  categories.value.forEach(cat => cat.items.forEach(i => { i.is_selected = false }))
-}
-
-async function loadMenu() {
-  loading.value = true
-  try {
-    const cid = JSON.parse(localStorage.getItem('user') || '{}').company_id
-    const res = await api.get('/api/pos/comanda/menu-diario-admin', {
-      headers: { 'X-Company-Id': cid },
-    })
-    targetDate.value  = res.data.date
-    categories.value  = res.data.categories
-    displayDate.value = formatDisplayDate(res.data.date)
-  } catch (e) {
-    showToastUtil(e.response?.data?.detail || 'Error al cargar el menú diario', 'error', 3000)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function guardar() {
-  saving.value = true
-  try {
-    const selected = []
-    categories.value.forEach(cat =>
-      cat.items.forEach(item => { if (item.is_selected) selected.push(item.item_id) })
-    )
-    const cid = JSON.parse(localStorage.getItem('user') || '{}').company_id
-    await api.post('/api/pos/comanda/menu-diario-admin/guardar',
-      { date: targetDate.value, selected_ids: selected },
-      { headers: { 'X-Company-Id': cid } }
-    )
-    showToast(selected.length
-      ? `Guardado: ${selected.length} ítems activos para hoy`
-      : 'Menú del día borrado'
-    )
-  } catch (e) {
-    showToastUtil(e.response?.data?.detail || 'Error al guardar el menú', 'error', 3000)
-  } finally {
-    saving.value = false
-  }
-}
-
-async function handleGuardar() { await guardar() }
-
-async function handleSalir() {
-  await guardar()
-  router.back()
-}
-
-function showToast(msg) {
-  toastMsg.value = msg
-  setTimeout(() => { toastMsg.value = '' }, 3000)
-}
-
-function formatDisplayDate(d) {
+function fmtFecha(d) {
   if (!d) return ''
   const [y, m, day] = d.split('-')
   return `${day}/${m}/${y}`
 }
 
-onMounted(loadMenu)
+async function cargar() {
+  loading.value = true
+  try {
+    const { data } = await api.get(BASE)
+    Object.assign(hoy, { date: data.date, menu_id: data.menu_id })
+    categorias.value = data.categories
+    inicial = huella()
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'Error al cargar el menú del día', 'error', 3500)
+  } finally { loading.value = false }
+}
+
+// Guarda solo si cambió lo marcado (se agregaron o quitaron insumos). Sin marcados → se borra el menú del día.
+async function guardarSiCambio() {
+  if (loading.value || huella() === inicial) return true
+  saving.value = true
+  try {
+    const { data } = await api.post(`${BASE}/guardar`, { date: hoy.date, selected_ids: marcados() })
+    hoy.menu_id = data.menu_id
+    inicial = huella()
+    showToast(data.selected_count ? `Menú del día guardado (${data.selected_count} insumos)` : 'Menú del día eliminado', 'success')
+    return true
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'Error al guardar el menú', 'error', 3500)
+    return false
+  } finally { saving.value = false }
+}
+
+async function salir() {
+  if (await guardarSiCambio()) router.back()
+}
+onBeforeRouteLeave(async () => { await guardarSiCambio() })
+
+// ── Impresión ────────────────────────────────────────────────────────────────
+const impresion = ref(null)
+function imprimir(menu) {
+  if (!menu?.categories?.length) { showToast('No hay insumos marcados para imprimir', 'warning'); return }
+  impresion.value = {
+    date: menu.date,
+    data: {
+      titulo: 'MENÚ DEL DÍA',
+      receipt_number: '',
+      ordenNumero: menu.menu_id ? `Menú No. ${menu.menu_id}` : '',
+      fecha: fmtFecha(menu.date),
+      secciones: menu.categories.map(c => ({ titulo: c.name, items: c.items })),
+      items: [], pagos: [],
+    },
+  }
+}
+async function imprimirHoy() {
+  if (!(await guardarSiCambio())) return        // se imprime lo guardado
+  try { imprimir((await api.get(`${BASE}/consulta`, { params: { date: hoy.date } })).data) }
+  catch (e) { showToast(e?.response?.data?.detail || 'No se pudo cargar el menú', 'error') }
+}
+
+// ── Consulta de otras fechas ─────────────────────────────────────────────────
+const consulta = reactive({ date: '', data: null, loading: false })
+async function abrirConsulta() {
+  await guardarSiCambio()
+  tab.value = 'consulta'
+  if (!consulta.date) { consulta.date = hoy.date; cargarConsulta() }
+}
+async function cargarConsulta() {
+  if (!consulta.date) return
+  consulta.loading = true
+  try { consulta.data = (await api.get(`${BASE}/consulta`, { params: { date: consulta.date } })).data }
+  catch (e) { consulta.data = null; showToast(e?.response?.data?.detail || 'Error al consultar', 'error') }
+  finally { consulta.loading = false }
+}
+
+onMounted(cargar)
 </script>
 
 <style scoped>
-/* ══ Layout base ══ */
-.md-view {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  background: #f1f5f9;
-  padding-bottom: 64px; /* espacio para footer */
-}
-
-/* ══ Header ══ */
-.md-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
-.md-header__back {
-  background: none;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 6px 10px;
-  color: #475569;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.md-header__back:disabled { opacity: .5; }
-
+.md-view { display: flex; flex-direction: column; min-height: 100%; background: #f1f5f9; }
+.md-header { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: #fff; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 5; }
+.md-back { width: 38px; height: 38px; border-radius: 50%; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; flex-shrink: 0; }
 .md-header__info { flex: 1; min-width: 0; }
+.md-title { margin: 0; font-weight: 800; color: #1e293b; font-size: 18px; }
+.md-date { font-size: 13px; color: #64748b; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.md-menu-id { font-weight: 700; color: #4338ca; background: #e0e7ff; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+.md-header__actions { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; color: #334155; }
+.md-saving { color: #1d4ed8; }
+.md-tabs { display: flex; gap: 4px; padding: 10px 18px 0; }
+.md-tab { border: none; background: #e2e8f0; color: #475569; padding: 8px 16px; border-radius: 10px 10px 0 0; font-weight: 700; font-size: 13px; cursor: pointer; }
+.md-tab.active { background: #fff; color: #1d4ed8; }
+.md-body { background: #fff; margin: 0 18px 18px; border-radius: 0 12px 12px 12px; padding: 14px; flex: 1; }
+.md-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.md-btn { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 10px; padding: 9px 16px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.md-btn:disabled { opacity: .5; cursor: not-allowed; }
+.md-btn--sec { background: #f1f5f9; color: #475569; }
+.md-btn--print { background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; }
+.md-state { display: flex; flex-direction: column; align-items: center; padding: 50px 16px; text-align: center; }
 
-.md-header__title {
-  font-size: .95rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 1px;
-}
+/* Acordeón */
+.md-acc { display: flex; flex-direction: column; gap: 8px; }
+.md-acc-item { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.md-acc-item.open { border-color: #bfdbfe; }
+.md-acc-hdr { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #f8fafc; border: none; cursor: pointer; text-align: left; }
+.md-acc-item.open .md-acc-hdr { background: #eff6ff; }
+.md-acc-chev { transition: transform .15s; color: #64748b; }
+.md-acc-item.open .md-acc-chev { transform: rotate(90deg); }
+.md-acc-name { flex: 1; min-width: 0; font-weight: 800; color: #1e3a5f; font-size: 14px; }
+.md-acc-count { font-size: 12px; font-weight: 700; color: #94a3b8; background: #fff; border-radius: 10px; padding: 2px 9px; border: 1px solid #e2e8f0; }
+.md-acc-count.on { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
+.md-acc-empty { font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 10px; padding: 2px 9px; }
+.md-acc-body { padding: 10px 14px 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.md-acc-note { grid-column: 1 / -1; margin: 0; font-size: 13px; color: #94a3b8; }
+.md-check { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 10px; cursor: pointer; font-size: 14px; color: #334155; user-select: none; }
+.md-check input { width: 18px; height: 18px; accent-color: #16a34a; flex-shrink: 0; }
+.md-check.on { border-color: #86efac; background: #f0fdf4; color: #14532d; font-weight: 600; }
 
-.md-header__date { font-size: .78rem; color: #64748b; }
+/* Consulta */
+.md-date-pick { display: flex; align-items: center; gap: 8px; }
+.md-lbl { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.md-consulta-hdr { font-weight: 800; color: #4338ca; margin-bottom: 10px; }
+.md-consulta { display: flex; flex-direction: column; gap: 10px; }
+.md-consulta-cat { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; }
+.md-consulta-name { font-weight: 800; color: #1e3a5f; margin-bottom: 4px; }
+.md-consulta-cat ul { margin: 0; padding-left: 18px; color: #334155; font-size: 14px; }
 
-.md-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.md-header__count { font-size: .8rem; font-weight: 600; color: #166534; }
-
-/* ══ Loading / Empty ══ */
-.md-loading, .md-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-  text-align: center;
-}
-
-/* ══ Grid de columnas ══
-   auto-fill: cuantas quepan (mín 200px), las extra se van a la siguiente fila */
-.md-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px;
-  padding: 12px;
-  align-items: start;
-  flex: 1;
-}
-
-/* ══ Columna ══ */
-.md-col {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.md-col__head {
-  padding: 10px 12px 8px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-  flex-shrink: 0;
-  position: sticky;
-  top: 56px; /* altura del header */
-}
-
-.md-col__head-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 2px;
-}
-
-.md-col__title {
-  font-weight: 700;
-  font-size: .82rem;
-  color: #1e293b;
-  text-transform: uppercase;
-  letter-spacing: .3px;
-  flex: 1;
-  min-width: 0;
-}
-
-.md-col__toggle {
-  background: none;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 1px 7px;
-  font-size: .68rem;
-  color: #475569;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.md-col__toggle:hover { background: #f1f5f9; }
-
-.md-col__summary { font-size: .72rem; font-weight: 600; }
-
-/* ══ Lista de ítems ══ */
-.md-col__body {
-  overflow-y: auto;
-  max-height: calc(100dvh - 190px);
-  display: flex;
-  flex-direction: column;
-}
-
-.md-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  background: #fff;
-  border: none;
-  border-bottom: 1px solid #f1f5f9;
-  text-align: left;
-  cursor: pointer;
-  transition: background .1s;
-  width: 100%;
-}
-.md-item:last-child { border-bottom: none; }
-.md-item:hover { background: #f8fafc; }
-
-.md-item--on {
-  background: #dcfce7;
-}
-.md-item--on:hover { background: #bbf7d0; }
-
-.md-item__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #cbd5e1;
-  flex-shrink: 0;
-  transition: background .1s;
-}
-.md-item--on .md-item__dot { background: #16a34a; }
-
-.md-item__name {
-  flex: 1;
-  font-size: .8rem;
-  font-weight: 500;
-  color: #334155;
-  line-height: 1.3;
-}
-.md-item--on .md-item__name { color: #166534; font-weight: 600; }
-
-.md-item__check {
-  font-size: .78rem;
-  color: #16a34a;
-  flex-shrink: 0;
-}
-
-/* ══ Footer acciones rápidas ══ */
-.md-footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: #fff;
-  border-top: 1px solid #e2e8f0;
-  z-index: 20;
-}
-
-.md-footer__total {
-  margin-left: auto;
-  font-size: .78rem;
-  color: #94a3b8;
-}
-
-/* ══ Toast ══ */
-.md-toast {
-  position: fixed;
-  bottom: 70px;
-  left: 50%;
-  transform: translateX(-50%) translateY(60px);
-  background: #1e293b;
-  color: #fff;
-  padding: 9px 18px;
-  border-radius: 20px;
-  font-size: .84rem;
-  font-weight: 600;
-  opacity: 0;
-  transition: transform .3s, opacity .3s;
-  z-index: 9999;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.md-toast--show { transform: translateX(-50%) translateY(0); opacity: 1; }
-
-/* ══ Tablet: máx 2-3 columnas ══ */
 @media (max-width: 1024px) {
-  .md-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-  .md-col__body { max-height: calc(50dvh - 100px); }
+  .md-acc-body { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 }
-
-/* ══ Mobile ≤768px: 2 columnas ══ */
 @media (max-width: 768px) {
-  .md-grid {
-    grid-template-columns: repeat(2, 1fr);
-    padding: 8px;
-    gap: 8px;
-  }
-  .md-col__body { max-height: calc(42dvh - 60px); }
   .md-header { padding: 10px 12px; }
-  .md-header__count { display: none; }
-  .md-col__head { top: 52px; padding: 8px 10px 6px; }
-  .md-item { padding: 6px 10px; }
-  .md-item__name { font-size: .75rem; }
+  .md-tabs { padding: 8px 10px 0; }
+  .md-body { margin: 0 10px 12px; padding: 12px; }
+  .md-acc-body { grid-template-columns: 1fr 1fr; }
 }
-
-/* ══ Mobile ≤480px: 1 columna ══ */
-@media (max-width: 480px) {
-  .md-grid { grid-template-columns: 1fr; }
-  .md-col__body { max-height: none; }
-  .md-col__toggle { display: none; }
+@media (max-width: 576px) {
+  .md-title { font-size: 16px; }
+  .md-header__actions .md-count { display: none; }
+  .md-tab { flex: 1; padding: 8px 6px; }
+  .md-toolbar .md-btn { flex: 1; justify-content: center; }
+  .md-acc-body { grid-template-columns: 1fr; padding: 8px 10px 12px; }
+  .md-acc-hdr { padding: 11px 12px; }
 }
 </style>

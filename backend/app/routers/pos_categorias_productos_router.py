@@ -158,3 +158,24 @@ async def desactivar(cat_id: int, db: AsyncSession = Depends(get_db),
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     await db.commit()
     return {"ok": True}
+
+
+@router.get("/{cat_id}/insumos")
+async def insumos_de_categoria(cat_id: int, db: AsyncSession = Depends(get_db),
+                               current_user: User = Depends(get_current_user)):
+    """Insumos de la categoría (inventario_porciones.Agrupar = Cod_Categoria), informativo.
+    Qué insumos se ofrecen en cada plato se define en el plato (plato_armar_detalle)."""
+    cid = current_user.company_id
+    existe = (await db.execute(text(
+        "SELECT 1 FROM pos_product_categories WHERE company_id=:cid AND id=:id"
+    ), {"cid": cid, "id": cat_id})).scalar()
+    if not existe:
+        raise HTTPException(status_code=404, detail="Categoría no encontrada")
+    rows = (await db.execute(text("""
+        SELECT id_item, description, COALESCE(armar_plato, 0) AS armar_plato, is_active
+        FROM supply_items
+        WHERE company_id = :cid AND agrupar = :id
+        ORDER BY is_active DESC, description
+    """), {"cid": cid, "id": cat_id})).mappings().all()
+    return [{"id_item": int(r["id_item"]), "description": r["description"] or f"Insumo {r['id_item']}",
+             "armar_plato": bool(r["armar_plato"]), "is_active": bool(r["is_active"])} for r in rows]

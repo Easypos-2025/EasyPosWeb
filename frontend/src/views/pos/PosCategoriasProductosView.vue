@@ -23,7 +23,8 @@
       <i class="bi bi-diagram-3"></i><p>No hay categorías{{ q ? ' con ese nombre' : '' }}.</p>
     </div>
     <div v-else class="cp-grid">
-      <div v-for="c in rows" :key="c.id" :class="['cp-card', { 'cp-card--off': !c.is_active, 'cp-card--armado': c.is_assembly }]">
+      <div v-for="c in rows" :key="c.id" :class="['cp-card', { 'cp-card--off': !c.is_active, 'cp-card--armado': c.is_assembly }]"
+           role="button" tabindex="0" title="Ver insumos" @click="verInsumos(c)" @keyup.enter="verInsumos(c)">
         <div class="cp-card-top">
           <span class="cp-code">#{{ c.id }}</span>
           <span v-if="c.is_assembly" class="cp-chip cp-chip--armado"><i class="bi bi-sliders"></i> Armado</span>
@@ -41,8 +42,38 @@
           <span v-if="c.print_assembly_changes_only">Imprime solo cambios</span>
         </div>
         <div class="cp-actions">
-          <button class="cp-ico" title="Editar" @click="abrir(c)"><i class="bi bi-pencil"></i></button>
-          <button v-if="c.is_active" class="cp-ico cp-ico--danger" title="Desactivar" @click="desactivar(c)"><i class="bi bi-slash-circle"></i></button>
+          <button class="cp-ico" title="Editar" @click.stop="abrir(c)"><i class="bi bi-pencil"></i></button>
+          <button v-if="c.is_active" class="cp-ico cp-ico--danger" title="Desactivar" @click.stop="desactivar(c)"><i class="bi bi-slash-circle"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Insumos de la categoría (informativo) -->
+    <div v-if="ins.show" class="cp-ov" @click.self="ins.show = false">
+      <div class="cp-modal cp-modal--ins">
+        <div class="cp-modal-hdr">
+          <span><i class="bi bi-box-seam me-1"></i> Insumos · {{ ins.cat?.name }}</span>
+          <button class="cp-x" @click="ins.show = false"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="cp-modal-body">
+          <div class="cp-ins-info">
+            <span>{{ ins.rows.length }} insumos</span>
+            <span v-if="ins.cat?.is_assembly">· {{ ins.rows.filter(r => r.armar_plato).length }} de armado</span>
+          </div>
+          <div class="cp-search cp-search--full">
+            <i class="bi bi-search"></i>
+            <input v-model="ins.q" placeholder="Buscar insumo..." maxlength="60" />
+          </div>
+          <div v-if="ins.loading" class="cp-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+          <div v-else-if="!insFiltrados.length" class="cp-state cp-empty"><p>Sin insumos en esta categoría.</p></div>
+          <ul v-else class="cp-ins-list">
+            <li v-for="r in insFiltrados" :key="r.id_item" :class="{ off: !r.is_active }">
+              <span class="cp-ins-name">{{ r.description }}</span>
+              <span v-if="r.armar_plato" class="cp-chip cp-chip--armado">Armado</span>
+              <span v-if="!r.is_active" class="cp-chip cp-chip--off">Inactivo</span>
+            </li>
+          </ul>
+          <p class="cp-ins-note"><i class="bi bi-info-circle"></i> Qué insumos se ofrecen en cada plato se marca en el plato (pestaña "Op. adicionales armar").</p>
         </div>
       </div>
     </div>
@@ -90,7 +121,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
@@ -108,6 +139,19 @@ const q = ref('')
 const modal = reactive({ show: false, id: null, name: '', is_assembly: false, is_active: true,
                          require_selection: false, print_assembly_changes_only: false })
 let t = null, seq = 0
+
+// Insumos de la categoría (solo lectura)
+const ins = reactive({ show: false, cat: null, rows: [], loading: false, q: '' })
+const insFiltrados = computed(() => {
+  const q = ins.q.trim().toUpperCase()
+  return q ? ins.rows.filter(r => r.description.toUpperCase().includes(q)) : ins.rows
+})
+async function verInsumos(c) {
+  Object.assign(ins, { show: true, cat: c, rows: [], loading: true, q: '' })
+  try { ins.rows = (await api.get(`${BASE}/${c.id}/insumos`)).data }
+  catch (e) { showToast(e?.response?.data?.detail || 'Error cargando insumos', 'error') }
+  ins.loading = false
+}
 
 async function cargar() {
   const my = ++seq
@@ -211,6 +255,16 @@ onMounted(cargar)
 .cp-btn { display: inline-flex; align-items: center; background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; border: none; border-radius: 10px; padding: 10px 18px; font-weight: 700; cursor: pointer; }
 .cp-btn:disabled { opacity: .6; cursor: not-allowed; }
 .cp-btn--sec { background: #f1f5f9; color: #475569; }
+.cp-card { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.cp-card:hover, .cp-card:focus-visible { border-color: #93c5fd; box-shadow: 0 2px 10px rgba(29,78,216,.1); outline: none; }
+.cp-modal--ins { max-width: 520px; }
+.cp-search--full { max-width: none; }
+.cp-ins-info { font-size: 13px; color: #64748b; font-weight: 600; }
+.cp-ins-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.cp-ins-list li { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid #f1f5f9; border-radius: 8px; font-size: 14px; }
+.cp-ins-list li.off { opacity: .55; }
+.cp-ins-name { flex: 1; min-width: 0; color: #1e293b; }
+.cp-ins-note { font-size: 12px; color: #64748b; margin: 4px 0 0; }
 
 @media (max-width: 1024px) {
   .cp-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }

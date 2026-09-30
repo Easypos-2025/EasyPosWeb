@@ -249,7 +249,7 @@ def _tirilla(d: dict, width: int = 32) -> bytes:
     return bytes(buf)
 
 
-async def enviar_tirilla(db: AsyncSession, cid: int, printer_id: int, raw: bool, datos_fn) -> dict:
+async def enviar_tirilla(db: AsyncSession, cid: int, printer_id: int, raw: bool, datos_fn, armar=None) -> dict:
     """Valida la impresora de la empresa y envía la tirilla (red) o devuelve los bytes
     (USB/Bluetooth). `datos_fn` es una corrutina que arma los datos solo si la impresora es válida."""
     printer = (await db.execute(text("""
@@ -264,7 +264,7 @@ async def enviar_tirilla(db: AsyncSession, cid: int, printer_id: int, raw: bool,
     if not directa and not printer["ip"]:
         raise HTTPException(status_code=400, detail="La impresora de red no tiene IP configurada")
 
-    data = _tirilla(await datos_fn())
+    data = (armar or _tirilla)(await datos_fn())
     if raw:
         return {"ok": True, "printer": printer["name"], "data_b64": base64.b64encode(data).decode()}
     try:

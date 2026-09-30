@@ -2267,6 +2267,25 @@ async def get_historico_eliminadas(
 
 
 # ── MENÚ DIARIO — GESTIÓN ADMIN ──────────────────────────────────────────────
+# Un menú por día (Id_Menu = consecutivo, fecha). Se muestran TODAS las categorías de armado
+# activas (categoria_productos.Porcentaje = 1 y Activa = 1), aun sin insumos; dentro de cada
+# una, sus insumos de armado (inventario_porciones.Armar_Plato = 1, Agrupar = categoría).
+# Se guardan solo los insumos marcados; si no hay ninguno se borra el menú de ese día.
+# Solo se arma el de HOY; otras fechas se consultan e imprimen.
+
+_FECHA_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _fecha_valida(d: Optional[str]) -> str:
+    d = (d or "").strip()
+    if not _FECHA_RE.match(d):
+        raise HTTPException(status_code=422, detail="Fecha inválida (AAAA-MM-DD)")
+    try:
+        datetime.strptime(d, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha inválida")
+    return d
+
 
 class GuardarMenuDiarioIn(BaseModel):
     date: str
@@ -2275,59 +2294,136 @@ class GuardarMenuDiarioIn(BaseModel):
 
 @router.get("/menu-diario-admin")
 async def get_menu_diario_admin(
-    date: Optional[str] = Query(None),
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Devuelve todos los insumos de menú agrupados por categoría.
-    Marca is_selected según pos_daily_menu para la fecha dada.
-    No hace auto-init: la fuente de verdad son supply_items.
-    """
+    """Menú de HOY: todas las categorías de armado activas (aun sin insumos) con sus insumos
+    de armado; is_selected según lo guardado hoy."""
     cid = payload["company_id"]
-    target_date = date or _today()
+    target_date = _today()
 
+    cats = (await db.execute(text("""
+        SELECT id, name FROM pos_product_categories
+        WHERE company_id = :cid AND percentage = 1 AND is_active = 1
+        ORDER BY name
+    """), {"cid": cid})).mappings().all()
     items_rows = (await db.execute(text("""
-        SELECT si.id_item, si.description AS item_name,
-               si.Agrupar AS group_id,
-               pc.name    AS group_name
+        SELECT si.id_item, si.description AS item_name, si.agrupar AS group_id
         FROM supply_items si
         INNER JOIN pos_product_categories pc
-               ON si.Agrupar = pc.id AND pc.company_id = :cid
-        WHERE si.company_id = :cid
-          AND si.is_active   = 1
-          AND pc.percentage  = 1
-          AND pc.is_active   = 1
-          AND si.armar_plato = 1
-        ORDER BY pc.name, si.description
+                ON pc.id = si.agrupar AND pc.company_id = si.company_id
+               AND pc.percentage = 1 AND pc.is_active = 1
+        WHERE si.company_id = :cid AND si.is_active = 1 AND si.armar_plato = 1
+        ORDER BY si.description
     """), {"cid": cid})).mappings().all()
-
-    if not items_rows:
-        return {"date": target_date, "categories": []}
-
-    # IDs guardados para hoy (solo los que el admin seleccionó)
-    saved_rows = (await db.execute(text("""
-        SELECT item_id FROM pos_daily_menu
-        WHERE company_id = :cid AND date = :d AND selected = 1
+    saved = (await db.execute(text("""
+        SELECT item_id, menu_id FROM pos_daily_menu
+        WHERE company_id = :cid AND date = :d AND COALESCE(selected, 1) = 1
     """), {"cid": cid, "d": target_date})).mappings().all()
-    selected_ids = {int(r["item_id"]) for r in saved_rows}
+    selected_ids = {int(r["item_id"]) for r in saved}
+    menu_id = max((int(r["menu_id"]) for r in saved), default=None)
 
-    categories: dict = {}
-    for row in items_rows:
-        gid = int(row["group_id"])
-        if gid not in categories:
-            categories[gid] = {
-                "group_id":   gid,
-                "group_name": row["group_name"] or f"Categoría {gid}",
-                "items":      [],
-            }
-        categories[gid]["items"].append({
-            "item_id":     int(row["id_item"]),
-            "item_name":   row["item_name"] or f"Ítem {row['id_item']}",
-            "is_selected": int(row["id_item"]) in selected_ids,
+    por_cat: dict = {}
+    for r in items_rows:
+        por_cat.setdefault(int(r["group_id"]), []).append({
+            "item_id": int(r["id_item"]),
+            "item_name": r["item_name"] or f"Insumo {r['id_item']}",
+            "is_selected": int(r["id_item"]) in selected_ids,
         })
+    return {
+        "date": target_date,
+        "menu_id": menu_id,
+        "categories": [{"group_id": int(c["id"]), "group_name": c["name"] or f"Categoría {c['id']}",
+                        "items": por_cat.get(int(c["id"]), [])} for c in cats],
+    }
 
-    return {"date": target_date, "categories": list(categories.values())}
+
+async def _menu_guardado(db: AsyncSession, cid: int, d: str) -> dict:
+    """Menú guardado de una fecha: categorías (orden alfabético) con sus insumos marcados
+    (orden alfabético). Las categorías sin insumos no se incluyen."""
+    rows = (await db.execute(text("""
+        SELECT dm.menu_id, dm.group_by, dm.item_id,
+               COALESCE(pc.name, dm.category) AS categoria,
+               COALESCE(si.description, dm.description) AS insumo
+        FROM pos_daily_menu dm
+        LEFT JOIN pos_product_categories pc ON pc.company_id = dm.company_id AND pc.id = dm.group_by
+        LEFT JOIN supply_items si ON si.company_id = dm.company_id AND si.id_item = dm.item_id
+        WHERE dm.company_id = :cid AND dm.date = :d AND COALESCE(dm.selected, 1) = 1
+    """), {"cid": cid, "d": d})).mappings().all()
+    grupos: dict = {}
+    for r in rows:
+        nombre = (r["categoria"] or f"Categoría {r['group_by']}").strip()
+        grupos.setdefault(nombre, []).append((r["insumo"] or f"Insumo {r['item_id']}").strip())
+    return {
+        "date": d,
+        "menu_id": max((int(r["menu_id"]) for r in rows), default=None),
+        "categories": [{"name": k, "items": sorted(v, key=str.upper)}
+                       for k, v in sorted(grupos.items(), key=lambda kv: kv[0].upper())],
+    }
+
+
+@router.get("/menu-diario-admin/consulta")
+async def consultar_menu_diario(
+    date: str = Query(...),
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """Menú armado de cualquier fecha (solo lectura, para ver e imprimir)."""
+    return await _menu_guardado(db, payload["company_id"], _fecha_valida(date))
+
+
+class ImprimirMenuIn(BaseModel):
+    date: str
+    printer_id: int
+    raw: bool = False
+
+
+def _tirilla_menu(d: dict, width: int = 32) -> bytes:
+    from app.routers.pos_recibo_impresion_router import _ascii
+    ESC = b"\x1b"
+    INIT, BOLD_ON, BOLD_OFF = ESC + b"@", ESC + b"E\x01", ESC + b"E\x00"
+    CENTER, LEFT, CUT, LF = ESC + b"a\x01", ESC + b"a\x00", b"\x1dV\x42\x00", b"\n"
+    buf = bytearray(INIT)
+
+    def line(t="", bold=False, center=False):
+        buf.extend((BOLD_ON if bold else b"") + (CENTER if center else LEFT) + _ascii(t) + LF + (BOLD_OFF if bold else b""))
+
+    line(d.get("empresa") or "", bold=True, center=True)
+    line("MENU DEL DIA", bold=True, center=True)
+    fecha = datetime.strptime(d["date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+    line(f"{fecha}   Menu No. {d['menu_id'] or '-'}", center=True)
+    line("-" * width)
+    for c in d["categories"]:
+        line(c["name"], bold=True)
+        for i in c["items"]:
+            t = f"  - {i}"
+            while t:
+                line(t[:width])
+                t = ("    " + t[width:]) if len(t) > width else ""
+        line()
+    buf.extend(LF * 3 + CUT)
+    return bytes(buf)
+
+
+@router.post("/menu-diario-admin/imprimir")
+async def imprimir_menu_diario(
+    data: ImprimirMenuIn,
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.routers.pos_recibo_impresion_router import enviar_tirilla
+    cid = payload["company_id"]
+    d = _fecha_valida(data.date)
+
+    async def datos():
+        m = await _menu_guardado(db, cid, d)
+        if not m["categories"]:
+            raise HTTPException(status_code=404, detail="No hay menú guardado para esa fecha")
+        m["empresa"] = (await db.execute(text(
+            "SELECT name FROM companies WHERE id_company = :cid"), {"cid": cid})).scalar() or ""
+        return m
+
+    return await enviar_tirilla(db, cid, data.printer_id, data.raw, datos, armar=_tirilla_menu)
 
 
 @router.post("/menu-diario-admin/guardar")
@@ -2336,18 +2432,15 @@ async def guardar_menu_diario(
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Guarda el menú del día con lógica DELETE+INSERT (pizarra limpia):
-    1. Borra todos los registros de esa fecha.
-    2. Re-inserta solo los seleccionados tomando datos de supply_items.
-    Esto evita el bug donde ítems previamente no seleccionados no pueden
-    re-seleccionarse porque ya no existen en la tabla.
-    """
+    """Guarda el menú de HOY (pizarra limpia): borra el de la fecha y re-inserta los insumos
+    marcados con el Id_Menu del día. Sin insumos marcados → se borra el menú de esa fecha."""
     cid = payload["company_id"]
-    d   = data.date
+    d = _fecha_valida(data.date)
+    if d != _today():
+        raise HTTPException(status_code=422, detail="Solo se puede armar el menú del día de hoy")
+    ids = sorted({int(i) for i in data.selected_ids if int(i) > 0})[:500]
 
-    # Id_Menu (menu_id): consecutivo del menú del día. Se conserva el de la fecha si ya
-    # existe; si no, el siguiente de la empresa. Agrupar (group_by) = categoría del insumo.
+    # Id_Menu: se conserva el de la fecha; si no existe, el siguiente de la empresa
     menu_id = (await db.execute(text(
         "SELECT MAX(menu_id) FROM pos_daily_menu WHERE company_id = :cid AND date = :d"
     ), {"cid": cid, "d": d})).scalar()
@@ -2356,30 +2449,22 @@ async def guardar_menu_diario(
             "SELECT COALESCE(MAX(menu_id), 0) FROM pos_daily_menu WHERE company_id = :cid"
         ), {"cid": cid})).scalar() or 0) + 1
 
-    # Pizarra limpia para esta fecha
-    await db.execute(text("""
-        DELETE FROM pos_daily_menu WHERE company_id = :cid AND date = :d
-    """), {"cid": cid, "d": d})
-
-    if data.selected_ids:
-        placeholders = ", ".join([f":id{i}" for i in range(len(data.selected_ids))])
-        params: dict = {"cid": cid, "d": d, "mid": int(menu_id)}
-        for i, sid in enumerate(data.selected_ids):
-            params[f"id{i}"] = sid
-
-        # Re-insertar seleccionados con datos frescos de supply_items
+    await db.execute(text("DELETE FROM pos_daily_menu WHERE company_id = :cid AND date = :d"),
+                     {"cid": cid, "d": d})
+    if ids:
+        ph = ", ".join(f":id{i}" for i in range(len(ids)))
+        params: dict = {"cid": cid, "d": d, "mid": int(menu_id), **{f"id{i}": v for i, v in enumerate(ids)}}
         await db.execute(text(f"""
             INSERT INTO pos_daily_menu
                 (company_id, menu_id, item_id, date, category, description, group_by, selected, synced, updated_at)
             SELECT si.company_id, :mid, si.id_item, :d,
-                   pc.name, si.description, si.Agrupar, 1, 0, NOW()
+                   pc.name, si.description, si.agrupar, 1, 0, NOW()
             FROM supply_items si
             INNER JOIN pos_product_categories pc
-                   ON si.Agrupar = pc.id AND pc.company_id = :cid
+                   ON si.agrupar = pc.id AND pc.company_id = :cid
                   AND pc.percentage = 1 AND pc.is_active = 1
-            WHERE si.company_id = :cid AND si.armar_plato = 1 AND si.id_item IN ({placeholders})
+            WHERE si.company_id = :cid AND si.armar_plato = 1 AND si.id_item IN ({ph})
             ON DUPLICATE KEY UPDATE date = :d, selected = 1, updated_at = NOW()
         """), params)
-
     await db.commit()
-    return {"ok": True, "date": d, "menu_id": int(menu_id), "selected_count": len(data.selected_ids)}
+    return {"ok": True, "date": d, "menu_id": int(menu_id) if ids else None, "selected_count": len(ids)}

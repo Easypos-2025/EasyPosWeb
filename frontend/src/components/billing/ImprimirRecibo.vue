@@ -7,7 +7,7 @@
         <div class="ir-header">
           <div class="ir-header-left">
             <i class="bi bi-printer-fill"></i>
-            <span>{{ receiptData.titulo ? 'Cuenta previa' : 'Imprimir Recibo' }}</span>
+            <span>{{ receiptData.secciones ? `Imprimir ${receiptData.titulo || ''}` : (receiptData.titulo ? 'Cuenta previa' : 'Imprimir Recibo') }}</span>
             <span v-if="receiptData.receipt_number" class="ir-rn">#{{ receiptData.receipt_number }}</span>
           </div>
           <button class="ir-close" @click="cerrar"><i class="bi bi-x-lg"></i></button>
@@ -46,6 +46,15 @@
                 </div>
                 <div class="r-divider">--------------------------------</div>
 
+                <!-- Modo lista por secciones (p. ej. menú del día): título + ítems, sin valores -->
+                <template v-if="receiptData.secciones">
+                  <div v-for="(sec, si) in receiptData.secciones" :key="si" class="r-sec">
+                    <div class="r-sec-title">{{ sec.titulo }}</div>
+                    <div v-for="(it, ii) in sec.items" :key="ii" class="r-sec-item">- {{ it }}</div>
+                  </div>
+                </template>
+
+                <template v-else>
                 <table class="r-items">
                   <thead>
                     <tr>
@@ -93,6 +102,7 @@
                 </div>
 
                 <div class="r-divider">--------------------------------</div>
+                </template>
 
                 <div v-if="receiptData.pagos?.length" class="r-pagos">
                   <div class="r-pagos-title">Formas de pago:</div>
@@ -110,8 +120,10 @@
                   <div class="r-divider">--------------------------------</div>
                   <div class="r-texto">{{ receiptData.resolucion_propina }}</div>
                 </template>
-                <div class="r-divider">--------------------------------</div>
-                <div class="r-gracias">{{ receiptData.mensaje || '¡Gracias por su preferencia!' }}</div>
+                <template v-if="!receiptData.secciones">
+                  <div class="r-divider">--------------------------------</div>
+                  <div class="r-gracias">{{ receiptData.mensaje || '¡Gracias por su preferencia!' }}</div>
+                </template>
               </div>
             </div>
           </div>
@@ -294,6 +306,19 @@ async function exportarExcel() {
   if (r.mesa)         filas.push(["Mesa", r.mesa])
   if (r.mesero)       filas.push(["Mesero", r.mesero])
   if (r.cliente?.nombre) filas.push(["Cliente", r.cliente.nombre])
+  if (r.secciones) {
+    filas.push([])
+    for (const sec of r.secciones) {
+      filas.push([sec.titulo])
+      for (const it of sec.items || []) filas.push(["", it])
+    }
+    const wsL = XLSX.utils.aoa_to_sheet(filas)
+    wsL["!cols"] = [{ wch: 30 }, { wch: 40 }]
+    const wbL = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wbL, wsL, (r.titulo || "Lista").slice(0, 28))
+    XLSX.writeFile(wbL, `${(r.titulo || "lista").toLowerCase().replace(/[^a-z0-9]+/gi, "_")}_${(r.fecha || "").replace(/\//g, "-")}.xlsx`)
+    return
+  }
   filas.push([], ["Descripción", "Detalle", "Cant", "Total"])
   for (const it of r.items || []) filas.push([it.nombre, it.detalle || "", it.cantidad, totalItem(it)])
   filas.push([], ["Subtotal", "", "", r.subtotal || 0])
@@ -644,6 +669,9 @@ onMounted(loadPrinters)
 .r-pedido { word-break: break-all; }
 .r-item-det { font-size: 10px; color: #64748b; }
 .r-texto { font-size: 10px; text-align: justify; white-space: pre-line; }
+.r-sec { margin-bottom: 6px; }
+.r-sec-title { font-weight: 800; font-size: 12px; }
+.r-sec-item { font-size: 11px; padding-left: 6px; }
 
 /* ── Print CSS: solo imprime el recibo ───────────────────────────────── */
 @media print {
