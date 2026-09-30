@@ -74,7 +74,7 @@
           <i class="bi bi-plus-circle"></i>
           <span>Agregar más</span>
         </button>
-        <button class="od-btn od-btn--success" :disabled="!order" title="Pagar" @click="irAPagar">
+        <button class="od-btn od-btn--success" :disabled="!order || verificandoPago" title="Pagar" @click="irAPagar">
           <i class="bi bi-receipt"></i>
           <span>PAGAR</span>
         </button>
@@ -93,6 +93,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
+import api from '@/services/apis'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
@@ -223,9 +224,29 @@ async function eliminarPedido() {
 
 function reimprimir() { /* placeholder */ }
 
-function irAPagar() {
-  if (!order.value) return
-  router.push(`/pos/pago/${order.value.order_number}`)
+// Una cuenta-mesa abierta en otro dispositivo no se puede pagar: se avisa quién la tiene.
+// Si el bloqueo es falso (cierre inesperado), un administrador la libera en Cuentas Abiertas.
+const verificandoPago = ref(false)
+async function irAPagar() {
+  if (!order.value || verificandoPago.value) return
+  verificandoPago.value = true
+  try {
+    const { data } = await api.get(`/api/pos/pago/${encodeURIComponent(order.value.order_number)}/bloqueo`)
+    if (data.editing_by) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Cuenta en uso',
+        text: `${data.mesa} está abierta por ${data.editing_by} en otro dispositivo. No se puede pagar hasta que la cierre o un administrador la libere en Cuentas Abiertas.`,
+        confirmButtonText: 'Entendido',
+      })
+      return
+    }
+    router.push(`/pos/pago/${order.value.order_number}`)
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'No se pudo verificar la cuenta', 'error', 3500)
+  } finally {
+    verificandoPago.value = false
+  }
 }
 </script>
 

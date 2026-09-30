@@ -72,7 +72,29 @@ async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str):
     """), {"cid": cid, "on": order_number})).mappings().all()
     if not items:
         raise HTTPException(status_code=400, detail="La cuenta no tiene ítems por pagar")
+    await _exigir_mesa_libre(db_temp, cid, orden["Mesa"])
     return orden, items
+
+
+async def _en_uso_por(db_temp: AsyncSession, cid: int, mesa) -> Optional[str]:
+    """Nombre de quien tiene la mesa-cuenta abierta en un dispositivo (o None si está libre)."""
+    row = (await db_temp.execute(text("""
+        SELECT editing_waiter_name FROM temp_mesa_abierta
+        WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)
+          AND editing_token IS NOT NULL AND editing_token <> ''
+        LIMIT 1
+    """), {"cid": cid, "mesa": mesa or ""})).first()
+    return (row[0] or "otro usuario") if row else None
+
+
+async def _exigir_mesa_libre(db_temp: AsyncSession, cid: int, mesa) -> None:
+    """Una cuenta-mesa abierta en un dispositivo NO se puede pagar. Si el bloqueo es falso
+    (cierre inesperado), el administrador la libera primero en Cuentas Abiertas."""
+    quien = await _en_uso_por(db_temp, cid, mesa)
+    if quien:
+        raise HTTPException(status_code=423, detail=(
+            f"La cuenta {str(mesa or '').strip()} está abierta por {quien} en otro dispositivo. "
+            "No se puede pagar hasta que la cierre o un administrador la libere en Cuentas Abiertas."))
 
 
 async def _config(db: AsyncSession, cid: int) -> dict:
@@ -91,6 +113,24 @@ async def _config(db: AsyncSession, cid: int) -> dict:
         "use_precuenta": fac["usar_precuenta"],
         "has_pos_electronico": bool(cfg and cfg["has_pos_electronico"]),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/pos/pago/{order_number}/bloqueo — ¿la cuenta-mesa está abierta en un dispositivo?
+# ═══════════════════════════════════════════════════════════════════════════
+@router.get("/{order_number}/bloqueo")
+async def bloqueo_cuenta(
+    order_number: str,
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+    current_user: User = Depends(get_current_user),
+):
+    cid = current_user.company_id
+    mesa = (await db_temp.execute(text(
+        "SELECT Mesa FROM temp_comanda WHERE company_id=:cid AND Nro_Pedido=:on LIMIT 1"
+    ), {"cid": cid, "on": order_number})).scalar()
+    if mesa is None:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    return {"mesa": str(mesa).strip(), "editing_by": await _en_uso_por(db_temp, cid, mesa)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
