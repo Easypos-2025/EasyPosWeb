@@ -67,17 +67,17 @@
           <div class="pg-box pg-pagos">
             <div class="pg-box-ttl">Formas de pago</div>
             <div v-for="(p, idx) in form.payments" :key="idx" class="pg-pago">
-              <select v-model.number="p.payment_method_id" class="pg-select" @change="onFormaPago(p)">
+              <select v-model.number="p.payment_method_id" class="pg-select">
                 <option v-for="pt in datos.payment_types" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
               </select>
               <CurrencyInput v-model="p.amount" class="pg-input text-end" />
-              <button v-if="esEfectivo(p)" class="pg-ico" title="Billetes" @click="abrirEfectivo(p)"><i class="bi bi-cash-stack"></i></button>
               <button class="pg-ico pg-ico--del" :disabled="form.payments.length === 1" @click="form.payments.splice(idx, 1)"><i class="bi bi-trash"></i></button>
             </div>
             <button class="pg-link" @click="agregarFormaPago"><i class="bi bi-plus-lg"></i> Agregar forma de pago</button>
-            <div :class="['pg-cubre', diferencia < 0 ? 'bad' : 'ok']">
-              <template v-if="diferencia < 0">Falta {{ fmt(-diferencia) }}</template>
-              <template v-else-if="diferencia > 0">Cambio {{ fmt(diferencia) }}</template>
+            <div :class="['pg-cubre', diferencia === 0 && seleccion.size ? 'ok' : 'bad']">
+              <template v-if="!seleccion.size">Marque los ítems a pagar</template>
+              <template v-else-if="diferencia < 0">Falta {{ fmt(-diferencia) }}</template>
+              <template v-else-if="diferencia > 0">Supera el total en {{ fmt(diferencia) }}</template>
               <template v-else><i class="bi bi-check-circle-fill"></i> Cubre el total</template>
             </div>
           </div>
@@ -146,7 +146,7 @@
           <div class="pg-v pg-v--total"><span>TOTAL</span><b>{{ fmt(total) }}</b></div>
         </div>
         <div class="pg-btns">
-          <button class="pg-btn pg-btn--fac" :disabled="!datos.has_pos_electronico" @click="facturar"
+          <button class="pg-btn pg-btn--fac" :disabled="!datos.has_pos_electronico || !puedeRegistrar" @click="facturar"
                   :title="datos.has_pos_electronico ? '' : 'Factura electrónica no habilitada para esta empresa'">
             <i class="bi bi-file-earmark-text"></i> FACTURA (F5)
           </button>
@@ -154,6 +154,11 @@
             <span v-if="registrando" class="spinner-border spinner-border-sm"></span>
             <i v-else class="bi bi-receipt"></i> RECIBO (F6)
           </button>
+          <button v-if="datos.use_precuenta" class="pg-btn pg-btn--pre" :disabled="!seleccion.size || cargandoPrecuenta" @click="cuentaPrevia">
+            <span v-if="cargandoPrecuenta" class="spinner-border spinner-border-sm"></span>
+            <i v-else class="bi bi-file-earmark-ruled"></i> CUENTA PREVIA
+          </button>
+          <button class="pg-btn pg-btn--sec" @click="salir"><i class="bi bi-box-arrow-left"></i> SALIR</button>
         </div>
       </footer>
     </template>
@@ -196,37 +201,35 @@
       </div>
     </div>
 
-    <!-- Efectivo: billetes rápidos + valor libre -->
+    <!-- ¿Con cuánto paga el cliente? — el cambio se calcula en la misma ventana -->
     <div v-if="cash.show" class="pg-ov" @click.self="cash.show = false">
-      <div class="pg-modal">
-        <div class="pg-modal-hdr">Efectivo recibido<button class="pg-x" @click="cash.show = false"><i class="bi bi-x-lg"></i></button></div>
+      <div class="pg-modal pg-modal--cash">
+        <div class="pg-modal-hdr">Pago en efectivo<button class="pg-x" @click="cash.show = false"><i class="bi bi-x-lg"></i></button></div>
         <div class="pg-modal-body">
-          <div class="cash-sum">
-            <div><span>A cubrir</span><b>{{ fmt(cash.aCubrir) }}</b></div>
-            <div><span>Recibido</span><b>{{ fmt(cash.recibido) }}</b></div>
-            <div :class="cash.recibido >= cash.aCubrir ? 'ok' : 'bad'">
-              <span>{{ cash.recibido >= cash.aCubrir ? 'Cambio' : 'Falta' }}</span><b>{{ fmt(Math.abs(cash.recibido - cash.aCubrir)) }}</b>
-            </div>
-          </div>
+          <div class="cash-apagar"><span>Efectivo a pagar</span><b>{{ fmt(cash.aPagar) }}</b></div>
+          <label class="cash-q" for="cash-recibido">¿Con cuánto paga el cliente?</label>
+          <CurrencyInput id="cash-recibido" ref="cashInput" v-model="cash.recibido" class="pg-input cash-inp text-end"
+                         @keyup.enter="confirmarEfectivo" />
           <div class="cash-grid">
             <button v-for="b in datos.cash_denominations" :key="b.value"
-                    :class="['cash-card', { 'cash-card--foto': b.image_path }]" @click="cash.recibido += b.value">
+                    :class="['cash-card', { 'cash-card--foto': b.image_path }]" @click="cash.recibido = (Number(cash.recibido) || 0) + b.value">
               <img v-if="b.image_path" :src="imgSrc(b.image_path)" class="cash-img" alt="" loading="lazy" />
               <i v-else class="bi bi-cash"></i>
-              <span class="cash-val">{{ fmt(b.value) }}</span>
+              <span class="cash-val">+ {{ fmt(b.value) }}</span>
             </button>
-            <button class="cash-card cash-card--exact" @click="cash.recibido = cash.aCubrir"><i class="bi bi-bullseye"></i>Exacto</button>
+            <button class="cash-card cash-card--exact" @click="cash.recibido = cash.aPagar"><i class="bi bi-bullseye"></i>Exacto</button>
           </div>
-          <div class="pg-inline">
-            <span class="pg-lbl">Valor libre</span>
-            <CurrencyInput v-model="cash.libre" class="pg-input text-end" />
-            <button class="pg-btn pg-btn--sec" @click="cash.recibido += Number(cash.libre) || 0; cash.libre = 0">Sumar</button>
+          <div :class="['cash-cambio', cashRecibido >= cash.aPagar ? 'ok' : 'bad']">
+            <span>{{ cashRecibido >= cash.aPagar ? 'CAMBIO' : 'FALTA' }}</span>
+            <b>{{ fmt(Math.abs(cashRecibido - cash.aPagar)) }}</b>
           </div>
-          <p v-if="!datos.cash_denominations.length" class="pg-arm">Configure los billetes rápidos en Formas de Pago.</p>
         </div>
         <div class="pg-modal-ftr">
           <button class="pg-btn pg-btn--sec" @click="cash.recibido = 0">Limpiar</button>
-          <button class="pg-btn pg-btn--rec" @click="aceptarEfectivo">Aceptar</button>
+          <button class="pg-btn pg-btn--rec" :disabled="cashRecibido < cash.aPagar || registrando" @click="confirmarEfectivo">
+            <span v-if="registrando" class="spinner-border spinner-border-sm"></span>
+            <i v-else class="bi bi-receipt"></i> Registrar recibo
+          </button>
         </div>
       </div>
     </div>
@@ -237,18 +240,11 @@
       :receiptData="imprimir.data"
       :companyId="companyId"
       printersPath="/api/pos/recibo-impresion/impresoras"
-      printPath="/api/pos/recibo-impresion/imprimir"
+      :printPath="imprimir.printPath"
+      :printExtra="imprimir.printExtra"
       @close="cerrarImpresion"
     />
 
-    <!-- Cambio en grande (se cierra solo) -->
-    <div v-if="cambioVisible" class="pg-ov pg-ov--cambio" @click="cerrarCambio">
-      <div class="cambio-box">
-        <div class="cambio-lbl">CAMBIO</div>
-        <div class="cambio-val">{{ fmt(cambioValor) }}</div>
-        <div class="cambio-sub">Recibo Nro. {{ ultimoRecibo }}</div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -289,15 +285,14 @@ const form = reactive({
 })
 const dom   = reactive({ cliente: null, selCliente: false })
 const modal = reactive({ show: false, kind: '', title: '', value: 0, text: '', continuar: false })
-const cash  = reactive({ show: false, linea: null, aCubrir: 0, recibido: 0, libre: 0 })
-const cambioVisible = ref(false)
-const cambioValor   = ref(0)
-const ultimoRecibo  = ref('')
-let cambioTimer = null
+const cash  = reactive({ show: false, aPagar: 0, recibido: 0 })
+const cashInput = ref(null)
+const cashRecibido = computed(() => Math.round(Number(cash.recibido) || 0))
+const cargandoPrecuenta = ref(false)
 const API_BASE = import.meta.env.VITE_API_URL || ''
 const imgSrc = u => (!u || /^(https?:|blob:|data:)/.test(u)) ? u : API_BASE + u
 // Impresión del recibo recién registrado (vista previa con la impresora predeterminada)
-const imprimir = reactive({ show: false, data: null, luego: null })
+const imprimir = reactive({ show: false, data: null, luego: null, printPath: '', printExtra: null })
 let propinaPreguntada = false
 
 // ── Carga ──────────────────────────────────────────────────────────────────
@@ -309,7 +304,9 @@ async function verificarTurno() {
 }
 function onTurnoAbierto() { turnoAbierto.value = true; cargar() }
 
-async function cargar() {
+// despuesDePago: tras un pago parcial la cuenta queda limpia y SIN ítems marcados
+// (el cajero marca los del siguiente pago); en la primera carga se marcan todos.
+async function cargar(despuesDePago = false) {
   loading.value = true
   errorCarga.value = ''
   try {
@@ -319,10 +316,11 @@ async function cargar() {
     form.waiter_id = data.order.waiter_id || 0
     form.typification_id = 0; form.monto_pesos = 0; form.desc_obs = ''
     form.tip_mode = data.tip.enabled ? 'auto' : 'none'
+    form.tip_manual = 0; form.delivery_amount = 0; form.observacion = ''
+    dom.cliente = null
     propinaPreguntada = false
-    seleccion.value = new Set(data.items.map(i => i.item))       // todo marcado por defecto
-    const def = data.payment_types.find(p => p.is_default) || data.payment_types[0]
-    form.payments = [{ payment_method_id: def?.id || null, amount: 0, auto: true }]
+    seleccion.value = new Set(despuesDePago ? [] : data.items.map(i => i.item))
+    reiniciarPagos()
   } catch (e) {
     errorCarga.value = e?.response?.data?.detail ?? 'Error al cargar la cuenta'
   }
@@ -395,19 +393,25 @@ const grupos = computed(() => {
   return [...map.values()]
 })
 
-// La única forma de pago "automática" sigue al total mientras el cajero no la edite
-watch(total, t => { if (form.payments.length === 1 && form.payments[0].auto) form.payments[0].amount = t }, { immediate: true })
-watch(() => form.payments.map(p => p.amount), (nv, ov) => {
-  if (!ov) return
-  form.payments.forEach((p, i) => { if (ov[i] !== undefined && nv[i] !== ov[i] && nv[i] !== total.value) p.auto = false })
-})
+// Cualquier cambio en el total (ítems, descuento, propina, domicilio) reinicia las
+// formas de pago: una sola línea de EFECTIVO (default) por el nuevo total.
+function formaPagoDefault() {
+  const tipos = datos.value?.payment_types || []
+  return tipos.find(p => p.is_default) || tipos.find(p => p.adds_to_cash) || tipos[0] || null
+}
+function reiniciarPagos() {
+  form.payments = [{ payment_method_id: formaPagoDefault()?.id || null, amount: total.value }]
+}
+watch(total, () => { if (datos.value) reiniciarPagos() })
 
 const tipoPago = id => datos.value?.payment_types.find(p => p.id === id)
 const esEfectivo = p => !!tipoPago(p.payment_method_id)?.adds_to_cash
 
+// Pago exacto; venta en $0 solo si es por descuento (cortesía / 100 %)
 const puedeRegistrar = computed(() =>
-  !!datos.value && seleccion.value.size > 0 && total.value >= 0 && diferencia.value >= 0 &&
-  form.payments.every(p => p.payment_method_id) &&
+  !!datos.value && seleccion.value.size > 0 && diferencia.value === 0 &&
+  (venta.value > 0 || descuento.value > 0) &&
+  form.payments.length > 0 && form.payments.every(p => p.payment_method_id) &&
   (!tipSel.value || elegiblesDescuento.value.length) &&
   (!tipSel.value?.ask_notes || form.desc_obs.trim()) &&
   (!tipSel.value || tipSel.value.percentage || (form.monto_pesos > 0 && descuento.value > 0))
@@ -416,19 +420,10 @@ const puedeRegistrar = computed(() =>
 // ── Formas de pago ───────────────────────────────────────────────────────────
 function agregarFormaPago() {
   const restante = Math.max(0, total.value - pagado.value)
-  const def = datos.value.payment_types[0]
-  form.payments.forEach(p => { p.auto = false })
-  form.payments.push({ payment_method_id: def?.id || null, amount: restante, auto: false })
+  const def = formaPagoDefault()
+  form.payments.push({ payment_method_id: def?.id || null, amount: restante })
 }
-function onFormaPago(p) { if (esEfectivo(p)) abrirEfectivo(p) }
-function abrirEfectivo(p) {
-  const otros = form.payments.filter(x => x !== p).reduce((s, x) => s + (Math.round(Number(x.amount)) || 0), 0)
-  cash.linea = p; cash.aCubrir = Math.max(0, total.value - otros); cash.recibido = 0; cash.libre = 0; cash.show = true
-}
-function aceptarEfectivo() {
-  if (cash.linea) { cash.linea.amount = cash.recibido || cash.aCubrir; cash.linea.auto = false }
-  cash.show = false
-}
+const efectivoAPagar = computed(() => form.payments.filter(esEfectivo).reduce((s, p) => s + (Math.round(Number(p.amount)) || 0), 0))
 
 // ── Propina / domicilio / observación ────────────────────────────────────────
 function togglePropina(on) { form.tip_mode = on ? 'auto' : 'none' }
@@ -466,48 +461,87 @@ async function registrar() {
     Object.assign(modal, { show: true, kind: 'propina', title: `¿Valor de ${datos.value.tip.label}?`, value: propina.value, continuar: true })
     return
   }
+  // Hay efectivo: preguntar con cuánto paga el cliente (el cambio se ve en la misma ventana)
+  if (efectivoAPagar.value > 0) {
+    Object.assign(cash, { show: true, aPagar: efectivoAPagar.value, recibido: 0 })
+    setTimeout(() => document.getElementById('cash-recibido')?.focus(), 50)
+    return
+  }
+  await enviarRecibo(null)
+}
+
+function confirmarEfectivo() {
+  if (cashRecibido.value < cash.aPagar || registrando.value) return
+  enviarRecibo(cashRecibido.value)
+}
+
+function cuerpoCalculo() {
+  return {
+    items: [...seleccion.value],
+    customer_id: cliente.value.id_cliente,
+    waiter_id: form.waiter_id || null,
+    descuento: tipSel.value ? {
+      typification_id: tipSel.value.id,
+      monto_pesos: tipSel.value.percentage ? null : Math.round(Number(form.monto_pesos) || 0),
+      observacion: form.desc_obs.trim() || null,
+    } : null,
+    tip_mode: form.tip_mode,
+    tip_amount: form.tip_mode === 'manual' ? form.tip_manual : null,
+    delivery_amount: form.delivery_amount || 0,
+    observacion: form.observacion || null,
+  }
+}
+
+async function enviarRecibo(recibido) {
+  if (registrando.value) return
   registrando.value = true
   try {
     const { data } = await api.post(`/api/pos/pago/${orderNumber}`, {
-      items: [...seleccion.value],
-      customer_id: cliente.value.id_cliente,
-      waiter_id: form.waiter_id || null,
-      descuento: tipSel.value ? {
-        typification_id: tipSel.value.id,
-        monto_pesos: tipSel.value.percentage ? null : Math.round(Number(form.monto_pesos) || 0),
-        observacion: form.desc_obs.trim() || null,
-      } : null,
-      tip_mode: form.tip_mode,
-      tip_amount: form.tip_mode === 'manual' ? form.tip_manual : null,
-      delivery_amount: form.delivery_amount || 0,
+      ...cuerpoCalculo(),
       delivery_customer_id: form.delivery_amount ? (dom.cliente?.id_cliente || null) : null,
-      observacion: form.observacion || null,
-      payments: form.payments.filter(p => Number(p.amount) > 0)
-        .map(p => ({ payment_method_id: p.payment_method_id, amount: Math.round(Number(p.amount)) })),
+      payments: form.payments.map(p => ({ payment_method_id: p.payment_method_id, amount: Math.round(Number(p.amount) || 0) })),
+      cash_received: recibido,
     })
-    ultimoRecibo.value = data.receipt_number
+    cash.show = false
+    const cambio = data.change > 0 ? ` · Cambio ${fmt(data.change)}` : ''
     const siguiente = () => {
       if (data.remaining_items > 0) {
-        showToast(`Recibo ${data.receipt_number} registrado · quedan ${data.remaining_items} ítem(s) en la cuenta`, 'success')
-        cargar()
+        showToast(`Recibo ${data.receipt_number} registrado${cambio} · quedan ${data.remaining_items} ítem(s) en la cuenta`, 'success')
+        cargar(true)
       } else {
-        showToast(`Recibo Nro. ${data.receipt_number} registrado`, 'success')
+        showToast(`Recibo Nro. ${data.receipt_number} registrado${cambio}`, 'success')
         router.push('/restaurante')
       }
     }
-    const previa = () => abrirImpresion(data.receipt_number, siguiente)
-    if (data.change > 0) mostrarCambio(data.change, previa)
-    else previa()
+    abrirImpresion(data.receipt_number, siguiente)
   } catch (e) {
     showToast(e?.response?.data?.detail ?? 'Error al registrar el recibo', 'error')
   }
   registrando.value = false
 }
 
+// ── Cuenta previa (informativa: no graba nada) ───────────────────────────────
+async function cuentaPrevia() {
+  if (!seleccion.value.size || cargandoPrecuenta.value) return
+  cargandoPrecuenta.value = true
+  try {
+    const cuerpo = cuerpoCalculo()
+    const { data } = await api.post(`/api/pos/pago/${orderNumber}/precuenta`, cuerpo)
+    Object.assign(imprimir, { show: true, data, luego: null,
+      printPath: `/api/pos/pago/${encodeURIComponent(orderNumber)}/precuenta/imprimir`, printExtra: cuerpo })
+  } catch (e) {
+    showToast(e?.response?.data?.detail ?? 'No se pudo generar la cuenta previa', 'error')
+  }
+  cargandoPrecuenta.value = false
+}
+
+function salir() { router.push('/restaurante') }
+
+
 async function abrirImpresion(receiptNumber, luego) {
   try {
     const { data } = await api.get(`/api/pos/recibo-impresion/${encodeURIComponent(receiptNumber)}`)
-    Object.assign(imprimir, { show: true, data, luego })
+    Object.assign(imprimir, { show: true, data, luego, printPath: '/api/pos/recibo-impresion/imprimir', printExtra: null })
   } catch {
     showToast('No se pudo cargar la vista previa del recibo', 'warning')
     luego()
@@ -515,30 +549,17 @@ async function abrirImpresion(receiptNumber, luego) {
 }
 function cerrarImpresion() {
   const f = imprimir.luego
-  Object.assign(imprimir, { show: false, data: null, luego: null })
+  Object.assign(imprimir, { show: false, data: null, luego: null, printPath: '', printExtra: null })
   if (f) f()
 }
 
-let despuesCambio = null
-function mostrarCambio(valor, luego) {
-  cambioValor.value = valor; cambioVisible.value = true; despuesCambio = luego
-  clearTimeout(cambioTimer)
-  cambioTimer = setTimeout(cerrarCambio, 5000)
-}
-function cerrarCambio() {
-  clearTimeout(cambioTimer)
-  if (!cambioVisible.value) return
-  cambioVisible.value = false
-  const f = despuesCambio; despuesCambio = null
-  if (f) f()
-}
 
 // ── Atajos F5 / F6 ───────────────────────────────────────────────────────────
 function onKey(e) {
   if (imprimir.show) return
+  if (cash.show) { if (e.key === 'Escape') cash.show = false; return }
   if (e.key === 'F6') { e.preventDefault(); registrar() }
-  else if (e.key === 'F5') { e.preventDefault(); if (datos.value?.has_pos_electronico) facturar() }
-  else if (e.key === 'Escape' && cambioVisible.value) cerrarCambio()
+  else if (e.key === 'F5') { e.preventDefault(); if (datos.value?.has_pos_electronico && puedeRegistrar.value) facturar() }
 }
 
 // La vista ocupa exactamente el alto visible: solo se desplazan las listas internas
@@ -560,7 +581,7 @@ onMounted(async () => {
   if (turnoAbierto.value) await cargar()
   else loading.value = false
 })
-onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', ajustarAlto); clearTimeout(cambioTimer) })
+onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', ajustarAlto) })
 </script>
 
 <style scoped>
@@ -655,11 +676,18 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.rem
 .cash-img { width: 100%; height: 64px; object-fit: cover; border-radius: 8px; }
 .cash-val { line-height: 1.2; }
 .cash-card--exact { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
-.pg-ov--cambio { background: rgba(15,23,42,.8); cursor: pointer; }
-.cambio-box { background: #16a34a; color: #fff; border-radius: 24px; padding: 40px 60px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
-.cambio-lbl { font-size: 22px; font-weight: 800; letter-spacing: 4px; opacity: .9; }
-.cambio-val { font-size: 64px; font-weight: 900; line-height: 1.1; }
-.cambio-sub { font-size: 14px; opacity: .85; margin-top: 8px; }
+.pg-modal--cash { max-width: 560px; }
+.cash-apagar { display: flex; justify-content: space-between; align-items: baseline; background: #f8fafc; border-radius: 10px; padding: 10px 14px; }
+.cash-apagar span { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.cash-apagar b { font-size: 22px; color: #1e293b; }
+.cash-q { font-size: 20px; font-weight: 900; color: #1e3a5f; text-align: center; margin-top: 4px; }
+.cash-inp { font-size: 30px !important; font-weight: 900; padding: 10px 14px !important; border: 2.5px solid #1d4ed8 !important; }
+.cash-cambio { display: flex; justify-content: space-between; align-items: center; border-radius: 14px; padding: 12px 18px; }
+.cash-cambio span { font-size: 18px; font-weight: 900; letter-spacing: 3px; }
+.cash-cambio b { font-size: 40px; font-weight: 900; line-height: 1.1; }
+.cash-cambio.ok { background: #16a34a; color: #fff; }
+.cash-cambio.bad { background: #fef2f2; color: #b91c1c; }
+.pg-btn--pre { background: #fff; color: #7c3aed; border: 1.5px solid #ddd6fe; }
 
 /* Tablet */
 @media (max-width: 1024px) {
@@ -679,9 +707,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.rem
   .pg-btns .pg-btn { flex: 1; }
   .pg-ov { padding: 0; align-items: flex-end; }
   .pg-modal { border-radius: 16px 16px 0 0; max-width: 100%; }
-  .pg-ov--cambio { align-items: center; padding: 16px; }
-  .cambio-box { padding: 30px 24px; }
-  .cambio-val { font-size: 48px; }
+  .pg-btns { display: grid; grid-template-columns: 1fr 1fr; }
+  .cash-cambio b { font-size: 32px; }
   .cash-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 576px) {

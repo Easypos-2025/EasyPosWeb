@@ -7,7 +7,9 @@ Registro de Recibo (pantalla de pago) — con pago parcial por ítem.
   - TODOS los valores los calcula el servidor: venta, descuento (tipificación sobre los
     ítems marcados, sin descuento sobre descuento), propina (sobre la venta del recibo),
     domicilio y total. Propina y domicilio NO suman en venta.
-  - Efectivo puede superar el total: se devuelve el cambio y el recibo queda por el total.
+  - Las formas de pago suman EXACTAMENTE el total. El cambio no es forma de pago: se calcula
+    con lo que entrega el cliente (cash_received) menos lo pagado en efectivo.
+  - Cuenta previa (/precuenta): mismo cálculo, solo informativa — no graba ni usa consecutivo.
   - Cliente = tabla `clientes` (1 = Consumidor Final).
   - Inventario: se graba pos_receipt_order_detail_products (= recibos_detalle_comanda_producto)
     con los insumos de cada ítem, y se descuenta cantidad_actual (insumo por unidad × cantidad).
@@ -27,6 +29,7 @@ from sqlalchemy import text
 
 from app.database import get_db, get_datatemppos_db
 from app.auth.dependencies import get_current_user
+from app.auth.tenant import tenant_guard
 from app.models.user_model import User
 from app.routers.pos_shift_router import require_open_shift
 from app.routers.pos_comanda_router import _recalc_total
@@ -35,7 +38,7 @@ from app.services import clientes as clientes_svc
 from app.services import comanda_armado as armado_svc
 from app.services import config_facturacion as cfg_facturacion
 
-router = APIRouter(prefix="/api/pos/pago", tags=["POS Pago"])
+router = APIRouter(prefix="/api/pos/pago", tags=["POS Pago"], dependencies=[Depends(tenant_guard)])
 
 _BOG = timezone(timedelta(hours=-5))
 Money = Annotated[float, Field(ge=0, le=2_000_000_000)]
@@ -85,6 +88,7 @@ async def _config(db: AsyncSession, cid: int) -> dict:
         "tip_percentage": float(fac["porcentaje_propina"] or 0),
         "tip_label": (cfg["tip_label"] if cfg else None) or "Propina",
         "ask_tip": fac["preguntar_valor_propina"],
+        "use_precuenta": fac["usar_precuenta"],
         "has_pos_electronico": bool(cfg and cfg["has_pos_electronico"]),
     }
 
@@ -159,6 +163,7 @@ async def datos_pago(
         "tip": {"enabled": cfg["has_tip"], "percentage": cfg["tip_percentage"], "label": cfg["tip_label"],
                 "ask_value": cfg["ask_tip"]},
         "has_pos_electronico": cfg["has_pos_electronico"],
+        "use_precuenta": cfg["use_precuenta"],
         "payment_types": [dict(p) for p in payment_types],
         "waiters": [dict(w) for w in waiters],
         "typifications": [{"id": int(t["Id_Tipificacion"]), "name": t["Nombre"],
@@ -170,44 +175,9 @@ async def datos_pago(
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# POST /api/pos/pago/{order_number} — registra el Recibo de los ítems marcados
-# ═══════════════════════════════════════════════════════════════════════════
-class DescuentoIn(BaseModel):
-    typification_id: Annotated[int, Field(ge=1)]
-    monto_pesos: Optional[Money] = None          # tipificación "en pesos" (sin %)
-    observacion: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
-
-
-class PagoLinea(BaseModel):
-    payment_method_id: Annotated[int, Field(ge=1)]
-    amount: Money
-    notes: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
-
-
-class PagoIn(BaseModel):
-    items: Annotated[List[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=500)]
-    customer_id: Optional[int] = None
-    waiter_id: Optional[int] = None
-    descuento: Optional[DescuentoIn] = None
-    tip_mode: Literal["auto", "none", "manual"] = "auto"
-    tip_amount: Optional[Money] = None
-    delivery_amount: Money = 0
-    delivery_customer_id: Optional[int] = None
-    observacion: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
-    payments: Annotated[List[PagoLinea], Field(min_length=1, max_length=10)]
-
-
-@router.post("/{order_number}")
-async def registrar_recibo(
-    order_number: str,
-    body: PagoIn,
-    db: AsyncSession = Depends(get_db),
-    db_temp: AsyncSession = Depends(get_datatemppos_db),
-    current_user: User = Depends(get_current_user),
-    turno: dict = Depends(require_open_shift),
-):
-    cid, uid = current_user.company_id, current_user.id
+async def _calcular(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, body) -> dict:
+    """Venta, descuento, propina, domicilio y total de los ítems marcados. Lo usan el
+    registro del recibo y la cuenta previa: el navegador nunca envía valores."""
     orden, items = await _cargar_cuenta(db_temp, cid, order_number)
 
     # ── Ítems marcados (deben seguir abiertos en esta cuenta) ────────────────
@@ -267,7 +237,61 @@ async def registrar_recibo(
     delivery_amount = int(round(body.delivery_amount or 0))
     total = venta + tip_amount + delivery_amount
 
-    # ── Formas de pago: deben cubrir el total; solo el efectivo puede exceder ─
+    return {"orden": orden, "items": items, "marcados": marcados, "sel": sel, "valores": valores,
+            "originales": originales, "tipif": tipif, "venta": venta, "descuento_total": descuento_total,
+            "tip_amount": tip_amount, "delivery_amount": delivery_amount, "total": total}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# POST /api/pos/pago/{order_number} — registra el Recibo de los ítems marcados
+# ═══════════════════════════════════════════════════════════════════════════
+class DescuentoIn(BaseModel):
+    typification_id: Annotated[int, Field(ge=1)]
+    monto_pesos: Optional[Money] = None          # tipificación "en pesos" (sin %)
+    observacion: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
+
+
+class PagoLinea(BaseModel):
+    payment_method_id: Annotated[int, Field(ge=1)]
+    amount: Money
+    notes: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
+
+
+class PagoIn(BaseModel):
+    items: Annotated[List[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=500)]
+    customer_id: Optional[int] = None
+    waiter_id: Optional[int] = None
+    descuento: Optional[DescuentoIn] = None
+    tip_mode: Literal["auto", "none", "manual"] = "auto"
+    tip_amount: Optional[Money] = None
+    delivery_amount: Money = 0
+    delivery_customer_id: Optional[int] = None
+    observacion: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
+    payments: Annotated[List[PagoLinea], Field(min_length=1, max_length=10)]
+    cash_received: Optional[Money] = None        # con cuánto paga el cliente (solo para el cambio)
+
+
+@router.post("/{order_number}")
+async def registrar_recibo(
+    order_number: str,
+    body: PagoIn,
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+    current_user: User = Depends(get_current_user),
+    turno: dict = Depends(require_open_shift),
+):
+    cid, uid = current_user.company_id, current_user.id
+    c = await _calcular(db, db_temp, cid, order_number, body)
+    orden, items, marcados, sel = c["orden"], c["items"], c["marcados"], c["sel"]
+    valores, originales, tipif = c["valores"], c["originales"], c["tipif"]
+    venta, descuento_total = c["venta"], c["descuento_total"]
+    tip_amount, delivery_amount, total = c["tip_amount"], c["delivery_amount"], c["total"]
+    if venta <= 0 and descuento_total <= 0:
+        raise HTTPException(status_code=422, detail="La venta no puede ser $0 (solo se permite por descuento)")
+
+    # ── Formas de pago: deben sumar EXACTAMENTE el total (ni menos ni más). El cambio
+    #    no es forma de pago: sale de lo que entregó el cliente (cash_received) menos
+    #    lo pagado en efectivo. Venta en $0 (descuento 100 %) → una línea de efectivo en $0.
     tipos = {int(r["id"]): r for r in (await db.execute(text(
         "SELECT id, name, adds_to_cash FROM pos_payment_types WHERE company_id=:cid AND is_active=1"
     ), {"cid": cid})).mappings().all()}
@@ -275,21 +299,21 @@ async def registrar_recibo(
         raise HTTPException(status_code=422, detail="Forma de pago no válida o inactiva")
     pagos = [{"pm": p.payment_method_id, "amount": int(round(p.amount)), "notes": (p.notes or "").strip()}
              for p in body.payments if p.amount > 0]
+    if not pagos:
+        p0 = body.payments[0]
+        pagos = [{"pm": p0.payment_method_id, "amount": 0, "notes": (p0.notes or "").strip()}]
     pagado = sum(p["amount"] for p in pagos)
     if pagado < total:
         raise HTTPException(status_code=422, detail=f"Falta por pagar ${total - pagado:,}".replace(",", "."))
-    cambio = pagado - total
-    if cambio:
-        efectivo = sum(p["amount"] for p in pagos if tipos[p["pm"]]["adds_to_cash"])
-        if cambio > efectivo:
-            raise HTTPException(status_code=422, detail="Solo el efectivo puede superar el total (para dar cambio)")
-        resto = cambio                                   # el recibo registra lo cobrado, no lo recibido
-        for p in reversed(pagos):
-            if resto and tipos[p["pm"]]["adds_to_cash"]:
-                q = min(resto, p["amount"])
-                p["amount"] -= q
-                resto -= q
-        pagos = [p for p in pagos if p["amount"] > 0]
+    if pagado > total:
+        raise HTTPException(status_code=422, detail="Las formas de pago superan el total a pagar")
+    efectivo = sum(p["amount"] for p in pagos if tipos[p["pm"]]["adds_to_cash"])
+    cambio = 0
+    if body.cash_received is not None and efectivo > 0:
+        recibido = int(round(body.cash_received))
+        if recibido < efectivo:
+            raise HTTPException(status_code=422, detail="El valor que entrega el cliente es menor al efectivo a pagar")
+        cambio = recibido - efectivo
 
     customer = await clientes_svc.get_cliente(db, cid, body.customer_id or int(orden["Id_Cliente"] or 0) or 1)
     delivery_customer = customer
@@ -470,3 +494,107 @@ async def registrar_recibo(
         "venta": venta, "discount": descuento_total, "tip": tip_amount, "delivery": delivery_amount,
         "total": total, "change": cambio, "remaining_items": int(pendientes),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CUENTA PREVIA — informativa: mismo cálculo del recibo, no graba nada
+# ═══════════════════════════════════════════════════════════════════════════
+class PrecuentaIn(BaseModel):
+    items: Annotated[List[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=500)]
+    customer_id: Optional[int] = None
+    waiter_id: Optional[int] = None
+    descuento: Optional[DescuentoIn] = None
+    tip_mode: Literal["auto", "none", "manual"] = "auto"
+    tip_amount: Optional[Money] = None
+    delivery_amount: Money = 0
+    observacion: Optional[Annotated[str, StringConstraints(max_length=250)]] = None
+
+
+class PrecuentaImprimirIn(PrecuentaIn):
+    printer_id: Annotated[int, Field(ge=0)]
+    raw: bool = False
+
+
+async def _datos_precuenta(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, body) -> dict:
+    fac = await cfg_facturacion.get_config(db, cid)
+    if not fac["usar_precuenta"]:
+        raise HTTPException(status_code=403, detail="La cuenta previa no está activa en Configuración Facturación")
+    c = await _calcular(db, db_temp, cid, order_number, body)
+    orden = c["orden"]
+
+    dish_ids = ",".join(str(int(i["Id_Plato"])) for i in c["sel"]) or "0"
+    dishes = {int(r["id"]): r["name"] for r in (await db.execute(text(
+        f"SELECT id, name FROM pos_dishes WHERE company_id=:cid AND id IN ({dish_ids})"
+    ), {"cid": cid})).mappings().all()}
+    armado = await armado_svc.armado_names(db_temp, cid, [order_number])
+    grupos = {}
+    for i in c["sel"]:
+        n, did = int(i["Item"]), int(i["Id_Plato"])
+        cp = str(i["Producto_Personalizado"] or "")
+        nombre = cp if cp and not cp.startswith("{") else (dishes.get(did) or f"Plato {did}")
+        detalle = " - ".join(armado.get((order_number, n), [])) or (i["Novedad"] or "")
+        qty = float(i["Cantidad"] or 0)
+        unit = round(c["valores"][n] / qty) if qty else c["valores"][n]
+        g = grupos.setdefault((nombre, detalle, unit), {"nombre": nombre, "detalle": detalle, "cantidad": 0.0,
+                                                        "precio": unit, "total": 0.0})
+        g["cantidad"] += qty
+        g["total"] += c["valores"][n]
+    items = [g | {"cantidad": int(g["cantidad"]) if float(g["cantidad"]).is_integer() else g["cantidad"]}
+             for g in grupos.values()]
+
+    waiter_id = body.waiter_id or int(orden["Mesero"] or 0)
+    mesero = (await db.execute(text("SELECT name FROM pos_waiters WHERE id=:w AND company_id=:cid"),
+                               {"w": waiter_id, "cid": cid})).scalar() if waiter_id else None
+    cli = await clientes_svc.get_cliente(db, cid, body.customer_id or int(orden["Id_Cliente"] or 0) or 1)
+    emp = (await db.execute(text(
+        "SELECT name, identification_number nit, dv, address, phone FROM companies WHERE id_company=:cid"
+    ), {"cid": cid})).mappings().first() or {}
+    cfg = await _config(db, cid)
+    await db.commit()
+
+    now = datetime.now(_BOG)
+    return {
+        "titulo": "CUENTA PREVIA - NO ES UN RECIBO",
+        "empresa": {
+            "nombre": emp.get("name") or "EasyPos",
+            "nit": (f"{emp.get('nit')}-{emp.get('dv')}" if emp.get("dv") not in (None, "") else emp.get("nit")) or "",
+            "direccion": emp.get("address") or "", "telefono": emp.get("phone") or "",
+            "encabezado": fac["imprimir_encabezado_factura"],
+        },
+        "receipt_number": "",
+        "fecha": now.date().isoformat(), "hora": now.strftime("%H:%M:%S"),
+        "order_number": orden["Nro_Pedido"], "mesa": orden["Mesa"] or "", "mesero": mesero or "",
+        "observacion": (body.observacion or "").strip(),
+        "cliente": {"nombre": cli.get("nombre", "")},
+        "items": items,
+        "subtotal": c["venta"] + c["descuento_total"], "descuento": c["descuento_total"], "venta": c["venta"],
+        "tip": c["tip_amount"], "tipLabel": cfg["tip_label"], "domicilio": c["delivery_amount"], "total": c["total"],
+        "pagos": [],
+        "resolucion_propina": fac["resolucion_propina"] if (c["tip_amount"] and fac["imprimir_resolucion_propina"]) else "",
+        "mensaje": "Cuenta informativa. No es un recibo.",
+    }
+
+
+@router.post("/{order_number}/precuenta")
+async def precuenta(
+    order_number: str,
+    body: PrecuentaIn,
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await _datos_precuenta(db, db_temp, current_user.company_id, order_number, body)
+
+
+@router.post("/{order_number}/precuenta/imprimir")
+async def precuenta_imprimir(
+    order_number: str,
+    body: PrecuentaImprimirIn,
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.routers.pos_recibo_impresion_router import enviar_tirilla
+    cid = current_user.company_id
+    return await enviar_tirilla(db, cid, body.printer_id, body.raw,
+                                lambda: _datos_precuenta(db, db_temp, cid, order_number, body))

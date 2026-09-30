@@ -212,8 +212,9 @@ def _tirilla(d: dict, width: int = 32) -> bytes:
         if e["nit"]: line(f"NIT {e['nit']}", center=True)
         if e["direccion"]: line(e["direccion"], center=True)
         if e["telefono"]: line(f"Tel. {e['telefono']}", center=True)
-    line("RECIBO DE VENTA", bold=True, center=True)
-    line(f"Recibo No. {d['receipt_number']}", center=True)
+    line(d.get("titulo") or "RECIBO DE VENTA", bold=True, center=True)
+    if d.get("receipt_number"):
+        line(f"Recibo No. {d['receipt_number']}", center=True)
     line(f"{d['fecha']}  {d['hora']}", center=True)
     if d["order_number"]: wrap(f"Pedido: {d['order_number']}")
     if d["mesa"]: line(f"Mesa: {d['mesa']}")
@@ -248,27 +249,23 @@ def _tirilla(d: dict, width: int = 32) -> bytes:
     return bytes(buf)
 
 
-@router.post("/imprimir")
-async def imprimir(
-    body: ImprimirIn,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    cid = current_user.company_id
+async def enviar_tirilla(db: AsyncSession, cid: int, printer_id: int, raw: bool, datos_fn) -> dict:
+    """Valida la impresora de la empresa y envía la tirilla (red) o devuelve los bytes
+    (USB/Bluetooth). `datos_fn` es una corrutina que arma los datos solo si la impresora es válida."""
     printer = (await db.execute(text("""
         SELECT name, ip, port, LOWER(COALESCE(connection_type,'')) connection_type
         FROM pos_printers WHERE id=:pid AND company_id=:cid AND is_active=1
-    """), {"pid": body.printer_id, "cid": cid})).mappings().first()
+    """), {"pid": printer_id, "cid": cid})).mappings().first()
     if not printer:
         raise HTTPException(status_code=404, detail="Impresora no encontrada o inactiva")
     directa = printer["connection_type"] in ("bluetooth", "usb")
-    if directa and not body.raw:
+    if directa and not raw:
         raise HTTPException(status_code=400, detail="Esta impresora es USB/Bluetooth: se imprime desde el dispositivo, no por red")
     if not directa and not printer["ip"]:
         raise HTTPException(status_code=400, detail="La impresora de red no tiene IP configurada")
 
-    data = _tirilla(await _datos_recibo(db, cid, body.receipt_number))
-    if body.raw:
+    data = _tirilla(await datos_fn())
+    if raw:
         return {"ok": True, "printer": printer["name"], "data_b64": base64.b64encode(data).decode()}
     try:
         with socket.create_connection((printer["ip"], int(printer["port"] or 9100)), timeout=5) as s:
@@ -276,3 +273,14 @@ async def imprimir(
     except OSError as e:
         raise HTTPException(status_code=502, detail=f"No se pudo conectar con la impresora: {e}")
     return {"ok": True, "printer": printer["name"]}
+
+
+@router.post("/imprimir")
+async def imprimir(
+    body: ImprimirIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cid = current_user.company_id
+    return await enviar_tirilla(db, cid, body.printer_id, body.raw,
+                                lambda: _datos_recibo(db, cid, body.receipt_number))

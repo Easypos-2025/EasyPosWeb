@@ -7,8 +7,8 @@
         <div class="ir-header">
           <div class="ir-header-left">
             <i class="bi bi-printer-fill"></i>
-            <span>Imprimir Recibo</span>
-            <span class="ir-rn">#{{ receiptData.receipt_number }}</span>
+            <span>{{ receiptData.titulo ? 'Cuenta previa' : 'Imprimir Recibo' }}</span>
+            <span v-if="receiptData.receipt_number" class="ir-rn">#{{ receiptData.receipt_number }}</span>
           </div>
           <button class="ir-close" @click="cerrar"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -31,9 +31,9 @@
                   <div v-if="emp.direccion" class="r-emp-line">{{ emp.direccion }}</div>
                   <div v-if="emp.telefono" class="r-emp-line">Tel. {{ emp.telefono }}</div>
                 </template>
-                <div class="r-titulo">RECIBO DE VENTA</div>
+                <div class="r-titulo">{{ receiptData.titulo || 'RECIBO DE VENTA' }}</div>
                 <div class="r-meta">
-                  <div>Recibo N°: <strong>{{ receiptData.receipt_number }}</strong></div>
+                  <div v-if="receiptData.receipt_number">Recibo N°: <strong>{{ receiptData.receipt_number }}</strong></div>
                   <div v-if="receiptData.ordenNumero">Orden: <strong>{{ receiptData.ordenNumero }}</strong></div>
                   <div v-if="receiptData.order_number" class="r-pedido">Pedido: <strong>{{ receiptData.order_number }}</strong></div>
                   <div v-if="receiptData.mesa">Mesa: <strong>{{ receiptData.mesa }}</strong></div>
@@ -94,7 +94,7 @@
 
                 <div class="r-divider">--------------------------------</div>
 
-                <div class="r-pagos">
+                <div v-if="receiptData.pagos?.length" class="r-pagos">
                   <div class="r-pagos-title">Formas de pago:</div>
                   <div v-for="(p, i) in receiptData.pagos" :key="i" class="r-pago-row">
                     <span>{{ p.name }}</span>
@@ -233,6 +233,9 @@ const props = defineProps({
   companyId:    { type: Number, required: true },
   printersPath: { type: String, default: "/api/talleres/printers" },
   printPath:    { type: String, default: "/api/talleres/imprimir-pos" },
+  // Campos adicionales para el cuerpo de impresión (p. ej. cuenta previa: ítems marcados,
+  // descuento, propina… — el servidor recalcula todo, no se envían valores)
+  printExtra:   { type: Object, default: null },
 })
 
 const emit = defineEmits(["close"])
@@ -282,9 +285,10 @@ async function exportarExcel() {
   const r = props.receiptData
   const XLSX = await import("xlsx")
   const filas = [
-    [nombreEmpresa.value], ["RECIBO DE VENTA"],
-    ["Recibo N°", r.receipt_number], ["Fecha", `${r.fecha || ""} ${r.hora || ""}`.trim()],
+    [nombreEmpresa.value], [r.titulo || "RECIBO DE VENTA"],
+    ["Fecha", `${r.fecha || ""} ${r.hora || ""}`.trim()],
   ]
+  if (r.receipt_number) filas.splice(2, 0, ["Recibo N°", r.receipt_number])
   if (r.order_number) filas.push(["Pedido", r.order_number])
   if (r.ordenNumero)  filas.push(["Orden", r.ordenNumero])
   if (r.mesa)         filas.push(["Mesa", r.mesa])
@@ -302,7 +306,7 @@ async function exportarExcel() {
   ws["!cols"] = [{ wch: 28 }, { wch: 30 }, { wch: 8 }, { wch: 14 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, "Recibo")
-  XLSX.writeFile(wb, `recibo_${r.receipt_number}.xlsx`)
+  XLSX.writeFile(wb, r.receipt_number ? `recibo_${r.receipt_number}.xlsx` : "cuenta_previa.xlsx")
 }
 
 async function imprimirPos(printer) {
@@ -319,6 +323,7 @@ async function imprimirPos(printer) {
       printer_id:     printer.id,
       receipt_number: props.receiptData.receipt_number,
       raw:            directa,
+      ...(props.printExtra || {}),
     })
     if (directa) await printDirect(printer, base64ToBytes(data.data_b64))
     showToast(`Enviado a "${printer.name}"`, "success", 2000)
