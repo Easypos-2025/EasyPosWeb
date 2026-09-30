@@ -89,7 +89,15 @@
 
     <!-- ImprimirRecibo -->
     <ImprimirRecibo
-      v-if="showImprimir && reciboImprimir"
+      v-if="showImprimir && reciboRestaurante"
+      :receiptData="reciboRestaurante"
+      :companyId="selectedCid || 0"
+      printersPath="/api/pos/recibo-impresion/impresoras"
+      printPath="/api/pos/recibo-impresion/imprimir"
+      @close="showImprimir = false; reciboRestaurante = null"
+    />
+    <ImprimirRecibo
+      v-else-if="showImprimir && reciboImprimir"
       :receiptData="reciboImprimir"
       :placa="placaImprimir"
       :companyId="selectedCid"
@@ -133,6 +141,10 @@
                 <i class="bi bi-bicycle"></i>{{ fmt(item.domicilio) }}
               </span>
               <span class="vc-hora text-muted ms-auto">{{ item.hora }}</span>
+            </div>
+            <div v-if="item.order_number" class="vc-row-pedido" :title="item.order_number">
+              <i class="bi bi-hash"></i>{{ item.order_number }}
+              <span v-if="item.order_number.startsWith('P-P')" class="vc-chip-pp">Pago parcial</span>
             </div>
           </div>
         </div>
@@ -178,7 +190,7 @@
                   <button
                     v-if="seleccionado.tipo==='recibo'"
                     class="vc-btn-imprimir"
-                    @click="showImprimir = true"
+                    @click="abrirImprimir"
                     title="Imprimir recibo"
                   >
                     <i class="bi bi-printer-fill"></i> Imprimir
@@ -190,6 +202,7 @@
                   <span v-if="detalle.header.mesa"><i class="bi bi-table"></i> {{ detalle.header.mesa }}</span>
                   <span v-if="detalle.header.mesero"><i class="bi bi-person"></i> {{ detalle.header.mesero }}</span>
                   <span v-if="detalle.header.comensales"><i class="bi bi-people"></i> {{ detalle.header.comensales }}</span>
+                  <span v-if="detalle.header.order_number" class="vc-det-pedido"><i class="bi bi-hash"></i> Pedido {{ detalle.header.order_number }}</span>
                 </div>
 
                 <!-- Órdenes de servicio vinculadas -->
@@ -293,6 +306,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/apis.js'
+import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
@@ -378,6 +392,22 @@ const cargandoInsumos = ref(false)
 
 // ImprimirRecibo
 const showImprimir    = ref(false)
+const reciboRestaurante = ref(null)
+// Recibos de restaurante (sin órdenes de servicio): la vista previa la arma el servidor
+// con plato, armado, descuento, propina, domicilio y Nro_Pedido
+async function abrirImprimir() {
+  const ordenes = detalle.value?.ordenes_servicio || []
+  if (!ordenes.length) {
+    try {
+      const { data } = await api.get(`/api/pos/recibo-impresion/${encodeURIComponent(detalle.value.header.numero)}`)
+      reciboRestaurante.value = data
+    } catch (e) {
+      showToast(e?.response?.data?.detail || 'No se pudo cargar el recibo', 'error')
+      return
+    }
+  }
+  showImprimir.value = true
+}
 const reciboImprimir  = computed(() => {
   if (!detalle.value || seleccionado.value?.tipo !== 'recibo') return null
   const h = detalle.value.header
@@ -662,6 +692,9 @@ onMounted(() => buscar())
 .vc-row-bot { display:flex; align-items:center; gap:8px; font-size:11px; color:#64748b; }
 .vc-hora { font-size: 11px; }
 .vc-fecha-item { font-size: 11px; color: #94a3b8; display:flex; align-items:center; gap:3px; }
+.vc-row-pedido { display:flex; align-items:center; gap:4px; margin-top:3px; font-size:11px; color:#94a3b8; font-family: ui-monospace, monospace; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vc-chip-pp { font-family: inherit; font-size:10px; font-weight:700; color:#b45309; background:#fef3c7; border-radius:6px; padding:0 6px; flex-shrink:0; }
+.vc-det-pedido { font-family: ui-monospace, monospace; word-break: break-all; }
 .vc-chip-propina, .vc-chip-domicilio {
   font-size:10px; font-weight:700; border-radius:4px; padding:1px 5px; white-space:nowrap;
 }

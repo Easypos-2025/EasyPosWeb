@@ -90,7 +90,7 @@
                   </div>
                 </div>
                 <div class="ca-det-meta">
-                  <span><i class="bi bi-hash"></i>{{ detalle.header.numero }}</span>
+                  <span class="ca-det-pedido"><i class="bi bi-hash"></i>Pedido {{ detalle.header.numero }}</span>
                   <span><i class="bi bi-calendar3"></i>{{ detalle.header.fecha }}</span>
                   <span><i class="bi bi-clock"></i>{{ detalle.header.hora?.slice(0,5) }}</span>
                   <span v-if="detalle.header.mesero"><i class="bi bi-person"></i>{{ detalle.header.mesero }}</span>
@@ -333,6 +333,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 .ca-det-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .ca-det-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #475569; margin-bottom: 8px; }
 .ca-det-meta span { display: flex; align-items: center; gap: 4px; }
+.ca-det-pedido { font-family: ui-monospace, monospace; word-break: break-all; }
 .ca-det-novedad { font-size: 12px; color: #92400e; background: #fffbeb; border-radius: 6px; padding: 4px 8px; margin-bottom: 8px; }
 .ca-det-total { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; max-width: 280px; }
 

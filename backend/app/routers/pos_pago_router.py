@@ -33,6 +33,7 @@ from app.routers.pos_comanda_router import _recalc_total
 from app.services import consecutivo_service as cs
 from app.services import clientes as clientes_svc
 from app.services import comanda_armado as armado_svc
+from app.services import config_facturacion as cfg_facturacion
 
 router = APIRouter(prefix="/api/pos/pago", tags=["POS Pago"])
 
@@ -72,15 +73,18 @@ async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str):
 
 
 async def _config(db: AsyncSession, cid: int) -> dict:
+    """Propina desde configuracion_facturacion (espejo del escritorio); rótulo y POS
+    electrónico desde company_configs."""
+    fac = await cfg_facturacion.get_config(db, cid)
     cfg = (await db.execute(text(
-        "SELECT COALESCE(has_tip,0) has_tip, COALESCE(tip_percentage,0) tip_percentage, "
-        "COALESCE(tip_label,'Propina') tip_label, COALESCE(has_pos_electronico,0) has_pos_electronico "
+        "SELECT COALESCE(tip_label,'Propina') tip_label, COALESCE(has_pos_electronico,0) has_pos_electronico "
         "FROM company_configs WHERE company_id=:cid"
     ), {"cid": cid})).mappings().first()
     return {
-        "has_tip": bool(cfg and cfg["has_tip"]),
-        "tip_percentage": float(cfg["tip_percentage"]) if cfg else 0.0,
+        "has_tip": fac["liquidar_propina"],
+        "tip_percentage": float(fac["porcentaje_propina"] or 0),
         "tip_label": (cfg["tip_label"] if cfg else None) or "Propina",
+        "ask_tip": fac["preguntar_valor_propina"],
         "has_pos_electronico": bool(cfg and cfg["has_pos_electronico"]),
     }
 
@@ -120,8 +124,8 @@ async def datos_pago(
         WHERE company_id = :cid AND Desactivada = 0 AND Id_Tipificacion <> 0
         ORDER BY Nombre
     """), {"cid": cid})).mappings().all()
-    billetes = [int(r[0]) for r in (await db.execute(text(
-        "SELECT value FROM pos_cash_denominations WHERE company_id=:cid ORDER BY sort_order, value DESC"
+    billetes = [{"value": int(r[0]), "image_path": r[1]} for r in (await db.execute(text(
+        "SELECT value, image_path FROM pos_cash_denominations WHERE company_id=:cid ORDER BY sort_order, value DESC"
     ), {"cid": cid})).all()]
 
     customer = await clientes_svc.get_cliente(db, cid, int(orden["Id_Cliente"] or 0) or clientes_svc.CONSUMIDOR_FINAL_ID)
@@ -152,7 +156,8 @@ async def datos_pago(
         },
         "items": out_items,
         "customer": customer,
-        "tip": {"enabled": cfg["has_tip"], "percentage": cfg["tip_percentage"], "label": cfg["tip_label"]},
+        "tip": {"enabled": cfg["has_tip"], "percentage": cfg["tip_percentage"], "label": cfg["tip_label"],
+                "ask_value": cfg["ask_tip"]},
         "has_pos_electronico": cfg["has_pos_electronico"],
         "payment_types": [dict(p) for p in payment_types],
         "waiters": [dict(w) for w in waiters],

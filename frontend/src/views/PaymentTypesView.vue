@@ -19,18 +19,31 @@
       <div class="billetes-hdr">
         <div>
           <div class="billetes-ttl"><i class="bi bi-cash-stack me-1"></i> Billetes rápidos</div>
-          <div class="billetes-sub">Tarjetas que aparecen al pagar en efectivo (máximo 6).</div>
+          <div class="billetes-sub">Tarjetas que aparecen al pagar en efectivo (máximo {{ MAX_BILLETES }}). La foto ayuda al cajero a reconocer el billete.</div>
         </div>
         <button class="btn btn-primary btn-sm" :disabled="savingBilletes" @click="guardarBilletes">
           {{ savingBilletes ? 'Guardando…' : 'Guardar' }}
         </button>
       </div>
       <div class="billetes-grid">
-        <div v-for="(b, i) in billetes" :key="i" class="billete">
-          <CurrencyInput v-model="billetes[i]" class="form-control billete-inp" />
-          <button class="billete-del" @click="billetes.splice(i, 1)" title="Quitar"><i class="bi bi-x-lg"></i></button>
+        <div v-for="(b, i) in billetes" :key="b.key" class="billete">
+          <ImageUploaderPro
+            class="billete-foto"
+            :current-url="b.image_path"
+            :output-width="640"
+            output-format="webp"
+            :output-quality="0.85"
+            label="Foto del billete"
+            :show-remove="true"
+            @change="blob => subirFoto(b, blob)"
+            @remove="quitarFoto(b)"
+          />
+          <div class="billete-row">
+            <CurrencyInput v-model="b.value" class="form-control billete-inp" />
+            <button class="billete-del" @click="billetes.splice(i, 1)" title="Quitar"><i class="bi bi-x-lg"></i></button>
+          </div>
         </div>
-        <button v-if="billetes.length < 6" class="billete-add" @click="billetes.push(0)"><i class="bi bi-plus-lg"></i> Agregar</button>
+        <button v-if="billetes.length < MAX_BILLETES" class="billete-add" @click="agregarBillete"><i class="bi bi-plus-lg"></i> Agregar</button>
       </div>
     </div>
 
@@ -251,6 +264,7 @@
 </template>
 
 <script setup>
+import ImageUploaderPro from "@/components/common/ImageUploaderPro.vue"
 import { ref, computed, onMounted } from "vue"
 import { useCompanyStore } from "@/stores/companyStore"
 import { useModuleName } from "@/composables/useModuleName"
@@ -300,22 +314,52 @@ async function load() {
   loading.value = false
 }
 
-// ── Billetes rápidos ───────────────────────────────────────────────────────────
-const billetes       = ref([])
+// ── Billetes rápidos (máx. 10, con foto) ─────────────────────────────────────
+const MAX_BILLETES   = 10
+const billetes       = ref([])      // [{ key, value, image_path }]
 const savingBilletes = ref(false)
+let billeteSeq = 0
+const toBillete = r => ({ key: ++billeteSeq, value: r.value, image_path: r.image_path || null })
 async function cargarBilletes() {
-  try { billetes.value = (await api.get("/api/payment-types/billetes")).data }
+  try { billetes.value = (await api.get("/api/payment-types/billetes")).data.map(toBillete) }
   catch { billetes.value = [] }
 }
+function agregarBillete() { billetes.value.push({ key: ++billeteSeq, value: 0, image_path: null }) }
+async function persistirBilletes() {
+  const values = billetes.value.map(b => Math.round(Number(b.value) || 0)).filter(v => v > 0)
+  const { data } = await api.put("/api/payment-types/billetes", { values })
+  billetes.value = data.billetes.map(toBillete)
+}
 async function guardarBilletes() {
-  const values = billetes.value.map(v => Math.round(Number(v) || 0)).filter(v => v > 0)
   savingBilletes.value = true
   try {
-    const { data } = await api.put("/api/payment-types/billetes", { values })
-    billetes.value = data.values
+    await persistirBilletes()
     showToast("Billetes guardados", "success")
   } catch (e) { showToast(e?.response?.data?.detail ?? "Error al guardar billetes", "error") }
   savingBilletes.value = false
+}
+// La foto se asocia al valor del billete: primero se guarda la lista y luego se sube
+async function subirFoto(b, blob) {
+  const value = Math.round(Number(b.value) || 0)
+  if (value <= 0) { showToast("Escribe primero el valor del billete", "warning"); return }
+  savingBilletes.value = true
+  try {
+    await persistirBilletes()
+    const fd = new FormData()
+    fd.append("file", blob, `billete_${value}.webp`)
+    const { data } = await api.post(`/api/payment-types/billetes/${value}/foto`, fd)
+    const t = billetes.value.find(x => x.value === value)
+    if (t) t.image_path = data.image_path
+    showToast("Foto guardada", "success")
+  } catch (e) { showToast(e?.response?.data?.detail ?? "Error al subir la foto", "error") }
+  savingBilletes.value = false
+}
+async function quitarFoto(b) {
+  if (!b.image_path) return
+  try {
+    await api.delete(`/api/payment-types/billetes/${Math.round(Number(b.value) || 0)}/foto`)
+    b.image_path = null
+  } catch (e) { showToast(e?.response?.data?.detail ?? "Error al quitar la foto", "error") }
 }
 
 // ── Abrir modal ────────────────────────────────────────────────────────────────
@@ -421,11 +465,16 @@ onMounted(() => { load(); cargarBilletes() })
 .billetes-hdr  { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
 .billetes-ttl  { font-weight: 700; color: #1e293b; font-size: 14px; }
 .billetes-sub  { font-size: 12px; color: #64748b; }
-.billetes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.billete       { display: flex; gap: 4px; }
+.billetes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.billete       { display: flex; flex-direction: column; gap: 6px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px; }
+.billete-row   { display: flex; gap: 4px; }
+.billete-foto :deep(.iup-preview) { height: 92px; }
+.billete-foto :deep(.iup-preview__paste-hint) { display: none; }
+.billete-foto :deep(.iup-preview__empty i) { font-size: 22px; }
+.billete-foto :deep(.iup-btn) { padding: 4px 6px; font-size: 12px; }
 .billete-inp   { text-align: right; font-weight: 700; }
 .billete-del   { border: 1.5px solid #fecaca; background: #fef2f2; color: #dc2626; border-radius: 8px; padding: 0 8px; cursor: pointer; }
-.billete-add   { border: 1.5px dashed #93c5fd; background: #fff; color: #1d4ed8; border-radius: 8px; padding: 8px; font-weight: 700; cursor: pointer; }
+.billete-add   { border: 1.5px dashed #93c5fd; background: #fff; color: #1d4ed8; border-radius: 10px; padding: 8px; font-weight: 700; cursor: pointer; min-height: 120px; }
 .page-container { padding: 24px; max-width: 1100px; }
 .page-header    { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-title     { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 4px; display: flex; align-items: center; }
@@ -481,6 +530,9 @@ onMounted(() => { load(); cargarBilletes() })
 @media (max-width: 576px) {
   .page-title { font-size: 18px; }
   .pt-name { font-size: 13px; }
+  .billetes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .billetes-hdr { flex-wrap: wrap; }
+  .billete-foto :deep(.iup-preview) { height: 78px; }
 }
 
 /* ── Modal (no hay estilos globales para estas clases) ──────────────── */

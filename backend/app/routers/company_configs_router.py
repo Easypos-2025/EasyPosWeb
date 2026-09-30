@@ -231,6 +231,16 @@ async def upsert_company_config(
     if "has_tv_cocina" in body:
         cfg.has_tv_cocina = int(bool(body["has_tv_cocina"]))
 
+    # La propina vive en configuracion_facturacion (espejo del escritorio): mantenerla igual
+    if "has_tip" in body or "tip_percentage" in body:
+        from sqlalchemy import text as _text
+        from app.services import config_facturacion as cfg_facturacion
+        await cfg_facturacion.get_config(db, company_id)
+        await db.execute(_text(
+            "UPDATE configuracion_facturacion SET liquidar_propina=:t, porcentaje_propina=:p, synced=0 "
+            "WHERE company_id=:cid"
+        ), {"t": int(bool(cfg.has_tip)), "p": float(cfg.tip_percentage or 0), "cid": company_id})
+
     await db.commit()
     await db.refresh(cfg)
     return _config_dict(cfg)

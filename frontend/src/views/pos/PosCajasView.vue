@@ -2,7 +2,7 @@
   <div class="crud-view">
     <div class="crud-header">
       <div>
-        <h5 class="crud-titulo">Cajas Registradoras</h5>
+        <h5 class="crud-titulo">{{ moduleName || 'Cajas' }}</h5>
         <p class="crud-sub">Define las cajas disponibles (principal y auxiliares)</p>
       </div>
       <button class="btn-nuevo" @click="abrirModal()">
@@ -24,6 +24,9 @@
           <span class="caja-tipo-badge">{{ caja.type === 'main' ? 'Principal' : 'Auxiliar' }}</span>
         </div>
         <div class="caja-nombre">{{ caja.name }}</div>
+        <div class="caja-printer" :class="{ 'caja-printer--none': !caja.printer_id }">
+          <i class="bi bi-printer"></i> {{ nombreImpresora(caja.printer_id) }}
+        </div>
         <div v-if="!caja.is_active" class="caja-inactiva">Inactiva</div>
         <div class="caja-acciones">
           <button class="btn-icono" @click="abrirModal(caja)"><i class="bi bi-pencil"></i></button>
@@ -55,6 +58,13 @@
               <i class="bi bi-info-circle me-1"></i>Solo puede haber una caja principal. Las demás se cambiarán a auxiliar.
             </p>
           </div>
+          <div class="campo"><label>Impresora de recibos</label>
+            <select v-model.number="modal.printer_id" class="inp">
+              <option :value="0">— La de Configuración Facturación —</option>
+              <option v-for="p in impresoras" :key="p.id" :value="p.id">{{ p.name }}{{ p.connection_type ? ` · ${p.connection_type}` : '' }}</option>
+            </select>
+            <p class="tip-printer">Se propone al imprimir los recibos de los turnos abiertos en esta caja.</p>
+          </div>
           <div class="campo-check">
             <input type="checkbox" v-model="modal.is_active" :true-value="1" :false-value="0" id="chkA" />
             <label for="chkA">Activa</label>
@@ -76,14 +86,26 @@
 import { ref, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
+import { useModuleName } from '@/composables/useModuleName'
+
+const { moduleName } = useModuleName()
 
 const BASE     = '/api/pos-catalogo/cajas'
 const items    = ref([])
 const loading  = ref(true)
 const guardando= ref(false)
-const modal    = ref({ visible:false, id:null, name:'', type:'auxiliary', is_active:1 })
+const modal    = ref({ visible:false, id:null, name:'', type:'auxiliary', is_active:1, printer_id:0 })
+const impresoras = ref([])
 
-onMounted(cargar)
+onMounted(() => { cargar(); cargarImpresoras() })
+
+async function cargarImpresoras() {
+  try { impresoras.value = (await api.get(`${BASE}/impresoras`)).data } catch { impresoras.value = [] }
+}
+function nombreImpresora(id) {
+  if (!id) return 'Impresora de Config. Facturación'
+  return impresoras.value.find(p => p.id === id)?.name || `Impresora ${id}`
+}
 
 async function cargar() {
   loading.value = true
@@ -93,8 +115,8 @@ async function cargar() {
 
 function abrirModal(c=null) {
   modal.value = c
-    ? { visible:true, id:c.id, name:c.name, type:c.type, is_active:c.is_active }
-    : { visible:true, id:null, name:'', type:'auxiliary', is_active:1 }
+    ? { visible:true, id:c.id, name:c.name, type:c.type || 'auxiliary', is_active:c.is_active, printer_id:c.printer_id || 0 }
+    : { visible:true, id:null, name:'', type:'auxiliary', is_active:1, printer_id:0 }
 }
 function cerrarModal() { modal.value.visible = false }
 
@@ -102,7 +124,7 @@ async function guardar() {
   if (!modal.value.name) return
   guardando.value = true
   try {
-    const p = { name:modal.value.name, type:modal.value.type, is_active:modal.value.is_active }
+    const p = { name:modal.value.name, type:modal.value.type, is_active:modal.value.is_active, printer_id:modal.value.printer_id || 0 }
     if (modal.value.id !== null) await api.put(`${BASE}/${modal.value.id}`, p)
     else                         await api.post(BASE, p)
     showToast('Caja guardada', 'success')
@@ -163,5 +185,17 @@ async function eliminar(id) {
 .btn-cancel    { background:#f1f5f9;border:none;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer;color:#475569;font-weight:600; }
 .btn-save      { background:linear-gradient(90deg,#1e3a5f,#1d4ed8);border:none;border-radius:8px;padding:9px 20px;font-size:14px;font-weight:700;color:#fff;cursor:pointer; }
 .btn-save:disabled { opacity:.6;cursor:not-allowed; }
-@media(max-width:768px){.crud-header{flex-direction:column;gap:10px;}}
+.caja-printer  { font-size:12px;color:#475569;margin-bottom:4px; }
+.caja-printer--none { color:#94a3b8; }
+.tip-printer   { font-size:11px;color:#64748b;margin:0; }
+@media(max-width:768px){
+  .crud-header{flex-direction:column;gap:10px;}
+  .modal-overlay{ align-items:flex-end; }
+  .modal-card{ border-radius:16px 16px 0 0;max-width:100%; }
+}
+@media(max-width:576px){
+  .cajas-grid{ grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+  .caja-card{ padding:12px 8px; }
+  .caja-nombre{ font-size:14px; }
+}
 </style>

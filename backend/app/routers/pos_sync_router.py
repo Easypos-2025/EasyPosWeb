@@ -2304,6 +2304,70 @@ async def pull_cash_registers(
 
 
 # ═════════════════════════════════════════
+# CONFIGURACION_FACTURACION (una fila por empresa)
+# ═════════════════════════════════════════
+class ConfigFacturacionIn(BaseModel):
+    company_id: int
+    id_sede: Optional[int] = None
+    impuesto_iva: Optional[float] = 0
+    impuesto_impoconsumo: Optional[float] = 0
+    impuesto_rete_fuente: Optional[float] = 0
+    liquidar_propina: Optional[int] = 0
+    resolucion_propina: Optional[str] = ""
+    paga_impuesto: Optional[int] = 0
+    precios_incluyen_impuesto: Optional[int] = 0
+    imprimir_logo_factura: Optional[int] = 0
+    nombre_logo_factura: Optional[str] = ""
+    tipo_moneda: Optional[int] = 1
+    texto_numeracion: Optional[str] = ""
+    nombre_cliente_facturacion_varia: Optional[str] = ""
+    codigo_cliente_facturacion_varia: Optional[str] = ""
+    id_cliente_facturacion_varia: Optional[float] = 1
+    usa_lector_barras: Optional[int] = 0
+    imprimir_encabezado_factura: Optional[int] = 1
+    impresora_facturas: Optional[int] = None
+    mensaje_factura: Optional[str] = ""
+    longitud_factura_sistema: Optional[int] = 1
+    longitud_factura_manual: Optional[int] = 1
+    cantidad_impresiones_factura: Optional[int] = 1
+    porcentaje_propina: Optional[float] = 0
+    activar_precio_x_mayor: Optional[int] = 0
+    usar_precuenta: Optional[int] = 0
+    imprimir_resolucion_propina: Optional[int] = 0
+    imprimir_datos_legales: Optional[int] = 0
+    imprimir_datos_cliente: Optional[int] = 0
+    imprimir_recibo_domiciliario: Optional[int] = 0
+    preguntar_valor_propina: Optional[int] = 0
+    usar_comanda_corta: Optional[int] = 0
+
+
+@router.post("/sync/push/billing-config")
+async def push_billing_config(
+    rows: List[ConfigFacturacionIn],
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
+):
+    """configuracion_facturacion del escritorio → web. Una fila por empresa (la de la sede).
+    Replica la propina en company_configs."""
+    from app.services import config_facturacion as cfg_svc
+    saved, failed = [], []
+    for r in rows:
+        try:
+            datos = r.dict()
+            cid = datos.pop("company_id")
+            for k in ("resolucion_propina", "nombre_logo_factura", "texto_numeracion", "mensaje_factura",
+                      "nombre_cliente_facturacion_varia", "codigo_cliente_facturacion_varia"):
+                datos[k] = (datos.get(k) or "")[: 3000 if k == "resolucion_propina" else 255]
+            await cfg_svc.guardar(db, cid, datos, synced=1)
+            saved.append(cid)
+        except Exception as e:
+            failed.append({"id": r.company_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(rows), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+# ═════════════════════════════════════════
 # PRINTERS (impresoras)
 # ═════════════════════════════════════════
 class PrinterIn(BaseModel):

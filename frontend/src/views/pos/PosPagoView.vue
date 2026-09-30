@@ -1,5 +1,5 @@
 <template>
-  <div class="pg">
+  <div class="pg" ref="pgRef" :style="pgStyle">
     <TurnoCajaModal v-if="!checkingTurno && !turnoAbierto" @opened="onTurnoAbierto" />
 
     <div v-if="loading" class="pg-state"><div class="spinner-border text-primary"></div></div>
@@ -167,9 +167,9 @@
                          @close="dom.selCliente = false" @select="c => { dom.cliente = c; dom.selCliente = false }" />
 
     <!-- Modal genérico: propina manual / domicilio / observación -->
-    <div v-if="modal.show" class="pg-ov" @click.self="modal.show = false">
+    <div v-if="modal.show" class="pg-ov" @click.self="cerrarModal">
       <div class="pg-modal">
-        <div class="pg-modal-hdr">{{ modal.title }}<button class="pg-x" @click="modal.show = false"><i class="bi bi-x-lg"></i></button></div>
+        <div class="pg-modal-hdr">{{ modal.title }}<button class="pg-x" @click="cerrarModal"><i class="bi bi-x-lg"></i></button></div>
         <div class="pg-modal-body">
           <template v-if="modal.kind === 'propina'">
             <label class="pg-lbl">Valor de la {{ datos.tip.label.toLowerCase() }}</label>
@@ -209,8 +209,11 @@
             </div>
           </div>
           <div class="cash-grid">
-            <button v-for="b in datos.cash_denominations" :key="b" class="cash-card" @click="cash.recibido += b">
-              <i class="bi bi-cash"></i>{{ fmt(b) }}
+            <button v-for="b in datos.cash_denominations" :key="b.value"
+                    :class="['cash-card', { 'cash-card--foto': b.image_path }]" @click="cash.recibido += b.value">
+              <img v-if="b.image_path" :src="imgSrc(b.image_path)" class="cash-img" alt="" loading="lazy" />
+              <i v-else class="bi bi-cash"></i>
+              <span class="cash-val">{{ fmt(b.value) }}</span>
             </button>
             <button class="cash-card cash-card--exact" @click="cash.recibido = cash.aCubrir"><i class="bi bi-bullseye"></i>Exacto</button>
           </div>
@@ -227,6 +230,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Vista previa del recibo: Imprimir (predeterminada) · PDF · Excel · Cancelar -->
+    <ImprimirRecibo
+      v-if="imprimir.show && imprimir.data"
+      :receiptData="imprimir.data"
+      :companyId="companyId"
+      printersPath="/api/pos/recibo-impresion/impresoras"
+      printPath="/api/pos/recibo-impresion/imprimir"
+      @close="cerrarImpresion"
+    />
 
     <!-- Cambio en grande (se cierra solo) -->
     <div v-if="cambioVisible" class="pg-ov pg-ov--cambio" @click="cerrarCambio">
@@ -245,6 +258,8 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/apis'
 import TurnoCajaModal from '@/components/pos/TurnoCajaModal.vue'
 import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
+import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
+import { useCompanyStore } from '@/stores/companyStore'
 import { showToast } from '@/utils/toast'
 
 const route  = useRoute()
@@ -260,6 +275,8 @@ const loading       = ref(true)
 const errorCarga    = ref('')
 const registrando   = ref(false)
 const datos         = ref(null)
+const companyStore  = useCompanyStore()
+const companyId     = computed(() => companyStore.selectedCompany?.id || 0)
 const cliente       = ref({ id_cliente: 1, nombre: 'Consumidor Final' })
 const tab           = ref('previa')
 const seleccion     = ref(new Set())
@@ -271,12 +288,17 @@ const form = reactive({
   payments: [],
 })
 const dom   = reactive({ cliente: null, selCliente: false })
-const modal = reactive({ show: false, kind: '', title: '', value: 0, text: '' })
+const modal = reactive({ show: false, kind: '', title: '', value: 0, text: '', continuar: false })
 const cash  = reactive({ show: false, linea: null, aCubrir: 0, recibido: 0, libre: 0 })
 const cambioVisible = ref(false)
 const cambioValor   = ref(0)
 const ultimoRecibo  = ref('')
 let cambioTimer = null
+const API_BASE = import.meta.env.VITE_API_URL || ''
+const imgSrc = u => (!u || /^(https?:|blob:|data:)/.test(u)) ? u : API_BASE + u
+// Impresión del recibo recién registrado (vista previa con la impresora predeterminada)
+const imprimir = reactive({ show: false, data: null, luego: null })
+let propinaPreguntada = false
 
 // ── Carga ──────────────────────────────────────────────────────────────────
 async function verificarTurno() {
@@ -297,6 +319,7 @@ async function cargar() {
     form.waiter_id = data.order.waiter_id || 0
     form.typification_id = 0; form.monto_pesos = 0; form.desc_obs = ''
     form.tip_mode = data.tip.enabled ? 'auto' : 'none'
+    propinaPreguntada = false
     seleccion.value = new Set(data.items.map(i => i.item))       // todo marcado por defecto
     const def = data.payment_types.find(p => p.is_default) || data.payment_types[0]
     form.payments = [{ payment_method_id: def?.id || null, amount: 0, auto: true }]
@@ -416,24 +439,33 @@ function abrirDomicilio() {
 }
 function abrirObservacion() { Object.assign(modal, { show: true, kind: 'observacion', title: 'Observación', text: form.observacion }) }
 function aceptarModal() {
-  if (modal.kind === 'propina') { form.tip_manual = Math.round(Number(modal.value) || 0); form.tip_mode = 'manual' }
+  if (modal.kind === 'propina') { form.tip_manual = Math.round(Number(modal.value) || 0); form.tip_mode = 'manual'; propinaPreguntada = true }
   else if (modal.kind === 'domicilio') {
     if ((Number(modal.value) || 0) > 0 && !dom.cliente) { showToast('Seleccione el cliente del domicilio', 'warning'); return }
     form.delivery_amount = Math.round(Number(modal.value) || 0)
   } else form.observacion = (modal.text || '').trim()
   modal.show = false
+  if (modal.continuar) { modal.continuar = false; registrar() }
 }
+// Cerrar con la X o por fuera: no registra (si venía de RECIBO, se cancela el registro)
+function cerrarModal() { modal.show = false; modal.continuar = false }
 function quitarModal() {
-  if (modal.kind === 'propina') form.tip_mode = 'none'
+  if (modal.kind === 'propina') { form.tip_mode = 'none'; propinaPreguntada = true }
   if (modal.kind === 'domicilio') { form.delivery_amount = 0; dom.cliente = null }
   modal.show = false
+  if (modal.continuar) { modal.continuar = false; registrar() }
 }
 
 // ── Registrar ────────────────────────────────────────────────────────────────
 function facturar() { showToast('La factura electrónica desde esta pantalla se habilita en la siguiente fase', 'info') }
 
 async function registrar() {
-  if (!puedeRegistrar.value || registrando.value) return
+  if (!puedeRegistrar.value || registrando.value || imprimir.show) return
+  // Config. Facturación → "Preguntar valor propina": se confirma el valor antes de asentar
+  if (datos.value.tip.enabled && datos.value.tip.ask_value && form.tip_mode === 'auto' && !propinaPreguntada) {
+    Object.assign(modal, { show: true, kind: 'propina', title: `¿Valor de ${datos.value.tip.label}?`, value: propina.value, continuar: true })
+    return
+  }
   registrando.value = true
   try {
     const { data } = await api.post(`/api/pos/pago/${orderNumber}`, {
@@ -463,12 +495,28 @@ async function registrar() {
         router.push('/restaurante')
       }
     }
-    if (data.change > 0) mostrarCambio(data.change, siguiente)
-    else siguiente()
+    const previa = () => abrirImpresion(data.receipt_number, siguiente)
+    if (data.change > 0) mostrarCambio(data.change, previa)
+    else previa()
   } catch (e) {
     showToast(e?.response?.data?.detail ?? 'Error al registrar el recibo', 'error')
   }
   registrando.value = false
+}
+
+async function abrirImpresion(receiptNumber, luego) {
+  try {
+    const { data } = await api.get(`/api/pos/recibo-impresion/${encodeURIComponent(receiptNumber)}`)
+    Object.assign(imprimir, { show: true, data, luego })
+  } catch {
+    showToast('No se pudo cargar la vista previa del recibo', 'warning')
+    luego()
+  }
+}
+function cerrarImpresion() {
+  const f = imprimir.luego
+  Object.assign(imprimir, { show: false, data: null, luego: null })
+  if (f) f()
 }
 
 let despuesCambio = null
@@ -487,22 +535,36 @@ function cerrarCambio() {
 
 // ── Atajos F5 / F6 ───────────────────────────────────────────────────────────
 function onKey(e) {
+  if (imprimir.show) return
   if (e.key === 'F6') { e.preventDefault(); registrar() }
   else if (e.key === 'F5') { e.preventDefault(); if (datos.value?.has_pos_electronico) facturar() }
   else if (e.key === 'Escape' && cambioVisible.value) cerrarCambio()
 }
 
+// La vista ocupa exactamente el alto visible: solo se desplazan las listas internas
+const pgRef   = ref(null)
+const pgStyle = ref({})
+function ajustarAlto() {
+  const el = pgRef.value
+  if (!el) return
+  const top    = el.getBoundingClientRect().top + (el.closest('.content')?.scrollTop || 0)
+  const footer = document.querySelector('.footer')?.offsetHeight || 0
+  pgStyle.value = { height: `${Math.max(420, window.innerHeight - top - footer)}px` }
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  window.addEventListener('resize', ajustarAlto)
+  ajustarAlto()
   await verificarTurno()
   if (turnoAbierto.value) await cargar()
   else loading.value = false
 })
-onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearTimeout(cambioTimer) })
+onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', ajustarAlto); clearTimeout(cambioTimer) })
 </script>
 
 <style scoped>
-.pg { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #f1f5f9; }
+.pg { display: flex; flex-direction: column; height: calc(100dvh - 120px); min-height: 0; overflow: hidden; margin-bottom: -40px; background: #f1f5f9; }
 .pg-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
 
 /* Encabezado */
@@ -576,7 +638,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearTimeo
 
 /* Modales */
 .pg-ov { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px; }
-.pg-modal { background: #fff; border-radius: 16px; width: 100%; max-width: 440px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+.pg-modal { background: #fff; border-radius: 16px; width: 100%; max-width: 520px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
 .pg-modal-hdr { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; font-weight: 800; color: #1e293b; border-bottom: 1px solid #f1f5f9; }
 .pg-x { background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; }
 .pg-modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
@@ -586,9 +648,12 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearTimeo
 .cash-sum span { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
 .cash-sum b { font-size: 16px; }
 .cash-sum .ok b { color: #15803d; } .cash-sum .bad b { color: #dc2626; }
-.cash-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cash-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .cash-card { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid #bbf7d0; background: #f0fdf4; color: #14532d; border-radius: 12px; padding: 14px 6px; font-size: 16px; font-weight: 800; cursor: pointer; }
 .cash-card i { font-size: 20px; }
+.cash-card--foto { padding: 6px; gap: 2px; }
+.cash-img { width: 100%; height: 64px; object-fit: cover; border-radius: 8px; }
+.cash-val { line-height: 1.2; }
 .cash-card--exact { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .pg-ov--cambio { background: rgba(15,23,42,.8); cursor: pointer; }
 .cambio-box { background: #16a34a; color: #fff; border-radius: 24px; padding: 40px 60px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
@@ -606,8 +671,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearTimeo
 @media (max-width: 768px) {
   .pg-hdr-field { max-width: none; min-width: 100%; }
   .pg-main { display: flex; flex-direction: column; overflow-y: auto; padding: 10px; }
-  .pg-left { overflow: visible; }
-  .pg-right { min-height: 320px; }
+  .pg-left { overflow: visible; flex-shrink: 0; }
+  .pg-right { flex-shrink: 0; height: 62dvh; min-height: 300px; }
   .pg-foot { flex-direction: column; align-items: stretch; position: sticky; bottom: 0; }
   .pg-vals { gap: 6px; }
   .pg-v { flex: 1; min-width: 30%; }
@@ -617,6 +682,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearTimeo
   .pg-ov--cambio { align-items: center; padding: 16px; }
   .cambio-box { padding: 30px 24px; }
   .cambio-val { font-size: 48px; }
+  .cash-grid { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 576px) {
   .pg-mesa { font-size: 15px; }

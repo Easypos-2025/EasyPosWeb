@@ -108,6 +108,8 @@ from app.routers.pos_payment_types_router import router as pos_payment_types_rou
 from app.routers.pos_shift_router import router as pos_shift_router
 from app.routers.pos_discount_types_router import router as pos_discount_types_router
 from app.routers.pos_pago_router import router as pos_pago_router
+from app.routers.pos_recibo_impresion_router import router as pos_recibo_impresion_router
+from app.routers.config_facturacion_router import router as config_facturacion_router
 from app.routers.metricas_router import router as metricas_router
 from app import models  # asegura que plan_model se registre en Base
 
@@ -2528,6 +2530,8 @@ routers = [
     pos_shift_router,
     pos_discount_types_router,
     pos_pago_router,
+    pos_recibo_impresion_router,
+    config_facturacion_router,
     metricas_router,
 ]
 

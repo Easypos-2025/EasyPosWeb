@@ -97,6 +97,7 @@ async def get_ventas(
                      WHERE invoice_number = i.invoice_number AND company_id = i.company_id), 0
                 )                                          AS domicilio,
                 COALESCE(o.table_name, '')                 AS mesa,
+                COALESCE(o.order_number, '')               AS order_number,
                 COALESCE(i.shift, '')                      AS turno,
                 'factura'                                  AS tipo
             FROM pos_invoices i
@@ -130,6 +131,7 @@ async def get_ventas(
                      WHERE invoice_number = rc.receipt_number AND company_id = rc.company_id), 0
                 )                                         AS domicilio,
                 COALESCE(ro.table_name, '')               AS mesa,
+                COALESCE(ro.order_number, '')             AS order_number,
                 COALESCE(rc.shift, '')                    AS turno,
                 'recibo'                                  AS tipo
             FROM pos_receipts rc

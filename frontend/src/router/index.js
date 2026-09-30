@@ -647,6 +647,13 @@ const routes = [
         meta: { title: "Tipificaciones de Descuento" }
       },
       {
+        path: "/configuration/facturacion",
+        name: "ConfigFacturacionView",
+        component: () => import("@/views/ConfigFacturacionView.vue"),
+        requiresAuth: true,
+        meta: { title: "Configuración Facturación" }
+      },
+      {
         path: "/payment-types",
         name: "PaymentTypesView",
         component: () => import("@/views/PaymentTypesView.vue"),

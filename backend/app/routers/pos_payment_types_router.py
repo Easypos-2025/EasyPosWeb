@@ -1,19 +1,44 @@
 from fastapi import Depends
 from app.auth.tenant import tenant_guard
-from fastapi import APIRouter, Depends, Query, HTTPException
+import io
+import uuid
+
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
+from PIL import Image, ImageOps
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.database import get_db
 from app.auth.dependencies import get_current_user
+from app.utils.storage import upload_file, delete_file
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/payment-types", tags=["Payment Types"], dependencies=[Depends(tenant_guard)])
 
 
-# ─── Billetes rápidos (pago en efectivo) — máx. 6 por empresa ─────────────────
+# ─── Billetes rápidos (pago en efectivo) — máx. 10 por empresa, con foto ──────
 # Declarados antes de /{payment_id} para que esa ruta no los capture.
-_MAX_BILLETES = 6
+_MAX_BILLETES = 10
+_FOTO_MAX_BYTES = 5 * 1024 * 1024
+_FOTO_TIPOS = {"image/jpeg", "image/png", "image/webp"}
+
+
+def _procesar_foto_billete(content: bytes) -> bytes:
+    """Valida que sea una imagen real (JPEG/PNG/WebP) y la re-codifica a WebP de máx.
+    640 px: descarta metadatos y cualquier contenido que no sea la imagen."""
+    try:
+        with Image.open(io.BytesIO(content)) as probe:
+            if probe.format not in ("JPEG", "PNG", "WEBP"):
+                raise ValueError
+            probe.verify()
+        img = Image.open(io.BytesIO(content))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        img.thumbnail((640, 640), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="WEBP", quality=82)
+        return out.getvalue()
+    except (ValueError, OSError, Image.DecompressionBombError):
+        raise HTTPException(status_code=400, detail="El archivo no es una imagen válida (JPG, PNG o WebP)")
 
 
 @router.get("/billetes")
@@ -22,9 +47,9 @@ async def list_billetes(
     current_user=Depends(get_current_user),
 ):
     rows = (await db.execute(text(
-        "SELECT value FROM pos_cash_denominations WHERE company_id = :cid ORDER BY sort_order, value DESC"
-    ), {"cid": current_user.company_id})).all()
-    return [int(r[0]) for r in rows]
+        "SELECT value, image_path FROM pos_cash_denominations WHERE company_id = :cid ORDER BY sort_order, value DESC"
+    ), {"cid": current_user.company_id})).mappings().all()
+    return [{"value": int(r["value"]), "image_path": r["image_path"]} for r in rows]
 
 
 @router.put("/billetes")
@@ -33,7 +58,8 @@ async def set_billetes(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Reemplaza la lista de billetes de la empresa (valores enteros > 0, sin repetir)."""
+    """Reemplaza la lista de billetes de la empresa (valores enteros > 0, sin repetir).
+    Cada billete que se mantiene conserva su foto; la de los eliminados se borra."""
     raw = body.get("values") or []
     if not isinstance(raw, list):
         raise HTTPException(status_code=422, detail="values debe ser una lista")
@@ -45,13 +71,67 @@ async def set_billetes(
     if len(values) > _MAX_BILLETES:
         raise HTTPException(status_code=422, detail=f"Máximo {_MAX_BILLETES} billetes")
     cid = current_user.company_id
+    fotos = {int(r[0]): r[1] for r in (await db.execute(text(
+        "SELECT value, image_path FROM pos_cash_denominations WHERE company_id = :cid"
+    ), {"cid": cid})).all()}
     await db.execute(text("DELETE FROM pos_cash_denominations WHERE company_id = :cid"), {"cid": cid})
     for i, v in enumerate(values):
         await db.execute(text(
-            "INSERT INTO pos_cash_denominations (company_id, value, sort_order) VALUES (:cid, :v, :o)"
-        ), {"cid": cid, "v": v, "o": i})
+            "INSERT INTO pos_cash_denominations (company_id, value, sort_order, image_path) VALUES (:cid, :v, :o, :img)"
+        ), {"cid": cid, "v": v, "o": i, "img": fotos.get(v)})
     await db.commit()
-    return {"ok": True, "values": values}
+    for v, path in fotos.items():
+        if path and v not in values:
+            await delete_file(path)
+    return {"ok": True, "billetes": [{"value": v, "image_path": fotos.get(v)} for v in values]}
+
+
+@router.post("/billetes/{value}/foto")
+async def foto_billete(
+    value: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    cid = current_user.company_id
+    old = (await db.execute(text(
+        "SELECT image_path FROM pos_cash_denominations WHERE company_id = :cid AND value = :v"
+    ), {"cid": cid, "v": value})).first()
+    if old is None:
+        raise HTTPException(status_code=404, detail="Guarde primero el billete")
+    if file.content_type not in _FOTO_TIPOS:
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido (JPG, PNG o WebP)")
+    content = await file.read(_FOTO_MAX_BYTES + 1)
+    if len(content) > _FOTO_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Imagen demasiado grande (máx 5 MB)")
+    webp = _procesar_foto_billete(content)
+    url = await upload_file(webp, f"billetes/{cid}/{value}_{uuid.uuid4().hex[:12]}.webp")
+    await db.execute(text(
+        "UPDATE pos_cash_denominations SET image_path = :url WHERE company_id = :cid AND value = :v"
+    ), {"url": url, "cid": cid, "v": value})
+    await db.commit()
+    if old[0]:
+        await delete_file(old[0])
+    return {"ok": True, "image_path": url}
+
+
+@router.delete("/billetes/{value}/foto")
+async def quitar_foto_billete(
+    value: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    cid = current_user.company_id
+    old = (await db.execute(text(
+        "SELECT image_path FROM pos_cash_denominations WHERE company_id = :cid AND value = :v"
+    ), {"cid": cid, "v": value})).scalar()
+    await db.execute(text(
+        "UPDATE pos_cash_denominations SET image_path = NULL WHERE company_id = :cid AND value = :v"
+    ), {"cid": cid, "v": value})
+    await db.commit()
+    if old:
+        await delete_file(old)
+    return {"ok": True}
 
 # ─── Listar ────────────────────────────────────────────────────────────────────
 @router.get("")

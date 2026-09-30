@@ -26,10 +26,20 @@
             <div class="recibo-wrap" id="print-receipt">
               <div class="recibo">
                 <div class="r-empresa">{{ nombreEmpresa }}</div>
+                <template v-if="emp && emp.encabezado">
+                  <div v-if="emp.nit" class="r-emp-line">NIT {{ emp.nit }}</div>
+                  <div v-if="emp.direccion" class="r-emp-line">{{ emp.direccion }}</div>
+                  <div v-if="emp.telefono" class="r-emp-line">Tel. {{ emp.telefono }}</div>
+                </template>
                 <div class="r-titulo">RECIBO DE VENTA</div>
                 <div class="r-meta">
                   <div>Recibo N°: <strong>{{ receiptData.receipt_number }}</strong></div>
-                  <div>Orden: <strong>{{ receiptData.ordenNumero }}</strong></div>
+                  <div v-if="receiptData.ordenNumero">Orden: <strong>{{ receiptData.ordenNumero }}</strong></div>
+                  <div v-if="receiptData.order_number" class="r-pedido">Pedido: <strong>{{ receiptData.order_number }}</strong></div>
+                  <div v-if="receiptData.mesa">Mesa: <strong>{{ receiptData.mesa }}</strong></div>
+                  <div v-if="receiptData.mesero">Mesero: <strong>{{ receiptData.mesero }}</strong></div>
+                  <div v-if="receiptData.cliente?.nombre">Cliente: <strong>{{ receiptData.cliente.nombre }}</strong></div>
+                  <div v-if="receiptData.cliente?.cedula">C.C./NIT: <strong>{{ receiptData.cliente.cedula }}</strong></div>
                   <div v-if="placa">Placa: <strong>{{ placa }}</strong></div>
                   <div>Fecha: <strong>{{ receiptData.fecha }}</strong></div>
                   <div v-if="receiptData.hora">Hora: <strong>{{ receiptData.hora }}</strong></div>
@@ -45,10 +55,10 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="it in receiptData.items" :key="it.nombre">
-                      <td>{{ it.nombre }}</td>
+                    <tr v-for="(it, i) in receiptData.items" :key="i">
+                      <td>{{ it.nombre }}<div v-if="it.detalle" class="r-item-det">{{ it.detalle }}</div></td>
                       <td class="ta-c">{{ it.cantidad }}</td>
-                      <td class="ta-r">{{ fmt(it.precio * it.cantidad) }}</td>
+                      <td class="ta-r">{{ fmt(totalItem(it)) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -60,9 +70,21 @@
                     <span>Subtotal</span>
                     <span>{{ fmt(receiptData.subtotal) }}</span>
                   </div>
+                  <div v-if="receiptData.descuento" class="r-tot-row">
+                    <span>Descuento</span>
+                    <span>-{{ fmt(receiptData.descuento) }}</span>
+                  </div>
+                  <div v-if="receiptData.descuento" class="r-tot-row">
+                    <span>Venta</span>
+                    <span>{{ fmt(receiptData.venta) }}</span>
+                  </div>
                   <div v-if="receiptData.tip" class="r-tot-row">
                     <span>{{ receiptData.tipLabel || 'Propina' }}</span>
                     <span>{{ fmt(receiptData.tip) }}</span>
+                  </div>
+                  <div v-if="receiptData.domicilio" class="r-tot-row">
+                    <span>Domicilio</span>
+                    <span>{{ fmt(receiptData.domicilio) }}</span>
                   </div>
                   <div class="r-tot-row r-tot-grand">
                     <span>TOTAL</span>
@@ -74,14 +96,22 @@
 
                 <div class="r-pagos">
                   <div class="r-pagos-title">Formas de pago:</div>
-                  <div v-for="p in receiptData.pagos" :key="p.name" class="r-pago-row">
+                  <div v-for="(p, i) in receiptData.pagos" :key="i" class="r-pago-row">
                     <span>{{ p.name }}</span>
                     <span>{{ fmt(p.amount) }}</span>
                   </div>
                 </div>
 
+                <template v-if="receiptData.observacion">
+                  <div class="r-divider">--------------------------------</div>
+                  <div class="r-texto">Obs: {{ receiptData.observacion }}</div>
+                </template>
+                <template v-if="receiptData.resolucion_propina">
+                  <div class="r-divider">--------------------------------</div>
+                  <div class="r-texto">{{ receiptData.resolucion_propina }}</div>
+                </template>
                 <div class="r-divider">--------------------------------</div>
-                <div class="r-gracias">¡Gracias por su preferencia!</div>
+                <div class="r-gracias">{{ receiptData.mensaje || '¡Gracias por su preferencia!' }}</div>
               </div>
             </div>
           </div>
@@ -93,7 +123,7 @@
             <div class="ir-tabs">
               <button :class="['ir-tab', { active: tab === 'configuradas' }]"
                       @click="tab = 'configuradas'">
-                <i class="bi bi-printer-fill"></i> Impresoras del taller
+                <i class="bi bi-printer-fill"></i> Impresoras
               </button>
               <button :class="['ir-tab', { active: tab === 'sistema' }]"
                       @click="tab = 'sistema'">
@@ -108,7 +138,7 @@
               </div>
               <div v-else-if="printers.length === 0" class="ir-pos-empty">
                 <i class="bi bi-printer" style="font-size:28px;display:block;margin-bottom:6px;color:#cbd5e1"></i>
-                No hay impresoras configuradas para este taller.
+                No hay impresoras configuradas.
                 <br/>
                 <a href="/pos/impresoras" target="_blank" class="ir-link">Ir a configurar impresoras →</a>
               </div>
@@ -123,7 +153,7 @@
                   <i class="bi bi-printer-fill"></i>
                 </div>
                 <div class="ir-opt-info">
-                  <span class="ir-opt-label">{{ p.name }}</span>
+                  <span class="ir-opt-label">{{ p.name }} <span v-if="p.is_default" class="ir-default-chip">Predeterminada</span></span>
                   <span class="ir-opt-desc">
                     <span v-if="isDirectPrinter(p)">{{ p.connection_type === 'usb' ? 'USB · desde este dispositivo' : 'Bluetooth · desde este dispositivo' }}</span>
                     <span v-else-if="p.ip">{{ p.ip }}:{{ p.port }}</span>
@@ -146,6 +176,14 @@
                 </div>
                 <i class="bi bi-chevron-right ir-opt-arrow"></i>
               </button>
+              <button class="ir-opt-btn ir-opt-xls" @click="exportarExcel">
+                <div class="ir-opt-icon"><i class="bi bi-file-earmark-excel-fill"></i></div>
+                <div class="ir-opt-info">
+                  <span class="ir-opt-label">Excel</span>
+                  <span class="ir-opt-desc">Descarga el recibo en un archivo .xlsx.</span>
+                </div>
+                <i class="bi bi-chevron-right ir-opt-arrow"></i>
+              </button>
               <div class="ir-sys-note">
                 <i class="bi bi-info-circle"></i>
                 Usa esta opción si tu impresora está instalada como dispositivo del sistema operativo o quieres guardar el recibo como PDF.
@@ -158,7 +196,21 @@
 
         <!-- ── Footer ── -->
         <div class="ir-footer">
-          <button class="ir-btn-cerrar" @click="cerrar">
+          <button v-if="predeterminada" class="ir-btn-sec" @click="cerrar">
+            <i class="bi bi-x-lg"></i> Cancelar
+          </button>
+          <button class="ir-btn-sec" @click="exportarExcel" title="Descargar Excel">
+            <i class="bi bi-file-earmark-excel"></i> Excel
+          </button>
+          <button class="ir-btn-sec" @click="imprimirSistema" title="PDF / impresora del sistema">
+            <i class="bi bi-file-earmark-pdf"></i> PDF
+          </button>
+          <button v-if="predeterminada" class="ir-btn-print" :disabled="imprimiendoPosId === predeterminada.id"
+                  @click="imprimirYCerrar(predeterminada)">
+            <i :class="imprimiendoPosId === predeterminada.id ? 'bi bi-arrow-repeat spin' : 'bi bi-printer-fill'"></i>
+            Imprimir <small>· {{ predeterminada.name }}</small>
+          </button>
+          <button v-else class="ir-btn-cerrar" @click="cerrar">
             <i class="bi bi-check2-circle"></i> Listo, cerrar
           </button>
         </div>
@@ -191,9 +243,13 @@ const loadingPrinters  = ref(true)
 const imprimiendoPosId = ref(null)
 const tab              = ref('configuradas')
 
+const emp = computed(() => props.receiptData.empresa || null)
 const nombreEmpresa = computed(
-  () => companyStore.selectedCompany?.name || "EasyPos"
+  () => emp.value?.nombre || companyStore.selectedCompany?.name || "EasyPos"
 )
+// Impresora predeterminada (la marca el servidor: caja del turno / Config. Facturación)
+const predeterminada = computed(() => printers.value.find(p => p.is_default) || null)
+const totalItem = it => (it.total ?? (Number(it.precio) || 0) * (Number(it.cantidad) || 0))
 
 // ── Carga impresoras ──────────────────────────────────────────────────────────
 async function loadPrinters() {
@@ -217,12 +273,45 @@ function imprimirSistema() {
 // ── Imprimir en impresora POS (via backend socket) ───────────────────────────
 // Red → lo envía el servidor (IP:9100). USB / Bluetooth → el servidor arma el recibo y
 // este dispositivo lo envía a la impresora (el servidor no puede alcanzarlas).
+async function imprimirYCerrar(printer) {
+  if (await imprimirPos(printer)) cerrar()
+}
+
+// ── Excel del recibo ─────────────────────────────────────────────────────────
+async function exportarExcel() {
+  const r = props.receiptData
+  const XLSX = await import("xlsx")
+  const filas = [
+    [nombreEmpresa.value], ["RECIBO DE VENTA"],
+    ["Recibo N°", r.receipt_number], ["Fecha", `${r.fecha || ""} ${r.hora || ""}`.trim()],
+  ]
+  if (r.order_number) filas.push(["Pedido", r.order_number])
+  if (r.ordenNumero)  filas.push(["Orden", r.ordenNumero])
+  if (r.mesa)         filas.push(["Mesa", r.mesa])
+  if (r.mesero)       filas.push(["Mesero", r.mesero])
+  if (r.cliente?.nombre) filas.push(["Cliente", r.cliente.nombre])
+  filas.push([], ["Descripción", "Detalle", "Cant", "Total"])
+  for (const it of r.items || []) filas.push([it.nombre, it.detalle || "", it.cantidad, totalItem(it)])
+  filas.push([], ["Subtotal", "", "", r.subtotal || 0])
+  if (r.descuento) filas.push(["Descuento", "", "", -r.descuento], ["Venta", "", "", r.venta || 0])
+  if (r.tip)       filas.push([r.tipLabel || "Propina", "", "", r.tip])
+  if (r.domicilio) filas.push(["Domicilio", "", "", r.domicilio])
+  filas.push(["TOTAL", "", "", r.total || 0], [], ["Formas de pago"])
+  for (const p of r.pagos || []) filas.push([p.name, "", "", p.amount])
+  const ws = XLSX.utils.aoa_to_sheet(filas)
+  ws["!cols"] = [{ wch: 28 }, { wch: 30 }, { wch: 8 }, { wch: 14 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Recibo")
+  XLSX.writeFile(wb, `recibo_${r.receipt_number}.xlsx`)
+}
+
 async function imprimirPos(printer) {
   const directa = isDirectPrinter(printer)
   if (!directa && !printer.ip) {
     showToast(`La impresora de red "${printer.name}" no tiene IP configurada`, "warning", 3000)
-    return
+    return false
   }
+  let ok = false
   imprimiendoPosId.value = printer.id
   try {
     const { data } = await api.post(props.printPath, {
@@ -233,11 +322,13 @@ async function imprimirPos(printer) {
     })
     if (directa) await printDirect(printer, base64ToBytes(data.data_b64))
     showToast(`Enviado a "${printer.name}"`, "success", 2000)
+    ok = true
   } catch (e) {
     if (isUserCancel(e)) showToast("Selección de impresora cancelada", "info", 2000)
     else showToast(e?.response?.data?.detail || e?.message || `Error al enviar a "${printer.name}"`, "error", 4000)
   }
   imprimiendoPosId.value = null
+  return ok
 }
 
 function cerrar() {
@@ -534,6 +625,20 @@ onMounted(loadPrinters)
   transition: background .15s;
 }
 .ir-btn-cerrar:hover { background: #0f172a; }
+.ir-footer { gap: 8px; flex-wrap: wrap; }
+.ir-btn-sec { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #fff; color: #334155;
+  border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.ir-btn-sec:hover { border-color: #1d4ed8; color: #1d4ed8; }
+.ir-btn-print { display: flex; align-items: center; gap: 8px; padding: 10px 22px; background: #16a34a; color: #fff;
+  border: none; border-radius: 8px; font-size: 15px; font-weight: 800; cursor: pointer; }
+.ir-btn-print small { font-weight: 600; opacity: .85; }
+.ir-btn-print:disabled { opacity: .6; cursor: wait; }
+.ir-default-chip { font-size: 10px; font-weight: 700; color: #15803d; background: #dcfce7; border-radius: 20px; padding: 1px 7px; margin-left: 4px; }
+.ir-opt-xls .ir-opt-icon { color: #15803d; }
+.r-emp-line { text-align: center; font-size: 10px; }
+.r-pedido { word-break: break-all; }
+.r-item-det { font-size: 10px; color: #64748b; }
+.r-texto { font-size: 10px; text-align: justify; white-space: pre-line; }
 
 /* ── Print CSS: solo imprime el recibo ───────────────────────────────── */
 @media print {
@@ -561,7 +666,10 @@ onMounted(loadPrinters)
 
 @media (max-width: 576px) {
   .ir-modal { max-height: 98vh; border-radius: 10px; }
-  .ir-col-preview { display: none; }
+  .ir-col-preview { max-height: 42vh; overflow-y: auto; }
+  .ir-footer { padding: 10px; }
+  .ir-footer button { flex: 1 1 auto; justify-content: center; padding: 10px 8px; }
+  .ir-btn-print { flex: 1 1 100% !important; order: -1; }
 }
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
