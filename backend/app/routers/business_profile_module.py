@@ -4,7 +4,7 @@ from sqlalchemy import select, delete, func, text
 from app.database import get_db
 from app.models.business_profile_module import BusinessProfileModule
 from app.models.system_module_model import SystemModule
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_sysadmin
 
 async def _insert_role_permissions(db: AsyncSession, module_id: int, profile_id: int):
     """Inserta can_view=1 en role_modules para todos los roles del perfil que no lo tengan."""
@@ -20,7 +20,9 @@ async def _insert_role_permissions(db: AsyncSession, module_id: int, profile_id:
           )
     """), {"module_id": module_id, "profile_id": profile_id})
 
-router = APIRouter(prefix="/business-profile-module", tags=["BusinessProfileModule"])
+# Solo SYSADMIN arma los módulos por perfil de negocio (vistas /companies/* y /sysadmin/*)
+router = APIRouter(prefix="/business-profile-module", tags=["BusinessProfileModule"],
+                   dependencies=[Depends(require_sysadmin)])
 
 
 @router.put("/reorder/")

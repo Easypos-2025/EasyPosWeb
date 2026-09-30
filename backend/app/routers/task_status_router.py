@@ -4,12 +4,13 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.models.task_status_model import TaskStatus
+from app.auth.dependencies import get_current_user, require_sysadmin
 
 router = APIRouter(prefix="/task-status", tags=["Task Status"])
 
 
 @router.post("/")
-async def create_status(name: str, description: str, db: AsyncSession = Depends(get_db)):
+async def create_status(name: str, description: str, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     new_status = TaskStatus(name=name, description=description)
     db.add(new_status)
     await db.commit()
@@ -18,13 +19,13 @@ async def create_status(name: str, description: str, db: AsyncSession = Depends(
 
 
 @router.get("/")
-async def get_status_list(db: AsyncSession = Depends(get_db)):
+async def get_status_list(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     result = await db.execute(select(TaskStatus))
     return result.scalars().all()
 
 
 @router.get("/{status_id}")
-async def get_status(status_id: int, db: AsyncSession = Depends(get_db)):
+async def get_status(status_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     result = await db.execute(select(TaskStatus).where(TaskStatus.id == status_id))
     status = result.scalar_one_or_none()
     if not status:
@@ -33,7 +34,7 @@ async def get_status(status_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{status_id}")
-async def update_status(status_id: int, name: str, description: str, db: AsyncSession = Depends(get_db)):
+async def update_status(status_id: int, name: str, description: str, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     result = await db.execute(select(TaskStatus).where(TaskStatus.id == status_id))
     status = result.scalar_one_or_none()
     if not status:
@@ -45,7 +46,7 @@ async def update_status(status_id: int, name: str, description: str, db: AsyncSe
 
 
 @router.delete("/{status_id}")
-async def delete_status(status_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_status(status_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     result = await db.execute(select(TaskStatus).where(TaskStatus.id == status_id))
     status = result.scalar_one_or_none()
     if not status:

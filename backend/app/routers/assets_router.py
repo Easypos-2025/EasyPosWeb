@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
@@ -165,7 +165,9 @@ async def get_asset_qr_image(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    result = await db.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.company_id == current_user.company_id)
+    )
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Activo no encontrado")
@@ -196,10 +198,35 @@ async def delete_asset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
+    result = await db.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.company_id == current_user.company_id)
+    )
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="Activo no encontrado")
-    await db.delete(asset)
-    await db.commit()
-    return {"message": "Activo eliminado"}
+
+    # tasks y service_orders tienen FK RESTRICT: se informa en vez de fallar con 500
+    n_tasks = (await db.execute(
+        text("SELECT COUNT(*) FROM tasks WHERE asset_id = :id"), {"id": asset_id}
+    )).scalar() or 0
+    n_orders = (await db.execute(
+        text("SELECT COUNT(*) FROM service_orders WHERE vehicle_id = :id"), {"id": asset_id}
+    )).scalar() or 0
+    if n_tasks or n_orders:
+        partes = []
+        if n_tasks:
+            partes.append(f"{n_tasks} tarea{'s' if n_tasks != 1 else ''}")
+        if n_orders:
+            partes.append(f"{n_orders} orden{'es' if n_orders != 1 else ''} de servicio")
+        raise HTTPException(
+            status_code=409,
+            detail=f"No se puede eliminar: tiene {' y '.join(partes)} asociada{'s' if (n_tasks + n_orders) != 1 else ''}. Puedes marcarlo como Inactivo.",
+        )
+
+    try:
+        await db.delete(asset)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="No se puede eliminar: tiene registros asociados. Puedes marcarlo como Inactivo.")
+    return {"message": "Eliminado"}

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.auth.access import ensure_task, ensure_asset
 from app.database import get_db
 from app.models.task_comment_model import TaskComment
 from app.models.task_model import Task
@@ -51,7 +52,8 @@ async def get_unread_notifications(authorization: str = Header(None), db: AsyncS
 
 
 @router.get("/{task_id}")
-async def get_comments(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_comments(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await ensure_task(db, await _get_user(authorization, db), task_id)
     result = await db.execute(
         select(TaskComment, User)
         .join(User, TaskComment.user_id == User.id, isouter=True)

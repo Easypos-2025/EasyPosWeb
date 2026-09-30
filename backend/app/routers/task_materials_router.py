@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.auth.access import ensure_task, ensure_asset
 from app.database import get_db
 from app.models.task_material_model import TaskMaterial
 from app.models.task_expense_model import TaskExpense
@@ -40,7 +41,8 @@ def _ser_exp(e: TaskExpense):
 
 
 @router.get("/{task_id:int}")
-async def get_materials(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_materials(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await ensure_task(db, await _get_user(authorization, db), task_id)
     result = await db.execute(select(TaskMaterial).where(TaskMaterial.task_id == task_id).order_by(TaskMaterial.created_at.asc()))
     return [_ser_mat(m) for m in result.scalars().all()]
 
@@ -95,7 +97,8 @@ expenses_router = APIRouter(prefix="/task-expenses", tags=["TaskExpenses"])
 
 
 @expenses_router.get("/{task_id}")
-async def get_expenses(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_expenses(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await ensure_task(db, await _get_user(authorization, db), task_id)
     result = await db.execute(select(TaskExpense).where(TaskExpense.task_id == task_id).order_by(TaskExpense.created_at.asc()))
     return [_ser_exp(e) for e in result.scalars().all()]
 

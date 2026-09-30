@@ -130,6 +130,16 @@ function exportExcel() {
 }
 
 // ── HTML builder (PDF + browser tirilla) ─────────────────────────────────────
+// Escapa todo texto dinámico: la ventana de impresión comparte origen con la app,
+// un valor con HTML/JS (ej. nombre guardado por un usuario) no debe ejecutarse.
+function esc(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+const ALIGNS = new Set(['left', 'right', 'center'])
+const al = c => (ALIGNS.has(c.align) ? c.align : 'left')
+
 function buildHTML(mode) {
   const isTirilla = mode !== 'a4'
   const width     = mode === 'a4' ? '210mm' : `${mode}mm`
@@ -137,19 +147,19 @@ function buildHTML(mode) {
   const pad       = mode === 'a4' ? '12mm' : '2mm'
   const colCount  = props.columns.length
 
-  const hdr  = props.columns.map(c => `<th style="text-align:${c.align||'left'}">${c.label}</th>`).join('')
+  const hdr  = props.columns.map(c => `<th style="text-align:${al(c)}">${esc(c.label)}</th>`).join('')
   const body = props.data.map(row => {
     if (row._sectionHeader) {
-      return `<tr class="sec-hdr"><td colspan="${colCount}">${row._title}</td></tr>`
+      return `<tr class="sec-hdr"><td colspan="${colCount}">${esc(row._title)}</td></tr>`
     }
     return `<tr>${props.columns.map(c =>
-      `<td style="text-align:${c.align||'left'}">${cellVal(row, c)}</td>`
+      `<td style="text-align:${al(c)}">${esc(cellVal(row, c))}</td>`
     ).join('')}</tr>`
   }).join('')
 
   const now = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${props.title}</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(props.title)}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:${isTirilla ? "'Courier New',monospace" : 'Arial,sans-serif'};font-size:${fs};width:${width};padding:${pad};}
@@ -162,8 +172,8 @@ td{padding:2px 4px;border-bottom:1px ${isTirilla?'dashed':'solid'} #ddd;font-siz
 .sec-hdr td{background:${isTirilla?'#000':'#1d4ed8'};color:#fff;font-weight:bold;padding:3px 4px;border-bottom:none;}
 @media print{@page{margin:0;size:${width} auto;}}
 </style></head><body>
-<p class="co">${props.companyName}</p>
-<h3>${props.title}</h3><p class="dt">${now}</p>
+<p class="co">${esc(props.companyName)}</p>
+<h3>${esc(props.title)}</h3><p class="dt">${now}</p>
 <table><thead><tr>${hdr}</tr></thead><tbody>${body}</tbody></table>
 </body></html>`
 }

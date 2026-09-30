@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.auth.access import ensure_task, ensure_asset
 from app.database import get_db
 from app.models.task_purchase_model import TaskPurchase
 from app.models.user_model import User
@@ -35,7 +36,8 @@ def _ser(p: TaskPurchase):
 
 
 @router.get("/{task_id:int}")
-async def get_purchases(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_purchases(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await ensure_task(db, await _get_user(authorization, db), task_id)
     result = await db.execute(select(TaskPurchase).where(TaskPurchase.task_id == task_id).order_by(TaskPurchase.created_at.asc()))
     return [_ser(p) for p in result.scalars().all()]
 

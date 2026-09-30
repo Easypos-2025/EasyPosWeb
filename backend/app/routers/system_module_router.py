@@ -9,7 +9,7 @@ from app.models.system_module_model import SystemModule
 from app.schemas.system_module_schema import SystemModuleCreate, SystemModuleOut, SystemModuleUpdate
 from app.models.business_profile_module import BusinessProfileModule
 from app.models.company_model import Company
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_sysadmin
 from app.models.role_model import Role
 
 router = APIRouter(prefix="/system-modules", tags=["System Modules"])
@@ -33,7 +33,7 @@ def build_tree(modules):
 
 
 @router.post("/", response_model=SystemModuleOut)
-async def create_module(data: SystemModuleCreate, db: AsyncSession = Depends(get_db)):
+async def create_module(data: SystemModuleCreate, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     payload = data.dict()
     payload["route"] = payload.get("route") or ""
     if payload["route"] and payload.get("parent_id"):
@@ -93,13 +93,13 @@ async def get_all_modules_flat(
 
 
 @router.get("/", response_model=list[SystemModuleOut])
-async def list_modules(db: AsyncSession = Depends(get_db)):
+async def list_modules(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     result = await db.execute(select(SystemModule).order_by(SystemModule.order_index))
     return build_tree(result.scalars().all())
 
 
 @router.get("/{module_id}", response_model=SystemModuleOut)
-async def get_module(module_id: int, db: AsyncSession = Depends(get_db)):
+async def get_module(module_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -107,7 +107,7 @@ async def get_module(module_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{module_id}", response_model=SystemModuleOut)
-async def update_module(module_id: int, data: SystemModuleUpdate, db: AsyncSession = Depends(get_db)):
+async def update_module(module_id: int, data: SystemModuleUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
@@ -173,7 +173,7 @@ async def get_defaults_tree(db: AsyncSession = Depends(get_db), user=Depends(get
 
 
 @router.patch("/{module_id}/toggle-default")
-async def toggle_default_child(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def toggle_default_child(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     """Activa/desactiva is_default_child en un módulo hijo."""
     module = await db.get(SystemModule, module_id)
     if not module:
@@ -184,7 +184,7 @@ async def toggle_default_child(module_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.get("/{module_id}/defaults-preview/")
-async def get_defaults_preview(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def get_defaults_preview(module_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     """Retorna los hijos default (is_default_child=1) que han sido asignados bajo este padre
     en al menos un perfil. Usa relaciones reales de BPM, no system_modules.parent_id."""
     rows = await db.execute(text("""
@@ -200,7 +200,7 @@ async def get_defaults_preview(module_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.delete("/{module_id}")
-async def delete_module(module_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_module(module_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     module = await db.get(SystemModule, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")

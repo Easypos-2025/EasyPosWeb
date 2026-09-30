@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.auth.access import ensure_task, ensure_asset
 from app.database import get_db
 from app.models.task_evidence_model import TaskEvidence
 from app.models.task_model import Task
@@ -51,7 +52,8 @@ def _serialize(e: TaskEvidence):
 
 
 @router.get("/{task_id:int}")
-async def get_evidence(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_evidence(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    await ensure_task(db, await _get_user(authorization, db), task_id)
     result = await db.execute(select(TaskEvidence).where(TaskEvidence.task_id == task_id).order_by(TaskEvidence.created_at.asc()))
     return [_serialize(e) for e in result.scalars().all()]
 

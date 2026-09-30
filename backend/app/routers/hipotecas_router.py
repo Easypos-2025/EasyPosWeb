@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from app.database import get_db, get_ext_session
 from app.models.company_model import Company
 from app.models.credit_attachment_model import CreditAttachment
 from app.auth.dependencies import get_current_user
+from app.auth import tenant
 from app.utils.storage import upload_file, delete_file
 
 router = APIRouter(prefix="/api/hipotecas", tags=["hipotecas"])
@@ -38,9 +40,9 @@ async def get_kpi(
     company_id: int      = Query(...),
     meses: int           = Query(5, ge=1),
     db: AsyncSession     = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
     async with ext as session:
         r1 = await session.execute(text("""
             SELECT COUNT(*) AS total FROM arriendos
@@ -81,9 +83,9 @@ async def get_kpi(
 async def detalle_arriendos_avisar(
     company_id: int  = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
     async with ext as session:
         rows = await session.execute(text("""
             SELECT
@@ -117,9 +119,9 @@ async def detalle_arriendos_avisar(
 async def detalle_arriendos_vencer(
     company_id: int  = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
     async with ext as session:
         rows = await session.execute(text("""
             SELECT
@@ -154,9 +156,9 @@ async def detalle_creditos_atrasados(
     company_id: int  = Query(...),
     meses: int       = Query(5, ge=1),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
     async with ext as session:
         rows = await session.execute(text("""
             SELECT
@@ -201,9 +203,9 @@ async def buscar_creditos(
     juridico: str    = Query("", description="Búsqueda por Nro_Juridico"),
     vigentes: bool   = Query(True),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
     filtro_vigente = "AND c.Cancelado=0 AND c.Anulado=0 AND c.Inactivo=0" if vigentes else ""
 
     async with ext as session:
@@ -246,10 +248,10 @@ async def detalle_credito(
     nro_credito: str,
     company_id: int  = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
     nro = nro_credito.strip()
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
 
     async with ext as session:
 
@@ -397,9 +399,9 @@ async def buscar_arriendos(
     cliente: str     = Query("", description="Nombre cliente arrendatario"),
     solo_activos: bool = Query(True),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
     filtro_activo = "AND a.Activo = 1" if solo_activos else ""
 
     async with ext as session:
@@ -456,9 +458,9 @@ async def detalle_arriendo(
     id_arriendo: int,
     company_id: int  = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
-    ext = await _get_ext(company_id, db)
+    ext = await _get_ext(await tenant.resolve_company(db, user, company_id), db)
 
     async with ext as session:
 
@@ -509,14 +511,20 @@ async def detalle_arriendo(
 
 # ── Adjuntos de crédito (fotos / documentos) ─────────────────────────────────
 
+_TIPOS_ADJUNTO = {"foto", "documento"}
+_EXT_ADJUNTO   = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".pdf", ".doc", ".docx"}
+_MAX_ADJUNTO   = 15 * 1024 * 1024
+_NRO_RE        = re.compile(r"[A-Za-z0-9_-]{1,40}")
+
 @router.get("/credito/{nro}/adjuntos")
 async def listar_adjuntos(
     nro:        str          = None,
     company_id: int          = Query(...),
     tipo:       str          = Query("foto"),
     db:         AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
+    company_id = await tenant.resolve_company(db, user, company_id)
     q = await db.execute(
         select(CreditAttachment)
         .where(CreditAttachment.company_id  == company_id)
@@ -544,11 +552,21 @@ async def subir_adjunto(
     tipo:       str          = Form("foto"),
     file:       UploadFile   = File(...),
     db:         AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
+    company_id = await tenant.resolve_company(db, user, company_id)
+    # tipo, nro y extensión forman la ruta del archivo: solo valores conocidos
+    if tipo not in _TIPOS_ADJUNTO:
+        raise HTTPException(status_code=400, detail="Tipo de adjunto no válido")
+    if not nro or not _NRO_RE.fullmatch(nro):
+        raise HTTPException(status_code=400, detail="Número de crédito no válido")
+    ext = os.path.splitext(file.filename or "")[-1].lower() or ".jpg"
+    if ext not in _EXT_ADJUNTO:
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido (imágenes, PDF o Word)")
     content = await file.read()
     size    = len(content)
-    ext     = os.path.splitext(file.filename or "")[-1].lower() or ".jpg"
+    if size > _MAX_ADJUNTO:
+        raise HTTPException(status_code=413, detail="El archivo supera el tamaño máximo (15 MB)")
     path    = f"creditos/{company_id}/{nro}/{tipo}/{uuid.uuid4().hex}{ext}"
     url     = await upload_file(content, path)
 
@@ -576,8 +594,9 @@ async def eliminar_adjunto(
     adj_id:     int,
     company_id: int          = Query(...),
     db:         AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
+    company_id = await tenant.resolve_company(db, user, company_id)
     q   = await db.execute(
         select(CreditAttachment)
         .where(CreditAttachment.id         == adj_id)

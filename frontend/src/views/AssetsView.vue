@@ -26,7 +26,15 @@
             <option value="0">Inactivo</option>
           </select>
         </div>
-        <div class="col-md-3 col-12 text-end">
+        <div class="col-md-3 col-12 d-flex justify-content-end align-items-center gap-2 flex-wrap">
+          <ExportToolbar
+            :data="filtered"
+            :columns="exportColumns"
+            :filename="exportFilename"
+            :title="moduleName"
+            :companyId="companyStore.selectedCompany?.id || null"
+            :companyName="companyStore.selectedCompany?.name || 'EasyPOS'"
+          />
           <button class="btn btn-primary btn-nuevo-activo" @click="openCreate">
             <i class="bi bi-plus-lg"></i> Nuevo {{ moduleName }}
           </button>
@@ -466,8 +474,11 @@ import { showToast } from "@/utils/toast"
 import { validateForm } from "@/utils/validate"
 import { useModuleName } from "@/composables/useModuleName"
 import AssetMediaGallery from "@/components/AssetMediaGallery.vue"
+import ExportToolbar from "@/components/common/ExportToolbar.vue"
+import { useCompanyStore } from "@/stores/companyStore"
 
 const { moduleName } = useModuleName()
+const companyStore   = useCompanyStore()
 
 const currentYear = new Date().getFullYear()
 
@@ -512,8 +523,26 @@ const filtered = computed(() =>
 
 function fmt(val) {
   if (val == null || val === "") return "—"
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(val)
+  const cc = companyStore.selectedCompany?.currency_code || "COP"
+  return new Intl.NumberFormat("es-CO", { style: "currency", currency: cc, maximumFractionDigits: 0 }).format(val)
 }
+
+// ── Exportación / impresión (ExportToolbar) ──────────────────────────────────
+const exportColumns = [
+  { key: "list_code",       label: "Cód.",            fmt: v => v ?? "" },
+  { key: "name",            label: "Nombre" },
+  { key: "short_name",      label: "Nombre corto" },
+  { key: "category_name",   label: "Categoría",       fmt: (v, r) => v || categoryName(r.category_id) },
+  { key: "client_name",     label: "Cliente" },
+  { key: "address",         label: "Dirección",       fmt: (v, r) => v || r.location || "" },
+  { key: "canon_value",     label: "Canon",           align: "right", fmt: v => (v != null ? fmt(v) : "") },
+  { key: "has_sale_option", label: "Opción de venta", fmt: v => (v ? "Sí" : "No") },
+  { key: "is_active",       label: "Estado",          fmt: v => (v ? "Vigente" : "Inactivo") },
+]
+
+const exportFilename = computed(() =>
+  `${(moduleName.value || "propiedades").toLowerCase().replace(/[^a-z0-9áéíóúñ]+/gi, "_")}_${new Date().toISOString().slice(0, 10)}`
+)
 
 function categoryName(id) {
   return categories.value.find(c => c.id === id)?.name || "—"
@@ -599,7 +628,8 @@ async function save() {
 
 async function handleDelete(a) {
   const { isConfirmed } = await window.Swal.fire({
-    title: `¿Eliminar "${a.name}"?`,
+    // titleText: Swal lo pinta como texto plano (el nombre lo escribe el usuario)
+    titleText: `¿Eliminar "${a.name}"?`,
     text: "Esta acción no se puede deshacer.",
     icon: "warning",
     showCancelButton: true,
@@ -610,10 +640,10 @@ async function handleDelete(a) {
   if (!isConfirmed) return
   try {
     await api.delete(`/assets/${a.id}`)
-    showToast("Activo eliminado", "success")
+    showToast(`${moduleName.value || "Registro"} eliminado`, "success")
     await load()
   } catch (e) {
-    showToast(e.response?.data?.detail || "Error eliminando activo", "error")
+    showToast(e.response?.data?.detail || `Error eliminando ${moduleName.value || "registro"}`, "error", 5000)
   }
 }
 

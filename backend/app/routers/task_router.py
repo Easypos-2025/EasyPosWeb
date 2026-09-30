@@ -4,6 +4,7 @@ from sqlalchemy import select, func, cast, Date, delete as sql_delete
 from datetime import datetime, date
 from typing import Optional
 
+from app.auth.access import ensure_task
 from app.database import get_db
 from app.models.task_model import Task
 from app.models.task_status_model import TaskStatus
@@ -314,14 +315,11 @@ async def get_tasks(
 
 
 @router.get("/{task_id:int}")
-async def get_task(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_task(task_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    task = await ensure_task(db, await _get_user(authorization, db), task_id)
     sm = await _status_map(db)
     wm = await _worker_map(db)
     um = await _user_map(db)
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
     return _serialize(task, sm, wm, um)
 
 
