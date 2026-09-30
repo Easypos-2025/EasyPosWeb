@@ -339,6 +339,7 @@
 </template>
 
 <script setup>
+import { beep } from '@/utils/audio'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
@@ -600,25 +601,8 @@ async function cargarMeseros() {
   } catch { meseros.value = [] }
 }
 
-function reproducirBeepStock() {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext
-    if (!AudioCtx) return
-    const ctx = new AudioCtx()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.value = 880
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.01)
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35)
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.4)
-    osc.onended = () => ctx.close()
-  } catch { /* audio no disponible en este navegador */ }
-}
+// Pitido de stock mínimo: usa el audio compartido (espera el primer toque del usuario)
+function reproducirBeepStock() { beep({ freq: 880, duracion: 0.35, volumen: 0.25 }) }
 
 async function _fetchStock() {
   const { data } = await api.get('/api/pos-dashboard/stock-alertas', {

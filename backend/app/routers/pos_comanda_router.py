@@ -223,13 +223,22 @@ async def get_mesas(
     cid = payload["company_id"]
     today = _today()
 
-    # Auto-cancelar pedidos sin ítems (web y escritorio)
+    # Auto-cancelar pedidos sin ítems (web y escritorio) que nadie tiene abiertos
     await db_temp.execute(text("""
         UPDATE temp_comanda tc
         SET tc.Cancelado = 1
         WHERE tc.company_id = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado = 0
+          -- No tocar pedidos que se están montando: la mesa está tomada por un dispositivo
+          -- (temp_mesa_abierta.editing_token). Gracia de 2 min para la apertura.
+          AND COALESCE(tc.updated_at, '2000-01-01') < NOW() - INTERVAL 2 MINUTE
+          AND NOT EXISTS (
+              SELECT 1 FROM temp_mesa_abierta tma
+              WHERE tma.company_id = tc.company_id
+                AND TRIM(tma.Mesa) = TRIM(tc.Mesa)
+                AND tma.editing_token IS NOT NULL AND tma.editing_token <> ''
+          )
           AND NOT EXISTS (
               SELECT 1 FROM temp_detalle_comanda_parcial tdc
               WHERE tdc.Nro_pedido = tc.Nro_Pedido
@@ -305,14 +314,12 @@ async def get_mesas(
         ), {"cid": cid})).mappings().all()
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
-    # Locks de edición activos (expiran tras 10 minutos sin heartbeat)
+    # Mesas tomadas por un dispositivo (no vencen: se liberan al salir o por el admin)
     lock_rows = (await db_temp.execute(text("""
         SELECT Id_Mesa, editing_waiter_name, editing_token
         FROM temp_mesa_abierta
-        WHERE company_id=:cid AND Abierta=1
-          AND editing_waiter_name IS NOT NULL
-          AND editing_since IS NOT NULL
-          AND editing_since > NOW() - INTERVAL 10 MINUTE
+        WHERE company_id=:cid
+          AND editing_token IS NOT NULL AND editing_token <> ''
     """), {"cid": cid})).mappings().all()
     locks: dict = {int(r["Id_Mesa"]): {"name": r["editing_waiter_name"], "token": r["editing_token"]} for r in lock_rows}
 
@@ -358,6 +365,7 @@ async def get_mesas(
 async def abrir_mesa(
     data: AbrirMesaIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
@@ -370,6 +378,7 @@ async def abrir_mesa(
     ), {"tid": data.table_id, "cid": cid})).mappings().first()
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    await _exigir_mesa(db_temp, cid, x_edit_token, table_id=data.table_id)
 
     # Verificar bloqueo en temp_mesa_abierta (check primario — previene race condition)
     locked = (await db_temp.execute(text("""
@@ -724,12 +733,14 @@ async def crear_cliente(
 async def cambiar_cliente(
     data: CambiarClienteIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     """Asigna el cliente al pedido y recalcula los ítems no facturados con su lista de
     precios (o platos.Valor). Los ítems con descuento aplicado conservan su valor."""
     cid = payload["company_id"]
+    await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
     order = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
         WHERE Nro_Pedido=:on AND company_id=:cid AND Nro_Factura='0' AND Cancelado=0 LIMIT 1
@@ -811,10 +822,12 @@ async def get_novedades(payload: dict = Depends(_auth_comanda), db: AsyncSession
 async def agregar_item(
     data: AgregarItemIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     # Verificar pedido activo — sin filtro de fecha (un pedido puede cruzar días)
     order_row = (await db_temp.execute(text("""
@@ -955,10 +968,12 @@ async def agregar_item(
 async def actualizar_item(
     data: ActualizarItemIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     current = (await db_temp.execute(text("""
         SELECT Cantidad, Valor FROM temp_detalle_comanda_parcial
@@ -1051,9 +1066,11 @@ async def listar_tipificaciones_descuento(
 async def aplicar_descuento_item(
     data: AplicarDescuentoItemIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     current = (await db_temp.execute(text("""
         SELECT Valor, Porc_Descuento_General, Id_Tipificacion
@@ -1117,9 +1134,11 @@ async def aplicar_descuento_item(
 async def eliminar_item(
     data: EliminarItemIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     # Borrar insumos (armado + fijos) y novedades del ítem
     await armado_svc.delete_item_temp(db_temp, cid, data.order_number, data.dish_id, data.item)
@@ -1145,10 +1164,12 @@ async def eliminar_item(
 async def enviar_cocina(
     data: EnviarCocinaIn,
     payload: dict = Depends(_auth_comanda),
+    x_edit_token: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
     now_str = _now_bog().strftime("%Y-%m-%d %H:%M:%S")
 
     # Determinar si es PEDIDO NUEVO (tc.Salio=0) o PEDIDO AGREGADO (tc.Salio=1)
@@ -1360,10 +1381,11 @@ async def cancelar_orden(
         WHERE Nro_Pedido=:on AND Fecha=:date AND company_id=:cid
     """), {"on": on, "date": fecha, "cid": cid})
 
-    # ── Marcar mesa como cerrada en temp_mesa_abierta ─────────────────────────
+    # ── Marcar mesa como cerrada en temp_mesa_abierta (y liberar su toma) ──────
     await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
-        SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW()
+        SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW(),
+            editing_waiter_name=NULL, editing_since=NULL, editing_token=NULL
         WHERE Id_Mesa=:tid AND company_id=:cid
     """), {"tid": data.table_id, "cid": cid})
 
@@ -1597,51 +1619,96 @@ async def get_cocina_pedidos(
     return result
 
 
-# ── 14. LOCK DE EDICIÓN DE MESA ───────────────────────────────────────────────
+# ── 14. BLOQUEO DE MESA-CUENTA ────────────────────────────────────────────────
+# Al entrar a una mesa, el dispositivo la toma (temp_mesa_abierta.editing_token). Mientras
+# la tenga, ningún otro mesero ni dispositivo puede entrar ni modificar el pedido. Se libera
+# al salir o enviar, al pagar la cuenta completa, o desde Cuentas Abiertas (administrador).
+# No vence solo: si un dispositivo se apaga, el administrador la libera.
 
 import secrets as _secrets
 
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
+
+def _token_valido(token: Optional[str]) -> Optional[str]:
+    t = (token or "").strip()
+    return t if _TOKEN_RE.match(t) else None
+
+
+async def _dueno_mesa(db_temp: AsyncSession, cid: int, table_id: Optional[int] = None,
+                      mesa_name: Optional[str] = None):
+    if table_id is not None:
+        q, p = "company_id=:cid AND Id_Mesa=:tid", {"cid": cid, "tid": table_id}
+    else:
+        q, p = "company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)", {"cid": cid, "mesa": mesa_name or ""}
+    return (await db_temp.execute(text(f"""
+        SELECT Id_Mesa, editing_waiter_name, editing_token FROM temp_mesa_abierta
+        WHERE {q} AND editing_token IS NOT NULL AND editing_token <> ''
+        LIMIT 1
+    """), p)).mappings().first()
+
+
+async def _exigir_mesa(db_temp: AsyncSession, cid: int, token: Optional[str],
+                       table_id: Optional[int] = None, order_number: Optional[str] = None) -> None:
+    """409 si la mesa (o la mesa del pedido) está tomada por OTRO dispositivo."""
+    if table_id is None:
+        mesa = (await db_temp.execute(text(
+            "SELECT Mesa FROM temp_comanda WHERE company_id=:cid AND Nro_Pedido=:on LIMIT 1"
+        ), {"cid": cid, "on": order_number})).scalar()
+        if mesa is None:
+            return
+        lock = await _dueno_mesa(db_temp, cid, mesa_name=mesa)
+    else:
+        lock = await _dueno_mesa(db_temp, cid, table_id=table_id)
+    if lock and lock["editing_token"] != _token_valido(token):
+        raise HTTPException(status_code=409,
+                            detail=f"La mesa está abierta por {lock['editing_waiter_name'] or 'otro usuario'} en otro dispositivo")
+
+
 class EditLockIn(BaseModel):
     waiter_name: str
-    token: str  # UUID generado en frontend por sesión
+    token: str  # UUID generado por el dispositivo
+
 
 @router.post("/mesa/{table_id}/editar")
 async def adquirir_lock(
     table_id: int,
     data: EditLockIn,
     payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
-    """Adquiere el lock de edición para la mesa. Si otro dispositivo ya lo tiene y no expiró → 409."""
+    """Toma la mesa para este dispositivo. 409 si otro dispositivo la tiene."""
     cid = payload["company_id"]
+    token = _token_valido(data.token)
+    if not token:
+        raise HTTPException(status_code=422, detail="Token de dispositivo inválido")
+    mesa = (await db.execute(text(
+        "SELECT id, name FROM pos_tables_layout WHERE id=:tid AND company_id=:cid"
+    ), {"tid": table_id, "cid": cid})).mappings().first()
+    if not mesa:
+        raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    nombre = (data.waiter_name or "Mesero").strip()[:100] or "Mesero"
 
-    # Verificar si hay un lock activo de OTRO token
-    existing_lock = (await db_temp.execute(text("""
-        SELECT editing_waiter_name, editing_token
-        FROM temp_mesa_abierta
-        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
-          AND editing_waiter_name IS NOT NULL
-          AND editing_since > NOW() - INTERVAL 10 MINUTE
-          AND editing_token != :token
-        LIMIT 1
-    """), {"cid": cid, "tid": table_id, "token": data.token})).mappings().first()
-
-    if existing_lock:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Mesa siendo editada por {existing_lock['editing_waiter_name']}"
-        )
-
-    # Adquirir o renovar el lock
+    # Toma atómica: solo si está libre o ya es de este dispositivo
+    await db_temp.execute(text("""
+        INSERT IGNORE INTO temp_mesa_abierta (company_id, Id_Mesa, Mesa, Abierta, updated_at)
+        VALUES (:cid, :tid, :mesa, 0, NOW())
+    """), {"cid": cid, "tid": table_id, "mesa": mesa["name"]})
     await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
-        SET editing_waiter_name = :name,
-            editing_since       = NOW(),
-            editing_token       = :token
-        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
-    """), {"cid": cid, "tid": table_id, "name": data.waiter_name, "token": data.token})
+        SET editing_waiter_name = :name, editing_since = NOW(), editing_token = :token
+        WHERE company_id=:cid AND Id_Mesa=:tid
+          AND (editing_token IS NULL OR editing_token = '' OR editing_token = :token)
+    """), {"cid": cid, "tid": table_id, "name": nombre, "token": token})
     await db_temp.commit()
-    return {"ok": True, "token": data.token}
+    dueno = (await db_temp.execute(text(
+        "SELECT editing_waiter_name, editing_token FROM temp_mesa_abierta WHERE company_id=:cid AND Id_Mesa=:tid"
+    ), {"cid": cid, "tid": table_id})).mappings().first()
+    if not dueno or dueno["editing_token"] != token:
+        raise HTTPException(status_code=409,
+                            detail=f"La mesa está abierta por {(dueno or {}).get('editing_waiter_name') or 'otro usuario'} en otro dispositivo")
+    return {"ok": True, "token": token}
 
 
 @router.delete("/mesa/{table_id}/editar")
@@ -1649,17 +1716,41 @@ async def liberar_lock(
     table_id: int,
     token: str,
     payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
-    """Libera el lock de edición. Solo lo puede liberar quien lo posee (mismo token)."""
+    """Libera la mesa (solo quien la tiene). Si el pedido quedó sin ítems se cancela y la
+    mesa queda libre de inmediato."""
     cid = payload["company_id"]
-    await db_temp.execute(text("""
+    token = _token_valido(token)
+    if not token:
+        return {"ok": True}
+    r = await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
-        SET editing_waiter_name = NULL,
-            editing_since       = NULL,
-            editing_token       = NULL
+        SET editing_waiter_name = NULL, editing_since = NULL, editing_token = NULL
         WHERE company_id=:cid AND Id_Mesa=:tid AND editing_token=:token
     """), {"cid": cid, "tid": table_id, "token": token})
+    if r.rowcount:
+        mesa = (await db.execute(text(
+            "SELECT name FROM pos_tables_layout WHERE id=:tid AND company_id=:cid"
+        ), {"tid": table_id, "cid": cid})).scalar()
+        if mesa is not None:
+            await db_temp.execute(text("""
+                UPDATE temp_comanda tc SET tc.Cancelado = 1
+                WHERE tc.company_id=:cid AND TRIM(tc.Mesa)=TRIM(:mesa)
+                  AND tc.Nro_Factura='0' AND tc.Cancelado=0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM temp_detalle_comanda_parcial tdc
+                      WHERE tdc.company_id=tc.company_id AND tdc.Nro_pedido=tc.Nro_Pedido
+                        AND tdc.Nro_Factura='0'
+                  )
+            """), {"cid": cid, "mesa": mesa})
+            await db_temp.execute(text("""
+                UPDATE temp_mesa_abierta SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW()
+                WHERE company_id=:cid AND Id_Mesa=:tid
+                  AND NOT EXISTS (SELECT 1 FROM temp_comanda tc WHERE tc.company_id=:cid
+                                  AND TRIM(tc.Mesa)=TRIM(:mesa) AND tc.Nro_Factura='0' AND tc.Cancelado=0)
+            """), {"cid": cid, "tid": table_id, "mesa": mesa})
     await db_temp.commit()
     return {"ok": True}
 

@@ -482,8 +482,9 @@ async def registrar_recibo(
             "UPDATE temp_comanda SET Nro_Factura=:rn WHERE company_id=:cid AND Nro_Pedido=:on"
         ), {"rn": receipt_number, "cid": cid, "on": order_number})
         await db_temp.execute(text("""
-            UPDATE temp_mesa_abierta SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW()
-            WHERE company_id=:cid AND Mesa=:mesa
+            UPDATE temp_mesa_abierta SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW(),
+                   editing_waiter_name=NULL, editing_since=NULL, editing_token=NULL
+            WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)
               AND NOT EXISTS (SELECT 1 FROM temp_comanda tc WHERE tc.company_id=:cid AND tc.Mesa=:mesa
                               AND tc.Nro_Factura='0' AND tc.Cancelado=0)
         """), {"cid": cid, "mesa": orden["Mesa"]})

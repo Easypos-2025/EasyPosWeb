@@ -266,6 +266,7 @@ import ComandaDescuentoModal from '@/components/comanda/ComandaDescuentoModal.vu
 import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
+import { useMesaLock } from '@/composables/useMesaLock'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -395,46 +396,26 @@ const visibleItemsCount = computed(() =>
   items.value.filter(i => !i._deleted).length
 )
 
-// ── Lock de edición ───────────────────────────────────────────────────────────
-const _editToken = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
-let _heartbeat = null
-
-function _waiterName() {
-  try {
-    const d = JSON.parse(localStorage.getItem('waiter_data') || '{}')
-    return d.name || 'Mesero'
-  } catch { return 'Mesero' }
-}
-
-async function _acquireLock() {
-  try {
-    await apiComanda.post(`/api/pos/comanda/mesa/${tableId.value}/editar`, {
-      waiter_name: _waiterName(),
-      token: _editToken,
-    })
-  } catch { /* lock suave — no bloquea si falla */ }
-}
-
-async function _releaseLock() {
-  try {
-    await apiComanda.delete(`/api/pos/comanda/mesa/${tableId.value}/editar`, {
-      params: { token: _editToken },
-    })
-  } catch { /* ignorar errores al salir */ }
-}
+// ── Bloqueo de mesa-cuenta: primero se toma la mesa; si otro dispositivo la tiene, no entra
+const mesaLock = useMesaLock(() => tableId.value)
 
 onMounted(async () => {
   if (ctx.company_id) localStorage.setItem('waiter_company_id', String(ctx.company_id))
+  try {
+    await mesaLock.tomar()
+  } catch (e) {
+    if (e.response?.status === 401) { router.push('/pos/tpv/login'); return }
+    showToast(e.response?.data?.detail || 'No se pudo abrir la mesa', 'warning', 4000)
+    router.push('/pos/tpv/mesas')
+    return
+  }
+  window.addEventListener('pagehide', mesaLock.liberarAlCerrar)
   await Promise.all([loadOrder(), loadMenu(), loadNotes()])
-  await _acquireLock()
-  _heartbeat = setInterval(_acquireLock, 3 * 60 * 1000)
-  window.addEventListener('beforeunload', _releaseLock)
 })
 
-onUnmounted(async () => {
-  clearInterval(_heartbeat)
-  window.removeEventListener('beforeunload', _releaseLock)
-  await _releaseLock()
+onUnmounted(() => {
+  window.removeEventListener('pagehide', mesaLock.liberarAlCerrar)
+  mesaLock.liberar()
 })
 
 async function loadOrder() {
@@ -629,7 +610,7 @@ function onDescuentoApplied({ item, valor, typification_id }) {
 
 async function submitOrder() {
   if (!order.value || sending.value) return
-  if (!hasChanges.value) { router.push('/pos/tpv/mesas'); return }
+  if (!hasChanges.value) { await mesaLock.liberar(); router.push('/pos/tpv/mesas'); return }
   sending.value = true
   try {
     const newItems = items.value.filter(i => i.isNew && !i._deleted)
@@ -665,6 +646,7 @@ async function submitOrder() {
         order_number: order.value.order_number, date: order.value.date,
       })
     }
+    await mesaLock.liberar()
     router.push('/pos/tpv/mesas?tab=abiertas')
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al enviar', 'error', 3000)
@@ -673,7 +655,8 @@ async function submitOrder() {
   }
 }
 
-function cancelOrder() {
+async function cancelOrder() {
+  await mesaLock.liberar()
   router.push('/pos/tpv/mesas?tab=abiertas')
 }
 </script>

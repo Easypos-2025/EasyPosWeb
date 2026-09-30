@@ -113,12 +113,11 @@
       <div class="lock-modal">
         <i class="bi bi-pencil-square lock-modal__icon"></i>
         <p class="lock-modal__msg">
-          <strong>{{ lockWarning.editing_by }}</strong> está editando este pedido ahora.
+          <strong>{{ lockWarning.editing_by }}</strong> tiene esta mesa abierta.
         </p>
-        <p class="lock-modal__sub">¿Quieres entrar de todas formas?</p>
+        <p class="lock-modal__sub">La mesa está abierta en otro dispositivo. Podrás entrar cuando la cierre, o un administrador puede liberarla desde Cuentas Abiertas.</p>
         <div class="lock-modal__btns">
-          <button class="lock-modal__cancel" @click="lockWarning = null">Esperar</button>
-          <button class="lock-modal__confirm" @click="goToOrder(lockWarning); lockWarning = null">Entrar</button>
+          <button class="lock-modal__confirm" @click="lockWarning = null">Entendido</button>
         </div>
       </div>
     </div>

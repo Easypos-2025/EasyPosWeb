@@ -166,13 +166,22 @@ async def get_mesas(
     user = await _get_user(authorization, db)
     cid = await _resolve_cid(user, company_id, db)
 
-    # Auto-cancelar pedidos sin ítems (web y escritorio)
+    # Auto-cancelar pedidos sin ítems (web y escritorio) que nadie tiene abiertos
     await db_temp.execute(text("""
         UPDATE temp_comanda tc
         SET tc.Cancelado = 1
         WHERE tc.company_id = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado = 0
+          -- No tocar pedidos que se están montando: la mesa está tomada por un dispositivo
+          -- (temp_mesa_abierta.editing_token). Gracia de 2 min para la apertura.
+          AND COALESCE(tc.updated_at, '2000-01-01') < NOW() - INTERVAL 2 MINUTE
+          AND NOT EXISTS (
+              SELECT 1 FROM temp_mesa_abierta tma
+              WHERE tma.company_id = tc.company_id
+                AND TRIM(tma.Mesa) = TRIM(tc.Mesa)
+                AND tma.editing_token IS NOT NULL AND tma.editing_token <> ''
+          )
           AND NOT EXISTS (
               SELECT 1 FROM temp_detalle_comanda_parcial tdc
               WHERE tdc.Nro_pedido = tc.Nro_Pedido
@@ -207,23 +216,16 @@ async def get_mesas(
         ORDER BY z.order_index, z.name, t.name
     """), {"cid": cid})).mappings().all()
 
-    # Mesas abiertas y locks de edición desde datatemppos
+    # Mesas abiertas y mesas tomadas por un dispositivo (el bloqueo no vence)
     open_rows = (await db_temp.execute(text("""
-        SELECT Id_Mesa, editing_waiter_name, editing_since
+        SELECT Id_Mesa, Abierta, editing_waiter_name, editing_token
         FROM temp_mesa_abierta
-        WHERE company_id=:cid AND Abierta=1
+        WHERE company_id=:cid AND (Abierta=1 OR (editing_token IS NOT NULL AND editing_token <> ''))
     """), {"cid": cid})).mappings().all()
-    open_set = {int(r["Id_Mesa"]) for r in open_rows}
-    def _lock_active(since) -> bool:
-        if not since: return False
-        try:
-            t = since if isinstance(since, datetime) else datetime.fromisoformat(str(since))
-            return (datetime.now() - t.replace(tzinfo=None)).total_seconds() < 600
-        except: return False
+    open_set = {int(r["Id_Mesa"]) for r in open_rows if int(r["Abierta"] or 0) == 1}
     locks_dash = {
-        int(r["Id_Mesa"]): r["editing_waiter_name"]
-        for r in open_rows
-        if r.get("editing_waiter_name") and _lock_active(r.get("editing_since"))
+        int(r["Id_Mesa"]): (r["editing_waiter_name"] or "Otro usuario")
+        for r in open_rows if r.get("editing_token")
     }
 
     # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de

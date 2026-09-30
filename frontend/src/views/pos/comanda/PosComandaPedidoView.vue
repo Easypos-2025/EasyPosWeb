@@ -219,7 +219,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useMesaLock } from '@/composables/useMesaLock'
 import { useRoute, useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaProductCard from '@/components/comanda/ComandaProductCard.vue'
@@ -351,9 +352,25 @@ const visibleItemsCount = computed(() =>
 )
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
+// Bloqueo de mesa-cuenta: primero se toma la mesa; si otro dispositivo la tiene, no entra
+const mesaLock = useMesaLock(() => tableId.value)
+
 onMounted(async () => {
   if (ctx.company_id) localStorage.setItem('waiter_company_id', String(ctx.company_id))
+  try {
+    await mesaLock.tomar()
+  } catch (e) {
+    if (e.response?.status === 401) { router.push('/pos/comanda/login'); return }
+    showToast(e.response?.data?.detail || 'No se pudo abrir la mesa', 'warning', 4000)
+    router.push('/restaurante')
+    return
+  }
+  window.addEventListener('pagehide', mesaLock.liberarAlCerrar)
   await Promise.all([loadOrder(), loadMenu(), loadNotes()])
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('pagehide', mesaLock.liberarAlCerrar)
+  mesaLock.liberar()
 })
 
 // ── Data loading ───────────────────────────────────────────────────────────
@@ -564,7 +581,7 @@ function onDescuentoApplied({ item, valor, typification_id }) {
 // ── Submit / Cancel ────────────────────────────────────────────────────────
 async function submitOrder() {
   if (!order.value || sending.value) return
-  if (!hasChanges.value) { router.push('/restaurante'); return }
+  if (!hasChanges.value) { await mesaLock.liberar(); router.push('/restaurante'); return }
   sending.value = true
   try {
     const newItems = items.value.filter(i => i.isNew && !i._deleted)
@@ -605,6 +622,7 @@ async function submitOrder() {
         date:         order.value.date,
       })
     }
+    await mesaLock.liberar()
     router.push('/restaurante')
   } catch (e) {
     showToast(e.response?.data?.detail || 'Error al enviar', 'error', 3000)
@@ -613,7 +631,8 @@ async function submitOrder() {
   }
 }
 
-function cancelOrder() {
+async function cancelOrder() {
+  await mesaLock.liberar()
   router.push('/restaurante')
 }
 </script>

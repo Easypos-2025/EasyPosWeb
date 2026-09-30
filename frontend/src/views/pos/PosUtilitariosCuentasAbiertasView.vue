@@ -48,6 +48,7 @@
                 <span class="badge" :class="tipoBadgeClass(cta.tipo_cuenta)">{{ tipoBadgeLabel(cta.tipo_cuenta) }}</span>
                 {{ cta.table_name || '—' }}
                 <i v-if="cta.is_web" class="bi bi-globe2 ca-web-icon" title="Pedido desde carta digital (web)"></i>
+                <span v-if="cta.editing_by" class="ca-lock-chip" :title="`Abierta por ${cta.editing_by}`"><i class="bi bi-lock-fill"></i> En uso</span>
               </span>
               <span class="ca-valor">{{ fmt(cta.amount) }}</span>
             </div>
@@ -88,6 +89,13 @@
                     <span class="badge" :class="tipoBadgeClass(seleccionado.tipo_cuenta)">{{ tipoBadgeLabel(seleccionado.tipo_cuenta) }}</span>
                     <strong class="ms-2">{{ detalle.header.mesa }}</strong>
                   </div>
+                </div>
+                <div v-if="seleccionado.editing_by" class="ca-lock-bar">
+                  <span><i class="bi bi-lock-fill"></i> Abierta por <strong>{{ seleccionado.editing_by }}</strong> en otro dispositivo</span>
+                  <button class="ca-btn-liberar" :disabled="liberando" @click="liberarMesa">
+                    <span v-if="liberando" class="spinner-border spinner-border-sm"></span>
+                    <i v-else class="bi bi-unlock-fill"></i> Liberar mesa
+                  </button>
                 </div>
                 <div class="ca-det-meta">
                   <span class="ca-det-pedido"><i class="bi bi-hash"></i>Pedido {{ detalle.header.numero }}</span>
@@ -165,6 +173,8 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/services/apis.js'
+import Swal from 'sweetalert2'
+import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
 import TurnoCajaModal from '@/components/pos/TurnoCajaModal.vue'
 
@@ -210,6 +220,31 @@ const insumos         = ref([])
 const cargandoInsumos = ref(false)
 
 const totalMontado = computed(() => lista.value.reduce((s, r) => s + (r.amount || 0), 0))
+
+// ── Desbloqueo de mesa-cuenta (administrador) ─────────────────────────────────
+const liberando = ref(false)
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+async function liberarMesa() {
+  const cta = seleccionado.value
+  if (!cta || liberando.value) return
+  const { isConfirmed } = await Swal.fire({
+    title: '¿Liberar la mesa?',
+    html: `<b>${esc(cta.table_name)}</b> está abierta por <b>${esc(cta.editing_by)}</b>.<br>Úselo solo si ese dispositivo ya no está en la mesa (se apagó o se cerró sin salir). El pedido no se modifica.`,
+    icon: 'warning', showCancelButton: true,
+    confirmButtonText: 'Sí, liberar', cancelButtonText: 'Cancelar', confirmButtonColor: '#d97706',
+  })
+  if (!isConfirmed) return
+  liberando.value = true
+  try {
+    await api.post('/api/pos/utilitarios/liberar-mesa', { order_number: cta.order_number })
+    cta.editing_by = null
+    showToast('Mesa liberada', 'success')
+    refrescarLista()
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'No se pudo liberar la mesa', 'error')
+  }
+  liberando.value = false
+}
 
 async function cargarLista() {
   cargandoLista.value = true
@@ -334,6 +369,11 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 .ca-det-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #475569; margin-bottom: 8px; }
 .ca-det-meta span { display: flex; align-items: center; gap: 4px; }
 .ca-det-pedido { font-family: ui-monospace, monospace; word-break: break-all; }
+.ca-lock-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 10px; padding: 1px 7px; margin-left: 6px; }
+.ca-lock-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
+.ca-btn-liberar { display: inline-flex; align-items: center; gap: 6px; background: #d97706; color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.ca-btn-liberar:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 576px) { .ca-btn-liberar { width: 100%; justify-content: center; } }
 .ca-det-novedad { font-size: 12px; color: #92400e; background: #fffbeb; border-radius: 6px; padding: 4px 8px; margin-bottom: 8px; }
 .ca-det-total { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; max-width: 280px; }
 

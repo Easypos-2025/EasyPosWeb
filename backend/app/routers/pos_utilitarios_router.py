@@ -2,6 +2,7 @@ from fastapi import APIRouter, Header, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
 from typing import Optional
+from pydantic import BaseModel, Field
 
 from app.database import get_db, get_datatemppos_db
 from app.auth.jwt_handler import decode_access_token
@@ -55,7 +56,8 @@ async def _get_admin_user(authorization: str, db: AsyncSession) -> User:
     if user.role and not user.role.is_system:
         if "ADMIN" not in (user.role.name or "").upper():
             raise HTTPException(status_code=403, detail="Requiere rol ADMIN")
-    return user
+    from app.auth.tenant import apply_selected_company
+    return await apply_selected_company(db, user)   # empresa del topbar (validada)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -440,6 +442,14 @@ async def cuentas_abiertas(
     ), {"cid": cid})).mappings().all()
     layout_names = {str(r["name"] or "").strip() for r in layout_rows}
 
+    # Mesas tomadas por un dispositivo (bloqueo de mesa-cuenta)
+    lock_rows = (await db_temp.execute(text("""
+        SELECT TRIM(Mesa) AS mesa, editing_waiter_name, editing_since
+        FROM temp_mesa_abierta
+        WHERE company_id=:cid AND editing_token IS NOT NULL AND editing_token <> ''
+    """), {"cid": cid})).mappings().all()
+    locks = {str(r["mesa"] or ""): r for r in lock_rows}
+
     result = []
     for r in order_rows:
         is_delivery = bool(r["is_delivery"])
@@ -461,8 +471,44 @@ async def cuentas_abiertas(
             "notes":         r["notes"],
             "waiter_name":   waiter_names.get(int(r["Mesero"] or 0)),
             "item_count":    item_count_map.get(r["order_number"], 0),
+            "editing_by":    (locks.get(table_name) or {}).get("editing_waiter_name"),
+            "editing_since": str((locks.get(table_name) or {}).get("editing_since") or "") or None,
         })
     return result
+
+
+# ═══════════════════════════════════════════════════════════════
+# POST /api/pos/utilitarios/liberar-mesa
+# Desbloqueo de mesa-cuenta (solo ADMIN): libera la mesa tomada por un dispositivo
+# (p. ej. un celular que se apagó sin salir del pedido). No toca el pedido.
+# ═══════════════════════════════════════════════════════════════
+class LiberarMesaIn(BaseModel):
+    order_number: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/liberar-mesa")
+async def liberar_mesa(
+    data: LiberarMesaIn,
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+    db_temp: AsyncSession = Depends(get_datatemppos_db),
+):
+    user = await _get_admin_user(authorization, db)
+    cid = user.company_id
+    mesa = (await db_temp.execute(text(
+        "SELECT Mesa FROM temp_comanda WHERE company_id=:cid AND Nro_Pedido=:on "
+        "AND Nro_Factura='0' AND Cancelado=0 LIMIT 1"
+    ), {"cid": cid, "on": data.order_number})).scalar()
+    if mesa is None:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada o ya cerrada")
+    r = await db_temp.execute(text("""
+        UPDATE temp_mesa_abierta
+        SET editing_waiter_name=NULL, editing_since=NULL, editing_token=NULL, updated_at=NOW()
+        WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)
+          AND editing_token IS NOT NULL AND editing_token <> ''
+    """), {"cid": cid, "mesa": mesa})
+    await db_temp.commit()
+    return {"ok": True, "released": r.rowcount > 0}
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -515,8 +515,10 @@ async function unlockAudio() {
 }
 function playNotifSound() {
   try {
-    const ctx = _getCtx()
-    if (ctx.state === "suspended") { hasNewNotif.value = true; return }
+    // Antes del primer clic no se crea el AudioContext (Chrome lo bloquea y avisa en consola):
+    // queda pendiente y unlockAudio() lo reproduce en el primer clic.
+    if (!_actx || _actx.state !== "running") { hasNewNotif.value = true; return }
+    const ctx = _actx
     const t = ctx.currentTime
     // chime 1 — 880→660 Hz
     const o1 = ctx.createOscillator(), g1 = ctx.createGain()
