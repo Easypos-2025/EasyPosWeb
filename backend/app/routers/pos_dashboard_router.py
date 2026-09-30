@@ -120,7 +120,8 @@ async def get_kpis(
         "SELECT COUNT(*) FROM pos_tables_layout WHERE company_id=:cid"
     ), {"cid": cid})).scalar() or 0)
     _ocupadas_cnt  = int((await db_temp.execute(text(
-        "SELECT COUNT(*) FROM temp_mesa_abierta WHERE company_id=:cid AND Abierta=1"
+        "SELECT COUNT(DISTINCT TRIM(Mesa)) FROM temp_comanda "
+        "WHERE company_id=:cid AND Nro_Factura='0' AND Cancelado=0"
     ), {"cid": cid})).scalar() or 0)
     r_mesas = {
         "libres":   max(0, _total_mesas - _ocupadas_cnt),
@@ -173,14 +174,14 @@ async def get_mesas(
         WHERE tc.company_id = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado = 0
-          -- No tocar pedidos que se están montando: la mesa está tomada por un dispositivo
-          -- (temp_mesa_abierta.editing_token). Gracia de 2 min para la apertura.
+          -- No tocar pedidos que se están montando: la mesa está abierta en un dispositivo
+          -- (temp_mesa_abierta.Abierta = 1). Gracia de 2 min para la apertura.
           AND COALESCE(tc.updated_at, '2000-01-01') < NOW() - INTERVAL 2 MINUTE
           AND NOT EXISTS (
               SELECT 1 FROM temp_mesa_abierta tma
               WHERE tma.company_id = tc.company_id
                 AND TRIM(tma.Mesa) = TRIM(tc.Mesa)
-                AND tma.editing_token IS NOT NULL AND tma.editing_token <> ''
+                AND tma.Abierta = 1
           )
           AND NOT EXISTS (
               SELECT 1 FROM temp_detalle_comanda_parcial tdc
@@ -196,6 +197,7 @@ async def get_mesas(
         SET tma.Abierta = 0, tma.Abierta_Desde = NULL, tma.updated_at = NOW()
         WHERE tma.company_id = :cid
           AND tma.Abierta = 1
+          AND (tma.editing_token IS NULL OR tma.editing_token = '')
           AND NOT EXISTS (
               SELECT 1 FROM temp_comanda tc
               WHERE tc.company_id = :cid
@@ -216,17 +218,18 @@ async def get_mesas(
         ORDER BY z.order_index, z.name, t.name
     """), {"cid": cid})).mappings().all()
 
-    # Mesas abiertas y mesas tomadas por un dispositivo (el bloqueo no vence)
+    # Mesas abiertas en un dispositivo (Abierta = 1 → bloqueadas; no vence)
     open_rows = (await db_temp.execute(text("""
-        SELECT Id_Mesa, Abierta, editing_waiter_name, editing_token
+        SELECT Id_Mesa, editing_waiter_name, Abierta_Desde
         FROM temp_mesa_abierta
-        WHERE company_id=:cid AND (Abierta=1 OR (editing_token IS NOT NULL AND editing_token <> ''))
+        WHERE company_id=:cid AND Abierta=1
     """), {"cid": cid})).mappings().all()
-    open_set = {int(r["Id_Mesa"]) for r in open_rows if int(r["Abierta"] or 0) == 1}
-    locks_dash = {
-        int(r["Id_Mesa"]): (r["editing_waiter_name"] or "Otro usuario")
-        for r in open_rows if r.get("editing_token")
-    }
+    open_set = {int(r["Id_Mesa"]) for r in open_rows}
+
+    def _quien(r):
+        n, d = (r["editing_waiter_name"] or "").strip(), (r["Abierta_Desde"] or "").strip()
+        return f"{n} en {d}" if (n and d) else (n or d or "Otro dispositivo")
+    locks_dash = {int(r["Id_Mesa"]): _quien(r) for r in open_rows}
 
     # Pedidos activos desde datatemppos (sin filtro de fecha — incluye pendientes de
     # días anteriores). Sin filtro de Domicilio: las cuentas dinámicas (domicilio,
@@ -532,7 +535,9 @@ async def abrir_mesa(
         LIMIT 1
     """), {"cid": cid, "mesa": data.table_name})).fetchone()
 
-    if locked or existing:
+    if locked:
+        raise HTTPException(status_code=409, detail="La mesa está abierta en otro dispositivo")
+    if existing:
         raise HTTPException(status_code=409, detail="La mesa ya tiene una comanda abierta")
 
     ts = int(datetime.now(_BOG).timestamp() * 1000)
@@ -557,17 +562,7 @@ async def abrir_mesa(
         "delivery": data.delivery,
     })
 
-    # Marcar mesa como abierta en temp_mesa_abierta
-    await db_temp.execute(text("""
-        INSERT INTO temp_mesa_abierta
-            (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
-        VALUES (:cid, :tid, :mesa, 1, NOW(), NOW())
-        ON DUPLICATE KEY UPDATE
-            Mesa=VALUES(Mesa), Abierta=1,
-            Abierta_Desde=CASE WHEN Abierta=0 THEN NOW() ELSE Abierta_Desde END,
-            updated_at=NOW()
-    """), {"cid": cid, "tid": data.table_id, "mesa": data.table_name})
-
+    # temp_mesa_abierta la marca quien ENTRA a la mesa (bloqueo por dispositivo)
     await db_temp.commit()
     return {"ok": True, "order_number": order_number}
 

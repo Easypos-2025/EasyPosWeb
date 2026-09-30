@@ -528,17 +528,19 @@ async def push_temp_table_status(
     db: AsyncSession = Depends(get_datatemppos_db),
 ):
     _verify(x_api_key)
+    # Las mesas abiertas desde la web (editing_token) no las toca el escritorio
     await db.execute(
-        text("DELETE FROM temp_mesa_abierta WHERE company_id = :cid"),
+        text("DELETE FROM temp_mesa_abierta WHERE company_id = :cid "
+             "AND (editing_token IS NULL OR editing_token = '')"),
         {"cid": batch.company_id},
     )
     saved = 0
     for t in batch.tables:
         await db.execute(text("""
-            INSERT INTO temp_mesa_abierta
+            INSERT IGNORE INTO temp_mesa_abierta
                 (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
             VALUES
-                (:cid, :id_mesa, :mesa, :abierta, NOW(), NOW())
+                (:cid, :id_mesa, :mesa, :abierta, 'Escritorio', NOW())
         """), {
             "cid":     batch.company_id,
             "id_mesa": t.table_id,

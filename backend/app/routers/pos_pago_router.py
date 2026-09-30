@@ -79,12 +79,14 @@ async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str):
 async def _en_uso_por(db_temp: AsyncSession, cid: int, mesa) -> Optional[str]:
     """Nombre de quien tiene la mesa-cuenta abierta en un dispositivo (o None si está libre)."""
     row = (await db_temp.execute(text("""
-        SELECT editing_waiter_name FROM temp_mesa_abierta
-        WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)
-          AND editing_token IS NOT NULL AND editing_token <> ''
+        SELECT editing_waiter_name, Abierta_Desde FROM temp_mesa_abierta
+        WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa) AND Abierta = 1
         LIMIT 1
     """), {"cid": cid, "mesa": mesa or ""})).first()
-    return (row[0] or "otro usuario") if row else None
+    if not row:
+        return None
+    n, d = (row[0] or "").strip(), (row[1] or "").strip()
+    return f"{n} en {d}" if (n and d) else (n or (f"el dispositivo {d}" if d else "otro dispositivo"))
 
 
 async def _exigir_mesa_libre(db_temp: AsyncSession, cid: int, mesa) -> None:
@@ -93,7 +95,7 @@ async def _exigir_mesa_libre(db_temp: AsyncSession, cid: int, mesa) -> None:
     quien = await _en_uso_por(db_temp, cid, mesa)
     if quien:
         raise HTTPException(status_code=423, detail=(
-            f"La cuenta {str(mesa or '').strip()} está abierta por {quien} en otro dispositivo. "
+            f"La cuenta {str(mesa or '').strip()} está abierta por {quien}. "
             "No se puede pagar hasta que la cierre o un administrador la libere en Cuentas Abiertas."))
 
 

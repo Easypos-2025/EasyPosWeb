@@ -444,11 +444,15 @@ async def cuentas_abiertas(
 
     # Mesas tomadas por un dispositivo (bloqueo de mesa-cuenta)
     lock_rows = (await db_temp.execute(text("""
-        SELECT TRIM(Mesa) AS mesa, editing_waiter_name, editing_since
+        SELECT TRIM(Mesa) AS mesa, editing_waiter_name, editing_since, Abierta_Desde
         FROM temp_mesa_abierta
-        WHERE company_id=:cid AND editing_token IS NOT NULL AND editing_token <> ''
+        WHERE company_id=:cid AND Abierta = 1
     """), {"cid": cid})).mappings().all()
-    locks = {str(r["mesa"] or ""): r for r in lock_rows}
+    locks = {}
+    for r in lock_rows:
+        n, d = (r["editing_waiter_name"] or "").strip(), (r["Abierta_Desde"] or "").strip()
+        locks[str(r["mesa"] or "")] = {"editing_waiter_name": f"{n} en {d}" if (n and d) else (n or d or "otro dispositivo"),
+                                       "editing_since": r["editing_since"]}
 
     result = []
     for r in order_rows:
@@ -503,9 +507,9 @@ async def liberar_mesa(
         raise HTTPException(status_code=404, detail="Cuenta no encontrada o ya cerrada")
     r = await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
-        SET editing_waiter_name=NULL, editing_since=NULL, editing_token=NULL, updated_at=NOW()
-        WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)
-          AND editing_token IS NOT NULL AND editing_token <> ''
+        SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW(),
+            editing_waiter_name=NULL, editing_since=NULL, editing_token=NULL
+        WHERE company_id=:cid AND TRIM(Mesa)=TRIM(:mesa) AND Abierta = 1
     """), {"cid": cid, "mesa": mesa})
     await db_temp.commit()
     return {"ok": True, "released": r.rowcount > 0}

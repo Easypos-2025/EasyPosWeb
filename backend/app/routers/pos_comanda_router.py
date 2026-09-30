@@ -230,14 +230,14 @@ async def get_mesas(
         WHERE tc.company_id = :cid
           AND tc.Nro_Factura = '0'
           AND tc.Cancelado = 0
-          -- No tocar pedidos que se están montando: la mesa está tomada por un dispositivo
-          -- (temp_mesa_abierta.editing_token). Gracia de 2 min para la apertura.
+          -- No tocar pedidos que se están montando: la mesa está abierta en un dispositivo
+          -- (temp_mesa_abierta.Abierta = 1). Gracia de 2 min para la apertura.
           AND COALESCE(tc.updated_at, '2000-01-01') < NOW() - INTERVAL 2 MINUTE
           AND NOT EXISTS (
               SELECT 1 FROM temp_mesa_abierta tma
               WHERE tma.company_id = tc.company_id
                 AND TRIM(tma.Mesa) = TRIM(tc.Mesa)
-                AND tma.editing_token IS NOT NULL AND tma.editing_token <> ''
+                AND tma.Abierta = 1
           )
           AND NOT EXISTS (
               SELECT 1 FROM temp_detalle_comanda_parcial tdc
@@ -253,6 +253,7 @@ async def get_mesas(
         SET tma.Abierta = 0, tma.Abierta_Desde = NULL, tma.updated_at = NOW()
         WHERE tma.company_id = :cid
           AND tma.Abierta = 1
+          AND (tma.editing_token IS NULL OR tma.editing_token = '')
           AND NOT EXISTS (
               SELECT 1 FROM temp_comanda tc
               WHERE tc.company_id = :cid
@@ -314,14 +315,13 @@ async def get_mesas(
         ), {"cid": cid})).mappings().all()
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
-    # Mesas tomadas por un dispositivo (no vencen: se liberan al salir o por el admin)
+    # Mesas abiertas en un dispositivo (Abierta = 1): bloqueadas para cualquier otro
     lock_rows = (await db_temp.execute(text("""
-        SELECT Id_Mesa, editing_waiter_name, editing_token
+        SELECT Id_Mesa, editing_waiter_name, editing_token, Abierta_Desde
         FROM temp_mesa_abierta
-        WHERE company_id=:cid
-          AND editing_token IS NOT NULL AND editing_token <> ''
+        WHERE company_id=:cid AND Abierta = 1
     """), {"cid": cid})).mappings().all()
-    locks: dict = {int(r["Id_Mesa"]): {"name": r["editing_waiter_name"], "token": r["editing_token"]} for r in lock_rows}
+    locks: dict = {int(r["Id_Mesa"]): {"name": _quien(r), "token": r["editing_token"]} for r in lock_rows}
 
     # Construir respuesta por zonas
     zones: dict = {}
@@ -380,13 +380,6 @@ async def abrir_mesa(
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
     await _exigir_mesa(db_temp, cid, x_edit_token, table_id=data.table_id)
 
-    # Verificar bloqueo en temp_mesa_abierta (check primario — previene race condition)
-    locked = (await db_temp.execute(text("""
-        SELECT Id_Mesa FROM temp_mesa_abierta
-        WHERE company_id=:cid AND Id_Mesa=:tid AND Abierta=1
-        LIMIT 1
-    """), {"cid": cid, "tid": data.table_id})).mappings().first()
-
     # Verificar también en temp_comanda (sin filtro de fecha: órdenes que cruzan medianoche)
     existing = (await db_temp.execute(text("""
         SELECT Nro_Pedido FROM temp_comanda
@@ -396,7 +389,7 @@ async def abrir_mesa(
         LIMIT 1
     """), {"mesa": mesa["name"], "cid": cid})).mappings().first()
 
-    if locked or existing:
+    if existing:
         # Devuelve el número de pedido existente para redirigir al mesero
         order_num = existing["Nro_Pedido"] if existing else None
         return {"order_number": order_num, "date": today, "already_open": True}
@@ -426,18 +419,7 @@ async def abrir_mesa(
         "cli":    customer["id_cliente"],
     })
 
-    # Marcar mesa como abierta en temp_mesa_abierta
-    await db_temp.execute(text("""
-        INSERT INTO temp_mesa_abierta
-            (company_id, Id_Mesa, Mesa, Abierta, Abierta_Desde, updated_at)
-        VALUES (:cid, :tid, :mesa, 1, NOW(), NOW())
-        ON DUPLICATE KEY UPDATE
-            Mesa          = VALUES(Mesa),
-            Abierta       = 1,
-            Abierta_Desde = CASE WHEN Abierta = 0 THEN NOW() ELSE Abierta_Desde END,
-            updated_at    = NOW()
-    """), {"cid": cid, "tid": data.table_id, "mesa": mesa["name"]})
-
+    # temp_mesa_abierta la marca quien ENTRA a la mesa (bloqueo por dispositivo)
     await db_temp.commit()
     return {"order_number": order_number, "date": today, "already_open": False}
 
@@ -1620,10 +1602,12 @@ async def get_cocina_pedidos(
 
 
 # ── 14. BLOQUEO DE MESA-CUENTA ────────────────────────────────────────────────
-# Al entrar a una mesa, el dispositivo la toma (temp_mesa_abierta.editing_token). Mientras
-# la tenga, ningún otro mesero ni dispositivo puede entrar ni modificar el pedido. Se libera
-# al salir o enviar, al pagar la cuenta completa, o desde Cuentas Abiertas (administrador).
-# No vence solo: si un dispositivo se apaga, el administrador la libera.
+# temp_mesa_abierta.Abierta = 1 → la mesa-cuenta está abierta en un dispositivo y queda
+# BLOQUEADA para cualquier otro: otro mesero, otro dispositivo o el mismo usuario en otro
+# equipo o pestaña. Abierta_Desde = nombre del dispositivo; editing_token identifica la
+# sesión de la pestaña que la tiene (solo esa pestaña puede seguir trabajando en ella).
+# Se libera al salir o enviar, al pagar la cuenta completa, o por el administrador en
+# Cuentas Abiertas (cierre inesperado). No vence sola. Tampoco se puede pagar abierta.
 
 import secrets as _secrets
 
@@ -1635,6 +1619,15 @@ def _token_valido(token: Optional[str]) -> Optional[str]:
     return t if _TOKEN_RE.match(t) else None
 
 
+def _quien(row) -> str:
+    """Texto 'USUARIO en DISPOSITIVO' de una mesa bloqueada."""
+    nombre = (row.get("editing_waiter_name") or "").strip()
+    disp = (row.get("Abierta_Desde") or "").strip()
+    if nombre and disp:
+        return f"{nombre} en {disp}"
+    return nombre or (f"el dispositivo {disp}" if disp else "otro dispositivo")
+
+
 async def _dueno_mesa(db_temp: AsyncSession, cid: int, table_id: Optional[int] = None,
                       mesa_name: Optional[str] = None):
     if table_id is not None:
@@ -1642,15 +1635,15 @@ async def _dueno_mesa(db_temp: AsyncSession, cid: int, table_id: Optional[int] =
     else:
         q, p = "company_id=:cid AND TRIM(Mesa)=TRIM(:mesa)", {"cid": cid, "mesa": mesa_name or ""}
     return (await db_temp.execute(text(f"""
-        SELECT Id_Mesa, editing_waiter_name, editing_token FROM temp_mesa_abierta
-        WHERE {q} AND editing_token IS NOT NULL AND editing_token <> ''
+        SELECT Id_Mesa, editing_waiter_name, editing_token, Abierta_Desde FROM temp_mesa_abierta
+        WHERE {q} AND Abierta = 1
         LIMIT 1
     """), p)).mappings().first()
 
 
 async def _exigir_mesa(db_temp: AsyncSession, cid: int, token: Optional[str],
                        table_id: Optional[int] = None, order_number: Optional[str] = None) -> None:
-    """409 si la mesa (o la mesa del pedido) está tomada por OTRO dispositivo."""
+    """409 si la mesa (o la mesa del pedido) está abierta en OTRO dispositivo/pestaña."""
     if table_id is None:
         mesa = (await db_temp.execute(text(
             "SELECT Mesa FROM temp_comanda WHERE company_id=:cid AND Nro_Pedido=:on LIMIT 1"
@@ -1660,14 +1653,15 @@ async def _exigir_mesa(db_temp: AsyncSession, cid: int, token: Optional[str],
         lock = await _dueno_mesa(db_temp, cid, mesa_name=mesa)
     else:
         lock = await _dueno_mesa(db_temp, cid, table_id=table_id)
-    if lock and lock["editing_token"] != _token_valido(token):
-        raise HTTPException(status_code=409,
-                            detail=f"La mesa está abierta por {lock['editing_waiter_name'] or 'otro usuario'} en otro dispositivo")
+    tk = _token_valido(token)
+    if lock and (not tk or lock["editing_token"] != tk):
+        raise HTTPException(status_code=409, detail=f"La mesa está abierta por {_quien(lock)}")
 
 
 class EditLockIn(BaseModel):
     waiter_name: str
-    token: str  # UUID generado por el dispositivo
+    token: str                          # sesión de la pestaña (generado por el dispositivo)
+    device_name: Optional[str] = None   # nombre del dispositivo → temp_mesa_abierta.Abierta_Desde
 
 
 @router.post("/mesa/{table_id}/editar")
@@ -1678,7 +1672,8 @@ async def adquirir_lock(
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
-    """Toma la mesa para este dispositivo. 409 si otro dispositivo la tiene."""
+    """Abre la mesa en este dispositivo (Abierta = 1). 409 si ya está abierta en otro
+    dispositivo o pestaña, aunque sea el mismo usuario."""
     cid = payload["company_id"]
     token = _token_valido(data.token)
     if not token:
@@ -1688,26 +1683,28 @@ async def adquirir_lock(
     ), {"tid": table_id, "cid": cid})).mappings().first()
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
-    nombre = (data.waiter_name or "Mesero").strip()[:100] or "Mesero"
+    nombre = re.sub(r"[\x00-\x1f<>]", "", (data.waiter_name or "")).strip()[:100] or "Usuario"
+    dispositivo = re.sub(r"[\x00-\x1f<>]", "", (data.device_name or "")).strip()[:100] or "Dispositivo web"
 
-    # Toma atómica: solo si está libre o ya es de este dispositivo
+    # Apertura atómica: solo si nadie la tiene abierta (o es esta misma pestaña, p. ej. al recargar)
     await db_temp.execute(text("""
         INSERT IGNORE INTO temp_mesa_abierta (company_id, Id_Mesa, Mesa, Abierta, updated_at)
         VALUES (:cid, :tid, :mesa, 0, NOW())
     """), {"cid": cid, "tid": table_id, "mesa": mesa["name"]})
     await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
-        SET editing_waiter_name = :name, editing_since = NOW(), editing_token = :token
+        SET Abierta = 1, Abierta_Desde = :disp, Mesa = :mesa,
+            editing_waiter_name = :name, editing_since = NOW(), editing_token = :token, updated_at = NOW()
         WHERE company_id=:cid AND Id_Mesa=:tid
-          AND (editing_token IS NULL OR editing_token = '' OR editing_token = :token)
-    """), {"cid": cid, "tid": table_id, "name": nombre, "token": token})
+          AND (COALESCE(Abierta, 0) = 0 OR editing_token = :token)
+    """), {"cid": cid, "tid": table_id, "mesa": mesa["name"], "name": nombre, "disp": dispositivo, "token": token})
     await db_temp.commit()
-    dueno = (await db_temp.execute(text(
-        "SELECT editing_waiter_name, editing_token FROM temp_mesa_abierta WHERE company_id=:cid AND Id_Mesa=:tid"
-    ), {"cid": cid, "tid": table_id})).mappings().first()
-    if not dueno or dueno["editing_token"] != token:
-        raise HTTPException(status_code=409,
-                            detail=f"La mesa está abierta por {(dueno or {}).get('editing_waiter_name') or 'otro usuario'} en otro dispositivo")
+    dueno = (await db_temp.execute(text("""
+        SELECT Abierta, editing_waiter_name, editing_token, Abierta_Desde
+        FROM temp_mesa_abierta WHERE company_id=:cid AND Id_Mesa=:tid
+    """), {"cid": cid, "tid": table_id})).mappings().first()
+    if not dueno or int(dueno["Abierta"] or 0) != 1 or dueno["editing_token"] != token:
+        raise HTTPException(status_code=409, detail=f"La mesa está abierta por {_quien(dueno or {})}")
     return {"ok": True, "token": token}
 
 
@@ -1719,15 +1716,16 @@ async def liberar_lock(
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
-    """Libera la mesa (solo quien la tiene). Si el pedido quedó sin ítems se cancela y la
-    mesa queda libre de inmediato."""
+    """Cierra la mesa en este dispositivo (Abierta = 0). Solo la pestaña que la abrió.
+    Si el pedido quedó sin ítems se cancela."""
     cid = payload["company_id"]
     token = _token_valido(token)
     if not token:
         return {"ok": True}
     r = await db_temp.execute(text("""
         UPDATE temp_mesa_abierta
-        SET editing_waiter_name = NULL, editing_since = NULL, editing_token = NULL
+        SET Abierta = 0, Abierta_Desde = NULL, updated_at = NOW(),
+            editing_waiter_name = NULL, editing_since = NULL, editing_token = NULL
         WHERE company_id=:cid AND Id_Mesa=:tid AND editing_token=:token
     """), {"cid": cid, "tid": table_id, "token": token})
     if r.rowcount:
@@ -1745,12 +1743,6 @@ async def liberar_lock(
                         AND tdc.Nro_Factura='0'
                   )
             """), {"cid": cid, "mesa": mesa})
-            await db_temp.execute(text("""
-                UPDATE temp_mesa_abierta SET Abierta=0, Abierta_Desde=NULL, updated_at=NOW()
-                WHERE company_id=:cid AND Id_Mesa=:tid
-                  AND NOT EXISTS (SELECT 1 FROM temp_comanda tc WHERE tc.company_id=:cid
-                                  AND TRIM(tc.Mesa)=TRIM(:mesa) AND tc.Nro_Factura='0' AND tc.Cancelado=0)
-            """), {"cid": cid, "tid": table_id, "mesa": mesa})
     await db_temp.commit()
     return {"ok": True}
 

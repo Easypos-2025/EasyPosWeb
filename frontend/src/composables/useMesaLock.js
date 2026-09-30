@@ -1,7 +1,9 @@
-// Bloqueo de mesa-cuenta: mientras un dispositivo tiene la mesa abierta, ningún otro
-// mesero ni dispositivo puede entrar ni modificar el pedido. El servidor valida el
-// token (header X-Edit-Token) en cada operación. Se libera al salir o enviar; si el
-// dispositivo se apaga, el administrador la libera desde Cuentas Abiertas.
+// Bloqueo de mesa-cuenta: al entrar a una mesa queda temp_mesa_abierta.Abierta = 1 con el
+// nombre del dispositivo (Abierta_Desde). Nadie más puede entrar ni modificar el pedido:
+// ni otro mesero, ni otro dispositivo, ni el mismo usuario en otro equipo o pestaña.
+// El token vive en sessionStorage (es de ESTA pestaña; sobrevive solo a una recarga) y el
+// servidor lo valida (header X-Edit-Token) en cada operación. Se libera al salir o enviar;
+// si el dispositivo se apaga, el administrador la libera en Cuentas Abiertas.
 import apiComanda from "@/services/apiComanda"
 
 function nuevoToken() {
@@ -20,16 +22,33 @@ function nombreUsuario() {
   } catch { return "Usuario" }
 }
 
+// Nombre legible y estable del dispositivo (navegador · sistema · id corto), guardado en
+// este equipo. Es lo que se registra en temp_mesa_abierta.Abierta_Desde.
+export function nombreDispositivo() {
+  try {
+    let n = localStorage.getItem("device_name")
+    if (n) return n
+    const ua = navigator.userAgent || ""
+    const nav = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome"
+      : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Navegador"
+    const so = /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows"
+      : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "Equipo"
+    n = `${so}-${nav}-${nuevoToken().replace(/-/g, "").slice(0, 4).toUpperCase()}`
+    localStorage.setItem("device_name", n)
+    return n
+  } catch { return "Dispositivo web" }
+}
+
 export function useMesaLock(getTableId) {
   let token = null
   const clave = () => `mesa_lock_${localStorage.getItem("waiter_company_id") || ""}_${getTableId()}`
 
   function leerToken() {
     try {
-      const t = localStorage.getItem(clave())
+      const t = sessionStorage.getItem(clave())
       if (t) return t
       const n = nuevoToken()
-      localStorage.setItem(clave(), n)
+      sessionStorage.setItem(clave(), n)
       return n
     } catch { return nuevoToken() }
   }
@@ -39,12 +58,12 @@ export function useMesaLock(getTableId) {
     token = leerToken()
     apiComanda.defaults.headers.common["X-Edit-Token"] = token
     await apiComanda.post(`/api/pos/comanda/mesa/${getTableId()}/editar`, {
-      waiter_name: nombreUsuario(), token,
+      waiter_name: nombreUsuario(), token, device_name: nombreDispositivo(),
     })
   }
 
   function limpiarLocal() {
-    try { localStorage.removeItem(clave()) } catch { /* sin almacenamiento */ }
+    try { sessionStorage.removeItem(clave()) } catch { /* sin almacenamiento */ }
     delete apiComanda.defaults.headers.common["X-Edit-Token"]
     token = null
   }
