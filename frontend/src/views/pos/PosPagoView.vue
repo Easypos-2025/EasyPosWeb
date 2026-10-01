@@ -17,9 +17,10 @@
           <div class="pg-mesa">{{ datos.order.table_name || 'Cuenta' }}</div>
           <div class="pg-rec">Recibo Nro. {{ datos.consecutivo_preview }} <small>(informativo)</small></div>
         </div>
-        <button class="pg-hdr-field" @click="modalCliente = true" title="Cambiar cliente">
+        <button :class="['pg-hdr-field', { 'pg-hdr-field--locked': clienteFijo }]" @click="abrirClienteRecibo"
+                :title="clienteFijo ? 'El pedido se montó con la lista de este cliente: se factura a él' : 'Cambiar cliente'">
           <span class="pg-lbl">Cliente</span>
-          <span class="pg-val"><i class="bi bi-person-badge"></i> {{ cliente.nombre }}</span>
+          <span class="pg-val"><i :class="clienteFijo ? 'bi bi-lock-fill' : 'bi bi-person-badge'"></i> {{ cliente.nombre }}</span>
         </button>
         <label class="pg-hdr-field">
           <span class="pg-lbl">Vendedor</span>
@@ -273,6 +274,15 @@ const errorCarga    = ref('')
 const registrando   = ref(false)
 const datos         = ref(null)
 const companyStore  = useCompanyStore()
+// Pedido montado con la lista de un cliente (≠ Consumidor Final): se factura a ese cliente
+const clienteFijo   = computed(() => (datos.value?.customer?.id_cliente || 1) !== 1)
+function abrirClienteRecibo() {
+  if (clienteFijo.value) {
+    showToast('El pedido se montó con la lista de precios de este cliente. Si está mal, elimine el pedido y móntelo de nuevo.', 'warning', 4500)
+    return
+  }
+  modalCliente.value = true
+}
 const companyId     = computed(() => companyStore.selectedCompany?.id || 0)
 const cliente       = ref({ id_cliente: 1, nombre: 'Consumidor Final' })
 const tab           = ref('previa')
@@ -745,4 +755,5 @@ onBeforeUnmount(() => {
   .pg-v b { font-size: 14px; }
   .pg-v--total b { font-size: 17px; }
 }
+.pg-hdr-field--locked .pg-val { background: #f1f5f9; color: #475569; cursor: not-allowed; }
 </style>

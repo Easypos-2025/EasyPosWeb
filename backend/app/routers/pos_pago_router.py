@@ -110,6 +110,20 @@ async def _exigir_mesa_libre(db_temp: AsyncSession, cid: int, mesa, token: Optio
             "No se puede pagar hasta que la cierre o un administrador la libere en Cuentas Abiertas."))
 
 
+def _cliente_recibo(orden, solicitado) -> int:
+    """El pedido montado con la lista de un cliente (≠ Consumidor Final) se factura SIEMPRE a
+    ese cliente: sus precios son los de su lista. Si el cliente está mal, se elimina el pedido
+    y se monta de nuevo. Un pedido de Consumidor Final puede facturarse al cliente que se escoja."""
+    del_pedido = int(orden["Id_Cliente"] or 0) or 1
+    if del_pedido != 1:
+        if solicitado and int(solicitado) != del_pedido:
+            raise HTTPException(status_code=422, detail=(
+                "El pedido se montó con la lista de precios de otro cliente: se factura a ese cliente. "
+                "Si el cliente está mal, elimine el pedido y móntelo de nuevo."))
+        return del_pedido
+    return int(solicitado or 1)
+
+
 async def _config(db: AsyncSession, cid: int) -> dict:
     """Propina desde configuracion_facturacion (espejo del escritorio); rótulo y POS
     electrónico desde company_configs."""
@@ -377,7 +391,7 @@ async def registrar_recibo(
             raise HTTPException(status_code=422, detail="El valor que entrega el cliente es menor al efectivo a pagar")
         cambio = recibido - efectivo
 
-    customer = await clientes_svc.get_cliente(db, cid, body.customer_id or int(orden["Id_Cliente"] or 0) or 1)
+    customer = await clientes_svc.get_cliente(db, cid, _cliente_recibo(orden, body.customer_id))
     delivery_customer = customer
     if delivery_amount and body.delivery_customer_id and body.delivery_customer_id != customer["id_cliente"]:
         delivery_customer = await clientes_svc.get_cliente(db, cid, body.delivery_customer_id)
@@ -609,7 +623,7 @@ async def _datos_precuenta(db: AsyncSession, db_temp: AsyncSession, cid: int, or
     waiter_id = body.waiter_id or int(orden["Mesero"] or 0)
     mesero = (await db.execute(text("SELECT name FROM pos_waiters WHERE id=:w AND company_id=:cid"),
                                {"w": waiter_id, "cid": cid})).scalar() if waiter_id else None
-    cli = await clientes_svc.get_cliente(db, cid, body.customer_id or int(orden["Id_Cliente"] or 0) or 1)
+    cli = await clientes_svc.get_cliente(db, cid, _cliente_recibo(orden, body.customer_id))
     emp = (await db.execute(text(
         "SELECT name, identification_number nit, dv, address, phone FROM companies WHERE id_company=:cid"
     ), {"cid": cid})).mappings().first() or {}
