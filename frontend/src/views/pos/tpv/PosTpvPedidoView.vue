@@ -220,6 +220,7 @@
 
     <!-- Modal armado -->
     <ComandaAssemblyModal
+      :customer-id="order?.customer?.id_cliente || 1"
       v-if="assemblyDish"
       :dish="assemblyDish"
       :preloaded-notes="preloadedNotes"
@@ -309,10 +310,10 @@ async function cambiarCliente(c) {
     const pendientes = items.value.filter(i => i.isNew)       // ítems aún no enviados se conservan
     await loadOrder()
     items.value.push(...pendientes)
+    await cargarPreciosCliente()
     clienteOpen.value = false
     let msg = `Cliente: ${data.customer.nombre}`
     if (data.kept_with_discount) msg += ` · ${data.kept_with_discount} ítem(s) con descuento conservan su valor`
-    if (pendientes.length) msg += ' · los ítems nuevos se cobrarán con su lista al enviar'
     showToast(msg, 'success')
   } catch (e) {
     showToast(e?.response?.data?.detail || 'No se pudo cambiar el cliente', 'error')
@@ -412,6 +413,7 @@ onMounted(async () => {
   }
   window.addEventListener('pagehide', mesaLock.liberarAlCerrar)
   await Promise.all([loadOrder(), loadMenu(), loadNotes()])
+  await cargarPreciosCliente()
 })
 
 onUnmounted(() => {
@@ -441,10 +443,40 @@ async function loadOrder() {
   }
 }
 
+// Precios del cliente del pedido (su lista → Lista Default → precio del plato). Se aplican a
+// las tarjetas del menú y a los ítems aún no enviados; el cobro real lo recalcula el servidor.
+const preciosCliente = ref({ platos: {}, variantes: {} })
+async function cargarPreciosCliente() {
+  try {
+    const { data } = await apiComanda.get('/api/pos/comanda/precios', {
+      params: { customer_id: order.value?.customer?.id_cliente || 1 },
+    })
+    preciosCliente.value = data
+  } catch { return }
+  aplicarPreciosCliente()
+}
+function aplicarPreciosCliente() {
+  const pp = preciosCliente.value
+  for (const cat of menuCategories.value) {
+    for (const d of (cat.dishes || [])) {
+      if (d.base_price === undefined) d.base_price = d.price
+      d.price = pp.platos?.[d.id] ?? d.base_price
+    }
+  }
+  for (const it of items.value) {
+    if (!it.isNew) continue
+    const unit = it.variant_id ? pp.variantes?.[it.variant_id] : pp.platos?.[it.dish_id]
+    if (unit === undefined) continue
+    const extra = (it.assembly || []).reduce((s, a) => s + (Number(a.supply_price) || 0), 0)
+    it.amount = (unit + extra) * (Number(it.quantity) || 1)
+  }
+}
+
 async function loadMenu() {
   try {
     const res = await apiComanda.get('/api/pos/comanda/menu')
     menuCategories.value = res.data.categories
+    if (Object.keys(preciosCliente.value.platos || {}).length) aplicarPreciosCliente()
     if (res.data.categories.length && !activeCategory.value) {
       activeCategory.value = res.data.categories[0].category_id
     }

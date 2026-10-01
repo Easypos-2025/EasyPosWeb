@@ -693,11 +693,32 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
     }
 
 
+# ── 5b. PRECIOS DEL CLIENTE (lista del cliente → Lista Default → precio del plato) ──
+
+@router.get("/precios")
+async def precios_cliente(
+    customer_id: int = Query(1, ge=1),
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """Precios de platos y variantes para el cliente del pedido (para mostrar en la toma de
+    pedidos). El cobro real lo recalcula el servidor al agregar cada ítem."""
+    from app.services import listas_precios
+    cid = payload["company_id"]
+    await clientes_svc.get_cliente(db, cid, customer_id)     # el cliente debe ser de la empresa
+    data = await listas_precios.precios_de_cliente(db, cid, customer_id)
+    await db.commit()
+    return {"customer_id": customer_id,
+            "platos": {str(k): v for k, v in data["platos"].items()},
+            "variantes": {str(k): v for k, v in data["variantes"].items()}}
+
+
 # ── 6. MENÚ DIARIO (opciones de armado para hoy) ─────────────────────────────
 
 @router.get("/menu-diario/{dish_id}")
 async def get_menu_diario(
     dish_id: int,
+    customer_id: int = Query(1, ge=1),
     payload: dict = Depends(_auth_comanda),
     db: AsyncSession = Depends(get_db),
 ):
@@ -711,6 +732,7 @@ async def get_menu_diario(
     variants = await armado_svc.dish_variants(db, cid, dish_id)
     for v in variants:
         v["assembly"] = await armado_svc.variant_assembly(db, cid, v["id"])   # {category_code: max_choices}
+        v["price"] = await armado_svc.variant_price(db, cid, customer_id, v, dish_id)  # precio de la lista del cliente
     return {
         "variants": variants,
         "categories": cats,

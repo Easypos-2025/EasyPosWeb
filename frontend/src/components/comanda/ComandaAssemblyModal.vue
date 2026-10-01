@@ -127,6 +127,7 @@ import { showToast } from '@/utils/toast'
 const props = defineProps({
   dish:           Object,
   preloadedNotes: { type: Array, default: () => [] },
+  customerId:     { type: Number, default: 1 },     // precios de la lista del cliente del pedido
 })
 const emit = defineEmits(['close', 'added'])
 
@@ -251,7 +252,7 @@ watch(() => props.dish, async (dish) => {
 
   loadingMenu.value = true
   try {
-    const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`)
+    const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`, { params: { customer_id: props.customerId || 1 } })
     categories.value    = res.data.categories
     fixedProducts.value = res.data.fixed_products
     variants.value      = res.data.variants || []

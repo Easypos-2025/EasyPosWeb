@@ -285,6 +285,25 @@ async def guardar_precios(id_lista: int, data: PreciosIn, company_id: Optional[i
                "p": ln.id_producto, "pres": ln.id_presentacion})
         actualizados += r.rowcount
     if h["predeterminada"] and h["activa"]:
+        # En la Default, el plato y su variante por defecto son el mismo precio: lo editado en
+        # una de las dos filas se copia a la otra antes de pasar los precios a los platos.
+        for ln in data.items:
+            vdef = (await db.execute(text(
+                "SELECT id FROM pos_dish_variants WHERE company_id=:cid AND dish_id=:p AND is_active=1 AND is_default=1 LIMIT 1"
+            ), {"cid": cid, "p": ln.id_producto})).scalar()
+            if not vdef:
+                continue
+            if ln.id_presentacion == 0:
+                destino = int(vdef)
+            elif ln.id_presentacion == int(vdef):
+                destino = 0
+            else:
+                continue
+            await db.execute(text("""
+                UPDATE pos_customer_price_list SET precio_producto = :pr, fecha = :f, synced = 0
+                WHERE company_id = :cid AND id_lista = :l AND id_producto = :p AND id_presentacion = :pres
+            """), {"pr": round(ln.precio), "f": _today(), "cid": cid, "l": id_lista,
+                   "p": ln.id_producto, "pres": destino})
         await lp.default_a_platos(db, cid, id_lista)
     await db.commit()
     return {"ok": True, "actualizados": actualizados}

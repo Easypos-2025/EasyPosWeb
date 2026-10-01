@@ -152,3 +152,32 @@ async def default_a_platos(db: AsyncSession, cid: int, id_lista: int) -> None:
         SET d.precio_producto = v.price
         WHERE d.company_id = :cid AND d.id_lista = :l AND d.id_presentacion = 0 AND d.precio_producto <> v.price
     """), {"cid": cid, "l": id_lista})
+
+
+async def precios_de_cliente(db: AsyncSession, cid: int, id_cliente: int) -> dict:
+    """Precios vigentes para un cliente, en bloque: {"platos": {id: precio}, "variantes": {id: precio}}.
+    Misma regla que precio(): lista del cliente → Default activa → precio del plato/variante."""
+    platos = {int(r[0]): int(r[1] or 0) for r in (await db.execute(text(
+        "SELECT id, price FROM pos_dishes WHERE company_id = :cid AND COALESCE(active, 0) = 0"
+    ), {"cid": cid})).all()}
+    variantes = {int(r[0]): int(r[1] or 0) for r in (await db.execute(text(
+        "SELECT id, price FROM pos_dish_variants WHERE company_id = :cid AND is_active = 1"
+    ), {"cid": cid})).all()}
+    listas = []
+    default = await lista_activa(db, cid, CLIENTE_DEFAULT)
+    if default:
+        listas.append(default)
+    if id_cliente and int(id_cliente) != CLIENTE_DEFAULT:
+        propia = await lista_activa(db, cid, int(id_cliente))
+        if propia:
+            listas.append(propia)          # se aplica después: sobrescribe a la Default
+    for l in listas:
+        for did, pres, pr in (await db.execute(text("""
+            SELECT id_producto, id_presentacion, precio_producto FROM pos_customer_price_list
+            WHERE company_id = :cid AND id_lista = :l
+        """), {"cid": cid, "l": l})).all():
+            if int(pres) == 0 and int(did) in platos:
+                platos[int(did)] = int(round(float(pr)))
+            elif int(pres) in variantes:
+                variantes[int(pres)] = int(round(float(pr)))
+    return {"platos": platos, "variantes": variantes}

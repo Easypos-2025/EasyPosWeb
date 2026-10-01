@@ -93,27 +93,33 @@
           <div v-if="bajoMinimo" class="warn-line"><i class="bi bi-exclamation-triangle"></i> {{ bajoMinimo }} producto(s) por debajo del precio mínimo.</div>
 
           <div v-if="loadingLista" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
-          <div v-else class="tbl-wrap">
-            <table class="tbl">
-              <thead><tr><th>Producto</th><th class="hide-sm">Categoría</th><th class="text-right">Precio</th></tr></thead>
-              <tbody>
-                <tr v-for="it in itemsFiltrados" :key="`${it.id_producto}-${it.id_presentacion}`"
-                    :class="{ 'row-warn': it.bajo_minimo, 'row-var': it.id_presentacion > 0, 'row-dirty': esCambio(it) }">
-                  <td>
-                    <div class="it-name">
-                      <i v-if="it.id_presentacion > 0" class="bi bi-arrow-return-right text-muted me-1"></i>{{ it.name }}
-                      <span v-if="it.var_default" class="chip-def">Por defecto</span>
-                    </div>
-                    <div v-if="it.bajo_minimo" class="it-warn">Mínimo {{ fmt(it.precio_minimo) }}</div>
-                  </td>
-                  <td class="hide-sm text-muted">{{ it.categoria || '—' }}</td>
-                  <td class="text-right">
-                    <CurrencyInput v-model="it.precio" class="inp-price" @update:model-value="marcar(it)" />
-                  </td>
-                </tr>
-                <tr v-if="!itemsFiltrados.length"><td colspan="3" class="text-center text-muted">Sin productos</td></tr>
-              </tbody>
-            </table>
+          <div v-else class="acc-wrap">
+            <div v-if="!grupos.length" class="lp-empty">Sin productos</div>
+            <div v-for="g in grupos" :key="g.nombre" :class="['acc-item', { open: estaAbierta(g.nombre) }]">
+              <button class="acc-hdr" @click="toggleCat(g.nombre)" :aria-expanded="estaAbierta(g.nombre)">
+                <i class="bi bi-chevron-right acc-chev"></i>
+                <span class="acc-name">{{ g.nombre }}</span>
+                <span v-if="g.cambios" class="acc-dirty">{{ g.cambios }} sin guardar</span>
+                <span class="acc-count">{{ g.items.length }}</span>
+              </button>
+              <table v-if="estaAbierta(g.nombre)" class="tbl">
+                <tbody>
+                  <tr v-for="it in g.items" :key="`${it.id_producto}-${it.id_presentacion}`"
+                      :class="{ 'row-warn': it.bajo_minimo, 'row-var': it.id_presentacion > 0, 'row-dirty': esCambio(it) }">
+                    <td>
+                      <div class="it-name">
+                        <i v-if="it.id_presentacion > 0" class="bi bi-arrow-return-right text-muted me-1"></i>{{ it.name }}
+                        <span v-if="it.var_default" class="chip-def">Por defecto</span>
+                      </div>
+                      <div v-if="it.bajo_minimo" class="it-warn">Mínimo {{ fmt(it.precio_minimo) }}</div>
+                    </td>
+                    <td class="text-right td-price">
+                      <CurrencyInput v-model="it.precio" class="inp-price" @update:model-value="marcar(it)" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </template>
       </section>
@@ -136,8 +142,9 @@
           <label class="lbl">Observación</label>
           <input v-model="nueva.observacion" class="inp" maxlength="255" />
           <label class="lbl">Cargar precios desde</label>
-          <label class="opt"><input type="radio" value="default" v-model="nueva.origen" /> La Lista Default (todos los productos activos)</label>
-          <label class="opt"><input type="radio" value="anterior" v-model="nueva.origen" /> La lista anterior de este cliente</label>
+          <label class="opt"><input type="radio" value="default" v-model="nueva.origen" /> Precios actuales (Lista Default) de todos los productos activos</label>
+          <label class="opt"><input type="radio" value="anterior" v-model="nueva.origen" /> Precios de la lista anterior del cliente + los productos nuevos con el precio actual</label>
+          <p class="info-line"><i class="bi bi-info-circle"></i> Toda lista incluye siempre todos los productos activos: los platos que se creen después se agregan solos con el precio actual.</p>
           <p class="warn-line"><i class="bi bi-info-circle"></i> Si el cliente tiene una lista activa, quedará anulada (solo una activa por cliente).</p>
         </div>
         <div class="mf">
@@ -200,6 +207,21 @@ const itemsFiltrados = computed(() => {
   const q = qItems.value.trim().toLowerCase()
   return q ? items.value.filter(i => i.name.toLowerCase().includes(q) || (i.categoria || '').toLowerCase().includes(q)) : items.value
 })
+// Acordeón por categoría: una sola abierta; al filtrar se muestran abiertas las que coinciden
+const catAbierta = ref(null)
+const grupos = computed(() => {
+  const m = new Map()
+  for (const it of itemsFiltrados.value) {
+    const c = it.categoria || 'SIN CATEGORÍA'
+    if (!m.has(c)) m.set(c, { nombre: c, items: [], cambios: 0 })
+    const g = m.get(c)
+    g.items.push(it)
+    if (esCambio(it)) g.cambios++
+  }
+  return [...m.values()]
+})
+const estaAbierta = nombre => !!qItems.value.trim() || catAbierta.value === nombre
+function toggleCat(nombre) { catAbierta.value = catAbierta.value === nombre ? null : nombre }
 function marcar(it) { it.bajo_minimo = !!it.precio_minimo && Number(it.precio) < it.precio_minimo }
 
 async function cargarListas() {
@@ -227,6 +249,7 @@ async function cargarLista(id) {
   loadingLista.value = true
   try {
     const { data } = await api.get(`${BASE}/lista/${id}`)
+    if (lista.value?.id_lista !== data.lista.id_lista) catAbierta.value = null
     lista.value = data.lista
     items.value = data.items
     original.value = new Map(data.items.map(i => [clave(i), Math.round(Number(i.precio) || 0)]))
@@ -447,4 +470,17 @@ onMounted(async () => {
   .hide-sm { display: none; }
   .inp-price { width: 100px; }
 }
+.acc-wrap { display: flex; flex-direction: column; gap: 6px; max-height: calc(100dvh - 380px); min-height: 220px; overflow-y: auto; }
+.acc-item { border: 1.5px solid #e2e8f0; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+.acc-item.open { border-color: #bfdbfe; }
+.acc-hdr { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #f8fafc; border: none; cursor: pointer; text-align: left; }
+.acc-item.open .acc-hdr { background: #eff6ff; }
+.acc-chev { color: #64748b; transition: transform .15s; }
+.acc-item.open .acc-chev { transform: rotate(90deg); }
+.acc-name { flex: 1; min-width: 0; font-weight: 800; color: #1e3a5f; font-size: 13px; }
+.acc-count { font-size: 11px; font-weight: 700; color: #64748b; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1px 8px; }
+.acc-dirty { font-size: 10px; font-weight: 700; color: #1d4ed8; background: #dbeafe; border-radius: 10px; padding: 1px 7px; }
+.td-price { width: 140px; }
+@media (max-width: 768px) { .acc-wrap { max-height: 60dvh; } }
+@media (max-width: 576px) { .td-price { width: 110px; } }
 </style>

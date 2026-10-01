@@ -27,9 +27,7 @@
     <!-- ══ MENÚ DE HOY ══ -->
     <section v-if="tab === 'hoy'" class="md-body">
       <div class="md-toolbar">
-        <button class="md-btn md-btn--sec" @click="expandirTodo(!todoAbierto)">
-          <i :class="todoAbierto ? 'bi bi-arrows-collapse' : 'bi bi-arrows-expand'"></i> {{ todoAbierto ? 'Contraer' : 'Expandir' }} todo
-        </button>
+        <span class="md-hint"><i class="bi bi-info-circle"></i> Toque una categoría para ver sus insumos</span>
         <button class="md-btn md-btn--print" :disabled="loading || saving" @click="imprimirHoy">
           <i class="bi bi-printer"></i> Imprimir
         </button>
@@ -41,14 +39,14 @@
         <p class="text-muted mt-2">No hay categorías de armado activas. Márquelas en Categorías de Productos.</p>
       </div>
       <div v-else class="md-acc">
-        <div v-for="c in categorias" :key="c.group_id" :class="['md-acc-item', { open: abiertas.has(c.group_id) }]">
-          <button class="md-acc-hdr" @click="toggleCat(c.group_id)" :aria-expanded="abiertas.has(c.group_id)">
+        <div v-for="c in categorias" :key="c.group_id" :class="['md-acc-item', { open: abierta === c.group_id }]">
+          <button class="md-acc-hdr" @click="toggleCat(c.group_id)" :aria-expanded="abierta === c.group_id">
             <i class="bi bi-chevron-right md-acc-chev"></i>
             <span class="md-acc-name">{{ c.group_name }}</span>
             <span v-if="!c.items.length" class="md-acc-empty">Sin insumos de armado</span>
             <span v-else :class="['md-acc-count', { on: nSel(c) }]">{{ nSel(c) }} / {{ c.items.length }}</span>
           </button>
-          <div v-if="abiertas.has(c.group_id)" class="md-acc-body">
+          <div v-if="abierta === c.group_id" class="md-acc-body">
             <p v-if="!c.items.length" class="md-acc-note">Esta categoría no tiene insumos marcados como "Armar Plato".</p>
             <label v-for="it in c.items" :key="it.item_id" :class="['md-check', { on: it.is_selected }]">
               <input type="checkbox" v-model="it.is_selected" />
@@ -118,21 +116,15 @@ const loading = ref(true)
 const saving = ref(false)
 const hoy = reactive({ date: '', menu_id: null })
 const categorias = ref([])
-const abiertas = ref(new Set())          // acordeón: todas cerradas al entrar
+const abierta = ref(null)                // acordeón: una sola categoría abierta (todas cerradas al entrar)
 let inicial = ''                          // insumos marcados al entrar (para saber si hubo cambios)
 
 const marcados = () => categorias.value.flatMap(c => c.items.filter(i => i.is_selected).map(i => i.item_id)).sort((a, b) => a - b)
 const huella = () => marcados().join(',')
 const totalSel = computed(() => categorias.value.reduce((s, c) => s + nSel(c), 0))
 const nSel = c => c.items.filter(i => i.is_selected).length
-const todoAbierto = computed(() => categorias.value.length > 0 && abiertas.value.size === categorias.value.length)
-
-function toggleCat(id) {
-  const s = new Set(abiertas.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  abiertas.value = s
-}
-function expandirTodo(v) { abiertas.value = new Set(v ? categorias.value.map(c => c.group_id) : []) }
+// Al abrir una categoría se cierra la que estaba abierta
+function toggleCat(id) { abierta.value = abierta.value === id ? null : id }
 
 function fmtFecha(d) {
   if (!d) return ''
@@ -231,6 +223,7 @@ onMounted(cargar)
 .md-btn { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 10px; padding: 9px 16px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .md-btn:disabled { opacity: .5; cursor: not-allowed; }
 .md-btn--sec { background: #f1f5f9; color: #475569; }
+.md-hint { font-size: 12px; color: #94a3b8; }
 .md-btn--print { background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; }
 .md-state { display: flex; flex-direction: column; align-items: center; padding: 50px 16px; text-align: center; }
 
