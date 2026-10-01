@@ -149,23 +149,36 @@ async def get_lista(id_lista: int, company_id: Optional[int] = Query(None),
                     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cid = await _ctx(db, user, company_id)
     h = await _header(db, cid, id_lista)
+    return {"lista": dict(h), "items": await _items_lista(db, cid, id_lista)}
+
+
+async def _items_lista(db: AsyncSession, cid: int, id_lista: int) -> list:
+    """Ítems de una lista: plato (id_presentacion = 0) y sus variantes (id_presentacion = variante)."""
     rows = (await db.execute(text("""
-        SELECT d.id_producto, d.precio_producto AS precio, p.name, p.price AS precio_base,
+        SELECT d.id_producto, d.id_presentacion, d.precio_producto AS precio,
+               CASE WHEN v.id IS NULL THEN p.name ELSE CONCAT(p.name, ' - ', v.name) END AS name,
+               COALESCE(v.price, p.price) AS precio_base, COALESCE(v.is_default, 0) AS var_default,
                COALESCE(p.wholesale_price, 0) AS precio_minimo, COALESCE(p.active, 0) AS desactivado,
                c.name AS categoria
         FROM pos_customer_price_list d
         JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id
+        LEFT JOIN pos_dish_variants v
+               ON d.id_presentacion > 0 AND v.id = d.id_presentacion AND v.company_id = d.company_id
+              AND v.dish_id = d.id_producto
         LEFT JOIN pos_dish_categories c ON c.id = p.category_id AND c.company_id = p.company_id
-        WHERE d.company_id = :cid AND d.id_lista = :l AND d.id_presentacion = 0
-        ORDER BY c.name, p.name
+        WHERE d.company_id = :cid AND d.id_lista = :l
+          AND (d.id_presentacion = 0 OR (v.id IS NOT NULL AND v.is_active = 1))
+        ORDER BY c.name, p.name, d.id_presentacion
     """), {"cid": cid, "l": id_lista})).mappings().all()
     items = []
     for r in rows:
         it = dict(r)
         it["precio"] = float(it["precio"] or 0)
+        it["precio_base"] = float(it["precio_base"] or 0)
+        it["var_default"] = bool(it["var_default"])
         it["bajo_minimo"] = bool(it["precio_minimo"]) and it["precio"] < float(it["precio_minimo"])
         items.append(it)
-    return {"lista": dict(h), "items": items}
+    return items
 
 
 @router.post("/lista", status_code=201)
@@ -198,10 +211,10 @@ async def crear_lista(data: ListaIn, company_id: Optional[int] = Query(None),
         await db.execute(text("""
             INSERT INTO pos_customer_price_list
                 (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-            SELECT :l, :cli, d.id_producto, 0, d.precio_producto, :f, 1, :cid, 0
+            SELECT :l, :cli, d.id_producto, d.id_presentacion, d.precio_producto, :f, 1, :cid, 0
             FROM pos_customer_price_list d
             JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id AND COALESCE(p.active,0) = 0
-            WHERE d.company_id = :cid AND d.id_lista = :ant AND d.id_presentacion = 0
+            WHERE d.company_id = :cid AND d.id_lista = :ant
         """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha, "ant": anterior})
     else:   # todos los platos activos con su precio de carta
         await db.execute(text("""
@@ -209,6 +222,14 @@ async def crear_lista(data: ListaIn, company_id: Optional[int] = Query(None),
                 (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
             SELECT :l, :cli, p.id, 0, p.price, :f, 1, :cid, 0
             FROM pos_dishes p WHERE p.company_id = :cid AND COALESCE(p.active, 0) = 0
+        """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha})
+        await db.execute(text("""
+            INSERT INTO pos_customer_price_list
+                (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
+            SELECT :l, :cli, v.dish_id, v.id, v.price, :f, 1, :cid, 0
+            FROM pos_dish_variants v
+            JOIN pos_dishes p ON p.id = v.dish_id AND p.company_id = v.company_id AND COALESCE(p.active, 0) = 0
+            WHERE v.company_id = :cid AND v.is_active = 1
         """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha})
 
     await _set_activa(db, cid, data.id_cliente, nid)
@@ -283,20 +304,28 @@ async def agregar_item(id_lista: int, data: ItemIn, company_id: Optional[int] = 
         ON DUPLICATE KEY UPDATE precio_producto = VALUES(precio_producto), fecha = VALUES(fecha), synced = 0
     """), {"l": id_lista, "cli": h["id_cliente"], "p": data.id_producto, "pr": data.precio,
            "f": _today(), "a": 1 if h["activa"] else 0, "cid": cid})
+    await db.execute(text("""
+        INSERT IGNORE INTO pos_customer_price_list
+            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
+        SELECT :l, :cli, v.dish_id, v.id, v.price, :f, :a, :cid, 0
+        FROM pos_dish_variants v WHERE v.company_id = :cid AND v.dish_id = :p AND v.is_active = 1
+    """), {"l": id_lista, "cli": h["id_cliente"], "p": data.id_producto,
+           "f": _today(), "a": 1 if h["activa"] else 0, "cid": cid})
     await db.commit()
     return {"ok": True, "bajo_minimo": bool(d["wholesale_price"]) and data.precio < float(d["wholesale_price"])}
 
 
 @router.put("/lista/{id_lista}/item/{id_producto}")
 async def editar_precio(id_lista: int, id_producto: int, data: PrecioIn, company_id: Optional[int] = Query(None),
+                        presentacion: int = Query(0, ge=0),
                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cid = await _ctx(db, user, company_id)
     await _header(db, cid, id_lista)
     d = await _check_dish(db, cid, id_producto)
     res = await db.execute(text("""
         UPDATE pos_customer_price_list SET precio_producto = :pr, fecha = :f, synced = 0
-        WHERE company_id = :cid AND id_lista = :l AND id_producto = :p AND id_presentacion = 0
-    """), {"pr": data.precio, "f": _today(), "cid": cid, "l": id_lista, "p": id_producto})
+        WHERE company_id = :cid AND id_lista = :l AND id_producto = :p AND id_presentacion = :pres
+    """), {"pr": data.precio, "f": _today(), "cid": cid, "l": id_lista, "p": id_producto, "pres": presentacion})
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="El producto no está en la lista")
     await db.commit()
@@ -310,7 +339,88 @@ async def quitar_item(id_lista: int, id_producto: int, company_id: Optional[int]
     await _header(db, cid, id_lista)
     await db.execute(text("""
         DELETE FROM pos_customer_price_list
-        WHERE company_id = :cid AND id_lista = :l AND id_producto = :p AND id_presentacion = 0
+        WHERE company_id = :cid AND id_lista = :l AND id_producto = :p
     """), {"cid": cid, "l": id_lista, "p": id_producto})
     await db.commit()
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LISTA GENERAL (por defecto) — lista_precios_cliente con Id_Lista = 0 y sin cliente.
+# Siempre contiene TODOS los platos activos y sus variantes; su precio ES el precio del
+# plato / variante (editar aquí cambia el plato y viceversa). Sin lista de cliente activa,
+# el pedido se cobra con esta lista.
+# ═══════════════════════════════════════════════════════════════════════════
+async def _completar_general(db: AsyncSession, cid: int) -> None:
+    f = _today()
+    await db.execute(text("""
+        INSERT IGNORE INTO pos_customer_price_list
+            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
+        SELECT 0, 0, p.id, 0, p.price, :f, 1, :cid, 0
+        FROM pos_dishes p WHERE p.company_id = :cid AND COALESCE(p.active, 0) = 0
+    """), {"cid": cid, "f": f})
+    await db.execute(text("""
+        INSERT IGNORE INTO pos_customer_price_list
+            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
+        SELECT 0, 0, v.dish_id, v.id, v.price, :f, 1, :cid, 0
+        FROM pos_dish_variants v
+        JOIN pos_dishes p ON p.id = v.dish_id AND p.company_id = v.company_id AND COALESCE(p.active, 0) = 0
+        WHERE v.company_id = :cid AND v.is_active = 1
+    """), {"cid": cid, "f": f})
+    # Mantener iguales al precio actual del plato / variante
+    await db.execute(text("""
+        UPDATE pos_customer_price_list d
+        JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id
+        SET d.precio_producto = p.price
+        WHERE d.company_id = :cid AND d.id_lista = 0 AND d.id_cliente = 0 AND d.id_presentacion = 0
+          AND d.precio_producto <> p.price
+    """), {"cid": cid})
+    await db.execute(text("""
+        UPDATE pos_customer_price_list d
+        JOIN pos_dish_variants v ON v.id = d.id_presentacion AND v.company_id = d.company_id AND v.dish_id = d.id_producto
+        SET d.precio_producto = v.price
+        WHERE d.company_id = :cid AND d.id_lista = 0 AND d.id_cliente = 0 AND d.id_presentacion > 0
+          AND d.precio_producto <> v.price
+    """), {"cid": cid})
+
+
+@router.get("/general")
+async def lista_general(company_id: Optional[int] = Query(None),
+                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    cid = await _ctx(db, user, company_id)
+    await _completar_general(db, cid)
+    await db.commit()
+    items = [i for i in await _items_lista(db, cid, 0) if not i["desactivado"]]
+    return {"lista": {"id_lista": 0, "nombre": "Lista general (por defecto)", "activa": 1}, "items": items}
+
+
+@router.put("/general/item/{id_producto}")
+async def editar_precio_general(id_producto: int, data: PrecioIn, presentacion: int = Query(0, ge=0),
+                                company_id: Optional[int] = Query(None),
+                                user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Cambia el precio en la lista general = precio del plato (presentacion 0) o de la variante.
+    La variante por defecto y el plato se mantienen iguales."""
+    cid = await _ctx(db, user, company_id)
+    d = await _check_dish(db, cid, id_producto)
+    precio = int(round(data.precio))
+    if presentacion:
+        v = (await db.execute(text(
+            "SELECT id, COALESCE(is_default,0) FROM pos_dish_variants WHERE id=:v AND dish_id=:p AND company_id=:cid AND is_active=1"
+        ), {"v": presentacion, "p": id_producto, "cid": cid})).first()
+        if not v:
+            raise HTTPException(status_code=404, detail="Variante no encontrada")
+        await db.execute(text("UPDATE pos_dish_variants SET price=:pr WHERE id=:v AND company_id=:cid"),
+                         {"pr": precio, "v": presentacion, "cid": cid})
+        if int(v[1]):
+            await db.execute(text("UPDATE pos_dishes SET price=:pr, synced=0 WHERE id=:p AND company_id=:cid"),
+                             {"pr": precio, "p": id_producto, "cid": cid})
+    else:
+        await db.execute(text("UPDATE pos_dishes SET price=:pr, synced=0 WHERE id=:p AND company_id=:cid"),
+                         {"pr": precio, "p": id_producto, "cid": cid})
+        await db.execute(text("""
+            UPDATE pos_dish_variants SET price=:pr
+            WHERE dish_id=:p AND company_id=:cid AND is_active=1 AND is_default=1
+        """), {"pr": precio, "p": id_producto, "cid": cid})
+    await _completar_general(db, cid)
+    await db.commit()
+    return {"ok": True, "bajo_minimo": bool(d["wholesale_price"]) and precio < float(d["wholesale_price"])}

@@ -19,6 +19,7 @@ from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.utils.storage import upload_file, delete_file
+from app.services import comanda_armado as armado_svc
 
 router = APIRouter(prefix="/api/pos-catalogo/platos", tags=["POS Items"])
 
@@ -182,10 +183,11 @@ class ModifierOptionIn(BaseModel):
     sort_order: Optional[int] = 0
 
 class VariantIn(BaseModel):
-    name: str
-    price: int = 0
-    compare_price: Optional[int] = None
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    price: Annotated[int, Field(ge=0, le=2_000_000_000)] = 0
+    compare_price: Optional[Annotated[int, Field(ge=0, le=2_000_000_000)]] = None
     order_index: Optional[int] = 0
+    is_default: bool = False
 
 class OrderIn(BaseModel):
     ids: List[int]
@@ -209,16 +211,18 @@ async def _check_category(db: AsyncSession, cid: int, category_id: Optional[int]
         raise HTTPException(status_code=400, detail="Categoría no válida para esta empresa")
 
 
-async def _upsert_general_price(db: AsyncSession, cid: int, dish_id: int, price: int) -> None:
-    """Lista general (id_lista=0, id_cliente=0) = espejo de platos.Valor."""
+async def _upsert_general_price(db: AsyncSession, cid: int, dish_id: int, price: int,
+                                id_presentacion: int = 0) -> None:
+    """Lista general (id_lista=0, id_cliente=0) = espejo de platos.Valor y, por variante,
+    de su precio (id_presentacion = id de la variante)."""
     await db.execute(text("""
         INSERT INTO pos_customer_price_list
             (id_lista, id_cliente, id_producto, id_presentacion,
              precio_producto, fecha, activa, company_id)
-        VALUES (0, 0, :id, 0, :precio, :fecha, 1, :cid)
+        VALUES (0, 0, :id, :pres, :precio, :fecha, 1, :cid)
         ON DUPLICATE KEY UPDATE
             precio_producto=VALUES(precio_producto), fecha=VALUES(fecha), updated_at=NOW()
-    """), {"id": dish_id, "precio": price, "fecha": _today(), "cid": cid})
+    """), {"id": dish_id, "pres": id_presentacion, "precio": price, "fecha": _today(), "cid": cid})
 
 
 # ─── CRUD Artículos ────────────────────────────────────────────────────────────
@@ -326,6 +330,12 @@ async def actualizar(
 
     if values.get("price") is not None:
         await _upsert_general_price(db, cid, item_id, values["price"])
+        # Con variantes, el precio del plato es el de la variante por defecto
+        await db.execute(text("""
+            UPDATE pos_dish_variants SET price=:p
+            WHERE dish_id=:did AND company_id=:cid AND is_active=1 AND is_default=1
+        """), {"p": values["price"], "did": item_id, "cid": cid})
+        await _sync_precio_default(db, cid, item_id)
 
     await db.commit()
     return {"ok": True}
@@ -499,14 +509,81 @@ async def delete_foto(item_id: int, authorization: str = Header(None), db: Async
 
 @router.get("/{item_id}/variantes")
 async def get_variantes(item_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
+    """Variantes del plato con su receta (cantidades de los insumos fijos del plato) y la
+    cantidad de sabores por categoría de armado."""
     user = await _get_user(authorization, db)
+    cid = user.company_id
+    await _check_dish(db, cid, item_id)
     rows = (await db.execute(text("""
-        SELECT id, name, price, compare_price, order_index
+        SELECT id, name, price, compare_price, order_index, COALESCE(is_default, 0) AS is_default
         FROM pos_dish_variants
         WHERE dish_id=:did AND company_id=:cid AND is_active=1
         ORDER BY order_index, id
-    """), {"did": item_id, "cid": user.company_id})).mappings().all()
-    return [dict(r) for r in rows]
+    """), {"did": item_id, "cid": cid})).mappings().all()
+    if not rows:
+        return []
+    fijos = await armado_svc.fixed_products(db, cid, item_id)
+    cats = (await db.execute(text("""
+        SELECT da.category_code, da.max_choices, pc.name AS category_name
+        FROM pos_dish_assembly da
+        LEFT JOIN pos_product_categories pc ON pc.id = da.category_code AND pc.company_id = da.company_id
+        WHERE da.dish_id = :did AND da.company_id = :cid AND da.is_active = 1
+        ORDER BY da.category_code
+    """), {"did": item_id, "cid": cid})).mappings().all()
+    ids = ",".join(str(int(r["id"])) for r in rows)
+    recetas = (await db.execute(text(
+        f"SELECT variant_id, id_item, porciones FROM pos_dish_variant_products WHERE company_id=:cid AND variant_id IN ({ids})"
+    ), {"cid": cid})).all()
+    sabores = (await db.execute(text(
+        f"SELECT variant_id, category_code, max_choices FROM pos_dish_variant_assembly WHERE company_id=:cid AND variant_id IN ({ids})"
+    ), {"cid": cid})).all()
+    rec_map = {(int(v), int(i)): float(q) for v, i, q in recetas}
+    sab_map = {(int(v), int(c)): int(m) for v, c, m in sabores}
+    out = []
+    for r in rows:
+        vid = int(r["id"])
+        out.append({
+            "id": vid, "name": r["name"], "price": int(r["price"] or 0),
+            "compare_price": r["compare_price"], "order_index": r["order_index"],
+            "is_default": bool(r["is_default"]),
+            "receta": [{"id_item": f["item_id"], "description": f["description"] or f"Insumo {f['item_id']}",
+                        "plato_qty": f["quantity"], "porciones": rec_map.get((vid, f["item_id"]), f["quantity"])}
+                       for f in fijos],
+            "sabores": [{"category_code": int(c["category_code"]),
+                         "category_name": c["category_name"] or f"Categoría {c['category_code']}",
+                         "plato_max": int(c["max_choices"] or 1),
+                         "max_choices": sab_map.get((vid, int(c["category_code"])), int(c["max_choices"] or 1))}
+                        for c in cats],
+        })
+    return out
+
+
+async def _sync_precio_default(db: AsyncSession, cid: int, dish_id: int) -> None:
+    """La variante por defecto define el precio del plato (garantiza que siempre haya una)."""
+    vars_ = await armado_svc.dish_variants(db, cid, dish_id)
+    if not vars_:
+        return
+    default = next((v for v in vars_ if v["is_default"]), None)
+    if not default:
+        default = vars_[0]
+        await db.execute(text(
+            "UPDATE pos_dish_variants SET is_default=1 WHERE id=:id AND company_id=:cid"
+        ), {"id": default["id"], "cid": cid})
+    await db.execute(text(
+        "UPDATE pos_dishes SET price=:p, synced=0 WHERE id=:did AND company_id=:cid"
+    ), {"p": default["price"], "did": dish_id, "cid": cid})
+    # Lista general (por defecto): precio del plato y de cada variante
+    await _upsert_general_price(db, cid, dish_id, default["price"])
+    for v in vars_:
+        await _upsert_general_price(db, cid, dish_id, v["price"], id_presentacion=v["id"])
+
+
+async def _check_variant(db: AsyncSession, cid: int, dish_id: int, var_id: int) -> None:
+    ok = (await db.execute(text(
+        "SELECT 1 FROM pos_dish_variants WHERE id=:id AND dish_id=:did AND company_id=:cid AND is_active=1"
+    ), {"id": var_id, "did": dish_id, "cid": cid})).scalar()
+    if not ok:
+        raise HTTPException(status_code=404, detail="Variante no encontrada")
 
 
 @router.post("/{item_id}/variantes", status_code=201)
@@ -515,13 +592,23 @@ async def crear_variante(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
-    await db.execute(text("""
-        INSERT INTO pos_dish_variants (company_id, dish_id, name, price, compare_price, order_index)
-        VALUES (:cid, :did, :name, :price, :cp, :ord)
-    """), {"cid": user.company_id, "did": item_id, "name": data.name,
-           "price": data.price, "cp": data.compare_price, "ord": data.order_index})
+    cid = user.company_id
+    await _check_dish(db, cid, item_id)
+    name = armado_svc.clean_text(data.name, 100)
+    if not name:
+        raise HTTPException(status_code=422, detail="El nombre de la variante es obligatorio")
+    if data.is_default:
+        await db.execute(text(
+            "UPDATE pos_dish_variants SET is_default=0 WHERE dish_id=:did AND company_id=:cid"
+        ), {"did": item_id, "cid": cid})
+    res = await db.execute(text("""
+        INSERT INTO pos_dish_variants (company_id, dish_id, name, price, compare_price, order_index, is_default)
+        VALUES (:cid, :did, :name, :price, :cp, :ord, :def)
+    """), {"cid": cid, "did": item_id, "name": name, "price": data.price, "cp": data.compare_price,
+           "ord": data.order_index, "def": int(bool(data.is_default))})
+    await _sync_precio_default(db, cid, item_id)
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "id": res.lastrowid}
 
 
 @router.put("/{item_id}/variantes/{var_id}")
@@ -530,13 +617,22 @@ async def actualizar_variante(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    cid = user.company_id
+    await _check_variant(db, cid, item_id, var_id)
+    name = armado_svc.clean_text(data.name, 100)
+    if not name:
+        raise HTTPException(status_code=422, detail="El nombre de la variante es obligatorio")
+    if data.is_default:
+        await db.execute(text(
+            "UPDATE pos_dish_variants SET is_default=0 WHERE dish_id=:did AND company_id=:cid AND id<>:id"
+        ), {"did": item_id, "cid": cid, "id": var_id})
     await db.execute(text("""
         UPDATE pos_dish_variants
-        SET name=:name, price=:price, compare_price=:cp, order_index=:ord
+        SET name=:name, price=:price, compare_price=:cp, order_index=:ord, is_default=:def
         WHERE id=:id AND dish_id=:did AND company_id=:cid
-    """), {"id": var_id, "did": item_id, "cid": user.company_id,
-           "name": data.name, "price": data.price,
-           "cp": data.compare_price, "ord": data.order_index})
+    """), {"id": var_id, "did": item_id, "cid": cid, "name": name, "price": data.price,
+           "cp": data.compare_price, "ord": data.order_index, "def": int(bool(data.is_default))})
+    await _sync_precio_default(db, cid, item_id)
     await db.commit()
     return {"ok": True}
 
@@ -547,9 +643,79 @@ async def eliminar_variante(
     authorization: str = Header(None), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user(authorization, db)
+    cid = user.company_id
+    await _check_variant(db, cid, item_id, var_id)
     await db.execute(text(
-        "UPDATE pos_dish_variants SET is_active=0 WHERE id=:id AND dish_id=:did AND company_id=:cid"
-    ), {"id": var_id, "did": item_id, "cid": user.company_id})
+        "UPDATE pos_dish_variants SET is_active=0, is_default=0 WHERE id=:id AND dish_id=:did AND company_id=:cid"
+    ), {"id": var_id, "did": item_id, "cid": cid})
+    await _sync_precio_default(db, cid, item_id)
+    await db.commit()
+    return {"ok": True}
+
+
+class VarianteRecetaLinea(BaseModel):
+    id_item: Annotated[int, Field(ge=1)]
+    porciones: Annotated[float, Field(ge=0, le=1_000_000)]
+
+
+class VarianteRecetaIn(BaseModel):
+    items: Annotated[List[VarianteRecetaLinea], Field(max_length=300)]
+
+
+@router.put("/{item_id}/variantes/{var_id}/receta")
+async def guardar_receta_variante(
+    item_id: int, var_id: int, data: VarianteRecetaIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    """Ajusta las cantidades de los insumos fijos del plato para esta variante (no agrega
+    ni quita insumos: solo se aceptan los insumos fijos del plato)."""
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await _check_variant(db, cid, item_id, var_id)
+    fijos = {f["item_id"] for f in await armado_svc.fixed_products(db, cid, item_id)}
+    for ln in data.items:
+        if ln.id_item not in fijos:
+            raise HTTPException(status_code=422, detail="Solo se pueden ajustar los insumos fijos del plato")
+    for ln in data.items:
+        await db.execute(text("""
+            INSERT INTO pos_dish_variant_products (company_id, variant_id, id_item, porciones)
+            VALUES (:cid, :vid, :iid, :q)
+            ON DUPLICATE KEY UPDATE porciones = VALUES(porciones)
+        """), {"cid": cid, "vid": var_id, "iid": ln.id_item, "q": ln.porciones})
+    await db.commit()
+    return {"ok": True}
+
+
+class VarianteSaborLinea(BaseModel):
+    category_code: Annotated[int, Field(ge=1)]
+    max_choices: Annotated[int, Field(ge=1, le=50)]
+
+
+class VarianteSaboresIn(BaseModel):
+    categorias: Annotated[List[VarianteSaborLinea], Field(max_length=100)]
+
+
+@router.put("/{item_id}/variantes/{var_id}/sabores")
+async def guardar_sabores_variante(
+    item_id: int, var_id: int, data: VarianteSaboresIn,
+    authorization: str = Header(None), db: AsyncSession = Depends(get_db)
+):
+    """Cantidad de opciones (sabores) por categoría de armado en esta variante."""
+    user = await _get_user(authorization, db)
+    cid = user.company_id
+    await _check_variant(db, cid, item_id, var_id)
+    cats = {int(r[0]) for r in (await db.execute(text(
+        "SELECT category_code FROM pos_dish_assembly WHERE dish_id=:did AND company_id=:cid"
+    ), {"did": item_id, "cid": cid})).all()}
+    for ln in data.categorias:
+        if ln.category_code not in cats:
+            raise HTTPException(status_code=422, detail="La categoría no es de armado de este plato")
+    for ln in data.categorias:
+        await db.execute(text("""
+            INSERT INTO pos_dish_variant_assembly (company_id, variant_id, category_code, max_choices)
+            VALUES (:cid, :vid, :cc, :mc)
+            ON DUPLICATE KEY UPDATE max_choices = VALUES(max_choices)
+        """), {"cid": cid, "vid": var_id, "cc": ln.category_code, "mc": ln.max_choices})
     await db.commit()
     return {"ok": True}
 

@@ -377,34 +377,78 @@
           <!-- ── TAB: VARIANTES (solo web) ── -->
           <div v-if="ed.tab === 'variantes' && form.id">
             <div class="sub-header">
-              <span>Versiones con precio propio (Pequeña, Familiar…)</span>
+              <span>Tamaños o versiones con precio propio (Personal, Dúo, Familiar…). Al comandar se pide el tamaño.</span>
               <button class="btn-mini" @click="abrirFormVariante()"><i class="bi bi-plus"></i> Agregar</button>
             </div>
-            <div v-if="!variantes.length" class="mini-vacio"><i class="bi bi-tags"></i> Sin variantes de precio</div>
-            <div v-else class="variantes-lista">
-              <div v-for="v in variantes" :key="v.id" class="variante-item">
-                <div class="variante-info">
-                  <span class="variante-nombre">{{ v.name }}</span>
-                  <div class="variante-precios">
-                    <span v-if="v.compare_price" class="variante-tachado">{{ fmt(v.compare_price) }}</span>
-                    <span class="variante-precio">{{ fmt(v.price) }}</span>
-                  </div>
-                </div>
-                <div class="variante-acc">
-                  <button class="btn-mini btn-mini--sm" @click="abrirFormVariante(v)"><i class="bi bi-pencil"></i></button>
-                  <button class="btn-x-sm" @click="eliminarVariante(v.id)"><i class="bi bi-trash"></i></button>
-                </div>
-              </div>
+            <div v-if="variantes.length" class="info-line">
+              <i class="bi bi-info-circle"></i> La variante <b>por defecto</b> define el precio del plato. Cada variante ajusta las cantidades de los insumos fijos y cuántos sabores lleva cada categoría de armado.
             </div>
+
             <div v-if="formVariante.visible" class="mini-modal">
-              <input v-model="formVariante.name" class="inp-sm" maxlength="100" placeholder="Nombre (Pequeña, Mediana, Familiar…)" />
+              <input v-model="formVariante.name" class="inp-sm" maxlength="100" placeholder="Nombre (Personal, Dúo, Familiar…)" />
               <div class="mini-row">
-                <CurrencyInput v-model="formVariante.price" class="inp-sm text-right" />
-                <CurrencyInput v-model="formVariante.compare_price" class="inp-sm text-right" />
+                <label class="mini-lbl">Precio <CurrencyInput v-model="formVariante.price" class="inp-sm text-right" /></label>
+                <label class="mini-lbl">Precio antes (opcional) <CurrencyInput v-model="formVariante.compare_price" class="inp-sm text-right" /></label>
               </div>
+              <label class="flag-row flag-row--inline"><span>Variante por defecto</span><input type="checkbox" v-model="formVariante.is_default" /></label>
               <div class="mini-modal-btns">
                 <button class="btn-mini btn-mini--cancel" @click="formVariante.visible=false">Cancelar</button>
                 <button class="btn-mini" @click="guardarVariante">{{ formVariante.id ? 'Actualizar' : 'Agregar' }}</button>
+              </div>
+            </div>
+
+            <div v-if="!variantes.length" class="mini-vacio"><i class="bi bi-tags"></i> Sin variantes: se vende con el precio del plato</div>
+            <div v-else class="variantes-lista">
+              <div v-for="v in variantes" :key="v.id" :class="['variante-item', { 'variante-item--open': varAbierta === v.id }]">
+                <div class="variante-top">
+                  <button class="variante-info" @click="varAbierta = varAbierta === v.id ? null : v.id">
+                    <span class="variante-nombre">
+                      <i :class="varAbierta === v.id ? 'bi bi-chevron-down' : 'bi bi-chevron-right'"></i>
+                      {{ v.name }} <span v-if="v.is_default" class="chip-default">Por defecto</span>
+                    </span>
+                    <div class="variante-precios">
+                      <span v-if="v.compare_price" class="variante-tachado">{{ fmt(v.compare_price) }}</span>
+                      <span class="variante-precio">{{ fmt(v.price) }}</span>
+                    </div>
+                  </button>
+                  <div class="variante-acc">
+                    <button class="btn-mini btn-mini--sm" @click="abrirFormVariante(v)" title="Editar"><i class="bi bi-pencil"></i></button>
+                    <button class="btn-x-sm" @click="eliminarVariante(v.id)" title="Eliminar"><i class="bi bi-trash"></i></button>
+                  </div>
+                </div>
+
+                <div v-if="varAbierta === v.id" class="variante-det">
+                  <div class="variante-sec">Receta — cantidades a descontar de los insumos fijos</div>
+                  <div v-if="!v.receta.length" class="mini-vacio mini-vacio--sm">El plato no tiene insumos fijos.</div>
+                  <table v-else class="tbl-mini">
+                    <thead><tr><th>Insumo</th><th class="text-center">Plato</th><th class="text-center">Esta variante</th></tr></thead>
+                    <tbody>
+                      <tr v-for="r in v.receta" :key="r.id_item">
+                        <td>{{ r.description }}</td>
+                        <td class="text-center text-muted">{{ r.plato_qty }}</td>
+                        <td class="text-center"><input type="number" class="inp-qty-sm" v-model.number="r.porciones" min="0" step="0.001" /></td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <div class="variante-sec">Sabores por categoría de armado</div>
+                  <div v-if="!v.sabores.length" class="mini-vacio mini-vacio--sm">El plato no tiene categorías de armado.</div>
+                  <table v-else class="tbl-mini">
+                    <thead><tr><th>Categoría</th><th class="text-center">Plato</th><th class="text-center">Esta variante</th></tr></thead>
+                    <tbody>
+                      <tr v-for="c in v.sabores" :key="c.category_code">
+                        <td>{{ c.category_name }}</td>
+                        <td class="text-center text-muted">{{ c.plato_max }}</td>
+                        <td class="text-center"><input type="number" class="inp-qty-sm" v-model.number="c.max_choices" min="1" max="50" step="1" /></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div class="mini-modal-btns">
+                    <button class="btn-mini" :disabled="guardandoVar" @click="guardarDetalleVariante(v)">
+                      <i class="bi bi-check-lg"></i> Guardar receta y sabores
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -815,17 +859,35 @@ async function cargarVariantes() {
 }
 function abrirFormVariante(v = null) {
   formVariante.value = v
-    ? { visible:true, id:v.id, name:v.name, price:v.price, compare_price:v.compare_price || 0 }
-    : { visible:true, id:null, name:'', price:0, compare_price:0 }
+    ? { visible:true, id:v.id, name:v.name, price:v.price, compare_price:v.compare_price || 0, is_default: !!v.is_default }
+    : { visible:true, id:null, name:'', price:0, compare_price:0, is_default: !variantes.value.length }
+}
+const varAbierta  = ref(null)
+const guardandoVar = ref(false)
+async function guardarDetalleVariante(v) {
+  guardandoVar.value = true
+  try {
+    if (v.receta.length) await api.put(`${BASE}/${form.value.id}/variantes/${v.id}/receta`,
+      { items: v.receta.map(r => ({ id_item: r.id_item, porciones: Number(r.porciones) || 0 })) })
+    if (v.sabores.length) await api.put(`${BASE}/${form.value.id}/variantes/${v.id}/sabores`,
+      { categorias: v.sabores.map(c => ({ category_code: c.category_code, max_choices: Math.max(1, Math.round(Number(c.max_choices) || 1)) })) })
+    showToast(`${v.name}: receta y sabores guardados`, 'success')
+    await cargarVariantes()
+  } catch (e) {
+    const d = e?.response?.data?.detail
+    showToast(Array.isArray(d) ? 'Revise las cantidades' : (d || 'Error al guardar la variante'), 'error')
+  }
+  guardandoVar.value = false
 }
 async function guardarVariante() {
   if (!formVariante.value.name?.trim()) { showToast('El nombre es obligatorio', 'warning'); return }
-  const p = { name: formVariante.value.name.trim(), price: formVariante.value.price || 0, compare_price: formVariante.value.compare_price || null }
+  const p = { name: formVariante.value.name.trim(), price: formVariante.value.price || 0,
+              compare_price: formVariante.value.compare_price || null, is_default: !!formVariante.value.is_default }
   try {
     if (formVariante.value.id) await api.put(`${BASE}/${form.value.id}/variantes/${formVariante.value.id}`, p)
     else await api.post(`${BASE}/${form.value.id}/variantes`, p)
     formVariante.value.visible = false; await cargarVariantes(); await cargarItems()
-  } catch { showToast('Error al guardar variante', 'error') }
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error al guardar variante', 'error') }
 }
 async function eliminarVariante(varId) {
   try { await api.delete(`${BASE}/${form.value.id}/variantes/${varId}`); await cargarVariantes(); await cargarItems() }
@@ -1141,8 +1203,16 @@ async function eliminar(item) {
 
 /* Variantes */
 .variantes-lista  { display:flex;flex-direction:column;gap:8px;margin-bottom:12px; }
-.variante-item    { display:flex;align-items:center;gap:8px;border:2px solid #e2e8f0;border-radius:10px;padding:10px 12px; }
-.variante-info    { flex:1;display:flex;flex-direction:column;gap:2px; }
+.variante-item    { display:flex;flex-direction:column;gap:8px;border:2px solid #e2e8f0;border-radius:10px;padding:10px 12px; }
+.variante-item--open { border-color:#93c5fd; }
+.variante-top     { display:flex;align-items:center;gap:8px; }
+.variante-info    { flex:1;display:flex;flex-direction:column;gap:2px;background:none;border:none;text-align:left;cursor:pointer;padding:0; }
+.chip-default     { font-size:10px;font-weight:700;color:#15803d;background:#dcfce7;border-radius:10px;padding:1px 7px;margin-left:4px; }
+.variante-det     { display:flex;flex-direction:column;gap:6px;border-top:1px dashed #e2e8f0;padding-top:8px; }
+.variante-sec     { font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;margin-top:4px; }
+.mini-vacio--sm   { padding:6px;font-size:12px; }
+.mini-lbl         { display:flex;flex-direction:column;gap:2px;font-size:11px;font-weight:700;color:#64748b;flex:1; }
+.flag-row--inline { margin:4px 0; }
 .variante-nombre  { font-weight:700;font-size:13px;color:#1e3a5f; }
 .variante-precios { display:flex;align-items:baseline;gap:6px; }
 .variante-tachado { font-size:11px;color:#94a3b8;text-decoration:line-through; }

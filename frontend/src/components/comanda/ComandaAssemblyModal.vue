@@ -6,7 +6,7 @@
       <div class="am-header">
         <div class="am-header__info">
           <h4 class="am-header__title">{{ dish?.name }}</h4>
-          <span class="am-header__sub">Seleccione las opciones del armado</span>
+          <span class="am-header__sub">{{ variants.length ? 'Seleccione el tamaño y las opciones' : 'Seleccione las opciones del armado' }}</span>
         </div>
         <div class="am-header__right">
           <span class="am-header__status" v-if="!loadingMenu && categories.length">
@@ -31,35 +31,47 @@
         <p class="text-muted mt-2">Error al cargar las opciones.</p>
       </div>
 
+      <!-- Tamaño (variantes): Personal / Dúo / Familiar… -->
+      <div v-if="!loadingMenu && !loadError && variants.length" class="am-variants">
+        <span class="am-variants__lbl">Tamaño</span>
+        <div class="am-variants__list">
+          <button v-for="v in variants" :key="v.id"
+                  :class="['am-variant', { 'am-variant--on': variant?.id === v.id }]" @click="elegirVariante(v)">
+            <span class="am-variant__name">{{ v.name }}</span>
+            <span class="am-variant__price">{{ formatPrice(v.price) }}</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Sin categorías -->
-      <div class="am-empty" v-else-if="!categories.length">
+      <div class="am-empty" v-else-if="!loadingMenu && !loadError && !categories.length && !variants.length">
         <i class="bi bi-sliders2 text-muted fs-2"></i>
         <p class="text-muted mt-2">Sin opciones de armado configuradas.</p>
       </div>
 
       <!-- Grid de columnas -->
-      <div class="am-grid" v-else>
+      <div class="am-grid" v-if="!loadingMenu && !loadError && categories.length">
         <div
           class="am-col"
           v-for="cat in categories"
           :key="cat.category_code"
           :class="{
             'am-col--done':    selCount(cat) > 0,
-            'am-col--pending': cat.is_required && selCount(cat) !== cat.max_choices
+            'am-col--pending': esObligatoria(cat) && selCount(cat) !== maxDe(cat)
           }"
         >
           <!-- Cabecera de columna -->
           <div class="am-col__head">
             <span class="am-col__title">{{ cat.category_name }}</span>
-            <span v-if="cat.is_required && selCount(cat) !== cat.max_choices" class="am-badge am-badge--req">Elegir {{ cat.max_choices }} ({{ selCount(cat) }}/{{ cat.max_choices }})</span>
-            <span v-else-if="cat.is_required" class="am-badge am-badge--done"><i class="bi bi-check-lg"></i></span>
+            <span v-if="esObligatoria(cat) && selCount(cat) !== maxDe(cat)" class="am-badge am-badge--req">Elegir {{ maxDe(cat) }} ({{ selCount(cat) }}/{{ maxDe(cat) }})</span>
+            <span v-else-if="esObligatoria(cat)" class="am-badge am-badge--done"><i class="bi bi-check-lg"></i></span>
             <span v-else class="am-badge am-badge--opt">Opcional</span>
           </div>
 
           <!-- Elegidos -->
           <div class="am-col__selected-hint" v-if="selCount(cat)">
             <i class="bi bi-check-circle-fill text-success me-1"></i>
-            {{ selections[cat.category_code].map(o => o.item_name).join(', ') }}
+            {{ resumen(cat) }}
           </div>
 
           <!-- Sin opciones hoy -->
@@ -79,7 +91,11 @@
               <span class="am-item__dot"></span>
               <span class="am-item__name">{{ opt.item_name }}</span>
               <span v-if="opt.supply_price > 0" class="am-item__extra">+{{ formatPrice(opt.supply_price) }}</span>
-              <i class="bi bi-check-lg am-item__check" v-if="isSelected(cat.category_code, opt.item_id)"></i>
+              <template v-if="variant && vecesElegido(cat.category_code, opt.item_id)">
+                <span class="am-item__count">×{{ vecesElegido(cat.category_code, opt.item_id) }}</span>
+                <span class="am-item__minus" role="button" title="Quitar uno" @click.stop="quitarUno(cat, opt)"><i class="bi bi-dash-lg"></i></span>
+              </template>
+              <i class="bi bi-check-lg am-item__check" v-else-if="isSelected(cat.category_code, opt.item_id)"></i>
             </button>
           </div>
         </div>
@@ -115,6 +131,8 @@ const props = defineProps({
 const emit = defineEmits(['close', 'added'])
 
 const qty           = ref(1)
+const variants      = ref([])     // [{ id, name, price, is_default, assembly: { category_code: max_choices } }]
+const variant       = ref(null)
 const categories    = ref([])
 const fixedProducts = ref([])
 const loadingMenu   = ref(false)
@@ -131,13 +149,39 @@ const totalSelected = computed(() =>
 const extraPrice = computed(() =>
   Object.values(selections.value).flat().reduce((s, o) => s + (Number(o.supply_price) || 0), 0)
 )
-const unitPrice = computed(() => (Number(props.dish?.price) || 0) + extraPrice.value)
+const unitPrice = computed(() => (Number(variant.value ? variant.value.price : props.dish?.price) || 0) + extraPrice.value)
+
+// Opciones por categoría: las de la variante (Personal 2, Dúo 3, Familiar 4) o las del plato
+const maxDe = cat => (variant.value?.assembly?.[cat.category_code]) || cat.max_choices
+// Con variante (tamaño) completar la cantidad de sabores es siempre obligatorio
+const esObligatoria = cat => !!cat.is_required || !!variant.value
 
 const isValid = computed(() => {
+  if (variants.value.length && !variant.value) return false
   if (!categories.value.length) return true
-  // Exigir cantidad → exactamente max_choices; si no, libre (0..todas)
-  return categories.value.every(c => !c.is_required || selCount(c) === c.max_choices)
+  // Exigir cantidad → exactamente las opciones permitidas; si no, libre
+  return categories.value.every(c => !esObligatoria(c) || selCount(c) === maxDe(c))
 })
+
+const vecesElegido = (cc, itemId) => (selections.value[cc] || []).filter(o => o.item_id === itemId).length
+function resumen(cat) {
+  const cnt = new Map()
+  for (const o of selections.value[cat.category_code] || []) cnt.set(o.item_name, (cnt.get(o.item_name) || 0) + 1)
+  return [...cnt].map(([n, c]) => (c > 1 ? `${n} ×${c}` : n)).join(', ')
+}
+function quitarUno(cat, opt) {
+  const list = [...(selections.value[cat.category_code] || [])]
+  const i = list.map(o => o.item_id).lastIndexOf(opt.item_id)
+  if (i >= 0) { list.splice(i, 1); selections.value[cat.category_code] = list }
+}
+// Al cambiar de tamaño se recorta lo elegido si supera las opciones de la nueva variante
+function elegirVariante(v) {
+  variant.value = v
+  for (const c of categories.value) {
+    const list = selections.value[c.category_code] || []
+    if (list.length > maxDe(c)) selections.value[c.category_code] = list.slice(0, maxDe(c))
+  }
+}
 
 function availableOpts(cat) {
   return cat.options.filter(o => o.available_today)
@@ -150,6 +194,15 @@ function isSelected(category_code, item_id) {
 function toggleOption(cat, opt) {
   const cc = cat.category_code
   const list = selections.value[cc] || []
+  // Con variante: cada toque suma una porción del sabor (Jamón ×2 + Cordero ×2), hasta el máximo
+  if (variant.value) {
+    if (list.length >= maxDe(cat)) {
+      showToast(`${cat.category_name}: ya eligió ${maxDe(cat)}. Quite uno con "−" para cambiar.`, 'warning')
+      return
+    }
+    selections.value[cc] = [...list, { item_id: opt.item_id, item_name: opt.item_name, supply_price: opt.supply_price || 0 }]
+    return
+  }
   if (isSelected(cc, opt.item_id)) {
     selections.value[cc] = list.filter(o => o.item_id !== opt.item_id)
     return
@@ -181,28 +234,32 @@ function add() {
       })
     }
   }
-  emit('added', { dish: props.dish, assemblySelections, qty: qty.value })
+  emit('added', { dish: props.dish, assemblySelections, qty: qty.value, variant: variant.value })
 }
 
 watch(() => props.dish, async (dish) => {
   if (!dish) return
   selections.value    = {}
+  variants.value      = []
+  variant.value       = null
   categories.value    = []
   fixedProducts.value = []
   loadError.value     = false
   qty.value           = 1
 
-  if (!dish.has_assembly) return
+  if (!dish.has_assembly && !dish.has_variants) return
 
   loadingMenu.value = true
   try {
     const res = await apiComanda.get(`/api/pos/comanda/menu-diario/${dish.id}`)
     categories.value    = res.data.categories
     fixedProducts.value = res.data.fixed_products
+    variants.value      = res.data.variants || []
+    variant.value       = variants.value.find(v => v.is_default) || variants.value[0] || null
     // Preseleccionar las opciones marcadas "por defecto" (Por_Default), hasta el máximo permitido
     for (const c of categories.value) {
       let defs = c.options.filter(o => o.is_default && o.available_today)
-      if (c.is_required) defs = defs.slice(0, c.max_choices)
+      if (c.is_required || variant.value) defs = defs.slice(0, maxDe(c))
       if (defs.length) selections.value[c.category_code] = defs.map(o => ({
         item_id: o.item_id, item_name: o.item_name, supply_price: o.supply_price || 0,
       }))
@@ -216,6 +273,22 @@ watch(() => props.dish, async (dish) => {
 </script>
 
 <style scoped>
+.am-variants { padding: 12px 18px; background: #fff; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+.am-variants__lbl { display: block; font-size: .72rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 6px; }
+.am-variants__list { display: flex; gap: 8px; flex-wrap: wrap; }
+.am-variant { flex: 1 1 120px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 8px;
+  border: 2px solid #e2e8f0; border-radius: 12px; background: #fff; cursor: pointer; }
+.am-variant--on { border-color: #1d4ed8; background: #eff6ff; }
+.am-variant__name { font-weight: 800; color: #1e293b; font-size: .95rem; }
+.am-variant__price { font-weight: 700; color: #1d4ed8; font-size: .85rem; }
+.am-item__count { font-size: .8rem; font-weight: 900; color: #fff; background: #16a34a; border-radius: 999px; padding: 1px 8px; margin-left: auto; }
+.am-item__minus { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%;
+  background: #fee2e2; color: #b91c1c; margin-left: 6px; flex-shrink: 0; }
+@media (max-width: 576px) {
+  .am-variants { padding: 10px 12px; }
+  .am-variant { flex: 1 1 30%; padding: 8px 4px; }
+  .am-variant__name { font-size: .85rem; }
+}
 .am-item__extra { font-size: .72rem; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 1px 7px; margin-left: auto; white-space: nowrap; }
 /* ── Overlay ── */
 .modal-overlay {

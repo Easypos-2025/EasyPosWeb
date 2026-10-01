@@ -134,6 +134,7 @@ class AgregarItemIn(BaseModel):
     assembly_selections: Optional[List[AssemblySelection]] = []
     customer_id: Optional[int] = 0
     custom_description: Optional[str] = None   # platos.Pedir_Descripcion_Producto (IMEI, detalle de trabajo...)
+    variant_id: Optional[int] = None           # tamaño (Personal / Dúo / Familiar…) si el plato tiene variantes
 
 
 class ActualizarItemIn(BaseModel):
@@ -512,6 +513,17 @@ async def get_orden_mesa(
         dish_names = {int(r["id"]): r["name"] for r in drows}
 
     assembly_map = await armado_svc.assembly_structured(db, db_temp, cid, on, dish_ids)
+    # Variantes: el ítem guarda "PLATO - VARIANTE" en Producto_Personalizado
+    variantes_por_plato = {d: await armado_svc.dish_variants(db, cid, d) for d in dish_ids}
+
+    def _variante_de(did: int, custom: str):
+        base = dish_names.get(did, "")
+        for v in sorted(variantes_por_plato.get(did, []), key=lambda x: -len(x["name"])):
+            pref = f"{base} - {v['name']}"
+            if custom == pref or custom.startswith(pref + " "):
+                return v
+        return None
+
     try:
         customer_info = await clientes_svc.get_cliente(db, cid, int(order["Id_Cliente"] or 0) or clientes_svc.CONSUMIDOR_FINAL_ID)
         await db.commit()
@@ -528,10 +540,14 @@ async def get_orden_mesa(
                 pass
         hora_plato = str(r["Hora_Plato"] or "")
         sent = bool(hora_plato and hora_plato not in ("", "0"))
+        did = int(r["Id_Plato"])
+        var = _variante_de(did, str(r["Producto_Personalizado"] or ""))
         items.append({
-            "dish_id":   int(r["Id_Plato"]),
+            "dish_id":   did,
             "item":      int(r["Item"]),
-            "dish_name": dish_names.get(int(r["Id_Plato"]), f"Plato {r['Id_Plato']}"),
+            "dish_name": (f"{dish_names.get(did, '')} - {var['name']}" if var
+                          else dish_names.get(did, f"Plato {did}")),
+            "variant_id": var["id"] if var else None,
             "quantity":  float(r["Cantidad"] or 0),
             "amount":    int(r["Valor"] or 0),
             "notes":     r["Novedad"],
@@ -641,6 +657,14 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
     except Exception:
         pass  # tablas de impresoras aún no creadas en esta BD
 
+    # Platos con variantes (Personal / Dúo / Familiar…): al comandar se pide el tamaño
+    try:
+        con_variantes = {int(r[0]) for r in (await db.execute(text(
+            "SELECT DISTINCT dish_id FROM pos_dish_variants WHERE company_id=:cid AND is_active=1"
+        ), {"cid": cid})).all()}
+    except Exception:
+        con_variantes = set()
+
     categories: dict = {}
     for d in dishes:
         cat_id = d["category_id"] or 0
@@ -657,6 +681,7 @@ async def get_menu(payload: dict = Depends(_auth_comanda), db: AsyncSession = De
             "photo_path":  d["photo_path"] or None,
             "tax":         float(d["tax"]) if d["tax"] else 0,
             "has_assembly": bool(d["has_assembly"]),
+            "has_variants": int(d["id"]) in con_variantes,
             "no_print":    bool(d["no_print"]),
             "ask_description": bool(d.get("ask_description") or 0),
             "printer_ids": ip_map.get(int(d["id"]), []),
@@ -683,7 +708,11 @@ async def get_menu_diario(
     for c in cats:
         for o in c["options"]:
             o["available_today"] = True
+    variants = await armado_svc.dish_variants(db, cid, dish_id)
+    for v in variants:
+        v["assembly"] = await armado_svc.variant_assembly(db, cid, v["id"])   # {category_code: max_choices}
     return {
+        "variants": variants,
         "categories": cats,
         "fixed_products": [{"item_id": f["item_id"], "quantity": f["quantity"], "description": f["description"]}
                            for f in fixed],
@@ -840,33 +869,52 @@ async def agregar_item(
     if not (0 < data.quantity <= 1000):
         raise HTTPException(status_code=400, detail="Cantidad no válida")
 
+    # ── Variante (tamaño): obligatoria si el plato tiene variantes ───────────
+    variants = await armado_svc.dish_variants(db, cid, data.dish_id)
+    variant = None
+    if variants:
+        variant = next((v for v in variants if v["id"] == data.variant_id), None)
+        if not variant:
+            raise HTTPException(status_code=400, detail="Seleccione el tamaño (variante) del producto")
+    elif data.variant_id:
+        raise HTTPException(status_code=400, detail="Este producto no tiene variantes")
+
     # ── Armado: validar contra la configuración del plato ────────────────────
+    #   Cada selección es UNA porción: un sabor puede repetirse (Jamón ×2 + Cordero ×2).
+    #   La variante fija cuántas opciones lleva cada categoría (Personal 2, Dúo 3, Familiar 4).
     cats = await armado_svc.build_assembly(db, cid, data.dish_id, _today())
+    if variant:
+        por_variante = await armado_svc.variant_assembly(db, cid, variant["id"])
+        for c in cats:
+            if c["category_code"] in por_variante:
+                c["max_choices"] = por_variante[c["category_code"]]
     opts = {c["category_code"]: {o["item_id"]: o for o in c["options"]} for c in cats}
-    selected, per_cat, seen = [], {}, set()
-    for sel in (data.assembly_selections or []):
-        key = (sel.category_code, sel.item_id)
-        if key in seen:
-            continue
-        seen.add(key)
+    selected, per_cat = [], {}
+    for sel in (data.assembly_selections or [])[:200]:
         opt = opts.get(sel.category_code, {}).get(sel.item_id)
         if not opt:
             raise HTTPException(status_code=400, detail="Opción de armado no disponible para este plato")
         selected.append(opt)
         per_cat[sel.category_code] = per_cat.get(sel.category_code, 0) + 1
-    # Exigir cantidad (Exgir_Seleccion) = 1 → exactamente "Opciones permitidas" (Cantidad_Elegir);
-    # = 0 → libre: ninguna, una, varias o todas las opciones de la categoría.
+    # Exigir cantidad (Exgir_Seleccion) = 1 → exactamente "Opciones permitidas" (Cantidad_Elegir o la
+    # de la variante); = 0 → libre, hasta ese máximo (o todas las opciones si es mayor).
     for c in cats:
         n = per_cat.get(c["category_code"], 0)
-        if c["is_required"] and n != c["max_choices"]:
+        # Con variante (tamaño) la cantidad de sabores SIEMPRE es obligatoria
+        if (c["is_required"] or variant) and n != c["max_choices"]:
             raise HTTPException(status_code=400,
                 detail=f"{c['category_name']}: debe seleccionar {c['max_choices']} opción(es)")
+        tope = max(c["max_choices"], len(c["options"])) if not variant else c["max_choices"]
+        if n > tope:
+            raise HTTPException(status_code=400,
+                detail=f"{c['category_name']}: máximo {tope} opción(es)")
 
     # ── Descripción personalizada (Pedir_Descripcion_Producto) ───────────────
     custom = armado_svc.clean_text(data.custom_description, 200)
     if int(dish["ask_description"]) and not custom:
         raise HTTPException(status_code=400, detail="Este producto requiere una descripción")
-    producto_personalizado = armado_svc.clean_text(f"{dish['name']} {custom}" if custom else dish["name"], 1000)
+    nombre_venta = f"{dish['name']} - {variant['name']}" if variant else dish["name"]
+    producto_personalizado = armado_svc.clean_text(f"{nombre_venta} {custom}" if custom else nombre_venta, 1000)
 
     # Siguiente número de ítem en datatemppos
     max_item = (await db_temp.execute(text(
@@ -885,13 +933,18 @@ async def agregar_item(
     cust = (await db_temp.execute(text(
         "SELECT COALESCE(Id_Cliente,0) FROM temp_comanda WHERE Nro_Pedido=:on AND company_id=:cid LIMIT 1"
     ), {"on": data.order_number, "cid": cid})).scalar() or 0
-    base = await armado_svc.client_price(db, cid, int(cust), data.dish_id, dish["price"])
+    if variant:
+        base = await armado_svc.variant_price(db, cid, int(cust), variant, data.dish_id)
+    else:
+        base = await armado_svc.client_price(db, cid, int(cust), data.dish_id, dish["price"])
     unit = base + sum(o["supply_price"] for o in selected)
     tax_pct = float(dish["tax"]) if dish["tax"] else 0
     pays_tax = 1 if tax_pct > 0 else 0
     notes = armado_svc.clean_text(data.notes, 250) or None
     changes = armado_svc.clean_text(data.changes, 255) or None
-    fixed = await armado_svc.fixed_products(db, cid, data.dish_id)
+    # Insumos fijos: con las cantidades de la receta de la variante, si la hay
+    fixed = (await armado_svc.variant_fixed_products(db, cid, data.dish_id, variant["id"]) if variant
+             else await armado_svc.fixed_products(db, cid, data.dish_id))
 
     total_amount, items_creados = 0, []
     for n, qty_u in enumerate(unidades):
@@ -946,6 +999,7 @@ async def agregar_item(
         "notes":    notes,
         "changes":  changes,
         "custom_product": producto_personalizado,
+        "variant_id": variant["id"] if variant else None,
     }
 
 

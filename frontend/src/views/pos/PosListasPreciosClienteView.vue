@@ -3,7 +3,7 @@
     <div class="lp-header">
       <div>
         <h5 class="lp-title">{{ moduleName }}</h5>
-        <p class="lp-sub">Precios especiales por cliente. Sin lista activa, el cliente paga el precio de la carta.</p>
+        <p class="lp-sub">La <b>lista general</b> tiene todos los productos con su precio. Cada cliente puede tener una lista propia que la reemplaza.</p>
       </div>
     </div>
 
@@ -14,6 +14,12 @@
           <i class="bi bi-search"></i>
           <input v-model="qCliente" @input="debBuscarClientes" placeholder="Buscar cliente por nombre, cédula o teléfono..." maxlength="60" />
         </div>
+        <button :class="['cli-row', 'cli-general', { active: general }]" @click="seleccionarGeneral">
+          <div class="cli-main">
+            <span class="cli-name"><i class="bi bi-list-ul me-1"></i> Lista general (por defecto)</span>
+            <span class="cli-doc">Todos los productos activos y sus variantes</span>
+          </div>
+        </button>
         <button class="btn-link-add" @click="abrirCrearCliente"><i class="bi bi-person-plus"></i> Crear cliente</button>
         <div v-if="loadingClientes" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
         <div v-else-if="!clientes.length" class="lp-empty">Sin clientes</div>
@@ -41,10 +47,13 @@
               <div class="det-cli-name">{{ cliente.nombre }}</div>
               <div class="det-cli-doc">{{ cliente.cedula || 'Sin cédula' }} · Id {{ cliente.id_cliente }}</div>
             </div>
-            <button v-if="cliente.id_cliente !== 1" class="btn-primary-sm" @click="abrirNuevaLista"><i class="bi bi-plus-lg"></i> Nueva lista</button>
+            <button v-if="cliente.id_cliente !== 1 && !general" class="btn-primary-sm" @click="abrirNuevaLista"><i class="bi bi-plus-lg"></i> Nueva lista</button>
           </div>
 
-          <div v-if="cliente.id_cliente === 1" class="info-line">
+          <div v-if="general" class="info-line">
+            <i class="bi bi-info-circle"></i> Es el precio de cada producto y variante: cambiarlo aquí cambia el precio del plato (y al revés). Se cobra cuando el cliente no tiene lista propia activa.
+          </div>
+          <div v-else-if="cliente.id_cliente === 1" class="info-line">
             <i class="bi bi-info-circle"></i> Consumidor Final paga siempre el precio de la carta; no se le asigna lista.
           </div>
 
@@ -57,21 +66,26 @@
               <small>{{ l.productos }} prod.</small>
             </button>
           </div>
-          <div v-else-if="cliente.id_cliente !== 1" class="lp-empty">El cliente no tiene listas. Cree una con "Nueva lista".</div>
+          <div v-else-if="cliente.id_cliente !== 1 && !general" class="lp-empty">El cliente no tiene listas. Cree una con "Nueva lista".</div>
 
           <!-- Lista seleccionada -->
           <div v-if="lista" class="lista-box">
             <div class="lista-top">
               <div class="lista-info">
-                <div class="lista-name">
+                <div v-if="general" class="lista-name"><span class="lista-general-name">{{ lista.nombre }}</span></div>
+                <div v-else class="lista-name">
                   <input v-model="lista.nombre" class="inp-inline" maxlength="100" @change="guardarCabecera" />
                   <span :class="['badge-st', lista.activa ? 'st-on' : 'st-off']">{{ lista.activa ? 'Activa' : 'Inactiva' }}</span>
                 </div>
-                <input v-model="lista.observacion" class="inp-inline inp-obs" maxlength="255" placeholder="Observación…" @change="guardarCabecera" />
-                <div class="lista-meta">{{ lista.fecha || '' }} · {{ lista.usuario || '' }}</div>
+                <template v-if="!general">
+                  <input v-model="lista.observacion" class="inp-inline inp-obs" maxlength="255" placeholder="Observación…" @change="guardarCabecera" />
+                  <div class="lista-meta">{{ lista.fecha || '' }} · {{ lista.usuario || '' }}</div>
+                </template>
               </div>
-              <button v-if="lista.activa" class="btn-soft-danger" @click="toggleActiva(false)"><i class="bi bi-pause-circle"></i> Desactivar</button>
-              <button v-else class="btn-soft-ok" @click="toggleActiva(true)"><i class="bi bi-check-circle"></i> Activar</button>
+              <template v-if="!general">
+                <button v-if="lista.activa" class="btn-soft-danger" @click="toggleActiva(false)"><i class="bi bi-pause-circle"></i> Desactivar</button>
+                <button v-else class="btn-soft-ok" @click="toggleActiva(true)"><i class="bi bi-check-circle"></i> Activar</button>
+              </template>
             </div>
 
             <div class="add-row">
@@ -79,25 +93,29 @@
                 <i class="bi bi-search"></i>
                 <input v-model="qItems" placeholder="Filtrar productos de la lista..." maxlength="60" />
               </div>
-              <button class="btn-link-add" @click="abrirAgregar"><i class="bi bi-plus-circle"></i> Agregar producto</button>
+              <button v-if="!general" class="btn-link-add" @click="abrirAgregar"><i class="bi bi-plus-circle"></i> Agregar producto</button>
             </div>
             <div v-if="bajoMinimo" class="warn-line"><i class="bi bi-exclamation-triangle"></i> {{ bajoMinimo }} producto(s) por debajo del precio mínimo.</div>
 
             <div v-if="loadingLista" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
             <table v-else class="tbl">
-              <thead><tr><th>Producto</th><th class="hide-sm">Categoría</th><th class="text-right hide-sm">Carta</th><th class="text-right">Precio cliente</th><th></th></tr></thead>
+              <thead><tr><th>Producto</th><th class="hide-sm">Categoría</th><th v-if="!general" class="text-right hide-sm">General</th><th class="text-right">{{ general ? 'Precio' : 'Precio cliente' }}</th><th></th></tr></thead>
               <tbody>
-                <tr v-for="it in itemsFiltrados" :key="it.id_producto" :class="{ 'row-warn': it.bajo_minimo, 'row-off': it.desactivado }">
+                <tr v-for="it in itemsFiltrados" :key="`${it.id_producto}-${it.id_presentacion}`"
+                    :class="{ 'row-warn': it.bajo_minimo, 'row-off': it.desactivado, 'row-var': it.id_presentacion > 0 }">
                   <td>
-                    <div class="it-name">{{ it.name }}</div>
+                    <div class="it-name">
+                      <i v-if="it.id_presentacion > 0" class="bi bi-arrow-return-right text-muted me-1"></i>{{ it.name }}
+                      <span v-if="it.var_default" class="chip-def">Por defecto</span>
+                    </div>
                     <div v-if="it.bajo_minimo" class="it-warn">Mínimo {{ fmt(it.precio_minimo) }}</div>
                   </td>
                   <td class="hide-sm text-muted">{{ it.categoria || '—' }}</td>
-                  <td class="text-right hide-sm text-muted">{{ fmt(it.precio_base) }}</td>
+                  <td v-if="!general" class="text-right hide-sm text-muted">{{ fmt(it.precio_base) }}</td>
                   <td class="text-right">
                     <CurrencyInput :model-value="it.precio" class="inp-price" @update:model-value="v => editarPrecio(it, v)" />
                   </td>
-                  <td><button class="btn-x-sm" @click="quitar(it)" title="Quitar"><i class="bi bi-x-lg"></i></button></td>
+                  <td><button v-if="!general && !it.id_presentacion" class="btn-x-sm" @click="quitar(it)" title="Quitar (con sus variantes)"><i class="bi bi-x-lg"></i></button></td>
                 </tr>
                 <tr v-if="!itemsFiltrados.length"><td colspan="5" class="text-center text-muted">Sin productos</td></tr>
               </tbody>
@@ -190,6 +208,7 @@ const lista = ref(null)
 const items = ref([])
 const loadingLista = ref(false)
 const qItems = ref('')
+const general = ref(false)          // lista general (por defecto): Id_Lista = 0
 
 const modalNueva   = ref({ show: false, nombre: '', observacion: '', origen: 'platos', saving: false })
 const modalAgregar = ref({ show: false, q: '', productos: [] })
@@ -205,7 +224,7 @@ const itemsFiltrados = computed(() => {
 })
 const bajoMinimo = computed(() => items.value.filter(i => i.bajo_minimo).length)
 const productosDisponibles = computed(() => {
-  const ya = new Set(items.value.map(i => i.id_producto))
+  const ya = new Set(items.value.filter(i => !i.id_presentacion).map(i => i.id_producto))
   return modalAgregar.value.productos.filter(p => !ya.has(p.id))
 })
 
@@ -216,7 +235,21 @@ async function buscarClientes() {
   finally { loadingClientes.value = false }
 }
 
+async function seleccionarGeneral() {
+  general.value = true
+  cliente.value = { id_cliente: 0, nombre: 'Lista general (por defecto)', cedula: '' }
+  listas.value = []
+  loadingLista.value = true
+  try {
+    const { data } = await api.get(`${BASE}/general`)
+    lista.value = data.lista
+    items.value = data.items
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error cargando la lista general', 'error') }
+  finally { loadingLista.value = false }
+}
+
 async function seleccionarCliente(c) {
+  general.value = false
   lista.value = null; items.value = []
   try {
     const { data } = await api.get(`${BASE}/cliente/${c.id_cliente}`)
@@ -283,8 +316,11 @@ async function editarPrecio(it, v) {
   const precio = Number(v) || 0
   if (precio === it.precio) return
   try {
-    const { data } = await api.put(`${BASE}/lista/${lista.value.id_lista}/item/${it.id_producto}`, { precio })
+    const url = general.value ? `${BASE}/general/item/${it.id_producto}` : `${BASE}/lista/${lista.value.id_lista}/item/${it.id_producto}`
+    const { data } = await api.put(url, { precio }, { params: { presentacion: it.id_presentacion || 0 } })
     it.precio = precio
+    // En la general, plato y variante por defecto quedan iguales: recargar para reflejarlo
+    if (general.value && (it.var_default || !it.id_presentacion)) seleccionarGeneral()
     it.bajo_minimo = data.bajo_minimo
     if (data.bajo_minimo) showToast(`${it.name}: queda por debajo del precio mínimo`, 'warning')
   } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
@@ -293,7 +329,7 @@ async function editarPrecio(it, v) {
 async function quitar(it) {
   try {
     await api.delete(`${BASE}/lista/${lista.value.id_lista}/item/${it.id_producto}`)
-    items.value = items.value.filter(x => x !== it)
+    items.value = items.value.filter(x => x.id_producto !== it.id_producto)
     recargarListas()
   } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
 }
@@ -437,4 +473,10 @@ onMounted(buscarClientes)
   .add-row { flex-direction: column; align-items: stretch; }
   .det-hdr { flex-wrap: wrap; }
 }
+.cli-general { border-color: #c7d2fe; background: #eef2ff; margin-bottom: 6px; }
+.cli-general.active { border-color: #4338ca; }
+.lista-general-name { font-weight: 800; color: #3730a3; font-size: 15px; }
+.row-var td:first-child { padding-left: 22px; }
+.row-var .it-name { font-weight: 500; }
+.chip-def { font-size: 10px; font-weight: 700; color: #15803d; background: #dcfce7; border-radius: 10px; padding: 1px 6px; margin-left: 4px; }
 </style>

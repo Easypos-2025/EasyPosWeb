@@ -151,6 +151,60 @@ async def fixed_products(db: AsyncSession, cid: int, dish_id: int) -> list:
     } for r in rows]
 
 
+# ── Variantes (solo web): Personal / Dúo / Familiar… ─────────────────────────
+# Toda opción de venta de un plato con variantes es una variante (precio propio). La receta
+# de la variante solo ajusta la cantidad de los insumos fijos del plato y cada categoría de
+# armado puede pedir una cantidad distinta de sabores según la variante.
+
+async def dish_variants(db: AsyncSession, cid: int, dish_id: int) -> list:
+    rows = (await db.execute(text("""
+        SELECT id, name, price, COALESCE(is_default, 0) AS is_default
+        FROM pos_dish_variants
+        WHERE company_id = :cid AND dish_id = :did AND is_active = 1
+        ORDER BY order_index, id
+    """), {"cid": cid, "did": dish_id})).mappings().all()
+    return [{"id": int(r["id"]), "name": r["name"], "price": int(r["price"] or 0),
+             "is_default": bool(r["is_default"])} for r in rows]
+
+
+async def variant_assembly(db: AsyncSession, cid: int, variant_id: int) -> dict:
+    """{category_code: max_choices} de la variante (sobrescribe plato_armar.Cantidad_Elegir)."""
+    rows = (await db.execute(text(
+        "SELECT category_code, max_choices FROM pos_dish_variant_assembly WHERE company_id=:cid AND variant_id=:vid"
+    ), {"cid": cid, "vid": variant_id})).all()
+    return {int(r[0]): max(int(r[1] or 1), 1) for r in rows}
+
+
+async def variant_fixed_products(db: AsyncSession, cid: int, dish_id: int, variant_id: int) -> list:
+    """Insumos fijos del plato con las cantidades de la receta de la variante."""
+    fixed = await fixed_products(db, cid, dish_id)
+    over = {int(r[0]): float(r[1]) for r in (await db.execute(text(
+        "SELECT id_item, porciones FROM pos_dish_variant_products WHERE company_id=:cid AND variant_id=:vid"
+    ), {"cid": cid, "vid": variant_id})).all()}
+    for f in fixed:
+        if f["item_id"] in over:
+            f["quantity"] = over[f["item_id"]]
+    return fixed
+
+
+async def variant_price(db: AsyncSession, cid: int, customer_id: int, variant: dict, dish_id: int) -> int:
+    """Precio de la variante; si el cliente tiene lista propia con esa variante
+    (lista_precios_cliente.Id_Presentacion = variante), manda la lista."""
+    if customer_id and int(customer_id) > 1:
+        row = (await db.execute(text("""
+            SELECT cpl.precio_producto
+            FROM pos_customer_price_list_header h
+            JOIN pos_customer_price_list cpl
+              ON cpl.company_id = h.company_id AND cpl.id_lista = h.id_lista
+             AND cpl.id_producto = :did AND cpl.id_presentacion = :vid AND cpl.activa = 1
+            WHERE h.company_id = :cid AND h.id_cliente = :cli AND h.activa = 1
+            ORDER BY h.id_lista DESC LIMIT 1
+        """), {"cid": cid, "cli": int(customer_id), "did": dish_id, "vid": variant["id"]})).scalar()
+        if row is not None:
+            return int(row)
+    return int(variant["price"])
+
+
 async def client_price(db: AsyncSession, cid: int, customer_id: int, dish_id: int, default_price: int) -> int:
     """Precio de la lista activa del cliente; si no tiene (o es consumidor final) → platos.Valor."""
     if not customer_id or int(customer_id) <= 1:

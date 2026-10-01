@@ -38,8 +38,8 @@
           <div class="od-item__detail">
             <span class="od-item__name">{{ group.dish_name }}</span>
             <span
-              v-for="sel in group.assembly"
-              :key="sel.category_code"
+              v-for="(sel, si) in group.assembly"
+              :key="si"
               class="od-item__asm"
             >{{ sel.item_name }}</span>
             <span v-if="group.notes" class="od-item__notes">

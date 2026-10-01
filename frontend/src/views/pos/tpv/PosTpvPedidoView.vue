@@ -161,7 +161,7 @@
               </button>
             </div>
             <div class="cart-item__tags" v-if="group.assembly?.length || group.notes || group.changes || !group.hasUnsent || group.hasDiscount">
-              <span v-for="sel in group.assembly" :key="sel.category_code" class="ci-tag">{{ sel.item_name }}</span>
+              <span v-for="(sel, si) in group.assembly" :key="si" class="ci-tag">{{ sel.item_name }}</span>
               <span v-if="group.custom_description" class="ci-tag ci-custom"><i class="bi bi-pencil-square"></i> {{ group.custom_description }}</span>
               <span v-if="group.notes"   class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
@@ -352,7 +352,7 @@ const groupedItems = computed(() => {
   const map    = new Map()
   for (const item of items.value) {
     if (item._deleted) continue
-    const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}|${item.custom_description || ''}`
+    const k = `${item.dish_id}|${item.variant_id || 0}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}|${item.custom_description || ''}`
     if (map.has(k)) {
       const g = map.get(k)
       g.qty         += item.quantity
@@ -363,6 +363,7 @@ const groupedItems = computed(() => {
     } else {
       map.set(k, {
         key: k, dish_id: item.dish_id, dish_name: item.dish_name, custom_description: item.custom_description || null,
+        variant_id: item.variant_id || null,
         qty: item.quantity, totalAmount: item.amount,
         assembly: item.assembly, notes: item.notes, changes: item.changes,
         hasUnsent: !item.sent || item.isNew,
@@ -496,7 +497,7 @@ async function onDishSelect(dish) {
     pendingCustom = await askDescription(dish.name)
     if (!pendingCustom) return
   }
-  if (dish.has_assembly) assemblyDish.value = dish
+  if (dish.has_assembly || dish.has_variants) assemblyDish.value = dish
   else addSimpleDish(dish, pendingCustom)
 }
 
@@ -509,13 +510,15 @@ function addSimpleDish(dish, custom = null) {
   })
 }
 
-function onItemAdded({ dish, assemblySelections, qty }) {
+function onItemAdded({ dish, assemblySelections, qty, variant }) {
   assemblyDish.value = null
   // Precio mostrado = base + valor adicional del armado (el definitivo lo calcula el servidor)
   const extra = (assemblySelections || []).reduce((s, a) => s + (Number(a.supply_price) || 0), 0)
   items.value.push({
     dish_id: dish.id, item: _tempId--,
-    dish_name: dish.name, quantity: qty, amount: ((dish.price || 0) + extra) * qty,
+    dish_name: variant ? `${dish.name} - ${variant.name}` : dish.name, quantity: qty,
+    amount: ((variant ? variant.price : (dish.price || 0)) + extra) * qty,
+    variant_id: variant?.id || null,
     notes: null, changes: null, assembly: assemblySelections, custom_description: pendingCustom,
     sent: false, isNew: true, _deleted: false, _dirty: false,
   })
@@ -533,7 +536,7 @@ async function addGroupItem(group) {
     dish_id: group.dish_id, item: _tempId--,
     dish_name: group.dish_name, quantity: 1, amount: group.unitPrice,
     notes: group.notes || null, changes: group.changes || null,
-    assembly: group.assembly || [], custom_description: custom,
+    assembly: group.assembly || [], custom_description: custom, variant_id: group.variant_id || null,
     sent: false, isNew: true, _deleted: false, _dirty: false,
   })
 }
@@ -622,6 +625,7 @@ async function submitOrder() {
         dish_id:             ni.dish_id,
         quantity:            ni.quantity,
         assembly_selections: ni.assembly || [],
+        variant_id:          ni.variant_id || null,
         custom_description:  ni.custom_description || null,
         notes:               ni.notes || null,
         changes:             ni.changes || null,

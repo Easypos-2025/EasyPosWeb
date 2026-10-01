@@ -273,6 +273,18 @@ async def _recalc_execute(db: AsyncSession, cid: int, where_sql: str, params: di
     return len(calc_rows)
 
 
+async def _recalc_items(db: AsyncSession, cid: int, ids) -> None:
+    """Recalcula el stock actual SOLO de los insumos indicados (misma fórmula del Kardex:
+    último inventario físico + entradas − salidas − ventas desde esa fecha). Se llama tras
+    cualquier cambio en el inventario físico para que Stocks Actuales quede al día."""
+    ids = sorted({int(i) for i in ids if i is not None})
+    if not ids:
+        return
+    ph = ", ".join(f":it{i}" for i in range(len(ids)))
+    params = {"cid": cid, **{f"it{i}": v for i, v in enumerate(ids)}}
+    await _recalc_execute(db, cid, f"iap.company_id = :cid AND iap.id_item IN ({ph})", params)
+
+
 @router.post("/stock/recalculate/all")
 async def recalculate_stock_all(
     current_user: User = Depends(get_current_user),
@@ -741,6 +753,11 @@ async def create_physical(
 
     if not id_item:
         raise HTTPException(400, "id_item es requerido")
+    ok = (await db.execute(text(
+        "SELECT 1 FROM supply_items WHERE company_id=:cid AND id_item=:item LIMIT 1"
+    ), {"cid": current_user.company_id, "item": int(id_item)})).scalar()
+    if not ok:
+        raise HTTPException(404, "Insumo no encontrado en esta empresa")
 
     # Reusar el id_fisico existente para esa fecha, o crear uno nuevo
     existing = (await db.execute(text("""
@@ -772,6 +789,7 @@ async def create_physical(
     })
     new_id = res.lastrowid
     await db.commit()
+    await _recalc_items(db, current_user.company_id, [id_item])
     return {"ok": True, "id": new_id}
 
 
@@ -850,6 +868,7 @@ async def create_physical_bulk(
         saved += 1
 
     await db.commit()
+    await _recalc_items(db, cid, conteo.keys())
     return {"ok": True, "saved": saved, "fecha": fecha}
 
 
@@ -862,7 +881,7 @@ async def update_physical(
 ):
     """Editar cantidad y/u observación de un registro de inventario físico."""
     row = (await db.execute(text(
-        "SELECT id FROM inventory_physical WHERE id=:pid AND company_id=:cid LIMIT 1"
+        "SELECT id, id_item FROM inventory_physical WHERE id=:pid AND company_id=:cid LIMIT 1"
     ), {"pid": pid, "cid": current_user.company_id})).mappings().first()
     if not row:
         raise HTTPException(404, "Registro no encontrado")
@@ -881,10 +900,12 @@ async def update_physical(
         raise HTTPException(400, "Nada que actualizar")
 
     sets.append("updated_at = NOW()")
+    params["cid"] = current_user.company_id
     await db.execute(text(
-        f"UPDATE inventory_physical SET {', '.join(sets)} WHERE id=:pid"
+        f"UPDATE inventory_physical SET {', '.join(sets)} WHERE id=:pid AND company_id=:cid"
     ), params)
     await db.commit()
+    await _recalc_items(db, current_user.company_id, [row["id_item"]])
     return {"ok": True}
 
 
@@ -895,10 +916,14 @@ async def delete_physical_by_date(
     db: AsyncSession = Depends(get_db),
 ):
     """Eliminar todos los registros de un corte de inventario por fecha."""
+    items = [r[0] for r in (await db.execute(text(
+        "SELECT DISTINCT id_item FROM inventory_physical WHERE company_id=:cid AND fecha=:fecha"
+    ), {"cid": current_user.company_id, "fecha": fecha})).all()]
     res = await db.execute(text(
         "DELETE FROM inventory_physical WHERE company_id=:cid AND fecha=:fecha"
     ), {"cid": current_user.company_id, "fecha": fecha})
     await db.commit()
+    await _recalc_items(db, current_user.company_id, items)
     return {"ok": True, "deleted": res.rowcount}
 
 
@@ -909,12 +934,16 @@ async def delete_physical(
     db: AsyncSession = Depends(get_db),
 ):
     """Eliminar un registro individual de inventario físico."""
+    id_item = (await db.execute(text(
+        "SELECT id_item FROM inventory_physical WHERE id=:pid AND company_id=:cid"
+    ), {"pid": pid, "cid": current_user.company_id})).scalar()
     res = await db.execute(text(
         "DELETE FROM inventory_physical WHERE id=:pid AND company_id=:cid"
     ), {"pid": pid, "cid": current_user.company_id})
     await db.commit()
     if res.rowcount == 0:
         raise HTTPException(404, "Registro no encontrado")
+    await _recalc_items(db, current_user.company_id, [id_item])
     return {"ok": True}
 
 
@@ -951,6 +980,7 @@ async def authorize_physical(
         )
 
     await db.commit()
+    await _recalc_items(db, current_user.company_id, [row["id_item"]])
     return {"ok": True}
 
 
