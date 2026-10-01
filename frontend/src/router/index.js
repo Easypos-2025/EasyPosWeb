@@ -989,6 +989,41 @@ const routes = [
         meta: { title: "Listas de precios por cliente" }
       },
       {
+        path: "/caja/cuadre",
+        name: "CajaCuadreView",
+        component: () => import("@/views/caja/CajaCuadreView.vue"),
+        requiresAuth: true,
+        meta: { title: "Cuadre Caja" }
+      },
+      {
+        path: "/caja/gastos",
+        name: "CajaGastosView",
+        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        requiresAuth: true,
+        meta: { title: "Registro Gastos", icon: "bi-wallet2" }
+      },
+      {
+        path: "/caja/compras",
+        name: "CajaComprasView",
+        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        requiresAuth: true,
+        meta: { title: "Registro Compras", icon: "bi-bag" }
+      },
+      {
+        path: "/caja/otros-ingresos",
+        name: "CajaOtrosIngresosView",
+        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        requiresAuth: true,
+        meta: { title: "Otros Ingresos", icon: "bi-box-arrow-in-down-right" }
+      },
+      {
+        path: "/caja/otros-egresos",
+        name: "CajaOtrosEgresosView",
+        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        requiresAuth: true,
+        meta: { title: "Otros Egresos", icon: "bi-box-arrow-up-right" }
+      },
+      {
         path: "/pos/categorias-productos",
         name: "PosCategoriasProductosView",
         component: () => import("@/views/pos/PosCategoriasProductosView.vue"),

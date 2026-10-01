@@ -43,14 +43,26 @@
                   <div v-if="placa">Placa: <strong>{{ placa }}</strong></div>
                   <div>Fecha: <strong>{{ receiptData.fecha }}</strong></div>
                   <div v-if="receiptData.hora">Hora: <strong>{{ receiptData.hora }}</strong></div>
+                  <div v-for="(l, li) in receiptData.lineas || []" :key="'l' + li"><strong>{{ l }}</strong></div>
                 </div>
                 <div class="r-divider">--------------------------------</div>
 
                 <!-- Modo lista por secciones (p. ej. menú del día): título + ítems, sin valores -->
                 <template v-if="receiptData.secciones">
                   <div v-for="(sec, si) in receiptData.secciones" :key="si" class="r-sec">
+                    <!-- Documento aparte (p. ej. detalle del cuadre de caja): en tirilla va con corte de papel -->
+                    <div v-if="sec.documento" class="r-doc">
+                      <div v-if="si > 0" class="r-corte"><i class="bi bi-scissors"></i> corte</div>
+                      <div class="r-titulo">{{ sec.documento }}</div>
+                    </div>
                     <div class="r-sec-title">{{ sec.titulo }}</div>
-                    <div v-for="(it, ii) in sec.items" :key="ii" class="r-sec-item">- {{ it }}</div>
+                    <template v-for="(it, ii) in sec.items" :key="ii">
+                      <div v-if="typeof it === 'string'" class="r-sec-item">- {{ it }}</div>
+                      <div v-else :class="['r-tot-row', { 'r-tot-bold': it.bold }]">
+                        <span>{{ it.cant !== null && it.cant !== undefined && it.valor !== null ? `${it.cant} ` : '' }}{{ it.label }}</span>
+                        <span>{{ it.valor === null || it.valor === undefined ? it.cant : fmt(it.valor) }}</span>
+                      </div>
+                    </template>
                   </div>
                 </template>
 
@@ -309,11 +321,15 @@ async function exportarExcel() {
   if (r.secciones) {
     filas.push([])
     for (const sec of r.secciones) {
+      if (sec.documento) filas.push([], [sec.documento])
       filas.push([sec.titulo])
-      for (const it of sec.items || []) filas.push(["", it])
+      for (const it of sec.items || []) {
+        if (typeof it === "string") filas.push(["", it])
+        else filas.push([it.label, it.valor === null || it.valor === undefined ? it.cant : (it.cant ?? ""), it.valor ?? ""])
+      }
     }
     const wsL = XLSX.utils.aoa_to_sheet(filas)
-    wsL["!cols"] = [{ wch: 30 }, { wch: 40 }]
+    wsL["!cols"] = [{ wch: 34 }, { wch: 12 }, { wch: 14 }]
     const wbL = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wbL, wsL, (r.titulo || "Lista").slice(0, 28))
     XLSX.writeFile(wbL, `${(r.titulo || "lista").toLowerCase().replace(/[^a-z0-9]+/gi, "_")}_${(r.fecha || "").replace(/\//g, "-")}.xlsx`)
@@ -707,4 +723,7 @@ onMounted(loadPrinters)
 
 .spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+.r-doc { margin-top: 6px; }
+.r-corte { text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px dashed #94a3b8; margin: 10px 0 6px; padding-top: 2px; }
+.r-tot-bold { font-weight: 800; }
 </style>

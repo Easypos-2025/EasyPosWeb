@@ -109,6 +109,7 @@ from app.routers.pos_pago_router import router as pos_pago_router
 from app.routers.pos_recibo_impresion_router import router as pos_recibo_impresion_router
 from app.routers.config_facturacion_router import router as config_facturacion_router
 from app.routers.pos_categorias_productos_router import router as pos_categorias_productos_router
+from app.routers.caja_cuadre_router import router as caja_cuadre_router
 from app.routers.metricas_router import router as metricas_router
 from app import models  # asegura que plan_model se registre en Base
 
@@ -2502,6 +2503,7 @@ routers = [
     pos_recibo_impresion_router,
     config_facturacion_router,
     pos_categorias_productos_router,
+    caja_cuadre_router,
     metricas_router,
 ]
 

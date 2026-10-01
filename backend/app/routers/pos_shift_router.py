@@ -146,7 +146,12 @@ async def abrir_turno(
         return existente      # se sigue con el mismo turno (puede pasar de medianoche) hasta cerrarlo
 
     register_number = body.get("register_number")
-    base_amount = body.get("base_amount", 0)
+    try:
+        base_amount = float(body.get("base_amount") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Base inicial no válida")
+    if base_amount < 0 or base_amount > 1e12:
+        raise HTTPException(status_code=422, detail="Base inicial no válida")
     pc = (body.get("pc") or "")[:50]
     if register_number is None:
         raise HTTPException(status_code=422, detail="register_number es requerido")
@@ -223,20 +228,35 @@ async def cerrar_turno(
         if not turno:
             raise HTTPException(status_code=404, detail="No tiene un turno de caja abierto")
 
-    await db.execute(text("""
+    await cerrar_y_liberar(db, cid, int(turno["id"]), int(turno["register_number"]))
+    await db.commit()
+    return {"ok": True}
+
+
+# Columnas del cuadre que se guardan al cerrar (cuadre_caja del escritorio)
+_CAMPOS_CUADRE = ("base_amount", "final_base", "total_sales", "cash_sales", "voucher_sales", "tips",
+                  "expenses", "purchases", "vouchers", "total_invoices", "voucher_invoices",
+                  "voided_invoices", "invoice_start", "invoice_end", "delivery_income", "delivery_expense")
+
+
+async def cerrar_y_liberar(db: AsyncSession, cid: int, turno_id: int, register_number: int,
+                           cuadre: Optional[dict] = None) -> None:
+    """Marca el turno cerrado (con la foto del cuadre si se envía) y libera la caja.
+    No hace commit: lo hace quien llama."""
+    campos = {k: v for k, v in (cuadre or {}).items() if k in _CAMPOS_CUADRE}
+    sets = "".join(f", {k} = :{k}" for k in campos)
+    await db.execute(text(f"""
         UPDATE pos_cash_register_closings
-        SET closed = 1, closing_datetime = :now
-        WHERE id = :id AND company_id = :cid
-    """), {"now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "id": turno["id"], "cid": cid})
+        SET closed = 1, closing_datetime = :now{sets}
+        WHERE id = :id AND company_id = :cid AND closed = 0
+    """), {"now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "id": turno_id, "cid": cid, **campos})
     # cajas.Abierta = 0 si ya no queda otro turno abierto en esa caja
     await db.execute(text("""
         UPDATE pos_cash_registers SET is_open = 0, employee_id = 0
         WHERE company_id = :cid AND id = :rn
           AND NOT EXISTS (SELECT 1 FROM pos_cash_register_closings
                           WHERE company_id = :cid AND register_number = :rn AND closed = 0)
-    """), {"cid": cid, "rn": int(turno["register_number"])})
-    await db.commit()
-    return {"ok": True}
+    """), {"cid": cid, "rn": register_number})
 
 
 async def require_open_shift(
