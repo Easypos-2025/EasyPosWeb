@@ -188,37 +188,15 @@ async def variant_fixed_products(db: AsyncSession, cid: int, dish_id: int, varia
 
 
 async def variant_price(db: AsyncSession, cid: int, customer_id: int, variant: dict, dish_id: int) -> int:
-    """Precio de la variante; si el cliente tiene lista propia con esa variante
-    (lista_precios_cliente.Id_Presentacion = variante), manda la lista."""
-    if customer_id and int(customer_id) > 1:
-        row = (await db.execute(text("""
-            SELECT cpl.precio_producto
-            FROM pos_customer_price_list_header h
-            JOIN pos_customer_price_list cpl
-              ON cpl.company_id = h.company_id AND cpl.id_lista = h.id_lista
-             AND cpl.id_producto = :did AND cpl.id_presentacion = :vid AND cpl.activa = 1
-            WHERE h.company_id = :cid AND h.id_cliente = :cli AND h.activa = 1
-            ORDER BY h.id_lista DESC LIMIT 1
-        """), {"cid": cid, "cli": int(customer_id), "did": dish_id, "vid": variant["id"]})).scalar()
-        if row is not None:
-            return int(row)
-    return int(variant["price"])
+    """Precio de la variante según las listas (cliente → Default → precio de la variante)."""
+    from app.services import listas_precios
+    return await listas_precios.precio(db, cid, int(customer_id or 0), dish_id, int(variant["id"]), int(variant["price"]))
 
 
 async def client_price(db: AsyncSession, cid: int, customer_id: int, dish_id: int, default_price: int) -> int:
-    """Precio de la lista activa del cliente; si no tiene (o es consumidor final) → platos.Valor."""
-    if not customer_id or int(customer_id) <= 1:
-        return int(default_price or 0)
-    row = (await db.execute(text("""
-        SELECT cpl.precio_producto
-        FROM pos_customer_price_list_header h
-        JOIN pos_customer_price_list cpl
-          ON cpl.company_id = h.company_id AND cpl.id_lista = h.id_lista
-         AND cpl.id_producto = :did AND cpl.id_presentacion = 0 AND cpl.activa = 1
-        WHERE h.company_id = :cid AND h.id_cliente = :cli AND h.activa = 1
-        ORDER BY h.id_lista DESC LIMIT 1
-    """), {"cid": cid, "cli": int(customer_id), "did": dish_id})).scalar()
-    return int(row) if row is not None else int(default_price or 0)
+    """Precio del plato según las listas (cliente → Default → platos.Valor)."""
+    from app.services import listas_precios
+    return await listas_precios.precio(db, cid, int(customer_id or 0), dish_id, 0, int(default_price or 0))
 
 
 async def write_item_products(db_temp: AsyncSession, cid: int, order_number: str, fecha, dish_id: int,

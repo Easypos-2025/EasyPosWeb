@@ -1,15 +1,17 @@
 """
-Listas de precios por cliente.
-  Cabecera: pos_customer_price_list_header  (= lista_precios_cliente_cabecera del escritorio)
-  Detalle:  pos_customer_price_list          (= lista_precios_cliente), relacionadas por id_lista.
+Listas de Precios (lista_precios_cliente del escritorio).
+  Cabecera: pos_customer_price_list_header  (Id_Lista, Fecha, Id_Cliente, Nombre, Activa…)
+  Detalle:  pos_customer_price_list          (Id_Producto, Id_Presentacion = variante, Precio)
 Reglas:
-  - id_lista es consecutivo por empresa y lo genera la web (0 = lista general, reservada).
-  - Un cliente tiene UNA sola lista activa: al crear o activar una, las demás se desactivan.
-  - Nueva lista: carga todos los platos activos con su Valor (o copia la lista anterior).
-  - Sin lista activa → la comanda cobra platos.Valor.
+  - Id_Lista es consecutivo por empresa.
+  - Lista DEFAULT (predeterminada) = lista del cliente 1 (Consumidor Final). Puede haber varias
+    (histórico de precios), solo una activa. Sus precios = precio de platos/variantes (ambos sentidos).
+  - Un cliente tiene UNA sola lista activa: al crear o activar una, la anterior queda anulada.
+  - El detalle son todos los platos activos y sus variantes; solo se edita el precio.
+  - Se cobra con la Default si el cliente es el 1 o si no tiene lista propia activa.
 """
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, StringConstraints
@@ -22,9 +24,10 @@ from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.models.user_model import User
 from app.services import clientes as clientes_svc
+from app.services import listas_precios as lp
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
-router = APIRouter(prefix="/api/pos-catalogo/listas-cliente", tags=["POS Listas de precios por cliente"],
+router = APIRouter(prefix="/api/pos-catalogo/listas-cliente", tags=["Listas de Precios"],
                    dependencies=[Depends(tenant_guard)])
 
 _BOG = timezone(timedelta(hours=-5))
@@ -40,7 +43,7 @@ class ListaIn(BaseModel):
     id_cliente: Annotated[int, Field(ge=1)]
     nombre: Text100
     observacion: Optional[Annotated[str, StringConstraints(max_length=255)]] = None
-    origen: Literal["platos", "anterior"] = "platos"
+    origen: Literal["default", "anterior"] = "default"
 
 
 class ListaUpdate(BaseModel):
@@ -48,13 +51,14 @@ class ListaUpdate(BaseModel):
     observacion: Optional[Annotated[str, StringConstraints(max_length=255)]] = None
 
 
-class PrecioIn(BaseModel):
-    precio: Money
-
-
-class ItemIn(BaseModel):
+class PrecioLinea(BaseModel):
     id_producto: Annotated[int, Field(ge=1)]
+    id_presentacion: Annotated[int, Field(ge=0)] = 0
     precio: Money
+
+
+class PreciosIn(BaseModel):
+    items: Annotated[List[PrecioLinea], Field(min_length=1, max_length=5000)]
 
 
 class ClienteIn(BaseModel):
@@ -65,27 +69,33 @@ class ClienteIn(BaseModel):
     mail: Optional[str] = None
 
 
+class ImprimirIn(BaseModel):
+    printer_id: Annotated[int, Field(ge=0)]
+    raw: bool = False
+    company_id: Optional[int] = None     # lo valida tenant_guard
+
+
 async def _ctx(db: AsyncSession, user: User, company_id: Optional[int]) -> int:
     return await tenant.resolve_company(db, user, company_id)
 
 
 async def _header(db: AsyncSession, cid: int, id_lista: int):
     h = (await db.execute(text("""
-        SELECT id_lista, id_cliente, nombre, fecha, activa, usuario, observacion
-        FROM pos_customer_price_list_header WHERE company_id = :cid AND id_lista = :l
+        SELECT h.id_lista, h.id_cliente, h.nombre, h.fecha, h.activa, h.usuario, h.observacion,
+               (h.id_cliente = 1) AS predeterminada,
+               TRIM(CONCAT(COALESCE(c.nombres,''),' ',COALESCE(c.apellidos,''))) AS cliente
+        FROM pos_customer_price_list_header h
+        LEFT JOIN clientes c ON c.company_id = h.company_id AND c.id_cliente = h.id_cliente
+        WHERE h.company_id = :cid AND h.id_lista = :l
     """), {"cid": cid, "l": id_lista})).mappings().first()
     if not h:
         raise HTTPException(status_code=404, detail="Lista no encontrada")
-    return h
-
-
-async def _check_dish(db: AsyncSession, cid: int, id_producto: int):
-    d = (await db.execute(text(
-        "SELECT id, price, wholesale_price FROM pos_dishes WHERE id = :id AND company_id = :cid"
-    ), {"id": id_producto, "cid": cid})).mappings().first()
-    if not d:
-        raise HTTPException(status_code=400, detail="Producto no válido para esta empresa")
-    return d
+    out = dict(h)
+    out["predeterminada"] = bool(out["predeterminada"])
+    out["fecha"] = str(out["fecha"] or "")
+    if out["predeterminada"]:
+        out["cliente"] = out["cliente"] or "Consumidor Final"
+    return out
 
 
 async def _set_activa(db: AsyncSession, cid: int, id_cliente: int, id_lista: Optional[int]) -> None:
@@ -100,7 +110,35 @@ async def _set_activa(db: AsyncSession, cid: int, id_cliente: int, id_lista: Opt
     """), {"cid": cid, "cli": id_cliente, "l": id_lista or -1})
 
 
-# ─── Clientes ─────────────────────────────────────────────────────────────────
+async def _items(db: AsyncSession, cid: int, id_lista: int) -> list:
+    """Detalle: plato (id_presentacion 0) y variantes, de platos activos."""
+    rows = (await db.execute(text("""
+        SELECT d.id_producto, d.id_presentacion, d.precio_producto AS precio,
+               CASE WHEN v.id IS NULL THEN p.name ELSE CONCAT(p.name, ' - ', v.name) END AS name,
+               COALESCE(v.is_default, 0) AS var_default,
+               COALESCE(p.wholesale_price, 0) AS precio_minimo, c.name AS categoria
+        FROM pos_customer_price_list d
+        JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id AND COALESCE(p.active, 0) = 0
+        LEFT JOIN pos_dish_variants v
+               ON d.id_presentacion > 0 AND v.id = d.id_presentacion AND v.company_id = d.company_id
+              AND v.dish_id = d.id_producto
+        LEFT JOIN pos_dish_categories c ON c.id = p.category_id AND c.company_id = p.company_id
+        WHERE d.company_id = :cid AND d.id_lista = :l
+          AND (d.id_presentacion = 0 OR (v.id IS NOT NULL AND v.is_active = 1))
+        ORDER BY c.name, p.name, d.id_presentacion
+    """), {"cid": cid, "l": id_lista})).mappings().all()
+    out = []
+    for r in rows:
+        it = dict(r)
+        it["precio"] = float(it["precio"] or 0)
+        it["var_default"] = bool(it["var_default"])
+        it["precio_minimo"] = float(it["precio_minimo"] or 0)
+        it["bajo_minimo"] = bool(it["precio_minimo"]) and it["precio"] < it["precio_minimo"]
+        out.append(it)
+    return out
+
+
+# ─── Clientes (selector del encabezado) ──────────────────────────────────────
 
 @router.get("/clientes")
 async def buscar_clientes(q: Optional[str] = Query(None, max_length=60), company_id: Optional[int] = Query(None),
@@ -125,76 +163,72 @@ async def crear_cliente(data: ClienteIn, company_id: Optional[int] = Query(None)
     return row
 
 
-@router.get("/cliente/{id_cliente}")
-async def listas_de_cliente(id_cliente: int, company_id: Optional[int] = Query(None),
-                            user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+# ─── Listas (encabezados) ────────────────────────────────────────────────────
+
+@router.get("/listas")
+async def listar(estado: Literal["activas", "todas"] = "activas", q: Optional[str] = Query(None, max_length=60),
+                 company_id: Optional[int] = Query(None),
+                 user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cid = await _ctx(db, user, company_id)
-    cliente = await clientes_svc.get_cliente(db, cid, id_cliente)
+    await clientes_svc.ensure_consumidor_final(db, cid)
+    await lp.asegurar_default(db, cid, getattr(user, "email", "") or "")
     await db.commit()
-    listas = (await db.execute(text("""
-        SELECT h.id_lista, h.nombre, h.fecha, h.activa, h.usuario, h.observacion,
+    sql = """
+        SELECT h.id_lista, h.id_cliente, h.nombre, h.fecha, h.activa, h.observacion,
+               (h.id_cliente = 1) AS predeterminada,
+               TRIM(CONCAT(COALESCE(c.nombres,''),' ',COALESCE(c.apellidos,''))) AS cliente,
                (SELECT COUNT(*) FROM pos_customer_price_list d
-                WHERE d.company_id = h.company_id AND d.id_lista = h.id_lista) AS productos
+                 WHERE d.company_id = h.company_id AND d.id_lista = h.id_lista) AS productos
         FROM pos_customer_price_list_header h
-        WHERE h.company_id = :cid AND h.id_cliente = :cli
-        ORDER BY h.activa DESC, h.id_lista DESC
-    """), {"cid": cid, "cli": id_cliente})).mappings().all()
-    return {"cliente": cliente, "listas": [dict(l) for l in listas]}
+        LEFT JOIN clientes c ON c.company_id = h.company_id AND c.id_cliente = h.id_cliente
+        WHERE h.company_id = :cid
+    """
+    params: dict = {"cid": cid}
+    if estado == "activas":
+        sql += " AND h.activa = 1"
+    term = (q or "").strip()
+    if term:
+        term = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        sql += " AND (h.nombre LIKE :q OR c.nombres LIKE :q OR c.apellidos LIKE :q)"
+        params["q"] = f"%{term}%"
+    sql += " ORDER BY (h.id_cliente = 1) DESC, h.activa DESC, h.id_lista DESC LIMIT 300"
+    out = []
+    for r in (await db.execute(text(sql), params)).mappings().all():
+        x = dict(r)
+        x["predeterminada"] = bool(x["predeterminada"])
+        x["fecha"] = str(x["fecha"] or "")
+        if x["predeterminada"]:
+            x["cliente"] = x["cliente"] or "Consumidor Final"
+        out.append(x)
+    return out
 
-
-# ─── Listas ───────────────────────────────────────────────────────────────────
 
 @router.get("/lista/{id_lista}")
 async def get_lista(id_lista: int, company_id: Optional[int] = Query(None),
                     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cid = await _ctx(db, user, company_id)
     h = await _header(db, cid, id_lista)
-    return {"lista": dict(h), "items": await _items_lista(db, cid, id_lista)}
-
-
-async def _items_lista(db: AsyncSession, cid: int, id_lista: int) -> list:
-    """Ítems de una lista: plato (id_presentacion = 0) y sus variantes (id_presentacion = variante)."""
-    rows = (await db.execute(text("""
-        SELECT d.id_producto, d.id_presentacion, d.precio_producto AS precio,
-               CASE WHEN v.id IS NULL THEN p.name ELSE CONCAT(p.name, ' - ', v.name) END AS name,
-               COALESCE(v.price, p.price) AS precio_base, COALESCE(v.is_default, 0) AS var_default,
-               COALESCE(p.wholesale_price, 0) AS precio_minimo, COALESCE(p.active, 0) AS desactivado,
-               c.name AS categoria
-        FROM pos_customer_price_list d
-        JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id
-        LEFT JOIN pos_dish_variants v
-               ON d.id_presentacion > 0 AND v.id = d.id_presentacion AND v.company_id = d.company_id
-              AND v.dish_id = d.id_producto
-        LEFT JOIN pos_dish_categories c ON c.id = p.category_id AND c.company_id = p.company_id
-        WHERE d.company_id = :cid AND d.id_lista = :l
-          AND (d.id_presentacion = 0 OR (v.id IS NOT NULL AND v.is_active = 1))
-        ORDER BY c.name, p.name, d.id_presentacion
-    """), {"cid": cid, "l": id_lista})).mappings().all()
-    items = []
-    for r in rows:
-        it = dict(r)
-        it["precio"] = float(it["precio"] or 0)
-        it["precio_base"] = float(it["precio_base"] or 0)
-        it["var_default"] = bool(it["var_default"])
-        it["bajo_minimo"] = bool(it["precio_minimo"]) and it["precio"] < float(it["precio_minimo"])
-        items.append(it)
-    return items
+    await lp.completar_lista(db, cid, id_lista, int(h["id_cliente"]))   # productos nuevos
+    await db.commit()
+    return {"lista": h, "items": await _items(db, cid, id_lista)}
 
 
 @router.post("/lista", status_code=201)
 async def crear_lista(data: ListaIn, company_id: Optional[int] = Query(None),
                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Nueva lista para un cliente con todos los productos activos (precios de la Default
+    activa o de la lista anterior del cliente). La lista activa anterior del cliente queda
+    anulada. Para el cliente 1 es una nueva Default (la anterior queda como histórico)."""
     cid = await _ctx(db, user, company_id)
-    if data.id_cliente == clientes_svc.CONSUMIDOR_FINAL_ID:
-        raise HTTPException(status_code=400, detail="Consumidor Final usa los precios de la carta; no se le asigna lista")
     await clientes_svc.get_cliente(db, cid, data.id_cliente)
-
+    default = await lp.asegurar_default(db, cid, getattr(user, "email", "") or "")
     anterior = (await db.execute(text("""
         SELECT id_lista FROM pos_customer_price_list_header
         WHERE company_id = :cid AND id_cliente = :cli ORDER BY activa DESC, id_lista DESC LIMIT 1
     """), {"cid": cid, "cli": data.id_cliente})).scalar()
     if data.origen == "anterior" and not anterior:
         raise HTTPException(status_code=400, detail="El cliente no tiene una lista anterior para copiar")
+    fuente = anterior if data.origen == "anterior" else default
 
     nid = int((await db.execute(text(
         "SELECT COALESCE(MAX(id_lista), 0) + 1 FROM pos_customer_price_list_header WHERE company_id = :cid FOR UPDATE"
@@ -203,36 +237,21 @@ async def crear_lista(data: ListaIn, company_id: Optional[int] = Query(None),
     await db.execute(text("""
         INSERT INTO pos_customer_price_list_header
             (company_id, id_lista, id_cliente, nombre, fecha, activa, usuario, observacion, synced)
-        VALUES (:cid, :l, :cli, :n, :f, 1, :u, :o, 0)
+        VALUES (:cid, :l, :cli, :n, :f, 0, :u, :o, 0)
     """), {"cid": cid, "l": nid, "cli": data.id_cliente, "n": data.nombre, "f": fecha,
            "u": (getattr(user, "email", None) or "")[:50], "o": (data.observacion or "").strip() or None})
-
-    if data.origen == "anterior":
-        await db.execute(text("""
-            INSERT INTO pos_customer_price_list
-                (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-            SELECT :l, :cli, d.id_producto, d.id_presentacion, d.precio_producto, :f, 1, :cid, 0
-            FROM pos_customer_price_list d
-            JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id AND COALESCE(p.active,0) = 0
-            WHERE d.company_id = :cid AND d.id_lista = :ant
-        """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha, "ant": anterior})
-    else:   # todos los platos activos con su precio de carta
-        await db.execute(text("""
-            INSERT INTO pos_customer_price_list
-                (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-            SELECT :l, :cli, p.id, 0, p.price, :f, 1, :cid, 0
-            FROM pos_dishes p WHERE p.company_id = :cid AND COALESCE(p.active, 0) = 0
-        """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha})
-        await db.execute(text("""
-            INSERT INTO pos_customer_price_list
-                (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-            SELECT :l, :cli, v.dish_id, v.id, v.price, :f, 1, :cid, 0
-            FROM pos_dish_variants v
-            JOIN pos_dishes p ON p.id = v.dish_id AND p.company_id = v.company_id AND COALESCE(p.active, 0) = 0
-            WHERE v.company_id = :cid AND v.is_active = 1
-        """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha})
-
-    await _set_activa(db, cid, data.id_cliente, nid)
+    await db.execute(text("""
+        INSERT INTO pos_customer_price_list
+            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
+        SELECT :l, :cli, d.id_producto, d.id_presentacion, d.precio_producto, :f, 0, :cid, 0
+        FROM pos_customer_price_list d
+        JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id AND COALESCE(p.active, 0) = 0
+        WHERE d.company_id = :cid AND d.id_lista = :src
+    """), {"cid": cid, "l": nid, "cli": data.id_cliente, "f": fecha, "src": fuente})
+    await _set_activa(db, cid, data.id_cliente, nid)            # anula la anterior del cliente
+    await lp.completar_lista(db, cid, nid, data.id_cliente)
+    if data.id_cliente == lp.CLIENTE_DEFAULT:
+        await lp.default_a_platos(db, cid, nid)
     await db.commit()
     return {"ok": True, "id_lista": nid}
 
@@ -250,12 +269,40 @@ async def editar_lista(id_lista: int, data: ListaUpdate, company_id: Optional[in
     return {"ok": True}
 
 
+@router.put("/lista/{id_lista}/precios")
+async def guardar_precios(id_lista: int, data: PreciosIn, company_id: Optional[int] = Query(None),
+                          user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Guarda los precios editados (botón Guardar cambios). Si es la Default activa, el precio
+    de los platos y variantes queda igual al de la lista."""
+    cid = await _ctx(db, user, company_id)
+    h = await _header(db, cid, id_lista)
+    actualizados = 0
+    for ln in data.items:
+        r = await db.execute(text("""
+            UPDATE pos_customer_price_list SET precio_producto = :pr, fecha = :f, synced = 0
+            WHERE company_id = :cid AND id_lista = :l AND id_producto = :p AND id_presentacion = :pres
+        """), {"pr": round(ln.precio), "f": _today(), "cid": cid, "l": id_lista,
+               "p": ln.id_producto, "pres": ln.id_presentacion})
+        actualizados += r.rowcount
+    if h["predeterminada"] and h["activa"]:
+        await lp.default_a_platos(db, cid, id_lista)
+    await db.commit()
+    return {"ok": True, "actualizados": actualizados}
+
+
 @router.post("/lista/{id_lista}/activar")
 async def activar_lista(id_lista: int, company_id: Optional[int] = Query(None),
                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Solo las listas Default (cliente 1) del histórico se pueden volver a activar (p. ej.
+    terminar un evento y regresar a los precios normales). Sus precios pasan a los platos."""
     cid = await _ctx(db, user, company_id)
     h = await _header(db, cid, id_lista)
+    if not h["predeterminada"]:
+        raise HTTPException(status_code=400,
+                            detail="Una lista de cliente anulada no se puede reactivar: cree una nueva para ese cliente")
     await _set_activa(db, cid, int(h["id_cliente"]), id_lista)
+    await lp.completar_lista(db, cid, id_lista, int(h["id_cliente"]))
+    await lp.default_a_platos(db, cid, id_lista)
     await db.commit()
     return {"ok": True}
 
@@ -265,162 +312,75 @@ async def desactivar_lista(id_lista: int, company_id: Optional[int] = Query(None
                            user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cid = await _ctx(db, user, company_id)
     h = await _header(db, cid, id_lista)
+    if h["predeterminada"]:
+        raise HTTPException(status_code=400,
+                            detail="La lista Default no se desactiva: cree una nueva o active otra del histórico")
     if h["activa"]:
         await _set_activa(db, cid, int(h["id_cliente"]), None)
     await db.commit()
     return {"ok": True}
 
 
-# ─── Ítems de la lista ────────────────────────────────────────────────────────
+# ─── Impresión (tirilla ESC/POS) ─────────────────────────────────────────────
 
-@router.get("/productos")
-async def productos(q: Optional[str] = Query(None, max_length=60), company_id: Optional[int] = Query(None),
-                    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    cid = await _ctx(db, user, company_id)
-    sql = """SELECT p.id, p.name, p.price, COALESCE(p.wholesale_price,0) AS precio_minimo, c.name AS categoria
-             FROM pos_dishes p
-             LEFT JOIN pos_dish_categories c ON c.id = p.category_id AND c.company_id = p.company_id
-             WHERE p.company_id = :cid AND COALESCE(p.active,0) = 0"""
-    params: dict = {"cid": cid}
-    term = (q or "").strip()
-    if term:
-        term = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        sql += " AND p.name LIKE :q"
-        params["q"] = f"%{term}%"
-    sql += " ORDER BY c.name, p.name LIMIT 300"
-    return [dict(r) for r in (await db.execute(text(sql), params)).mappings().all()]
+def _tirilla_lista(d: dict, width: int = 32) -> bytes:
+    from app.routers.pos_recibo_impresion_router import _ascii, _money
+    ESC = b"\x1b"
+    INIT, BOLD_ON, BOLD_OFF = ESC + b"@", ESC + b"E\x01", ESC + b"E\x00"
+    CENTER, LEFT, CUT, LF = ESC + b"a\x01", ESC + b"a\x00", b"\x1dV\x42\x00", b"\n"
+    buf = bytearray(INIT)
+
+    def line(t="", bold=False, center=False):
+        buf.extend((BOLD_ON if bold else b"") + (CENTER if center else LEFT) + _ascii(t) + LF + (BOLD_OFF if bold else b""))
+
+    def dl(a, b):
+        a = str(a)[: max(1, width - len(b) - 1)]
+        line(a + " " * max(1, width - len(a) - len(b)) + b)
+
+    line(d["empresa"], bold=True, center=True)
+    line("LISTA DE PRECIOS", bold=True, center=True)
+    line(d["lista"]["nombre"], center=True)
+    line(f"Cliente: {d['lista']['cliente'] or ''}")
+    line(f"Lista No. {d['lista']['id_lista']}  {d['lista']['fecha']}")
+    line("-" * width)
+    cat = None
+    for it in d["items"]:
+        if it["categoria"] != cat:
+            cat = it["categoria"]
+            line(cat or "SIN CATEGORIA", bold=True)
+        dl(("  " if it["id_presentacion"] else "") + it["name"], _money(it["precio"]))
+    buf.extend(LF * 3 + CUT)
+    return bytes(buf)
 
 
-@router.post("/lista/{id_lista}/item", status_code=201)
-async def agregar_item(id_lista: int, data: ItemIn, company_id: Optional[int] = Query(None),
-                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+@router.post("/lista/{id_lista}/imprimir")
+async def imprimir_lista(id_lista: int, data: ImprimirIn,
+                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.routers.pos_recibo_impresion_router import enviar_tirilla
+    cid = await _ctx(db, user, data.company_id)
+
+    async def datos():
+        h = await _header(db, cid, id_lista)
+        emp = (await db.execute(text("SELECT name FROM companies WHERE id_company = :cid"),
+                                {"cid": cid})).scalar() or ""
+        return {"empresa": emp, "lista": h, "items": await _items(db, cid, id_lista)}
+
+    return await enviar_tirilla(db, cid, data.printer_id, data.raw, datos, armar=_tirilla_lista)
+
+
+@router.delete("/lista/{id_lista}")
+async def eliminar_lista(id_lista: int, company_id: Optional[int] = Query(None),
+                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Elimina la lista (cabecera y detalle). No se puede eliminar la Default activa: siempre
+    debe existir una. Si era la lista activa de un cliente, el cliente pasa a la Default."""
     cid = await _ctx(db, user, company_id)
     h = await _header(db, cid, id_lista)
-    d = await _check_dish(db, cid, data.id_producto)
-    await db.execute(text("""
-        INSERT INTO pos_customer_price_list
-            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-        VALUES (:l, :cli, :p, 0, :pr, :f, :a, :cid, 0)
-        ON DUPLICATE KEY UPDATE precio_producto = VALUES(precio_producto), fecha = VALUES(fecha), synced = 0
-    """), {"l": id_lista, "cli": h["id_cliente"], "p": data.id_producto, "pr": data.precio,
-           "f": _today(), "a": 1 if h["activa"] else 0, "cid": cid})
-    await db.execute(text("""
-        INSERT IGNORE INTO pos_customer_price_list
-            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-        SELECT :l, :cli, v.dish_id, v.id, v.price, :f, :a, :cid, 0
-        FROM pos_dish_variants v WHERE v.company_id = :cid AND v.dish_id = :p AND v.is_active = 1
-    """), {"l": id_lista, "cli": h["id_cliente"], "p": data.id_producto,
-           "f": _today(), "a": 1 if h["activa"] else 0, "cid": cid})
-    await db.commit()
-    return {"ok": True, "bajo_minimo": bool(d["wholesale_price"]) and data.precio < float(d["wholesale_price"])}
-
-
-@router.put("/lista/{id_lista}/item/{id_producto}")
-async def editar_precio(id_lista: int, id_producto: int, data: PrecioIn, company_id: Optional[int] = Query(None),
-                        presentacion: int = Query(0, ge=0),
-                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    cid = await _ctx(db, user, company_id)
-    await _header(db, cid, id_lista)
-    d = await _check_dish(db, cid, id_producto)
-    res = await db.execute(text("""
-        UPDATE pos_customer_price_list SET precio_producto = :pr, fecha = :f, synced = 0
-        WHERE company_id = :cid AND id_lista = :l AND id_producto = :p AND id_presentacion = :pres
-    """), {"pr": data.precio, "f": _today(), "cid": cid, "l": id_lista, "p": id_producto, "pres": presentacion})
-    if res.rowcount == 0:
-        raise HTTPException(status_code=404, detail="El producto no está en la lista")
-    await db.commit()
-    return {"ok": True, "bajo_minimo": bool(d["wholesale_price"]) and data.precio < float(d["wholesale_price"])}
-
-
-@router.delete("/lista/{id_lista}/item/{id_producto}")
-async def quitar_item(id_lista: int, id_producto: int, company_id: Optional[int] = Query(None),
-                      user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    cid = await _ctx(db, user, company_id)
-    await _header(db, cid, id_lista)
-    await db.execute(text("""
-        DELETE FROM pos_customer_price_list
-        WHERE company_id = :cid AND id_lista = :l AND id_producto = :p
-    """), {"cid": cid, "l": id_lista, "p": id_producto})
+    if h["predeterminada"] and h["activa"]:
+        raise HTTPException(status_code=400,
+                            detail="No se puede eliminar la Lista Default activa: active otra Default o cree una nueva primero")
+    await db.execute(text("DELETE FROM pos_customer_price_list WHERE company_id = :cid AND id_lista = :l"),
+                     {"cid": cid, "l": id_lista})
+    await db.execute(text("DELETE FROM pos_customer_price_list_header WHERE company_id = :cid AND id_lista = :l"),
+                     {"cid": cid, "l": id_lista})
     await db.commit()
     return {"ok": True}
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# LISTA GENERAL (por defecto) — lista_precios_cliente con Id_Lista = 0 y sin cliente.
-# Siempre contiene TODOS los platos activos y sus variantes; su precio ES el precio del
-# plato / variante (editar aquí cambia el plato y viceversa). Sin lista de cliente activa,
-# el pedido se cobra con esta lista.
-# ═══════════════════════════════════════════════════════════════════════════
-async def _completar_general(db: AsyncSession, cid: int) -> None:
-    f = _today()
-    await db.execute(text("""
-        INSERT IGNORE INTO pos_customer_price_list
-            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-        SELECT 0, 0, p.id, 0, p.price, :f, 1, :cid, 0
-        FROM pos_dishes p WHERE p.company_id = :cid AND COALESCE(p.active, 0) = 0
-    """), {"cid": cid, "f": f})
-    await db.execute(text("""
-        INSERT IGNORE INTO pos_customer_price_list
-            (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
-        SELECT 0, 0, v.dish_id, v.id, v.price, :f, 1, :cid, 0
-        FROM pos_dish_variants v
-        JOIN pos_dishes p ON p.id = v.dish_id AND p.company_id = v.company_id AND COALESCE(p.active, 0) = 0
-        WHERE v.company_id = :cid AND v.is_active = 1
-    """), {"cid": cid, "f": f})
-    # Mantener iguales al precio actual del plato / variante
-    await db.execute(text("""
-        UPDATE pos_customer_price_list d
-        JOIN pos_dishes p ON p.id = d.id_producto AND p.company_id = d.company_id
-        SET d.precio_producto = p.price
-        WHERE d.company_id = :cid AND d.id_lista = 0 AND d.id_cliente = 0 AND d.id_presentacion = 0
-          AND d.precio_producto <> p.price
-    """), {"cid": cid})
-    await db.execute(text("""
-        UPDATE pos_customer_price_list d
-        JOIN pos_dish_variants v ON v.id = d.id_presentacion AND v.company_id = d.company_id AND v.dish_id = d.id_producto
-        SET d.precio_producto = v.price
-        WHERE d.company_id = :cid AND d.id_lista = 0 AND d.id_cliente = 0 AND d.id_presentacion > 0
-          AND d.precio_producto <> v.price
-    """), {"cid": cid})
-
-
-@router.get("/general")
-async def lista_general(company_id: Optional[int] = Query(None),
-                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    cid = await _ctx(db, user, company_id)
-    await _completar_general(db, cid)
-    await db.commit()
-    items = [i for i in await _items_lista(db, cid, 0) if not i["desactivado"]]
-    return {"lista": {"id_lista": 0, "nombre": "Lista general (por defecto)", "activa": 1}, "items": items}
-
-
-@router.put("/general/item/{id_producto}")
-async def editar_precio_general(id_producto: int, data: PrecioIn, presentacion: int = Query(0, ge=0),
-                                company_id: Optional[int] = Query(None),
-                                user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Cambia el precio en la lista general = precio del plato (presentacion 0) o de la variante.
-    La variante por defecto y el plato se mantienen iguales."""
-    cid = await _ctx(db, user, company_id)
-    d = await _check_dish(db, cid, id_producto)
-    precio = int(round(data.precio))
-    if presentacion:
-        v = (await db.execute(text(
-            "SELECT id, COALESCE(is_default,0) FROM pos_dish_variants WHERE id=:v AND dish_id=:p AND company_id=:cid AND is_active=1"
-        ), {"v": presentacion, "p": id_producto, "cid": cid})).first()
-        if not v:
-            raise HTTPException(status_code=404, detail="Variante no encontrada")
-        await db.execute(text("UPDATE pos_dish_variants SET price=:pr WHERE id=:v AND company_id=:cid"),
-                         {"pr": precio, "v": presentacion, "cid": cid})
-        if int(v[1]):
-            await db.execute(text("UPDATE pos_dishes SET price=:pr, synced=0 WHERE id=:p AND company_id=:cid"),
-                             {"pr": precio, "p": id_producto, "cid": cid})
-    else:
-        await db.execute(text("UPDATE pos_dishes SET price=:pr, synced=0 WHERE id=:p AND company_id=:cid"),
-                         {"pr": precio, "p": id_producto, "cid": cid})
-        await db.execute(text("""
-            UPDATE pos_dish_variants SET price=:pr
-            WHERE dish_id=:p AND company_id=:cid AND is_active=1 AND is_default=1
-        """), {"pr": precio, "p": id_producto, "cid": cid})
-    await _completar_general(db, cid)
-    await db.commit()
-    return {"ok": True, "bajo_minimo": bool(d["wholesale_price"]) and precio < float(d["wholesale_price"])}

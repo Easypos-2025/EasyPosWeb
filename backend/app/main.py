@@ -76,7 +76,6 @@ from app.routers.supply_items_router import router as supply_items_router
 from app.routers.inventory_router import router as inventory_router
 from app.routers.product_categories_router import router as product_categories_router
 from app.routers.products_router import router as products_router
-from app.routers.price_lists_router import router as price_lists_router
 from app.routers.purchase_orders_router import router as purchase_orders_router
 from app.routers.pos_sync_router import router as pos_sync_router
 from app.routers.pos_apidian_sync_router import router as pos_apidian_sync_router
@@ -92,7 +91,6 @@ from app.routers.pos_consultas_router import router as pos_consultas_router
 from app.routers.pos_categorias_router import router as pos_categorias_router
 from app.routers.pos_printers_router import router as pos_printers_router
 from app.routers.pos_cajas_router import router as pos_cajas_router
-from app.routers.pos_lista_precios_router import router as pos_lista_precios_router
 from app.routers.pos_platos_router import router as pos_platos_router
 from app.routers.pos_listas_cliente_router import router as pos_listas_cliente_router
 from app.routers.pos_tables_router import router as pos_tables_router
@@ -293,16 +291,6 @@ async def _init_db_data():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_pr_company (company_id)
             )""",
-            """CREATE TABLE IF NOT EXISTS price_lists (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                company_id INT NOT NULL,
-                name VARCHAR(150) NOT NULL,
-                description VARCHAR(255) NULL,
-                is_default TINYINT(1) NOT NULL DEFAULT 0,
-                is_active TINYINT(1) NOT NULL DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_pl_company (company_id)
-            )""",
             """CREATE TABLE IF NOT EXISTS products (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 company_id INT NOT NULL,
@@ -355,16 +343,6 @@ async def _init_db_data():
                 INDEX idx_ser_product (product_id),
                 INDEX idx_ser_serial (serial_code)
             )""",
-            """CREATE TABLE IF NOT EXISTS price_list_items (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                price_list_id INT NOT NULL,
-                product_id INT NOT NULL,
-                presentation_id INT NULL,
-                price DECIMAL(14,2) NOT NULL DEFAULT 0,
-                is_active TINYINT(1) NOT NULL DEFAULT 1,
-                INDEX idx_pli_list (price_list_id),
-                INDEX idx_pli_product (product_id)
-            )""",
             """CREATE TABLE IF NOT EXISTS purchase_orders (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 company_id INT NOT NULL,
@@ -413,13 +391,6 @@ async def _init_db_data():
             except Exception:
                 await db.rollback()
 
-        # Agregar price_list_id a clients si no existe
-        try:
-            await db.execute(text("ALTER TABLE clients ADD COLUMN price_list_id INT NULL"))
-            await db.commit()
-        except Exception:
-            await db.rollback()
-
         # Registrar módulo Clientes en system_modules si no existe
         from app.models.system_module_model import SystemModule
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/configuration/clients"))
@@ -467,7 +438,6 @@ async def _init_db_data():
             ("Insumos",           "/inventory/supply-items",     "bi-box-seam"),
             ("Categorías Prod.",  "/inventory/categories",       "bi-tags"),
             ("Productos",         "/inventory/products",         "bi-grid"),
-            ("Listas de Precios", "/inventory/price-lists",      "bi-currency-dollar"),
             ("Entradas Mercancía","/inventory/purchase-orders",  "bi-cart-plus"),
         ]
         for mod_name, mod_route, mod_icon in inventory_modules:
@@ -2175,7 +2145,7 @@ async def _init_db_data():
             ("Platos",            "/pos/platos",          "bi-egg-fried",       2),
             ("Categorías",        "/pos/categorias",      "bi-tags",            3),
             ("Impresoras",        "/pos/impresoras",      "bi-printer",         4),
-            ("Listas de Precios", "/pos/listas-precios",  "bi-currency-dollar", 5),
+            ("Listas de Precios", "/pos/listas-precios-cliente", "bi-currency-dollar", 5),
             ("Cajas",             "/pos/cajas",           "bi-cash-stack",      6),
         ]
         for _name, _route, _icon, _order in _pos_modules:
@@ -2192,7 +2162,7 @@ async def _init_db_data():
         # Asignar módulos POS catálogo al perfil Restaurante (business_profile_id=1)
         try:
             _pos_routes = ["/pos", "/pos/zonas", "/pos/mesas", "/pos/platos",
-                           "/pos/categorias", "/pos/impresoras", "/pos/listas-precios", "/pos/cajas"]
+                           "/pos/categorias", "/pos/impresoras", "/pos/listas-precios-cliente", "/pos/cajas"]
             for _route in _pos_routes:
                 r = await db.execute(select(SystemModule).where(SystemModule.route == _route))
                 _mod = r.scalars().first()
@@ -2496,7 +2466,6 @@ routers = [
     inventory_router,
     product_categories_router,
     products_router,
-    price_lists_router,
     purchase_orders_router,
     asset_media_router,
     public_asset_router,
@@ -2515,7 +2484,6 @@ routers = [
     pos_categorias_router,
     pos_printers_router,
     pos_cajas_router,
-    pos_lista_precios_router,
     pos_platos_router,
     pos_listas_cliente_router,
     pos_tables_router,

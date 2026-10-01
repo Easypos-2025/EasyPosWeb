@@ -15,7 +15,6 @@ class Client(Base):
     email:           Mapped[str]  = mapped_column(String(150), nullable=True)
     phone:           Mapped[str]  = mapped_column(String(20),  nullable=True)
     address:         Mapped[str]  = mapped_column(Text,        nullable=True)
-    price_list_id:   Mapped[Optional[int]] = mapped_column(ForeignKey("price_lists.id"), nullable=True)
     is_active:       Mapped[int]              = mapped_column(SmallInteger, default=1)
     plan_blocked:    Mapped[int]              = mapped_column(SmallInteger, default=0)
     plan_blocked_at: Mapped[Optional[object]] = mapped_column(DateTime, nullable=True)

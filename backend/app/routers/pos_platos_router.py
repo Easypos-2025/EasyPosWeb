@@ -213,16 +213,9 @@ async def _check_category(db: AsyncSession, cid: int, category_id: Optional[int]
 
 async def _upsert_general_price(db: AsyncSession, cid: int, dish_id: int, price: int,
                                 id_presentacion: int = 0) -> None:
-    """Lista general (id_lista=0, id_cliente=0) = espejo de platos.Valor y, por variante,
-    de su precio (id_presentacion = id de la variante)."""
-    await db.execute(text("""
-        INSERT INTO pos_customer_price_list
-            (id_lista, id_cliente, id_producto, id_presentacion,
-             precio_producto, fecha, activa, company_id)
-        VALUES (0, 0, :id, :pres, :precio, :fecha, 1, :cid)
-        ON DUPLICATE KEY UPDATE
-            precio_producto=VALUES(precio_producto), fecha=VALUES(fecha), updated_at=NOW()
-    """), {"id": dish_id, "pres": id_presentacion, "precio": price, "fecha": _today(), "cid": cid})
+    """El precio del plato (o de la variante) es el de la lista Default activa: se actualiza allí."""
+    from app.services import listas_precios
+    await listas_precios.plato_a_default(db, cid, dish_id, id_presentacion, int(price or 0))
 
 
 # ─── CRUD Artículos ────────────────────────────────────────────────────────────

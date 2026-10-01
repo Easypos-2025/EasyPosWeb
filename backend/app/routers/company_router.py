@@ -49,8 +49,6 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     from app.models.product_category_model import ProductCategory
     from app.models.product_reference_model import ProductReference
     from app.models.product_presentation_model import ProductPresentation
-    from app.models.price_list_model import PriceList
-    from app.models.price_list_item_model import PriceListItem
     from app.models.company_payment_model import CompanyPayment
     from app.models.company_plan_model import CompanyPlan
     from app.models.company_plan_limits_model import CompanyPlanLimits
@@ -124,13 +122,6 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
         await db.execute(delete(PurchaseOrderItem).where(PurchaseOrderItem.purchase_order_id.in_(po_ids)))
     await db.execute(delete(PurchaseOrder).where(PurchaseOrder.company_id == cid))
     await db.execute(delete(StockMovement).where(StockMovement.company_id == cid))
-
-    pl_ids = [r[0] for r in (await db.execute(
-        select(PriceList.id).where(PriceList.company_id == cid)
-    )).all()]
-    if pl_ids:
-        await db.execute(delete(PriceListItem).where(PriceListItem.price_list_id.in_(pl_ids)))
-    await db.execute(delete(PriceList).where(PriceList.company_id == cid))
 
     prod_ids = [r[0] for r in (await db.execute(
         select(Product.id).where(Product.company_id == cid)

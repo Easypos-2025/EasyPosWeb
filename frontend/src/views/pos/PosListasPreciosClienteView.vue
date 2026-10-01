@@ -2,107 +2,103 @@
   <div class="lp-view">
     <div class="lp-header">
       <div>
-        <h5 class="lp-title">{{ moduleName }}</h5>
-        <p class="lp-sub">La <b>lista general</b> tiene todos los productos con su precio. Cada cliente puede tener una lista propia que la reemplaza.</p>
+        <h5 class="lp-title">{{ moduleName || 'Listas de Precios' }}</h5>
+        <p class="lp-sub">La <b>Lista Default</b> (Consumidor Final) es el precio de los platos y se cobra a todo cliente sin lista propia. Cada cliente tiene máximo una lista activa.</p>
       </div>
+      <button class="btn-primary-sm" @click="abrirNueva"><i class="bi bi-plus-lg"></i> Nueva lista</button>
     </div>
 
     <div class="lp-grid">
-      <!-- ── Clientes ── -->
-      <section class="lp-panel lp-clientes" :class="{ 'lp-hide-mobile': cliente }">
+      <!-- ══ Encabezados ══ -->
+      <section class="lp-panel lp-listas" :class="{ 'lp-hide-mobile': lista }">
+        <div class="lp-tabs">
+          <button :class="['lp-tab', { active: estado === 'activas' }]" @click="estado = 'activas'; cargarListas()">Activas</button>
+          <button :class="['lp-tab', { active: estado === 'todas' }]" @click="estado = 'todas'; cargarListas()">Todas (histórico)</button>
+        </div>
         <div class="lp-search">
           <i class="bi bi-search"></i>
-          <input v-model="qCliente" @input="debBuscarClientes" placeholder="Buscar cliente por nombre, cédula o teléfono..." maxlength="60" />
+          <input v-model="qListas" @input="debListas" placeholder="Buscar por lista o cliente..." maxlength="60" />
         </div>
-        <button :class="['cli-row', 'cli-general', { active: general }]" @click="seleccionarGeneral">
-          <div class="cli-main">
-            <span class="cli-name"><i class="bi bi-list-ul me-1"></i> Lista general (por defecto)</span>
-            <span class="cli-doc">Todos los productos activos y sus variantes</span>
+        <div v-if="loadingListas" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
+        <div v-else-if="!listas.length" class="lp-empty">Sin listas</div>
+        <button v-for="l in listas" :key="l.id_lista"
+                :class="['ls-row', { active: lista?.id_lista === l.id_lista, 'ls-def': l.predeterminada, off: !l.activa }]"
+                @click="seleccionar(l.id_lista)">
+          <div class="ls-main">
+            <span class="ls-name">{{ l.nombre }}</span>
+            <span class="ls-cli"><i class="bi bi-person"></i> {{ l.cliente || `Cliente ${l.id_cliente}` }}</span>
+            <span class="ls-meta">No. {{ l.id_lista }} · {{ l.fecha }} · {{ l.productos }} prod.</span>
           </div>
-        </button>
-        <button class="btn-link-add" @click="abrirCrearCliente"><i class="bi bi-person-plus"></i> Crear cliente</button>
-        <div v-if="loadingClientes" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
-        <div v-else-if="!clientes.length" class="lp-empty">Sin clientes</div>
-        <button v-for="c in clientes" :key="c.id_cliente"
-                :class="['cli-row', { active: cliente?.id_cliente === c.id_cliente, 'cli-cf': c.id_cliente === 1 }]"
-                @click="seleccionarCliente(c)">
-          <div class="cli-main">
-            <span class="cli-name">{{ c.nombre }}</span>
-            <span class="cli-doc">{{ c.cedula || '—' }}</span>
+          <div class="ls-badges">
+            <span v-if="l.predeterminada" class="bdg bdg-def">Predeterminada</span>
+            <span :class="['bdg', l.activa ? 'bdg-on' : 'bdg-off']">{{ l.activa ? 'Activa' : 'Histórico' }}</span>
           </div>
-          <span v-if="c.lista_activa" class="cli-tag" :title="c.lista_activa"><i class="bi bi-tags-fill"></i></span>
         </button>
       </section>
 
-      <!-- ── Listas del cliente ── -->
-      <section class="lp-panel lp-detalle" :class="{ 'lp-hide-mobile': !cliente }">
-        <div v-if="!cliente" class="lp-empty lp-empty--big">
-          <i class="bi bi-person-lines-fill"></i>
-          <p>Seleccione un cliente para ver o crear su lista de precios.</p>
+      <!-- ══ Lista seleccionada ══ -->
+      <section class="lp-panel lp-detalle" :class="{ 'lp-hide-mobile': !lista }">
+        <div v-if="!lista" class="lp-empty lp-empty--big">
+          <i class="bi bi-currency-dollar"></i>
+          <p>Seleccione una lista para ver y editar sus precios.</p>
         </div>
         <template v-else>
-          <div class="det-hdr">
-            <button class="btn-back only-mobile" @click="cliente = null; lista = null"><i class="bi bi-arrow-left"></i></button>
-            <div class="det-cli">
-              <div class="det-cli-name">{{ cliente.nombre }}</div>
-              <div class="det-cli-doc">{{ cliente.cedula || 'Sin cédula' }} · Id {{ cliente.id_cliente }}</div>
+          <div class="det-top">
+            <button class="btn-back only-mobile" @click="salirLista"><i class="bi bi-arrow-left"></i></button>
+            <div class="det-grid">
+              <div class="det-f"><span class="det-l">Id lista</span><b>{{ lista.id_lista }}</b></div>
+              <div class="det-f"><span class="det-l">Fecha</span><b>{{ lista.fecha }}</b></div>
+              <div class="det-f det-f--wide"><span class="det-l">Cliente</span><b>{{ lista.cliente || `Cliente ${lista.id_cliente}` }} <small>(Id {{ lista.id_cliente }})</small></b></div>
+              <div class="det-f det-f--wide">
+                <span class="det-l">Nombre</span>
+                <input v-model="lista.nombre" class="inp-inline" maxlength="100" @change="guardarCabecera" />
+              </div>
+              <div class="det-f det-f--wide">
+                <span class="det-l">Observación</span>
+                <input v-model="lista.observacion" class="inp-inline" maxlength="255" placeholder="—" @change="guardarCabecera" />
+              </div>
+              <div class="det-f">
+                <span class="det-l">Estado</span>
+                <span>
+                  <span v-if="lista.predeterminada" class="bdg bdg-def">Predeterminada</span>
+                  <span :class="['bdg', lista.activa ? 'bdg-on' : 'bdg-off']">{{ lista.activa ? 'Activa' : 'Histórico' }}</span>
+                </span>
+              </div>
             </div>
-            <button v-if="cliente.id_cliente !== 1 && !general" class="btn-primary-sm" @click="abrirNuevaLista"><i class="bi bi-plus-lg"></i> Nueva lista</button>
           </div>
 
-          <div v-if="general" class="info-line">
-            <i class="bi bi-info-circle"></i> Es el precio de cada producto y variante: cambiarlo aquí cambia el precio del plato (y al revés). Se cobra cuando el cliente no tiene lista propia activa.
-          </div>
-          <div v-else-if="cliente.id_cliente === 1" class="info-line">
-            <i class="bi bi-info-circle"></i> Consumidor Final paga siempre el precio de la carta; no se le asigna lista.
-          </div>
-
-          <!-- Historial de listas -->
-          <div v-if="listas.length" class="listas-chips">
-            <button v-for="l in listas" :key="l.id_lista"
-                    :class="['lchip', { active: lista?.id_lista === l.id_lista, on: l.activa }]"
-                    @click="cargarLista(l.id_lista)">
-              <span class="lchip-dot"></span>{{ l.nombre }}
-              <small>{{ l.productos }} prod.</small>
+          <div class="det-actions">
+            <div class="lp-search lp-search--sm">
+              <i class="bi bi-search"></i>
+              <input v-model="qItems" placeholder="Filtrar productos..." maxlength="60" />
+            </div>
+            <button v-if="!lista.activa && lista.predeterminada" class="btn-soft-ok" @click="activar"><i class="bi bi-check-circle"></i> Activar como Default</button>
+            <button v-else-if="!lista.predeterminada" class="btn-soft-danger" @click="desactivar"><i class="bi bi-slash-circle"></i> Anular</button>
+            <button class="btn-soft" @click="imprimir"><i class="bi bi-printer"></i> Imprimir</button>
+            <button v-if="!(lista.predeterminada && lista.activa)" class="btn-soft-danger" @click="eliminar"><i class="bi bi-trash"></i> Eliminar lista</button>
+            <button class="btn-primary-sm" :disabled="!cambios || guardando" @click="guardarPrecios">
+              <span v-if="guardando" class="spinner-border spinner-border-sm"></span>
+              <i v-else class="bi bi-floppy"></i> Guardar cambios<span v-if="cambios"> ({{ cambios }})</span>
             </button>
           </div>
-          <div v-else-if="cliente.id_cliente !== 1 && !general" class="lp-empty">El cliente no tiene listas. Cree una con "Nueva lista".</div>
+          <div v-if="lista.predeterminada && lista.activa" class="info-line">
+            <i class="bi bi-info-circle"></i> Es la lista Default activa: al guardar, el precio de cada plato y variante queda igual al de la lista.
+          </div>
+          <div v-else-if="lista.predeterminada" class="info-line">
+            <i class="bi bi-clock-history"></i> Lista Default del histórico. Al activarla, sus precios pasan a los platos.
+          </div>
+          <div v-else-if="!lista.activa" class="info-line">
+            <i class="bi bi-slash-circle"></i> Lista anulada (histórico). No se puede reactivar: para este cliente cree una lista nueva.
+          </div>
+          <div v-if="bajoMinimo" class="warn-line"><i class="bi bi-exclamation-triangle"></i> {{ bajoMinimo }} producto(s) por debajo del precio mínimo.</div>
 
-          <!-- Lista seleccionada -->
-          <div v-if="lista" class="lista-box">
-            <div class="lista-top">
-              <div class="lista-info">
-                <div v-if="general" class="lista-name"><span class="lista-general-name">{{ lista.nombre }}</span></div>
-                <div v-else class="lista-name">
-                  <input v-model="lista.nombre" class="inp-inline" maxlength="100" @change="guardarCabecera" />
-                  <span :class="['badge-st', lista.activa ? 'st-on' : 'st-off']">{{ lista.activa ? 'Activa' : 'Inactiva' }}</span>
-                </div>
-                <template v-if="!general">
-                  <input v-model="lista.observacion" class="inp-inline inp-obs" maxlength="255" placeholder="Observación…" @change="guardarCabecera" />
-                  <div class="lista-meta">{{ lista.fecha || '' }} · {{ lista.usuario || '' }}</div>
-                </template>
-              </div>
-              <template v-if="!general">
-                <button v-if="lista.activa" class="btn-soft-danger" @click="toggleActiva(false)"><i class="bi bi-pause-circle"></i> Desactivar</button>
-                <button v-else class="btn-soft-ok" @click="toggleActiva(true)"><i class="bi bi-check-circle"></i> Activar</button>
-              </template>
-            </div>
-
-            <div class="add-row">
-              <div class="lp-search lp-search--sm">
-                <i class="bi bi-search"></i>
-                <input v-model="qItems" placeholder="Filtrar productos de la lista..." maxlength="60" />
-              </div>
-              <button v-if="!general" class="btn-link-add" @click="abrirAgregar"><i class="bi bi-plus-circle"></i> Agregar producto</button>
-            </div>
-            <div v-if="bajoMinimo" class="warn-line"><i class="bi bi-exclamation-triangle"></i> {{ bajoMinimo }} producto(s) por debajo del precio mínimo.</div>
-
-            <div v-if="loadingLista" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
-            <table v-else class="tbl">
-              <thead><tr><th>Producto</th><th class="hide-sm">Categoría</th><th v-if="!general" class="text-right hide-sm">General</th><th class="text-right">{{ general ? 'Precio' : 'Precio cliente' }}</th><th></th></tr></thead>
+          <div v-if="loadingLista" class="lp-empty"><span class="spinner-border spinner-border-sm"></span></div>
+          <div v-else class="tbl-wrap">
+            <table class="tbl">
+              <thead><tr><th>Producto</th><th class="hide-sm">Categoría</th><th class="text-right">Precio</th></tr></thead>
               <tbody>
                 <tr v-for="it in itemsFiltrados" :key="`${it.id_producto}-${it.id_presentacion}`"
-                    :class="{ 'row-warn': it.bajo_minimo, 'row-off': it.desactivado, 'row-var': it.id_presentacion > 0 }">
+                    :class="{ 'row-warn': it.bajo_minimo, 'row-var': it.id_presentacion > 0, 'row-dirty': esCambio(it) }">
                   <td>
                     <div class="it-name">
                       <i v-if="it.id_presentacion > 0" class="bi bi-arrow-return-right text-muted me-1"></i>{{ it.name }}
@@ -111,13 +107,11 @@
                     <div v-if="it.bajo_minimo" class="it-warn">Mínimo {{ fmt(it.precio_minimo) }}</div>
                   </td>
                   <td class="hide-sm text-muted">{{ it.categoria || '—' }}</td>
-                  <td v-if="!general" class="text-right hide-sm text-muted">{{ fmt(it.precio_base) }}</td>
                   <td class="text-right">
-                    <CurrencyInput :model-value="it.precio" class="inp-price" @update:model-value="v => editarPrecio(it, v)" />
+                    <CurrencyInput v-model="it.precio" class="inp-price" @update:model-value="marcar(it)" />
                   </td>
-                  <td><button v-if="!general && !it.id_presentacion" class="btn-x-sm" @click="quitar(it)" title="Quitar (con sus variantes)"><i class="bi bi-x-lg"></i></button></td>
                 </tr>
-                <tr v-if="!itemsFiltrados.length"><td colspan="5" class="text-center text-muted">Sin productos</td></tr>
+                <tr v-if="!itemsFiltrados.length"><td colspan="3" class="text-center text-muted">Sin productos</td></tr>
               </tbody>
             </table>
           </div>
@@ -126,357 +120,331 @@
     </div>
 
     <!-- Nueva lista -->
-    <div v-if="modalNueva.show" class="modal-overlay" @click.self="modalNueva.show = false">
+    <div v-if="nueva.show" class="modal-overlay" @click.self="nueva.show = false">
       <div class="modal-box">
-        <div class="mh"><span>Nueva lista — {{ cliente?.nombre }}</span><button class="btn-x" @click="modalNueva.show = false"><i class="bi bi-x-lg"></i></button></div>
+        <div class="mh"><span>Nueva lista de precios</span><button class="btn-x" @click="nueva.show = false"><i class="bi bi-x-lg"></i></button></div>
         <div class="mb">
+          <label class="lbl">Cliente *</label>
+          <button class="inp inp-btn" @click="nueva.selCliente = true">
+            <i class="bi bi-person-badge"></i> {{ nueva.cliente.nombre }} <small>(Id {{ nueva.cliente.id_cliente }})</small>
+          </button>
+          <p v-if="nueva.cliente.id_cliente === 1" class="info-line">
+            <i class="bi bi-info-circle"></i> Consumidor Final = nueva <b>Lista Default</b>. La Default actual queda en el histórico y los precios de esta lista pasan a los platos.
+          </p>
           <label class="lbl">Nombre *</label>
-          <input v-model="modalNueva.nombre" class="inp" maxlength="100" placeholder="Ej: Mayorista octubre" />
+          <input v-model="nueva.nombre" class="inp" maxlength="100" placeholder="Ej: Precios octubre" />
           <label class="lbl">Observación</label>
-          <input v-model="modalNueva.observacion" class="inp" maxlength="255" />
+          <input v-model="nueva.observacion" class="inp" maxlength="255" />
           <label class="lbl">Cargar precios desde</label>
-          <label class="opt"><input type="radio" value="platos" v-model="modalNueva.origen" /> Todos los productos activos con su precio de carta</label>
-          <label class="opt" :class="{ disabled: !listas.length }"><input type="radio" value="anterior" v-model="modalNueva.origen" :disabled="!listas.length" /> Copiar la lista anterior del cliente</label>
-          <p v-if="listas.some(l => l.activa)" class="warn-line"><i class="bi bi-info-circle"></i> La lista activa actual quedará desactivada.</p>
+          <label class="opt"><input type="radio" value="default" v-model="nueva.origen" /> La Lista Default (todos los productos activos)</label>
+          <label class="opt"><input type="radio" value="anterior" v-model="nueva.origen" /> La lista anterior de este cliente</label>
+          <p class="warn-line"><i class="bi bi-info-circle"></i> Si el cliente tiene una lista activa, quedará anulada (solo una activa por cliente).</p>
         </div>
         <div class="mf">
-          <button class="btn-cancel" @click="modalNueva.show = false">Cancelar</button>
-          <button class="btn-primary-sm" :disabled="modalNueva.saving || !modalNueva.nombre.trim()" @click="crearLista">
-            {{ modalNueva.saving ? 'Creando…' : 'Crear lista' }}
+          <button class="btn-cancel" @click="nueva.show = false">Cancelar</button>
+          <button class="btn-primary-sm" :disabled="nueva.saving || !nueva.nombre.trim()" @click="crear">
+            {{ nueva.saving ? 'Creando…' : 'Crear lista' }}
           </button>
         </div>
       </div>
     </div>
+    <ComandaClienteModal v-if="nueva.selCliente" panel title="Cliente de la lista" :current-id="nueva.cliente.id_cliente"
+                         @close="nueva.selCliente = false" @select="elegirCliente" />
 
-    <!-- Agregar producto -->
-    <div v-if="modalAgregar.show" class="modal-overlay" @click.self="modalAgregar.show = false">
-      <div class="modal-box">
-        <div class="mh"><span>Agregar producto a la lista</span><button class="btn-x" @click="modalAgregar.show = false"><i class="bi bi-x-lg"></i></button></div>
-        <div class="mb">
-          <div class="lp-search">
-            <i class="bi bi-search"></i>
-            <input v-model="modalAgregar.q" @input="debBuscarProductos" placeholder="Buscar producto..." maxlength="60" />
-          </div>
-          <div class="prod-list">
-            <button v-for="p in productosDisponibles" :key="p.id" class="prod-row" @click="agregarProducto(p)">
-              <span class="prod-name">{{ p.name }}</span>
-              <span class="text-muted">{{ fmt(p.price) }}</span>
-              <i class="bi bi-plus-circle"></i>
-            </button>
-            <div v-if="!productosDisponibles.length" class="lp-empty">Sin productos por agregar</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Crear cliente -->
-    <div v-if="modalCliente.show" class="modal-overlay" @click.self="modalCliente.show = false">
-      <div class="modal-box">
-        <div class="mh"><span>Nuevo cliente</span><button class="btn-x" @click="modalCliente.show = false"><i class="bi bi-x-lg"></i></button></div>
-        <div class="mb">
-          <label class="lbl">Nombre *</label><input v-model="modalCliente.nombres" class="inp" maxlength="150" />
-          <label class="lbl">Cédula / NIT</label><input v-model="modalCliente.cedula" class="inp" maxlength="50" />
-          <label class="lbl">Teléfono</label><input v-model="modalCliente.telefono" class="inp" maxlength="50" />
-          <label class="lbl">Dirección</label><input v-model="modalCliente.direccion" class="inp" maxlength="255" />
-        </div>
-        <div class="mf">
-          <button class="btn-cancel" @click="modalCliente.show = false">Cancelar</button>
-          <button class="btn-primary-sm" :disabled="modalCliente.saving || !modalCliente.nombres.trim()" @click="crearCliente">Crear</button>
-        </div>
-      </div>
-    </div>
+    <!-- Impresión (componente propio) -->
+    <ImprimirRecibo v-if="impresion" :receiptData="impresion" :companyId="companyId"
+                    printersPath="/api/pos/recibo-impresion/impresoras"
+                    :printPath="`${BASE}/lista/${lista?.id_lista}/imprimir`"
+                    @close="impresion = null" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import Swal from 'sweetalert2'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
 import { useModuleName } from '@/composables/useModuleName'
+import { useCompanyStore } from '@/stores/companyStore'
+import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
+import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 
 const BASE = '/api/pos-catalogo/listas-cliente'
 const { moduleName } = useModuleName()
+const companyStore = useCompanyStore()
+const companyId = computed(() => companyStore.selectedCompany?.id || 0)
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
 const fmt = v => fmtCOP.format(Number(v) || 0)
 
-const clientes = ref([])
-const qCliente = ref('')
-const loadingClientes = ref(false)
-const cliente = ref(null)
+const estado = ref('activas')
+const qListas = ref('')
 const listas = ref([])
+const loadingListas = ref(false)
 const lista = ref(null)
 const items = ref([])
+const original = ref(new Map())          // precio guardado por ítem, para saber qué cambió
 const loadingLista = ref(false)
+const guardando = ref(false)
 const qItems = ref('')
-const general = ref(false)          // lista general (por defecto): Id_Lista = 0
+const impresion = ref(null)
+const nueva = reactive({ show: false, selCliente: false, saving: false, nombre: '', observacion: '', origen: 'default',
+                         cliente: { id_cliente: 1, nombre: 'Consumidor Final' } })
 
-const modalNueva   = ref({ show: false, nombre: '', observacion: '', origen: 'platos', saving: false })
-const modalAgregar = ref({ show: false, q: '', productos: [] })
-const modalCliente = ref({ show: false, nombres: '', cedula: '', telefono: '', direccion: '', saving: false })
-
-let tCli = null, tProd = null
-const debBuscarClientes = () => { clearTimeout(tCli); tCli = setTimeout(buscarClientes, 250) }
-const debBuscarProductos = () => { clearTimeout(tProd); tProd = setTimeout(buscarProductos, 250) }
-
+let tL = null
+const debListas = () => { clearTimeout(tL); tL = setTimeout(cargarListas, 250) }
+const clave = it => `${it.id_producto}-${it.id_presentacion}`
+const esCambio = it => original.value.get(clave(it)) !== Math.round(Number(it.precio) || 0)
+const cambios = computed(() => items.value.filter(esCambio).length)
+const bajoMinimo = computed(() => items.value.filter(i => i.precio_minimo && Number(i.precio) < i.precio_minimo).length)
 const itemsFiltrados = computed(() => {
   const q = qItems.value.trim().toLowerCase()
-  return q ? items.value.filter(i => i.name.toLowerCase().includes(q)) : items.value
+  return q ? items.value.filter(i => i.name.toLowerCase().includes(q) || (i.categoria || '').toLowerCase().includes(q)) : items.value
 })
-const bajoMinimo = computed(() => items.value.filter(i => i.bajo_minimo).length)
-const productosDisponibles = computed(() => {
-  const ya = new Set(items.value.filter(i => !i.id_presentacion).map(i => i.id_producto))
-  return modalAgregar.value.productos.filter(p => !ya.has(p.id))
-})
+function marcar(it) { it.bajo_minimo = !!it.precio_minimo && Number(it.precio) < it.precio_minimo }
 
-async function buscarClientes() {
-  loadingClientes.value = true
-  try { clientes.value = (await api.get(`${BASE}/clientes`, { params: { q: qCliente.value || undefined } })).data }
-  catch (e) { showToast(e?.response?.data?.detail || 'Error cargando clientes', 'error') }
-  finally { loadingClientes.value = false }
+async function cargarListas() {
+  loadingListas.value = true
+  try { listas.value = (await api.get(`${BASE}/listas`, { params: { estado: estado.value, q: qListas.value.trim() || undefined } })).data }
+  catch (e) { showToast(e?.response?.data?.detail || 'Error cargando listas', 'error') }
+  finally { loadingListas.value = false }
 }
 
-async function seleccionarGeneral() {
-  general.value = true
-  cliente.value = { id_cliente: 0, nombre: 'Lista general (por defecto)', cedula: '' }
-  listas.value = []
-  loadingLista.value = true
-  try {
-    const { data } = await api.get(`${BASE}/general`)
-    lista.value = data.lista
-    items.value = data.items
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error cargando la lista general', 'error') }
-  finally { loadingLista.value = false }
+async function confirmarDescartar() {
+  if (!cambios.value) return true
+  const { isConfirmed } = await Swal.fire({
+    title: 'Hay cambios sin guardar', text: `${cambios.value} precio(s) modificados se perderán.`,
+    icon: 'warning', showCancelButton: true, confirmButtonText: 'Descartar', cancelButtonText: 'Volver',
+  })
+  return isConfirmed
 }
 
-async function seleccionarCliente(c) {
-  general.value = false
-  lista.value = null; items.value = []
-  try {
-    const { data } = await api.get(`${BASE}/cliente/${c.id_cliente}`)
-    cliente.value = data.cliente
-    listas.value = data.listas
-    const activa = data.listas.find(l => l.activa) || data.listas[0]
-    if (activa) await cargarLista(activa.id_lista)
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error cargando cliente', 'error') }
+async function seleccionar(id) {
+  if (lista.value?.id_lista === id) return
+  if (!(await confirmarDescartar())) return
+  await cargarLista(id)
 }
-
-async function recargarListas() {
-  const { data } = await api.get(`${BASE}/cliente/${cliente.value.id_cliente}`)
-  listas.value = data.listas
-}
-
 async function cargarLista(id) {
   loadingLista.value = true
   try {
     const { data } = await api.get(`${BASE}/lista/${id}`)
     lista.value = data.lista
     items.value = data.items
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error cargando lista', 'error') }
+    original.value = new Map(data.items.map(i => [clave(i), Math.round(Number(i.precio) || 0)]))
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error cargando la lista', 'error') }
   finally { loadingLista.value = false }
 }
-
-function abrirNuevaLista() {
-  modalNueva.value = { show: true, nombre: '', observacion: '', origen: 'platos', saving: false }
-}
-async function crearLista() {
-  const m = modalNueva.value
-  m.saving = true
-  try {
-    const { data } = await api.post(`${BASE}/lista`, {
-      id_cliente: cliente.value.id_cliente, nombre: m.nombre.trim(), observacion: m.observacion.trim() || null, origen: m.origen,
-    })
-    m.show = false
-    showToast('Lista creada', 'success')
-    await recargarListas()
-    await cargarLista(data.id_lista)
-    buscarClientes()
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error creando lista', 'error') }
-  finally { m.saving = false }
-}
+async function salirLista() { if (await confirmarDescartar()) { lista.value = null; items.value = [] } }
 
 async function guardarCabecera() {
   if (!lista.value.nombre?.trim()) { showToast('El nombre es obligatorio', 'warning'); return }
   try {
     await api.put(`${BASE}/lista/${lista.value.id_lista}`, { nombre: lista.value.nombre.trim(), observacion: lista.value.observacion || null })
-    await recargarListas()
+    cargarListas()
   } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
 }
 
-async function toggleActiva(activar) {
+async function guardarPrecios() {
+  const cambiados = items.value.filter(esCambio)
+  if (!cambiados.length) return
+  guardando.value = true
   try {
-    await api.post(`${BASE}/lista/${lista.value.id_lista}/${activar ? 'activar' : 'desactivar'}`)
-    lista.value.activa = activar ? 1 : 0
-    await recargarListas()
-    buscarClientes()
-    showToast(activar ? 'Lista activada' : 'Lista desactivada', 'success')
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
-}
-
-async function editarPrecio(it, v) {
-  const precio = Number(v) || 0
-  if (precio === it.precio) return
-  try {
-    const url = general.value ? `${BASE}/general/item/${it.id_producto}` : `${BASE}/lista/${lista.value.id_lista}/item/${it.id_producto}`
-    const { data } = await api.put(url, { precio }, { params: { presentacion: it.id_presentacion || 0 } })
-    it.precio = precio
-    // En la general, plato y variante por defecto quedan iguales: recargar para reflejarlo
-    if (general.value && (it.var_default || !it.id_presentacion)) seleccionarGeneral()
-    it.bajo_minimo = data.bajo_minimo
-    if (data.bajo_minimo) showToast(`${it.name}: queda por debajo del precio mínimo`, 'warning')
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
-}
-
-async function quitar(it) {
-  try {
-    await api.delete(`${BASE}/lista/${lista.value.id_lista}/item/${it.id_producto}`)
-    items.value = items.value.filter(x => x.id_producto !== it.id_producto)
-    recargarListas()
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
-}
-
-async function abrirAgregar() {
-  modalAgregar.value = { show: true, q: '', productos: [] }
-  await buscarProductos()
-}
-async function buscarProductos() {
-  try { modalAgregar.value.productos = (await api.get(`${BASE}/productos`, { params: { q: modalAgregar.value.q || undefined } })).data }
-  catch { modalAgregar.value.productos = [] }
-}
-async function agregarProducto(p) {
-  try {
-    await api.post(`${BASE}/lista/${lista.value.id_lista}/item`, { id_producto: p.id, precio: p.price || 0 })
-    await cargarLista(lista.value.id_lista)
-    recargarListas()
-    showToast(`${p.name} agregado`, 'success')
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
-}
-
-function abrirCrearCliente() {
-  modalCliente.value = { show: true, nombres: '', cedula: '', telefono: '', direccion: '', saving: false }
-}
-async function crearCliente() {
-  const m = modalCliente.value
-  m.saving = true
-  try {
-    const { data } = await api.post(`${BASE}/clientes`, {
-      nombres: m.nombres.trim(), cedula: m.cedula.trim() || null, telefono: m.telefono.trim() || null, direccion: m.direccion.trim() || null,
+    await api.put(`${BASE}/lista/${lista.value.id_lista}/precios`, {
+      items: cambiados.map(i => ({ id_producto: i.id_producto, id_presentacion: i.id_presentacion, precio: Math.round(Number(i.precio) || 0) })),
     })
-    m.show = false
-    showToast('Cliente creado', 'success')
-    await buscarClientes()
-    await seleccionarCliente(data)
-  } catch (e) { showToast(e?.response?.data?.detail || 'Error creando cliente', 'error') }
-  finally { m.saving = false }
+    showToast(`${cambiados.length} precio(s) guardados`, 'success')
+    await cargarLista(lista.value.id_lista)
+  } catch (e) {
+    const d = e?.response?.data?.detail
+    showToast(Array.isArray(d) ? 'Revise los precios' : (d || 'Error al guardar'), 'error')
+  }
+  guardando.value = false
 }
 
-onMounted(buscarClientes)
+async function activar() {
+  if (!(await confirmarDescartar())) return
+  try {
+    await api.post(`${BASE}/lista/${lista.value.id_lista}/activar`)
+    showToast('Lista Default activada: sus precios rigen para los platos', 'success')
+    await cargarLista(lista.value.id_lista); cargarListas()
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
+}
+async function desactivar() {
+  const { isConfirmed } = await Swal.fire({
+    title: '¿Anular la lista?', text: 'El cliente pasará a pagar con la Lista Default.',
+    icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#e11d48',
+  })
+  if (!isConfirmed) return
+  try {
+    await api.post(`${BASE}/lista/${lista.value.id_lista}/desactivar`)
+    showToast('Lista anulada', 'success')
+    await cargarLista(lista.value.id_lista); cargarListas()
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error', 'error') }
+}
+
+async function eliminar() {
+  const { isConfirmed } = await Swal.fire({
+    title: '¿Eliminar la lista?',
+    text: `Se eliminará "${lista.value.nombre}" con todos sus precios. Este proceso no se puede deshacer.`,
+    icon: 'warning', showCancelButton: true, confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#e11d48',
+  })
+  if (!isConfirmed) return
+  try {
+    await api.delete(`${BASE}/lista/${lista.value.id_lista}`)
+    showToast('Lista eliminada', 'success')
+    lista.value = null; items.value = []; original.value = new Map()
+    await cargarListas()
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error al eliminar la lista', 'error') }
+}
+
+function imprimir() {
+  if (cambios.value) { showToast('Guarde los cambios antes de imprimir', 'warning'); return }
+  const porCat = new Map()
+  for (const it of items.value) {
+    const c = it.categoria || 'SIN CATEGORÍA'
+    if (!porCat.has(c)) porCat.set(c, [])
+    porCat.get(c).push(`${it.id_presentacion ? '   ' : ''}${it.name} — ${fmt(it.precio)}`)
+  }
+  impresion.value = {
+    titulo: 'LISTA DE PRECIOS', receipt_number: '',
+    ordenNumero: `${lista.value.nombre} · No. ${lista.value.id_lista}`,
+    cliente: { nombre: lista.value.cliente || `Cliente ${lista.value.id_cliente}` },
+    fecha: lista.value.fecha,
+    secciones: [...porCat].map(([titulo, its]) => ({ titulo, items: its })),
+    items: [], pagos: [],
+  }
+}
+
+function abrirNueva() {
+  Object.assign(nueva, { show: true, selCliente: false, saving: false, nombre: '', observacion: '', origen: 'default',
+                         cliente: { id_cliente: 1, nombre: 'Consumidor Final' } })
+}
+function elegirCliente(c) {
+  nueva.cliente = { id_cliente: c.id_cliente, nombre: c.nombre }
+  nueva.selCliente = false
+}
+async function crear() {
+  nueva.saving = true
+  try {
+    const { data } = await api.post(`${BASE}/lista`, {
+      id_cliente: nueva.cliente.id_cliente, nombre: nueva.nombre.trim(),
+      observacion: nueva.observacion.trim() || null, origen: nueva.origen,
+    })
+    nueva.show = false
+    showToast('Lista creada', 'success')
+    estado.value = 'activas'
+    await cargarListas()
+    await cargarLista(data.id_lista)
+  } catch (e) { showToast(e?.response?.data?.detail || 'Error creando la lista', 'error') }
+  finally { nueva.saving = false }
+}
+
+onMounted(async () => {
+  await cargarListas()
+  const def = listas.value.find(l => l.predeterminada && l.activa)
+  if (def) await cargarLista(def.id_lista)
+})
 </script>
 
 <style scoped>
-.lp-view { padding: 0; }
-.lp-header { margin-bottom: 14px; }
-.lp-title { font-weight: 700; font-size: 16px; color: #1e3a5f; margin: 0; }
-.lp-sub { font-size: 13px; color: #64748b; margin: 2px 0 0; }
-.lp-grid { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; }
-.lp-panel { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); padding: 12px; min-width: 0; }
-.lp-clientes { display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 180px); overflow-y: auto; }
-.lp-search { display: flex; align-items: center; gap: 6px; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 7px 10px; background: #fff; }
-.lp-search input { border: none; outline: none; flex: 1; font-size: 13px; min-width: 0; }
-.lp-search--sm { flex: 1; }
-.btn-link-add { background: none; border: none; color: #1d4ed8; font-size: 13px; font-weight: 700; cursor: pointer; text-align: left; padding: 4px 2px; white-space: nowrap; }
-.cli-row { display: flex; align-items: center; gap: 8px; border: 1.5px solid #e2e8f0; background: #fff; border-radius: 10px; padding: 8px 10px; cursor: pointer; text-align: left; }
-.cli-row:hover { border-color: #93c5fd; }
-.cli-row.active { border-color: #1d4ed8; background: #eff6ff; }
-.cli-cf { background: #f8fafc; }
-.cli-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.cli-name { font-weight: 700; font-size: 13px; color: #1e3a5f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cli-doc { font-size: 11px; color: #94a3b8; }
-.cli-tag { color: #16a34a; }
-.lp-empty { text-align: center; color: #94a3b8; font-size: 13px; padding: 16px; }
-.lp-empty--big { padding: 60px 20px; }
-.lp-empty--big i { font-size: 40px; display: block; margin-bottom: 8px; }
-.det-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.det-cli { flex: 1; min-width: 0; }
-.det-cli-name { font-weight: 800; font-size: 15px; color: #1e3a5f; }
-.det-cli-doc { font-size: 12px; color: #64748b; }
-.btn-back { border: none; background: #f1f5f9; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-.btn-primary-sm { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.btn-primary-sm:disabled { opacity: .6; cursor: not-allowed; }
-.btn-cancel { background: #f1f5f9; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; }
-.btn-soft-danger { background: #fef2f2; border: 1.5px solid #fecaca; color: #b91c1c; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.btn-soft-ok { background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #15803d; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.info-line { font-size: 12px; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
-.warn-line { font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
-.listas-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.lchip { display: flex; align-items: center; gap: 6px; border: 1.5px solid #e2e8f0; background: #f8fafc; border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 700; color: #475569; cursor: pointer; }
-.lchip small { font-weight: 500; color: #94a3b8; }
-.lchip-dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
-.lchip.on .lchip-dot { background: #16a34a; }
-.lchip.active { border-color: #1d4ed8; background: #eff6ff; color: #1d4ed8; }
-.lista-box { border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px; }
-.lista-top { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
-.lista-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.lista-name { display: flex; align-items: center; gap: 8px; }
-.inp-inline { border: 1.5px solid transparent; border-radius: 6px; padding: 3px 6px; font-size: 14px; font-weight: 700; color: #1e3a5f; min-width: 0; flex: 1; }
-.inp-inline:hover, .inp-inline:focus { border-color: #cbd5e1; outline: none; }
-.inp-obs { font-size: 12px; font-weight: 500; color: #64748b; }
-.lista-meta { font-size: 11px; color: #94a3b8; padding-left: 6px; }
-.badge-st { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
-.st-on { background: #dcfce7; color: #15803d; }
-.st-off { background: #f1f5f9; color: #94a3b8; }
-.add-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.lp-view { padding: 16px 20px 28px; }
+.lp-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.lp-title { font-weight: 800; color: #1e3a5f; margin: 0; font-size: 18px; }
+.lp-sub { font-size: 13px; color: #64748b; margin: 2px 0 0; max-width: 680px; }
+.lp-grid { display: grid; grid-template-columns: 330px 1fr; gap: 12px; align-items: start; }
+.lp-panel { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.07); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.lp-listas { max-height: calc(100dvh - 190px); overflow-y: auto; }
+.lp-tabs { display: flex; background: #f1f5f9; border-radius: 10px; padding: 3px; }
+.lp-tab { flex: 1; border: none; background: none; padding: 7px 8px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
+.lp-tab.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.lp-search { display: flex; align-items: center; gap: 6px; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 7px 10px; background: #fff; }
+.lp-search input { border: none; outline: none; flex: 1; min-width: 0; font-size: 14px; }
+.lp-search--sm { flex: 1; min-width: 180px; }
+.lp-empty { text-align: center; color: #94a3b8; padding: 16px; font-size: 13px; }
+.lp-empty--big { padding: 50px 16px; }
+.lp-empty--big i { font-size: 34px; display: block; margin-bottom: 6px; }
+.ls-row { display: flex; align-items: center; gap: 8px; text-align: left; border: 1.5px solid #e2e8f0; background: #fff; border-radius: 10px; padding: 9px 11px; cursor: pointer; }
+.ls-row.active { border-color: #1d4ed8; background: #eff6ff; }
+.ls-row.ls-def { border-color: #c7d2fe; background: #f5f7ff; }
+.ls-row.ls-def.active { border-color: #4338ca; }
+.ls-row.off { opacity: .7; }
+.ls-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ls-name { font-weight: 800; color: #1e3a5f; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ls-cli, .ls-meta { font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ls-meta { color: #94a3b8; }
+.ls-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.bdg { font-size: 10px; font-weight: 700; border-radius: 10px; padding: 2px 8px; white-space: nowrap; display: inline-block; }
+.bdg-def { background: #e0e7ff; color: #4338ca; margin-right: 4px; }
+.bdg-on { background: #dcfce7; color: #15803d; }
+.bdg-off { background: #f1f5f9; color: #64748b; }
+.det-top { display: flex; gap: 8px; align-items: flex-start; }
+.det-grid { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.det-f { display: flex; flex-direction: column; gap: 2px; grid-column: span 1; min-width: 0; }
+.det-f--wide { grid-column: span 2; }
+.det-l { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.det-f b { color: #1e293b; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.det-f small { color: #94a3b8; font-weight: 600; }
+.inp-inline { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 9px; font-size: 14px; font-weight: 600; color: #1e3a5f; width: 100%; }
+.inp-inline:focus { outline: none; border-color: #1d4ed8; }
+.det-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn-primary-sm { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; border: none; border-radius: 9px; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.btn-primary-sm:disabled { opacity: .5; cursor: not-allowed; }
+.btn-soft, .btn-soft-ok, .btn-soft-danger { display: inline-flex; align-items: center; gap: 6px; border-radius: 9px; padding: 8px 12px; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.btn-soft { background: #fff; border: 1.5px solid #cbd5e1; color: #334155; }
+.btn-soft-ok { background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #15803d; }
+.btn-soft-danger { background: #fff1f2; border: 1.5px solid #fecdd3; color: #be123c; }
+.btn-back { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; flex-shrink: 0; }
+.info-line { font-size: 12px; color: #3730a3; background: #eef2ff; border-radius: 8px; padding: 7px 10px; margin: 0; }
+.warn-line { font-size: 12px; color: #92400e; background: #fffbeb; border-radius: 8px; padding: 7px 10px; margin: 0; }
+.tbl-wrap { max-height: calc(100dvh - 380px); min-height: 220px; overflow-y: auto; border: 1px solid #f1f5f9; border-radius: 10px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tbl th { background: #f8fafc; color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase; padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: left; }
-.tbl td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-.row-warn td { background: #fffbeb; }
-.row-off { opacity: .55; }
-.it-name { font-weight: 600; color: #1e3a5f; }
+.tbl th { position: sticky; top: 0; background: #f8fafc; z-index: 1; text-align: left; font-size: 11px; text-transform: uppercase; color: #64748b; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+.tbl td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.text-right { text-align: right; } .text-center { text-align: center; } .text-muted { color: #94a3b8; }
+.it-name { font-weight: 600; color: #1e293b; }
 .it-warn { font-size: 11px; color: #b45309; }
-.inp-price { width: 120px; text-align: right; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 13px; }
-.text-right { text-align: right; }
-.text-center { text-align: center; }
-.text-muted { color: #94a3b8; }
-.btn-x-sm { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px; }
-.btn-x-sm:hover { color: #e11d48; }
-.only-mobile { display: none; }
+.row-var td:first-child { padding-left: 24px; }
+.row-var .it-name { font-weight: 500; }
+.row-warn { background: #fffbeb; }
+.row-dirty { background: #eff6ff; }
+.chip-def { font-size: 10px; font-weight: 700; color: #15803d; background: #dcfce7; border-radius: 10px; padding: 1px 6px; margin-left: 4px; }
+.inp-price { width: 120px; text-align: right; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 5px 8px; font-weight: 700; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1050; padding: 16px; }
-.modal-box { background: #fff; border-radius: 16px; width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
-.mh { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; font-weight: 700; font-size: 14px; }
-.btn-x { background: none; border: none; color: #fff; cursor: pointer; font-size: 16px; }
-.mb { padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.modal-box { background: #fff; border-radius: 16px; width: 100%; max-width: 460px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+.mh { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; font-weight: 700; }
+.btn-x { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; }
+.mb { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 .mf { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid #f1f5f9; }
-.lbl { font-size: 12px; font-weight: 700; color: #475569; margin-top: 4px; }
+.lbl { font-size: 12px; font-weight: 700; color: #475569; }
 .inp { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
-.opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #334155; cursor: pointer; }
-.opt.disabled { opacity: .5; cursor: not-allowed; }
-.prod-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; margin-top: 6px; }
-.prod-row { display: flex; align-items: center; gap: 8px; border: 1.5px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 8px 10px; cursor: pointer; text-align: left; }
-.prod-row:hover { border-color: #1d4ed8; }
-.prod-name { flex: 1; font-weight: 600; font-size: 13px; color: #1e3a5f; }
-.prod-row i { color: #1d4ed8; }
+.inp-btn { text-align: left; background: #eff6ff; color: #1d4ed8; font-weight: 700; cursor: pointer; }
+.inp-btn small { color: #64748b; font-weight: 600; }
+.opt { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #334155; }
+.btn-cancel { background: #f1f5f9; border: none; border-radius: 9px; padding: 8px 16px; font-weight: 600; color: #475569; cursor: pointer; }
+.only-mobile { display: none; }
 
 @media (max-width: 1024px) {
-  .lp-grid { grid-template-columns: 260px 1fr; }
+  .lp-grid { grid-template-columns: 280px 1fr; }
+  .det-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @media (max-width: 768px) {
+  .lp-view { padding: 12px 10px 20px; }
+  .lp-header { flex-direction: column; }
+  .lp-header .btn-primary-sm { width: 100%; justify-content: center; }
   .lp-grid { grid-template-columns: 1fr; }
   .lp-hide-mobile { display: none; }
-  .only-mobile { display: inline-flex; }
-  .lp-clientes { max-height: none; }
+  .only-mobile { display: inline-block; }
+  .lp-listas { max-height: none; }
+  .det-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tbl-wrap { max-height: 60dvh; }
   .modal-overlay { padding: 0; align-items: flex-end; }
-  .modal-box { border-radius: 16px 16px 0 0; max-height: 92vh; }
+  .modal-box { border-radius: 16px 16px 0 0; max-width: 100%; }
 }
 @media (max-width: 576px) {
+  .det-f--wide { grid-column: span 2; }
+  .det-actions > * { flex: 1 1 auto; justify-content: center; }
+  .lp-search--sm { flex: 1 1 100%; }
   .hide-sm { display: none; }
-  .inp-price { width: 96px; }
-  .lista-top { flex-direction: column; }
-  .add-row { flex-direction: column; align-items: stretch; }
-  .det-hdr { flex-wrap: wrap; }
+  .inp-price { width: 100px; }
 }
-.cli-general { border-color: #c7d2fe; background: #eef2ff; margin-bottom: 6px; }
-.cli-general.active { border-color: #4338ca; }
-.lista-general-name { font-weight: 800; color: #3730a3; font-size: 15px; }
-.row-var td:first-child { padding-left: 22px; }
-.row-var .it-name { font-weight: 500; }
-.chip-def { font-size: 10px; font-weight: 700; color: #15803d; background: #dcfce7; border-radius: 10px; padding: 1px 6px; margin-left: 4px; }
 </style>

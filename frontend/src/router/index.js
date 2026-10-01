@@ -713,13 +713,6 @@ const routes = [
         meta: { title: "Categorías de Producto" }
       },
       {
-        path: "/inventory/price-lists",
-        name: "PriceListsView",
-        component: () => import("@/views/inventory/PriceListsView.vue"),
-        requiresAuth: true,
-        meta: { title: "Listas de Precios" }
-      },
-      {
         path: "/inventory/products",
         name: "ProductsView",
         component: () => import("@/views/inventory/ProductsView.vue"),
@@ -1022,13 +1015,6 @@ const routes = [
         component: () => import("@/views/pos/POSFacturasElectronicasView.vue"),
         requiresAuth: true,
         meta: { title: "Facturas Electrónicas" }
-      },
-      {
-        path: "/pos/listas-precios",
-        name: "PosListaPreciosView",
-        component: () => import("@/views/pos/PosListaPreciosView.vue"),
-        requiresAuth: true,
-        meta: { title: "Listas de Precios" }
       },
       {
         path: "/pos/cajas",

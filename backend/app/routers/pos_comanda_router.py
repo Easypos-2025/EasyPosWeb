@@ -771,7 +771,8 @@ async def cambiar_cliente(
     ), {"cli": customer["id_cliente"], "on": data.order_number, "cid": cid})
 
     items = (await db_temp.execute(text("""
-        SELECT Id_Plato, Item, Cantidad, COALESCE(Id_Tipificacion,0) AS tip
+        SELECT Id_Plato, Item, Cantidad, COALESCE(Id_Tipificacion,0) AS tip,
+               COALESCE(Producto_Personalizado, '') AS custom
         FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND company_id=:cid AND Nro_Factura='0' AND Mostrar=1
     """), {"on": data.order_number, "cid": cid})).mappings().all()
@@ -783,7 +784,7 @@ async def cambiar_cliente(
     dishes = {}
     if dish_ids:
         dishes = {int(r["id"]): r for r in (await db.execute(text(
-            f"SELECT id, price, tax FROM pos_dishes WHERE company_id=:cid AND id IN ({','.join(str(d) for d in dish_ids)})"
+            f"SELECT id, name, price, tax FROM pos_dishes WHERE company_id=:cid AND id IN ({','.join(str(d) for d in dish_ids)})"
         ), {"cid": cid})).mappings().all()}
     repriced, kept = 0, 0
     for it in items:
@@ -793,7 +794,17 @@ async def cambiar_cliente(
         d = dishes.get(int(it["Id_Plato"]))
         if not d:
             continue
-        base = await armado_svc.client_price(db, cid, customer["id_cliente"], int(it["Id_Plato"]), d["price"])
+        # Ítem de una variante ("PLATO - VARIANTE"): se cobra la variante con la lista del cliente
+        var = None
+        for v in sorted(await armado_svc.dish_variants(db, cid, int(it["Id_Plato"])), key=lambda x: -len(x["name"])):
+            pref = f"{d['name']} - {v['name']}"
+            if it["custom"] == pref or it["custom"].startswith(pref + " "):
+                var = v
+                break
+        if var:
+            base = await armado_svc.variant_price(db, cid, customer["id_cliente"], var, int(it["Id_Plato"]))
+        else:
+            base = await armado_svc.client_price(db, cid, customer["id_cliente"], int(it["Id_Plato"]), d["price"])
         amount = int(round((base + extras.get(int(it["Item"]), 0)) * float(it["Cantidad"] or 0)))
         tax_pct = float(d["tax"] or 0)
         tax_val = int(amount * tax_pct / 100) if tax_pct > 0 else 0
