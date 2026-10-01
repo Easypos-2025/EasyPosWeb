@@ -75,6 +75,9 @@
 
       <span v-if="companyStore.isSystem" class="sysadmin-badge">ADMIN</span>
 
+      <!-- Turno de caja abierto (verde: de hoy · ámbar: de otra fecha, se debe cerrar) -->
+      <TurnoIndicator />
+
     </div>
 
     <!-- ── DERECHA: soporte + sitio web + usuario ── -->
@@ -437,6 +440,7 @@ import { getThemeState } from "@/utils/theme"
 import { useCompanyStore } from "@/stores/companyStore"
 import api from "@/services/apis"
 import { useParkingMode } from "@/composables/useParkingMode"
+import TurnoIndicator from "@/components/layout/TurnoIndicator.vue"
 
 const props = defineProps({ sidebarRightOpen: { type: Boolean, default: true } })
 const emit  = defineEmits(["toggle-sidebar", "toggle-sidebar-right", "open-upgrade-modal"])

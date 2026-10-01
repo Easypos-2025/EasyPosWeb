@@ -14,7 +14,8 @@ negocio, este mismo campo se reutiliza aquí para guardar el id del usuario
 que abrió el turno — igual que hace el programa de escritorio con su
 campo `Venta_Clientes`. No confundir con una métrica de ventas.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -28,15 +29,52 @@ from app.routers.pos_comanda_router import _auth_comanda
 
 router = APIRouter(prefix="/api/pos/turno", tags=["POS Turno de Caja"])
 
+# Hora de Colombia (el servidor corre en UTC): la apertura/cierre y la regla "caja del día"
+_BOG = timezone(timedelta(hours=-5))
+
+
+def _ahora() -> datetime:
+    return datetime.now(_BOG).replace(tzinfo=None)
+
+
+def _hoy() -> str:
+    return _ahora().date().isoformat()
+
+
+def _fecha_turno(turno: dict) -> Optional[str]:
+    """Fecha (AAAA-MM-DD) de apertura del turno, según opening_datetime o date."""
+    for k in ("opening_datetime", "date"):
+        v = turno.get(k)
+        if v:
+            txt = str(v)[:10]
+            if len(txt) == 10 and txt[4] == "-":
+                return txt
+    return None
+
+
+async def _es_admin(db: AsyncSession, user: User) -> bool:
+    from app.models.role_model import Role
+    role = await db.get(Role, user.role_id) if user.role_id else None
+    return bool(role) and (bool(role.is_system) or "ADMIN" in (role.name or "").upper())
+
 
 async def _turno_abierto(db: AsyncSession, company_id: int, user_id: int) -> dict | None:
     row = (await db.execute(text("""
-        SELECT id, register_number, base_amount, opening_datetime
-        FROM pos_cash_register_closings
-        WHERE company_id = :cid AND customer_sales = :uid AND closed = 0
-        ORDER BY id DESC LIMIT 1
+        SELECT c.id, c.register_number, c.base_amount, c.opening_datetime, c.date,
+               COALESCE(r.name, CONCAT('Caja ', c.register_number)) AS caja_nombre
+        FROM pos_cash_register_closings c
+        LEFT JOIN pos_cash_registers r ON r.company_id = c.company_id AND r.id = c.register_number
+        WHERE c.company_id = :cid AND c.customer_sales = :uid AND c.closed = 0
+        ORDER BY c.id DESC LIMIT 1
     """), {"cid": company_id, "uid": user_id})).mappings().first()
-    return dict(row) if row else None
+    if not row:
+        return None
+    t = dict(row)
+    t["fecha"] = _fecha_turno(t)
+    t["es_de_hoy"] = t["fecha"] == _hoy()
+    t["opening_datetime"] = str(t["opening_datetime"] or "")
+    t["date"] = str(t["date"] or "")
+    return t
 
 
 @router.get("/company-abierto")
@@ -105,7 +143,7 @@ async def abrir_turno(
     # con ese mismo turno hasta que se cierre — no se abre uno nuevo.
     existente = await _turno_abierto(db, cid, uid)
     if existente:
-        return existente
+        return existente      # se sigue con el mismo turno (puede pasar de medianoche) hasta cerrarlo
 
     register_number = body.get("register_number")
     base_amount = body.get("base_amount", 0)
@@ -141,11 +179,15 @@ async def abrir_turno(
                     (id_registro, register_number, date, base_amount, customer_sales, closed,
                      opened_pc, opening_datetime, company_id, synced)
                 VALUES
-                    (:idreg, :rn, CURDATE(), :base, :uid, 0, :pc, :now, :cid, 1)
+                    (:idreg, :rn, :hoy, :base, :uid, 0, :pc, :now, :cid, 1)
             """), {
                 "idreg": next_id_registro, "rn": register_number, "base": base_amount, "uid": uid, "pc": pc,
-                "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "cid": cid,
+                "now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "hoy": _hoy(), "cid": cid,
             })
+            # cajas.Abierta: la caja queda bloqueada para otros usuarios
+            await db.execute(text(
+                "UPDATE pos_cash_registers SET is_open = 1, employee_id = :uid WHERE company_id = :cid AND id = :rn"
+            ), {"uid": uid, "cid": cid, "rn": register_number})
             await db.commit()
             break
         except IntegrityError:
@@ -159,20 +201,40 @@ async def abrir_turno(
 
 @router.post("/cerrar")
 async def cerrar_turno(
+    body: Optional[dict] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    turno = await _turno_abierto(db, current_user.company_id, current_user.id)
-    if not turno:
-        raise HTTPException(status_code=404, detail="No tiene un turno de caja abierto")
+    """Cierra un turno: el propio (sin closing_id) o, si es Admin, el de otro usuario.
+    El cuadre de caja se hará en la vista Cuadre de Caja; aquí solo se cierra y se libera la caja."""
+    cid = current_user.company_id
+    closing_id = (body or {}).get("closing_id")
+    if closing_id:
+        turno = (await db.execute(text("""
+            SELECT id, register_number, customer_sales AS user_id FROM pos_cash_register_closings
+            WHERE id = :id AND company_id = :cid AND closed = 0
+        """), {"id": int(closing_id), "cid": cid})).mappings().first()
+        if not turno:
+            raise HTTPException(status_code=404, detail="Turno no encontrado o ya cerrado")
+        if int(turno["user_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
+            raise HTTPException(status_code=403, detail="Solo el usuario que abrió la caja o un administrador pueden cerrarla")
+    else:
+        turno = await _turno_abierto(db, cid, current_user.id)
+        if not turno:
+            raise HTTPException(status_code=404, detail="No tiene un turno de caja abierto")
 
-    # Cuadre de caja (ventas/gastos/etc.) queda pendiente para otra fase;
-    # por ahora el cierre solo libera la caja.
     await db.execute(text("""
         UPDATE pos_cash_register_closings
         SET closed = 1, closing_datetime = :now
-        WHERE id = :id
-    """), {"now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "id": turno["id"]})
+        WHERE id = :id AND company_id = :cid
+    """), {"now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "id": turno["id"], "cid": cid})
+    # cajas.Abierta = 0 si ya no queda otro turno abierto en esa caja
+    await db.execute(text("""
+        UPDATE pos_cash_registers SET is_open = 0, employee_id = 0
+        WHERE company_id = :cid AND id = :rn
+          AND NOT EXISTS (SELECT 1 FROM pos_cash_register_closings
+                          WHERE company_id = :cid AND register_number = :rn AND closed = 0)
+    """), {"cid": cid, "rn": int(turno["register_number"])})
     await db.commit()
     return {"ok": True}
 
@@ -185,4 +247,6 @@ async def require_open_shift(
     turno = await _turno_abierto(db, current_user.company_id, current_user.id)
     if not turno:
         raise HTTPException(status_code=409, detail="Debe abrir un turno de caja antes de continuar")
+    # Un turno puede pasar de medianoche (negocios 24 h): los recibos se registran con la
+    # fecha de APERTURA del turno (turno["fecha"]); la factura electrónica, solo con la de hoy.
     return turno

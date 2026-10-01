@@ -76,6 +76,7 @@ const cajas   = ref([])
 const loading = ref(false)
 const saving  = ref(false)
 const form    = ref({ register_number: null, base_amount: 0 })
+const avisarCambio = () => window.dispatchEvent(new Event('turno-cambio'))
 
 async function cargarCajas() {
   loading.value = true
@@ -100,6 +101,7 @@ async function abrir() {
       pc: navigator.platform || '',
     })
     showToast('Turno de caja abierto', 'success')
+    avisarCambio()
     emit('opened', data)
   } catch (e) {
     showToast(e?.response?.data?.detail ?? 'Error al abrir turno', 'error')

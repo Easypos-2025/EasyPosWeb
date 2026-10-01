@@ -30,6 +30,11 @@
           </select>
         </label>
       </header>
+      <div v-if="datos.turno && !datos.turno.es_de_hoy" class="pg-fecha-turno">
+        <i class="bi bi-calendar-event"></i>
+        El recibo se registrará con la <b>fecha de apertura de la caja: {{ fmtFechaTurno(datos.turno.fecha) }}</b>
+        ({{ datos.turno.caja }} · turno #{{ datos.turno.id }}), no con la fecha actual.
+      </div>
 
       <div class="pg-main">
         <!-- ══ PANEL IZQUIERDO: descuento · propina · domicilio · observación · formas de pago ══ -->
@@ -274,6 +279,7 @@ const errorCarga    = ref('')
 const registrando   = ref(false)
 const datos         = ref(null)
 const companyStore  = useCompanyStore()
+const fmtFechaTurno = d => { if (!d) return ''; const [y, m, dd] = String(d).split('-'); return `${dd}/${m}/${y}` }
 // Pedido montado con la lista de un cliente (≠ Consumidor Final): se factura a ese cliente
 const clienteFijo   = computed(() => (datos.value?.customer?.id_cliente || 1) !== 1)
 function abrirClienteRecibo() {
@@ -309,7 +315,10 @@ let propinaPreguntada = false
 // ── Carga ──────────────────────────────────────────────────────────────────
 async function verificarTurno() {
   checkingTurno.value = true
-  try { turnoAbierto.value = !!(await api.get('/api/pos/turno/actual')).data?.id }
+  try {
+    const t = (await api.get('/api/pos/turno/actual')).data
+    turnoAbierto.value = !!t?.id
+  }
   catch { turnoAbierto.value = false }
   checkingTurno.value = false
 }
@@ -756,4 +765,6 @@ onBeforeUnmount(() => {
   .pg-v--total b { font-size: 17px; }
 }
 .pg-hdr-field--locked .pg-val { background: #f1f5f9; color: #475569; cursor: not-allowed; }
+.pg-fecha-turno { flex-shrink: 0; margin: 8px 16px 0; padding: 8px 12px; border-radius: 10px; background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; font-size: 13px; }
+@media (max-width: 576px) { .pg-fecha-turno { margin: 6px 10px 0; font-size: 12px; } }
 </style>

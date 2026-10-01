@@ -246,6 +246,8 @@ async def datos_pago(
         "cash_denominations": billetes,
         "consecutivo_preview": consecutivo_preview,
         "turno_id": turno["id"],
+        "turno": {"id": turno["id"], "caja": turno.get("caja_nombre"), "fecha": turno.get("fecha"),
+                  "es_de_hoy": bool(turno.get("es_de_hoy"))},
     }
 
 
@@ -427,7 +429,8 @@ async def registrar_recibo(
             pedido_real = f"{base}-{k}"
 
     now = datetime.now(_BOG)
-    fecha, hora = now.date().isoformat(), now.strftime("%H:%M:%S")
+    # Recibo: con la fecha de APERTURA del turno de caja (un turno puede pasar de medianoche)
+    fecha, hora = (turno.get("fecha") or now.date().isoformat()), now.strftime("%H:%M:%S")
     is_delivery = 1 if delivery_amount else 0
     armado = await armado_svc.armado_names(db_temp, cid, [order_number])
 
