@@ -506,7 +506,9 @@ onMounted(async () => {
 .cc-mov-v { color: #0f172a; }
 .cc-ver { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 1px 8px; font-size: 12px; font-weight: 700; color: #334155; cursor: pointer; }
 .cc-ver:hover { border-color: #1d4ed8; color: #1d4ed8; }
-.cc-inp { width: 130px; text-align: right; }
+.cc-inp { width: 140px; text-align: right; font-weight: 800; font-size: 14px; color: #0f172a; background: #fffbeb;
+          border: 1.5px solid #fcd34d; border-radius: 8px; padding: 5px 10px; outline: none; transition: border-color .15s, box-shadow .15s; }
+.cc-inp:focus { border-color: #f59e0b; background: #fff; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
 .cc-total { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; font-weight: 800; color: #1d4ed8; }
 .cc-total--red span { color: #dc2626; }
 .cc-entregar { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px; background: #eef2ff; border-color: #c7d2fe; }
@@ -519,7 +521,7 @@ onMounted(async () => {
 .cc-cat-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: #334155; }
 .cc-cat-q { text-align: right; color: #64748b; min-width: 34px; }
 
-.cc-foot { position: sticky; bottom: 0; z-index: 20; display: flex; justify-content: flex-end; gap: 8px; margin: 14px -20px 0; padding: 10px 20px; background: rgba(255,255,255,.96); border-top: 1px solid #e2e8f0; flex-wrap: wrap; }
+.cc-foot { position: sticky; bottom: 0; z-index: 20; display: flex; justify-content: flex-end; gap: 8px; margin: 14px -20px 0; padding: 10px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-shadow: 0 -6px 16px rgba(15,23,42,.08); flex-wrap: wrap; }
 .cc-btn { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid #cbd5e1; background: #fff; border-radius: 10px; padding: 8px 14px; font-size: 14px; font-weight: 700; color: #334155; cursor: pointer; }
 .cc-btn:disabled { opacity: .5; cursor: not-allowed; }
 .cc-btn--primary { background: linear-gradient(90deg,#1e3a5f,#1d4ed8); color: #fff; border-color: transparent; }
@@ -573,7 +575,7 @@ onMounted(async () => {
   .cc-origen { width: 100%; justify-content: space-between; }
   .cc-big b { font-size: 18px; }
   .cc-entregar b { font-size: 22px; }
-  .cc-inp { width: 110px; }
+  .cc-inp { width: 118px; font-size: 13px; padding: 5px 8px; }
   .cc-cat, .cc-art-h, .cc-art-i { grid-template-columns: 1fr auto 92px; }
   .cc-btn { font-size: 13px; padding: 8px 10px; }
 }
