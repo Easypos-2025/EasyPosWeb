@@ -9,10 +9,11 @@
         <span class="pedido-header__waiter">
           <i class="bi bi-person-fill me-1"></i>{{ order?.waiter_name }}
         </span>
-        <button class="cli-chip" :disabled="!order?.order_number" @click="clienteOpen = true" title="Cliente del pedido">
+        <button :class="['cli-chip', { 'cli-chip--locked': clienteBloqueado }]" :disabled="!order?.order_number"
+                @click="abrirCliente" :title="clienteBloqueado ? 'El pedido ya tiene productos: el cliente (lista de precios) no se puede cambiar' : 'Cliente del pedido'">
           <i class="bi bi-person-badge"></i>
           <span class="cli-chip__name">{{ order?.customer?.nombre || 'Consumidor Final' }}</span>
-          <i class="bi bi-chevron-down"></i>
+          <i :class="clienteBloqueado ? 'bi bi-lock-fill' : 'bi bi-chevron-down'"></i>
         </button>
       </div>
       <div class="pedido-header__total">
@@ -262,11 +263,30 @@ const clienteOpen    = ref(false)
 const savingCliente  = ref(false)
 
 // Cliente del pedido: el servidor recalcula los ítems guardados con su lista de precios
+// Un pedido se cobra con una sola lista de precios: con al menos un producto (no eliminado)
+// el cliente queda bloqueado; si se eliminan todos, se vuelve a habilitar.
+const clienteBloqueado = computed(() => items.value.some(i => !i._deleted))
+function abrirCliente() {
+  if (clienteBloqueado.value) {
+    showToast('El pedido ya tiene productos: se cobra con la lista del cliente con que se abrió', 'warning', 3500)
+    return
+  }
+  clienteOpen.value = true
+}
+
 async function cambiarCliente(c) {
   if (!order.value?.order_number) return
   if (c.id_cliente === (order.value.customer?.id_cliente || 1)) { clienteOpen.value = false; return }
   savingCliente.value = true
   try {
+    // Productos ya enviados que se eliminaron en pantalla: se eliminan en el servidor primero
+    // (el pedido debe quedar sin productos para poder cambiar el cliente)
+    for (const del of items.value.filter(i => !i.isNew && i._deleted)) {
+      await apiComanda.delete('/api/pos/comanda/orden/item', {
+        data: { order_number: order.value.order_number, date: order.value.date, dish_id: del.dish_id, item: del.item },
+      })
+    }
+    items.value = items.value.filter(i => !i._deleted)
     const { data } = await apiComanda.put('/api/pos/comanda/orden/cliente', {
       order_number: order.value.order_number, customer_id: c.id_cliente,
     })
@@ -1123,4 +1143,5 @@ async function cancelOrder() {
   }
   .cat-arrow { width: 24px; font-size: .85rem; }
 }
+.cli-chip--locked { opacity: .75; cursor: not-allowed; }
 </style>

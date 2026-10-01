@@ -775,8 +775,8 @@ async def cambiar_cliente(
     db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
-    """Asigna el cliente al pedido y recalcula los ítems no facturados con su lista de
-    precios (o platos.Valor). Los ítems con descuento aplicado conservan su valor."""
+    """Asigna el cliente (y con él la lista de precios) al pedido. Solo mientras el pedido no
+    tenga productos: un pedido se cobra con una sola lista."""
     cid = payload["company_id"]
     await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
     order = (await db_temp.execute(text("""
@@ -785,6 +785,15 @@ async def cambiar_cliente(
     """), {"on": data.order_number, "cid": cid})).mappings().first()
     if not order:
         raise HTTPException(status_code=404, detail="Orden no encontrada o ya cerrada")
+    # Un pedido usa UNA sola lista de precios (la del cliente con que se abrió): con al menos
+    # un producto registrado ya no se puede cambiar el cliente.
+    con_items = (await db_temp.execute(text("""
+        SELECT 1 FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND company_id=:cid AND Mostrar=1 LIMIT 1
+    """), {"on": data.order_number, "cid": cid})).scalar()
+    if con_items:
+        raise HTTPException(status_code=409,
+                            detail="El pedido ya tiene productos: no se puede cambiar el cliente (una sola lista de precios por pedido)")
     customer = await clientes_svc.get_cliente(db, cid, data.customer_id)
     await db.commit()
 
