@@ -11,7 +11,7 @@ recibos por caja_recibos.Id_Caja (closing_id), facturas por caja_facturas.Id_Caj
 gastos / compras / otros ingresos / otros egresos / vales por register_id.
 
 Reglas de efectivo (como el escritorio):
-  · Entra en efectivo la parte pagada en efectivo (forma de pago con adds_to_cash = 1) de la
+  · Entra en efectivo la parte pagada con la forma de pago EFECTIVO (las demás son Otros) de la
     venta, la propina y el domicilio; en recibos con varias formas de pago se reparte en proporción.
   · Salen completas la propina y el domicilio: se les pagan en efectivo al mesero y al
     domiciliario aunque el cliente haya pagado con tarjeta.
@@ -23,6 +23,8 @@ from typing import Optional
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.formas_pago import es_efectivo_sql
 
 # Movimientos de dinero del turno: (clave, tabla, título, type_id en pos_cash_movement_payments, sentido)
 MOVIMIENTOS = [
@@ -106,7 +108,7 @@ async def _documentos(db: AsyncSession, cid: int, ids: list[int], tipo: str) -> 
         return []
     nums = list(docs)
     for pm in (await db.execute(_in(f"""
-        SELECT pm.invoice_number, pm.amount, COALESCE(pt.name, 'Pago') name, COALESCE(pt.adds_to_cash, 0) cash
+        SELECT pm.invoice_number, pm.amount, COALESCE(pt.name, 'Pago') name, {es_efectivo_sql('pt')} cash
         FROM {f['pagos']} pm
         LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
         WHERE pm.company_id = :cid AND pm.invoice_number IN :nums
@@ -135,7 +137,7 @@ async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
                    COALESCE((SELECT SUM(mp.amount) FROM pos_cash_movement_payments mp
                              LEFT JOIN pos_payment_types pt ON pt.id = mp.payment_method_id AND pt.company_id = mp.company_id
                              WHERE mp.company_id = m.company_id AND mp.type_id = {tipo} AND mp.movement_id = m.id
-                               AND COALESCE(pt.adds_to_cash, 0) = 0), 0) AS otros
+                               AND NOT {es_efectivo_sql('pt')}), 0) AS otros
             FROM {tabla} m {join}
             WHERE m.company_id = :cid AND m.register_id IN :ids
             ORDER BY m.id

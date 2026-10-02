@@ -74,7 +74,6 @@
           <tr>
             <th>Nombre</th>
             <th class="text-center">Predeterminado</th>
-            <th class="text-center">Suma a caja</th>
             <th class="text-center">Pedir notas</th>
             <th class="text-center">Activo</th>
             <th class="text-center">Acciones</th>
@@ -99,12 +98,6 @@
                 <i class="bi bi-check-circle-fill"></i> Sí
               </span>
               <span v-else class="text-muted">—</span>
-            </td>
-            <td class="text-center">
-              <span v-if="item.adds_to_cash" class="badge-yes">
-                <i class="bi bi-cash"></i> Sí
-              </span>
-              <span v-else class="badge-no">No</span>
             </td>
             <td class="text-center">
               <span v-if="item.ask_notes" class="badge-yes">
@@ -179,17 +172,6 @@
               </div>
               <div class="opt-toggle">
                 <i :class="form.is_default ? 'bi bi-toggle-on text-success' : 'bi bi-toggle-off text-muted'"></i>
-              </div>
-            </div>
-
-            <div class="opt-item" :class="{ active: form.adds_to_cash }" @click="form.adds_to_cash = !form.adds_to_cash">
-              <div class="opt-icon"><i class="bi bi-cash-stack"></i></div>
-              <div class="opt-info">
-                <span class="opt-label">Suma a caja</span>
-                <span class="opt-desc">Suma al saldo físico de caja</span>
-              </div>
-              <div class="opt-toggle">
-                <i :class="form.adds_to_cash ? 'bi bi-toggle-on text-success' : 'bi bi-toggle-off text-muted'"></i>
               </div>
             </div>
 
@@ -287,7 +269,6 @@ const formDef = () => ({
   name:            "",
   is_active:       true,
   is_default:      false,
-  adds_to_cash:    false,
   ask_notes:       false,
   select_card:     false,
   validate_amount: false,
@@ -375,7 +356,6 @@ function openEdit(item) {
     name:            item.name,
     is_active:       !!item.is_active,
     is_default:      !!item.is_default,
-    adds_to_cash:    !!item.adds_to_cash,
     ask_notes:       !!item.ask_notes,
     select_card:     !!item.select_card,
     validate_amount: !!item.validate_amount,

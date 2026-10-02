@@ -142,7 +142,7 @@ async def list_payment_types(
 ):
     rows = (await db.execute(text("""
         SELECT id, company_id, name, is_active, is_default,
-               adds_to_cash, select_card, ask_notes,
+               select_card, ask_notes,
                validate_amount, validate_number, ask_customer
         FROM pos_payment_types
         WHERE company_id = :cid
@@ -180,18 +180,17 @@ async def create_payment_type(
     await db.execute(text("""
         INSERT INTO pos_payment_types
             (id, company_id, name, is_active, is_default,
-             adds_to_cash, select_card, ask_notes,
+             select_card, ask_notes,
              validate_amount, validate_number, ask_customer, synced)
         VALUES
             (:id, :cid, :name, :active, :def,
-             :cash, :card, :notes, :val_amt, :val_num, :ask_cust, 0)
+             :card, :notes, :val_amt, :val_num, :ask_cust, 0)
     """), {
         "id":       next_id,
         "cid":      company_id,
         "name":     name,
         "active":   int(bool(body.get("is_active", 1))),
         "def":      is_default,
-        "cash":     int(bool(body.get("adds_to_cash", 0))),
         "card":     int(bool(body.get("select_card", 0))),
         "notes":    int(bool(body.get("ask_notes", 0))),
         "val_amt":  int(bool(body.get("validate_amount", 0))),
@@ -233,7 +232,6 @@ async def update_payment_type(
             name             = :name,
             is_active        = :active,
             is_default       = :def,
-            adds_to_cash     = :cash,
             select_card      = :card,
             ask_notes        = :notes,
             validate_amount  = :val_amt,
@@ -244,7 +242,6 @@ async def update_payment_type(
         "name":     name,
         "active":   int(bool(body.get("is_active", 1))),
         "def":      is_default,
-        "cash":     int(bool(body.get("adds_to_cash", 0))),
         "card":     int(bool(body.get("select_card", 0))),
         "notes":    int(bool(body.get("ask_notes", 0))),
         "val_amt":  int(bool(body.get("validate_amount", 0))),

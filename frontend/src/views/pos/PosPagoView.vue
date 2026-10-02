@@ -439,7 +439,7 @@ const grupos = computed(() => {
 // formas de pago: una sola línea de EFECTIVO (default) por el nuevo total.
 function formaPagoDefault() {
   const tipos = datos.value?.payment_types || []
-  return tipos.find(p => p.is_default) || tipos.find(p => p.adds_to_cash) || tipos[0] || null
+  return tipos.find(p => p.is_default) || tipos.find(p => p.es_efectivo) || tipos[0] || null
 }
 function reiniciarPagos() {
   form.payments = [{ payment_method_id: formaPagoDefault()?.id || null, amount: total.value }]
@@ -447,7 +447,7 @@ function reiniciarPagos() {
 watch(total, () => { if (datos.value) reiniciarPagos() })
 
 const tipoPago = id => datos.value?.payment_types.find(p => p.id === id)
-const esEfectivo = p => !!tipoPago(p.payment_method_id)?.adds_to_cash
+const esEfectivo = p => !!tipoPago(p.payment_method_id)?.es_efectivo
 
 // Pago exacto; venta en $0 solo si es por descuento (cortesía / 100 %)
 const puedeRegistrar = computed(() =>

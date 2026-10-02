@@ -34,6 +34,7 @@ from app.models.user_model import User
 from app.routers.pos_shift_router import require_open_shift
 from app.routers.pos_comanda_router import _recalc_total
 from app.services import consecutivo_service as cs
+from app.services.formas_pago import es_efectivo_sql
 from app.services import clientes as clientes_svc
 from app.services import comanda_armado as armado_svc
 from app.services import config_facturacion as cfg_facturacion
@@ -190,7 +191,7 @@ async def datos_pago(
 
     cfg = await _config(db, cid)
     payment_types = (await db.execute(text(
-        "SELECT id, name, is_default, adds_to_cash, select_card, ask_notes, ask_customer "
+        f"SELECT id, name, is_default, {es_efectivo_sql('pos_payment_types')} AS es_efectivo, select_card, ask_notes, ask_customer "
         "FROM pos_payment_types WHERE company_id=:cid AND is_active=1 ORDER BY is_default DESC, id"
     ), {"cid": cid})).mappings().all()
     waiters = (await db.execute(text(
@@ -371,7 +372,7 @@ async def registrar_recibo(
     #    no es forma de pago: sale de lo que entregó el cliente (cash_received) menos
     #    lo pagado en efectivo. Venta en $0 (descuento 100 %) → una línea de efectivo en $0.
     tipos = {int(r["id"]): r for r in (await db.execute(text(
-        "SELECT id, name, adds_to_cash FROM pos_payment_types WHERE company_id=:cid AND is_active=1"
+        f"SELECT id, name, {es_efectivo_sql('pos_payment_types')} AS es_efectivo FROM pos_payment_types WHERE company_id=:cid AND is_active=1"
     ), {"cid": cid})).mappings().all()}
     if any(p.payment_method_id not in tipos for p in body.payments):
         raise HTTPException(status_code=422, detail="Forma de pago no válida o inactiva")
@@ -385,7 +386,7 @@ async def registrar_recibo(
         raise HTTPException(status_code=422, detail=f"Falta por pagar ${total - pagado:,}".replace(",", "."))
     if pagado > total:
         raise HTTPException(status_code=422, detail="Las formas de pago superan el total a pagar")
-    efectivo = sum(p["amount"] for p in pagos if tipos[p["pm"]]["adds_to_cash"])
+    efectivo = sum(p["amount"] for p in pagos if tipos[p["pm"]]["es_efectivo"])
     cambio = 0
     if body.cash_received is not None and efectivo > 0:
         recibido = int(round(body.cash_received))

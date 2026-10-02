@@ -1305,13 +1305,13 @@ async def resumen_caja(
             COALESCE(SUM(r.tip), 0)                                         AS ingresos_propina,
             COALESCE(SUM(r.cash_amount), 0)                                 AS ingresos_total,
             COUNT(*)                                                         AS num_recibos,
-            -- Efectivo: pagos con forma adds_to_cash=1
+            -- Efectivo: pagos con la forma de pago EFECTIVO
             COALESCE(SUM(
                 CASE WHEN EXISTS(
                     SELECT 1 FROM pos_receipt_payment_methods pm
                     JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
                     WHERE pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
-                      AND pt.adds_to_cash = 1
+                      AND UPPER(TRIM(pt.name)) = 'EFECTIVO'
                 ) THEN r.cash_amount ELSE 0 END
             ), 0)                                                            AS ingresos_efectivo,
             -- Convenio / crédito: el resto
@@ -1320,7 +1320,7 @@ async def resumen_caja(
                     SELECT 1 FROM pos_receipt_payment_methods pm
                     JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
                     WHERE pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
-                      AND pt.adds_to_cash = 1
+                      AND UPPER(TRIM(pt.name)) = 'EFECTIVO'
                 ) THEN r.cash_amount ELSE 0 END
             ), 0)                                                            AS ingresos_convenio
         FROM pos_receipts r
@@ -1827,7 +1827,7 @@ async def get_payment_types(
     _=Depends(get_current_user),
 ):
     rows = (await db.execute(text("""
-        SELECT id, name, adds_to_cash, is_default, ask_notes
+        SELECT id, name, (UPPER(TRIM(name)) = 'EFECTIVO') AS es_efectivo, is_default, ask_notes
         FROM pos_payment_types
         WHERE company_id = :cid AND is_active = 1
         ORDER BY is_default DESC, name
