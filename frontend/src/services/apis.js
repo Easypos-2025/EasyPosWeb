@@ -4,6 +4,7 @@ Vue con el backend FastAPI
 ========================================= */
 
 import axios from "axios"
+import { leerIdCaja } from "./idCaja"
 
 /* =========================================
 CONFIGURACIÓN BASE
@@ -45,6 +46,12 @@ api.interceptors.request.use(
         const sel = JSON.parse(localStorage.getItem("selected_company") || "null")
         if (sel?.id) config.headers["X-Company-Id"] = String(sel.id)
       } catch { /* selección inválida: se ignora */ }
+    }
+
+    // Id_Caja elegido (empresas con escritorio): el servidor lo valida contra los abiertos
+    if (!config.headers["X-Id-Caja"]) {
+      const idCaja = leerIdCaja()
+      if (idCaja) config.headers["X-Id-Caja"] = idCaja
     }
 
     return config

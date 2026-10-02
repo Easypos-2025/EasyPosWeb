@@ -15,7 +15,7 @@ servidor. Del navegador solo se aceptan filtros y las dos bases (únicos valores
 from datetime import datetime
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +25,8 @@ from app.auth.dependencies import get_current_user
 from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.models.user_model import User
-from app.routers.pos_shift_router import _BOG, _es_admin, _hoy, _turno_abierto, cerrar_y_liberar
+from app.routers.pos_shift_router import (_BOG, _es_admin, _es_escritorio, _hoy, _id_caja_header,
+                                          _turno_abierto, cerrar_y_liberar)
 from app.services import cuadre_caja as svc
 
 router = APIRouter(prefix="/api/caja/cuadre", tags=["Caja Cuadre"], dependencies=[Depends(tenant_guard)])
@@ -86,6 +87,7 @@ async def _cuadre(db: AsyncSession, cid: int, f) -> dict:
 
 @router.get("/opciones")
 async def opciones(
+    request: Request,
     fecha: Optional[Fecha] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -103,9 +105,10 @@ async def opciones(
         "pos_electronico": pe, "origen_default": "facturas" if pe else "recibos",
         "turnos": [{"id": t["id"], "caja": t["caja_nombre"], "usuario": t["usuario"], "user_id": t["user_id"],
                     "cerrado": bool(int(t["closed"] or 0)), "apertura": t["opening_datetime"],
-                    "cierre": t["closing_datetime"]} for t in ts],
+                    "cierre": t["closing_datetime"], "origen": t["origen"]} for t in ts],
         "usuarios": [{"id": k, "nombre": v} for k, v in sorted(usuarios.items(), key=lambda x: x[1])],
-        "turno_actual": await _turno_abierto(db, cid, current_user.id),
+        "turno_actual": await _turno_abierto(db, cid, current_user.id, _id_caja_header(request)),
+        "escritorio": await _es_escritorio(db, cid),
         "es_admin": await _es_admin(db, current_user),
         "user_id": current_user.id,
     }
@@ -128,7 +131,7 @@ async def articulos(
 ):
     cid = current_user.company_id
     c = await _cuadre(db, cid, f)
-    cats = await svc.ventas_por_categoria(db, cid, c["recibos"], detalle=True)
+    cats = await svc.ventas_por_categoria(db, cid, c["documentos"], detalle=True)
     return {"categorias": cats, "total": sum(x["valor"] for x in cats)}
 
 
@@ -147,17 +150,19 @@ async def cerrar(
 ):
     cid = current_user.company_id
     turno = (await db.execute(text("""
-        SELECT id, register_number, date, closed, CAST(customer_sales AS SIGNED) user_id
-        FROM pos_cash_register_closings WHERE id = :id AND company_id = :cid
+        SELECT id_registro AS id, register_number, date, closed, synced, CAST(customer_sales AS SIGNED) user_id
+        FROM pos_cash_register_closings WHERE id_registro = :id AND company_id = :cid
     """), {"id": body.closing_id, "cid": cid})).mappings().first()
     if not turno:
-        raise HTTPException(status_code=404, detail="Turno no encontrado")
+        raise HTTPException(status_code=404, detail="Id_Caja no encontrado")
+    if int(turno["synced"] or 0):
+        raise HTTPException(status_code=409, detail="Este Id_Caja se cierra desde el programa de escritorio")
     if int(turno["closed"] or 0):
-        raise HTTPException(status_code=409, detail="Este turno ya está cerrado")
+        raise HTTPException(status_code=409, detail="Este Id_Caja ya está cerrado")
     if int(turno["user_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
         raise HTTPException(status_code=403, detail="Solo el usuario que abrió la caja o un administrador pueden cerrarla")
 
-    # Foto del cuadre del turno con TODO el dinero (recibos y facturas)
+    # Foto del cuadre del Id_Caja con TODO el dinero (recibos y facturas)
     c = await svc.calcular(db, cid, str(turno["date"]), "caja", "ambos", closing_id=int(turno["id"]),
                            base_inicial=body.base_inicial, base_final=body.base_final)
     total = lambda k: sum(m["valor"] for m in c["movimientos"][k])
@@ -247,7 +252,7 @@ async def _documentos(db: AsyncSession, cid: int, f: ImpresionIn) -> dict:
             [fila(x["categoria"], x["valor"], cant=x["cantidad"]) for x in c["categorias"]]
             + [fila("Total", sum(x["valor"] for x in c["categorias"]), True)]}]})
     if f.incluir.articulos:
-        cats = await svc.ventas_por_categoria(db, cid, c["recibos"], detalle=True)
+        cats = await svc.ventas_por_categoria(db, cid, c["documentos"], detalle=True)
         if cats:
             docs.append({"titulo": "ARTICULOS VENDIDOS", "secciones": [
                 {"titulo": x["categoria"], "filas": [fila(i["producto"], i["valor"], cant=i["cantidad"]) for i in x["items"]]

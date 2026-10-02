@@ -1,11 +1,13 @@
 """
 Cuadre de Caja — cálculo único (pantalla, impresión y cierre usan este mismo resultado).
 
-Alcance de un cuadre = un conjunto de turnos (pos_cash_register_closings = cajas_cierres):
-  · todos   → todos los turnos de la fecha
-  · usuario → los turnos de la fecha de ese usuario (customer_sales = id del usuario)
-  · caja    → un turno (Id_Caja) de la fecha
-Todos los movimientos se amarran al turno: recibos por pos_cash_register_receipts.closing_id,
+Alcance de un cuadre = un conjunto de Id_Caja (pos_cash_register_closings = cajas_cierres;
+el Id_Caja es `id_registro`, el mismo del escritorio):
+  · todos   → todos los Id_Caja de la fecha
+  · usuario → los Id_Caja de la fecha de ese cajero (Venta_Clientes = customer_sales)
+  · caja    → un Id_Caja de la fecha
+Los movimientos se amarran al Id_Caja, vengan del escritorio (sincronizados) o de la web:
+recibos por caja_recibos.Id_Caja (closing_id), facturas por caja_facturas.Id_Caja,
 gastos / compras / otros ingresos / otros egresos / vales por register_id.
 
 Reglas de efectivo (como el escritorio):
@@ -42,71 +44,81 @@ def _in(sql: str, *names: str):
 
 async def turnos(db: AsyncSession, cid: int, fecha: str, modo: str,
                  user_id: Optional[int] = None, closing_id: Optional[int] = None) -> list[dict]:
+    """Id_Caja de la fecha. `abierto` = Cierre 0 y es el mayor Id_Caja abierto de ese cajero
+    (los demás Cierre 0 son registros viejos sin cerrar)."""
+    from app.routers.pos_shift_router import _VIGENTE
     where, p = "c.company_id = :cid AND c.date = :f", {"cid": cid, "f": fecha}
     if modo == "usuario":
         where += " AND c.customer_sales = :uid"
         p["uid"] = int(user_id or 0)
     elif modo == "caja":
-        where += " AND c.id = :clid"
+        where += " AND c.id_registro = :clid"
         p["clid"] = int(closing_id or 0)
     rows = (await db.execute(text(f"""
-        SELECT c.id, c.register_number, c.base_amount, c.final_base, c.closed,
+        SELECT c.id_registro AS id, c.register_number, c.base_amount, c.final_base,
+               CASE WHEN {_VIGENTE} THEN 0 ELSE 1 END AS closed, c.synced,
                CAST(c.customer_sales AS SIGNED) AS user_id, c.opening_datetime, c.closing_datetime,
                COALESCE(r.name, CONCAT('Caja ', c.register_number)) AS caja_nombre,
-               COALESCE(u.nombre, '') AS usuario
+               COALESCE(e.name, u.nombre, '') AS usuario
         FROM pos_cash_register_closings c
         LEFT JOIN pos_cash_registers r ON r.company_id = c.company_id AND r.id = c.register_number
+        LEFT JOIN pos_employees e ON e.company_id = c.company_id AND e.id = CAST(c.customer_sales AS SIGNED)
         LEFT JOIN users u ON u.id = CAST(c.customer_sales AS SIGNED) AND u.company_id = c.company_id
         WHERE {where}
-        ORDER BY c.id
+        ORDER BY c.id_registro
     """), p)).mappings().all()
     return [dict(r) | {"opening_datetime": str(r["opening_datetime"] or ""),
-                       "closing_datetime": str(r["closing_datetime"] or "")} for r in rows]
+                       "closing_datetime": str(r["closing_datetime"] or ""),
+                       "origen": "escritorio" if int(r["synced"] or 0) else "web"} for r in rows]
 
 
-async def _recibos(db: AsyncSession, cid: int, ids: list[int]) -> list[dict]:
+# Recibos y facturas tienen la misma estructura (escritorio y web):
+#   caja_recibos / caja_facturas → encabezado → formas de pago → domicilios → detalle
+FUENTES = {
+    "recibos": {"caja": "pos_cash_register_receipts", "num": "receipt_number", "hdr": "pos_receipts",
+                "pagos": "pos_receipt_payment_methods", "dom": "receipt_delivery_fees",
+                "det": "pos_receipt_order_details", "det_num": "receipt_number", "det_amount": "amount",
+                "custom": "od.custom_product"},
+    "facturas": {"caja": "pos_cash_register_invoices", "num": "invoice_number", "hdr": "pos_invoices",
+                 "pagos": "pos_invoice_payment_methods", "dom": "invoice_delivery_fees",
+                 "det": "pos_invoice_details", "det_num": "invoice_number", "det_amount": "dish_amount",
+                 "custom": "''"},
+}
+
+
+async def _documentos(db: AsyncSession, cid: int, ids: list[int], tipo: str) -> list[dict]:
     if not ids:
         return []
-    rows = (await db.execute(_in("""
-        SELECT cr.receipt_number, cr.closing_id, cr.date,
-               COALESCE(p.amount_without_tip, 0) venta, COALESCE(p.tip, 0) tip,
-               COALESCE(p.cash_amount, cr.amount, 0) total, COALESCE(p.voided, 0) voided
-        FROM pos_cash_register_receipts cr
-        JOIN pos_receipts p ON p.company_id = cr.company_id AND p.receipt_number = cr.receipt_number
+    f = FUENTES[tipo]
+    rows = (await db.execute(_in(f"""
+        SELECT cr.{f['num']} AS numero, cr.closing_id, cr.date,
+               COALESCE(h.amount_without_tip, cr.amount, 0) venta, COALESCE(h.tip, 0) tip,
+               COALESCE(h.cash_amount, cr.amount, 0) total, COALESCE(h.voided, 0) voided
+        FROM {f['caja']} cr
+        LEFT JOIN {f['hdr']} h ON h.company_id = cr.company_id AND h.{f['num']} = cr.{f['num']}
         WHERE cr.company_id = :cid AND cr.closing_id IN :ids
     """, "ids"), {"cid": cid, "ids": ids})).mappings().all()
-    recibos = {str(r["receipt_number"]): dict(r) | {"pagos": [], "domicilio": 0.0} for r in rows}
-    if not recibos:
+    docs = {str(r["numero"]): {"receipt_number": str(r["numero"]), "venta": float(r["venta"] or 0),
+                               "tip": float(r["tip"] or 0), "total": float(r["total"] or 0),
+                               "voided": int(r["voided"] or 0), "pagos": [], "domicilio": 0.0,
+                               "tipo": tipo} for r in rows}
+    if not docs:
         return []
-    rns = list(recibos)
-    for pm in (await db.execute(_in("""
+    nums = list(docs)
+    for pm in (await db.execute(_in(f"""
         SELECT pm.invoice_number, pm.amount, COALESCE(pt.name, 'Pago') name, COALESCE(pt.adds_to_cash, 0) cash
-        FROM pos_receipt_payment_methods pm
+        FROM {f['pagos']} pm
         LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
-        WHERE pm.company_id = :cid AND pm.invoice_number IN :rns
+        WHERE pm.company_id = :cid AND pm.invoice_number IN :nums
         ORDER BY pm.item
-    """, "rns"), {"cid": cid, "rns": rns})).mappings().all():
-        recibos[str(pm["invoice_number"])]["pagos"].append(dict(pm))
-    for d in (await db.execute(_in("""
-        SELECT invoice_number, SUM(amount) amount FROM receipt_delivery_fees
-        WHERE company_id = :cid AND invoice_number IN :rns GROUP BY invoice_number
-    """, "rns"), {"cid": cid, "rns": rns})).mappings().all():
-        recibos[str(d["invoice_number"])]["domicilio"] = float(d["amount"] or 0)
-    return list(recibos.values())
-
-
-async def _facturas(db: AsyncSession, cid: int, ids: list[int]) -> list[dict]:
-    """Facturas (caja_facturas). La factura electrónica web aún no se registra: por ahora solo
-    entran las que lleguen de escritorio con el id del turno; sin detalle de formas de pago."""
-    if not ids:
-        return []
-    rows = (await db.execute(_in("""
-        SELECT invoice_number, closing_id, amount FROM pos_cash_register_invoices
-        WHERE company_id = :cid AND closing_id IN :ids
-    """, "ids"), {"cid": cid, "ids": ids})).mappings().all()
-    return [{"receipt_number": str(r["invoice_number"]), "venta": float(r["amount"] or 0), "tip": 0.0,
-             "total": float(r["amount"] or 0), "voided": 0, "domicilio": 0.0, "pagos": [], "factura": True}
-            for r in rows]
+    """, "nums"), {"cid": cid, "nums": nums})).mappings().all():
+        docs[str(pm["invoice_number"])]["pagos"].append(dict(pm))
+    for d in (await db.execute(_in(f"""
+        SELECT invoice_number, SUM(amount) amount FROM {f['dom']}
+        WHERE company_id = :cid AND invoice_number IN :nums GROUP BY invoice_number
+    """, "nums"), {"cid": cid, "nums": nums})).mappings().all():
+        docs[str(d["invoice_number"])]["domicilio"] = float(d["amount"] or 0)
+    return list(docs.values())
 
 
 async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
@@ -142,13 +154,14 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
 
     docs = []
     if origen in ("recibos", "ambos"):
-        docs += await _recibos(db, cid, ids)
+        docs += await _documentos(db, cid, ids, "recibos")
     if origen in ("facturas", "ambos"):
-        docs += await _facturas(db, cid, ids)
+        docs += await _documentos(db, cid, ids, "facturas")
 
     venta = venta_ef = tip = tip_ef = dom = dom_ef = 0.0
     formas: "OrderedDict[str, float]" = OrderedDict()
-    cuentas, otros, anuladas, numeros, recibos_validos = [], [], [], [], []
+    cuentas, otros, anuladas, numeros = [], [], [], []
+    validos = {"recibos": [], "facturas": []}
     for d in docs:
         num = d["receipt_number"]
         if int(d["voided"] or 0):
@@ -156,7 +169,7 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
             continue
         pagado = sum(float(p["amount"] or 0) for p in d["pagos"])
         en_ef = sum(float(p["amount"] or 0) for p in d["pagos"] if int(p["cash"] or 0))
-        f = (en_ef / pagado) if pagado else (0.0 if d.get("factura") else 1.0)
+        f = (en_ef / pagado) if pagado else 1.0
         v, t, dm = float(d["venta"] or 0), float(d["tip"] or 0), float(d["domicilio"] or 0)
         venta += v; tip += t; dom += dm
         venta_ef += v * f; tip_ef += t * f; dom_ef += dm * f
@@ -164,8 +177,7 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
             formas[p["name"]] = formas.get(p["name"], 0.0) + float(p["amount"] or 0)
         cuentas.append({"numero": num, "valor": _r(d["total"])})
         numeros.append(num)
-        if not d.get("factura"):
-            recibos_validos.append(num)
+        validos[d["tipo"]].append(num)
         if any(not int(p["cash"] or 0) for p in d["pagos"]):
             otros.append({"numero": num, "valor": _r(d["total"]),
                           "formas": ", ".join(sorted({p["name"] for p in d["pagos"] if not int(p["cash"] or 0)}))})
@@ -181,7 +193,7 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
     # Bases: editables solo en un turno abierto (modo caja); si no, lo guardado en los turnos
     b_ini = sum(float(t["base_amount"] or 0) for t in ts)
     b_fin = sum(float(t["final_base"] if int(t["closed"] or 0) else t["base_amount"] or 0) for t in ts)
-    editable = modo == "caja" and len(ts) == 1 and not int(ts[0]["closed"] or 0)
+    editable = modo == "caja" and len(ts) == 1 and not int(ts[0]["closed"] or 0) and ts[0]["origen"] == "web"
     if editable:
         if base_inicial is not None:
             b_ini = float(base_inicial)
@@ -205,7 +217,7 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
     salen = [s for s in salen if s.get("fija") or s["valor"]]
     t_ent, t_sal = sum(e["valor"] for e in entran), sum(s["valor"] for s in salen)
 
-    categorias = await ventas_por_categoria(db, cid, recibos_validos, detalle=False)
+    categorias = await ventas_por_categoria(db, cid, validos, detalle=False)
 
     return {
         "fecha": fecha, "modo": modo, "origen": origen,
@@ -221,27 +233,34 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
         "formas_pago": [{"name": k, "valor": _r(v)} for k, v in formas.items() if _r(v)],
         "categorias": categorias,
         "movimientos": movs,
-        "recibos": recibos_validos,
+        "documentos": validos,
         "bases": {"inicial": _r(b_ini), "final": _r(b_fin)},
     }
 
 
-async def ventas_por_categoria(db: AsyncSession, cid: int, recibos: list[str], detalle: bool) -> list[dict]:
-    """Venta por categoría (detalle=False) o lista de artículos vendidos agrupada por categoría."""
-    if not recibos:
+async def ventas_por_categoria(db: AsyncSession, cid: int, documentos: dict, detalle: bool) -> list[dict]:
+    """Venta por categoría (detalle=False) o lista de artículos vendidos agrupada por categoría.
+    `documentos` = {"recibos": [números], "facturas": [números]} (solo los no anulados)."""
+    partes, params = [], {"cid": cid}
+    for tipo, nums in documentos.items():
+        if not nums:
+            continue
+        f = FUENTES[tipo]
+        params[f"n_{tipo}"] = list(nums)
+        partes.append(f"""
+            SELECT COALESCE(dc.name, 'SIN CATEGORÍA') categoria,
+                   CASE WHEN COALESCE({f['custom']}, '') <> '' AND LEFT({f['custom']}, 1) <> '{{'
+                        THEN {f['custom']} ELSE COALESCE(d.name, 'Producto') END producto,
+                   od.quantity cantidad, od.{f['det_amount']} valor
+            FROM {f['det']} od
+            LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = od.company_id
+            LEFT JOIN pos_dish_categories dc ON dc.id = d.category_id AND dc.company_id = od.company_id
+            WHERE od.company_id = :cid AND od.{f['det_num']} IN :n_{tipo}""")
+    if not partes:
         return []
-    rows = (await db.execute(_in("""
-        SELECT COALESCE(dc.name, 'SIN CATEGORÍA') categoria,
-               CASE WHEN COALESCE(od.custom_product, '') <> '' AND LEFT(od.custom_product, 1) <> '{'
-                    THEN od.custom_product ELSE COALESCE(d.name, 'Producto') END producto,
-               SUM(od.quantity) cantidad, SUM(od.amount) valor
-        FROM pos_receipt_order_details od
-        LEFT JOIN pos_dishes d ON d.id = od.dish_id AND d.company_id = od.company_id
-        LEFT JOIN pos_dish_categories dc ON dc.id = d.category_id AND dc.company_id = od.company_id
-        WHERE od.company_id = :cid AND od.receipt_number IN :rns
-        GROUP BY categoria, producto
-        ORDER BY categoria, producto
-    """, "rns"), {"cid": cid, "rns": recibos})).mappings().all()
+    sql = ("SELECT categoria, producto, SUM(cantidad) cantidad, SUM(valor) valor FROM ("
+           + " UNION ALL ".join(partes) + ") x GROUP BY categoria, producto ORDER BY categoria, producto")
+    rows = (await db.execute(_in(sql, *[k for k in params if k.startswith("n_")]), params)).mappings().all()
     cats: "OrderedDict[str, dict]" = OrderedDict()
     for r in rows:
         c = cats.setdefault(r["categoria"], {"categoria": r["categoria"], "cantidad": 0.0, "valor": 0, "items": []})

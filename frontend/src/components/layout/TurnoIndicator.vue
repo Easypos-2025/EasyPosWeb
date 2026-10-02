@@ -3,7 +3,7 @@
   <div v-if="turno" :class="['ti', turno.es_de_hoy ? 'ti--hoy' : 'ti--vieja']"
        :title="turno.es_de_hoy ? 'Trabajando con caja abierta hoy' : 'Caja abierta en una fecha anterior: los recibos se registran con la fecha de apertura. Ciérrela en Cuadre de Caja.'">
     <i :class="turno.es_de_hoy ? 'bi bi-cash-coin' : 'bi bi-exclamation-triangle-fill'"></i>
-    <span class="ti-main">{{ turno.caja_nombre }} · Turno #{{ turno.id }}</span>
+    <span class="ti-main">{{ turno.caja_nombre }} · Id_Caja #{{ turno.id }}</span>
     <span class="ti-sub">
       {{ turno.es_de_hoy ? `Caja abierta hoy ${hora}` : `Caja abierta del ${fecha} — los recibos llevan esa fecha` }}
     </span>

@@ -20,7 +20,7 @@
       <select v-if="f.modo === 'caja'" v-model.number="f.closing_id" class="cc-select" @change="cargar">
         <option :value="null" disabled>Seleccione el Id_Caja</option>
         <option v-for="t in opc.turnos" :key="t.id" :value="t.id">
-          #{{ t.id }} · {{ t.caja }} · {{ t.usuario || 'Sin usuario' }}{{ t.cerrado ? ' (cerrado)' : ' (abierto)' }}
+          #{{ t.id }} · {{ t.caja }} · {{ t.usuario || `Cajero ${t.user_id}` }}{{ t.cerrado ? ' (cerrado)' : ' (abierto)' }}{{ t.origen === 'escritorio' ? ' · escritorio' : '' }}
         </option>
       </select>
       <div class="cc-fecha" :title="puedeFecha ? 'Fecha del cuadre' : 'Sin permiso para cambiar la fecha'">
@@ -129,7 +129,7 @@
 
     <!-- ══ Pie ══ -->
     <div class="cc-foot">
-      <button class="cc-btn" :disabled="!c || !c.recibos?.length" @click="abrirArticulos"><i class="bi bi-list-ul"></i> Lista Artículos</button>
+      <button class="cc-btn" :disabled="!c || !(c.documentos?.recibos?.length || c.documentos?.facturas?.length)" @click="abrirArticulos"><i class="bi bi-list-ul"></i> Lista Artículos</button>
       <button class="cc-btn cc-btn--warn" :disabled="!puedeCerrar || cerrando" :title="tituloCierre" @click="cerrarTurno">
         <i :class="cerrando ? 'bi bi-arrow-repeat spin' : 'bi bi-lock-fill'"></i> Cierre
       </button>
@@ -281,12 +281,13 @@ const estado = computed(() => {
     : { t: 'Caja abierta', c: 'open', i: 'bi bi-unlock-fill' }
 })
 const puedeCerrar = computed(() => !!(c.value && f.modo === 'caja' && turnoSel.value && !turnoSel.value.cerrado
-  && (opc.value.es_admin || turnoSel.value.user_id === opc.value.user_id)))
+  && turnoSel.value.origen === 'web' && (opc.value.es_admin || turnoSel.value.user_id === opc.value.user_id)))
 const tituloCierre = computed(() => {
   if (f.modo !== 'caja') return 'El cierre se hace sobre un Id_Caja'
-  if (turnoSel.value?.cerrado) return 'Este turno ya está cerrado'
+  if (turnoSel.value?.cerrado) return 'Este Id_Caja ya está cerrado'
+  if (turnoSel.value?.origen === 'escritorio') return 'Este Id_Caja se cierra desde el programa de escritorio'
   if (turnoSel.value && !puedeCerrar.value) return 'Solo el usuario que abrió la caja o un administrador'
-  return 'Cerrar el turno de caja'
+  return 'Cerrar la caja'
 })
 
 // Las bases son lo único editable: los totales se ajustan al instante (el servidor recalcula al cerrar/imprimir)

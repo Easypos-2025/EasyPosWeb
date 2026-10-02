@@ -5,7 +5,7 @@
     <div class="mp-empty">
       <i class="bi bi-cone-striped"></i>
       <p>Esta vista está en desarrollo.</p>
-      <small>Los movimientos que se registren aquí se amarran al turno de caja abierto (Id_Caja) y se reflejan en el Cuadre de Caja.</small>
+      <small>Los movimientos que se registren aquí se amarran al Id_Caja abierto y se reflejan en el Cuadre de Caja.</small>
     </div>
   </div>
 </template>

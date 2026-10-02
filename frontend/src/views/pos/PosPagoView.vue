@@ -33,7 +33,7 @@
       <div v-if="datos.turno && !datos.turno.es_de_hoy" class="pg-fecha-turno">
         <i class="bi bi-calendar-event"></i>
         El recibo se registrará con la <b>fecha de apertura de la caja: {{ fmtFechaTurno(datos.turno.fecha) }}</b>
-        ({{ datos.turno.caja }} · turno #{{ datos.turno.id }}), no con la fecha actual.
+        ({{ datos.turno.caja }} · Id_Caja #{{ datos.turno.id }}), no con la fecha actual.
       </div>
 
       <div class="pg-main">

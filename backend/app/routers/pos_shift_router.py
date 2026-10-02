@@ -17,7 +17,7 @@ campo `Venta_Clientes`. No confundir con una métrica de ventas.
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -58,23 +58,71 @@ async def _es_admin(db: AsyncSession, user: User) -> bool:
     return bool(role) and (bool(role.is_system) or "ADMIN" in (role.name or "").upper())
 
 
-async def _turno_abierto(db: AsyncSession, company_id: int, user_id: int) -> dict | None:
-    row = (await db.execute(text("""
-        SELECT c.id, c.register_number, c.base_amount, c.opening_datetime, c.date,
-               COALESCE(r.name, CONCAT('Caja ', c.register_number)) AS caja_nombre
-        FROM pos_cash_register_closings c
-        LEFT JOIN pos_cash_registers r ON r.company_id = c.company_id AND r.id = c.register_number
-        WHERE c.company_id = :cid AND c.customer_sales = :uid AND c.closed = 0
-        ORDER BY c.id DESC LIMIT 1
-    """), {"cid": company_id, "uid": user_id})).mappings().first()
-    if not row:
-        return None
+# ═══════════════════════════════════════════════════════════════════════════
+# Id_Caja (cajas_cierres): la llave de caja es `id_registro`, la misma del escritorio.
+#   · Empresa CON escritorio (tiene Id_Caja subidos por la sincronización, synced=1):
+#     la caja se abre/cierra solo en el escritorio; la web usa el Id_Caja abierto.
+#   · Empresa solo web: la web abre su Id_Caja (positivo, siguiente número libre).
+#   Abiertos válidos: de los Cierre=0, solo el mayor Id_Caja de cada cajero (Venta_Clientes);
+#   los demás Cierre=0 son registros viejos que no se cerraron en la sincronización.
+#   `customer_sales` (Venta_Clientes) = código/cédula del cajero (pos_employees.id); en la
+#   web, el id del usuario (se le crea su registro en pos_employees al abrir caja).
+# ═══════════════════════════════════════════════════════════════════════════
+_VIGENTE = """c.closed = 0 AND c.id_registro = (
+    SELECT MAX(c2.id_registro) FROM pos_cash_register_closings c2
+    WHERE c2.company_id = c.company_id AND c2.customer_sales = c.customer_sales AND c2.closed = 0)"""
+
+_SELECT_CAJA = """
+    SELECT c.id_registro AS id, c.id AS row_id, c.register_number, c.base_amount, c.opening_datetime, c.date,
+           CAST(c.customer_sales AS SIGNED) AS cajero_id, c.synced,
+           COALESCE(r.name, CONCAT('Caja ', c.register_number)) AS caja_nombre,
+           COALESCE(e.name, u.nombre, '') AS cajero
+    FROM pos_cash_register_closings c
+    LEFT JOIN pos_cash_registers r ON r.company_id = c.company_id AND r.id = c.register_number
+    LEFT JOIN pos_employees e ON e.company_id = c.company_id AND e.id = CAST(c.customer_sales AS SIGNED)
+    LEFT JOIN users u ON u.id = CAST(c.customer_sales AS SIGNED) AND u.company_id = c.company_id
+"""
+
+
+def _caja_dict(row) -> dict:
     t = dict(row)
     t["fecha"] = _fecha_turno(t)
     t["es_de_hoy"] = t["fecha"] == _hoy()
     t["opening_datetime"] = str(t["opening_datetime"] or "")
     t["date"] = str(t["date"] or "")
+    t["origen"] = "escritorio" if int(t.pop("synced") or 0) else "web"
     return t
+
+
+async def _es_escritorio(db: AsyncSession, company_id: int) -> bool:
+    """La empresa maneja la caja desde el escritorio si tiene Id_Caja subidos por la sincronización."""
+    return bool((await db.execute(text(
+        "SELECT 1 FROM pos_cash_register_closings WHERE company_id = :cid AND synced = 1 LIMIT 1"
+    ), {"cid": company_id})).scalar())
+
+
+async def _cajas_abiertas(db: AsyncSession, company_id: int) -> list[dict]:
+    rows = (await db.execute(text(_SELECT_CAJA + f" WHERE c.company_id = :cid AND {_VIGENTE} ORDER BY c.id_registro DESC"),
+                             {"cid": company_id})).mappings().all()
+    return [_caja_dict(r) for r in rows]
+
+
+async def _turno_abierto(db: AsyncSession, company_id: int, user_id: int,
+                         id_caja: Optional[int] = None) -> dict | None:
+    """Id_Caja con el que trabaja el usuario.
+    Escritorio: el Id_Caja abierto elegido (header X-Id-Caja) o el único abierto.
+    Solo web: el Id_Caja abierto de ese usuario."""
+    abiertas = await _cajas_abiertas(db, company_id)
+    if await _es_escritorio(db, company_id):
+        if id_caja:
+            return next((a for a in abiertas if int(a["id"]) == int(id_caja)), None)
+        return abiertas[0] if len(abiertas) == 1 else None
+    return next((a for a in abiertas if int(a["cajero_id"] or 0) == int(user_id)), None)
+
+
+def _id_caja_header(request: Request) -> Optional[int]:
+    v = (request.headers.get("x-id-caja") or "").strip()
+    return int(v) if v.isdigit() else None
 
 
 @router.get("/company-abierto")
@@ -87,18 +135,32 @@ async def turno_company_abierto(
     `users` admin): ¿hay algún turno de caja abierto en la empresa, sin
     importar qué usuario/cajero lo abrió? Gate de "tomar pedido".
     """
-    row = (await db.execute(text(
-        "SELECT id FROM pos_cash_register_closings WHERE company_id = :cid AND closed = 0 LIMIT 1"
-    ), {"cid": auth["company_id"]})).mappings().first()
-    return {"abierto": row is not None}
+    return {"abierto": bool(await _cajas_abiertas(db, auth["company_id"]))}
 
 
 @router.get("/actual")
 async def turno_actual(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await _turno_abierto(db, current_user.company_id, current_user.id) or {}
+    return await _turno_abierto(db, current_user.company_id, current_user.id, _id_caja_header(request)) or {}
+
+
+@router.get("/estado")
+async def estado_caja(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Para la ventana de caja: si la empresa abre caja en el escritorio y sus Id_Caja abiertos."""
+    cid = current_user.company_id
+    escritorio = await _es_escritorio(db, cid)
+    return {
+        "escritorio": escritorio,
+        "abiertas": await _cajas_abiertas(db, cid) if escritorio else [],
+        "actual": await _turno_abierto(db, cid, current_user.id, _id_caja_header(request)),
+    }
 
 
 @router.get("/cajas")
@@ -112,14 +174,7 @@ async def cajas_disponibles(
         WHERE company_id = :cid AND is_active = 1
         ORDER BY type DESC, name
     """), {"cid": cid})).mappings().all()
-
-    ocupadas = (await db.execute(text("""
-        SELECT register_number, customer_sales AS user_id
-        FROM pos_cash_register_closings
-        WHERE company_id = :cid AND closed = 0
-    """), {"cid": cid})).mappings().all()
-    ocupada_por = {int(o["register_number"]): int(o["user_id"]) for o in ocupadas}
-
+    ocupada_por = {int(a["register_number"]): int(a["cajero_id"] or 0) for a in await _cajas_abiertas(db, cid)}
     result = []
     for c in cajas:
         ocupante = ocupada_por.get(c["id"])
@@ -131,19 +186,45 @@ async def cajas_disponibles(
     return result
 
 
+async def _siguiente_id_caja(db: AsyncSession, cid: int) -> int:
+    """Siguiente Id_Caja libre: mayor que cualquier Id_Caja usado (también en recibos, facturas,
+    gastos y compras que referencien Id_Caja que no estén en cajas_cierres)."""
+    return int((await db.execute(text("""
+        SELECT GREATEST(
+            COALESCE((SELECT MAX(id_registro) FROM pos_cash_register_closings WHERE company_id = :cid), 0),
+            COALESCE((SELECT MAX(closing_id) FROM pos_cash_register_receipts WHERE company_id = :cid), 0),
+            COALESCE((SELECT MAX(closing_id) FROM pos_cash_register_invoices WHERE company_id = :cid), 0),
+            COALESCE((SELECT MAX(register_id) FROM pos_expenses WHERE company_id = :cid), 0),
+            COALESCE((SELECT MAX(register_id) FROM pos_purchases WHERE company_id = :cid), 0)) + 1
+    """), {"cid": cid})).scalar())
+
+
+async def _asegurar_empleado(db: AsyncSession, cid: int, user: User) -> None:
+    """El cajero web queda en pos_employees (empleados) con id = id del usuario."""
+    await db.execute(text("""
+        INSERT INTO pos_employees (id, company_id, name, login, password, status, employee_type, personal_skin, synced)
+        SELECT :uid, :cid, :name, :login, '', 1, 0, 0, 0 FROM DUAL
+        WHERE NOT EXISTS (SELECT 1 FROM pos_employees WHERE company_id = :cid AND id = :uid)
+    """), {"uid": user.id, "cid": cid, "name": (user.nombre or f"Usuario {user.id}")[:50],
+           "login": (user.email or str(user.id))[:25]})
+
+
 @router.post("/abrir")
 async def abrir_turno(
     body: dict,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     cid, uid = current_user.company_id, current_user.id
 
-    # Si el usuario ya tiene un turno abierto (en cualquier caja), se continúa
-    # con ese mismo turno hasta que se cierre — no se abre uno nuevo.
-    existente = await _turno_abierto(db, cid, uid)
+    if await _es_escritorio(db, cid):
+        raise HTTPException(status_code=409, detail="Esta empresa abre la caja desde el programa de escritorio")
+
+    # Si el usuario ya tiene un Id_Caja abierto se sigue con ese hasta que se cierre
+    existente = await _turno_abierto(db, cid, uid, _id_caja_header(request))
     if existente:
-        return existente      # se sigue con el mismo turno (puede pasar de medianoche) hasta cerrarlo
+        return existente
 
     register_number = body.get("register_number")
     try:
@@ -161,32 +242,21 @@ async def abrir_turno(
     ), {"id": register_number, "cid": cid})).mappings().first()
     if not caja:
         raise HTTPException(status_code=404, detail="Caja no encontrada")
-
-    ocupada = (await db.execute(text("""
-        SELECT id FROM pos_cash_register_closings
-        WHERE company_id = :cid AND register_number = :rn AND closed = 0
-    """), {"cid": cid, "rn": register_number})).mappings().first()
-    if ocupada:
+    if any(int(a["register_number"]) == int(register_number) for a in await _cajas_abiertas(db, cid)):
         raise HTTPException(status_code=409, detail="Esta caja ya está abierta por otro usuario")
 
-    # `id_registro` participa en la UNIQUE KEY (id_registro, company_id) que
-    # el escritorio usa para no duplicar cierres sincronizados. El escritorio
-    # siempre manda valores positivos (su propio autoincremental); las
-    # aperturas nativas de la web usan una secuencia negativa propia para no
-    # chocar nunca con eso ni entre sí.
+    await _asegurar_empleado(db, cid, current_user)
     for _ in range(5):
-        next_id_registro = (await db.execute(text(
-            "SELECT COALESCE(MIN(id_registro), 0) - 1 AS next FROM pos_cash_register_closings WHERE company_id = :cid"
-        ), {"cid": cid})).mappings().first()["next"]
+        id_caja = await _siguiente_id_caja(db, cid)
         try:
             await db.execute(text("""
                 INSERT INTO pos_cash_register_closings
                     (id_registro, register_number, date, base_amount, customer_sales, closed,
                      opened_pc, opening_datetime, company_id, synced)
                 VALUES
-                    (:idreg, :rn, :hoy, :base, :uid, 0, :pc, :now, :cid, 1)
+                    (:idreg, :rn, :hoy, :base, :uid, 0, :pc, :now, :cid, 0)
             """), {
-                "idreg": next_id_registro, "rn": register_number, "base": base_amount, "uid": uid, "pc": pc,
+                "idreg": id_caja, "rn": register_number, "base": base_amount, "uid": uid, "pc": pc,
                 "now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "hoy": _hoy(), "cid": cid,
             })
             # cajas.Abierta: la caja queda bloqueada para otros usuarios
@@ -199,34 +269,39 @@ async def abrir_turno(
             await db.rollback()
             continue
     else:
-        raise HTTPException(status_code=409, detail="No se pudo abrir el turno, intente nuevamente")
+        raise HTTPException(status_code=409, detail="No se pudo abrir la caja, intente nuevamente")
 
     return await _turno_abierto(db, cid, uid)
 
 
 @router.post("/cerrar")
 async def cerrar_turno(
+    request: Request,
     body: Optional[dict] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Cierra un turno: el propio (sin closing_id) o, si es Admin, el de otro usuario.
-    El cuadre de caja se hará en la vista Cuadre de Caja; aquí solo se cierra y se libera la caja."""
+    """Cierra un Id_Caja web: el propio (sin closing_id) o, si es Admin, el de otro usuario.
+    Los Id_Caja del escritorio se cierran en el escritorio."""
     cid = current_user.company_id
     closing_id = (body or {}).get("closing_id")
     if closing_id:
         turno = (await db.execute(text("""
-            SELECT id, register_number, customer_sales AS user_id FROM pos_cash_register_closings
-            WHERE id = :id AND company_id = :cid AND closed = 0
+            SELECT id_registro AS id, register_number, CAST(customer_sales AS SIGNED) AS cajero_id, synced
+            FROM pos_cash_register_closings WHERE id_registro = :id AND company_id = :cid AND closed = 0
         """), {"id": int(closing_id), "cid": cid})).mappings().first()
         if not turno:
-            raise HTTPException(status_code=404, detail="Turno no encontrado o ya cerrado")
-        if int(turno["user_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
+            raise HTTPException(status_code=404, detail="Id_Caja no encontrado o ya cerrado")
+        if int(turno["synced"] or 0):
+            raise HTTPException(status_code=409, detail="Este Id_Caja se cierra desde el programa de escritorio")
+        if int(turno["cajero_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
             raise HTTPException(status_code=403, detail="Solo el usuario que abrió la caja o un administrador pueden cerrarla")
     else:
-        turno = await _turno_abierto(db, cid, current_user.id)
+        turno = await _turno_abierto(db, cid, current_user.id, _id_caja_header(request))
         if not turno:
-            raise HTTPException(status_code=404, detail="No tiene un turno de caja abierto")
+            raise HTTPException(status_code=404, detail="No tiene una caja abierta")
+        if turno["origen"] == "escritorio":
+            raise HTTPException(status_code=409, detail="Este Id_Caja se cierra desde el programa de escritorio")
 
     await cerrar_y_liberar(db, cid, int(turno["id"]), int(turno["register_number"]))
     await db.commit()
@@ -248,25 +323,26 @@ async def cerrar_y_liberar(db: AsyncSession, cid: int, turno_id: int, register_n
     await db.execute(text(f"""
         UPDATE pos_cash_register_closings
         SET closed = 1, closing_datetime = :now{sets}
-        WHERE id = :id AND company_id = :cid AND closed = 0
+        WHERE id_registro = :id AND company_id = :cid AND closed = 0
     """), {"now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "id": turno_id, "cid": cid, **campos})
     # cajas.Abierta = 0 si ya no queda otro turno abierto en esa caja
-    await db.execute(text("""
+    await db.execute(text(f"""
         UPDATE pos_cash_registers SET is_open = 0, employee_id = 0
         WHERE company_id = :cid AND id = :rn
-          AND NOT EXISTS (SELECT 1 FROM pos_cash_register_closings
-                          WHERE company_id = :cid AND register_number = :rn AND closed = 0)
+          AND NOT EXISTS (SELECT 1 FROM pos_cash_register_closings c
+                          WHERE c.company_id = :cid AND c.register_number = :rn AND {_VIGENTE})
     """), {"cid": cid, "rn": register_number})
 
 
 async def require_open_shift(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Dependency reutilizable: exige turno de caja abierto antes de operar con dinero."""
-    turno = await _turno_abierto(db, current_user.company_id, current_user.id)
+    """Dependency reutilizable: exige Id_Caja abierto antes de operar con dinero."""
+    turno = await _turno_abierto(db, current_user.company_id, current_user.id, _id_caja_header(request))
     if not turno:
-        raise HTTPException(status_code=409, detail="Debe abrir un turno de caja antes de continuar")
-    # Un turno puede pasar de medianoche (negocios 24 h): los recibos se registran con la
-    # fecha de APERTURA del turno (turno["fecha"]); la factura electrónica, solo con la de hoy.
+        raise HTTPException(status_code=409, detail="Debe abrir la caja antes de continuar")
+    # Un Id_Caja puede pasar de medianoche (negocios 24 h): los recibos se registran con la
+    # fecha de APERTURA (turno["fecha"]); la factura electrónica, solo con la de hoy.
     return turno

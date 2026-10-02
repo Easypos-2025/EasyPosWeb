@@ -19,7 +19,7 @@ import unicodedata
 from collections import OrderedDict
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
 from sqlalchemy import text
@@ -29,7 +29,7 @@ from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.auth.tenant import tenant_guard
 from app.models.user_model import User
-from app.routers.pos_shift_router import _turno_abierto
+from app.routers.pos_shift_router import _id_caja_header, _turno_abierto
 from app.services import config_facturacion as cfg_svc
 
 router = APIRouter(prefix="/api/pos/recibo-impresion", tags=["POS Recibo Impresión"],
@@ -39,8 +39,8 @@ ReceiptNo = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
                                              pattern=r"^[A-Za-z0-9_-]+$")]
 
 
-async def _impresora_default(db: AsyncSession, cid: int, uid: int) -> Optional[int]:
-    turno = await _turno_abierto(db, cid, uid)
+async def _impresora_default(db: AsyncSession, cid: int, uid: int, id_caja: Optional[int] = None) -> Optional[int]:
+    turno = await _turno_abierto(db, cid, uid, id_caja)
     if turno and turno.get("register_number"):
         pid = (await db.execute(text(
             "SELECT printer_id FROM pos_cash_registers WHERE company_id=:cid AND id=:caja"
@@ -53,6 +53,7 @@ async def _impresora_default(db: AsyncSession, cid: int, uid: int) -> Optional[i
 
 @router.get("/impresoras")
 async def impresoras(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -61,7 +62,7 @@ async def impresoras(
         SELECT id, name, ip, port, connection_type, bluetooth_address, usb_device_id
         FROM pos_printers WHERE company_id = :cid AND is_active = 1 ORDER BY id
     """), {"cid": cid})).mappings().all()
-    default_id = await _impresora_default(db, cid, current_user.id)
+    default_id = await _impresora_default(db, cid, current_user.id, _id_caja_header(request))
     await db.commit()
     out = [dict(r) | {"is_default": int(r["id"]) == default_id} for r in rows]
     out.sort(key=lambda p: not p["is_default"])          # la predeterminada primero
