@@ -23,9 +23,8 @@
           #{{ t.id }} · {{ t.caja }} · {{ t.usuario || `Cajero ${t.user_id}` }}{{ t.cerrado ? ' (cerrado)' : ' (abierto)' }}{{ t.origen === 'escritorio' ? ' · escritorio' : '' }}
         </option>
       </select>
-      <div class="cc-fecha" :title="puedeFecha ? 'Fecha del cuadre' : 'Sin permiso para cambiar la fecha'">
-        <CustomDatePicker v-model="f.fecha" :class="{ 'cc-disabled': !puedeFecha }" />
-      </div>
+      <PeriodoSelector :modelValue="{ periodo: f.periodo, fecha: f.fecha }" :anteriores="puedeFecha"
+                       :periodos="!!opc.permisos?.periodos" :hoy="opc.hoy" @update:modelValue="cambiarPeriodo" />
       <div v-if="opc.pos_electronico" class="cc-origen">
         <label v-for="o in ORIGENES" :key="o.v" :class="['cc-radio', { active: f.origen === o.v }]">
           <input type="radio" :value="o.v" v-model="f.origen" @change="cargar" /> {{ o.l }}
@@ -234,7 +233,7 @@ import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
 import { useCompanyStore } from '@/stores/companyStore'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import PeriodoSelector from '@/components/common/PeriodoSelector.vue'
 import CurrencyInput from '@/components/CurrencyInput.vue'
 import TurnoIndicator from '@/components/layout/TurnoIndicator.vue'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
@@ -261,7 +260,7 @@ const fmt = v => fmtMon.value.format(Math.round(Number(v) || 0))
 // Selector de fecha: solo con el permiso "Consultar Facturas y Cuadres Anteriores" (Roles → Control de Acceso)
 const puedeFecha = computed(() => !!opc.value.permisos?.anteriores)
 
-const f = reactive({ fecha: '', modo: 'todos', user_id: null, closing_id: null, origen: 'recibos' })
+const f = reactive({ fecha: '', periodo: 'dia', modo: 'todos', user_id: null, closing_id: null, origen: 'recibos' })
 const opc = ref({ turnos: [], usuarios: [], pos_electronico: false })
 const c = ref(null)
 const loading = ref(false)
@@ -300,7 +299,7 @@ const dineroEntregar = computed(() => totalEntran.value - totalSalen.value)
 function onBaseInicial(v) { if (!finalTocada.value) bases.final = Number(v) || 0 }
 
 function params() {
-  const p = { fecha: f.fecha, modo: f.modo, origen: f.origen }
+  const p = { fecha: f.fecha, periodo: f.periodo, modo: f.modo, origen: f.origen }
   if (f.modo === 'usuario') p.user_id = f.user_id
   if (f.modo === 'caja') p.closing_id = f.closing_id
   if (c.value?.editable_bases) { p.base_inicial = Number(bases.inicial) || 0; p.base_final = Number(bases.final) || 0 }
@@ -308,7 +307,7 @@ function params() {
 }
 
 async function cargarOpciones() {
-  const { data } = await api.get(`${BASE}/opciones`, { params: { fecha: f.fecha || undefined } })
+  const { data } = await api.get(`${BASE}/opciones`, { params: { fecha: f.fecha || undefined, periodo: f.periodo } })
   opc.value = data
   if (!f.fecha) f.fecha = data.fecha
   if (!data.pos_electronico) f.origen = 'recibos'
@@ -321,7 +320,7 @@ async function cargar() {
   const my = ++seq
   loading.value = true
   try {
-    const p = { fecha: f.fecha, modo: f.modo, origen: f.origen }
+    const p = { fecha: f.fecha, periodo: f.periodo, modo: f.modo, origen: f.origen }
     if (f.modo === 'usuario') p.user_id = f.user_id
     if (f.modo === 'caja') p.closing_id = f.closing_id
     const { data } = await api.get(BASE, { params: p })
@@ -355,6 +354,12 @@ function cambiarModo(m) {
 }
 
 watch(() => f.fecha, (n, o) => { if (o && n !== o) recargarTodo() })
+function cambiarPeriodo(v) {
+  const cambioTipo = v.periodo !== f.periodo
+  f.periodo = v.periodo
+  if (v.fecha !== f.fecha) f.fecha = v.fecha            // el watch de la fecha recarga
+  else if (cambioTipo) recargarTodo()
+}
 
 // ── Listas (Cuentas · Otros · Anuladas) y movimientos (Ver) ─────────────────
 const lista = reactive({ show: false, clave: '', titulo: '', rows: [] })

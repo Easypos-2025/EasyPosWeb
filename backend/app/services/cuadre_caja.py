@@ -3,9 +3,9 @@ Cuadre de Caja — cálculo único (pantalla, impresión y cierre usan este mism
 
 Alcance de un cuadre = un conjunto de Id_Caja (pos_cash_register_closings = cajas_cierres;
 el Id_Caja es `id_registro`, el mismo del escritorio):
-  · todos   → todos los Id_Caja de la fecha
-  · usuario → los Id_Caja de la fecha de ese cajero (Venta_Clientes = customer_sales)
-  · caja    → un Id_Caja de la fecha
+  · todos   → todos los Id_Caja del periodo (día, mes o año: desde/hasta)
+  · usuario → los Id_Caja del periodo de ese cajero (Venta_Clientes = customer_sales)
+  · caja    → un Id_Caja del periodo
 Los movimientos se amarran al Id_Caja, vengan del escritorio (sincronizados) o de la web:
 recibos por caja_recibos.Id_Caja (closing_id), facturas por caja_facturas.Id_Caja,
 gastos / compras / otros ingresos / otros egresos / vales por register_id.
@@ -44,12 +44,13 @@ def _in(sql: str, *names: str):
     return text(sql).bindparams(*(bindparam(n, expanding=True) for n in names))
 
 
-async def turnos(db: AsyncSession, cid: int, fecha: str, modo: str,
-                 user_id: Optional[int] = None, closing_id: Optional[int] = None) -> list[dict]:
+async def turnos(db: AsyncSession, cid: int, desde: str, modo: str,
+                 user_id: Optional[int] = None, closing_id: Optional[int] = None,
+                 hasta: Optional[str] = None) -> list[dict]:
     """Id_Caja de la fecha. `abierto` = Cierre 0 y es el mayor Id_Caja abierto de ese cajero
     (los demás Cierre 0 son registros viejos sin cerrar)."""
     from app.routers.pos_shift_router import _VIGENTE
-    where, p = "c.company_id = :cid AND c.date = :f", {"cid": cid, "f": fecha}
+    where, p = "c.company_id = :cid AND c.date BETWEEN :d AND :h", {"cid": cid, "d": desde, "h": hasta or desde}
     if modo == "usuario":
         where += " AND c.customer_sales = :uid"
         p["uid"] = int(user_id or 0)
@@ -150,8 +151,9 @@ async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
 
 async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: str,
                    user_id: Optional[int] = None, closing_id: Optional[int] = None,
-                   base_inicial: Optional[float] = None, base_final: Optional[float] = None) -> dict:
-    ts = await turnos(db, cid, fecha, modo, user_id, closing_id)
+                   base_inicial: Optional[float] = None, base_final: Optional[float] = None,
+                   hasta: Optional[str] = None) -> dict:
+    ts = await turnos(db, cid, fecha, modo, user_id, closing_id, hasta=hasta)
     ids = [int(t["id"]) for t in ts]
 
     docs = []
@@ -222,7 +224,7 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
     categorias = await ventas_por_categoria(db, cid, validos, detalle=False)
 
     return {
-        "fecha": fecha, "modo": modo, "origen": origen,
+        "fecha": fecha, "hasta": hasta or fecha, "modo": modo, "origen": origen,
         "turnos": ts, "editable_bases": editable,
         "venta": {"total": _r(venta), "efectivo": _r(venta_ef), "otros": _r(venta) - _r(venta_ef)},
         "domicilios": {"total": _r(dom), "efectivo": _r(dom_ef), "otros": _r(dom) - _r(dom_ef)},

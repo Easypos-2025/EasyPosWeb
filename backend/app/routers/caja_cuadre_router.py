@@ -29,11 +29,13 @@ from app.routers.pos_shift_router import (_BOG, _es_admin, _es_escritorio, _hoy,
                                           _turno_abierto, cerrar_y_liberar)
 from app.services import cuadre_caja as svc
 from app.services.permisos import permisos_usuario
+from app.services import periodos as per
 
 router = APIRouter(prefix="/api/caja/cuadre", tags=["Caja Cuadre"], dependencies=[Depends(tenant_guard)])
 
 Fecha = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 Modo = Literal["todos", "usuario", "caja"]
+Periodo = Literal["dia", "mes", "anio"]
 Origen = Literal["recibos", "facturas", "ambos"]
 Base = Annotated[float, Field(ge=0, le=1e12)]
 
@@ -62,6 +64,7 @@ async def _origen(db: AsyncSession, cid: int, origen: Optional[str]) -> str:
 
 class Filtros(BaseModel):
     fecha: Fecha
+    periodo: Periodo = "dia"
     modo: Modo = "todos"
     user_id: Optional[Annotated[int, Field(ge=1)]] = None
     closing_id: Optional[Annotated[int, Field(ge=1)]] = None
@@ -78,21 +81,20 @@ def _validar_modo(f) -> None:
         raise HTTPException(status_code=422, detail="Seleccione el Id_Caja")
 
 
-async def _validar_fecha(db: AsyncSession, user: User, fecha: str, id_caja: Optional[int] = None) -> None:
-    if fecha >= _hoy():
-        return
-    if "consultar_anteriores" in await permisos_usuario(db, user):
-        return
+async def _validar_fecha(db: AsyncSession, user: User, fecha: str, id_caja: Optional[int] = None,
+                         periodo: str = "dia") -> tuple[str, str]:
+    """Rango (desde, hasta) del periodo validado contra el Control de Acceso del rol.
+    Siempre se permite la fecha del propio Id_Caja abierto."""
+    desde, hasta = per.rango(periodo, fecha)
     propio = await _turno_abierto(db, user.company_id, user.id, id_caja)
-    if propio and propio.get("fecha") == fecha:
-        return
-    raise HTTPException(status_code=403, detail="No tiene permiso para consultar fechas anteriores")
+    return await per.validar_rango(db, user, desde, hasta, propio.get("fecha") if propio else None)
 
 
 async def _cuadre(db: AsyncSession, cid: int, f) -> dict:
     _fecha(f.fecha)
     _validar_modo(f)
-    return await svc.calcular(db, cid, f.fecha, f.modo, await _origen(db, cid, f.origen),
+    desde, hasta = per.rango(f.periodo, f.fecha)
+    return await svc.calcular(db, cid, desde, f.modo, await _origen(db, cid, f.origen), hasta=hasta,
                               user_id=f.user_id, closing_id=f.closing_id,
                               base_inicial=f.base_inicial, base_final=f.base_final)
 
@@ -101,21 +103,22 @@ async def _cuadre(db: AsyncSession, cid: int, f) -> dict:
 async def opciones(
     request: Request,
     fecha: Optional[Fecha] = None,
+    periodo: Periodo = "dia",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     cid = current_user.company_id
     f = _fecha(fecha or _hoy())
-    await _validar_fecha(db, current_user, f, _id_caja_header(request))
+    desde, hasta = await _validar_fecha(db, current_user, f, _id_caja_header(request), periodo)
     permisos = await permisos_usuario(db, current_user)
-    ts = await svc.turnos(db, cid, f, "todos")
+    ts = await svc.turnos(db, cid, desde, "todos", hasta=hasta)
     usuarios = {}
     for t in ts:
         if t["user_id"]:
             usuarios.setdefault(int(t["user_id"]), t["usuario"] or f"Usuario {t['user_id']}")
     pe = await _pos_electronico(db, cid)
     return {
-        "fecha": f, "hoy": _hoy(),
+        "fecha": f, "periodo": periodo, "desde": desde, "hasta": hasta, "hoy": _hoy(),
         "pos_electronico": pe, "origen_default": "facturas" if pe else "recibos",
         "turnos": [{"id": t["id"], "caja": t["caja_nombre"], "usuario": t["usuario"], "user_id": t["user_id"],
                     "cerrado": bool(int(t["closed"] or 0)), "apertura": t["opening_datetime"],
@@ -137,7 +140,7 @@ async def cuadre(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _validar_fecha(db, current_user, f.fecha, _id_caja_header(request))
+    await _validar_fecha(db, current_user, f.fecha, _id_caja_header(request), f.periodo)
     return await _cuadre(db, current_user.company_id, f)
 
 
@@ -149,7 +152,7 @@ async def articulos(
     current_user: User = Depends(get_current_user),
 ):
     cid = current_user.company_id
-    await _validar_fecha(db, current_user, f.fecha, _id_caja_header(request))
+    await _validar_fecha(db, current_user, f.fecha, _id_caja_header(request), f.periodo)
     c = await _cuadre(db, cid, f)
     cats = await svc.ventas_por_categoria(db, cid, c["documentos"], detalle=True)
     return {"categorias": cats, "total": sum(x["valor"] for x in cats)}
@@ -281,7 +284,13 @@ async def _documentos(db: AsyncSession, cid: int, f: ImpresionIn) -> dict:
                  + [fila(f"Total {x['categoria']}", x["valor"], True, cant=x["cantidad"])]} for x in cats]})
 
     empresa = (await db.execute(text("SELECT name FROM companies WHERE id_company = :cid"), {"cid": cid})).scalar() or ""
-    return {"empresa": empresa, "fecha": _fmt_fecha(c["fecha"]), "alcance": alcance, "origen": origen,
+    if f.periodo == "mes":
+        fecha_txt = f"Mes {c['fecha'][5:7]}/{c['fecha'][:4]}"
+    elif f.periodo == "anio":
+        fecha_txt = f"Año {c['fecha'][:4]}"
+    else:
+        fecha_txt = _fmt_fecha(c["fecha"])
+    return {"empresa": empresa, "fecha": fecha_txt, "alcance": alcance, "origen": origen,
             "impreso": datetime.now(_BOG).strftime("%d/%m/%Y %H:%M"), "documentos": docs}
 
 
@@ -303,7 +312,7 @@ def _tirilla_cuadre(d: dict, width: int = 32) -> bytes:
         buf.extend(INIT)
         line(d["empresa"], bold=True, center=True)
         line(doc["titulo"], bold=True, center=True)
-        line(f"Fecha: {d['fecha']}", center=True)
+        line(d["fecha"] if d["fecha"][:3] in ("Mes", "Año") else f"Fecha: {d['fecha']}", center=True)
         line(d["alcance"][:width], center=True)
         line(d["origen"], center=True)
         line("-" * width)
@@ -328,7 +337,7 @@ async def vista_previa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _validar_fecha(db, current_user, body.fecha, _id_caja_header(request))
+    await _validar_fecha(db, current_user, body.fecha, _id_caja_header(request), body.periodo)
     return await _documentos(db, current_user.company_id, body)
 
 
@@ -341,6 +350,6 @@ async def imprimir(
 ):
     from app.routers.pos_recibo_impresion_router import enviar_tirilla
     cid = current_user.company_id
-    await _validar_fecha(db, current_user, body.fecha, _id_caja_header(request))
+    await _validar_fecha(db, current_user, body.fecha, _id_caja_header(request), body.periodo)
     return await enviar_tirilla(db, cid, body.printer_id, body.raw,
                                 lambda: _documentos(db, cid, body), armar=_tirilla_cuadre)

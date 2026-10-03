@@ -13,8 +13,11 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
 - **Planifica-Primero**: Antes de escribir código o crear archivos, presenta un plan breve y espera mi confirmación ("OK" o "Dale").
 - **Auto-Deploy**: Cuando el usuario escriba la palabra **"commit"**, ejecutar el siguiente flujo completo en orden:
   1. `npm run build` en frontend — si hay errores, detener y reportar.
-  2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
-  3. `git push origin master`
+  2. `git add <solo los archivos que tocó ESTA sesión> && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
+     - **PROHIBIDO `git add .` / `git add -A` / `git commit -a`**: puede haber otras sesiones trabajando en paralelo en la misma carpeta y sus cambios a medias se colarían en este commit con un mensaje que no les corresponde.
+     - Antes de agregar, revisar `git status` y comparar con la lista de archivos que esta sesión creó/modificó. Archivos ajenos se dejan sin tocar (ni agregar, ni revertir, ni formatear).
+     - Si un archivo de esta sesión también tiene cambios de otra sesión (`git diff` muestra cosas que esta sesión no hizo), DETENER y preguntar al usuario antes de hacer commit.
+  3. `git push origin master`. Si lo rechaza porque el remoto avanzó: `git pull --rebase --autostash origin master` y reintentar el push. Si hay conflicto, detener y reportar.
   4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb`
      Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb"`
   5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:

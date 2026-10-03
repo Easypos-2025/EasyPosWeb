@@ -38,12 +38,9 @@
 
           <!-- Fechas -->
           <div class="vi-filter-group">
-            <label class="vi-label">Desde / Hasta</label>
-            <div class="vi-fechas-row">
-              <CustomDatePicker v-model="filtro.desde" @update:modelValue="buscar" style="width:140px" />
-              <span class="vi-fecha-sep">—</span>
-              <CustomDatePicker v-model="filtro.hasta" @update:modelValue="buscar" style="width:140px" />
-            </div>
+            <label class="vi-label">Periodo</label>
+            <PeriodoSelector v-model="per" :anteriores="permisos.anteriores.value" :periodos="permisos.periodos.value"
+                             :hoy="localDate()" @change="aplicarPeriodo" />
           </div>
 
           <!-- Categoría del plato -->
@@ -158,8 +155,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis.js'
+import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import PeriodoSelector, { rangoPeriodo } from '@/components/common/PeriodoSelector.vue'
+import { usePermisos } from '@/composables/usePermisos'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 
 const companyStore = useCompanyStore()
@@ -183,6 +182,14 @@ const tipoOpts = [
 ]
 
 const filtro         = ref({ tipo:'ambos', desde:localDate(), hasta:localDate(), catId:null })
+// Periodo Día / Mes / Año según el Control de Acceso del rol (el servidor también lo valida)
+const permisos       = usePermisos()
+const per            = ref({ periodo: 'dia', fecha: localDate() })
+function aplicarPeriodo(v) {
+  const r = rangoPeriodo(v)
+  filtro.value = { ...filtro.value, desde: r.desde, hasta: r.hasta }
+  buscar()
+}
 const filtrosVisible = ref(true)
 const cargando       = ref(false)
 const lista          = ref([])
@@ -257,7 +264,8 @@ async function buscar() {
     lista.value = data
     if (data.length) filtrosVisible.value = false
   } catch(e) {
-    console.error(e); lista.value = []
+    lista.value = []
+    showToast(e?.response?.data?.detail || 'No se pudo consultar', 'error')
   } finally {
     cargando.value = false
   }
@@ -265,6 +273,7 @@ async function buscar() {
 
 function irHoy() {
   const hoy = localDate()
+  per.value = { periodo: 'dia', fecha: hoy }
   filtro.value = { tipo:'ambos', desde:hoy, hasta:hoy, catId:null }
   buscar()
 }

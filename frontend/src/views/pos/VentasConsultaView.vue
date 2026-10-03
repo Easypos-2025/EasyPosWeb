@@ -36,12 +36,9 @@
           </div>
 
           <div class="vc-filter-group">
-            <label class="vc-label">Desde / Hasta</label>
-            <div class="vc-fechas-row">
-              <CustomDatePicker v-model="filtro.desde" @update:modelValue="buscar" style="width:140px" />
-              <span class="vc-fecha-sep">—</span>
-              <CustomDatePicker v-model="filtro.hasta" @update:modelValue="buscar" style="width:140px" />
-            </div>
+            <label class="vc-label">Periodo</label>
+            <PeriodoSelector v-model="per" :anteriores="permisos.anteriores.value" :periodos="permisos.periodos.value"
+                             :hoy="hoy" @change="aplicarPeriodo" />
           </div>
 
           <div class="vc-btns-group">
@@ -53,6 +50,9 @@
             </button>
             <button class="btn btn-outline-primary vc-btn-refresh" @click="refrescarLista" :disabled="cargandoLista" title="Actualizar lista sin perder selección">
               <i class="bi bi-arrow-clockwise" :class="{ spin: cargandoLista }"></i>
+            </button>
+            <button class="btn btn-outline-dark vc-btn-hoy" @click="abrirImprimirLista" :disabled="cargandoLista || !lista.length" title="Imprimir el listado (vista previa, PDF, Excel)">
+              <i class="bi bi-printer"></i><span>Imprimir</span>
             </button>
             <ExportToolbar
               v-if="lista.length"
@@ -71,7 +71,8 @@
     <!-- ── Totales: sticky, independiente del filtro ─────────── -->
     <div v-if="!cargandoLista && lista.length" class="vc-totales-bar">
       <span class="vc-total-chip">
-        <span class="vc-total-lbl">{{ lista.length }} registros</span>
+        <span class="vc-total-lbl">{{ totalRegistros }} registros</span>
+        <span v-if="totalRegistros > lista.length" class="vc-total-lbl">(se listan {{ lista.length }})</span>
       </span>
       <span class="vc-total-chip vc-total-chip--green">
         <span class="vc-total-lbl">Venta Real</span>
@@ -95,6 +96,15 @@
       printersPath="/api/pos/recibo-impresion/impresoras"
       printPath="/api/pos/recibo-impresion/imprimir"
       @close="showImprimir = false; reciboRestaurante = null"
+    />
+    <ImprimirRecibo
+      v-else-if="impLista"
+      :receiptData="impLista"
+      :companyId="selectedCid || 0"
+      printersPath="/api/pos/recibo-impresion/impresoras"
+      printPath="/api/pos-consultas/imprimir"
+      :printExtra="{ desde: filtro.desde, hasta: filtro.hasta, tipo: filtro.tipo }"
+      @close="impLista = null"
     />
     <ImprimirRecibo
       v-else-if="showImprimir && reciboImprimir"
@@ -308,7 +318,8 @@ import { useRouter } from 'vue-router'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast'
 import { useCompanyStore } from '@/stores/companyStore'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import PeriodoSelector, { rangoPeriodo } from '@/components/common/PeriodoSelector.vue'
+import { usePermisos } from '@/composables/usePermisos'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 
@@ -379,6 +390,16 @@ const tipoOpts = [
 ]
 
 const filtro          = ref({ tipo:'ambos', desde:hoy, hasta:hoy })
+// Periodo Día / Mes / Año según el Control de Acceso del rol (el servidor también lo valida)
+const permisos        = usePermisos()
+const per             = ref({ periodo: 'dia', fecha: hoy })
+function aplicarPeriodo(v) {
+  const r = rangoPeriodo(v)
+  filtro.value = { ...filtro.value, desde: r.desde, hasta: r.hasta }
+  buscar()
+}
+const resumen         = ref(null)
+const impLista        = ref(null)
 const filtrosVisible  = ref(true)
 
 const lista           = ref([])
@@ -435,9 +456,32 @@ const placaImprimir = computed(() => {
 })
 
 const ventaReal       = r => (r.valor||0)-(r.propina||0)-(r.domicilio||0)
-const totalVentaReal  = computed(() => lista.value.reduce((s,r)=>s+ventaReal(r),0))
-const totalPropinas   = computed(() => lista.value.reduce((s,r)=>s+(r.propina||0),0))
-const totalDomicilios = computed(() => lista.value.reduce((s,r)=>s+(r.domicilio||0),0))
+// Totales del periodo completo (el servidor; la lista se limita a 500 registros)
+const totalVentaReal  = computed(() => resumen.value ? resumen.value.venta_real : lista.value.reduce((s,r)=>s+ventaReal(r),0))
+const totalPropinas   = computed(() => resumen.value ? resumen.value.propinas : lista.value.reduce((s,r)=>s+(r.propina||0),0))
+const totalDomicilios = computed(() => resumen.value ? resumen.value.domicilios : lista.value.reduce((s,r)=>s+(r.domicilio||0),0))
+const totalRegistros  = computed(() => resumen.value ? resumen.value.registros : lista.value.length)
+
+function abrirImprimirLista() {
+  const tipoTxt = { ambos: 'Facturas y Recibos', factura: 'Facturas', recibo: 'Recibos' }[filtro.value.tipo]
+  const rangoTxt = filtro.value.desde === filtro.value.hasta ? fmtFecha(filtro.value.desde)
+    : `${fmtFecha(filtro.value.desde)} al ${fmtFecha(filtro.value.hasta)}`
+  const tot = [{ label: 'Registros', valor: null, cant: totalRegistros.value },
+               { label: 'Venta Real', valor: totalVentaReal.value, bold: true }]
+  if (totalPropinas.value) tot.push({ label: 'Propinas', valor: totalPropinas.value })
+  if (totalDomicilios.value) tot.push({ label: 'Domicilios', valor: totalDomicilios.value })
+  tot.push({ label: 'TOTAL', valor: totalVentaReal.value + totalPropinas.value + totalDomicilios.value, bold: true })
+  impLista.value = {
+    titulo: 'CONSULTA DE VENTAS', receipt_number: '', fecha: rangoTxt, lineas: [tipoTxt],
+    secciones: [
+      { titulo: 'Ventas', items: lista.value.map(r => ({
+          label: `${r.tipo === 'factura' ? 'FAC' : 'REC'} ${r.numero} · ${fmtFecha(String(r.date).slice(0, 10)).slice(0, 5)}`,
+          valor: r.valor })) },
+      { titulo: 'Totales', items: tot },
+    ],
+    items: [], pagos: [],
+  }
+}
 
 const fmtCOPRaw = v => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', minimumFractionDigits:0 }).format(v || 0)
 const ventaRealFn = r => (r.valor||0)-(r.propina||0)-(r.domicilio||0)
@@ -459,13 +503,17 @@ async function buscar() {
   detalle.value        = null
   itemExpandido.value  = null
   try {
-    const { data } = await api.get('/api/pos-consultas/ventas', {
-      params:{ desde:filtro.value.desde, hasta:filtro.value.hasta, tipo:filtro.value.tipo, company_id:selectedCid.value }
-    })
-    lista.value = data
-    if (data.length) filtrosVisible.value = false
+    const params = { desde:filtro.value.desde, hasta:filtro.value.hasta, tipo:filtro.value.tipo, company_id:selectedCid.value }
+    const [l, r] = await Promise.all([
+      api.get('/api/pos-consultas/ventas', { params }),
+      api.get('/api/pos-consultas/ventas-resumen', { params }),
+    ])
+    lista.value = l.data
+    resumen.value = r.data
+    if (l.data.length) filtrosVisible.value = false
   } catch(e) {
-    console.error(e); lista.value = []
+    lista.value = []; resumen.value = null
+    showToast(e?.response?.data?.detail || 'No se pudo consultar las ventas', 'error')
   } finally {
     cargandoLista.value = false
   }
@@ -523,6 +571,7 @@ async function verInsumos(group) {
 
 function irHoy() {
   const hoyStr = localDate()
+  per.value = { periodo: 'dia', fecha: hoyStr }
   filtro.value = { tipo:'ambos', desde:hoyStr, hasta:hoyStr }
   buscar()
 }

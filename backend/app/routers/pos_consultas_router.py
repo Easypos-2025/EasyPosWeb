@@ -19,6 +19,10 @@ from app.models.user_model import User
 from app.utils.excel_ventas import build_ventas_excel
 from app.routers.metricas_router import _query_export
 
+from app.services import periodos as per
+
+from pydantic import BaseModel
+
 router = APIRouter(prefix="/api/pos-consultas", tags=["POS Consultas"])
 
 
@@ -69,6 +73,7 @@ async def get_ventas(
     hoy = _today()
     desde = desde or hoy
     hasta = hasta or hoy
+    desde, hasta = await per.validar_rango(db, user, desde, hasta)
 
     rows = []
 
@@ -142,6 +147,109 @@ async def get_ventas(
     # Sort merged list newest first by date+hora
     rows.sort(key=lambda x: (x["date"], x["hora"]), reverse=True)
     return rows[:500]
+
+
+# ─── Totales del periodo (sin límite de registros) ────────────────────────────
+@router.get("/ventas-resumen")
+async def get_ventas_resumen(
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    tipo: Optional[str] = "ambos",
+    company_id: Optional[int] = None,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await _get_user(authorization, db)
+    cid = await _resolve_cid(user, company_id, db)
+    hoy = _today()
+    desde, hasta = await per.validar_rango(db, user, desde or hoy, hasta or hoy)
+    tot = {"registros": 0, "venta": 0.0, "propinas": 0.0, "domicilios": 0.0}
+    fuentes = []
+    if tipo in ("factura", "ambos"):
+        fuentes.append(("pos_invoices", "invoice_number", "invoice_delivery_fees"))
+    if tipo in ("recibo", "ambos"):
+        fuentes.append(("pos_receipts", "receipt_number", "receipt_delivery_fees"))
+    for tabla, num, dom in fuentes:
+        r = (await db.execute(text(f"""
+            SELECT COUNT(*) n,
+                   COALESCE(SUM(COALESCE(x.cash_amount,0) + COALESCE(x.credit_card_amount,0)
+                       + COALESCE(x.debit_card_amount,0) + COALESCE(x.adjustment,0) - COALESCE(x.discount,0)), 0) v,
+                   COALESCE(SUM(COALESCE(x.tip,0) + COALESCE(x.extra_tip,0)), 0) p,
+                   COALESCE((SELECT SUM(d.amount) FROM {dom} d
+                             JOIN {tabla} y ON y.{num} = d.invoice_number AND y.company_id = d.company_id
+                             WHERE d.company_id = :cid AND y.date BETWEEN :d AND :h AND y.voided = 0), 0) dm
+            FROM {tabla} x
+            WHERE x.company_id = :cid AND x.date BETWEEN :d AND :h AND x.voided = 0
+        """), {"cid": cid, "d": desde, "h": hasta})).mappings().first()
+        tot["registros"] += int(r["n"] or 0)
+        tot["venta"] += float(r["v"] or 0)
+        tot["propinas"] += float(r["p"] or 0)
+        tot["domicilios"] += float(r["dm"] or 0)
+    # Venta real = valor sin propinas ni domicilios (igual que la lista)
+    tot["venta_real"] = tot["venta"] - tot["propinas"] - tot["domicilios"]
+    return tot | {"desde": desde, "hasta": hasta}
+
+
+class ImprimirVentasIn(BaseModel):
+    desde: str
+    hasta: str
+    tipo: str = "ambos"
+    printer_id: int
+    raw: bool = False
+    company_id: Optional[int] = None
+    receipt_number: Optional[str] = None
+
+
+@router.post("/imprimir")
+async def imprimir_ventas(
+    body: ImprimirVentasIn,
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tirilla del listado de ventas del periodo (mismos filtros y permisos de la consulta)."""
+    from app.routers.pos_recibo_impresion_router import enviar_tirilla, _ascii, _money
+    user = await _get_user(authorization, db)
+    cid = await _resolve_cid(user, body.company_id, db)
+    tipo = body.tipo if body.tipo in ("factura", "recibo", "ambos") else "ambos"
+
+    async def datos():
+        lista = await get_ventas(body.desde, body.hasta, tipo, body.company_id, authorization, db)
+        tot = await get_ventas_resumen(body.desde, body.hasta, tipo, body.company_id, authorization, db)
+        empresa = (await db.execute(text("SELECT name FROM companies WHERE id_company = :c"), {"c": cid})).scalar() or ""
+        return {"empresa": empresa, "lista": lista, "tot": tot}
+
+    def armar(d: dict, width: int = 32) -> bytes:
+        ESC = b"\x1b"
+        buf = bytearray(ESC + b"@")
+        def line(t="", bold=False, center=False):
+            buf.extend((ESC + b"E\x01" if bold else b"") + (ESC + b"a\x01" if center else ESC + b"a\x00")
+                       + _ascii(t) + b"\n" + (ESC + b"E\x00" if bold else b""))
+        def dl(a, b, bold=False):
+            a = str(a)[: max(1, width - len(b) - 1)]
+            line(a + " " * max(1, width - len(a) - len(b)) + b, bold=bold)
+        t = d["tot"]
+        line(d["empresa"], bold=True, center=True)
+        line("CONSULTA DE VENTAS", bold=True, center=True)
+        f = lambda x: f"{x[8:10]}/{x[5:7]}/{x[:4]}"
+        line(f"{f(t['desde'])} al {f(t['hasta'])}", center=True)
+        line({"factura": "Facturas", "recibo": "Recibos", "ambos": "Facturas y Recibos"}[tipo], center=True)
+        line("-" * width)
+        for r in d["lista"]:
+            dl(f"{'FAC' if r['tipo'] == 'factura' else 'REC'} {r['numero']} {str(r['date'])[5:10]}", _money(r["valor"]))
+        line("-" * width)
+        dl("Registros", str(t["registros"]))
+        dl("Venta Real", _money(t["venta_real"]), True)
+        if t["propinas"]:
+            dl("Propinas", _money(t["propinas"]))
+        if t["domicilios"]:
+            dl("Domicilios", _money(t["domicilios"]))
+        dl("TOTAL", _money(t["venta"]), True)
+        if t["registros"] > len(d["lista"]):
+            line(f"(se listan {len(d['lista'])} de {t['registros']})", center=True)
+        buf.extend(b"\n" * 4 + b"\x1dV\x42\x00")
+        return bytes(buf)
+
+    return await enviar_tirilla(db, cid, body.printer_id, body.raw, datos, armar=armar)
 
 
 # ─── 2. Detalle de una venta (header + items) ─────────────────────────────────
@@ -412,6 +520,7 @@ async def get_ventas_producto(
     hoy  = _today()
     d0   = desde or hoy
     d1   = hasta or hoy
+    d0, d1 = await per.validar_rango(db, user, d0, d1)
     cat_filter = "AND dc.id = :cat_id" if cat_id else ""
 
     rows = []
@@ -502,6 +611,7 @@ async def get_ventas_insumo(
     hoy  = _today()
     d0   = desde or hoy
     d1   = hasta or hoy
+    d0, d1 = await per.validar_rango(db, user, d0, d1)
     cat_filter = "AND dc.id = :cat_id" if cat_id else ""
 
     rows = []
@@ -603,6 +713,7 @@ async def export_excel(
     hoy  = _today()
     d0   = desde or hoy
     d1   = hasta or hoy
+    d0, d1 = await per.validar_rango(db, user, d0, d1)
 
     # normalizar tipo: consultas usa "factura"/"recibo", export usa "facturas"/"recibos"
     tipo_exp = {"factura": "facturas", "recibo": "recibos", "ambos": "ambos"}.get(tipo, "ambos")
