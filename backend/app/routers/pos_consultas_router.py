@@ -145,7 +145,7 @@ async def get_ventas(
         rows.extend([dict(row) for row in rec_rows])
 
     # Sort merged list newest first by date+hora
-    rows.sort(key=lambda x: (x["date"], x["hora"]), reverse=True)
+    rows.sort(key=lambda x: (str(x["date"] or ""), str(x["hora"] or "")), reverse=True)
     return rows[:500]
 
 
@@ -590,7 +590,7 @@ async def get_ventas_producto(
                 "total":     float(r["total"]    or 0),
             }
 
-    result = sorted(merged.values(), key=lambda x: (x["categoria"], -x["total"]))
+    result = sorted(merged.values(), key=lambda x: (x["categoria"] or "", -(x["total"] or 0)))
     return result
 
 
@@ -693,7 +693,7 @@ async def get_ventas_insumo(
                 "cantidad":        float(r["cantidad"] or 0),
             }
 
-    result = sorted(merged.values(), key=lambda x: (x["categoria_plato"], x["plato"], x["insumo"]))
+    result = sorted(merged.values(), key=lambda x: (x["categoria_plato"] or "", x["plato"] or "", x["insumo"] or ""))
     return result
 
 

@@ -1005,28 +1005,28 @@ const routes = [
       {
         path: "/caja/gastos",
         name: "CajaGastosView",
-        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        component: () => import("@/views/caja/CajaMovimientosView.vue"),
         requiresAuth: true,
         meta: { title: "Registro Gastos", icon: "bi-wallet2" }
       },
       {
         path: "/caja/compras",
         name: "CajaComprasView",
-        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        component: () => import("@/views/caja/CajaMovimientosView.vue"),
         requiresAuth: true,
         meta: { title: "Registro Compras", icon: "bi-bag" }
       },
       {
         path: "/caja/otros-ingresos",
         name: "CajaOtrosIngresosView",
-        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        component: () => import("@/views/caja/CajaMovimientosView.vue"),
         requiresAuth: true,
         meta: { title: "Otros Ingresos", icon: "bi-box-arrow-in-down-right" }
       },
       {
         path: "/caja/otros-egresos",
         name: "CajaOtrosEgresosView",
-        component: () => import("@/views/caja/CajaMovimientoPendienteView.vue"),
+        component: () => import("@/views/caja/CajaMovimientosView.vue"),
         requiresAuth: true,
         meta: { title: "Otros Egresos", icon: "bi-box-arrow-up-right" }
       },

@@ -140,7 +140,7 @@ async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
                              WHERE mp.company_id = m.company_id AND mp.type_id = {tipo} AND mp.movement_id = m.id_registro
                                AND NOT {es_efectivo_sql('pt')}), 0) AS otros
             FROM {tabla} m {join}
-            WHERE m.company_id = :cid AND m.register_id IN :ids
+            WHERE m.company_id = :cid AND m.register_id IN :ids AND COALESCE(m.voided, 0) = 0
             ORDER BY m.id
         """, "ids"), {"cid": cid, "ids": ids})).mappings().all()
         out[clave] = [{"id": r["id"], "fecha": str(r["date"] or ""), "concepto": r["concepto"] or "",
