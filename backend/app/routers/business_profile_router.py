@@ -8,7 +8,7 @@ from app.schemas.business_profile_schema import (
     BusinessProfileCreate, BusinessProfileUpdate,
     BusinessProfileResponse, BusinessProfileListResponse
 )
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_sysadmin
 
 router = APIRouter(prefix="/business-profiles", tags=["Business Profiles"])
 
@@ -29,7 +29,7 @@ async def get_business_profile(profile_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.post("/", response_model=BusinessProfileResponse)
-async def create_business_profile(data: BusinessProfileCreate, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def create_business_profile(data: BusinessProfileCreate, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     new_profile = BusinessProfile(**data.dict())
     db.add(new_profile)
     await db.commit()
@@ -38,7 +38,7 @@ async def create_business_profile(data: BusinessProfileCreate, db: AsyncSession 
 
 
 @router.put("/{profile_id}", response_model=BusinessProfileResponse)
-async def update_business_profile(profile_id: int, data: BusinessProfileUpdate, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def update_business_profile(profile_id: int, data: BusinessProfileUpdate, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     result = await db.execute(select(BusinessProfile).where(BusinessProfile.id == profile_id))
     profile = result.scalar_one_or_none()
     if not profile:
@@ -51,7 +51,7 @@ async def update_business_profile(profile_id: int, data: BusinessProfileUpdate, 
 
 
 @router.delete("/{profile_id}")
-async def delete_business_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def delete_business_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     result = await db.execute(select(BusinessProfile).where(BusinessProfile.id == profile_id))
     profile = result.scalar_one_or_none()
     if not profile:
@@ -72,7 +72,7 @@ async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get
 
 
 @router.post("/{profile_id}/modules/")
-async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     """Asigna módulos al perfil de forma no-destructiva: solo agrega los nuevos y elimina los quitados,
     preservando parent_id, sort_order y display_name de los módulos que permanecen."""
     try:

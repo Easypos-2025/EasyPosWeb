@@ -283,7 +283,10 @@ async def cerrar_turno(
 ):
     """Cierra un Id_Caja web: el propio (sin closing_id) o, si es Admin, el de otro usuario.
     Los Id_Caja del escritorio se cierran en el escritorio."""
+    from app.services.permisos import permisos_usuario
     cid = current_user.company_id
+    if "hacer_cierre" not in await permisos_usuario(db, current_user):
+        raise HTTPException(status_code=403, detail="No tiene permiso para hacer el cierre de caja")
     closing_id = (body or {}).get("closing_id")
     if closing_id:
         turno = (await db.execute(text("""

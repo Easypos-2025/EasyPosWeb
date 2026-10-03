@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 
 from app.database import get_db
 from app.models.role_model import Role
@@ -10,6 +10,7 @@ from app.models.system_module_model import SystemModule
 from app.models.user_model import User
 from app.auth.dependencies import get_current_user
 from app.services.plan_limits_service import check_limit
+from app.services.permisos import permisos_usuario
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
@@ -69,6 +70,13 @@ async def create_role(
     db.add(role)
     await db.commit()
     await db.refresh(role)
+    # Control de Acceso inicial: un rol Admin con todo; los demás pueden cerrar su propia caja
+    await db.execute(text("""
+        INSERT IGNORE INTO role_access_permissions (role_id, perm_key)
+        SELECT :rid, perm_key FROM access_permissions
+        WHERE is_active = 1 AND (:admin = 1 OR perm_key = 'hacer_cierre')
+    """), {"rid": role.id, "admin": 1 if "ADMIN" in name.upper() else 0})
+    await db.commit()
     return _ser(role)
 
 
@@ -122,9 +130,7 @@ async def get_modules_by_role(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    role = await db.get(Role, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Rol no encontrado")
+    await _rol_de_mi_empresa(db, current_user, role_id)
 
     if await _is_system(current_user, db):
         result = await db.execute(select(SystemModule).order_by(SystemModule.order_index))
@@ -175,3 +181,72 @@ async def assign_modules_to_role(
 
     await db.commit()
     return {"message": "Módulos asignados correctamente"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Control de Acceso por rol (permisos especiales; catálogo en access_permissions)
+# ═══════════════════════════════════════════════════════════════════════════
+async def _rol_de_mi_empresa(db: AsyncSession, current_user: User, role_id: int) -> Role:
+    role = await db.get(Role, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rol no encontrado")
+    if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
+        raise HTTPException(status_code=403, detail="Sin permisos")
+    return role
+
+
+@router.get("/access/catalog")
+async def access_catalog(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (await db.execute(text("""
+        SELECT perm_key, name, group_name, description FROM access_permissions
+        WHERE is_active = 1 ORDER BY order_index, name
+    """))).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/access/me")
+async def my_access(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return sorted(await permisos_usuario(db, current_user))
+
+
+@router.get("/{role_id}/access")
+async def role_access(
+    role_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _rol_de_mi_empresa(db, current_user, role_id)
+    return sorted((await db.execute(text(
+        "SELECT perm_key FROM role_access_permissions WHERE role_id = :rid"
+    ), {"rid": role_id})).scalars().all())
+
+
+@router.put("/{role_id}/access")
+async def save_role_access(
+    role_id: int,
+    data: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reemplaza los permisos especiales del rol. Solo un Admin (o SYSADMIN) puede cambiarlos."""
+    from app.routers.pos_shift_router import _es_admin
+    await _rol_de_mi_empresa(db, current_user, role_id)
+    if not await _es_admin(db, current_user):
+        raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar el Control de Acceso")
+    claves = data.get("keys")
+    if not isinstance(claves, list) or len(claves) > 200:
+        raise HTTPException(status_code=422, detail="Lista de permisos no válida")
+    validas = set((await db.execute(text("SELECT perm_key FROM access_permissions WHERE is_active = 1"))).scalars().all())
+    claves = sorted({str(k) for k in claves} & validas)
+    await db.execute(text("DELETE FROM role_access_permissions WHERE role_id = :rid"), {"rid": role_id})
+    for k in claves:
+        await db.execute(text("INSERT INTO role_access_permissions (role_id, perm_key) VALUES (:rid, :k)"),
+                         {"rid": role_id, "k": k})
+    await db.commit()
+    return {"ok": True, "keys": claves}

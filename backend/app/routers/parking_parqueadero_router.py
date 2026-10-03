@@ -699,6 +699,11 @@ async def upload_foto_mensualidad(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    propia = (await db.execute(text(
+        "SELECT 1 FROM parqueadero_mensualidades WHERE id = :id AND company_id = :cid"
+    ), {"id": men_id, "cid": company_id})).scalar()
+    if not propia:
+        raise HTTPException(404, "Mensualidad no encontrada")
     ext = Path(file.filename).suffix.lower() if file.filename else ".jpg"
     if ext not in (".jpg", ".jpeg", ".png", ".webp"):
         raise HTTPException(400, "Formato no permitido")
@@ -722,9 +727,11 @@ async def delete_foto_mensualidad(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    row = await db.execute(text(
-        "SELECT url FROM parqueadero_mensualidad_fotos WHERE id=:id"
-    ), {"id": foto_id})
+    row = await db.execute(text("""
+        SELECT f.url FROM parqueadero_mensualidad_fotos f
+        JOIN parqueadero_mensualidades m ON m.id = f.mensualidad_id AND m.company_id = :cid
+        WHERE f.id = :id
+    """), {"id": foto_id, "cid": company_id})
     foto = row.mappings().first()
     if foto:
         path = Path(__file__).resolve().parent.parent.parent.parent / foto["url"].lstrip("/")

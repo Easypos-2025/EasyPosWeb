@@ -258,8 +258,8 @@ const fmtMon = computed(() => new Intl.NumberFormat('es-CO', {
 }))
 const fmt = v => fmtMon.value.format(Math.round(Number(v) || 0))
 
-// Selector de fecha: luego se controla desde Roles; por ahora habilitado para todos
-const puedeFecha = true
+// Selector de fecha: solo con el permiso "Consultar Facturas y Cuadres Anteriores" (Roles → Control de Acceso)
+const puedeFecha = computed(() => !!opc.value.permisos?.anteriores)
 
 const f = reactive({ fecha: '', modo: 'todos', user_id: null, closing_id: null, origen: 'recibos' })
 const opc = ref({ turnos: [], usuarios: [], pos_electronico: false })
@@ -281,11 +281,13 @@ const estado = computed(() => {
     : { t: 'Caja abierta', c: 'open', i: 'bi bi-unlock-fill' }
 })
 const puedeCerrar = computed(() => !!(c.value && f.modo === 'caja' && turnoSel.value && !turnoSel.value.cerrado
-  && turnoSel.value.origen === 'web' && (opc.value.es_admin || turnoSel.value.user_id === opc.value.user_id)))
+  && turnoSel.value.origen === 'web' && opc.value.permisos?.cierre
+  && (opc.value.es_admin || turnoSel.value.user_id === opc.value.user_id)))
 const tituloCierre = computed(() => {
   if (f.modo !== 'caja') return 'El cierre se hace sobre un Id_Caja'
   if (turnoSel.value?.cerrado) return 'Este Id_Caja ya está cerrado'
   if (turnoSel.value?.origen === 'escritorio') return 'Este Id_Caja se cierra desde el programa de escritorio'
+  if (opc.value.permisos && !opc.value.permisos.cierre) return 'Su rol no tiene permiso para hacer el cierre de caja'
   if (turnoSel.value && !puedeCerrar.value) return 'Solo el usuario que abrió la caja o un administrador'
   return 'Cerrar la caja'
 })

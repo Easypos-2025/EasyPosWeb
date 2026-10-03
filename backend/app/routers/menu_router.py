@@ -6,7 +6,7 @@ from sqlalchemy import select, text
 from app.database import get_db
 from app.models.user_model import User
 from app.models.company_model import Company
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_sysadmin
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/menu", tags=["Menu"], dependencies=[Depends(tenant_guard)])
@@ -55,6 +55,8 @@ async def get_menu_by_company(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.auth.tenant import resolve_company
+    company_id = await resolve_company(db, current_user, company_id)     # 403 si no tiene acceso
     result = await db.execute(select(Company).where(Company.id_company == company_id))
     company = result.scalar_one_or_none()
 
@@ -126,7 +128,7 @@ async def get_menu_by_profile(
 async def repair_profile_menu(
     profile_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_sysadmin)
 ):
     deleted = await db.execute(text("""
         DELETE bpm FROM business_profile_modules bpm

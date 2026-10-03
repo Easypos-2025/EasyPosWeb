@@ -989,6 +989,13 @@ const routes = [
         meta: { title: "Listas de precios por cliente" }
       },
       {
+        path: "/configuration/conceptos-caja",
+        name: "CajaConceptosView",
+        component: () => import("@/views/caja/CajaConceptosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Conceptos de Caja" }
+      },
+      {
         path: "/caja/cuadre",
         name: "CajaCuadreView",
         component: () => import("@/views/caja/CajaCuadreView.vue"),

@@ -28,6 +28,7 @@ from app.models.user_model import User
 from app.routers.pos_shift_router import (_BOG, _es_admin, _es_escritorio, _hoy, _id_caja_header,
                                           _turno_abierto, cerrar_y_liberar)
 from app.services import cuadre_caja as svc
+from app.services.permisos import permisos_usuario
 
 router = APIRouter(prefix="/api/caja/cuadre", tags=["Caja Cuadre"], dependencies=[Depends(tenant_guard)])
 
@@ -77,6 +78,17 @@ def _validar_modo(f) -> None:
         raise HTTPException(status_code=422, detail="Seleccione el Id_Caja")
 
 
+async def _validar_fecha(db: AsyncSession, user: User, fecha: str, id_caja: Optional[int] = None) -> None:
+    if fecha >= _hoy():
+        return
+    if "consultar_anteriores" in await permisos_usuario(db, user):
+        return
+    propio = await _turno_abierto(db, user.company_id, user.id, id_caja)
+    if propio and propio.get("fecha") == fecha:
+        return
+    raise HTTPException(status_code=403, detail="No tiene permiso para consultar fechas anteriores")
+
+
 async def _cuadre(db: AsyncSession, cid: int, f) -> dict:
     _fecha(f.fecha)
     _validar_modo(f)
@@ -94,6 +106,8 @@ async def opciones(
 ):
     cid = current_user.company_id
     f = _fecha(fecha or _hoy())
+    await _validar_fecha(db, current_user, f, _id_caja_header(request))
+    permisos = await permisos_usuario(db, current_user)
     ts = await svc.turnos(db, cid, f, "todos")
     usuarios = {}
     for t in ts:
@@ -110,26 +124,32 @@ async def opciones(
         "turno_actual": await _turno_abierto(db, cid, current_user.id, _id_caja_header(request)),
         "escritorio": await _es_escritorio(db, cid),
         "es_admin": await _es_admin(db, current_user),
+        "permisos": {"anteriores": "consultar_anteriores" in permisos, "periodos": "ver_periodos" in permisos,
+                     "cierre": "hacer_cierre" in permisos},
         "user_id": current_user.id,
     }
 
 
 @router.get("")
 async def cuadre(
+    request: Request,
     f: Filtros = Depends(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await _validar_fecha(db, current_user, f.fecha, _id_caja_header(request))
     return await _cuadre(db, current_user.company_id, f)
 
 
 @router.get("/articulos")
 async def articulos(
+    request: Request,
     f: Filtros = Depends(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     cid = current_user.company_id
+    await _validar_fecha(db, current_user, f.fecha, _id_caja_header(request))
     c = await _cuadre(db, cid, f)
     cats = await svc.ventas_por_categoria(db, cid, c["documentos"], detalle=True)
     return {"categorias": cats, "total": sum(x["valor"] for x in cats)}
@@ -159,6 +179,8 @@ async def cerrar(
         raise HTTPException(status_code=409, detail="Este Id_Caja se cierra desde el programa de escritorio")
     if int(turno["closed"] or 0):
         raise HTTPException(status_code=409, detail="Este Id_Caja ya está cerrado")
+    if "hacer_cierre" not in await permisos_usuario(db, current_user):
+        raise HTTPException(status_code=403, detail="No tiene permiso para hacer el cierre de caja")
     if int(turno["user_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
         raise HTTPException(status_code=403, detail="Solo el usuario que abrió la caja o un administrador pueden cerrarla")
 
@@ -301,20 +323,24 @@ def _tirilla_cuadre(d: dict, width: int = 32) -> bytes:
 
 @router.post("/vista-previa")
 async def vista_previa(
+    request: Request,
     body: ImpresionIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await _validar_fecha(db, current_user, body.fecha, _id_caja_header(request))
     return await _documentos(db, current_user.company_id, body)
 
 
 @router.post("/imprimir")
 async def imprimir(
+    request: Request,
     body: ImprimirIn,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from app.routers.pos_recibo_impresion_router import enviar_tirilla
     cid = current_user.company_id
+    await _validar_fecha(db, current_user, body.fecha, _id_caja_header(request))
     return await enviar_tirilla(db, cid, body.printer_id, body.raw,
                                 lambda: _documentos(db, cid, body), armar=_tirilla_cuadre)

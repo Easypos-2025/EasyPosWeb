@@ -110,6 +110,7 @@ from app.routers.pos_recibo_impresion_router import router as pos_recibo_impresi
 from app.routers.config_facturacion_router import router as config_facturacion_router
 from app.routers.pos_categorias_productos_router import router as pos_categorias_productos_router
 from app.routers.caja_cuadre_router import router as caja_cuadre_router
+from app.routers.caja_conceptos_router import router as caja_conceptos_router
 from app.routers.metricas_router import router as metricas_router
 from app import models  # asegura que plan_model se registre en Base
 
@@ -2504,6 +2505,7 @@ routers = [
     config_facturacion_router,
     pos_categorias_productos_router,
     caja_cuadre_router,
+    caja_conceptos_router,
     metricas_router,
 ]
 
@@ -2526,7 +2528,7 @@ _NO_CACHE_HEADERS = {
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     if full_path.startswith("api/"):
-        return {"detail": "Not Found"}
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
 
     # Standalone TV page: máxima compatibilidad con WebOS/browsers viejos
     if full_path.startswith("tv/"):

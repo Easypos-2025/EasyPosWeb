@@ -117,6 +117,8 @@ async def get_company_plan(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    from app.auth.tenant import resolve_company
+    company_id = await resolve_company(db, current_user, company_id)     # 403 si no tiene acceso
     result = await db.execute(
         select(CompanyPlan)
         .where(CompanyPlan.company_id == company_id, CompanyPlan.is_active == True)

@@ -43,18 +43,10 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
 
 
 async def _resolve_cid(user: User, override: Optional[int], db: AsyncSession) -> int:
-    """SYSADMIN puede ver cualquier empresa; usuario normal puede ver empresas con el mismo NIT."""
-    if not override:
-        return user.company_id
-    if user.role and user.role.is_system:
-        return override
-    row = (await db.execute(
-        text("""SELECT 1 FROM companies c1
-                JOIN companies c2 ON c1.identification_number = c2.identification_number
-                WHERE c1.id_company = :uid AND c2.id_company = :oid AND c1.identification_number IS NOT NULL LIMIT 1"""),
-        {"uid": user.company_id, "oid": override}
-    )).fetchone()
-    return override if row else user.company_id
+    """Empresa efectiva (CLAUDE.md §6): la propia, o la solicitada solo si el usuario tiene acceso
+    (ADMIN → empresas de su mismo NIT; SYSADMIN → todas; otros roles → solo la suya). 403 si no."""
+    from app.auth.tenant import resolve_company
+    return await resolve_company(db, user, override)
 
 
 # ─── KPIs ─────────────────────────────────────────────────────────────────────

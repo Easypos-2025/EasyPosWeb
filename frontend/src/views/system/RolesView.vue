@@ -106,17 +106,49 @@
           </div>
 
           <template v-else>
-            <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
               <div>
                 <h6 class="fw-bold mb-0">{{ selectedRole.name }}</h6>
                 <small class="text-muted">{{ selectedRole.description }}</small>
               </div>
-              <button class="btn btn-success btn-sm" @click="savePermissions" :disabled="saving">
+              <button v-if="tabRol === 'modulos'" class="btn btn-success btn-sm" @click="savePermissions" :disabled="saving">
                 <i class="bi bi-check-lg"></i> {{ saving ? 'Guardando...' : 'Guardar permisos' }}
+              </button>
+              <button v-else class="btn btn-success btn-sm" @click="saveAccess" :disabled="savingAccess">
+                <i class="bi bi-check-lg"></i> {{ savingAccess ? 'Guardando...' : 'Guardar control de acceso' }}
               </button>
             </div>
 
-            <div v-if="loadingModules" class="text-muted small">Cargando permisos...</div>
+            <div class="role-tabs mb-3">
+              <button :class="['role-tab', { active: tabRol === 'modulos' }]" @click="tabRol = 'modulos'">
+                <i class="bi bi-grid"></i> Módulos
+              </button>
+              <button :class="['role-tab', { active: tabRol === 'acceso' }]" @click="tabRol = 'acceso'">
+                <i class="bi bi-shield-check"></i> Control de Acceso
+              </button>
+            </div>
+
+            <!-- Control de Acceso: permisos especiales del rol (como el escritorio) -->
+            <div v-if="tabRol === 'acceso'">
+              <div v-if="loadingAccess" class="text-muted small">Cargando control de acceso...</div>
+              <template v-else>
+                <div class="d-flex gap-2 mb-3">
+                  <button class="btn btn-outline-primary btn-sm" @click="accessKeys = accessCatalog.map(a => a.perm_key)">Seleccionar todo</button>
+                  <button class="btn btn-outline-secondary btn-sm" @click="accessKeys = []">Quitar todo</button>
+                </div>
+                <div class="access-groups">
+                  <div v-for="g in accessGroups" :key="g.nombre" class="access-group">
+                    <div class="access-group-t">{{ g.nombre }}</div>
+                    <label v-for="a in g.items" :key="a.perm_key" class="access-item" :title="a.description || ''">
+                      <input type="checkbox" :value="a.perm_key" v-model="accessKeys" />
+                      <span>{{ a.name }}<small v-if="a.description">{{ a.description }}</small></span>
+                    </label>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <div v-else-if="loadingModules" class="text-muted small">Cargando permisos...</div>
 
             <div v-else class="table-responsive">
               <table class="table table-hover table-sm mb-0">
@@ -270,6 +302,46 @@ function onCompanyChange() {
 function selectRole(role) {
   selectedRole.value = role
   loadRolePerms(role.id)
+  loadAccess(role.id)
+}
+
+// ─── Control de Acceso (permisos especiales del rol) ─────────
+const tabRol        = ref('modulos')
+const accessCatalog = ref([])
+const accessKeys    = ref([])
+const loadingAccess = ref(false)
+const savingAccess  = ref(false)
+const accessGroups  = computed(() => {
+  const m = new Map()
+  for (const a of accessCatalog.value) {
+    if (!m.has(a.group_name)) m.set(a.group_name, { nombre: a.group_name, items: [] })
+    m.get(a.group_name).items.push(a)
+  }
+  return [...m.values()]
+})
+
+async function loadAccess(roleId) {
+  loadingAccess.value = true
+  try {
+    if (!accessCatalog.value.length) accessCatalog.value = (await api.get('/roles/access/catalog')).data
+    accessKeys.value = (await api.get(`/roles/${roleId}/access`)).data
+  } catch {
+    showToast('Error cargando el control de acceso', 'error')
+  } finally {
+    loadingAccess.value = false
+  }
+}
+
+async function saveAccess() {
+  savingAccess.value = true
+  try {
+    await api.put(`/roles/${selectedRole.value.id}/access`, { keys: accessKeys.value })
+    showToast('Control de acceso guardado', 'success')
+  } catch (e) {
+    showToast(e.response?.data?.detail || 'Error guardando el control de acceso', 'error')
+  } finally {
+    savingAccess.value = false
+  }
 }
 
 async function loadRolePerms(roleId) {
@@ -420,4 +492,16 @@ onMounted(async () => {
 .fg label { font-size: 13px; font-weight: 500; color: #374151; }
 .btn-close-sm { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; border-radius: 6px; padding: 4px 8px; }
 .btn-close-sm:hover { background: #f1f5f9; color: #1e293b; }
+
+.role-tabs { display: inline-flex; background: #f1f5f9; border-radius: 10px; padding: 3px; }
+.role-tab { border: none; background: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
+.role-tab.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.access-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.access-group { border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; }
+.access-group-t { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: #1d4ed8; margin-bottom: 6px; }
+.access-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 13px; color: #1e293b; cursor: pointer; }
+.access-item input { margin-top: 3px; }
+.access-item small { display: block; font-size: 11px; color: #64748b; }
+@media (max-width: 768px) { .access-groups { grid-template-columns: 1fr; } }
+@media (max-width: 576px) { .role-tab { padding: 6px 10px; font-size: 12px; } }
 </style>
