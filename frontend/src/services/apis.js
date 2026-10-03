@@ -5,6 +5,7 @@ Vue con el backend FastAPI
 
 import axios from "axios"
 import { leerIdCaja } from "./idCaja"
+import { setLastErrorRef, reportError } from "@/utils/errorReporter"
 
 /* =========================================
 CONFIGURACIÓN BASE
@@ -54,6 +55,10 @@ api.interceptors.request.use(
       if (idCaja) config.headers["X-Id-Caja"] = idCaja
     }
 
+    // Monitor de Errores: compilación cargada (detecta clientes sin recargar) y vista actual
+    if (typeof __APP_BUILD__ !== "undefined") config.headers["X-App-Build"] = encodeURIComponent(__APP_BUILD__)
+    config.headers["X-View"] = encodeURIComponent(window.location.pathname.slice(0, 300))
+
     return config
   },
   (error) => {
@@ -88,6 +93,22 @@ api.interceptors.response.use(
       setTimeout(() => {
         window.location.href = "/login"
       }, 1800)
+    }
+
+    // Monitor de Errores: referencia del error del servidor (para el toast) o falla de red
+    if (!err.config?._skipErrorReport) {
+      const ref = err.response?.data?.error_ref || err.response?.headers?.["x-error-ref"]
+      if (ref) {
+        setLastErrorRef(ref)
+      } else if (!err.response && err.code !== "ERR_CANCELED") {
+        reportError({
+          tipo: "RED",
+          clase: err.code || "NetworkError",
+          mensaje: err.message,
+          endpoint: String(err.config?.url || "").split("?")[0],
+          http_status: 0,
+        })
+      }
     }
 
     return Promise.reject(err)

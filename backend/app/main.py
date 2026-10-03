@@ -9,7 +9,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func, text
 
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.database import AsyncSessionLocal, DatatempposSession, init_db
+from app.services import error_log
 from app import models
 
 # ===============================
@@ -113,6 +117,7 @@ from app.routers.caja_cuadre_router import router as caja_cuadre_router
 from app.routers.caja_conceptos_router import router as caja_conceptos_router
 from app.routers.caja_movimientos_router import router as caja_movimientos_router
 from app.routers.metricas_router import router as metricas_router
+from app.routers.error_log_router import router as error_log_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -396,6 +401,16 @@ async def _init_db_data():
 
         # Registrar módulo Clientes en system_modules si no existe
         from app.models.system_module_model import SystemModule
+
+        # Monitor de Errores (solo SYSADMIN)
+        result = await db.execute(select(SystemModule).where(SystemModule.route == "/sysadmin/errores"))
+        if not result.scalars().first():
+            db.add(SystemModule(
+                name="Monitor de Errores", route="/sysadmin/errores",
+                icon="bi-bug", parent_id=None, is_active=True,
+                order_index=0, is_sysadmin=True
+            ))
+            await db.commit()
         result = await db.execute(select(SystemModule).where(SystemModule.route == "/configuration/clients"))
         if not result.scalars().first():
             db.add(SystemModule(
@@ -2315,6 +2330,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/register/associate/": (5, 3600),
     "/payments/submit-receipt": (10, 3600),
     "/auth/login": (20, 900),
+    "/api/error-log/client": (30, 60),
     "/auth/forgot-password": (5, 3600),
     "/qr/prestamo/": (15, 60),
     "/ads/": (30, 60),
@@ -2363,6 +2379,7 @@ async def rate_limit_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup():
     await init_db()
+    await error_log.warmup()
     # Advisory lock evita que múltiples workers de uvicorn corran el seeding simultáneamente
     async with AsyncSessionLocal() as _lock_db:
         lock_res = await _lock_db.execute(text("SELECT GET_LOCK('easyposweb_seed', 30)"))
@@ -2389,6 +2406,29 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 # ===============================
 from app.auth.tenant import SelectedCompanyMiddleware
 app.add_middleware(SelectedCompanyMiddleware)
+
+# ===============================
+# Monitor de Errores (SYSADMIN): captura 500 no controlados, 5xx y 429.
+# Va DENTRO de CORS para que la respuesta 500 lleve los headers CORS.
+# ===============================
+app.add_middleware(error_log.ErrorLogMiddleware)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_with_ref(request: Request, exc: StarletteHTTPException):
+    """HTTPException >= 500: se registra en el Monitor y la respuesta lleva error_ref."""
+    if exc.status_code < 500:
+        return await http_exception_handler(request, exc)
+    ref = error_log.mark_http_exception(request.scope, exc)
+    headers = dict(exc.headers or {})
+    if ref:
+        headers["X-Error-Ref"] = ref
+    return JSONResponse({"detail": exc.detail, "error_ref": ref}, status_code=exc.status_code, headers=headers)
+
+
+@app.on_event("shutdown")
+async def _flush_error_log():
+    await error_log.flush()
 
 # ===============================
 # CORS
@@ -2509,6 +2549,7 @@ routers = [
     caja_conceptos_router,
     caja_movimientos_router,
     metricas_router,
+    error_log_router,
 ]
 
 for router in routers:

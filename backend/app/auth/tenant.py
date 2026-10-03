@@ -75,6 +75,8 @@ def check_company(own: Optional[int], allowed, requested: Optional[int]) -> int:
     requested = int(requested)
     if allowed is None or requested in allowed:
         return requested
+    from app.services.error_log import record_security
+    record_security("Acceso a empresa no permitida", {"empresa_propia": own, "empresa_solicitada": requested})
     raise HTTPException(status_code=403, detail="No tiene acceso a la empresa solicitada")
 
 
@@ -193,8 +195,10 @@ class SelectedCompanyMiddleware:
 async def apply_selected_company(db: AsyncSession, user: User) -> User:
     """Aplica al usuario (solo en memoria, para esta petición) la empresa del topbar
     si tiene acceso; si no, se ignora y queda su empresa propia."""
+    from app.services.error_log import set_identity
     requested = _selected_company.get()
     if not requested or requested == user.company_id:
+        set_identity(user_id=user.id, company_id=user.company_id)
         return user
     own, allowed = await allowed_companies(db, user)
     if allowed is None or requested in allowed:
@@ -203,6 +207,7 @@ async def apply_selected_company(db: AsyncSession, user: User) -> User:
         set_committed_value(user, "company_id", requested)
     else:
         logger.warning("X-Company-Id %s ignorado: usuario %s sin acceso", requested, user.id)
+    set_identity(user_id=user.id, company_id=user.company_id)
     return user
 
 

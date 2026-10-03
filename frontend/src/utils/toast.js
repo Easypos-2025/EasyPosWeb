@@ -1,6 +1,19 @@
 import Swal from "sweetalert2"
+import { takeRecentRef, markToast } from "@/utils/errorReporter"
+
+const RE_REF = /Ref:\s*(ERR-[0-9A-F]{8})/
 
 export function showToast(message, type = "success", timer = 1500) {
+  // Monitor de Errores: los toast de error muestran la referencia del error del servidor
+  if (type === "error") {
+    try {
+      const inMsg = String(message ?? "").match(RE_REF)
+      const ref = inMsg ? inMsg[1] : takeRecentRef()
+      if (ref && !inMsg) message = `${message} · Ref: ${ref}`
+      if (ref) timer = Math.max(timer, 4500)
+      markToast(message, ref)
+    } catch { /* nunca bloquea el toast */ }
+  }
   Swal.fire({
     toast: true,
     title: message,

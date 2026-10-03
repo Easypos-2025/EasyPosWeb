@@ -18,8 +18,10 @@ import "./styles/forms.css"
 import { createPinia } from "pinia"
 import "cropperjs/dist/cropper.css"
 import CurrencyInput from "./components/CurrencyInput.vue"
+import { installErrorReporter } from "./utils/errorReporter"
 
 const app = createApp(App)
+installErrorReporter(app)
 const pinia = createPinia()
 
 app.use(router)

@@ -84,3 +84,4 @@ from app.models.advertisement_model import Advertisement, AdPiece, AdPayment
 from app.models.compraventa_foto_model import CompraventaFoto
 
 
+from app.models.system_error_model import SystemErrorGroup, SystemErrorDetail, SystemErrorCompany

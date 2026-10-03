@@ -2,6 +2,7 @@
 IMPORTACIÓN DE HERRAMIENTAS DE VUE ROUTER
 ========================================= */
 
+import { reportError } from "@/utils/errorReporter"
 import { createRouter, createWebHistory } from "vue-router"
 
 /* =========================================
@@ -515,6 +516,14 @@ const routes = [
         component: () => import("@/views/sysadmin/ModuleDefaultsManagerView.vue"),
         requiresAuth: true,
         meta: { title: "Defaults de Módulos" }
+      },
+
+      {
+        path: "/sysadmin/errores",
+        name: "ErroresMonitorView",
+        component: () => import("@/views/sysadmin/ErroresMonitorView.vue"),
+        requiresAuth: true,
+        meta: { title: "Monitor de Errores" }
       },
 
       {
@@ -1421,10 +1430,17 @@ const CHUNK_RELOAD_KEY = "chunk_reload_at"
 router.onError((error, to) => {
   const msg = String(error?.message || "")
   const isChunkError = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk .* failed/i.test(msg)
-  if (!isChunkError) return
+  if (!isChunkError) {
+    reportError({ clase: error?.name || "RouterError", mensaje: `${msg} (ruta ${to?.path || ""})`, stack: error?.stack })
+    return
+  }
   let last = 0
   try { last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0) } catch { /* sin storage */ }
-  if (Date.now() - last < 30000) return          // ya se recargó hace poco: evita ciclo infinito
+  if (Date.now() - last < 30000) {               // ya se recargó hace poco: evita ciclo infinito
+    // La recarga no bastó: queda en el Monitor (el servidor lo clasifica como versión desactualizada)
+    reportError({ clase: "ChunkLoadError", mensaje: msg, stack: error?.stack, componente: to?.path })
+    return
+  }
   try { sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now())) } catch { /* sin storage */ }
   window.location.assign(to?.fullPath || window.location.href)
 })
