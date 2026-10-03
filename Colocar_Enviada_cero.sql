@@ -50,3 +50,8 @@ UPDATE consecutivo_factura_manual       SET Enviada_MySql=0 WHERE Enviada_MySql=
 UPDATE apidian_caja_facturas            SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE apidian_clientes_adquiriente     SET Enviada_MySql=0 WHERE Enviada_MySql=1;
 UPDATE apidian_facturas_cufe            SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE conceptos                        SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE sub_conceptos                    SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE otros_ingresos                   SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE otros_egresos                    SET Enviada_MySql=0 WHERE Enviada_MySql=1;
+UPDATE ingresos_egresos_forma_pago      SET Enviada_MySql=0 WHERE Enviada_MySql=1;

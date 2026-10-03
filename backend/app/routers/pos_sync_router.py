@@ -308,63 +308,6 @@ async def pull_invoices(
 # ═════════════════════════════════════════
 # ORDERS (comanda)
 # ═════════════════════════════════════════
-class OrderIn(BaseModel):
-    order_number: str
-    date: str
-    invoice_number: str
-    company_id: int
-    table_name: Optional[str] = "0"
-    time: Optional[str] = None
-    waiter_id: Optional[int] = 0
-    cancelled: Optional[int] = 0
-    amount: Optional[int] = 0
-    notes: Optional[str] = None
-    complimentary: Optional[int] = 0
-    guests_count: Optional[int] = 0
-    delivery: Optional[int] = 0
-    customer_id: Optional[int] = 0
-    table_id: Optional[int] = 0
-
-
-@router.post("/sync/push/orders")
-async def push_orders(
-    orders: List[OrderIn],
-    db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
-):
-    saved, failed = [], []
-    for o in orders:
-        try:
-            await db.execute(text("""
-                INSERT INTO pos_orders (
-                    order_number, date, invoice_number, company_id,
-                    table_name, time, waiter_id, cancelled, amount,
-                    notes, complimentary, guests_count, delivery,
-                    customer_id, table_id, synced, updated_at
-                ) VALUES (
-                    :order_number, :date, :invoice_number, :company_id,
-                    :table_name, :time, :waiter_id, :cancelled, :amount,
-                    :notes, :complimentary, :guests_count, :delivery,
-                    :customer_id, :table_id, 1, NOW()
-                )
-                ON DUPLICATE KEY UPDATE
-                    waiter_id    = VALUES(waiter_id),
-                    cancelled    = VALUES(cancelled),
-                    amount       = VALUES(amount),
-                    notes        = VALUES(notes),
-                    customer_id  = VALUES(customer_id),
-                    table_id     = VALUES(table_id),
-                    synced       = 1,
-                    updated_at   = NOW()
-            """), o.dict())
-            saved.append(o.order_number)
-        except Exception as e:
-            failed.append({"order_number": o.order_number, "error": str(e)})
-    await db.commit()
-    return {"saved": saved, "failed": failed,
-            "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
-
-
 @router.get("/sync/pull/orders")
 async def pull_orders(
     company_id: int = Query(...),
@@ -1172,63 +1115,6 @@ async def pull_invoice_payments(
 # ═════════════════════════════════════════
 # RECEIPT ORDERS (recibos_comanda)
 # ═════════════════════════════════════════
-class ReceiptOrderIn(BaseModel):
-    order_number: str
-    date: str
-    receipt_number: str
-    company_id: int
-    table_name: Optional[str] = "0"
-    time: Optional[str] = None
-    waiter_id: Optional[int] = 0
-    cancelled: Optional[int] = 0
-    amount: Optional[int] = 0
-    notes: Optional[str] = None
-    complimentary: Optional[int] = 0
-    guests_count: Optional[int] = 0
-    delivery: Optional[int] = 0
-    customer_id: Optional[int] = 0
-    table_id: Optional[int] = 0
-
-
-@router.post("/sync/push/receipt-orders")
-async def push_receipt_orders(
-    orders: List[ReceiptOrderIn],
-    db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
-):
-    saved, failed = [], []
-    for o in orders:
-        key = f"{o.order_number}|{o.date}|{o.receipt_number}"
-        try:
-            await db.execute(text("""
-                INSERT INTO pos_receipt_orders (
-                    order_number, date, receipt_number, company_id,
-                    table_name, time, waiter_id, cancelled, amount,
-                    notes, complimentary, guests_count, delivery,
-                    customer_id, table_id, synced, updated_at
-                ) VALUES (
-                    :order_number, :date, :receipt_number, :company_id,
-                    :table_name, :time, :waiter_id, :cancelled, :amount,
-                    :notes, :complimentary, :guests_count, :delivery,
-                    :customer_id, :table_id, 1, NOW()
-                )
-                ON DUPLICATE KEY UPDATE
-                    waiter_id   = VALUES(waiter_id),
-                    cancelled   = VALUES(cancelled),
-                    amount      = VALUES(amount),
-                    notes       = VALUES(notes),
-                    customer_id = VALUES(customer_id),
-                    synced      = 1,
-                    updated_at  = NOW()
-            """), o.dict())
-            saved.append(key)
-        except Exception as e:
-            failed.append({"key": key, "error": str(e)})
-    await db.commit()
-    return {"saved": saved, "failed": failed,
-            "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
-
-
 @router.get("/sync/pull/receipt-orders")
 async def pull_receipt_orders(
     company_id: int = Query(...),
@@ -1637,49 +1523,40 @@ class CashClosingIn(BaseModel):
     closing_datetime: Optional[str] = None
 
 
+# Columnas del cuadre que llegan del escritorio (cajas_cierres) y se actualizan completas
+_CIERRE_COLS = ("register_number", "shift", "date", "base_amount", "total_sales", "cash_sales",
+                "voucher_sales", "tips", "extra_tips", "expenses", "vouchers", "manager_consumption",
+                "final_base", "total_invoices", "voucher_invoices", "copy_invoices", "voided_invoices",
+                "invoice_start", "invoice_end", "bills", "coins", "purchases", "customer_sales", "closed",
+                "invoice_start_manual", "invoice_end_manual", "delivery_income", "delivery_expense",
+                "opened_pc", "closing_notes", "opening_datetime", "closing_datetime")
+
+
+async def _upsert_cierre(db: AsyncSession, datos: dict) -> None:
+    """Un Id_Caja del escritorio: llave (id_registro, company_id). Se actualiza todo el cuadre."""
+    cols = ", ".join(_CIERRE_COLS)
+    vals = ", ".join(f":{c}" for c in _CIERRE_COLS)
+    upd = ", ".join(f"{c} = VALUES({c})" for c in _CIERRE_COLS)
+    await db.execute(text(f"""
+        INSERT INTO pos_cash_register_closings (id_registro, company_id, {cols}, synced, updated_at)
+        VALUES (:id_registro, :company_id, {vals}, 1, NOW())
+        ON DUPLICATE KEY UPDATE {upd}, synced = 1, updated_at = NOW()
+    """), {k: datos.get(k) for k in ("id_registro", "company_id", *_CIERRE_COLS)})
+
+
+
 @router.post("/sync/push/cash-closings")
 async def push_cash_closings(
     closings: List[CashClosingIn],
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
+    """cajas_cierres. El "id" que envía el escritorio es su Id_Caja: se guarda en id_registro
+    (por empresa), nunca en la llave interna `id` de la tabla."""
     saved, failed = [], []
     for c in closings:
         try:
-            await db.execute(text("""
-                INSERT INTO pos_cash_register_closings (
-                    id, company_id, register_number, shift, date,
-                    base_amount, total_sales, cash_sales, voucher_sales,
-                    tips, extra_tips, expenses, vouchers, manager_consumption,
-                    final_base, total_invoices, voucher_invoices, copy_invoices,
-                    voided_invoices, invoice_start, invoice_end, bills, coins,
-                    purchases, customer_sales, closed, invoice_start_manual,
-                    invoice_end_manual, delivery_income, delivery_expense,
-                    opened_pc, closing_notes, opening_datetime, closing_datetime,
-                    synced, updated_at
-                ) VALUES (
-                    :id, :company_id, :register_number, :shift, :date,
-                    :base_amount, :total_sales, :cash_sales, :voucher_sales,
-                    :tips, :extra_tips, :expenses, :vouchers, :manager_consumption,
-                    :final_base, :total_invoices, :voucher_invoices, :copy_invoices,
-                    :voided_invoices, :invoice_start, :invoice_end, :bills, :coins,
-                    :purchases, :customer_sales, :closed, :invoice_start_manual,
-                    :invoice_end_manual, :delivery_income, :delivery_expense,
-                    :opened_pc, :closing_notes, :opening_datetime, :closing_datetime,
-                    1, NOW()
-                )
-                ON DUPLICATE KEY UPDATE
-                    total_sales     = VALUES(total_sales),
-                    cash_sales      = VALUES(cash_sales),
-                    total_invoices  = VALUES(total_invoices),
-                    voided_invoices = VALUES(voided_invoices),
-                    final_base      = VALUES(final_base),
-                    closed          = VALUES(closed),
-                    closing_notes   = VALUES(closing_notes),
-                    closing_datetime= VALUES(closing_datetime),
-                    synced          = 1,
-                    updated_at      = NOW()
-            """), c.dict())
+            await _upsert_cierre(db, c.dict() | {"id_registro": c.id})
             saved.append(c.id)
         except Exception as e:
             failed.append({"id": c.id, "error": str(e)})
@@ -2596,40 +2473,7 @@ async def push_cash_closings_v2(
     for c in closings:
         key = f"{c.id_registro}|{c.company_id}"
         try:
-            await db.execute(text("""
-                INSERT INTO pos_cash_register_closings (
-                    id_registro, company_id, register_number, shift, date,
-                    base_amount, total_sales, cash_sales, voucher_sales,
-                    tips, extra_tips, expenses, vouchers, manager_consumption,
-                    final_base, total_invoices, voucher_invoices, copy_invoices,
-                    voided_invoices, invoice_start, invoice_end, bills, coins,
-                    purchases, customer_sales, closed, invoice_start_manual,
-                    invoice_end_manual, delivery_income, delivery_expense,
-                    opened_pc, closing_notes, opening_datetime, closing_datetime,
-                    synced, updated_at
-                ) VALUES (
-                    :id_registro, :company_id, :register_number, :shift, :date,
-                    :base_amount, :total_sales, :cash_sales, :voucher_sales,
-                    :tips, :extra_tips, :expenses, :vouchers, :manager_consumption,
-                    :final_base, :total_invoices, :voucher_invoices, :copy_invoices,
-                    :voided_invoices, :invoice_start, :invoice_end, :bills, :coins,
-                    :purchases, :customer_sales, :closed, :invoice_start_manual,
-                    :invoice_end_manual, :delivery_income, :delivery_expense,
-                    :opened_pc, :closing_notes, :opening_datetime, :closing_datetime,
-                    1, NOW()
-                )
-                ON DUPLICATE KEY UPDATE
-                    total_sales      = VALUES(total_sales),
-                    cash_sales       = VALUES(cash_sales),
-                    total_invoices   = VALUES(total_invoices),
-                    voided_invoices  = VALUES(voided_invoices),
-                    final_base       = VALUES(final_base),
-                    closed           = VALUES(closed),
-                    closing_notes    = VALUES(closing_notes),
-                    closing_datetime = VALUES(closing_datetime),
-                    synced           = 1,
-                    updated_at       = NOW()
-            """), c.dict())
+            await _upsert_cierre(db, c.dict())
             saved.append(key)
         except Exception as e:
             failed.append({"key": key, "error": str(e)})
@@ -2684,12 +2528,21 @@ async def push_cash_register_invoices(
                      :employee_id, :shift, :source_pc, :delivery_person_id,
                      :invoice_notes, :prefix, :fac_pe, 1, NOW())
                 ON DUPLICATE KEY UPDATE
-                    closing_id         = VALUES(closing_id),
-                    amount             = VALUES(amount),
-                    base_amount        = VALUES(base_amount),
-                    tax_vat            = VALUES(tax_vat),
-                    tax_consumption    = VALUES(tax_consumption),
-                    invoice_notes      = VALUES(invoice_notes),
+                    register_number = VALUES(register_number),
+                    closing_id      = VALUES(closing_id),
+                    date            = VALUES(date),
+                    order_number    = VALUES(order_number),
+                    amount          = VALUES(amount),
+                    base_amount     = VALUES(base_amount),
+                    tax_vat         = VALUES(tax_vat),
+                    tax_consumption = VALUES(tax_consumption),
+                    employee_id     = VALUES(employee_id),
+                    shift           = VALUES(shift),
+                    source_pc       = VALUES(source_pc),
+                    delivery_person_id = VALUES(delivery_person_id),
+                    invoice_notes   = VALUES(invoice_notes),
+                    prefix          = VALUES(prefix),
+                    fac_pe          = VALUES(fac_pe),
                     synced             = 1,
                     updated_at         = NOW()
             """), item.dict())
@@ -2747,12 +2600,21 @@ async def push_cash_register_receipts(
                      :employee_id, :shift, :source_pc, :delivery_person_id,
                      :notes, :prefix, :fac_pe, 1, NOW())
                 ON DUPLICATE KEY UPDATE
+                    register_number = VALUES(register_number),
                     closing_id      = VALUES(closing_id),
+                    date            = VALUES(date),
+                    order_number    = VALUES(order_number),
                     amount          = VALUES(amount),
                     base_amount     = VALUES(base_amount),
                     tax_vat         = VALUES(tax_vat),
                     tax_consumption = VALUES(tax_consumption),
+                    employee_id     = VALUES(employee_id),
+                    shift           = VALUES(shift),
+                    source_pc       = VALUES(source_pc),
+                    delivery_person_id = VALUES(delivery_person_id),
                     notes           = VALUES(notes),
+                    prefix          = VALUES(prefix),
+                    fac_pe          = VALUES(fac_pe),
                     synced          = 1,
                     updated_at      = NOW()
             """), item.dict())
@@ -2802,7 +2664,14 @@ async def push_expenses(
                      :employee_code, :concept_id, :sub_concept_id, :shift,
                      :movement_number, :detail, 1, NOW())
                 ON DUPLICATE KEY UPDATE
+                    register_id     = VALUES(register_id),
+                    date            = VALUES(date),
                     amount          = VALUES(amount),
+                    employee_code   = VALUES(employee_code),
+                    concept_id      = VALUES(concept_id),
+                    sub_concept_id  = VALUES(sub_concept_id),
+                    shift           = VALUES(shift),
+                    movement_number = VALUES(movement_number),
                     detail          = VALUES(detail),
                     synced          = 1,
                     updated_at      = NOW()
@@ -2853,7 +2722,14 @@ async def push_purchases(
                      :employee_code, :concept_id, :sub_concept_id, :shift,
                      :movement_number, :detail, 1, NOW())
                 ON DUPLICATE KEY UPDATE
+                    register_id     = VALUES(register_id),
+                    date            = VALUES(date),
                     amount          = VALUES(amount),
+                    employee_code   = VALUES(employee_code),
+                    concept_id      = VALUES(concept_id),
+                    sub_concept_id  = VALUES(sub_concept_id),
+                    shift           = VALUES(shift),
+                    movement_number = VALUES(movement_number),
                     detail          = VALUES(detail),
                     synced          = 1,
                     updated_at      = NOW()
@@ -3026,7 +2902,11 @@ async def push_payment_types(
                     name            = VALUES(name),
                     validate_amount = VALUES(validate_amount),
                     is_active       = VALUES(is_active),
+                    select_card     = VALUES(select_card),
                     value           = VALUES(value),
+                    ask_notes       = VALUES(ask_notes),
+                    ask_customer    = VALUES(ask_customer),
+                    validate_number = VALUES(validate_number),
                     is_default      = VALUES(is_default),
                     synced          = 1,
                     updated_at      = NOW()
@@ -4085,6 +3965,203 @@ async def push_historico_inventario_actual(
 # Todos los endpoints usan X-Api-Key igual que el resto del router.
 # Solo retornan pedidos cuyo order_number empieza con 'WEB-' (origen web).
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Movimientos de caja (Cuadre de Caja): conceptos, sub_conceptos, otros_ingresos,
+# otros_egresos, vales, ingresos_egresos_forma_pago. Llave = id del escritorio + empresa.
+# `saved` devuelve los ids del escritorio tal cual (para marcar Enviada_MySql).
+# ═════════════════════════════════════════════════════════════════════════════
+class CashConceptIn(BaseModel):
+    company_id:   int
+    concept_id:   int
+    description:  Optional[str] = ""
+    concept_type: Optional[int] = 0
+    is_active:    Optional[int] = 1
+
+
+@router.post("/sync/push/cash-concepts")
+async def push_cash_concepts(items: List[CashConceptIn], db: AsyncSession = Depends(get_db),
+                             _: str = Depends(verify_api_key)):
+    """conceptos (catálogo completo en cada envío)."""
+    saved, failed = [], []
+    for it in items:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_concepts (company_id, concept_id, description, concept_type, is_active, synced)
+                VALUES (:company_id, :concept_id, :description, :concept_type, :is_active, 1)
+                ON DUPLICATE KEY UPDATE description = VALUES(description), concept_type = VALUES(concept_type),
+                                        is_active = VALUES(is_active), synced = 1
+            """), it.dict() | {"description": (it.description or "")[:50]})
+            saved.append(it.concept_id)
+        except Exception as e:
+            failed.append({"id": it.concept_id, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+class CashSubconceptIn(BaseModel):
+    company_id:    int
+    concept_id:    int
+    subconcept_id: int
+    description:   Optional[str] = ""
+    is_active:     Optional[int] = 1
+
+
+@router.post("/sync/push/cash-subconcepts")
+async def push_cash_subconcepts(items: List[CashSubconceptIn], db: AsyncSession = Depends(get_db),
+                                _: str = Depends(verify_api_key)):
+    """sub_conceptos (catálogo completo en cada envío)."""
+    saved, failed = [], []
+    for it in items:
+        key = f"{it.concept_id}|{it.subconcept_id}"
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_subconcepts (company_id, concept_id, subconcept_id, description, is_active, synced)
+                VALUES (:company_id, :concept_id, :subconcept_id, :description, :is_active, 1)
+                ON DUPLICATE KEY UPDATE description = VALUES(description), is_active = VALUES(is_active), synced = 1
+            """), it.dict() | {"description": (it.description or "")[:50]})
+            saved.append(key)
+        except Exception as e:
+            failed.append({"key": key, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+class CashMovementIn(BaseModel):
+    id_registro:     int                    # Nro_Gasto del escritorio
+    company_id:      int
+    register_id:     Optional[int]   = 0    # Id_Caja
+    date:            Optional[str]   = None
+    amount:          Optional[float] = 0
+    employee_code:   Optional[str]   = None
+    concept_id:      Optional[int]   = 0
+    sub_concept_id:  Optional[int]   = 0
+    shift:           Optional[int]   = 0
+    movement_number: Optional[int]   = 0
+    detail:          Optional[str]   = None
+
+
+async def _push_movimientos(tabla: str, items: List[CashMovementIn], db: AsyncSession) -> dict:
+    saved, failed = [], []
+    for it in items:
+        try:
+            await db.execute(text(f"""
+                INSERT INTO {tabla}
+                    (id_registro, company_id, register_id, date, amount, employee_code, concept_id,
+                     sub_concept_id, shift, movement_number, detail, synced)
+                VALUES (:id_registro, :company_id, :register_id, :date, :amount, :employee_code, :concept_id,
+                        :sub_concept_id, :shift, :movement_number, :detail, 1)
+                ON DUPLICATE KEY UPDATE
+                    register_id = VALUES(register_id), date = VALUES(date), amount = VALUES(amount),
+                    employee_code = VALUES(employee_code), concept_id = VALUES(concept_id),
+                    sub_concept_id = VALUES(sub_concept_id), shift = VALUES(shift),
+                    movement_number = VALUES(movement_number), detail = VALUES(detail), synced = 1
+            """), it.dict())
+            saved.append(it.id_registro)
+        except Exception as e:
+            failed.append({"id": it.id_registro, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+@router.post("/sync/push/other-incomes")
+async def push_other_incomes(items: List[CashMovementIn], db: AsyncSession = Depends(get_db),
+                             _: str = Depends(verify_api_key)):
+    """otros_ingresos"""
+    return await _push_movimientos("pos_other_incomes", items, db)
+
+
+@router.post("/sync/push/other-expenses")
+async def push_other_expenses(items: List[CashMovementIn], db: AsyncSession = Depends(get_db),
+                              _: str = Depends(verify_api_key)):
+    """otros_egresos"""
+    return await _push_movimientos("pos_other_expenses", items, db)
+
+
+class CashAdvanceIn(BaseModel):
+    id_registro:   int                      # Cod_Vale del escritorio
+    company_id:    int
+    register_id:   Optional[int]   = 0      # Id_Caja
+    date:          Optional[str]   = None
+    amount:        Optional[float] = 0
+    employee_code: Optional[str]   = None
+    status:        Optional[int]   = 0
+    description:   Optional[str]   = None
+    shift:         Optional[int]   = 0
+
+
+@router.post("/sync/push/cash-advances")
+async def push_cash_advances(items: List[CashAdvanceIn], db: AsyncSession = Depends(get_db),
+                             _: str = Depends(verify_api_key)):
+    """vales"""
+    saved, failed = [], []
+    for it in items:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_advances
+                    (id_registro, company_id, register_id, date, amount, employee_code, status, description, shift, synced)
+                VALUES (:id_registro, :company_id, :register_id, :date, :amount, :employee_code, :status,
+                        :description, :shift, 1)
+                ON DUPLICATE KEY UPDATE
+                    register_id = VALUES(register_id), date = VALUES(date), amount = VALUES(amount),
+                    employee_code = VALUES(employee_code), status = VALUES(status),
+                    description = VALUES(description), shift = VALUES(shift), synced = 1
+            """), it.dict())
+            saved.append(it.id_registro)
+        except Exception as e:
+            failed.append({"id": it.id_registro, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
+
+class CashMovementPaymentIn(BaseModel):
+    id_registro:       int                  # Id_Registro del escritorio
+    company_id:        int
+    register_id:       Optional[int]   = 0  # Id_Caja
+    item:              Optional[int]   = 0
+    payment_method_id: Optional[int]   = 0
+    card_id:           Optional[int]   = 0
+    invoice_number:    Optional[str]   = None
+    type_id:           Optional[int]   = 0  # Id_Tipo: 1 Gastos, 2 Compras, 3 Otros Egresos, 4 Otros Ingresos
+    shift:             Optional[int]   = 0
+    amount:            Optional[float] = 0
+    date:              Optional[str]   = None
+    authorization:     Optional[float] = 0
+    notes:             Optional[str]   = None
+    movement_id:       Optional[int]   = 0  # Nro_Gasto
+
+
+@router.post("/sync/push/cash-movement-payments")
+async def push_cash_movement_payments(items: List[CashMovementPaymentIn], db: AsyncSession = Depends(get_db),
+                                      _: str = Depends(verify_api_key)):
+    """ingresos_egresos_forma_pago"""
+    saved, failed = [], []
+    for it in items:
+        try:
+            await db.execute(text("""
+                INSERT INTO pos_cash_movement_payments
+                    (id_registro, company_id, register_id, item, payment_method_id, card_id, invoice_number,
+                     type_id, shift, amount, date, authorization, notes, movement_id, synced)
+                VALUES (:id_registro, :company_id, :register_id, :item, :payment_method_id, :card_id, :invoice_number,
+                        :type_id, :shift, :amount, :date, :authorization, :notes, :movement_id, 1)
+                ON DUPLICATE KEY UPDATE
+                    register_id = VALUES(register_id), item = VALUES(item), payment_method_id = VALUES(payment_method_id),
+                    card_id = VALUES(card_id), invoice_number = VALUES(invoice_number), type_id = VALUES(type_id),
+                    shift = VALUES(shift), amount = VALUES(amount), date = VALUES(date),
+                    authorization = VALUES(authorization), notes = VALUES(notes), movement_id = VALUES(movement_id),
+                    synced = 1
+            """), it.dict())
+            saved.append(it.id_registro)
+        except Exception as e:
+            failed.append({"id": it.id_registro, "error": str(e)})
+    await db.commit()
+    return {"saved": saved, "failed": failed,
+            "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
+
 
 @router.get("/sync/health")
 async def sync_health(x_api_key: str = Header(...)):

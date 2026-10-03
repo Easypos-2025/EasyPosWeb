@@ -136,7 +136,7 @@ async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
             SELECT m.id, m.date, m.amount, {concepto} AS concepto, {detalle} AS detalle,
                    COALESCE((SELECT SUM(mp.amount) FROM pos_cash_movement_payments mp
                              LEFT JOIN pos_payment_types pt ON pt.id = mp.payment_method_id AND pt.company_id = mp.company_id
-                             WHERE mp.company_id = m.company_id AND mp.type_id = {tipo} AND mp.movement_id = m.id
+                             WHERE mp.company_id = m.company_id AND mp.type_id = {tipo} AND mp.movement_id = m.id_registro
                                AND NOT {es_efectivo_sql('pt')}), 0) AS otros
             FROM {tabla} m {join}
             WHERE m.company_id = :cid AND m.register_id IN :ids
