@@ -200,7 +200,8 @@ async def _siguiente_id_caja(db: AsyncSession, cid: int) -> int:
             COALESCE((SELECT MAX(register_id) FROM pos_expenses WHERE company_id = :cid), 0),
             COALESCE((SELECT MAX(register_id) FROM pos_purchases WHERE company_id = :cid), 0),
             COALESCE((SELECT MAX(register_id) FROM pos_other_incomes WHERE company_id = :cid), 0),
-            COALESCE((SELECT MAX(register_id) FROM pos_other_expenses WHERE company_id = :cid), 0)) + 1
+            COALESCE((SELECT MAX(register_id) FROM pos_other_expenses WHERE company_id = :cid), 0),
+            COALESCE((SELECT MAX(register_id) FROM pos_cash_advances WHERE company_id = :cid), 0)) + 1
     """), {"cid": cid})).scalar())
 
 

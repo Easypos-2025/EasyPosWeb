@@ -15,7 +15,7 @@ Reglas de efectivo (como el escritorio):
     venta, la propina y el domicilio; en recibos con varias formas de pago se reparte en proporción.
   · Salen completas la propina y el domicilio: se les pagan en efectivo al mesero y al
     domiciliario aunque el cliente haya pagado con tarjeta.
-  · Gastos, compras, otros egresos/ingresos y vales: efectivo = valor − lo pagado con otras
+  · Gastos, compras, otros egresos/ingresos, vales y abonos de vales: efectivo = valor − lo pagado con otras
     formas de pago (pos_cash_movement_payments).
 """
 from collections import OrderedDict
@@ -33,6 +33,7 @@ MOVIMIENTOS = [
     ("compras", "pos_purchases", "Compras", 2, "sale"),
     ("vales", "pos_cash_advances", "Vales", 5, "sale"),
     ("otros_egresos", "pos_other_expenses", "Otros Egresos", 3, "sale"),
+    ("abono_vales", "pos_cash_advance_payments", "Abono Vales", 6, "entra"),
 ]
 
 
@@ -129,10 +130,15 @@ async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
     if not ids:
         return {k: [] for k, *_ in MOVIMIENTOS}
     for clave, tabla, _titulo, tipo, _s in MOVIMIENTOS:
-        concepto = "m.description" if tabla == "pos_cash_advances" else "COALESCE(c.description, m.detail, '')"
-        join = "" if tabla == "pos_cash_advances" else \
-            "LEFT JOIN pos_cash_concepts c ON c.company_id = m.company_id AND c.concept_id = m.concept_id"
-        detalle = "m.description" if tabla == "pos_cash_advances" else "m.detail"
+        if tabla == "pos_cash_advances":
+            concepto, join, detalle = "m.description", "", "m.description"
+        elif tabla == "pos_cash_advance_payments":
+            concepto = "CONCAT('Vale #', m.advance_id, COALESCE(CONCAT(' · ', e.name), ''))"
+            join = "LEFT JOIN pos_employees e ON e.company_id = m.company_id AND e.id = CAST(m.employee_code AS SIGNED)"
+            detalle = "m.detail"
+        else:
+            concepto, detalle = "COALESCE(c.description, m.detail, '')", "m.detail"
+            join = "LEFT JOIN pos_cash_concepts c ON c.company_id = m.company_id AND c.concept_id = m.concept_id"
         rows = (await db.execute(_in(f"""
             SELECT m.id, m.date, m.amount, {concepto} AS concepto, {detalle} AS detalle,
                    COALESCE((SELECT SUM(mp.amount) FROM pos_cash_movement_payments mp
@@ -208,7 +214,8 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
               {"clave": "venta", "label": "Efectivo Venta", "valor": _r(venta_ef)},
               {"clave": "domicilio", "label": "Efectivo Domicilio", "valor": _r(dom_ef)},
               {"clave": "propina", "label": "Efectivo Propina", "valor": _r(tip_ef)},
-              {"clave": "otros_ingresos", "label": "Efectivo Otros Ingresos", "valor": ef_mov["otros_ingresos"], "ver": True}]
+              {"clave": "otros_ingresos", "label": "Efectivo Otros Ingresos", "valor": ef_mov["otros_ingresos"], "ver": True},
+              {"clave": "abono_vales", "label": "Efectivo Abono Vales", "valor": ef_mov["abono_vales"], "ver": True}]
     salen = [{"clave": "base_final", "label": "Base Final", "valor": _r(b_fin), "fija": True},
              {"clave": "gastos", "label": "Gastos Efectivo", "valor": ef_mov["gastos"], "ver": True},
              {"clave": "compras", "label": "Compras Efectivo", "valor": ef_mov["compras"], "ver": True},

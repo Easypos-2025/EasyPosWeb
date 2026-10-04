@@ -116,6 +116,7 @@ from app.routers.pos_categorias_productos_router import router as pos_categorias
 from app.routers.caja_cuadre_router import router as caja_cuadre_router
 from app.routers.caja_conceptos_router import router as caja_conceptos_router
 from app.routers.caja_movimientos_router import router as caja_movimientos_router
+from app.routers.caja_vales_router import router as caja_vales_router
 from app.routers.metricas_router import router as metricas_router
 from app.routers.error_log_router import router as error_log_router
 from app import models  # asegura que plan_model se registre en Base
@@ -2551,6 +2552,7 @@ routers = [
     caja_cuadre_router,
     caja_conceptos_router,
     caja_movimientos_router,
+    caja_vales_router,
     metricas_router,
     error_log_router,
 ]

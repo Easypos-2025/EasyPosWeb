@@ -96,6 +96,89 @@ async def _formas_pago(db: AsyncSession, cid: int) -> list[dict]:
              "is_default": bool(r["is_default"]), "ask_notes": bool(r["ask_notes"])} for r in rows]
 
 
+async def validar_pagos(db: AsyncSession, cid: int, total: int, payments: List[PagoIn]) -> List[PagoIn]:
+    """Formas de pago de la empresa y activas, que sumen exactamente `total`.
+    Sin formas → todo en EFECTIVO (o la forma por defecto)."""
+    fps = {f["id"]: f for f in await _formas_pago(db, cid)}
+    pagos = [p for p in payments if p.amount > 0]
+    if not pagos:
+        fp = next((f for f in fps.values() if f["es_efectivo"]), None) or next((f for f in fps.values() if f["is_default"]), None)
+        if not fp:
+            raise HTTPException(status_code=422, detail="La empresa no tiene la forma de pago EFECTIVO activa")
+        pagos = [PagoIn(payment_method_id=fp["id"], amount=total)]
+    for p in pagos:
+        fp = fps.get(p.payment_method_id)
+        if not fp:
+            raise HTTPException(status_code=422, detail="Forma de pago no válida o inactiva")
+        if fp["ask_notes"] and not (p.notes or "").strip():
+            raise HTTPException(status_code=422, detail=f"La forma de pago {fp['name']} exige una observación")
+    pagado = sum(int(round(p.amount)) for p in pagos)
+    if pagado != total:
+        raise HTTPException(status_code=422, detail=f"Las formas de pago suman ${pagado:,} y el valor es ${total:,}".replace(",", "."))
+    return pagos
+
+
+async def guardar_pagos(db: AsyncSession, cid: int, id_caja: int, fecha: str, tipo_id: int, mov_id: int,
+                        pagos: List[PagoIn]) -> None:
+    """ingresos_egresos_forma_pago: una fila por forma de pago (type_id = tipo de movimiento)."""
+    sig = await _siguiente(db, "pos_cash_movement_payments", cid)
+    for i, p in enumerate(pagos):
+        await db.execute(text("""
+            INSERT INTO pos_cash_movement_payments
+                (id_registro, company_id, register_id, item, payment_method_id, card_id, invoice_number,
+                 type_id, shift, amount, date, authorization, notes, movement_id, synced)
+            VALUES (:idr, :cid, :caja, :item, :pm, 0, :num, :t, 0, :amt, :f, 0, :notes, :mov, 0)
+        """), {"idr": sig + i, "cid": cid, "caja": id_caja, "item": i + 1, "pm": p.payment_method_id,
+               "num": str(mov_id), "t": tipo_id, "amt": int(round(p.amount)), "f": fecha,
+               "notes": (p.notes or "").strip() or None, "mov": mov_id})
+
+
+async def caja_vigente(db: AsyncSession, cid: int, id_caja) -> bool:
+    return bool((await db.execute(text(
+        f"SELECT 1 FROM pos_cash_register_closings c WHERE c.company_id = :cid AND c.id_registro = :caja AND {_VIGENTE}"
+    ), {"cid": cid, "caja": int(id_caja or 0)})).scalar())
+
+
+async def vigentes(db: AsyncSession, cid: int) -> set:
+    return {int(x) for x in (await db.execute(text(
+        f"SELECT c.id_registro FROM pos_cash_register_closings c WHERE c.company_id = :cid AND {_VIGENTE}"
+    ), {"cid": cid})).scalars().all()}
+
+
+def armar_tirilla(d: dict, filas, width: int = 32) -> bytes:
+    """Tirilla de un listado: encabezado, filas (izquierda, derecha, subtexto) y totales."""
+    from app.routers.pos_recibo_impresion_router import _ascii, _money
+    ESC = b"\x1b"
+    buf = bytearray(ESC + b"@")
+
+    def line(t="", bold=False, center=False):
+        buf.extend((ESC + b"E\x01" if bold else b"") + (ESC + b"a\x01" if center else ESC + b"a\x00")
+                   + _ascii(t) + b"\n" + (ESC + b"E\x00" if bold else b""))
+
+    def dl(a, b, bold=False):
+        a = str(a)[: max(1, width - len(b) - 1)]
+        line(a + " " * max(1, width - len(a) - len(b)) + b, bold=bold)
+
+    f = lambda x: f"{x[8:10]}/{x[5:7]}/{x[:4]}"
+    line(d["empresa"], bold=True, center=True)
+    line(d["titulo"].upper(), bold=True, center=True)
+    line(f(d["desde"]) if d["desde"] == d["hasta"] else f"{f(d['desde'])} al {f(d['hasta'])}", center=True)
+    line("-" * width)
+    for izq, der, sub in filas:
+        dl(izq, der)
+        if sub:
+            line("  " + sub[: width - 2])
+    line("-" * width)
+    dl("Registros", str(d["registros"]))
+    if d.get("anulados"):
+        dl("Anulados", str(d["anulados"]))
+    dl("TOTAL", _money(d["total"]), True)
+    if d["registros"] > len(d["rows"]):
+        line(f"(se listan {len(d['rows'])} de {d['registros']})", center=True)
+    buf.extend(b"\n" * 4 + b"\x1dV\x42\x00")
+    return bytes(buf)
+
+
 # ─── Opciones de la vista ────────────────────────────────────────────────────
 
 @router.get("/{tipo}/opciones")
@@ -165,12 +248,7 @@ async def _listado(db: AsyncSession, user: User, request: Request, tipo: str, pe
                COALESCE(SUM(voided), 0) anulados
         FROM {tabla} WHERE company_id = :cid AND date BETWEEN :d AND :h
     """), p)).mappings().first()
-    abiertos = {int(caja["id"])} if caja else set()
-    if rows:
-        ids = {int(r["register_id"] or 0) for r in rows}
-        abiertos |= {int(x) for x in (await db.execute(text(
-            f"SELECT c.id_registro FROM pos_cash_register_closings c WHERE c.company_id = :cid AND {_VIGENTE}"
-        ), {"cid": cid})).scalars().all() if int(x) in ids}
+    abiertos = await vigentes(db, cid) if rows else set()
     return {
         "titulo": titulo, "desde": desde, "hasta": hasta,
         "registros": int(tot["n"] or 0), "total": int(round(float(tot["total"] or 0))),
@@ -230,25 +308,8 @@ async def registrar(
     """), {"cid": cid, "c": body.concept_id, "s": body.sub_concept_id})).scalar():
         raise HTTPException(status_code=422, detail="Subconcepto no válido o inactivo")
 
-    # Formas de pago: de la empresa y activas; sin formas → todo en EFECTIVO (o la forma por defecto)
     total = int(round(body.amount))
-    fps = {f["id"]: f for f in await _formas_pago(db, cid)}
-    pagos = [p for p in body.payments if p.amount > 0]
-    if not pagos:
-        fp = next((f for f in fps.values() if f["es_efectivo"]), None) or next((f for f in fps.values() if f["is_default"]), None)
-        if not fp:
-            raise HTTPException(status_code=422, detail="La empresa no tiene la forma de pago EFECTIVO activa")
-        pagos = [PagoIn(payment_method_id=fp["id"], amount=total)]
-    for p in pagos:
-        fp = fps.get(p.payment_method_id)
-        if not fp:
-            raise HTTPException(status_code=422, detail="Forma de pago no válida o inactiva")
-        if fp["ask_notes"] and not (p.notes or "").strip():
-            raise HTTPException(status_code=422, detail=f"La forma de pago {fp['name']} exige una observación")
-    pagado = sum(int(round(p.amount)) for p in pagos)
-    if pagado != total:
-        raise HTTPException(status_code=422, detail=f"Las formas de pago suman ${pagado:,} y el valor es ${total:,}".replace(",", "."))
-
+    pagos = await validar_pagos(db, cid, total, body.payments)
     fecha = caja["fecha"] or per.hoy().isoformat()
     for intento in range(3):
         try:
@@ -261,16 +322,7 @@ async def registrar(
                    "emp": str(caja["cajero_id"] or current_user.id)[:15], "c": body.concept_id,
                    "s": body.sub_concept_id or 0, "det": (body.detail or "").strip() or None,
                    "uid": current_user.id, "now": _ahora()})
-            sig = await _siguiente(db, "pos_cash_movement_payments", cid)
-            for i, p in enumerate(pagos):
-                await db.execute(text("""
-                    INSERT INTO pos_cash_movement_payments
-                        (id_registro, company_id, register_id, item, payment_method_id, card_id, invoice_number,
-                         type_id, shift, amount, date, authorization, notes, movement_id, synced)
-                    VALUES (:idr, :cid, :caja, :item, :pm, 0, :num, :t, 0, :amt, :f, 0, :notes, :mov, 0)
-                """), {"idr": sig + i, "cid": cid, "caja": caja["id"], "item": i + 1, "pm": p.payment_method_id,
-                       "num": str(idr), "t": tc, "amt": int(round(p.amount)), "f": fecha,
-                       "notes": (p.notes or "").strip() or None, "mov": idr})
+            await guardar_pagos(db, cid, caja["id"], fecha, tc, idr, pagos)
             await db.commit()
             return {"ok": True, "id": idr, "id_caja": caja["id"], "fecha": fecha}
         except IntegrityError:
@@ -302,9 +354,7 @@ async def anular(
         raise HTTPException(status_code=409, detail="El movimiento ya está anulado")
     if not m["created_by"]:
         raise HTTPException(status_code=409, detail="Este movimiento se registró en el escritorio: se anula allá")
-    if not (await db.execute(text(
-        f"SELECT 1 FROM pos_cash_register_closings c WHERE c.company_id = :cid AND c.id_registro = :caja AND {_VIGENTE}"
-    ), {"cid": cid, "caja": int(m["register_id"] or 0)})).scalar():
+    if not await caja_vigente(db, cid, m["register_id"]):
         raise HTTPException(status_code=409, detail="El Id_Caja de este movimiento ya está cerrado")
     await db.execute(text(f"""
         UPDATE {tabla} SET voided = 1, void_reason = :r, voided_by = :uid, voided_at = :now
@@ -324,7 +374,7 @@ async def imprimir(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.routers.pos_recibo_impresion_router import enviar_tirilla, _ascii, _money
+    from app.routers.pos_recibo_impresion_router import enviar_tirilla, _money
     cid = current_user.company_id
     # Valida permisos del periodo antes de tocar la impresora
     lst = await _listado(db, current_user, request, tipo, body.periodo, body.fecha)
@@ -333,35 +383,9 @@ async def imprimir(
         empresa = (await db.execute(text("SELECT name FROM companies WHERE id_company = :c"), {"c": cid})).scalar() or ""
         return {"empresa": empresa, **lst}
 
-    def armar(d: dict, width: int = 32) -> bytes:
-        ESC = b"\x1b"
-        buf = bytearray(ESC + b"@")
-
-        def line(t="", bold=False, center=False):
-            buf.extend((ESC + b"E\x01" if bold else b"") + (ESC + b"a\x01" if center else ESC + b"a\x00")
-                       + _ascii(t) + b"\n" + (ESC + b"E\x00" if bold else b""))
-
-        def dl(a, b, bold=False):
-            a = str(a)[: max(1, width - len(b) - 1)]
-            line(a + " " * max(1, width - len(a) - len(b)) + b, bold=bold)
-
-        f = lambda x: f"{x[8:10]}/{x[5:7]}/{x[:4]}"
-        line(d["empresa"], bold=True, center=True)
-        line(d["titulo"].upper(), bold=True, center=True)
-        line(f(d["desde"]) if d["desde"] == d["hasta"] else f"{f(d['desde'])} al {f(d['hasta'])}", center=True)
-        line("-" * width)
-        for r in d["rows"]:
-            dl(f"#{r['id']} {r['fecha'][5:10]} {r['concepto']}", "ANULADO" if r["anulado"] else _money(r["valor"]))
-            if r["subconcepto"] or r["detalle"]:
-                line("  " + " - ".join(x for x in (r["subconcepto"], r["detalle"]) if x)[: width - 2])
-        line("-" * width)
-        dl("Registros", str(d["registros"]))
-        if d["anulados"]:
-            dl("Anulados", str(d["anulados"]))
-        dl("TOTAL", _money(d["total"]), True)
-        if d["registros"] > len(d["rows"]):
-            line(f"(se listan {len(d['rows'])} de {d['registros']})", center=True)
-        buf.extend(b"\n" * 4 + b"\x1dV\x42\x00")
-        return bytes(buf)
+    def armar(d: dict) -> bytes:
+        return armar_tirilla(d, [(f"#{r['id']} {r['fecha'][5:10]} {r['concepto']}",
+                                  "ANULADO" if r["anulado"] else _money(r["valor"]),
+                                  " - ".join(x for x in (r["subconcepto"], r["detalle"]) if x)) for r in d["rows"]])
 
     return await enviar_tirilla(db, cid, body.printer_id, body.raw, datos, armar=armar)

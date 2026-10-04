@@ -1040,6 +1040,20 @@ const routes = [
         meta: { title: "Otros Egresos", icon: "bi-box-arrow-up-right" }
       },
       {
+        path: "/caja/vales",
+        name: "CajaValesView",
+        component: () => import("@/views/caja/CajaValesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Vales", icon: "bi-cash-coin" }
+      },
+      {
+        path: "/caja/abono-vales",
+        name: "CajaAbonoValesView",
+        component: () => import("@/views/caja/CajaValesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Abono Vales", icon: "bi-arrow-return-left" }
+      },
+      {
         path: "/pos/categorias-productos",
         name: "PosCategoriasProductosView",
         component: () => import("@/views/pos/PosCategoriasProductosView.vue"),
