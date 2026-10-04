@@ -24,8 +24,10 @@
   1. `npm run build` en frontend — si hay errores, detener y reportar.
   2. `git add . && git commit -m "feat/fix: [resumen de cambios]\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
   3. `git push origin master`
-  4. SSH al servidor: `cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb`
-     Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build && systemctl restart easyposweb"`
+  4. SSH al servidor (deploy sin caída): `cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build -- --outDir dist_new && rm -rf dist_old && mv dist dist_old && mv dist_new dist && systemctl restart easyposweb`
+     Comando SSH completo: `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "cd /var/www/easyposweb && git pull origin master && cd frontend && npm run build -- --outDir dist_new && rm -rf dist_old && mv dist dist_old && mv dist_new dist && systemctl restart easyposweb"`
+     - **REGLA — nunca compilar directo sobre `dist/` en el servidor**: Vite vacía la carpeta de salida al iniciar y el build tarda ~5 min; mientras tanto la app responde 500 (sin `index.html`) a todos los usuarios. Se compila en `dist_new` y solo al terminar se intercambia con `dist/` (renombrado instantáneo). Si el build falla, `dist/` no se toca y la app sigue con la versión anterior.
+     - `dist_old` queda como respaldo de la versión previa. Volver atrás: `cd /var/www/easyposweb/frontend && mv dist dist_new && mv dist_old dist && systemctl restart easyposweb`.
   5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
      `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
   6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
