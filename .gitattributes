@@ -18,3 +18,5 @@
 *.jpeg binary
 *.ico  binary
 *.svg  binary
+# Scripts de servidor: siempre LF (bash falla con CRLF)
+*.sh text eol=lf
