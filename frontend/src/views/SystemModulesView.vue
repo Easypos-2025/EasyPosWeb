@@ -130,22 +130,115 @@
   <!-- =============================== -->
   <!-- MODAL CONFIRMAR ELIMINAR -->
   <!-- =============================== -->
-  <div v-if="deleteTarget" class="modal-overlay" @click.self="deleteTarget = null">
-    <div class="modal-content" style="max-width:380px; text-align:center">
-      <div style="font-size:2rem; color:#ef4444; margin-bottom:10px">
-        <i class="bi bi-trash3-fill"></i>
+  <div v-if="deleteTarget" class="modal-overlay" @click.self="closeDelete">
+    <div class="modal-content del-modal" :class="{ 'del-modal--wide': preview?.children?.length }">
+      <div class="del-head">
+        <i class="bi bi-trash3-fill del-icon"></i>
+        <div class="del-head-txt">
+          <h5 class="mb-0">Eliminar "{{ deleteTarget.name }}"</h5>
+          <small v-if="preview" class="del-usage">
+            <template v-if="preview.profiles.length">
+              Perfiles: {{ preview.profiles.map(p => p.name).join(', ') }}
+            </template>
+            <template v-else>Sin perfiles</template>
+            · {{ preview.roles }} rol(es)
+          </small>
+        </div>
+        <button class="del-close" @click="closeDelete" title="Cerrar"><i class="bi bi-x-lg"></i></button>
       </div>
-      <h5 class="mb-1">Eliminar módulo</h5>
-      <p class="text-muted" style="font-size:.88rem; margin-bottom:20px">
-        ¿Eliminar <strong>"{{ deleteTarget.name }}"</strong>? Esta acción no se puede deshacer.
-      </p>
-      <div class="modal-actions">
-        <button class="btn btn-danger" :disabled="deleting" @click="confirmDelete">
-          <i v-if="deleting" class="bi bi-hourglass-split me-1"></i>
-          {{ deleting ? 'Eliminando...' : 'Sí, eliminar' }}
-        </button>
-        <button class="btn btn-secondary" @click="deleteTarget = null">Cancelar</button>
+
+      <div v-if="previewLoading" class="text-muted py-3 text-center">
+        <i class="bi bi-arrow-repeat spin"></i> Revisando dependencias...
       </div>
+
+      <template v-else-if="preview">
+        <!-- Sin hijos: confirmación simple -->
+        <p v-if="!preview.children.length" class="del-msg">
+          ¿Eliminar este módulo? Se quitará de los perfiles y roles que lo tienen. Esta acción no se puede deshacer.
+        </p>
+
+        <!-- Con hijos: gestionar cada hijo -->
+        <template v-else>
+          <p class="del-msg">
+            Tiene <strong>{{ preview.children.length }}</strong> módulo(s) hijo(s). Elimínelos, muévalos a otro padre
+            o déjelos como padre para poder eliminar este módulo.
+          </p>
+
+          <label class="del-all">
+            <input type="checkbox" :checked="allSelected" @change="toggleAll($event.target.checked)" />
+            Seleccionar todos
+          </label>
+
+          <ul class="del-list">
+            <li v-for="c in preview.children" :key="c.id" class="del-item">
+              <div class="del-row">
+                <input type="checkbox" class="del-chk" :value="c.id" v-model="selectedIds"
+                       :disabled="c.grandchildren > 0 || busy" />
+                <div class="del-info">
+                  <div class="del-name">
+                    {{ c.name }}
+                    <span v-if="!c.is_active" class="del-tag del-tag--off">Inactivo</span>
+                    <span v-if="c.grandchildren" class="del-tag del-tag--warn" title="Tiene sus propios hijos">
+                      <i class="bi bi-diagram-3"></i> {{ c.grandchildren }} hijo(s)
+                    </span>
+                  </div>
+                  <div class="del-route">{{ c.route || 'Sin ruta' }}</div>
+                  <div class="del-meta">
+                    {{ c.profiles.length ? c.profiles.map(p => p.name).join(', ') : 'Sin perfiles' }}
+                    · {{ c.roles }} rol(es)
+                  </div>
+                </div>
+                <div class="del-acts">
+                  <button class="btn btn-sm btn-outline-info" :disabled="busy"
+                          @click="toggleMove(c.id)">
+                    <i class="bi bi-arrow-left-right"></i> Mover
+                  </button>
+                  <button class="btn btn-sm btn-outline-light" :disabled="busy"
+                          @click="moveChild(c, null)">
+                    <i class="bi bi-arrow-bar-up"></i> Dejar como padre
+                  </button>
+                </div>
+              </div>
+
+              <!-- Panel mover -->
+              <div v-if="moveOpenId === c.id" class="del-move">
+                <input v-model="moveSearch" class="form-control form-control-sm" placeholder="Buscar nuevo padre..." />
+                <select v-model="moveParentId" class="form-control form-control-sm" size="5">
+                  <option v-for="m in parentOptions(c.id)" :key="m.id" :value="m.id">
+                    {{ m.label }}
+                  </option>
+                </select>
+                <label class="del-add">
+                  <input type="checkbox" v-model="moveAddParent" />
+                  Agregar el nuevo padre a los perfiles donde no esté
+                </label>
+                <div class="del-move-acts">
+                  <button class="btn btn-sm btn-primary" :disabled="!moveParentId || busy"
+                          @click="moveChild(c, moveParentId)">
+                    Mover aquí
+                  </button>
+                  <button class="btn btn-sm btn-secondary" @click="moveOpenId = null">Cancelar</button>
+                </div>
+              </div>
+            </li>
+          </ul>
+
+          <button class="btn btn-sm btn-danger del-batch" :disabled="!selectedIds.length || busy"
+                  @click="deleteSelected">
+            <i class="bi bi-trash3"></i> Eliminar seleccionados ({{ selectedIds.length }})
+          </button>
+        </template>
+
+        <div class="modal-actions">
+          <button class="btn btn-danger" :disabled="deleting || busy || preview.children.length > 0"
+                  :title="preview.children.length ? 'Primero resuelva los módulos hijos' : ''"
+                  @click="confirmDelete">
+            <i v-if="deleting" class="bi bi-hourglass-split me-1"></i>
+            {{ deleting ? 'Eliminando...' : 'Eliminar padre' }}
+          </button>
+          <button class="btn btn-secondary" @click="closeDelete">Cancelar</button>
+        </div>
+      </template>
     </div>
   </div>
 
@@ -203,7 +296,7 @@
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import TreeItem from "@/components/system/TreeItem.vue"
-import { ref, onMounted, watch } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 
 /* =========================
 STATE
@@ -383,13 +476,138 @@ const createModule = async () => {
 DELETE
 ========================= */
 
-const deleteTarget = ref(null)
-const deleting     = ref(false)
+const deleteTarget   = ref(null)   // { id: system_modules.id, name }
+const deleting       = ref(false)
+const preview        = ref(null)   // dependencias del módulo a eliminar
+const previewLoading = ref(false)
+const selectedIds    = ref([])
+const busy           = ref(false)
+const moveOpenId     = ref(null)
+const moveSearch     = ref("")
+const moveParentId   = ref(null)
+const moveAddParent  = ref(false)
 
-const deleteModule = (id) => {
-  const item = modules.value.find(m => m.id === id)
-  deleteTarget.value = item ?? { id, name: `#${id}` }
+const errMsg = (e, fallback) => e?.response?.data?.detail || fallback
+
+const loadPreview = async () => {
+  previewLoading.value = !preview.value
+  try {
+    const { data } = await api.get(`/system-modules/${deleteTarget.value.id}/delete-preview`)
+    preview.value = data
+    const valid = new Set(data.children.filter(c => !c.grandchildren).map(c => c.id))
+    selectedIds.value = selectedIds.value.filter(id => valid.has(id))
+  } catch (e) {
+    showToast(errMsg(e, "Error revisando el módulo"), "error")
+    closeDelete()
+  } finally {
+    previewLoading.value = false
+  }
 }
+
+const openDelete = (smId, name) => {
+  deleteTarget.value = { id: smId, name }
+  preview.value = null
+  selectedIds.value = []
+  moveOpenId.value = null
+  loadPreview()
+}
+
+const closeDelete = () => {
+  if (busy.value || deleting.value) return
+  deleteTarget.value = null
+  preview.value = null
+  moveOpenId.value = null
+}
+
+const allSelected = computed(() => {
+  const sel = (preview.value?.children || []).filter(c => !c.grandchildren)
+  return sel.length > 0 && sel.every(c => selectedIds.value.includes(c.id))
+})
+
+const toggleAll = (checked) => {
+  selectedIds.value = checked
+    ? preview.value.children.filter(c => !c.grandchildren).map(c => c.id)
+    : []
+}
+
+// Lista plana de módulos para elegir nuevo padre
+const flatModules = computed(() => {
+  const out = []
+  const walk = (nodes, depth) => {
+    for (const n of nodes || []) {
+      out.push({ id: n.id, name: n.name, label: `${"— ".repeat(depth)}${n.name}` })
+      walk(n.children, depth + 1)
+    }
+  }
+  walk(modules.value, 0)
+  return out
+})
+
+const parentOptions = (childId) => {
+  const q = moveSearch.value.trim().toLowerCase()
+  const exclude = new Set([childId, deleteTarget.value?.id])
+  return flatModules.value.filter(m =>
+    !exclude.has(m.id) && (!q || m.name.toLowerCase().includes(q)))
+}
+
+const toggleMove = (childId) => {
+  moveOpenId.value = moveOpenId.value === childId ? null : childId
+  moveSearch.value = ""
+  moveParentId.value = null
+  moveAddParent.value = false
+}
+
+const moveChild = async (child, newParentId) => {
+  busy.value = true
+  try {
+    const { data } = await api.post(`/system-modules/${child.id}/move`, {
+      new_parent_id: newParentId,
+      add_parent_to_profiles: newParentId ? moveAddParent.value : false,
+    })
+    let msg = newParentId ? `"${child.name}" movido` : `"${child.name}" quedó como padre`
+    if (data.added_parent_profiles?.length)
+      msg += `. Padre agregado a: ${data.added_parent_profiles.join(", ")}`
+    if (data.root_profiles?.length)
+      msg += `. Quedó sin padre en: ${data.root_profiles.join(", ")} (el nuevo padre no está en ese perfil)`
+    const warn = data.root_profiles?.length > 0
+    showToast(msg, warn ? "warning" : "success", warn || data.added_parent_profiles?.length ? 6000 : 1500)
+    moveOpenId.value = null
+    await Promise.all([loadPreview(), loadModules()])
+  } catch (e) {
+    showToast(errMsg(e, "Error al mover el módulo"), "error")
+  } finally {
+    busy.value = false
+  }
+}
+
+const deleteSelected = async () => {
+  const names = preview.value.children.filter(c => selectedIds.value.includes(c.id)).map(c => c.name)
+  const { isConfirmed } = await window.Swal.fire({
+    title: `¿Eliminar ${names.length} módulo(s)?`,
+    html: `<div style="text-align:left;font-size:14px;color:#475569">${names.map(escapeHtml).join("<br>")}</div>
+           <div style="margin-top:8px;font-size:13px">Se quitarán de perfiles y roles. No se puede deshacer.</div>`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Sí, eliminar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#dc2626",
+  })
+  if (!isConfirmed) return
+  busy.value = true
+  try {
+    const { data } = await api.post("/system-modules/delete-batch", { ids: selectedIds.value })
+    showToast(`${data.deleted} módulo(s) eliminado(s)`, "success")
+    selectedIds.value = []
+    await Promise.all([loadPreview(), loadModules()])
+  } catch (e) {
+    showToast(errMsg(e, "Error al eliminar módulos"), "error")
+  } finally {
+    busy.value = false
+  }
+}
+
+const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, ch =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]))
 
 const confirmDelete = async () => {
   if (!deleteTarget.value) return
@@ -397,11 +615,12 @@ const confirmDelete = async () => {
   try {
     await api.delete(`/system-modules/${deleteTarget.value.id}`)
     showToast("Módulo eliminado", "success")
-    deleteTarget.value = null
+    deleting.value = false
+    closeDelete()
     await loadModules()
   } catch (error) {
-    console.error(error)
-    showToast("Error al eliminar módulo", "error")
+    showToast(errMsg(error, "Error al eliminar módulo"), "error")
+    await loadPreview()
   } finally {
     deleting.value = false
   }
@@ -495,18 +714,17 @@ const closeModal = () => {
   editForm.value = { name: "", route: "", icon: "", parent_id: null }
 }
 
+// En la vista por perfil los nodos traen id = business_profile_modules.id y module_id = system_modules.id
+const smIdOf = (item) => item.module_id ?? item.id
+
 const handleDelete = (item) => {
-  if (item.children && item.children.length) {
-    showToast("No puedes eliminar un módulo con hijos", "error")
-    return
-  }
-  deleteTarget.value = item
+  openDelete(smIdOf(item), item.name)
 }
 
 const handleToggle = async (item) => {
   try {
 
-    await api.put(`/system-modules/${item.id}`, {
+    await api.put(`/system-modules/${smIdOf(item)}`, {
       is_active: !item.is_active
     })
 
@@ -656,6 +874,52 @@ onMounted(() => { loadModules(); loadProfiles() })
   justify-content: flex-end;
   gap: 10px;
   margin-top: 10px;
+}
+
+/* ── Modal eliminar con dependencias ── */
+.del-modal { width: 420px; max-width: calc(100vw - 32px); max-height: 90vh; overflow-y: auto; }
+.del-modal--wide { width: 680px; }
+.del-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+.del-icon { font-size: 1.6rem; color: #ef4444; line-height: 1; }
+.del-head-txt { flex: 1; min-width: 0; }
+.del-head-txt h5 { word-break: break-word; }
+.del-usage { color: #94a3b8; font-size: 12px; }
+.del-close { background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; padding: 2px; }
+.del-close:hover { color: #e2e8f0; }
+.del-msg { font-size: 13px; color: #cbd5e1; margin: 6px 0 12px; }
+.del-all { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #cbd5e1; margin-bottom: 6px; cursor: pointer; }
+.del-list { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 8px; }
+.del-item { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; }
+.del-row { display: flex; align-items: flex-start; gap: 10px; }
+.del-chk { margin-top: 4px; flex-shrink: 0; }
+.del-info { flex: 1; min-width: 0; }
+.del-name { font-weight: 600; font-size: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.del-route { font-family: monospace; font-size: 12px; color: #93c5fd; word-break: break-all; }
+.del-meta { font-size: 12px; color: #94a3b8; }
+.del-tag { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+.del-tag--off { background: #334155; color: #cbd5e1; }
+.del-tag--warn { background: #78350f; color: #fde68a; }
+.del-acts { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.del-acts .btn { white-space: nowrap; font-size: 12px; }
+.del-move { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed #334155; padding-top: 10px; }
+.del-move .form-control { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+.del-add { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; cursor: pointer; }
+.del-move-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.del-batch { margin-bottom: 4px; }
+
+@media (max-width: 768px) {
+  .del-modal--wide { width: 100%; }
+  .del-row { flex-wrap: wrap; }
+  .del-acts { flex-direction: row; width: 100%; padding-left: 24px; }
+  .del-acts .btn { flex: 1; }
+}
+
+@media (max-width: 576px) {
+  .del-modal { padding: 14px; max-height: 94vh; }
+  .del-acts { padding-left: 0; flex-direction: column; }
+  .del-move-acts .btn, .del-batch, .modal-actions .btn { flex: 1; }
+  .del-batch { width: 100%; }
+  .modal-actions { flex-direction: column-reverse; }
 }
 
 </style>

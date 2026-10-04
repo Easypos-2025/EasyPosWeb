@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, delete, text
@@ -199,18 +200,211 @@ async def get_defaults_preview(module_id: int, db: AsyncSession = Depends(get_db
     return [{"id": r.id, "name": r.name, "route": r.route} for r in rows.fetchall()]
 
 
+async def _child_ids(db: AsyncSession, module_id: int) -> list[int]:
+    """Hijos directos de un módulo: por system_modules.parent_id y por la jerarquía real
+    del sidebar (business_profile_modules.parent_id en cualquier perfil)."""
+    rows = await db.execute(text("""
+        SELECT id FROM system_modules WHERE parent_id = :mid AND id <> :mid
+        UNION
+        SELECT bpm_c.module_id
+        FROM business_profile_modules bpm_c
+        JOIN business_profile_modules bpm_p ON bpm_p.id = bpm_c.parent_id
+        WHERE bpm_p.module_id = :mid AND bpm_c.module_id <> :mid
+    """), {"mid": module_id})
+    return [r[0] for r in rows.fetchall()]
+
+
+async def _module_usage(db: AsyncSession, module_id: int) -> dict:
+    prof = await db.execute(text("""
+        SELECT DISTINCT bp.id, bp.name
+        FROM business_profile_modules bpm
+        JOIN business_profiles bp ON bp.id = bpm.business_profile_id
+        WHERE bpm.module_id = :mid ORDER BY bp.name
+    """), {"mid": module_id})
+    roles = await db.execute(text(
+        "SELECT COUNT(*) FROM role_modules WHERE module_id = :mid"
+    ), {"mid": module_id})
+    return {"profiles": [{"id": r.id, "name": r.name} for r in prof.fetchall()],
+            "roles": roles.scalar() or 0}
+
+
+async def _hard_delete(db: AsyncSession, module_id: int):
+    await db.execute(delete(RoleModule).where(RoleModule.module_id == module_id))
+    await db.execute(delete(BusinessProfileModule).where(BusinessProfileModule.module_id == module_id))
+    await db.execute(delete(SystemModule).where(SystemModule.id == module_id))
+
+
+async def _names(db: AsyncSession, ids: list[int]) -> str:
+    if not ids:
+        return ""
+    rows = await db.execute(select(SystemModule.name).where(SystemModule.id.in_(ids[:10])))
+    names = [r[0] for r in rows.fetchall()]
+    extra = f" y {len(ids) - 10} más" if len(ids) > 10 else ""
+    return ", ".join(names) + extra
+
+
+@router.get("/{module_id}/delete-preview")
+async def delete_preview(module_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
+    """Qué depende de un módulo antes de eliminarlo: perfiles, roles e hijos (con sus nietos)."""
+    module = await db.get(SystemModule, module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail="Módulo no encontrado")
+
+    children = []
+    for cid in await _child_ids(db, module_id):
+        child = await db.get(SystemModule, cid)
+        if not child:
+            continue
+        usage = await _module_usage(db, cid)
+        children.append({
+            "id": child.id, "name": child.name, "route": child.route,
+            "is_active": child.is_active, **usage,
+            "grandchildren": len(await _child_ids(db, cid)),
+        })
+    children.sort(key=lambda c: (c["name"] or "").lower())
+
+    return {"id": module.id, "name": module.name, "route": module.route,
+            **(await _module_usage(db, module_id)), "children": children}
+
+
+class DeleteBatchIn(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=50)
+
+
+@router.post("/delete-batch")
+async def delete_batch(data: DeleteBatchIn, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
+    """Elimina varios módulos en una sola transacción. Si alguno tiene hijos, no elimina ninguno."""
+    ids = list(dict.fromkeys(data.ids))
+    found = await db.execute(select(SystemModule.id).where(SystemModule.id.in_(ids)))
+    found_ids = {r[0] for r in found.fetchall()}
+    if len(found_ids) != len(ids):
+        raise HTTPException(status_code=404, detail="Uno o más módulos ya no existen. Recargue la lista.")
+
+    for mid in ids:
+        pending = [c for c in await _child_ids(db, mid) if c not in ids]
+        if pending:
+            name = (await db.get(SystemModule, mid)).name
+            raise HTTPException(status_code=400, detail=(
+                f"No se eliminó nada: \"{name}\" tiene módulos hijos ({await _names(db, pending)}). "
+                "Elimínelos o muévalos primero."))
+
+    try:
+        # Primero los más profundos: los que no son padres de otros del lote
+        remaining = set(ids)
+        while remaining:
+            leaves = [m for m in remaining
+                      if not any(c in remaining for c in await _child_ids(db, m))]
+            if not leaves:
+                raise HTTPException(status_code=400, detail="Jerarquía circular entre los módulos seleccionados.")
+            for mid in leaves:
+                await _hard_delete(db, mid)
+                remaining.discard(mid)
+        await db.commit()
+    except HTTPException:
+        await db.rollback()
+        raise
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudieron eliminar los módulos: tienen datos relacionados.")
+    return {"deleted": len(ids)}
+
+
+class MoveModuleIn(BaseModel):
+    new_parent_id: Optional[int] = None          # None = dejar como padre (raíz)
+    add_parent_to_profiles: bool = False         # agregar el nuevo padre a los perfiles donde falte
+
+
+@router.post("/{module_id}/move")
+async def move_module(module_id: int, data: MoveModuleIn,
+                      db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
+    """Mueve un módulo a otro padre (o a la raíz) en system_modules y en el sidebar de cada perfil."""
+    module = await db.get(SystemModule, module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail="Módulo no encontrado")
+
+    new_parent = None
+    if data.new_parent_id is not None:
+        if data.new_parent_id == module_id:
+            raise HTTPException(status_code=400, detail="Un módulo no puede ser su propio padre.")
+        new_parent = await db.get(SystemModule, data.new_parent_id)
+        if not new_parent:
+            raise HTTPException(status_code=404, detail="El nuevo padre no existe.")
+        # Evitar ciclos: el nuevo padre no puede ser descendiente del módulo
+        seen, stack = set(), [module_id]
+        while stack:
+            for c in await _child_ids(db, stack.pop()):
+                if c == data.new_parent_id:
+                    raise HTTPException(status_code=400, detail="El nuevo padre es un hijo de este módulo.")
+                if c not in seen:
+                    seen.add(c)
+                    stack.append(c)
+
+    root_profiles, added_profiles = [], []
+    try:
+        module.parent_id = data.new_parent_id
+        rows = await db.execute(text("""
+            SELECT bpm.id, bpm.business_profile_id AS pid, bp.name AS pname
+            FROM business_profile_modules bpm
+            JOIN business_profiles bp ON bp.id = bpm.business_profile_id
+            WHERE bpm.module_id = :mid
+        """), {"mid": module_id})
+        for r in rows.fetchall():
+            parent_bpm = None
+            if new_parent:
+                found = await db.execute(text("""
+                    SELECT id FROM business_profile_modules
+                    WHERE business_profile_id = :pid AND module_id = :npid
+                    ORDER BY id LIMIT 1
+                """), {"pid": r.pid, "npid": new_parent.id})
+                parent_bpm = found.scalar()
+                if not parent_bpm and data.add_parent_to_profiles:
+                    so = await db.execute(text("""
+                        SELECT COALESCE(MAX(sort_order), -1) + 1 FROM business_profile_modules
+                        WHERE business_profile_id = :pid AND parent_id IS NULL
+                    """), {"pid": r.pid})
+                    ins = await db.execute(text("""
+                        INSERT INTO business_profile_modules (business_profile_id, module_id, parent_id, sort_order)
+                        VALUES (:pid, :npid, NULL, :so)
+                    """), {"pid": r.pid, "npid": new_parent.id, "so": so.scalar()})
+                    parent_bpm = ins.lastrowid
+                    # Roles de las empresas del perfil que ven al hijo también deben ver al padre
+                    await db.execute(text("""
+                        INSERT INTO role_modules (role_id, module_id, can_view, can_create, can_edit, can_delete)
+                        SELECT DISTINCT rm.role_id, :npid, 1, 0, 0, 0
+                        FROM role_modules rm
+                        JOIN roles ro ON ro.id = rm.role_id
+                        JOIN companies c ON c.id_company = ro.company_id
+                        WHERE rm.module_id = :mid AND c.business_profile_id = :pid
+                          AND NOT EXISTS (SELECT 1 FROM role_modules x
+                                          WHERE x.role_id = rm.role_id AND x.module_id = :npid)
+                    """), {"npid": new_parent.id, "mid": module_id, "pid": r.pid})
+                    added_profiles.append(r.pname)
+                elif not parent_bpm:
+                    root_profiles.append(r.pname)
+            await db.execute(text(
+                "UPDATE business_profile_modules SET parent_id = :p WHERE id = :id"
+            ), {"p": parent_bpm, "id": r.id})
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudo mover el módulo.")
+
+    return {"moved": module_id, "new_parent_id": data.new_parent_id,
+            "root_profiles": root_profiles, "added_parent_profiles": added_profiles}
+
+
 @router.delete("/{module_id}")
 async def delete_module(module_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     module = await db.get(SystemModule, module_id)
     if not module:
-        raise HTTPException(status_code=404, detail="Module not found")
+        raise HTTPException(status_code=404, detail="Módulo no encontrado")
 
-    result = await db.execute(select(SystemModule).where(SystemModule.parent_id == module_id))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Tiene módulos hijos")
+    children = await _child_ids(db, module_id)
+    if children:
+        raise HTTPException(status_code=400, detail=(
+            f"No se puede eliminar: tiene módulos hijos ({await _names(db, children)}). "
+            "Elimínelos o muévalos primero."))
 
-    await db.execute(delete(RoleModule).where(RoleModule.module_id == module_id))
-    await db.execute(delete(BusinessProfileModule).where(BusinessProfileModule.module_id == module_id))
-    await db.delete(module)
+    await _hard_delete(db, module_id)
     await db.commit()
-    return {"message": "Module deleted"}
+    return {"message": "Módulo eliminado"}
