@@ -1,4 +1,5 @@
 from fastapi import Depends
+from app.services.error_log import log_error
 from app.auth.access import is_sysadmin
 from app.auth.tenant import tenant_guard
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -1631,8 +1632,8 @@ async def registrar_liquidacion(
                 SET liq_estado = 'liquidado', liq_id = :lid
                 WHERE id = :did
             """), {"lid": liq_id, "did": did})
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, contexto={"liquidacion": liq_id, "detalle": did})
     if detail_ids:
         await db.commit()
 
@@ -2192,7 +2193,8 @@ async def imprimir_pos(
         ) as sock:
             sock.sendall(bytes(buf))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error al conectar con la impresora: {e}")
+        log_error(e, tipo="IMPRESION", contexto={"impresora": printer["name"], "ip": printer["ip"], "puerto": printer["port"]})
+        raise HTTPException(status_code=502, detail=f"No se pudo conectar con la impresora {printer['name']} ({printer['ip']}:{printer['port'] or 9100}). Verifique que esté encendida y en la misma red.")
 
     return {"ok": True, "printer": printer["name"]}
 
@@ -2312,6 +2314,7 @@ async def imprimir_comprobante(
         ) as sock:
             sock.sendall(bytes(buf))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error al conectar con la impresora: {e}")
+        log_error(e, tipo="IMPRESION", contexto={"impresora": printer["name"], "ip": printer["ip"], "puerto": printer["port"]})
+        raise HTTPException(status_code=502, detail=f"No se pudo conectar con la impresora {printer['name']} ({printer['ip']}:{printer['port'] or 9100}). Verifique que esté encendida y en la misma red.")
 
     return {"ok": True, "printer": printer["name"]}

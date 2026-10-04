@@ -122,4 +122,4 @@ async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: 
         raise HTTPException(status_code=400, detail="Ya existen módulos duplicados para este perfil")
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al asignar módulos: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudieron asignar los módulos. Intente de nuevo.")

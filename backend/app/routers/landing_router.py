@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from pathlib import Path
+from app.services.error_log import log_error
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, Body
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -149,7 +150,7 @@ async def submit_contact(data: dict = Body(...), db: AsyncSession = Depends(get_
         send_contact_email(name=name, email=email, message=message,
                            phone=data.get("phone", ""), company=data.get("company", ""))
     except Exception as e:
-        print("WARN: email contacto:", e)
+        log_error(e, tipo="INTEGRACION", contexto={"correo": "contacto landing"})
     return {"message": "Mensaje recibido. Te contactaremos pronto."}
 
 

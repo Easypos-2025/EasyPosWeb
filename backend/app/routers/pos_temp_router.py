@@ -18,6 +18,8 @@ from fastapi import Depends
 from app.database import get_datatemppos_db, get_db
 from app.utils.pos_archive import archive_commands_to_history
 
+from app.services.error_log import sync_error, log_error
+
 router = APIRouter(prefix="/api/pos", tags=["POS Temp Sync"])
 
 POS_API_KEY = os.getenv("POS_API_KEY", "easypos-sync-key-2024")
@@ -120,7 +122,7 @@ async def push_temp_comanda(
             if is_new_cancel:
                 cancel_events.append((o, fecha))
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(o, "company_id", None))})
 
     await db.commit()
 
@@ -158,8 +160,8 @@ async def push_temp_comanda(
                 "today": fecha,
             })
             await db_main.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=o.company_id, contexto={"pedido": o.order_number})
 
     # Limpieza proactiva — el lote VB6 es la fuente de verdad para Movil=0.
     # Si un pedido ya no llega en el lote (facturado, eliminado, cancelado,
@@ -195,8 +197,8 @@ async def push_temp_comanda(
                     await db.execute(text(
                         "DELETE FROM temp_comanda WHERE company_id = :cid AND Movil = 0"
                     ), {"cid": cid})
-            except Exception:
-                pass
+            except Exception as e:
+                log_error(e, tipo="SINCRONIZACION", company_id=cid)
             continue
         try:
             ph = ",".join(f":np_{i}" for i in range(len(batch_orders)))
@@ -245,8 +247,8 @@ async def push_temp_comanda(
                   AND (Nro_Pedido NOT IN ({ph}) OR Cancelado = 1)
             """), params)
 
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=cid)
     await db.commit()
 
     return {"saved": saved, "failed": failed,
@@ -344,8 +346,8 @@ async def push_temp_details_replace(
                 })
                 saved += 1
             total_orders += 1
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=order.company_id, contexto={"pedido": order.order_number})
     await db.commit()
 
     # Recalculate temp_comanda.Valor from actual item sums so KPI shows correct totals
@@ -367,8 +369,8 @@ async def push_temp_details_replace(
                 "fecha": _norm_date(order.date),
                 "cid":   order.company_id,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=order.company_id, contexto={"pedido": order.order_number})
     await db.commit()
 
     return {"total_orders": total_orders, "total_saved": saved}
@@ -433,8 +435,8 @@ async def push_temp_assembly_replace(
                 })
                 saved += 1
             total_orders += 1
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=order.company_id, contexto={"pedido": order.order_number})
     await db.commit()
     return {"total_orders": total_orders, "total_saved": saved}
 
@@ -496,8 +498,8 @@ async def push_temp_notes_replace(
                 })
                 saved += 1
             total_orders += 1
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=order.company_id, contexto={"pedido": order.order_number})
     await db.commit()
     return {"total_orders": total_orders, "total_saved": saved}
 
@@ -794,7 +796,7 @@ async def push_historico_comanda_eliminada(
 
         except Exception as e:
             failed += 1
-            errors.append(f"{r.order_number}: {str(e)[:120]}")
+            errors.append(f"{r.order_number}: {sync_error(e, r.order_number, r.company_id)[:160]}")
 
     await db_main.commit()
     await db.commit()
@@ -912,8 +914,8 @@ async def push_historico_detalle_eliminada(
                 "custom":    r.custom_product,
             })
             saved += 1
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, tipo="SINCRONIZACION", company_id=r.company_id)
 
     await db_main.commit()
     return {"total_saved": saved}

@@ -8,6 +8,8 @@ from sqlalchemy import text
 
 from app.database import get_db
 
+from app.services.error_log import sync_error, log_error
+
 router = APIRouter(prefix="/api/pos", tags=["POS Apidian Sync"])
 
 POS_API_KEY = os.getenv("POS_API_KEY", "easypos-sync-key-2024")
@@ -136,7 +138,7 @@ async def push_apidian_caja_facturas(
             """), r.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -187,7 +189,7 @@ async def push_apidian_clientes(
             """), r.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -236,7 +238,7 @@ async def push_apidian_facturas_cufe(
             """), r.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -298,7 +300,7 @@ async def push_consecutivo_factura_manual(
             """), r.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -333,7 +335,7 @@ async def push_consecutivo_factura_sistema(
             """), r.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}

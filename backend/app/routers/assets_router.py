@@ -102,7 +102,7 @@ async def create_asset(
         return await _ser(asset, db)
     except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=422, detail=f"Error de integridad: verifica categoría o propietario. ({e.orig})")
+        raise HTTPException(status_code=422, detail="Error de integridad: verifica categoría o propietario.")
 
 
 @router.get("/")

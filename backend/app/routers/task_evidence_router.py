@@ -88,7 +88,7 @@ async def add_evidence(
         try:
             file_path = await upload_file(content, f"{file_type}s/{filename}")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
+            raise HTTPException(status_code=500, detail="No se pudo guardar el archivo. Intente de nuevo.")
 
     evidence = TaskEvidence(task_id=task_id, file_type=file_type, file_path=file_path,
                             description=description, created_by=user.id)

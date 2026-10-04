@@ -11,6 +11,8 @@ from app.database import get_db, get_datatemppos_db
 from app.services.plan_limits_service import get_limits
 from app.services.stock import apply_stock_move
 
+from app.services.error_log import sync_error, log_error
+
 router = APIRouter(prefix="/api/pos", tags=["POS Sync"])
 
 POS_API_KEY = os.getenv("POS_API_KEY", "easypos-sync-key-2024")
@@ -146,7 +148,7 @@ async def push_orders(
             """), o.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(o, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
@@ -202,7 +204,7 @@ async def push_receipt_orders(
             """), o.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(o, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(orders), "total_saved": len(saved), "total_failed": len(failed)}
@@ -272,7 +274,7 @@ async def push_invoices(
             """), inv.dict())
             saved.append(inv.invoice_number)
         except Exception as e:
-            failed.append({"invoice_number": inv.invoice_number, "error": str(e)})
+            failed.append({"invoice_number": inv.invoice_number, "error": sync_error(e, inv.invoice_number, getattr(inv, "company_id", None))})
 
     await db.commit()
 
@@ -389,7 +391,7 @@ async def push_order_details(
             """), d.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(d, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
@@ -501,7 +503,7 @@ async def push_receipts(
             """), r.dict())
             saved.append(r.invoice_number)
         except Exception as e:
-            failed.append({"invoice_number": r.invoice_number, "error": str(e)})
+            failed.append({"invoice_number": r.invoice_number, "error": sync_error(e, r.invoice_number, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(receipts), "total_saved": len(saved), "total_failed": len(failed)}
@@ -605,7 +607,7 @@ async def push_dishes(
             """), d.dict())
             saved.append(d.id)
         except Exception as e:
-            failed.append({"id": d.id, "error": str(e)})
+            failed.append({"id": d.id, "error": sync_error(e, d.id, getattr(d, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(dishes), "total_saved": len(saved), "total_failed": len(failed)}
@@ -673,7 +675,7 @@ async def push_zones(
             """), z.dict())
             saved.append(z.id)
         except Exception as e:
-            failed.append({"id": z.id, "error": str(e)})
+            failed.append({"id": z.id, "error": sync_error(e, z.id, getattr(z, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(zones), "total_saved": len(saved), "total_failed": len(failed)}
@@ -830,7 +832,7 @@ async def push_waiters(
             """), w.dict())
             saved.append(w.id)
         except Exception as e:
-            failed.append({"id": w.id, "error": str(e)})
+            failed.append({"id": w.id, "error": sync_error(e, w.id, getattr(w, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(waiters), "total_saved": len(saved), "total_failed": len(failed)}
@@ -893,7 +895,7 @@ async def push_tables(
             """), t.dict())
             saved.append(t.id)
         except Exception as e:
-            failed.append({"id": t.id, "error": str(e)})
+            failed.append({"id": t.id, "error": sync_error(e, t.id, getattr(t, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(tables), "total_saved": len(saved), "total_failed": len(failed)}
@@ -945,7 +947,7 @@ async def push_temp_mesas(
             """), t.dict())
             saved.append(t.id)
         except Exception as e:
-            failed.append({"id": t.id, "error": str(e)})
+            failed.append({"id": t.id, "error": sync_error(e, t.id, getattr(t, "company_id", None))})
     await db_temp.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(tables), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1017,7 +1019,7 @@ async def push_invoice_details(
             """), d.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(d, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1089,7 +1091,7 @@ async def push_invoice_payments(
             """), p.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(p, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(payments), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1196,7 +1198,7 @@ async def push_receipt_order_details(
             """), d.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(d, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1267,7 +1269,7 @@ async def push_receipt_invoice_details(
             """), d.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(d, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(details), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1339,7 +1341,7 @@ async def push_receipt_payments(
             """), p.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(p, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(payments), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1391,7 +1393,7 @@ async def push_invoice_delivery_fees(
             """), {**item.dict(), "id_registro": eff_id})
             saved.append(str(eff_id))
         except Exception as e:
-            failed.append({"key": str(eff_id), "error": str(e)})
+            failed.append({"key": str(eff_id), "error": sync_error(e, str(eff_id), getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1426,7 +1428,7 @@ async def push_receipt_delivery_fees(
             """), {**item.dict(), "id_registro": eff_id})
             saved.append(str(eff_id))
         except Exception as e:
-            failed.append({"key": str(eff_id), "error": str(e)})
+            failed.append({"key": str(eff_id), "error": sync_error(e, str(eff_id), getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1559,7 +1561,7 @@ async def push_cash_closings(
             await _upsert_cierre(db, c.dict() | {"id_registro": c.id})
             saved.append(c.id)
         except Exception as e:
-            failed.append({"id": c.id, "error": str(e)})
+            failed.append({"id": c.id, "error": sync_error(e, c.id, getattr(c, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(closings), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1642,7 +1644,7 @@ async def push_order_detail_products(
 
             saved.append(r.order_number)
         except Exception as e:
-            failed.append({"order_number": r.order_number, "error": str(e)})
+            failed.append({"order_number": r.order_number, "error": sync_error(e, r.order_number, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1725,7 +1727,7 @@ async def push_receipt_order_detail_products(
 
             saved.append(r.order_number)
         except Exception as e:
-            failed.append({"order_number": r.order_number, "error": str(e)})
+            failed.append({"order_number": r.order_number, "error": sync_error(e, r.order_number, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1788,7 +1790,7 @@ async def push_dish_products(
             """), r.dict())
             saved.append(r.dish_id)
         except Exception as e:
-            failed.append({"dish_id": r.dish_id, "error": str(e)})
+            failed.append({"dish_id": r.dish_id, "error": sync_error(e, r.dish_id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1844,7 +1846,7 @@ async def push_dish_printers(
             """), r.dict())
             saved.append(r.item_id)
         except Exception as e:
-            failed.append({"item_id": r.item_id, "error": str(e)})
+            failed.append({"item_id": r.item_id, "error": sync_error(e, r.item_id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1902,7 +1904,7 @@ async def push_dish_assembly(
             """), r.dict())
             saved.append(r.dish_id)
         except Exception as e:
-            failed.append({"dish_id": r.dish_id, "error": str(e)})
+            failed.append({"dish_id": r.dish_id, "error": sync_error(e, r.dish_id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -1961,7 +1963,7 @@ async def push_categories(
             """), c.dict())
             saved.append(c.id)
         except Exception as e:
-            failed.append({"id": c.id, "error": str(e)})
+            failed.append({"id": c.id, "error": sync_error(e, c.id, getattr(c, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(categories), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2037,7 +2039,7 @@ async def push_dish_categories(
             """), c.dict())
             saved.append(c.id)
         except Exception as e:
-            failed.append({"id": c.id, "error": str(e)})
+            failed.append({"id": c.id, "error": sync_error(e, c.id, getattr(c, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(categories), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2095,7 +2097,7 @@ async def push_product_categories(
             """), c.dict())
             saved.append(c.id)
         except Exception as e:
-            failed.append({"id": c.id, "error": str(e)})
+            failed.append({"id": c.id, "error": sync_error(e, c.id, getattr(c, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(categories), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2162,7 +2164,7 @@ async def push_cash_registers(
             """), r.dict())
             saved.append(r.id)
         except Exception as e:
-            failed.append({"id": r.id, "error": str(e)})
+            failed.append({"id": r.id, "error": sync_error(e, r.id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(registers), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2238,7 +2240,7 @@ async def push_billing_config(
             await cfg_svc.guardar(db, cid, datos, synced=1)
             saved.append(cid)
         except Exception as e:
-            failed.append({"id": r.company_id, "error": str(e)})
+            failed.append({"id": r.company_id, "error": sync_error(e, r.company_id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(rows), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2278,7 +2280,7 @@ async def push_printers(
             """), p.dict())
             saved.append(p.id)
         except Exception as e:
-            failed.append({"id": p.id, "error": str(e)})
+            failed.append({"id": p.id, "error": sync_error(e, p.id, getattr(p, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(printers), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2335,7 +2337,7 @@ async def push_dish_assembly_detail(
             """), r.dict())
             saved.append(r.dish_id)
         except Exception as e:
-            failed.append({"dish_id": r.dish_id, "error": str(e)})
+            failed.append({"dish_id": r.dish_id, "error": sync_error(e, r.dish_id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2399,7 +2401,7 @@ async def push_daily_menu(
             """), r.dict())
             saved.append(r.menu_id)
         except Exception as e:
-            failed.append({"menu_id": r.menu_id, "error": str(e)})
+            failed.append({"menu_id": r.menu_id, "error": sync_error(e, r.menu_id, getattr(r, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(records), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2476,7 +2478,7 @@ async def push_cash_closings_v2(
             await _upsert_cierre(db, c.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(c, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(closings), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2548,7 +2550,7 @@ async def push_cash_register_invoices(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2620,7 +2622,7 @@ async def push_cash_register_receipts(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2678,7 +2680,7 @@ async def push_expenses(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2736,7 +2738,7 @@ async def push_purchases(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2795,7 +2797,7 @@ async def push_discounts(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2854,7 +2856,7 @@ async def push_receipt_discounts(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2913,7 +2915,7 @@ async def push_payment_types(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2953,7 +2955,7 @@ async def push_measure_forms(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -2999,7 +3001,7 @@ async def push_customer_price_list(
             # Llave compuesta por fila: el escritorio marca Enviada_MySql=1 solo lo confirmado
             saved.append(f"{item.id_lista}|{item.id_cliente}|{item.id_producto}|{item.id_presentacion or 0}")
         except Exception as e:
-            failed.append({"key": item.id_lista, "error": str(e)})
+            failed.append({"key": item.id_lista, "error": sync_error(e, item.id_lista, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3052,7 +3054,7 @@ async def push_dish_portions(
             ok_platos.add(it.id_plato)
         except Exception as e:
             bad_platos.add(it.id_plato)
-            failed.append({"key": f"{it.id_plato}|{it.id_grupo}|{it.id_item}", "error": str(e)})
+            failed.append({"key": f"{it.id_plato}|{it.id_grupo}|{it.id_item}", "error": sync_error(e, f"{it.id_plato}|{it.id_grupo}|{it.id_item}", getattr(it, "company_id", None))})
     await db.commit()
     saved = sorted(ok_platos - bad_platos)
     return {"saved": saved, "failed": failed,
@@ -3107,7 +3109,7 @@ async def push_suppliers(
             """), {**it.dict(), "empresa": (it.empresa or "").strip() or f"PROVEEDOR {it.id_proveedor}"})
             saved.append(it.id_proveedor)
         except Exception as e:
-            failed.append({"key": it.id_proveedor, "error": str(e)})
+            failed.append({"key": it.id_proveedor, "error": sync_error(e, it.id_proveedor, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3163,7 +3165,7 @@ async def push_supply_suppliers(
                    "fecha_final_negociacion":   it.fecha_final_negociacion or None})
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3197,7 +3199,7 @@ async def push_supply_measures(
             """), it.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3261,7 +3263,7 @@ async def push_clientes(
             """), params)
             saved.append(it.id_cliente)
         except Exception as e:
-            failed.append({"key": it.id_cliente, "error": str(e)})
+            failed.append({"key": it.id_cliente, "error": sync_error(e, it.id_cliente, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3301,7 +3303,7 @@ async def push_dish_note_categories(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3334,7 +3336,7 @@ async def push_order_notes(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3367,7 +3369,7 @@ async def push_product_notes(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3478,7 +3480,7 @@ async def push_supply_items(
             """), item.dict())
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(item, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3616,7 +3618,7 @@ async def push_inventory_physical(
 
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3681,7 +3683,7 @@ async def push_inventory_entries(
 
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3746,7 +3748,7 @@ async def push_inventory_exits(
 
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3846,7 +3848,7 @@ async def push_inventory_stock(
             })
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3954,7 +3956,7 @@ async def push_historico_inventario_actual(
             })
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -3994,7 +3996,7 @@ async def push_cash_concepts(items: List[CashConceptIn], db: AsyncSession = Depe
             """), it.dict() | {"description": (it.description or "")[:50]})
             saved.append(it.concept_id)
         except Exception as e:
-            failed.append({"id": it.concept_id, "error": str(e)})
+            failed.append({"id": it.concept_id, "error": sync_error(e, it.concept_id, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -4023,7 +4025,7 @@ async def push_cash_subconcepts(items: List[CashSubconceptIn], db: AsyncSession 
             """), it.dict() | {"description": (it.description or "")[:50]})
             saved.append(key)
         except Exception as e:
-            failed.append({"key": key, "error": str(e)})
+            failed.append({"key": key, "error": sync_error(e, key, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -4061,7 +4063,7 @@ async def _push_movimientos(tabla: str, items: List[CashMovementIn], db: AsyncSe
             """), it.dict())
             saved.append(it.id_registro)
         except Exception as e:
-            failed.append({"id": it.id_registro, "error": str(e)})
+            failed.append({"id": it.id_registro, "error": sync_error(e, it.id_registro, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -4112,7 +4114,7 @@ async def push_cash_advances(items: List[CashAdvanceIn], db: AsyncSession = Depe
             """), it.dict())
             saved.append(it.id_registro)
         except Exception as e:
-            failed.append({"id": it.id_registro, "error": str(e)})
+            failed.append({"id": it.id_registro, "error": sync_error(e, it.id_registro, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}
@@ -4157,7 +4159,7 @@ async def push_cash_movement_payments(items: List[CashMovementPaymentIn], db: As
             """), it.dict())
             saved.append(it.id_registro)
         except Exception as e:
-            failed.append({"id": it.id_registro, "error": str(e)})
+            failed.append({"id": it.id_registro, "error": sync_error(e, it.id_registro, getattr(it, "company_id", None))})
     await db.commit()
     return {"saved": saved, "failed": failed,
             "total_sent": len(items), "total_saved": len(saved), "total_failed": len(failed)}

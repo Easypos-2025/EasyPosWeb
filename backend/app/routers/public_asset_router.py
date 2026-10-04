@@ -6,6 +6,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
+from app.services.error_log import log_error
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
@@ -161,8 +162,8 @@ async def submit_inquiry(
             asset_name = asset.name,
             confirm_link = confirm_link,
         )
-    except Exception:
-        pass  # no bloquear la respuesta si el email falla
+    except Exception as e:
+        log_error(e, tipo="INTEGRACION", contexto={"correo": "consulta activo"})  # no bloquea la respuesta
 
     return {"message": "Solicitud recibida"}
 
@@ -220,7 +221,7 @@ async def confirm_inquiry(token: str, db: AsyncSession = Depends(get_db)):
             asset_name  = asset.name if asset else "—",
             list_code   = asset.list_code if asset else None,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log_error(e, tipo="INTEGRACION", contexto={"correo": "activo"})
 
     return {"message": "confirmed", "name": inquiry.name}

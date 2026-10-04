@@ -1,5 +1,6 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from app.services.error_log import log_error
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -183,6 +184,7 @@ async def print_raw(
         sock.sendall(raw)
         sock.close()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error al enviar a impresora: {e}")
+        log_error(e, tipo="IMPRESION", contexto={"impresora": printer["name"], "ip": printer["ip"], "puerto": printer["port"]})
+        raise HTTPException(status_code=502, detail=f"No se pudo enviar a la impresora {printer['name']} ({printer['ip']}:{printer['port'] or 9100}). Verifique que esté encendida y en la misma red.")
 
     return {"ok": True, "printer": printer["name"]}

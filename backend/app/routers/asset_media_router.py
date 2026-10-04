@@ -89,7 +89,7 @@ async def upload_media(
     try:
         url = await upload_file(content, storage_path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error guardando archivo: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo guardar el archivo. Intente de nuevo.")
 
     order_res = await db.execute(
         select(AssetMedia).where(AssetMedia.asset_id == asset_id).order_by(AssetMedia.sort_order.desc())

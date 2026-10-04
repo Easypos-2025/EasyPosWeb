@@ -12,6 +12,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+from app.services.error_log import log_error
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 
@@ -156,6 +157,7 @@ def _send_resend(to: str, subject: str, body_html: str):
         })
         print(f"RESEND EMAIL ENVIADO A: {to}")
     except Exception as e:
+        log_error(e, tipo="INTEGRACION", contexto={"servicio": "resend", "asunto": subject})
         print(f"RESEND ERROR: {e}")
 
 
@@ -173,6 +175,7 @@ def _send_smtp(to: str, subject: str, body_html: str):
         server.quit()
         print(f"SMTP EMAIL ENVIADO A: {to}")
     except Exception as e:
+        log_error(e, tipo="INTEGRACION", contexto={"servicio": "smtp", "asunto": subject})
         print(f"SMTP ERROR: {e}")
 
 

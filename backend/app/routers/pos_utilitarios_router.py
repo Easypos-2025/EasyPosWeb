@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
 from typing import Optional
 from pydantic import BaseModel, Field
+from app.services.error_log import log_error
 
 from app.database import get_db, get_datatemppos_db
 from app.auth.jwt_handler import decode_access_token
@@ -125,8 +126,8 @@ async def cleanup_temp(
     if orphan_ids:
         try:
             await archive_commands_to_history(db_temp, db, cid, orphan_ids, "manual_cleanup")
-        except Exception:
-            pass  # Archivado best-effort; la limpieza continúa igual
+        except Exception as e:
+            log_error(e, contexto={"archivo": "manual_cleanup"}, company_id=cid)  # best-effort: la limpieza continúa
 
         ph = ",".join(f":oid_{i}" for i in range(len(orphan_ids)))
         params: dict = {"cid": cid}
@@ -189,8 +190,8 @@ async def cleanup_temp(
     if empty_ids:
         try:
             await archive_commands_to_history(db_temp, db, cid, empty_ids, "manual_cleanup_empty")
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, contexto={"archivo": "manual_cleanup_empty"}, company_id=cid)
         ph2 = ",".join(f":eid_{i}" for i in range(len(empty_ids)))
         params2: dict = {"cid": cid}
         params2.update({f"eid_{i}": v for i, v in enumerate(empty_ids)})

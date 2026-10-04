@@ -475,15 +475,18 @@ def record_security(motivo: str, extra: Optional[dict] = None, http_status: int 
 
 
 def log_error(exc: BaseException, *, tipo: Optional[str] = None, nivel: Optional[str] = None,
-              contexto: Optional[dict] = None) -> Optional[str]:
+              contexto: Optional[dict] = None, company_id: Optional[int] = None) -> Optional[str]:
     """Helper para los `except` de routers/servicios (sync, impresión, integraciones):
         except Exception as e:
             ref = log_error(e, tipo="IMPRESION", contexto={"pedido": nro})
-    Usa la petición en curso si existe. Nunca lanza."""
+    Usa la petición en curso si existe. `company_id` solo para contextos confiables del
+    servidor sin sesión de usuario (sincronización con escritorio por API key). Nunca lanza."""
     try:
         ctx = _request_ctx.get()
         scope = (ctx or {}).get("scope") or {"type": "http", "path": "", "headers": []}
         info = build_request_info(scope, ctx)
+        if company_id and not (info.get("identity") or {}).get("company_id"):
+            info["identity"] = {**(info.get("identity") or {}), "company_id": _int(company_id)}
         if contexto:
             info["payload"] = _limit_json({"contexto": sanitize(contexto), "peticion": info.get("payload")})
         clase = type(exc).__name__
@@ -499,6 +502,15 @@ def log_error(exc: BaseException, *, tipo: Optional[str] = None, nivel: Optional
     except Exception:
         logger.exception("error_log.log_error falló")
         return None
+
+
+def sync_error(exc: BaseException, key: Any = None, company_id: Optional[int] = None) -> str:
+    """Fila fallida de la sincronización con escritorio: registra el error (agrupado) y
+    devuelve el texto para la respuesta al programa de escritorio, con la referencia."""
+    ref = log_error(exc, tipo="SINCRONIZACION", contexto={"registro": str(key)[:200]} if key is not None else None,
+                    company_id=company_id)
+    msg = (scrub_text(str(exc), 300) or type(exc).__name__)
+    return f"{msg} · Ref: {ref}" if ref else msg
 
 
 # ─── Escritura agrupada en BD ────────────────────────────────────────────────
@@ -651,6 +663,62 @@ async def _write_entry(db, entry: dict) -> None:
                "business_profile_id": d.get("business_profile_id"),
                "payload": json.dumps(d["payload"], ensure_ascii=False, default=str) if d.get("payload") else None,
                "query_params": json.dumps(d["query_params"], ensure_ascii=False, default=str) if d.get("query_params") else None})
+
+
+# ─── Retención (120 días) ────────────────────────────────────────────────────
+RETENCION_DIAS = 120
+_PURGE_EVERY = 24 * 3600
+_maintenance_task: Optional[asyncio.Task] = None
+
+
+async def purge_old() -> dict:
+    """Borra (con sus detalles y empresas, por CASCADE):
+    - Resueltos / ignorados hace más de 120 días.
+    - Abiertos que llevan más de 120 días sin volver a ocurrir.
+    Un error activo nunca se borra, aunque su primera ocurrencia sea antigua.
+    Solo un worker lo ejecuta a la vez (GET_LOCK sin espera)."""
+    from app.database import AsyncSessionLocal
+    out = {"cerrados": 0, "inactivos": 0}
+    async with AsyncSessionLocal() as db:
+        if not (await db.execute(text("SELECT GET_LOCK('easyposweb_error_purge', 0)"))).scalar():
+            return out
+        try:
+            for key, cond in (
+                ("cerrados", "estado IN ('RESUELTO','IGNORADO') AND resuelto_en < NOW() - INTERVAL :d DAY"),
+                ("inactivos", "estado IN ('NUEVO','EN_REVISION') AND last_seen < NOW() - INTERVAL :d DAY"),
+            ):
+                while True:                       # por lotes para no bloquear la tabla
+                    res = await db.execute(text(
+                        f"DELETE FROM system_error_groups WHERE {cond} LIMIT 500"), {"d": RETENCION_DIAS})
+                    await db.commit()
+                    out[key] += res.rowcount or 0
+                    if (res.rowcount or 0) < 500:
+                        break
+        finally:
+            await db.execute(text("SELECT RELEASE_LOCK('easyposweb_error_purge')"))
+    if out["cerrados"] or out["inactivos"]:
+        logger.info("error_log: depurados %s", out)
+    return out
+
+
+async def _maintenance_loop() -> None:
+    await asyncio.sleep(120)                      # deja terminar el arranque
+    while True:
+        try:
+            await purge_old()
+        except Exception:
+            logger.exception("error_log: depuración falló")
+        await asyncio.sleep(_PURGE_EVERY)
+
+
+def start_maintenance() -> None:
+    """Startup: programa la depuración diaria."""
+    global _maintenance_task
+    if _maintenance_task is None or _maintenance_task.done():
+        try:
+            _maintenance_task = asyncio.get_running_loop().create_task(_maintenance_loop())
+        except RuntimeError:
+            pass
 
 
 # ─── Middleware ASGI ─────────────────────────────────────────────────────────

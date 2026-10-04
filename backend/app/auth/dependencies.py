@@ -45,7 +45,8 @@ async def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        print("ERROR REAL:", str(e))
+        from app.services.error_log import log_error
+        log_error(e, tipo="SERVIDOR", contexto={"etapa": "autenticacion"})
         raise HTTPException(status_code=401, detail="No autorizado")
 
 

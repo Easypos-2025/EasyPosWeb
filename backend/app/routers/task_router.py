@@ -365,7 +365,7 @@ async def create_task(
         await db.refresh(task)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al crear tarea: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo crear la tarea. Intente de nuevo.")
     sm = await _status_map(db)
     wm = await _worker_map(db)
     um = await _user_map(db)
@@ -404,7 +404,7 @@ async def update_task(
         await db.refresh(task)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error al actualizar tarea: {str(e)}")
+        raise HTTPException(status_code=500, detail="No se pudo actualizar la tarea. Intente de nuevo.")
 
     sm = await _status_map(db)
     wm = await _worker_map(db)

@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 import json
 import re
 import secrets
+from app.services.error_log import log_error
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1291,8 +1292,8 @@ async def enviar_cocina(
     # (INSERT IGNORE → idempotente; se acumulan nuevos ítems en envíos adicionales)
     try:
         await archive_commands_to_history(db_temp, db, cid, [data.order_number], "kitchen_send")
-    except Exception:
-        pass  # Best-effort: no bloquear el flujo principal
+    except Exception as e:
+        log_error(e, contexto={"archivo": "kitchen_send"}, company_id=cid)  # best-effort: no bloquea el flujo
 
     return {"tipo": tipo, "sent": result.rowcount}
 

@@ -2378,17 +2378,20 @@ async def rate_limit_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
-    await init_db()
-    await error_log.warmup()
-    # Advisory lock evita que múltiples workers de uvicorn corran el seeding simultáneamente
+    # Advisory lock evita que múltiples workers de uvicorn creen tablas / corran el seeding
+    # simultáneamente (sin él, al agregar una tabla nueva los workers chocan con
+    # "Table already exists" y gunicorn se detiene).
     async with AsyncSessionLocal() as _lock_db:
-        lock_res = await _lock_db.execute(text("SELECT GET_LOCK('easyposweb_seed', 30)"))
+        lock_res = await _lock_db.execute(text("SELECT GET_LOCK('easyposweb_seed', 60)"))
         got_lock = lock_res.scalar()
         if got_lock:
             try:
+                await init_db()
                 await _init_db_data()
             finally:
                 await _lock_db.execute(text("SELECT RELEASE_LOCK('easyposweb_seed')"))
+    await error_log.warmup()
+    error_log.start_maintenance()
 
 
 app.router.redirect_slashes = True

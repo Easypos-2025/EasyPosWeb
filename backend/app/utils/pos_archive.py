@@ -5,6 +5,7 @@ All writes go to easyposweb (db_write); reads come from datatemppos (db_read).
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from app.services.error_log import log_error
 
 
 async def archive_commands_to_history(
@@ -27,7 +28,8 @@ async def archive_commands_to_history(
             FROM temp_comanda
             WHERE company_id = :cid AND Nro_Pedido IN ({ph})
         """), params)).mappings().all()
-    except Exception:
+    except Exception as e:
+        log_error(e, contexto={"archivo": reason, "pedidos": nro_pedidos[:20]}, company_id=cid)
         return
 
     try:
@@ -37,7 +39,8 @@ async def archive_commands_to_history(
             FROM temp_detalle_comanda_parcial
             WHERE company_id = :cid AND Nro_pedido IN ({ph})
         """), params)).mappings().all()
-    except Exception:
+    except Exception as e:
+        log_error(e, contexto={"archivo": reason, "pedidos": nro_pedidos[:20]}, company_id=cid)
         items = []
 
     for h in headers:
@@ -60,8 +63,8 @@ async def archive_commands_to_history(
                 "movil":     int(h["Movil"]   or 0),
                 "reason":    reason,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, contexto={"archivo": reason}, company_id=cid)
 
     for it in items:
         try:
@@ -84,10 +87,10 @@ async def archive_commands_to_history(
                 "hora_plato": str(it["Hora_Plato"] or ""),
                 "mostrar":    int(it["Mostrar"]    or 1),
             })
-        except Exception:
-            pass
+        except Exception as e:
+            log_error(e, contexto={"archivo": reason}, company_id=cid)
 
     try:
         await db_write.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        log_error(e, contexto={"archivo": reason}, company_id=cid)

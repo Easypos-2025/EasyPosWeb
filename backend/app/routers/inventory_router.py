@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Optional, List
 import asyncio
 import uuid as uuid_module
+from app.services.error_log import log_error
 
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -489,7 +490,8 @@ async def _run_auto_snapshot(job_id: str, company_id: int, user_id: int):
 
         await _job_update(job_id, status="done", progress="Completado", items_saved=updated,
                           id_fisico=next_fisico, fecha=str(date_type.today()))
-    except Exception:
+    except Exception as e:
+        log_error(e, contexto={"job": job_id}, company_id=company_id)
         # No exponer SQL ni detalles internos al usuario; queda en el log del servidor
         logger.exception("auto_snapshot company=%s", company_id)
         try:

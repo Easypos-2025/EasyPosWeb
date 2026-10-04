@@ -20,6 +20,7 @@ from collections import OrderedDict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from app.services.error_log import log_error
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
 from sqlalchemy import text
@@ -272,7 +273,8 @@ async def enviar_tirilla(db: AsyncSession, cid: int, printer_id: int, raw: bool,
         with socket.create_connection((printer["ip"], int(printer["port"] or 9100)), timeout=5) as s:
             s.sendall(data)
     except OSError as e:
-        raise HTTPException(status_code=502, detail=f"No se pudo conectar con la impresora: {e}")
+        log_error(e, tipo="IMPRESION", contexto={"impresora": printer["name"], "ip": printer["ip"], "puerto": printer["port"]})
+        raise HTTPException(status_code=502, detail=f"No se pudo conectar con la impresora {printer['name']} ({printer['ip']}:{printer['port'] or 9100}). Verifique que esté encendida y en la misma red.")
     return {"ok": True, "printer": printer["name"]}
 
 
