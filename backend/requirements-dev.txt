@@ -1,0 +1,4 @@
+# Solo para desarrollo y pruebas (no se instala en el servidor)
+pytest==8.4.2
+httpx==0.28.1
+playwright==1.55.0   # recorrido de la mini-app en Chrome (usa el Chrome instalado)

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:tomapedido": "vite build --config vite.tomapedido.config.js",
+    "dev:tomapedido": "vite --config vite.tomapedido.config.js",
     "preview": "vite preview"
   },
   "dependencies": {

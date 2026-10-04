@@ -17,6 +17,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/dist_new/
 frontend/dist_old/
+frontend/dist_tomapedido/
 frontend/.env
 *.local
 
@@ -39,3 +40,7 @@ npm-debug.log*
 
 # Respaldo del Monitor de Errores
 backend/logs/
+
+# Agente Local (secreto de firma y logs del PC del negocio)
+backend/agente_local/secreto.key
+backend/agente_local/logs/
