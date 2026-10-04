@@ -45,3 +45,7 @@ backend/logs/
 backend/agente_local/secreto.key
 backend/agente_local/logs/
 backend/agente_local/cache_fotos/
+
+# Instalador del agente (se genera con instalador_agente/construir.py)
+instalador_agente/construccion/
+instalador_agente/salida/

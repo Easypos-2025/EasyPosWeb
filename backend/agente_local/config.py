@@ -11,18 +11,22 @@ Se lee de `agente_local/.env` (uno por PC del negocio; ver `.env.ejemplo`).
 """
 import os
 import secrets
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-BASE = Path(__file__).resolve().parent
+# Carpeta de trabajo del agente (.env, secreto.key, logs, caché de fotos).
+# Instalado (ejecutable): la carpeta del .exe. En desarrollo: la carpeta de este paquete.
+EMPAQUETADO = getattr(sys, "frozen", False)
+BASE = Path(sys.executable).resolve().parent if EMPAQUETADO else Path(__file__).resolve().parent
 load_dotenv(BASE / ".env")
 
 
 def _requerida(nombre: str) -> str:
     valor = os.getenv(nombre, "").strip()
     if not valor:
-        raise RuntimeError(f"Falta la variable {nombre} en agente_local/.env")
+        raise RuntimeError(f"Falta la variable {nombre} en el archivo .env del agente ({BASE})")
     return valor
 
 
@@ -47,7 +51,7 @@ SECRETO        = _secreto()
 HOST   = os.getenv("AG_HOST", "0.0.0.0")
 
 # Carpeta de la mini-app compilada (por defecto la del repositorio)
-DIR_APP = Path(os.getenv("AG_DIR_APP") or BASE.parent.parent / "frontend" / "dist_tomapedido")
+DIR_APP = Path(os.getenv("AG_DIR_APP") or (BASE / "app" if EMPAQUETADO else BASE.parent.parent / "frontend" / "dist_tomapedido"))
 PUERTO = int(os.getenv("AG_PUERTO", "8090"))
 
 # Sesión del mesero: dura un turno largo; un nuevo ingreso invalida la anterior
