@@ -110,13 +110,16 @@ async def _cajas_abiertas(db: AsyncSession, company_id: int) -> list[dict]:
 async def _turno_abierto(db: AsyncSession, company_id: int, user_id: int,
                          id_caja: Optional[int] = None) -> dict | None:
     """Id_Caja con el que trabaja el usuario.
-    Escritorio: el Id_Caja abierto elegido (header X-Id-Caja) o el único abierto.
+    Escritorio: el Id_Caja abierto elegido (header X-Id-Caja); si no eligió (o el elegido ya se
+    cerró), el último creado de los abiertos (mayor Id_Caja).
     Solo web: el Id_Caja abierto de ese usuario."""
-    abiertas = await _cajas_abiertas(db, company_id)
+    abiertas = await _cajas_abiertas(db, company_id)      # ordenadas por Id_Caja descendente
     if await _es_escritorio(db, company_id):
         if id_caja:
-            return next((a for a in abiertas if int(a["id"]) == int(id_caja)), None)
-        return abiertas[0] if len(abiertas) == 1 else None
+            elegida = next((a for a in abiertas if int(a["id"]) == int(id_caja)), None)
+            if elegida:
+                return elegida
+        return abiertas[0] if abiertas else None
     return next((a for a in abiertas if int(a["cajero_id"] or 0) == int(user_id)), None)
 
 
