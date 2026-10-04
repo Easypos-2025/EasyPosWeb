@@ -354,6 +354,10 @@ async def anular(
         raise HTTPException(status_code=409, detail="El movimiento ya está anulado")
     if not m["created_by"]:
         raise HTTPException(status_code=409, detail="Este movimiento se registró en el escritorio: se anula allá")
+    if tabla == "pos_other_expenses" and (await db.execute(text(
+        "SELECT 1 FROM worker_liquidaciones WHERE company_id = :cid AND other_expense_id = :id LIMIT 1"
+    ), {"cid": cid, "id": id_registro})).scalar():
+        raise HTTPException(status_code=409, detail="Es un pago a operarios: se anula desde Liquidación de Operarios")
     if not await caja_vigente(db, cid, m["register_id"]):
         raise HTTPException(status_code=409, detail="El Id_Caja de este movimiento ya está cerrado")
     await db.execute(text(f"""

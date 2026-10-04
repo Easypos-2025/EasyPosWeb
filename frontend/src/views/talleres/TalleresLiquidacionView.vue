@@ -204,18 +204,24 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="liq in dataHist.liquidaciones" :key="liq.id">
+            <tr v-for="liq in dataHist.liquidaciones" :key="liq.id" :class="{ 'liq-anulada': liq.anulado }">
               <td class="mono">{{ liq.fecha_inicio }}</td>
               <td class="fw-bold">{{ liq.worker_nombre }}</td>
               <td><span class="prof-badge">{{ liq.profesion || '—' }}</span></td>
               <td class="ta-c">{{ liq.num_items }}</td>
               <td class="ta-r">{{ fmt(liq.total_bruto) }}</td>
-              <td class="ta-r fw-bold text-green">{{ fmt(liq.monto_operario) }}</td>
+              <td class="ta-r fw-bold text-green">{{ fmt(liq.monto_operario) }}
+                <div v-if="liq.anulado" class="liq-anulada-tag" :title="liq.motivo">ANULADA</div>
+                <div v-else-if="liq.id_caja" class="small-txt">Id_Caja {{ liq.id_caja }}</div>
+              </td>
               <td><span :class="['forma-badge', `fp-${liq.forma_pago}`]">{{ formaLabel(liq.forma_pago) }}</span></td>
               <td class="small-txt">{{ liq.registrado_por || '—' }}</td>
               <td>
                 <button class="tbl-btn" @click="imprimirHistLiq(liq)" title="Imprimir">
                   <i class="bi bi-printer-fill"></i>
+                </button>
+                <button v-if="!liq.anulado && liq.id_caja" class="tbl-btn tbl-btn--danger" @click="pedirAnular(liq)" title="Anular">
+                  <i class="bi bi-x-circle"></i>
                 </button>
               </td>
             </tr>
@@ -379,11 +385,10 @@
             </div>
             <div class="mb-row">
               <label>Forma de Pago</label>
-              <select v-model="formPago.forma_pago" class="mb-sel">
-                <option value="efectivo">Efectivo</option>
-                <option value="transferencia">Transferencia</option>
-                <option value="otro">Otro</option>
+              <select v-model.number="formPago.payment_method_id" class="mb-sel">
+                <option v-for="fp in formasPago" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
               </select>
+              <small class="mb-help">Sale de la caja como Otro Egreso (Pagos · Pago Operarios) en el Id_Caja abierto.</small>
             </div>
             <div class="mb-row">
               <label>Observaciones (opcional)</label>
@@ -403,6 +408,37 @@
       </div>
     </Teleport>
 
+    <!-- ─── Modal Anular liquidación ────────────────────────────────────── -->
+    <Teleport to="body">
+      <div v-if="anu.liq" class="modal-overlay" @click.self="anu.liq = null">
+        <div class="modal-box">
+          <div class="mb-head">
+            <div>
+              <h4><i class="bi bi-x-circle"></i> Anular liquidación</h4>
+              <p class="mb-sub">{{ anu.liq.worker_nombre }} · {{ fmt(anu.liq.monto_operario) }}</p>
+            </div>
+            <button class="btn-x" @click="anu.liq = null"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="mb-body">
+            <p class="mb-help">No se elimina: queda anulada junto con su Otro Egreso, y los servicios vuelven a quedar pendientes de liquidar.</p>
+            <div class="mb-row">
+              <label>Motivo</label>
+              <input v-model="anu.reason" class="mb-inp" maxlength="255" placeholder="¿Por qué se anula?" />
+            </div>
+          </div>
+          <div class="mb-footer">
+            <button class="btn-cancel" @click="anu.liq = null">Cancelar</button>
+            <button class="btn-confirmar btn-confirmar--danger" :disabled="anu.reason.trim().length < 3 || anu.saving" @click="anularLiq">
+              <i :class="anu.saving ? 'bi bi-hourglass-split spin' : 'bi bi-x-circle-fill'"></i> Anular
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Sin Id_Caja abierto no se paga a operarios (sale dinero de la caja) -->
+    <TurnoCajaModal v-if="pedirCaja" @opened="onCaja" />
+
     <!-- Zona de impresión (invisible en pantalla) -->
     <div id="print-zone"></div>
 
@@ -415,6 +451,8 @@ import { useRouter } from 'vue-router'
 import api from '@/services/apis'
 import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import TurnoCajaModal from '@/components/pos/TurnoCajaModal.vue'
+import { showToast } from '@/utils/toast'
 
 const router       = useRouter()
 const companyStore = useCompanyStore()
@@ -488,31 +526,67 @@ const totalSeleccionado = computed(() =>
 const showModalPago  = ref(false)
 const workerPago     = ref(null)
 const guardandoPago  = ref(false)
-const formPago       = ref({ forma_pago: 'efectivo', observaciones: '' })
+const formPago       = ref({ payment_method_id: null, observaciones: '' })
+const formasPago     = ref([])
+const pedirCaja      = ref(false)
+let workerPendiente  = null
 
-function abrirPago(w) {
+async function abrirPago(w) {
+  // El pago sale de la caja: exige Id_Caja abierto (como Restaurante)
+  try {
+    if (!(await api.get('/api/pos/turno/actual')).data?.id) { workerPendiente = w; pedirCaja.value = true; return }
+  } catch { /* el servidor vuelve a validar */ }
+  if (!formasPago.value.length) {
+    try { formasPago.value = (await api.get('/api/talleres/payment-types', { params: { company_id: companyId.value } })).data || [] }
+    catch { formasPago.value = [] }
+  }
+  const def = formasPago.value.find(f => f.es_efectivo) || formasPago.value.find(f => f.is_default) || formasPago.value[0]
   workerPago.value = w
-  formPago.value   = { forma_pago: 'efectivo', observaciones: '' }
+  formPago.value   = { payment_method_id: def?.id ?? null, observaciones: '' }
   showModalPago.value = true
+}
+function onCaja() {
+  pedirCaja.value = false
+  if (workerPendiente) { const w = workerPendiente; workerPendiente = null; abrirPago(w) }
+}
+
+// ── Anular liquidación ──
+const anu = ref({ liq: null, reason: '', saving: false })
+function pedirAnular(liq) { anu.value = { liq, reason: '', saving: false } }
+async function anularLiq() {
+  anu.value.saving = true
+  try {
+    await api.post(`/api/talleres/liquidacion/${anu.value.liq.id}/anular`, { reason: anu.value.reason.trim() })
+    showToast('Liquidación anulada', 'success')
+    anu.value = { liq: null, reason: '', saving: false }
+    await Promise.all([cargarHistorial(), cargarDia()])
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'No se pudo anular', 'error')
+    anu.value.saving = false
+  }
 }
 async function confirmarPago() {
   if (!workerPago.value) return
   guardandoPago.value = true
   try {
     const w = workerPago.value
-    await api.post('/api/talleres/liquidacion/registrar', {
+    const { data } = await api.post('/api/talleres/liquidacion/registrar', {
       company_id:    companyId.value,
       worker_id:     w.worker_id,
       fecha:         fechaDia.value,
-      monto_operario: w.total_pendiente,
-      total_bruto:   w.detalles.reduce((s, d) => s + d.subtotal, 0),
-      forma_pago:    formPago.value.forma_pago,
+      payment_method_id: formPago.value.payment_method_id,
       observaciones: formPago.value.observaciones,
       detail_ids:    w.detalles.map(d => d.detail_id),
     })
+    showToast(`Pago registrado en el Id_Caja ${data.id_caja}`, 'success')
     showModalPago.value = false
     await cargarDia()
-  } catch { alert('Error al registrar el pago. Intente de nuevo.') }
+  } catch (e) {
+    showToast(e?.response?.data?.detail || 'Error al registrar el pago. Intente de nuevo.', 'error')
+    if (e?.response?.status === 409 && !(await api.get('/api/pos/turno/actual').then(r => r.data?.id).catch(() => true))) {
+      showModalPago.value = false; workerPendiente = workerPago.value; pedirCaja.value = true
+    }
+  }
   finally { guardandoPago.value = false }
 }
 
@@ -982,4 +1056,9 @@ onMounted(cargarDia)
   .liq-page    { display: none !important; }
   #print-zone  { display: block !important; }
 }
+.liq-anulada td { opacity: .55; }
+.liq-anulada-tag { display: inline-block; background: #fee2e2; color: #b91c1c; border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 800; }
+.tbl-btn--danger { color: #dc2626; }
+.btn-confirmar--danger { background: #dc2626 !important; border-color: #dc2626 !important; }
+.mb-help { display: block; color: #64748b; font-size: 12px; margin-top: 4px; }
 </style>

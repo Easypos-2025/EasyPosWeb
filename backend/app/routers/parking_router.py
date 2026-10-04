@@ -9,6 +9,8 @@ from app.auth.dependencies import get_current_user
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional, List
+from app.routers.pos_shift_router import require_open_shift
+from app.services import recibo_caja as rc
 from pathlib import Path
 import uuid, shutil
 
@@ -466,8 +468,15 @@ class ItemCobro(BaseModel):
     cantidad:        int   = 1
     subtotal:        float
 
+class PagoParking(BaseModel):
+    payment_method_id: int
+    amount:            float
+    notes:             Optional[str] = None
+
+
 class PagarBody(BaseModel):
     items: List[ItemCobro] = []
+    pagos: List[PagoParking] = []      # sin pagos → EFECTIVO por el total
 
 
 @router.put("/orders/{order_id}/pagar")
@@ -476,11 +485,15 @@ async def pagar_orden(
     body: PagarBody,
     db: AsyncSession      = Depends(get_db),
     current_user=Depends(get_current_user),
+    turno: dict = Depends(require_open_shift),
 ):
+    """Cobro: exige Id_Caja abierto (como Restaurante). Precios del catálogo (los calcula el
+    servidor, no se toman del navegador); recibo con el consecutivo de recibos, fecha de apertura
+    del Id_Caja, formas de pago y caja_recibos del Id_Caja."""
     await _check_orden_empresa(db, order_id, current_user)
     row = await db.execute(text(
-        "SELECT id, estado, company_id FROM parking_orders WHERE id = :id"
-    ), {"id": order_id})
+        "SELECT id, estado, company_id FROM parking_orders WHERE id = :id AND company_id = :cid"
+    ), {"id": order_id, "cid": current_user.company_id})
     orden = row.mappings().first()
     if not orden:
         raise HTTPException(404, detail="Orden no encontrada")
@@ -489,50 +502,73 @@ async def pagar_orden(
             400,
             detail=f"Solo se pueden pagar órdenes en estado 'registrado'. Estado actual: '{orden['estado']}'"
         )
+    company_id = current_user.company_id
+    if not body.items:
+        raise HTTPException(422, detail="Seleccione al menos un servicio")
+
+    # Precios e impuestos del catálogo de la empresa
+    ids = {int(i.product_id or 0) for i in body.items}
+    prods = {int(r["id"]): r for r in (await db.execute(text(
+        f"SELECT id, name, base_price, tax_rate FROM products WHERE company_id = :cid AND is_active = 1 "
+        f"AND id IN ({','.join(str(i) for i in ids) or '0'})"
+    ), {"cid": company_id})).mappings().all()}
+    lineas = []
+    for it in body.items:
+        pr = prods.get(int(it.product_id or 0))
+        if not pr:
+            raise HTTPException(422, detail="Servicio no válido o inactivo")
+        qty = int(it.cantidad or 0)
+        if qty < 1 or qty > 1000:
+            raise HTTPException(422, detail="Cantidad no válida")
+        precio, imp = float(pr["base_price"] or 0), float(pr["tax_rate"] or 0)
+        lineas.append({"product_id": int(pr["id"]), "nombre": pr["name"], "precio_unitario": precio,
+                       "impuesto_pct": imp, "cantidad": qty,
+                       "subtotal": round(precio * qty * (1 + imp / 100))})
+    total_cobrado = int(sum(l["subtotal"] for l in lineas))
+    pagos = await rc.preparar_pagos(db, company_id, total_cobrado, [p.dict() for p in body.pagos])
+
+    # La orden pasa a pagada una sola vez (doble clic / dos cajeros)
+    now_dt   = datetime.now(timezone(timedelta(hours=-5)))
+    now_str  = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+    marcada = await db.execute(text("""
+        UPDATE parking_orders
+        SET estado = 'pagado', hora_salida = :now, pagado_por = :uid, updated_at = :now
+        WHERE id = :id AND company_id = :cid AND estado = 'registrado'
+    """), {"uid": current_user.id, "id": order_id, "cid": company_id, "now": now_str})
+    if not marcada.rowcount:
+        await db.rollback()
+        raise HTTPException(409, detail="La orden ya fue cobrada")
+    await db.commit()
 
     # Reemplaza ítems existentes (los del portero/mesero con precio=0) con los del cobro
     await db.execute(text(
         "DELETE FROM parking_order_items WHERE parking_order_id = :oid"
     ), {"oid": order_id})
 
-    for item in body.items:
+    for item in lineas:
         await db.execute(text("""
             INSERT INTO parking_order_items
                 (parking_order_id, product_id, nombre, precio_unitario, impuesto_pct, cantidad, subtotal)
             VALUES (:oid, :pid, :nom, :pu, :imp, :qty, :sub)
         """), {
             "oid": order_id,
-            "pid": item.product_id,
-            "nom": item.nombre,
-            "pu":  item.precio_unitario,
-            "imp": item.impuesto_pct,
-            "qty": item.cantidad,
-            "sub": item.subtotal,
+            "pid": item["product_id"],
+            "nom": item["nombre"],
+            "pu":  item["precio_unitario"],
+            "imp": item["impuesto_pct"],
+            "qty": item["cantidad"],
+            "sub": item["subtotal"],
         })
 
-    now_dt   = datetime.now(timezone(timedelta(hours=-5)))
-    fecha    = now_dt.date().isoformat()
-    hora     = now_dt.strftime("%H:%M:%S")
-    now_str  = now_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    await db.execute(text("""
-        UPDATE parking_orders
-        SET estado      = 'pagado',
-            hora_salida = :now,
-            pagado_por  = :uid,
-            updated_at  = :now
-        WHERE id = :id
-    """), {"uid": current_user.id, "id": order_id, "now": now_str})
-
-    # Generar e insertar recibo en pos_receipts
-    company_id = orden["company_id"]
-    total_cobrado = int(sum(item.subtotal for item in body.items))
-
-    rn_row = (await db.execute(text("""
-        SELECT COALESCE(MAX(CAST(receipt_number AS UNSIGNED)), 0) + 1 AS next_rn
-        FROM pos_receipts WHERE company_id = :cid
-    """), {"cid": company_id})).mappings().first()
-    receipt_number = str(int(rn_row["next_rn"]))
+    fecha = turno.get("fecha") or now_dt.date().isoformat()    # fecha de apertura del Id_Caja
+    hora  = now_dt.strftime("%H:%M:%S")
+    try:
+        receipt_number = await rc.consecutivo_recibo(db, company_id, f"PK{order_id}-{now_dt:%y%m%d%H%M%S}", fecha)
+    except Exception:
+        await db.execute(text("UPDATE parking_orders SET estado = 'registrado', hora_salida = NULL, pagado_por = NULL "
+                              "WHERE id = :id AND company_id = :cid"), {"id": order_id, "cid": company_id})
+        await db.commit()
+        raise
 
     await db.execute(text("""
         INSERT INTO pos_receipts
@@ -546,7 +582,7 @@ async def pagar_orden(
         "total": total_cobrado, "uid": current_user.id, "hora": hora,
     })
 
-    for idx, item in enumerate(body.items, start=1):
+    for idx, item in enumerate(lineas, start=1):
         await db.execute(text("""
             INSERT INTO pos_receipt_order_details
                 (order_number, date, receipt_number, dish_id, item,
@@ -558,12 +594,15 @@ async def pagar_orden(
             "orden": str(order_id), "fecha": fecha, "rn": receipt_number,
             # dish_id=0 porque es un servicio de parking, no un plato de pos_dishes
             "dish_id": 0, "item": idx,
-            "qty": float(item.cantidad), "amount": int(item.subtotal),
-            "notes": item.nombre, "cid": company_id,
+            "qty": float(item["cantidad"]), "amount": int(item["subtotal"]),
+            "notes": item["nombre"], "cid": company_id,
         })
 
+    await rc.guardar_pagos_recibo(db, company_id, receipt_number, fecha, str(order_id), pagos)
+    await rc.amarrar_a_caja(db, company_id, turno, receipt_number, fecha, str(order_id),
+                            total_cobrado, total_cobrado, current_user.id)
     await db.commit()
-    return {"ok": True, "estado": "pagado", "receipt_number": receipt_number}
+    return {"ok": True, "estado": "pagado", "receipt_number": receipt_number, "total": total_cobrado}
 
 
 # ── Cancelar orden (cajero elimina con motivo obligatorio) ───────────────────

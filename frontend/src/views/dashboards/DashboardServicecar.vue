@@ -34,9 +34,9 @@
         <span class="ac-label">Ver<br>Órdenes</span>
         <i class="bi bi-chevron-right ac-arrow"></i>
       </button>
-      <button class="acceso-card" @click="ir('/talleres/caja')">
-        <div class="ac-icon purple"><i class="bi bi-cash-stack"></i></div>
-        <span class="ac-label">Cierre<br>de Caja</span>
+      <button class="acceso-card" @click="ir('/caja/cuadre')">
+        <div class="ac-icon purple"><i class="bi bi-calculator"></i></div>
+        <span class="ac-label">Cuadre<br>de Caja</span>
         <i class="bi bi-chevron-right ac-arrow"></i>
       </button>
       <button class="acceso-card" @click="ir('/talleres/convenios')">

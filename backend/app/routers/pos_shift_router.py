@@ -177,6 +177,8 @@ async def cajas_disponibles(
         WHERE company_id = :cid AND is_active = 1
         ORDER BY type DESC, name
     """), {"cid": cid})).mappings().all()
+    if not cajas and not await _tiene_cajas(db, cid):
+        cajas = [CAJA_PROVISIONAL]
     ocupada_por = {int(a["register_number"]): int(a["cajero_id"] or 0) for a in await _cajas_abiertas(db, cid)}
     result = []
     for c in cajas:
@@ -187,6 +189,15 @@ async def cajas_disponibles(
             "ocupada_por_mi": ocupante == current_user.id,
         })
     return result
+
+
+# Empresa sin ninguna caja creada (Configuración → Cajas): se usa la Caja 1 mientras la crean
+CAJA_PROVISIONAL = {"id": 1, "name": "Caja 1", "type": 0}
+
+
+async def _tiene_cajas(db: AsyncSession, cid: int) -> bool:
+    return bool((await db.execute(text(
+        "SELECT 1 FROM pos_cash_registers WHERE company_id = :cid LIMIT 1"), {"cid": cid})).scalar())
 
 
 async def _siguiente_id_caja(db: AsyncSession, cid: int) -> int:
@@ -240,13 +251,14 @@ async def abrir_turno(
     if base_amount < 0 or base_amount > 1e12:
         raise HTTPException(status_code=422, detail="Base inicial no válida")
     pc = (body.get("pc") or "")[:50]
-    if register_number is None:
+    if register_number is None or not str(register_number).isdigit():
         raise HTTPException(status_code=422, detail="register_number es requerido")
+    register_number = int(register_number)
 
     caja = (await db.execute(text(
         "SELECT id FROM pos_cash_registers WHERE id = :id AND company_id = :cid AND is_active = 1"
     ), {"id": register_number, "cid": cid})).mappings().first()
-    if not caja:
+    if not caja and not (int(register_number) == CAJA_PROVISIONAL["id"] and not await _tiene_cajas(db, cid)):
         raise HTTPException(status_code=404, detail="Caja no encontrada")
     if any(int(a["register_number"]) == int(register_number) for a in await _cajas_abiertas(db, cid)):
         raise HTTPException(status_code=409, detail="Esta caja ya está abierta por otro usuario")

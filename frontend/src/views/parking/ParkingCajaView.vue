@@ -199,13 +199,30 @@
           <span>TOTAL</span>
           <span>{{ fmt(totalFinal) }}</span>
         </div>
+
+        <!-- Formas de pago (EFECTIVO por defecto; el servidor valida que sumen el total) -->
+        <div class="pkc-fp-head">
+          <span>Formas de pago</span>
+          <button type="button" class="pkc-fp-add" @click="agregarPago"><i class="bi bi-plus-circle"></i> Agregar</button>
+        </div>
+        <div v-for="(pg, i) in pagos" :key="i" class="pkc-fp">
+          <select v-model.number="pg.payment_method_id" class="pkc-fp-sel">
+            <option v-for="fp in formasPago" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
+          </select>
+          <input v-model.number="pg.amount" type="number" min="0" class="pkc-fp-val" />
+          <button v-if="pagos.length > 1" type="button" class="pkc-fp-del" @click="pagos.splice(i, 1)"><i class="bi bi-trash"></i></button>
+          <input v-if="pideNota(pg)" v-model="pg.notes" class="pkc-fp-nota" maxlength="255" placeholder="Observación (obligatoria)" />
+        </div>
+        <div v-if="faltaPago !== 0" class="pkc-fp-dif">
+          {{ faltaPago > 0 ? `Falta asignar ${fmt(faltaPago)}` : `Sobran ${fmt(-faltaPago)}` }}
+        </div>
       </div>
 
       <div class="pkc-modal-footer">
         <button class="pkc-btn-cancelar" @click="showCobro = false">Cancelar</button>
         <button
           class="pkc-btn-confirmar"
-          :disabled="lineasSeleccionadas.length === 0 || pagando"
+          :disabled="lineasSeleccionadas.length === 0 || pagando || !pagosValidos"
           @click="confirmarCobro"
         >
           <i v-if="pagando" class="bi bi-arrow-repeat spin"></i>
@@ -216,6 +233,9 @@
 
     </div>
   </div>
+
+  <!-- Sin Id_Caja abierto no se cobra (como Restaurante) -->
+  <TurnoCajaModal v-if="pedirCaja" @opened="onCaja" />
 
   <!-- ══ MODAL CANCELACIÓN ══════════════════════════════════════════════════ -->
   <div v-if="showCancelacion" class="pkc-overlay" @click.self="showCancelacion = false">
@@ -278,6 +298,7 @@ import { useCompanyStore } from '@/stores/companyStore'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 import ComprobanteParkingIngreso from '@/components/parking/ComprobanteParkingIngreso.vue'
 import ParkingOrderCard from '@/components/parking/ParkingOrderCard.vue'
+import TurnoCajaModal from '@/components/pos/TurnoCajaModal.vue'
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
@@ -365,6 +386,27 @@ const totalBruto    = computed(() => lineasSeleccionadas.value.reduce((s, l) => 
 const totalImpuesto = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.impuesto, 0))
 const totalFinal    = computed(() => lineasSeleccionadas.value.reduce((s, l) => s + l.subtotal, 0))
 
+// ── Formas de pago e Id_Caja ──────────────────────────────────────────────────
+const formasPago = ref([])
+const pagos      = ref([])
+const pedirCaja  = ref(false)
+const fpDefecto  = () => (formasPago.value.find(f => f.es_efectivo) || formasPago.value.find(f => f.is_default) || formasPago.value[0])?.id
+const pideNota   = pg => !!formasPago.value.find(f => f.id === pg.payment_method_id)?.ask_notes
+const faltaPago  = computed(() => Math.round(totalFinal.value) - pagos.value.reduce((s, pg) => s + Math.round(Number(pg.amount) || 0), 0))
+const pagosValidos = computed(() => Math.abs(faltaPago.value) <= 1
+  && pagos.value.every(pg => pg.payment_method_id && (!pideNota(pg) || (pg.notes || '').trim())))
+watch(totalFinal, v => { if (pagos.value.length === 1) pagos.value[0].amount = Math.round(v) })
+function agregarPago() {
+  pagos.value.push({ payment_method_id: fpDefecto(), amount: Math.max(faltaPago.value, 0), notes: '' })
+}
+async function cajaAbierta() {
+  try { return !!(await api.get('/api/pos/turno/actual')).data?.id } catch { return true }
+}
+async function onCaja() {
+  pedirCaja.value = false
+  if (ordenCobro.value) abrirCobro(ordenCobro.value)
+}
+
 const pctIngresado  = computed(() => stats.value.total_plazas ? Math.round((stats.value.cnt_ingresado || 0) / stats.value.total_plazas * 100) : 0)
 const pctRegistrado = computed(() => stats.value.total_plazas ? Math.round((stats.value.cnt_registrado || 0) / stats.value.total_plazas * 100) : 0)
 const pctPagado     = computed(() => { const a = (stats.value.cnt_ingresado || 0) + (stats.value.cnt_registrado || 0); return a ? Math.round((stats.value.cnt_pagado || 0) / a * 100) : 0 })
@@ -401,8 +443,14 @@ async function cargar(silent = false) {
 // ── Abrir modal cobro ─────────────────────────────────────────────────────────
 async function abrirCobro(orden) {
   ordenCobro.value = orden
+  if (!(await cajaAbierta())) { pedirCaja.value = true; return }
   seleccion.value  = {}
   showCobro.value  = true
+  if (!formasPago.value.length) {
+    try { formasPago.value = (await api.get('/api/talleres/payment-types', { params: { company_id: companyId.value } })).data || [] }
+    catch { formasPago.value = [] }
+  }
+  pagos.value = [{ payment_method_id: fpDefecto(), amount: 0, notes: '' }]
   loadingProductos.value = true
   try {
     const calls = [api.get(`/api/parking/orders/${orden.id}/items`)]
@@ -450,7 +498,10 @@ async function confirmarCobro() {
       cantidad:        l.cantidad,
       subtotal:        l.subtotal,
     }))
-    await api.put(`/api/parking/orders/${ordenCobro.value.id}/pagar`, { items })
+    await api.put(`/api/parking/orders/${ordenCobro.value.id}/pagar`, {
+      items,
+      pagos: pagos.value.map(pg => ({ payment_method_id: pg.payment_method_id, amount: Number(pg.amount) || 0, notes: pg.notes || null })),
+    })
     showToast('Orden cobrada correctamente', 'success', 2500)
 
     const actualizada = { ...ordenCobro.value, estado: 'pagado', hora_salida: new Date().toISOString() }
@@ -465,6 +516,7 @@ async function confirmarCobro() {
     ordenParaSalida.value = actualizada
   } catch (e) {
     showToast(e?.response?.data?.detail || 'Error al cobrar', 'error', 3000)
+    if (e?.response?.status === 409 && !(await cajaAbierta())) { showCobro.value = false; pedirCaja.value = true }
   }
   pagando.value = false
 }
@@ -814,6 +866,15 @@ onUnmounted(() => clearInterval(_autoRefresh))
 
 /* ── Modal cancelación ── */
 .pkc-modal--cancel  { max-width: 440px; }
+.pkc-fp-head { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-weight: 700; font-size: .85rem; }
+.pkc-fp-add { border: none; background: none; color: #2563eb; font-weight: 700; font-size: .8rem; cursor: pointer; }
+.pkc-fp { display: grid; grid-template-columns: 1fr 120px auto; gap: 6px; margin-top: 6px; align-items: center; }
+.pkc-fp-sel, .pkc-fp-val, .pkc-fp-nota { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; font-size: .85rem; width: 100%; }
+.pkc-fp-val { text-align: right; font-weight: 700; }
+.pkc-fp-nota { grid-column: 1 / -1; }
+.pkc-fp-del { border: none; background: none; color: #dc2626; cursor: pointer; }
+.pkc-fp-dif { margin-top: 6px; color: #b91c1c; font-weight: 700; font-size: .8rem; }
+@media (max-width: 576px) { .pkc-fp { grid-template-columns: 1fr 100px auto; } }
 .pkc-cancel-body    { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
 .pkc-cancel-warn {
   background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;

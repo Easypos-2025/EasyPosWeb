@@ -1,6 +1,8 @@
 <template>
   <Teleport to="body">
-    <div class="fr-overlay" @click.self="$emit('close')">
+    <!-- Sin Id_Caja abierto no se cobra (como Restaurante): primero abrir o escoger la caja -->
+    <TurnoCajaModal v-if="sinCaja" @opened="onCaja" />
+    <div v-else class="fr-overlay" @click.self="$emit('close')">
       <div class="fr-modal">
 
         <!-- ── Header ── -->
@@ -156,6 +158,7 @@
 import { ref, computed, onMounted, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import TurnoCajaModal from "@/components/pos/TurnoCajaModal.vue"
 
 const props = defineProps({
   ordenId:     { type: Number, required: true },
@@ -196,6 +199,15 @@ const canSubmit = computed(() =>
 )
 
 // ── Carga inicial ─────────────────────────────────────────────────────────────
+const sinCaja = ref(false)
+async function verificarCaja() {
+  try {
+    const t = (await api.get("/api/pos/turno/actual")).data
+    sinCaja.value = !t?.id
+  } catch { sinCaja.value = false }
+}
+function onCaja() { sinCaja.value = false }
+
 async function loadData() {
   loadingTypes.value = true
   try {
@@ -258,6 +270,7 @@ async function registrar() {
     })
   } catch (e) {
     showToast(e?.response?.data?.detail || "Error al registrar recibo", "error", 3000)
+    if (e?.response?.status === 409) await verificarCaja()
   }
   saving.value = false
 }
@@ -269,7 +282,7 @@ function fmt(v) {
   }).format(v || 0)
 }
 
-onMounted(loadData)
+onMounted(() => { verificarCaja(); loadData() })
 </script>
 
 <style scoped>

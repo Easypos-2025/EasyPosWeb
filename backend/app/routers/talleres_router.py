@@ -8,6 +8,8 @@ from sqlalchemy import text
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from datetime import datetime, timezone, timedelta
+from app.routers.pos_shift_router import require_open_shift
+from app.services import recibo_caja as rc
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/talleres", tags=["talleres"], dependencies=[Depends(tenant_guard)])
@@ -1288,183 +1290,6 @@ async def buscar_ordenes_avanzado(
 # CIERRE DE CAJA DIARIO
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.get("/caja/resumen")
-async def resumen_caja(
-    company_id: int = Query(...),
-    fecha: str      = Query(None),
-    db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """Resumen financiero del día: ingresos facturados (pos_receipts), mano de obra, egresos."""
-    fecha_q = fecha or datetime.now(_BOG).date().isoformat()
-
-    # ── Ingresos facturados del día (pos_receipts) ────────────────────────────
-    # Agrupado por forma de pago para separar efectivo de otros medios
-    ing = await db.execute(text("""
-        SELECT
-            COALESCE(SUM(r.amount_without_tip), 0)                          AS ingresos_subtotal,
-            COALESCE(SUM(r.tip), 0)                                         AS ingresos_propina,
-            COALESCE(SUM(r.cash_amount), 0)                                 AS ingresos_total,
-            COUNT(*)                                                         AS num_recibos,
-            -- Efectivo: pagos con la forma de pago EFECTIVO
-            COALESCE(SUM(
-                CASE WHEN EXISTS(
-                    SELECT 1 FROM pos_receipt_payment_methods pm
-                    JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
-                    WHERE pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
-                      AND UPPER(TRIM(pt.name)) = 'EFECTIVO'
-                ) THEN r.cash_amount ELSE 0 END
-            ), 0)                                                            AS ingresos_efectivo,
-            -- Convenio / crédito: el resto
-            COALESCE(SUM(
-                CASE WHEN NOT EXISTS(
-                    SELECT 1 FROM pos_receipt_payment_methods pm
-                    JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
-                    WHERE pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
-                      AND UPPER(TRIM(pt.name)) = 'EFECTIVO'
-                ) THEN r.cash_amount ELSE 0 END
-            ), 0)                                                            AS ingresos_convenio
-        FROM pos_receipts r
-        WHERE r.company_id = :cid AND r.date = :fecha AND r.voided = 0
-    """), {"cid": company_id, "fecha": fecha_q})
-    ingresos = dict(ing.mappings().first() or {})
-
-    # ── Detalle de recibos del día ────────────────────────────────────────────
-    det = await db.execute(text("""
-        SELECT
-            r.receipt_number,
-            r.time,
-            r.cash_amount          AS total_orden,
-            r.amount_without_tip   AS subtotal,
-            r.tip,
-            so.numero_orden,
-            so.placa_vehiculo,
-            so.estado_facturacion,
-            c.name                 AS cliente_nombre,
-            cv.nombre_empresa      AS convenio_nombre,
-            -- Formas de pago concatenadas
-            GROUP_CONCAT(pt.name ORDER BY pm.item SEPARATOR ' / ') AS formas_pago
-        FROM pos_receipts r
-        LEFT JOIN pos_receipt_payment_methods pm
-               ON pm.invoice_number = r.receipt_number AND pm.company_id = r.company_id
-        LEFT JOIN pos_payment_types pt
-               ON pt.id = pm.payment_method_id AND pt.company_id = r.company_id
-        LEFT JOIN service_orders so
-               ON so.id = CAST(pm.order_number AS UNSIGNED) AND so.company_id = r.company_id
-        LEFT JOIN clients c ON c.id = so.client_id
-        LEFT JOIN service_convenios cv ON cv.id = so.convenio_id
-        WHERE r.company_id = :cid AND r.date = :fecha AND r.voided = 0
-        GROUP BY r.receipt_number, r.company_id, r.time, r.cash_amount, r.amount_without_tip, r.tip,
-                 so.numero_orden, so.placa_vehiculo, so.estado_facturacion, c.name, cv.nombre_empresa
-        ORDER BY r.time
-    """), {"cid": company_id, "fecha": fecha_q})
-    ordenes_dia = [dict(r) for r in det.mappings()]
-
-    # ── Mano de obra liquidada (pagos a workers del día) ──────────────────────
-    liq = await db.execute(text("""
-        SELECT
-            COALESCE(SUM(wl.monto_operario), 0) AS total_mano_obra,
-            COUNT(*)                             AS num_liquidaciones
-        FROM worker_liquidaciones wl
-        WHERE wl.company_id = :cid AND wl.fecha_pago = :fecha AND wl.estado = 'pagado'
-    """), {"cid": company_id, "fecha": fecha_q})
-    liquidaciones = dict(liq.mappings().first() or {})
-
-    # Detalle liquidaciones
-    liq_det = await db.execute(text("""
-        SELECT
-            wl.id, wl.monto_operario, wl.forma_pago, wl.fecha_pago,
-            w.name AS worker_nombre,
-            p.name AS profession_nombre
-        FROM worker_liquidaciones wl
-        JOIN workers w    ON w.id = wl.worker_id
-        LEFT JOIN professions p ON p.id = w.profession_id
-        WHERE wl.company_id = :cid AND wl.fecha_pago = :fecha AND wl.estado = 'pagado'
-        ORDER BY wl.created_at
-    """), {"cid": company_id, "fecha": fecha_q})
-    liquidaciones_det = [dict(r) for r in liq_det.mappings()]
-
-    # ── Egresos manuales del día ──────────────────────────────────────────────
-    eg = await db.execute(text("""
-        SELECT COALESCE(SUM(monto), 0) AS total_egresos, COUNT(*) AS num_egresos
-        FROM caja_egresos WHERE company_id = :cid AND fecha = :fecha
-    """), {"cid": company_id, "fecha": fecha_q})
-    egresos_sum = dict(eg.mappings().first() or {})
-
-    eg_det = await db.execute(text("""
-        SELECT id, concepto, categoria, monto, forma_pago, created_at
-        FROM caja_egresos WHERE company_id = :cid AND fecha = :fecha ORDER BY created_at
-    """), {"cid": company_id, "fecha": fecha_q})
-    egresos_det = [dict(r) for r in eg_det.mappings()]
-
-    total_egresos = float(liquidaciones.get("total_mano_obra") or 0) + float(egresos_sum.get("total_egresos") or 0)
-    saldo_neto    = float(ingresos.get("ingresos_efectivo") or 0) - total_egresos
-
-    return {
-        "fecha":             fecha_q,
-        "ingresos":          {k: float(v or 0) for k, v in ingresos.items()},
-        "ordenes_dia":       ordenes_dia,
-        "liquidaciones":     {k: float(v or 0) if isinstance(v, (int, float)) else v
-                              for k, v in liquidaciones.items()},
-        "liquidaciones_det": liquidaciones_det,
-        "egresos":           {k: float(v or 0) if isinstance(v, (int, float)) else v
-                              for k, v in egresos_sum.items()},
-        "egresos_det":       egresos_det,
-        "saldo_neto":        saldo_neto,
-        "total_egresos":     total_egresos,
-    }
-
-
-@router.post("/caja/egresos")
-async def crear_egreso_caja(
-    payload: dict,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    from datetime import date as ddate
-    company_id = payload.get("company_id") or current_user.company_id
-    concepto   = (payload.get("concepto") or "").strip()
-    if not concepto:
-        raise HTTPException(status_code=400, detail="El concepto es requerido")
-    monto = float(payload.get("monto") or 0)
-    if monto <= 0:
-        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
-    categoria  = payload.get("categoria", "gasto")
-    if categoria not in ("gasto", "compra", "nomina", "otro"):
-        categoria = "gasto"
-    forma_pago = payload.get("forma_pago", "efectivo")
-    fecha      = payload.get("fecha") or str(ddate.today())
-
-    await db.execute(text("""
-        INSERT INTO caja_egresos (company_id, fecha, concepto, categoria, monto, forma_pago, registrado_por)
-        VALUES (:cid, :fecha, :concepto, :cat, :monto, :fp, :usr)
-    """), {
-        "cid": company_id, "fecha": fecha, "concepto": concepto,
-        "cat": categoria, "monto": monto, "fp": forma_pago,
-        "usr": current_user.id,
-    })
-    await db.commit()
-    r = await db.execute(text("SELECT LAST_INSERT_ID()"))
-    return {"id": r.scalar(), "ok": True}
-
-
-@router.delete("/caja/egresos/{egreso_id}")
-async def eliminar_egreso_caja(
-    egreso_id: int,
-    company_id: int = Query(...),
-    db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    chk = await db.execute(text(
-        "SELECT id FROM caja_egresos WHERE id=:eid AND company_id=:cid"
-    ), {"eid": egreso_id, "cid": company_id})
-    if not chk.scalar():
-        raise HTTPException(status_code=404, detail="Egreso no encontrado")
-    await db.execute(text("DELETE FROM caja_egresos WHERE id=:eid"), {"eid": egreso_id})
-    await db.commit()
-    return {"ok": True}
-
-
 # ── Liquidación de Operarios ───────────────────────────────────────────────────
 
 @router.get("/liquidacion/dia")
@@ -1584,60 +1409,176 @@ async def liquidacion_dia(
     }
 
 
+_MONTO_OPERARIO = """COALESCE(
+    NULLIF(sod.mano_obra_operario, 0),
+    sod.subtotal * COALESCE((SELECT sp.pct_pago / 100 FROM service_participants sp
+                             WHERE sp.product_id = sod.product_id AND sp.profession_id = w.profession_id
+                             LIMIT 1), 0))"""
+
+
+async def _concepto_pago_operarios(db: AsyncSession, cid: int) -> tuple[int, int]:
+    """Otro Egreso: concepto "Pagos" y subconcepto "Pago Operarios" de la empresa (se crean si no existen)."""
+    concepto = (await db.execute(text(
+        "SELECT concept_id FROM pos_cash_concepts WHERE company_id = :cid AND concept_type = 3 AND UPPER(description) = 'PAGOS' LIMIT 1"
+    ), {"cid": cid})).scalar()
+    if not concepto:
+        concepto = int((await db.execute(text(
+            "SELECT COALESCE(MAX(concept_id), 0) + 1 FROM pos_cash_concepts WHERE company_id = :cid"
+        ), {"cid": cid})).scalar())
+        await db.execute(text(
+            "INSERT INTO pos_cash_concepts (company_id, concept_id, description, concept_type, is_active, synced) "
+            "VALUES (:cid, :c, 'Pagos', 3, 1, 0)"), {"cid": cid, "c": concepto})
+    sub = (await db.execute(text(
+        "SELECT subconcept_id FROM pos_cash_subconcepts WHERE company_id = :cid AND concept_id = :c "
+        "AND UPPER(description) = 'PAGO OPERARIOS' LIMIT 1"), {"cid": cid, "c": concepto})).scalar()
+    if not sub:
+        sub = int((await db.execute(text(
+            "SELECT COALESCE(MAX(subconcept_id), 0) + 1 FROM pos_cash_subconcepts WHERE company_id = :cid AND concept_id = :c"
+        ), {"cid": cid, "c": concepto})).scalar())
+        await db.execute(text(
+            "INSERT INTO pos_cash_subconcepts (company_id, concept_id, subconcept_id, description, is_active, synced) "
+            "VALUES (:cid, :c, :s, 'Pago Operarios', 1, 0)"), {"cid": cid, "c": concepto, "s": sub})
+    return int(concepto), int(sub)
+
+
 @router.post("/liquidacion/registrar")
 async def registrar_liquidacion(
     payload: dict,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    turno: dict = Depends(require_open_shift),
 ):
-    company_id    = int(payload.get("company_id") or current_user.company_id)
-    worker_id     = int(payload.get("worker_id")  or 0)
-    fecha         = payload.get("fecha", "")
-    monto         = float(payload.get("monto_operario") or 0)
-    total_bruto   = float(payload.get("total_bruto")    or monto)
-    forma_pago    = payload.get("forma_pago", "efectivo")
-    if forma_pago not in ("efectivo", "transferencia", "otro"):
-        forma_pago = "efectivo"
-    observaciones = (payload.get("observaciones") or "").strip()
-    detail_ids    = [int(d) for d in (payload.get("detail_ids") or []) if str(d).isdigit()]
-
-    if not worker_id or monto <= 0:
+    """Pago a un operario = Otro Egreso (Pagos · Pago Operarios) en el Id_Caja abierto.
+    El valor lo calcula el servidor con los servicios pendientes enviados (de la empresa y del operario)."""
+    from app.routers.caja_movimientos_router import PagoIn, _ahora, _siguiente, guardar_pagos, validar_pagos
+    company_id    = current_user.company_id
+    worker_id     = int(payload.get("worker_id") or 0)
+    fecha         = str(payload.get("fecha") or "")[:10] or turno.get("fecha")
+    observaciones = (payload.get("observaciones") or "").strip()[:500]
+    detail_ids    = sorted({int(d) for d in (payload.get("detail_ids") or []) if str(d).isdigit()})
+    if not worker_id or not detail_ids:
         raise HTTPException(status_code=400, detail="Datos incompletos")
 
-    await db.execute(text("""
-        INSERT INTO worker_liquidaciones
-            (company_id, worker_id, fecha_inicio, fecha_fin, total_bruto, pct_aplicado,
-             monto_operario, estado, fecha_pago, forma_pago, observaciones, registrado_por)
-        VALUES (:cid, :wid, :fi, :ff, :tb, 0, :mo, 'pagado', :fpd, :fp, :obs, :usr)
-    """), {
-        "cid": company_id, "wid": worker_id,
-        "fi": fecha, "ff": fecha,
-        "tb": total_bruto, "mo": monto,
-        "fpd": fecha, "fp": forma_pago,
-        "obs": observaciones, "usr": current_user.id,
-    })
-    await db.commit()
-    r     = await db.execute(text("SELECT LAST_INSERT_ID()"))
-    liq_id = r.scalar()
+    worker = (await db.execute(text(
+        "SELECT id, name FROM workers WHERE id = :w AND company_id = :cid"
+    ), {"w": worker_id, "cid": company_id})).mappings().first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Operario no encontrado")
 
-    for did in detail_ids:
-        try:
+    # Servicios pendientes de ese operario en órdenes de la empresa (valor calculado aquí)
+    dets = (await db.execute(text(f"""
+        SELECT sod.id, sod.subtotal, {_MONTO_OPERARIO} AS monto
+        FROM service_order_details sod
+        JOIN service_orders so ON so.id = sod.order_id AND so.company_id = :cid
+        JOIN workers w ON w.id = sod.worker_id
+        WHERE sod.worker_id = :w AND sod.liq_estado = 'pendiente'
+          AND sod.id IN ({",".join(str(d) for d in detail_ids)})
+    """), {"cid": company_id, "w": worker_id})).mappings().all()
+    if len(dets) != len(detail_ids):
+        raise HTTPException(status_code=409, detail="Algunos servicios ya no están pendientes o no son de este operario")
+    monto = int(round(sum(float(d["monto"] or 0) for d in dets)))
+    total_bruto = sum(float(d["subtotal"] or 0) for d in dets)
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="No hay valor a liquidar")
+
+    # Forma de pago de la empresa (EFECTIVO por defecto) por el valor completo
+    pm = payload.get("payment_method_id")
+    pagos = await validar_pagos(db, company_id, monto,
+                                [PagoIn(payment_method_id=int(pm), amount=monto)] if str(pm or "").isdigit() else [])
+    fp = (await db.execute(text(
+        "SELECT UPPER(TRIM(name)) FROM pos_payment_types WHERE company_id = :cid AND id = :id"
+    ), {"cid": company_id, "id": pagos[0].payment_method_id})).scalar() or ""
+    fecha_caja = turno.get("fecha") or datetime.now(_BOG).date().isoformat()
+    concepto, sub = await _concepto_pago_operarios(db, company_id)
+
+    try:
+        oexp = await _siguiente(db, "pos_other_expenses", company_id)
+        await db.execute(text("""
+            INSERT INTO pos_other_expenses (id_registro, company_id, register_id, date, amount, employee_code, concept_id,
+                                            sub_concept_id, shift, movement_number, detail, synced, created_by, created_at)
+            VALUES (:idr, :cid, :caja, :f, :amt, :emp, :c, :s, 0, 1, :det, 0, :uid, :now)
+        """), {"idr": oexp, "cid": company_id, "caja": turno["id"], "f": fecha_caja, "amt": monto,
+               "emp": str(turno.get("cajero_id") or current_user.id)[:15], "c": concepto, "s": sub,
+               "det": f"Liquidación {worker['name']}"[:255], "uid": current_user.id, "now": _ahora()})
+        await guardar_pagos(db, company_id, turno["id"], fecha_caja, 3, oexp, pagos)
+        res = await db.execute(text("""
+            INSERT INTO worker_liquidaciones
+                (company_id, worker_id, fecha_inicio, fecha_fin, total_bruto, pct_aplicado, monto_operario, estado,
+                 fecha_pago, forma_pago, observaciones, registrado_por, register_id, other_expense_id)
+            VALUES (:cid, :wid, :fi, :ff, :tb, 0, :mo, 'pagado', :fpd, :fp, :obs, :usr, :caja, :oexp)
+        """), {"cid": company_id, "wid": worker_id, "fi": fecha, "ff": fecha, "tb": total_bruto, "mo": monto,
+               "fpd": fecha_caja, "fp": "efectivo" if fp == "EFECTIVO" else "otro", "obs": observaciones,
+               "usr": current_user.id, "caja": turno["id"], "oexp": oexp})
+        liq_id = res.lastrowid
+        for d in dets:
             await db.execute(text("""
                 INSERT INTO worker_liquidacion_details (liq_id, detail_id, subtotal, monto_pagado)
-                SELECT :lid, sod.id, sod.subtotal, sod.mano_obra_operario
-                FROM service_order_details sod WHERE sod.id = :did
-            """), {"lid": liq_id, "did": did})
-            await db.execute(text("""
-                UPDATE service_order_details
-                SET liq_estado = 'liquidado', liq_id = :lid
-                WHERE id = :did
-            """), {"lid": liq_id, "did": did})
-        except Exception as e:
-            log_error(e, contexto={"liquidacion": liq_id, "detalle": did})
-    if detail_ids:
+                VALUES (:lid, :did, :sub, :monto)
+            """), {"lid": liq_id, "did": d["id"], "sub": float(d["subtotal"] or 0), "monto": float(d["monto"] or 0)})
+            marcado = await db.execute(text("""
+                UPDATE service_order_details SET liq_estado = 'liquidado', liq_id = :lid
+                WHERE id = :did AND liq_estado = 'pendiente'
+            """), {"lid": liq_id, "did": d["id"]})
+            if not marcado.rowcount:
+                raise HTTPException(status_code=409, detail="Algunos servicios ya fueron liquidados")
+        await db.execute(text(
+            "UPDATE pos_other_expenses SET detail = :det WHERE company_id = :cid AND id_registro = :idr"
+        ), {"det": f"Liquidación #{liq_id} · {worker['name']}"[:255], "cid": company_id, "idr": oexp})
         await db.commit()
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        log_error(e, contexto={"liquidacion_worker": worker_id})
+        raise HTTPException(status_code=409, detail="No se pudo registrar la liquidación, intente de nuevo")
 
-    return {"ok": True, "liq_id": liq_id}
+    return {"ok": True, "liq_id": liq_id, "monto": monto, "id_caja": turno["id"], "otro_egreso": oexp}
+
+
+@router.post("/liquidacion/{liq_id}/anular")
+async def anular_liquidacion(
+    liq_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Anula la liquidación y su Otro Egreso (nunca se borra); los servicios vuelven a pendientes.
+    Permiso "Anular Movimientos de Caja" y su Id_Caja debe seguir abierto."""
+    from app.routers.caja_movimientos_router import _ahora, caja_vigente
+    from app.services.permisos import permisos_usuario
+    company_id = current_user.company_id
+    motivo = (payload.get("reason") or "").strip()[:255]
+    if len(motivo) < 3:
+        raise HTTPException(status_code=422, detail="Escriba el motivo de la anulación")
+    if "anular_movimientos" not in await permisos_usuario(db, current_user):
+        raise HTTPException(status_code=403, detail="Su rol no tiene permiso para anular movimientos de caja")
+    liq = (await db.execute(text("""
+        SELECT id, register_id, other_expense_id, voided FROM worker_liquidaciones
+        WHERE id = :id AND company_id = :cid
+    """), {"id": liq_id, "cid": company_id})).mappings().first()
+    if not liq:
+        raise HTTPException(status_code=404, detail="Liquidación no encontrada")
+    if liq["voided"]:
+        raise HTTPException(status_code=409, detail="La liquidación ya está anulada")
+    if not liq["register_id"]:
+        raise HTTPException(status_code=409, detail="Esta liquidación no está en un Id_Caja")
+    if not await caja_vigente(db, company_id, liq["register_id"]):
+        raise HTTPException(status_code=409, detail="El Id_Caja de esta liquidación ya está cerrado")
+    now = _ahora()
+    await db.execute(text("""
+        UPDATE worker_liquidaciones SET voided = 1, void_reason = :r, voided_by = :uid, voided_at = :now
+        WHERE id = :id AND company_id = :cid
+    """), {"r": motivo, "uid": current_user.id, "now": now, "id": liq_id, "cid": company_id})
+    await db.execute(text("""
+        UPDATE pos_other_expenses SET voided = 1, void_reason = :r, voided_by = :uid, voided_at = :now
+        WHERE company_id = :cid AND id_registro = :oexp AND voided = 0
+    """), {"r": motivo, "uid": current_user.id, "now": now, "cid": company_id, "oexp": liq["other_expense_id"]})
+    await db.execute(text("""
+        UPDATE service_order_details SET liq_estado = 'pendiente', liq_id = NULL WHERE liq_id = :id
+    """), {"id": liq_id})
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/liquidacion/historial")
@@ -1662,6 +1603,7 @@ async def liquidacion_historial(
             wl.total_bruto, wl.monto_operario,
             wl.estado, wl.fecha_pago, wl.forma_pago,
             wl.observaciones, wl.created_at,
+            wl.register_id, wl.other_expense_id, wl.voided, wl.void_reason,
             w.name       AS worker_nombre,
             pr.name      AS profesion,
             u.nombre     AS registrado_por_nombre,
@@ -1678,6 +1620,7 @@ async def liquidacion_historial(
         GROUP BY wl.id, wl.worker_id, wl.fecha_inicio, wl.fecha_fin,
                  wl.total_bruto, wl.monto_operario, wl.estado,
                  wl.fecha_pago, wl.forma_pago, wl.observaciones, wl.created_at,
+                 wl.register_id, wl.other_expense_id, wl.voided, wl.void_reason,
                  w.name, pr.name, u.nombre
         ORDER BY wl.created_at DESC
         LIMIT 500
@@ -1702,11 +1645,15 @@ async def liquidacion_historial(
             "registrado_por":  rm["registrado_por_nombre"],
             "num_items":       int(rm["num_items"] or 0),
             "created_at":      str(rm["created_at"]) if rm["created_at"] else None,
+            "id_caja":         rm["register_id"],
+            "otro_egreso":     rm["other_expense_id"],
+            "anulado":         bool(rm["voided"]),
+            "motivo":          rm["void_reason"] or "",
         })
 
     return {
         "liquidaciones": result,
-        "total":         sum(r["monto_operario"] for r in result),
+        "total":         sum(r["monto_operario"] for r in result if not r["anulado"]),
         "count":         len(result),
     }
 
@@ -1861,12 +1808,12 @@ async def registrar_recibo(
     body: dict,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
+    turno: dict = Depends(require_open_shift),
 ):
-    company_id = body.get("company_id")
-    pagos      = body.get("pagos", [])   # [{payment_method_id, amount, notes?}]
-
-    if not company_id or not pagos:
-        raise HTTPException(status_code=422, detail="company_id y pagos son requeridos")
+    """Cobro de la orden: exige Id_Caja abierto (como Restaurante). El recibo usa el consecutivo
+    de recibos, la fecha de apertura del Id_Caja y queda en caja_recibos de ese Id_Caja."""
+    company_id = current_user.company_id
+    pagos      = body.get("pagos") or []   # [{payment_method_id, amount, notes?}]
 
     # ── Verificar orden ───────────────────────────────────────────────────────
     orden = (await db.execute(text("""
@@ -1903,24 +1850,29 @@ async def registrar_recibo(
 
     grand_total = subtotal + tip_amount
 
-    # ── Validar suma de pagos ─────────────────────────────────────────────────
-    total_pagado = sum(float(p.get("amount", 0)) for p in pagos)
-    if abs(total_pagado - grand_total) > 1:   # tolerancia $1 por redondeo
-        raise HTTPException(
-            status_code=422,
-            detail=f"La suma de pagos ({total_pagado}) no coincide con el total ({grand_total})"
-        )
+    # ── Formas de pago de la empresa que sumen el total (calculado aquí) ──────
+    pagos = await rc.preparar_pagos(db, company_id, int(round(grand_total)), pagos)
 
-    # ── Generar número de recibo ──────────────────────────────────────────────
-    rn_row = (await db.execute(text("""
-        SELECT COALESCE(MAX(CAST(receipt_number AS UNSIGNED)), 0) + 1 AS next_rn
-        FROM pos_receipts WHERE company_id = :cid
-    """), {"cid": company_id})).mappings().first()
-    receipt_number = str(int(rn_row["next_rn"]))
+    # ── La orden pasa a entregada solo una vez (doble clic / dos cajeros) ──────
+    marcada = await db.execute(text("""
+        UPDATE service_orders SET estado = 'entregada'
+        WHERE id = :oid AND company_id = :cid AND estado <> 'entregada'
+    """), {"oid": orden_id, "cid": company_id})
+    if not marcada.rowcount:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="La orden ya fue entregada/facturada")
+    await db.commit()
 
     now_bog = datetime.now(_BOG)
-    fecha   = now_bog.date().isoformat()
+    fecha   = turno.get("fecha") or now_bog.date().isoformat()    # fecha de apertura del Id_Caja
     hora    = now_bog.strftime("%H:%M:%S")
+    try:
+        receipt_number = await rc.consecutivo_recibo(db, company_id, f"OS{orden_id}-{now_bog:%y%m%d%H%M%S}", fecha)
+    except Exception:
+        await db.execute(text("UPDATE service_orders SET estado = :e WHERE id = :oid AND company_id = :cid"),
+                         {"e": orden["estado"], "oid": orden_id, "cid": company_id})
+        await db.commit()
+        raise
 
     # ── Insertar pos_receipts ─────────────────────────────────────────────────
     await db.execute(text("""
@@ -1954,25 +1906,10 @@ async def registrar_recibo(
             "notes": it["nombre"], "cid": company_id,
         })
 
-    # ── Insertar pos_receipt_payment_methods ──────────────────────────────────
-    for idx, pago in enumerate(pagos, start=1):
-        await db.execute(text("""
-            INSERT INTO pos_receipt_payment_methods
-                (item, payment_method_id, card_id, invoice_number,
-                 amount, date, order_number, notes, synced, company_id)
-            VALUES
-                (:item, :pm_id, 0, :rn,
-                 :amount, :fecha, :orden, :notes, 0, :cid)
-        """), {
-            "item": idx,
-            "pm_id": int(pago["payment_method_id"]),
-            "rn": receipt_number,
-            "amount": float(pago["amount"]),
-            "fecha": fecha,
-            "orden": str(orden_id),
-            "notes": pago.get("notes", "") or "",
-            "cid": company_id,
-        })
+    # ── Formas de pago y caja_recibos (Id_Caja) ───────────────────────────────
+    await rc.guardar_pagos_recibo(db, company_id, receipt_number, fecha, str(orden_id), pagos)
+    await rc.amarrar_a_caja(db, company_id, turno, receipt_number, fecha, str(orden_id),
+                            int(grand_total), int(subtotal), current_user.id)
 
     # ── Descontar stock de repuestos (items con product_id) ──────────────────
     for it in items:
@@ -1990,13 +1927,6 @@ async def registrar_recibo(
                 "pid": int(it["producto_id"]),
                 "cid": company_id,
             })
-
-    # ── Marcar orden como entregada ───────────────────────────────────────────
-    await db.execute(text("""
-        UPDATE service_orders
-        SET estado = 'entregada'
-        WHERE id = :oid AND company_id = :cid
-    """), {"oid": orden_id, "cid": company_id})
 
     await db.commit()
     return {

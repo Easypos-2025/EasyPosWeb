@@ -1105,30 +1105,12 @@ async def _init_db_data():
         """))
         await db.commit()
 
-        # ── Tabla egresos de caja (gastos manuales del día) ──────────────────
-        await db.execute(text("""
-            CREATE TABLE IF NOT EXISTS caja_egresos (
-                id             INT AUTO_INCREMENT PRIMARY KEY,
-                company_id     INT NOT NULL,
-                fecha          DATE NOT NULL,
-                concepto       VARCHAR(200) NOT NULL,
-                categoria      ENUM('gasto','compra','nomina','otro') NOT NULL DEFAULT 'gasto',
-                monto          DECIMAL(14,2) NOT NULL DEFAULT 0,
-                forma_pago     ENUM('efectivo','transferencia','otro') NOT NULL DEFAULT 'efectivo',
-                registrado_por INT NULL,
-                created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_ce_company_fecha (company_id, fecha)
-            )
-        """))
-        await db.commit()
-
         _talleres_modules = [
             ("/talleres/ordenes",        "Órdenes de Servicio",       "bi-clipboard2-pulse-fill"),
             ("/talleres/operarios",      "Operarios",                 "bi-people-fill"),
             ("/talleres/convenios",      "Convenios Empresariales",   "bi-building-fill"),
             ("/talleres/liquidacion",    "Liquidación de Operarios",  "bi-cash-coin"),
             ("/talleres/tipos-vehiculo", "Tipos de Vehículo",         "bi-car-front-fill"),
-            ("/talleres/caja",           "Cierre de Caja",            "bi-cash-stack"),
         ]
         for _route, _name, _icon in _talleres_modules:
             _res = await db.execute(select(SystemModule).where(SystemModule.route == _route))
