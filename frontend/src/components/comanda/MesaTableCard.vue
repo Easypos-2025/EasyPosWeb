@@ -11,7 +11,7 @@
     </div>
 
     <!-- Comensal IZQUIERDO: eliminar -->
-    <button v-if="!mesa.es_dinamica" class="mtc-cm mtc-cm--left mtc-cm--del"
+    <button v-if="showDelete && !mesa.es_dinamica" class="mtc-cm mtc-cm--left mtc-cm--del"
       @click.stop="$emit('eliminar')"
       title="Eliminar pedido (irreversible)">
       <i class="bi bi-trash"></i>
@@ -47,7 +47,8 @@ import { computed } from 'vue'
 import { showToast } from '@/utils/toast'
 
 const props = defineProps({
-  mesa: { type: Object, required: true }
+  mesa: { type: Object, required: true },
+  showDelete: { type: Boolean, default: true },   // según "Eliminar Cuentas" del rol
 })
 
 const emit = defineEmits(['click', 'eliminar', 'facturar'])

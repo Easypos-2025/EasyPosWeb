@@ -284,6 +284,11 @@ async def imprimir(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.services import recibo_caja as rc
     cid = current_user.company_id
-    return await enviar_tirilla(db, cid, body.printer_id, body.raw,
-                                lambda: _datos_recibo(db, cid, body.receipt_number))
+    existe = await rc.exigir_reimpresion(db, current_user, cid, body.receipt_number)
+    res = await enviar_tirilla(db, cid, body.printer_id, body.raw,
+                               lambda: _datos_recibo(db, cid, body.receipt_number))
+    if existe:
+        await rc.contar_impresion(db, cid, body.receipt_number)
+    return res

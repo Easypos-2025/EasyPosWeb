@@ -73,6 +73,7 @@
                 <div>
                   <div class="fw-semibold" style="font-size:14px">{{ r.name }}</div>
                   <div class="text-muted" style="font-size:12px">{{ r.description || '—' }}</div>
+                  <span v-if="r.access_type && r.access_type !== 'interno'" class="rol-tipo">{{ TIPOS_ACCESO.find(t => t.v === r.access_type)?.l }}</span>
                 </div>
                 <div class="d-flex gap-1">
                   <button
@@ -219,6 +220,13 @@
             <label>Descripción</label>
             <input v-model="roleForm.description" class="form-control" />
           </div>
+          <div class="fg">
+            <label>Tipo de acceso</label>
+            <select v-model="roleForm.access_type" class="form-control">
+              <option v-for="t in TIPOS_ACCESO" :key="t.v" :value="t.v">{{ t.l }}</option>
+            </select>
+            <small class="text-muted">{{ TIPOS_ACCESO.find(t => t.v === roleForm.access_type)?.d }}</small>
+          </div>
         </div>
         <div class="modal-footer-bar">
           <button class="btn btn-secondary" @click="showRoleModal = false">Cancelar</button>
@@ -249,7 +257,13 @@ const loadingModules     = ref(false)
 const saving             = ref(false)
 const showRoleModal      = ref(false)
 const savingRole         = ref(false)
-const roleForm           = ref({ name: "", description: "" })
+const roleForm           = ref({ name: "", description: "", access_type: "interno" })
+// Canal por el que entra quien tiene el rol (cada tipo remoto tendrá su propia URL)
+const TIPOS_ACCESO = [
+  { v: "interno",        l: "Interno",            d: "Personal de la empresa: panel, caja y TPV." },
+  { v: "remoto_login",   l: "Remoto con login",   d: "Cliente o vendedor externo: entra con usuario a su URL y solo ve sus pedidos." },
+  { v: "remoto_publico", l: "Remoto sin login",   d: "Cliente final tipo Rappi: URL pública, sin usuario; el pedido lo acepta caja o admin." },
+]
 const editingRoleId      = ref(null)
 const selectedCompanyId  = ref("")
 
@@ -396,13 +410,13 @@ async function savePermissions() {
 // ─── Crear rol ────────────────────────────────────────────────
 function openCreateRole() {
   editingRoleId.value  = null
-  roleForm.value       = { name: "", description: "" }
+  roleForm.value       = { name: "", description: "", access_type: "interno" }
   showRoleModal.value  = true
 }
 
 function openEditRole(role) {
   editingRoleId.value  = role.id
-  roleForm.value       = { name: role.name, description: role.description || "" }
+  roleForm.value       = { name: role.name, description: role.description || "", access_type: role.access_type || "interno" }
   showRoleModal.value  = true
 }
 
@@ -416,6 +430,7 @@ async function saveRole() {
     const payload = {
       name:        roleForm.value.name.trim().toUpperCase(),
       description: roleForm.value.description.trim(),
+      access_type: roleForm.value.access_type,
     }
     if (editingRoleId.value) {
       await api.put(`/roles/${editingRoleId.value}`, payload)
@@ -504,4 +519,5 @@ onMounted(async () => {
 .access-item small { display: block; font-size: 11px; color: #64748b; }
 @media (max-width: 768px) { .access-groups { grid-template-columns: 1fr; } }
 @media (max-width: 576px) { .role-tab { padding: 6px 10px; font-size: 12px; } }
+.rol-tipo { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 700; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 1px 7px; }
 </style>

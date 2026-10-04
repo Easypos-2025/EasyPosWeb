@@ -38,6 +38,7 @@ from app.services.formas_pago import es_efectivo_sql
 from app.services import clientes as clientes_svc
 from app.services import comanda_armado as armado_svc
 from app.services import config_facturacion as cfg_facturacion
+from app.services import permisos
 
 router = APIRouter(prefix="/api/pos/pago", tags=["POS Pago"], dependencies=[Depends(tenant_guard)])
 
@@ -360,7 +361,15 @@ async def registrar_recibo(
     turno: dict = Depends(require_open_shift),
 ):
     cid, uid = current_user.company_id, current_user.id
+    # Control de Acceso del rol: cobrar, descuentos y cambio de propina
+    perms = await permisos.permisos_usuario(db, current_user)
+    permisos.exigir(perms, "generar_recibo", "Su rol no tiene permiso para generar recibos")
+    if body.descuento:
+        permisos.exigir(perms, "realizar_descuentos", "Su rol no tiene permiso para realizar descuentos")
     c = await _calcular(db, db_temp, cid, order_number, body, x_edit_token)
+    cfg_tip = await _config(db, cid)
+    if cfg_tip["has_tip"] and not cfg_tip["ask_tip"]             and c["tip_amount"] != int(round(c["venta"] * cfg_tip["tip_percentage"] / 100)):
+        permisos.exigir(perms, "cambiar_propina", "Su rol no tiene permiso para cambiar la propina")
     orden, items, marcados, sel = c["orden"], c["items"], c["marcados"], c["sel"]
     valores, originales, tipif = c["valores"], c["originales"], c["tipif"]
     venta, descuento_total = c["venta"], c["descuento_total"]

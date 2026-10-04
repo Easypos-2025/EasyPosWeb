@@ -70,6 +70,7 @@
             v-for="mesa in mesasOcupadasOrdenadas"
             :key="mesa.id"
             :mesa="mesa"
+            :show-delete="permisosRol.tiene('eliminar_cuentas')"
             @click="irAMesaExistente(mesa)"
             @eliminar="eliminarOrden(mesa)"
           />
@@ -270,6 +271,8 @@ import { useRouter } from 'vue-router'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
 import apiComanda from '@/services/apiComanda.js'
+import { usePermisos } from '@/composables/usePermisos'
+const permisosRol = usePermisos()   // Control de Acceso: Eliminar Cuentas
 import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 import MesaTableCard from '@/components/comanda/MesaTableCard.vue'

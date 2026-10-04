@@ -32,6 +32,10 @@ class Role(Base):
 
     home_route: Mapped[str] = mapped_column(String(200), nullable=True)
 
+    # Canal por el que entra quien tiene el rol: interno (panel / TPV), remoto_login (cliente o
+    # vendedor externo con login, solo sus pedidos) o remoto_publico (cliente final tipo Rappi, sin login)
+    access_type: Mapped[str] = mapped_column(String(20), nullable=False, default="interno")
+
     users = relationship("User", back_populates="role", lazy="selectin")
 
     role_modules = relationship(

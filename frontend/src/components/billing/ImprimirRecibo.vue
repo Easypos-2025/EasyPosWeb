@@ -260,6 +260,8 @@ const props = defineProps({
   // Campos adicionales para el cuerpo de impresión (p. ej. cuenta previa: ítems marcados,
   // descuento, propina… — el servidor recalcula todo, no se envían valores)
   printExtra:   { type: Object, default: null },
+  // Control de Acceso "Obligar Imprimir Factura": no se cierra hasta enviar a una impresora
+  obligar:      { type: Boolean, default: false },
 })
 
 const emit = defineEmits(["close"])
@@ -369,6 +371,7 @@ async function imprimirPos(printer) {
     if (directa) await printDirect(printer, base64ToBytes(data.data_b64))
     showToast(`Enviado a "${printer.name}"`, "success", 2000)
     ok = true
+    impreso.value = true
   } catch (e) {
     if (isUserCancel(e)) showToast("Selección de impresora cancelada", "info", 2000)
     else showToast(e?.response?.data?.detail || e?.message || `Error al enviar a "${printer.name}"`, "error", 4000)
@@ -377,7 +380,12 @@ async function imprimirPos(printer) {
   return ok
 }
 
+const impreso = ref(false)
 function cerrar() {
+  if (props.obligar && !impreso.value) {
+    showToast("Debe imprimir el recibo antes de continuar", "warning", 2500)
+    return
+  }
   emit("close")
 }
 

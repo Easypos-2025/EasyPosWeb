@@ -150,14 +150,15 @@
                 <i class="bi bi-chat-text"></i>
               </button>
               <button
-                v-if="!group.hasNew"
+                v-if="!group.hasNew && perm.tiene('realizar_descuentos')"
                 class="cart-item__btn cart-item__btn--descuento"
                 title="Aplicar descuento"
                 @click="openDescuentoModal(group.allItems[group.allItems.length - 1])"
               >
                 <i class="bi bi-percent"></i>
               </button>
-              <button v-if="group.hasUnsent" class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
+              <!-- Sin imprimir lo quita quien toma el pedido; impreso solo con "Eliminar Productos" en su rol -->
+              <button v-if="group.hasUnsent || perm.tiene('eliminar_productos')" class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
@@ -269,10 +270,12 @@ import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 import { useMesaLock } from '@/composables/useMesaLock'
+import { usePermisosComanda } from '@/composables/usePermisosComanda'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
 const route   = useRoute()
+const perm    = usePermisosComanda()
 const router  = useRouter()
 const tableId = computed(() => parseInt(route.params.tableId))
 

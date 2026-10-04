@@ -99,6 +99,7 @@
                 <i class="bi bi-chat-text"></i>
               </button>
               <button
+                v-if="perm.tiene('realizar_descuentos')"
                 class="cart-item__btn cart-item__btn--descuento"
                 :disabled="group.hasNew"
                 :title="group.hasNew ? 'Envía el pedido antes de aplicar descuento' : 'Aplicar descuento'"
@@ -106,7 +107,8 @@
               >
                 <i class="bi bi-percent"></i>
               </button>
-              <button class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
+              <!-- Sin imprimir lo quita quien toma el pedido; impreso solo con "Eliminar Productos" en su rol -->
+              <button v-if="group.hasUnsent || perm.tiene('eliminar_productos')" class="cart-item__btn cart-item__btn--del" @click="removeGroupItem(group)">
                 <i class="bi bi-trash3"></i>
               </button>
             </div>
@@ -223,6 +225,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useMesaLock } from '@/composables/useMesaLock'
+import { usePermisosComanda } from '@/composables/usePermisosComanda'
 import { useRoute, useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import ComandaProductCard from '@/components/comanda/ComandaProductCard.vue'
@@ -234,6 +237,7 @@ import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 
 const route   = useRoute()
+const perm    = usePermisosComanda()
 const router  = useRouter()
 const tableId = computed(() => parseInt(route.params.tableId))
 

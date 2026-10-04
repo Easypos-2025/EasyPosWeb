@@ -304,7 +304,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
+import { ref, onMounted, computed, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
@@ -324,8 +324,15 @@ const isAdmin     = (currentUser.role || "").toLowerCase().includes("admin")
 
 const planInfo = ref({ current: 0, max: -1, plan_name: "", can_add: true })
 const usersRaw = ref([])
-// SYSADMIN empieza sin filtro de empresa; no-SYSADMIN siempre su empresa
-const selectedCompany = ref(isSysAdmin ? null : (currentUser.company_id ?? null))
+// Empresa de trabajo = la escogida en el topbar (un Admin maneja las de su mismo NIT); si no hay, la propia
+const empresaTopbar = () => companyStore.selectedCompany?.id ?? currentUser.company_id ?? null
+// SYSADMIN empieza sin filtro de empresa; no-SYSADMIN siempre la empresa del topbar
+const selectedCompany = ref(isSysAdmin ? null : empresaTopbar())
+watch(() => companyStore.selectedCompany?.id, (id, antes) => {
+  if (isSysAdmin || !id || id === antes) return
+  selectedCompany.value = id
+  loadUsers(id); loadRoles(id)
+})
 const permissions = ref([])
 
 // ── Invitación por link ──────────────────────────────
@@ -448,10 +455,10 @@ const resetForm = () => {
 
 const filteredUsers = computed(() => {
   return usersRaw.value.filter(u => {
-    // No-SYSADMIN: siempre filtrar por su propia empresa, sin excepción
+    // No-SYSADMIN: siempre filtrar por la empresa del topbar, sin excepción
     const matchCompany = isSysAdmin
       ? (selectedCompany.value === null || selectedCompany.value === "all" || u.company_id == selectedCompany.value)
-      : u.company_id == currentUser.company_id
+      : u.company_id == empresaTopbar()
 
     const matchName =
       !search.value ||
@@ -510,8 +517,8 @@ const handleCompanyChange = async () => {
   const currentUser = JSON.parse(localStorage.getItem("user"))
 
   if (selectedCompany.value === null) {
-    await loadUsers(currentUser.company_id)
-    await loadRoles(currentUser.company_id)
+    await loadUsers(empresaTopbar() ?? currentUser.company_id)
+    await loadRoles(empresaTopbar() ?? currentUser.company_id)
     return
   }
 
@@ -543,7 +550,7 @@ const createUser = async () => {
   const currentUser = JSON.parse(localStorage.getItem("user"))
   const targetCompanyId = selectedCompany.value && selectedCompany.value !== "all"
     ? selectedCompany.value
-    : currentUser.company_id
+    : (empresaTopbar() ?? currentUser.company_id)
 
   try {
     await api.post("/users/", { ...form.value, company_id: targetCompanyId })
@@ -689,11 +696,10 @@ onMounted(async () => {
 
   //console.log("👤 USER LOGUEADO:", user)
   //console.log("👤 COMPANY :", user.company_id)
-  // 🔥 cargar SOLO su empresa
-  await loadUsers(user.company_id)
-
-  // 🔥 setear select en su empresa
-  selectedCompany.value = user.company_id
+  // Empresa del topbar (/auth/me ya la devuelve aplicada); cargar solo esa
+  const cid = empresaTopbar() ?? user.company_id
+  await loadUsers(cid)
+  selectedCompany.value = cid
 
 })
 

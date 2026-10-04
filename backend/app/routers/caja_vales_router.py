@@ -34,7 +34,7 @@ from app.routers.caja_movimientos_router import (
     LIMITE, AnularIn, Money, PagoIn, Texto, _ahora, _formas_pago, _siguiente, armar_tirilla,
     caja_vigente, guardar_pagos, validar_pagos, vigentes,
 )
-from app.routers.pos_shift_router import _id_caja_header, _turno_abierto
+from app.routers.pos_shift_router import _id_caja_header, _turno_abierto, exigir_usuario_caja
 from app.services import periodos as per
 from app.services.permisos import permisos_usuario
 
@@ -192,6 +192,7 @@ async def registrar_vale(
     current_user: User = Depends(get_current_user),
 ):
     cid = current_user.company_id
+    await exigir_usuario_caja(db, current_user)
     caja = await _caja(db, current_user, request)
     if not caja:
         raise HTTPException(status_code=409, detail="Debe abrir la caja antes de registrar vales")
@@ -301,6 +302,7 @@ async def abonar(
     current_user: User = Depends(get_current_user),
 ):
     cid = current_user.company_id
+    await exigir_usuario_caja(db, current_user)
     caja = await _caja(db, current_user, request)
     if not caja:
         raise HTTPException(status_code=409, detail="Debe abrir la caja antes de registrar abonos")

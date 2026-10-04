@@ -74,11 +74,11 @@
           <i class="bi bi-plus-circle"></i>
           <span>Agregar más</span>
         </button>
-        <button class="od-btn od-btn--success" :disabled="!order || verificandoPago" title="Pagar" @click="irAPagar">
+        <button v-if="perm.tiene('generar_recibo')" class="od-btn od-btn--success" :disabled="!order || verificandoPago" title="Pagar" @click="irAPagar">
           <i class="bi bi-receipt"></i>
           <span>PAGAR</span>
         </button>
-        <button class="od-btn od-btn--danger" @click="eliminarPedido" :disabled="cancelando">
+        <button v-if="perm.tiene('eliminar_cuentas')" class="od-btn od-btn--danger" @click="eliminarPedido" :disabled="cancelando">
           <span v-if="cancelando" class="spinner-border spinner-border-sm"></span>
           <i class="bi bi-trash3" v-else></i>
           <span>Eliminar pedido</span>
@@ -96,6 +96,8 @@ import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
+import { usePermisosComanda } from '@/composables/usePermisosComanda'
+const perm = usePermisosComanda()
 
 const props = defineProps({
   table: { type: Object, required: true },

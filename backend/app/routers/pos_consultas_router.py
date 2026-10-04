@@ -47,6 +47,10 @@ async def _get_user(authorization: str, db: AsyncSession) -> User:
     if not user.company_id:
         raise HTTPException(status_code=403, detail="Usuario sin empresa asignada")
     from app.auth.tenant import apply_selected_company
+    from app.services import permisos
+    # Control de Acceso: todas las consultas de ventas exigen "Ver Ventas"
+    permisos.exigir(await permisos.permisos_usuario(db, user), "ver_ventas",
+                    "Su rol no tiene permiso para ver ventas")
     return await apply_selected_company(db, user)   # empresa del topbar (validada)
 
 

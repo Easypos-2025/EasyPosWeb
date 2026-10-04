@@ -84,7 +84,7 @@
             </div>
             <div class="mesa-estado">{{ mesa.es_dinamica ? 'Dinámica' : 'Ocupada' }}</div>
             <div class="mesa-acciones">
-              <button v-if="!mesa.es_dinamica" class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
+              <button v-if="!mesa.es_dinamica && permisosRol.tiene('eliminar_cuentas')" class="mesa-btn mesa-btn--del" @click.stop="eliminarOrden(mesa)"
                 title="Eliminar pedido (irreversible)">
                 <i class="bi bi-trash"></i>
               </button>
@@ -350,6 +350,8 @@ import { useRouter } from 'vue-router'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
 import apiComanda from '@/services/apiComanda.js'
+import { usePermisos } from '@/composables/usePermisos'
+const permisosRol = usePermisos()   // Control de Acceso: Eliminar Cuentas
 import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 import { showToast } from '@/utils/toast'

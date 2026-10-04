@@ -17,6 +17,7 @@ from typing import Optional, List
 
 from app.database import get_db, get_datatemppos_db
 from app.services import comanda_armado as armado_svc
+from app.services import permisos
 from app.auth import tenant
 from app.services import clientes as clientes_svc
 from app.auth.jwt_handler import create_access_token, decode_access_token
@@ -187,6 +188,15 @@ async def list_waiters(company_id: int = Query(...), db: AsyncSession = Depends(
         "WHERE company_id=:cid AND status=1 AND plan_blocked=0 AND employee_type=2 ORDER BY name"
     ), {"cid": company_id})).mappings().all()
     return [{"id": int(r["id"]), "name": r["name"]} for r in rows]
+
+
+@router.get("/permisos")
+async def permisos_operador(
+    payload: dict = Depends(_auth_comanda),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permisos del rol de quien opera (mesero con PIN o usuario). El servidor siempre valida."""
+    return sorted(await permisos.permisos_comanda(db, payload))
 
 
 @router.post("/auth/mesero")
@@ -1151,9 +1161,12 @@ async def aplicar_descuento_item(
     data: AplicarDescuentoItemIn,
     payload: dict = Depends(_auth_comanda),
     x_edit_token: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    permisos.exigir(await permisos.permisos_comanda(db, payload), "realizar_descuentos",
+                    "Su rol no tiene permiso para realizar descuentos")
     await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     current = (await db_temp.execute(text("""
@@ -1219,10 +1232,22 @@ async def eliminar_item(
     data: EliminarItemIn,
     payload: dict = Depends(_auth_comanda),
     x_edit_token: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
     await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
+
+    # Un producto que aún no se imprimió (Impreso = 0 y no ha salido a cocina) lo quita quien
+    # toma el pedido; uno ya impreso solo un rol con "Eliminar Productos" (admin / caja).
+    impreso = (await db_temp.execute(text("""
+        SELECT MAX(GREATEST(COALESCE(Impreso, 0), COALESCE(Salio, 0)))
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido=:on AND Nro_Factura='0' AND Id_Plato=:did AND Item=:item AND company_id=:cid
+    """), {"on": data.order_number, "did": data.dish_id, "item": data.item, "cid": cid})).scalar()
+    if int(impreso or 0):
+        permisos.exigir(await permisos.permisos_comanda(db, payload), "eliminar_productos",
+                        "El producto ya se imprimió: solo un usuario con permiso puede eliminarlo")
 
     # Borrar insumos (armado + fijos) y novedades del ítem
     await armado_svc.delete_item_temp(db_temp, cid, data.order_number, data.dish_id, data.item)
@@ -1280,7 +1305,7 @@ async def enviar_cocina(
     # Marcar con Hora_Plato solo los ítems aún no enviados (Salio=0)
     result = await db_temp.execute(text("""
         UPDATE temp_detalle_comanda_parcial
-        SET Hora_Plato = :now, Salio = 1
+        SET Hora_Plato = :now, Salio = 1, Impreso = 1
         WHERE Nro_pedido = :on AND Fecha = :date
           AND Nro_Factura = '0' AND company_id = :cid
           AND Salio = 0
@@ -1318,6 +1343,8 @@ async def cancelar_orden(
     db_temp: AsyncSession = Depends(get_datatemppos_db),
 ):
     cid = payload["company_id"]
+    permisos.exigir(await permisos.permisos_comanda(db, payload), "eliminar_cuentas",
+                    "Su rol no tiene permiso para eliminar cuentas")
     today = _today()
 
     # Obtener nombre de mesa desde easyposweb

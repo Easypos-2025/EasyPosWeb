@@ -15,9 +15,20 @@ from app.services.permisos import permisos_usuario
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
 
+TIPOS_ACCESO = ("interno", "remoto_login", "remoto_publico")
+
+
+def _tipo_acceso(data: dict, actual: str = "interno") -> str:
+    t = (data.get("access_type") or actual or "interno").strip()
+    if t not in TIPOS_ACCESO:
+        raise HTTPException(status_code=422, detail="Tipo de acceso no válido")
+    return t
+
+
 def _ser(r: Role) -> dict:
     return {"id": r.id, "name": r.name, "description": r.description,
-            "company_id": r.company_id, "is_system": r.is_system}
+            "company_id": r.company_id, "is_system": r.is_system,
+            "access_type": r.access_type or "interno"}
 
 
 async def _is_system(user: User, db: AsyncSession) -> bool:
@@ -66,17 +77,19 @@ async def create_role(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Ya existe un rol '{name}' en esta empresa")
 
-    role = Role(name=name, description=(data.get("description") or "").strip(), company_id=cid, is_system=False)
+    role = Role(name=name, description=(data.get("description") or "").strip(), company_id=cid, is_system=False,
+                access_type=_tipo_acceso(data))
     db.add(role)
     await db.commit()
     await db.refresh(role)
-    # Control de Acceso inicial: un rol Admin con todo; los demás pueden cerrar su propia caja
-    await db.execute(text("""
-        INSERT IGNORE INTO role_access_permissions (role_id, perm_key)
-        SELECT :rid, perm_key FROM access_permissions
-        WHERE is_active = 1 AND (:admin = 1 OR perm_key = 'hacer_cierre')
-    """), {"rid": role.id, "admin": 1 if "ADMIN" in name.upper() else 0})
-    await db.commit()
+    # Control de Acceso inicial: un rol Admin con todo; los demás sin permisos (el Admin los activa
+    # en Roles → Control de Acceso: todo depende del rol, no del perfil de negocio)
+    if "ADMIN" in name.upper():
+        await db.execute(text("""
+            INSERT IGNORE INTO role_access_permissions (role_id, perm_key)
+            SELECT :rid, perm_key FROM access_permissions WHERE is_active = 1
+        """), {"rid": role.id})
+        await db.commit()
     return _ser(role)
 
 
@@ -103,6 +116,7 @@ async def update_role(
 
     role.name = name
     role.description = (data.get("description") or "").strip()
+    role.access_type = _tipo_acceso(data, role.access_type)
     await db.commit()
     await db.refresh(role)
     return _ser(role)

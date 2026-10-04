@@ -39,7 +39,7 @@
       <div class="pg-main">
         <!-- ══ PANEL IZQUIERDO: descuento · propina · domicilio · observación · formas de pago ══ -->
         <section class="pg-left">
-          <div class="pg-box">
+          <div v-if="permisosRol.tiene('realizar_descuentos')" class="pg-box">
             <div class="pg-box-ttl">Descuento</div>
             <select v-model.number="form.typification_id" class="pg-select" :disabled="!elegiblesDescuento.length">
               <option :value="0">{{ elegiblesDescuento.length ? '— Sin descuento —' : 'Ítems marcados ya tienen descuento' }}</option>
@@ -57,10 +57,11 @@
           <div class="pg-box pg-actions">
             <template v-if="datos.tip.enabled">
               <label class="pg-chk" :class="{ on: form.tip_mode !== 'none' }">
-                <input type="checkbox" :checked="form.tip_mode !== 'none'" @change="togglePropina($event.target.checked)" />
+                <input type="checkbox" :checked="form.tip_mode !== 'none'" :disabled="!puedePropina"
+                       @change="togglePropina($event.target.checked)" />
                 {{ datos.tip.label }} {{ form.tip_mode === 'manual' ? '(manual)' : `${datos.tip.percentage}%` }}
               </label>
-              <button class="pg-act" @click="abrirPropinaManual"><i class="bi bi-pencil"></i> {{ datos.tip.label }} manual</button>
+              <button v-if="puedePropina" class="pg-act" @click="abrirPropinaManual"><i class="bi bi-pencil"></i> {{ datos.tip.label }} manual</button>
             </template>
             <button class="pg-act" :class="{ on: form.delivery_amount > 0 }" @click="abrirDomicilio">
               <i class="bi bi-bicycle"></i> Domicilio<span v-if="form.delivery_amount"> · {{ fmt(form.delivery_amount) }}</span>
@@ -156,7 +157,8 @@
                   :title="datos.has_pos_electronico ? '' : 'Factura electrónica no habilitada para esta empresa'">
             <i class="bi bi-file-earmark-text"></i> FACTURA (F5)
           </button>
-          <button class="pg-btn pg-btn--rec" :disabled="!puedeRegistrar || registrando" @click="registrar">
+          <button class="pg-btn pg-btn--rec" :disabled="!puedeRegistrar || registrando || !permisosRol.tiene('generar_recibo')"
+                  :title="permisosRol.tiene('generar_recibo') ? '' : 'Su rol no tiene permiso para generar recibos'" @click="registrar">
             <span v-if="registrando" class="spinner-border spinner-border-sm"></span>
             <i v-else class="bi bi-receipt"></i> RECIBO (F6)
           </button>
@@ -248,6 +250,7 @@
       printersPath="/api/pos/recibo-impresion/impresoras"
       :printPath="imprimir.printPath"
       :printExtra="imprimir.printExtra"
+      :obligar="imprimir.obligar"
       @close="cerrarImpresion"
     />
 
@@ -264,6 +267,9 @@ import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 import { useCompanyStore } from '@/stores/companyStore'
 import { useMesaLock } from '@/composables/useMesaLock'
 import { showToast } from '@/utils/toast'
+import { usePermisos } from '@/composables/usePermisos'
+// Control de Acceso del rol (el servidor también valida)
+const permisosRol = usePermisos()
 
 const route  = useRoute()
 const router = useRouter()
@@ -309,7 +315,7 @@ const cargandoPrecuenta = ref(false)
 const API_BASE = import.meta.env.VITE_API_URL || ''
 const imgSrc = u => (!u || /^(https?:|blob:|data:)/.test(u)) ? u : API_BASE + u
 // Impresión del recibo recién registrado (vista previa con la impresora predeterminada)
-const imprimir = reactive({ show: false, data: null, luego: null, printPath: '', printExtra: null })
+const imprimir = reactive({ show: false, data: null, luego: null, printPath: '', printExtra: null, obligar: false })
 let propinaPreguntada = false
 
 // ── Carga ──────────────────────────────────────────────────────────────────
@@ -468,7 +474,9 @@ function agregarFormaPago() {
 const efectivoAPagar = computed(() => form.payments.filter(esEfectivo).reduce((s, p) => s + (Math.round(Number(p.amount)) || 0), 0))
 
 // ── Propina / domicilio / observación ────────────────────────────────────────
-function togglePropina(on) { form.tip_mode = on ? 'auto' : 'none' }
+function togglePropina(on) { if (puedePropina.value) form.tip_mode = on ? 'auto' : 'none' }
+// Quitar / cambiar la propina: "Cambiar Propina" del rol, o la empresa pide el valor en cada recibo
+const puedePropina = computed(() => permisosRol.tiene('cambiar_propina') || !!datos.value?.tip?.ask_value)
 function abrirPropinaManual() { Object.assign(modal, { show: true, kind: 'propina', title: `${datos.value.tip.label} manual`, value: propina.value }) }
 function abrirDomicilio() {
   if (!dom.cliente) dom.cliente = cliente.value.id_cliente !== 1 ? cliente.value : null
@@ -583,7 +591,8 @@ function salir() { router.push('/restaurante') }
 async function abrirImpresion(receiptNumber, luego) {
   try {
     const { data } = await api.get(`/api/pos/recibo-impresion/${encodeURIComponent(receiptNumber)}`)
-    Object.assign(imprimir, { show: true, data, luego, printPath: '/api/pos/recibo-impresion/imprimir', printExtra: null })
+    Object.assign(imprimir, { show: true, data, luego, printPath: '/api/pos/recibo-impresion/imprimir', printExtra: null,
+                              obligar: permisosRol.tiene('obligar_imprimir') })
   } catch {
     showToast('No se pudo cargar la vista previa del recibo', 'warning')
     luego()
@@ -591,7 +600,7 @@ async function abrirImpresion(receiptNumber, luego) {
 }
 function cerrarImpresion() {
   const f = imprimir.luego
-  Object.assign(imprimir, { show: false, data: null, luego: null, printPath: '', printExtra: null })
+  Object.assign(imprimir, { show: false, data: null, luego: null, printPath: '', printExtra: null, obligar: false })
   if (f) f()
 }
 

@@ -94,6 +94,13 @@ def _caja_dict(row) -> dict:
     return t
 
 
+async def exigir_usuario_caja(db: AsyncSession, user: User) -> None:
+    """Control de Acceso: solo los roles con "Es Usuario Caja" abren o usan un Id_Caja."""
+    from app.services import permisos
+    permisos.exigir(await permisos.permisos_usuario(db, user), "usuario_caja",
+                    "Su rol no tiene permiso de usuario de caja")
+
+
 async def _es_escritorio(db: AsyncSession, company_id: int) -> bool:
     """La empresa maneja la caja desde el escritorio si tiene Id_Caja subidos por la sincronización."""
     return bool((await db.execute(text(
@@ -234,6 +241,7 @@ async def abrir_turno(
     current_user: User = Depends(get_current_user),
 ):
     cid, uid = current_user.company_id, current_user.id
+    await exigir_usuario_caja(db, current_user)
 
     if await _es_escritorio(db, cid):
         raise HTTPException(status_code=409, detail="Esta empresa abre la caja desde el programa de escritorio")
@@ -360,7 +368,8 @@ async def require_open_shift(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Dependency reutilizable: exige Id_Caja abierto antes de operar con dinero."""
+    """Dependency reutilizable: exige Id_Caja abierto (y rol "Es Usuario Caja") antes de operar con dinero."""
+    await exigir_usuario_caja(db, current_user)
     turno = await _turno_abierto(db, current_user.company_id, current_user.id, _id_caja_header(request))
     if not turno:
         raise HTTPException(status_code=409, detail="Debe abrir la caja antes de continuar")

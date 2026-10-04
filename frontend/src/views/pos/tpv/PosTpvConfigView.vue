@@ -40,6 +40,7 @@
             <tr>
               <th>Nombre</th>
               <th>Teléfono</th>
+              <th>Rol</th>
               <th class="text-center">Estado</th>
               <th class="text-center">Acciones</th>
             </tr>
@@ -51,6 +52,7 @@
                 <span v-if="emp.plan_blocked" class="badge-blocked ms-2">Bloqueado</span>
               </td>
               <td class="text-muted">{{ emp.phone || '—' }}</td>
+              <td><span :class="['tpv-rol', { 'tpv-rol--sin': !emp.role_name }]">{{ emp.role_name || 'Sin rol' }}</span></td>
               <td class="text-center">
                 <button
                   class="badge-status"
@@ -65,9 +67,6 @@
               <td class="text-center">
                 <button class="btn-icon" title="Editar" @click="openEdit(emp)">
                   <i class="bi bi-pencil-fill"></i>
-                </button>
-                <button class="btn-icon btn-icon--danger" title="Eliminar" @click="confirmDelete(emp)">
-                  <i class="bi bi-trash3-fill"></i>
                 </button>
               </td>
             </tr>
@@ -185,6 +184,14 @@
             <input v-model="form.phone" class="tpv-input" placeholder="Opcional" maxlength="50" />
           </div>
           <div class="tpv-field">
+            <label>Rol</label>
+            <select v-model.number="form.role_id" class="tpv-input">
+              <option :value="null">Sin rol</option>
+              <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
+            </select>
+            <small class="tpv-help">Lo que puede hacer (eliminar productos impresos, cuentas, descuentos…) se activa en Roles → Control de Acceso.</small>
+          </div>
+          <div class="tpv-field">
             <label>PIN {{ modal.editing ? '(dejar vacío para no cambiar)' : '*' }}</label>
             <input v-model="form.password" class="tpv-input" type="password" placeholder="PIN numérico" maxlength="10" />
           </div>
@@ -223,11 +230,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/apis'
 import { useCardStyle, CARD_STYLES } from '@/composables/useCardStyle'
 import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'
 import { showToast } from '@/utils/toast'
+import { useCompanyStore } from '@/stores/companyStore'
 
 const previewOrder = {
   name: 'Mesa 5',
@@ -261,17 +269,30 @@ const delTarget  = ref(null)
 const deleting   = ref(false)
 
 const modal = ref({ open: false, editing: false, editId: null, error: '', saving: false })
-const form  = ref({ name: '', phone: '', password: '' })
+const form  = ref({ name: '', phone: '', password: '', role_id: null })
+const roles = ref([])
+const companyStore = useCompanyStore()
+// Al cambiar de empresa en el topbar: meseros, roles, estilo y enlace de esa empresa
+watch(() => companyStore.selectedCompany?.id, (id, antes) => {
+  if (id && antes && id !== antes) Promise.all([loadEmpleados(), loadRoles(), loadStyle(id)])
+})
+async function loadRoles() {
+  try { roles.value = (await api.get('/api/pos/tpv/config/roles')).data || [] } catch { roles.value = [] }
+}
 
 const currentApiUrl = computed(() => localStorage.getItem('tpv_api_url') || import.meta.env.VITE_API_URL)
 const localUrlSet   = computed(() => !!localStorage.getItem('tpv_api_url'))
 
 const copied = ref(false)
 
+// Empresa escogida en el topbar (un Admin puede manejar varias del mismo NIT); si no hay, la propia
+function empresaActiva() {
+  try { return companyStore.selectedCompany?.id || JSON.parse(localStorage.getItem('user') || '{}').company_id || '' }
+  catch { return companyStore.selectedCompany?.id || '' }
+}
 const tpvLoginUrl = computed(() => {
   try {
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
-    const cid  = user.company_id || ''
+    const cid  = empresaActiva()
     const base = window.location.origin
     return cid ? `${base}/pos/tpv/login?cid=${cid}` : `${base}/pos/tpv/login`
   } catch {
@@ -311,12 +332,12 @@ async function loadEmpleados() {
 }
 
 function openNew() {
-  form.value = { name: '', phone: '', password: '' }
+  form.value = { name: '', phone: '', password: '', role_id: roles.value.find(r => r.name === 'VENDEDOR-MESERO')?.id ?? null }
   modal.value = { open: true, editing: false, editId: null, error: '', saving: false }
 }
 
 function openEdit(emp) {
-  form.value = { name: emp.name, phone: emp.phone || '', password: '' }
+  form.value = { name: emp.name, phone: emp.phone || '', password: '', role_id: emp.role_id ?? null }
   modal.value = { open: true, editing: true, editId: emp.id, error: '', saving: false }
 }
 
@@ -358,7 +379,7 @@ async function deleteEmpleado() {
     delTarget.value = null
     await loadEmpleados()
   } catch (e) {
-    alert(e?.response?.data?.detail || 'Error al eliminar')
+    showToast(e?.response?.data?.detail || 'Error al desactivar', 'error')
   } finally {
     deleting.value = false
   }
@@ -369,7 +390,7 @@ async function toggleStatus(emp) {
     const res = await api.patch(`/api/pos/tpv/config/empleados/${emp.id}/status`)
     emp.status = res.data.status
   } catch (e) {
-    alert(e?.response?.data?.detail || 'Error al cambiar estado')
+    showToast(e?.response?.data?.detail || 'Error al cambiar estado', 'error')
   }
 }
 
@@ -379,7 +400,7 @@ function clearLocalUrl() {
 
 onMounted(async () => {
   const user = JSON.parse(localStorage.getItem('user') || '{}')
-  await Promise.all([loadEmpleados(), loadStyle(user.company_id || undefined)])
+  await Promise.all([loadEmpleados(), loadRoles(), loadStyle(empresaActiva() || user.company_id || undefined)])
 })
 </script>
 
@@ -733,4 +754,7 @@ onMounted(async () => {
   .cso-preview__inner { transform: translate(-50%, -50%) scale(0.48); }
   .card-style-opt__label { font-size: .78rem; }
 }
+.tpv-rol { font-size: 12px; font-weight: 700; background: #eef2ff; color: #3730a3; border-radius: 6px; padding: 2px 8px; }
+.tpv-rol--sin { background: #fef3c7; color: #92400e; }
+.tpv-help { display: block; color: #64748b; font-size: 12px; margin-top: 4px; }
 </style>

@@ -88,3 +88,27 @@ async def guardar_pagos_recibo(db: AsyncSession, cid: int, receipt_number: str, 
             VALUES (:item, :pm, 0, :rn, :amount, :fecha, :orden, :notes, 0, :cid)
         """), {"item": idx, "pm": p["payment_method_id"], "rn": receipt_number, "amount": p["amount"],
                "fecha": fecha, "orden": order_number, "notes": p["notes"], "cid": cid})
+
+
+async def exigir_reimpresion(db: AsyncSession, user, cid: int, receipt_number: str) -> bool:
+    """Control de Acceso "Reimprimir Facturas" (sin límite de tiempo): la primera impresión de un
+    recibo es libre; si ya se imprimió (contador web o recibo subido del escritorio, que lo imprimió
+    allá) exige el permiso. Devuelve True si el recibo existe (para contar la impresión)."""
+    from app.services import permisos
+    r = (await db.execute(text(
+        "SELECT COALESCE(print_count, 0) n, COALESCE(synced, 0) s FROM pos_receipts "
+        "WHERE company_id = :cid AND receipt_number = :rn LIMIT 1"
+    ), {"cid": cid, "rn": str(receipt_number)})).mappings().first()
+    if not r:
+        return False
+    if int(r["n"]) >= 1 or int(r["s"]) == 1:
+        permisos.exigir(await permisos.permisos_usuario(db, user), "reimprimir_facturas",
+                        "Este recibo ya se imprimió: su rol no tiene permiso para reimprimir")
+    return True
+
+
+async def contar_impresion(db: AsyncSession, cid: int, receipt_number: str) -> None:
+    await db.execute(text(
+        "UPDATE pos_receipts SET print_count = COALESCE(print_count, 0) + 1 WHERE company_id = :cid AND receipt_number = :rn"
+    ), {"cid": cid, "rn": str(receipt_number)})
+    await db.commit()

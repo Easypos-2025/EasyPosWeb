@@ -86,7 +86,7 @@
           </div>
           <div class="mesa-footer-actions" @click.stop>
             <button
-              v-if="mesa.status === 'occupied' || mesa.status === 'bill_requested'"
+              v-if="(mesa.status === 'occupied' || mesa.status === 'bill_requested') && permisosRol.tiene('eliminar_cuentas')"
               class="btn-icon cancel-order"
               @click="cancelarPedido(mesa)"
               title="Cancelar pedido"
@@ -190,6 +190,8 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
+import { usePermisos } from '@/composables/usePermisos'
+const permisosRol = usePermisos()   // Control de Acceso: Eliminar Cuentas
 import { useModuleName } from '@/composables/useModuleName'
 import { useCompanyStore } from '@/stores/companyStore'
 

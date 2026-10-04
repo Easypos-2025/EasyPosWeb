@@ -8,7 +8,7 @@
     <div class="aoc-oval__timer" :class="{ 'aoc-oval__timer--alert': isAlert }">
       <i class="bi bi-clock"></i>
       <span>{{ timeDisplay }}</span>
-      <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido desde carta digital (web)"></i>
+      <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido tomado en la web (TPV / comanda)"></i>
       <i v-if="d.tipoIcon" :class="['bi', d.tipoIcon, 'aoc-tipo-icon']" :title="d.tipoTitle"></i>
     </div>
     <button v-if="showDelete && !d.esDinamica" class="aoc-oval__btn aoc-oval__btn--del"
@@ -44,7 +44,7 @@
     <div class="aoc__top">
       <span class="aoc__timer" :class="{ 'aoc__timer--alert': isAlert }">
         <i class="bi bi-clock-fill"></i>{{ timeDisplay }}
-        <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido desde carta digital (web)"></i>
+        <i v-if="d.isWeb" class="bi bi-globe2 aoc-web-icon" title="Pedido tomado en la web (TPV / comanda)"></i>
         <i v-if="d.tipoIcon" :class="['bi', d.tipoIcon, 'aoc-tipo-icon']" :title="d.tipoTitle"></i>
       </span>
       <button v-if="showDelete && !d.esDinamica" class="aoc__del" @click.stop="$emit('eliminar')" title="Eliminar">

@@ -266,7 +266,10 @@ const selectedPlan = computed(() => downgrades.value.find(p => p.id === selected
 const isImage      = computed(() => selectedFile.value?.type?.startsWith("image/") ?? false)
 const refText      = computed(() => {
   const user = JSON.parse(localStorage.getItem("user") || "{}")
-  return `DOWNGRADE-${user.company_id ?? "0"}`
+  // Referencia de pago de la empresa del topbar (la misma de Mi Plan)
+  let cid = user.company_id
+  try { cid = JSON.parse(localStorage.getItem("selected_company") || "null")?.id ?? cid } catch { /* sin almacenamiento */ }
+  return `DOWNGRADE-${cid ?? "0"}`
 })
 
 async function loadDowngrades() {

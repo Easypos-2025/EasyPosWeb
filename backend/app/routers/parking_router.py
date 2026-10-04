@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.routers.pos_shift_router import require_open_shift
 from app.services import recibo_caja as rc
+from app.services import permisos
 from pathlib import Path
 import uuid, shutil
 
@@ -490,6 +491,8 @@ async def pagar_orden(
     """Cobro: exige Id_Caja abierto (como Restaurante). Precios del catálogo (los calcula el
     servidor, no se toman del navegador); recibo con el consecutivo de recibos, fecha de apertura
     del Id_Caja, formas de pago y caja_recibos del Id_Caja."""
+    permisos.exigir(await permisos.permisos_usuario(db, current_user), "generar_recibo",
+                    "Su rol no tiene permiso para generar recibos")
     await _check_orden_empresa(db, order_id, current_user)
     row = await db.execute(text(
         "SELECT id, estado, company_id FROM parking_orders WHERE id = :id AND company_id = :cid"

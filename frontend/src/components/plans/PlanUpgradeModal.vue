@@ -187,7 +187,10 @@ const selectedPlan = computed(() => upgrades.value.find(p => p.id === selectedPl
 const isImage      = computed(() => selectedFile.value?.type?.startsWith("image/") ?? false)
 const refText      = computed(() => {
   const user = JSON.parse(localStorage.getItem("user") || "{}")
-  return `UPGRADE-${user.company_id ?? "0"}`
+  // Referencia de pago de la empresa del topbar (la misma de Mi Plan)
+  let cid = user.company_id
+  try { cid = JSON.parse(localStorage.getItem("selected_company") || "null")?.id ?? cid } catch { /* sin almacenamiento */ }
+  return `UPGRADE-${cid ?? "0"}`
 })
 
 async function loadUpgrades() {

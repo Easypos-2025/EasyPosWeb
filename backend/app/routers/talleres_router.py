@@ -10,6 +10,7 @@ from app.auth.dependencies import get_current_user
 from datetime import datetime, timezone, timedelta
 from app.routers.pos_shift_router import require_open_shift
 from app.services import recibo_caja as rc
+from app.services import permisos
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/talleres", tags=["talleres"], dependencies=[Depends(tenant_guard)])
@@ -1814,6 +1815,8 @@ async def registrar_recibo(
     de recibos, la fecha de apertura del Id_Caja y queda en caja_recibos de ese Id_Caja."""
     company_id = current_user.company_id
     pagos      = body.get("pagos") or []   # [{payment_method_id, amount, notes?}]
+    permisos.exigir(await permisos.permisos_usuario(db, current_user), "generar_recibo",
+                    "Su rol no tiene permiso para generar recibos")
 
     # ── Verificar orden ───────────────────────────────────────────────────────
     orden = (await db.execute(text("""
@@ -1950,6 +1953,8 @@ async def anular_recibo(
     current_user=Depends(get_current_user),
 ):
     company_id = current_user.company_id
+    permisos.exigir(await permisos.permisos_usuario(db, current_user), "anular_facturas",
+                    "Su rol no tiene permiso para anular recibos")
 
     # Verificar que el recibo existe y no está ya anulado
     rec = (await db.execute(text("""
@@ -2019,6 +2024,8 @@ async def imprimir_pos(
 
     if not company_id or not printer_id:
         raise HTTPException(status_code=422, detail="company_id y printer_id requeridos")
+    company_id = current_user.company_id          # empresa de la sesión (tenant_guard ya validó)
+    existe = await rc.exigir_reimpresion(db, current_user, company_id, receipt_number)
 
     # Datos de la impresora
     printer = (await db.execute(text("""
@@ -2113,6 +2120,8 @@ async def imprimir_pos(
 
     if raw:
         import base64 as _b64
+        if existe:
+            await rc.contar_impresion(db, company_id, receipt_number)
         return {"ok": True, "printer": printer["name"], "data_b64": _b64.b64encode(bytes(buf)).decode()}
 
     # ── Enviar via socket TCP (impresoras de red) ─────────────────────────────
@@ -2126,6 +2135,8 @@ async def imprimir_pos(
         log_error(e, tipo="IMPRESION", contexto={"impresora": printer["name"], "ip": printer["ip"], "puerto": printer["port"]})
         raise HTTPException(status_code=502, detail=f"No se pudo conectar con la impresora {printer['name']} ({printer['ip']}:{printer['port'] or 9100}). Verifique que esté encendida y en la misma red.")
 
+    if existe:
+        await rc.contar_impresion(db, company_id, receipt_number)
     return {"ok": True, "printer": printer["name"]}
 
 

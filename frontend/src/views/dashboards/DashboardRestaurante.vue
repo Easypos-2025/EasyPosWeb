@@ -83,7 +83,7 @@
             :key="mesa.id"
             :order="mesa"
             :card-style="cardStyle || 'oval-wood'"
-            :show-delete="true"
+            :show-delete="permisosRol.tiene('eliminar_cuentas')"
             :editing-by="mesa.editing_by || null"
             @click="irAMesaExistente(mesa)"
             @eliminar="eliminarOrden(mesa)"
@@ -345,6 +345,8 @@ import { useRouter } from 'vue-router'
 import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import api from '@/services/apis.js'
 import apiComanda from '@/services/apiComanda.js'
+import { usePermisos } from '@/composables/usePermisos'
+const permisosRol = usePermisos()   // Control de Acceso: Eliminar Cuentas
 import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'

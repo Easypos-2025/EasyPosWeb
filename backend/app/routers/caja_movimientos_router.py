@@ -29,7 +29,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.models.user_model import User
-from app.routers.pos_shift_router import _BOG, _VIGENTE, _id_caja_header, _turno_abierto
+from app.routers.pos_shift_router import _BOG, _VIGENTE, _id_caja_header, _turno_abierto, exigir_usuario_caja
 from app.services import periodos as per
 from app.services.formas_pago import es_efectivo_sql
 from app.services.permisos import permisos_usuario
@@ -294,6 +294,7 @@ async def registrar(
 ):
     tabla, tc, titulo = _tipo(tipo)
     cid = current_user.company_id
+    await exigir_usuario_caja(db, current_user)
     caja = await _turno_abierto(db, cid, current_user.id, _id_caja_header(request))
     if not caja:
         raise HTTPException(status_code=409, detail="Debe abrir la caja antes de registrar movimientos")

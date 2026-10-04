@@ -185,7 +185,6 @@ async function buscar() {
   cargando.value = true
   expandido.value = null
   try {
-    const cid = JSON.parse(localStorage.getItem('user') || '{}').company_id
     const params = {
       fecha_desde: filtros.value.desde,
       fecha_hasta: filtros.value.hasta,
@@ -193,10 +192,8 @@ async function buscar() {
     if (filtros.value.mesa)  params.mesa          = filtros.value.mesa
     if (filtros.value.quien) params.quien_elimino = filtros.value.quien
 
-    const res = await api.get('/api/pos/comanda/historico-eliminadas', {
-      params,
-      headers: { 'X-Company-Id': cid },
-    })
+    // Empresa del topbar: la envía apis.js en X-Company-Id (validada en el servidor)
+    const res = await api.get('/api/pos/comanda/historico-eliminadas', { params })
     lista.value = res.data.orders || []
   } catch (e) {
     console.error(e)
