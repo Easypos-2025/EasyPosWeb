@@ -119,6 +119,7 @@ from app.routers.caja_movimientos_router import router as caja_movimientos_route
 from app.routers.caja_vales_router import router as caja_vales_router
 from app.routers.metricas_router import router as metricas_router
 from app.routers.error_log_router import router as error_log_router
+from app.routers.agentes_locales_router import router_admin as agentes_locales_router, router_agente as agente_local_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -2537,6 +2538,8 @@ routers = [
     caja_vales_router,
     metricas_router,
     error_log_router,
+    agentes_locales_router,
+    agente_local_router,
 ]
 
 for router in routers:

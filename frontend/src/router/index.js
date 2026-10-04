@@ -527,6 +527,14 @@ const routes = [
       },
 
       {
+        path: "/sysadmin/agentes-locales",
+        name: "AgentesLocalesView",
+        component: () => import("@/views/sysadmin/AgentesLocalesView.vue"),
+        requiresAuth: true,
+        meta: { title: "Agentes Locales" }
+      },
+
+      {
         path: "/sysadmin/sesiones",
         name: "SesionesLiveView",
         component: () => import("@/views/sysadmin/SesionesLiveView.vue"),

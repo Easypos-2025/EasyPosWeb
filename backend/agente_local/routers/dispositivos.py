@@ -15,15 +15,17 @@ import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import auditoria, config
+from .. import auditoria, config, errores
 from ..db import get_emp, get_tmp
 from ..seguridad import (cadena_aleatoria, cifrar_clave, crear_token, gastar_tiempo_clave,
-                         hash_secreto, ip_cliente, nuevo_secreto, verificar_clave)
+                         hash_secreto, ip_cliente, leer_token, nuevo_secreto, verificar_clave)
 from ..sesion import Mesero, activacion_escritorio, estado_de, mesero_actual
 
 router = APIRouter(prefix="/api/ag", tags=["dispositivos"])
@@ -258,3 +260,52 @@ async def yo(mesero: Mesero = Depends(mesero_actual), emp: AsyncSession = Depend
     return {"cod_empleado": mesero.cod_empleado, "usuario": mesero.usuario,
             "nombre": await _nombre_mesero(emp, mesero.cod_empleado) or mesero.usuario,
             "nombre_dispositivo": mesero.nombre_dispositivo}
+
+
+# ───────────────────────────── conexión y errores del dispositivo ─────────────────────────────
+
+@router.post("/sesion/latido")
+async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp: AsyncSession = Depends(get_tmp)):
+    """El dispositivo avisa que sigue conectado (el panel muestra quién perdió la conexión)."""
+    await tmp.execute(text("UPDATE ag_dispositivos SET ultimo_acceso = :f, ultima_ip = :ip WHERE id = :id"),
+                      {"f": datetime.now(), "ip": ip_cliente(request), "id": mesero.id_dispositivo})
+    await tmp.commit()
+    return {"ok": True}
+
+
+class EventoDispositivoIn(BaseModel):
+    tipo: Literal["RED", "VISTA"] = "VISTA"
+    nivel: Literal["ERROR", "ADVERTENCIA"] = "ERROR"
+    titulo: str = Field(min_length=1, max_length=200)
+    mensaje: str | None = Field(default=None, max_length=2000)
+    detalle: str | None = Field(default=None, max_length=4000)
+    vista: str | None = Field(default=None, max_length=200)
+    cuando: str | None = Field(default=None, max_length=40)
+
+
+class ErroresDispositivoIn(BaseModel):
+    eventos: list[EventoDispositivoIn] = Field(min_length=1, max_length=20)
+
+
+@router.post("/errores")
+async def errores_dispositivo(data: ErroresDispositivoIn, request: Request, tmp: AsyncSession = Depends(get_tmp),
+                              authorization: str | None = Header(default=None)):
+    """Errores que vio el dispositivo (incluidos los guardados mientras no tenía conexión).
+    Se aceptan con o sin sesión (sin conexión pudo vencerse), con límite por IP."""
+    ip = ip_cliente(request)
+    if await auditoria.contar("error_dispositivo", "ok", 10, ip=ip) >= 30:
+        return {"ok": True, "registrados": 0}           # silencioso: no se le da información a un abusador
+    dispositivo = f"IP {ip}"
+    datos = leer_token(authorization[7:]) if authorization and authorization.lower().startswith("bearer ") else None
+    if datos:
+        nombre = (await tmp.execute(text("SELECT nombre_dispositivo FROM ag_dispositivos WHERE id = :id"),
+                                    {"id": datos["dsp"]})).scalar()
+        if nombre:
+            dispositivo = f"{nombre} ({ip})"
+    for ev in data.eventos:
+        mensaje = (ev.mensaje or "") + (f"\nOcurrió: {ev.cuando}" if ev.cuando else "")
+        await errores.registrar(origen="dispositivo", tipo=ev.tipo, nivel=ev.nivel, titulo=ev.titulo,
+                                mensaje=mensaje.strip() or None, detalle=ev.detalle, vista=ev.vista,
+                                dispositivo=dispositivo, ip=ip)
+    await auditoria.registrar("error_dispositivo", "ok", ip, detalle=f"{len(data.eventos)} eventos")
+    return {"ok": True, "registrados": len(data.eventos)}

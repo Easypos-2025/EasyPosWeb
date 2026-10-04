@@ -55,6 +55,40 @@ TABLAS = [
         KEY ix_ag_aud_usuario (usuario, fecha)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # Errores del agente y de sus dispositivos (mismo criterio del Monitor de Errores de la nube:
+    # un registro por error distinto, con contador; se marca resuelto con nota)
+    """
+    CREATE TABLE IF NOT EXISTS ag_errores (
+        id              INT AUTO_INCREMENT PRIMARY KEY,
+        huella          CHAR(40)      NOT NULL,
+        origen          VARCHAR(12)   NOT NULL,
+        tipo            VARCHAR(20)   NOT NULL,
+        nivel           VARCHAR(12)   NOT NULL,
+        titulo          VARCHAR(255)  NOT NULL,
+        mensaje         TEXT          NULL,
+        detalle         MEDIUMTEXT    NULL,
+        vista           VARCHAR(255)  NULL,
+        dispositivo     VARCHAR(150)  NULL,
+        ip              VARCHAR(45)   NULL,
+        ocurrencias     INT           NOT NULL DEFAULT 1,
+        primera         DATETIME      NOT NULL,
+        ultima          DATETIME      NOT NULL,
+        estado          VARCHAR(12)   NOT NULL DEFAULT 'NUEVO',
+        regresiones     INT           NOT NULL DEFAULT 0,
+        nota            TEXT          NULL,
+        resuelto_en     DATETIME      NULL,
+        pendiente_nube  INT           NOT NULL DEFAULT 1,
+        UNIQUE KEY uq_ag_err_huella (huella),
+        KEY ix_ag_err_estado (estado, ultima)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
+    """
+    CREATE TABLE IF NOT EXISTS ag_config (
+        clave   VARCHAR(60)  NOT NULL PRIMARY KEY,
+        valor   VARCHAR(255) NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 ]
 
 

@@ -68,7 +68,7 @@ def limpiar(db, cliente):
     with db.cursor() as c:
         for t in TABLAS_EMP:
             c.execute(f"DELETE FROM {BD_EMP}.{t}")
-        for t in TABLAS_TMP + ["ag_dispositivos", "ag_auditoria", "ag_bloqueo_mesa"]:
+        for t in TABLAS_TMP + ["ag_dispositivos", "ag_auditoria", "ag_bloqueo_mesa", "ag_errores", "ag_config"]:
             c.execute(f"DELETE FROM {BD_TMP}.{t}")
     yield
 

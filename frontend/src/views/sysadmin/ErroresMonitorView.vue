@@ -210,11 +210,12 @@ const TABS = [
   { key: "resueltos",    label: "Resueltos" },
   { key: "ignorados",    label: "Ignorados" },
 ]
-const TIPOS = ["SERVIDOR", "BASE_DATOS", "VISTA", "RED", "SINCRONIZACION", "IMPRESION", "INTEGRACION", "SEGURIDAD", "VERSION_DESACTUALIZADA"]
+const TIPOS = ["SERVIDOR", "BASE_DATOS", "VISTA", "RED", "SINCRONIZACION", "IMPRESION", "INTEGRACION", "SEGURIDAD", "VERSION_DESACTUALIZADA", "AGENTE_LOCAL"]
 const NIVELES = ["CRITICO", "ERROR", "ADVERTENCIA"]
 const TIPO_LABEL = {
   SERVIDOR: "Servidor", BASE_DATOS: "Base de datos", VISTA: "Vista", RED: "Red", SINCRONIZACION: "Sincronización",
   IMPRESION: "Impresión", INTEGRACION: "Integración", SEGURIDAD: "Seguridad", VERSION_DESACTUALIZADA: "Versión desactualizada",
+  AGENTE_LOCAL: "Agente local",
 }
 const ESTADO_LABEL = { NUEVO: "Nuevo", EN_REVISION: "En revisión", RESUELTO: "Resuelto", IGNORADO: "Ignorado" }
 const tipoLabel = t => TIPO_LABEL[t] || t

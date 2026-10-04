@@ -59,3 +59,10 @@ LOGIN_VENTANA_MIN       = 10    # …en esta ventana de minutos
 REGISTRO_MAX_POR_IP     = 5     # registros de dispositivo por IP por hora
 REGISTRO_MAX_PENDIENTES = 20    # dispositivos esperando activación en el escritorio
 MAX_CUERPO_BYTES        = 64 * 1024
+
+# Nube (EasyPosWeb): latido, envío de errores al Monitor y fotos de la web.
+# La clave la asigna SYSADMIN en "Agentes Locales" (una por empresa). Sin clave el agente
+# funciona igual en la red local, solo que no reporta a la nube.
+NUBE_URL   = os.getenv("AG_NUBE_URL", "https://easyposweb.com").rstrip("/")
+NUBE_CLAVE = os.getenv("AG_NUBE_CLAVE", "").strip()
+NUBE_CADA_SEG = int(os.getenv("AG_NUBE_CADA_SEG", "60"))
