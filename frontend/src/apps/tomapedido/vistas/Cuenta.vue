@@ -3,7 +3,7 @@
     <header class="barra">
       <button class="barra__btn" @click="$router.replace('/cuentas')"><Icono nombre="atras" /></button>
       <div class="barra__titulo">
-        <h1>{{ pedido?.mesa || "Cuenta" }}</h1>
+        <h1>{{ pedido?.mesa || textos.cuenta }}</h1>
         <small v-if="pedido">{{ pedido.cliente.nombre }} · {{ pedido.hora }}</small>
       </div>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
@@ -31,13 +31,13 @@
         </div>
         <div class="total"><span>Total</span><b>{{ pesos(pedido.total) }}</b></div>
       </div>
-      <p class="nota">Solo puede quitar productos que aún no se han impreso.</p>
+      <p class="nota">Solo puede quitar {{ t("productos") }} que aún no se han impreso.</p>
     </main>
 
     <div class="accion-fija">
       <button class="btn btn--primario btn--bloque" :disabled="!pedido"
               @click="$router.push({ path: '/pedido', query: { nro } })">
-        <Icono nombre="mas" /> Agregar productos
+        <Icono nombre="mas" /> Agregar {{ t("productos") }}
       </button>
     </div>
   </div>
@@ -50,6 +50,7 @@ import Icono from "../componentes/Icono.vue"
 import { api } from "../api"
 import { cantidad, pesos } from "../formato"
 import { showConfirm, showToast } from "@/utils/toast"
+import { t, textos } from "../textos"
 
 const route = useRoute()
 const router = useRouter()
@@ -80,7 +81,7 @@ async function quitar(l) {
       showToast("El pedido quedó vacío y se eliminó.", "info", 2500)
       return router.replace("/cuentas")
     }
-    showToast("Producto quitado", "success", 1200)
+    showToast(`${textos.producto} quitado`, "success", 1200)
     await cargar()
   } catch (e) {
     showToast(e.message, "error", 3500)

@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_emp, get_tmp
 from ..servicios import bloqueos
+from ..servicios.catalogo import color_vb
 from ..sesion import Mesero, mesero_actual
+from ..textos import t
 
 router = APIRouter(prefix="/api/ag", tags=["mesas"])
 
@@ -21,17 +23,6 @@ router = APIRouter(prefix="/api/ag", tags=["mesas"])
 class MesaIn(BaseModel):
     id_mesa: int = Field(ge=0)
     mesa: str = Field(min_length=1, max_length=200)
-
-
-def color_vb(valor) -> str | None:
-    """Color de VB6 (entero en orden BGR) → '#rrggbb'. 0 / vacío = sin color."""
-    try:
-        c = int(valor or 0)
-    except (TypeError, ValueError):
-        return None
-    if c <= 0 or c > 0xFFFFFF:
-        return None
-    return f"#{c & 0xFF:02x}{(c >> 8) & 0xFF:02x}{(c >> 16) & 0xFF:02x}"
 
 
 @router.get("/mesas")
@@ -92,12 +83,12 @@ async def _mesa_permitida(emp: AsyncSession, tmp: AsyncSession, data: MesaIn, me
             SELECT COUNT(*) FROM temp_comanda WHERE Imprimio_Precuenta = :i AND Mesa = :m AND Mesero = :c
         """), {"i": data.id_mesa, "m": data.mesa, "c": mesero.cod_empleado})).scalar()
     if not existe:
-        raise HTTPException(status_code=404, detail="La mesa no existe.")
+        raise HTTPException(status_code=404, detail=f"'{data.mesa.strip()}' no existe.")
     otro = (await tmp.execute(text("""
         SELECT COUNT(*) FROM temp_comanda WHERE Mesa = :m AND Mesero <> :c
     """), {"m": data.mesa, "c": mesero.cod_empleado})).scalar()
     if otro:
-        raise HTTPException(status_code=409, detail="La mesa tiene un pedido de otro mesero.")
+        raise HTTPException(status_code=409, detail=f"'{data.mesa.strip()}' tiene un pedido de otro {t('mesero')}.")
 
 
 @router.post("/mesas/bloquear")

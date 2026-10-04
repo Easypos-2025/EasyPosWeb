@@ -2,7 +2,7 @@
   <div class="pantalla">
     <header class="barra">
       <div class="barra__titulo">
-        <h1>Mis cuentas</h1>
+        <h1>Mis {{ t('cuentas') }}</h1>
         <small>{{ sesion.mesero?.nombre }} · {{ sesion.nombre_dispositivo }}</small>
       </div>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
@@ -13,7 +13,7 @@
       <div v-if="cargando && !cuentas.length" class="cargando"><span class="giro"></span></div>
       <div v-else-if="!cuentas.length" class="vacio">
         <Icono nombre="lista" :tam="40" />
-        <p>No tiene cuentas abiertas.</p>
+        <p>No tiene {{ t('cuentas') }} abiertas.</p>
       </div>
 
       <div class="cuentas">
@@ -25,7 +25,7 @@
           <div class="cuenta__total">{{ pesos(c.total) }}</div>
           <div class="cuenta__info">
             <span><Icono nombre="reloj" :tam="14" /> {{ c.hora }}</span>
-            <span>{{ cantidad(c.unidades) }} {{ c.unidades === 1 ? "producto" : "productos" }}</span>
+            <span>{{ cantidad(c.unidades) }} {{ c.unidades === 1 ? t("producto") : t("productos") }}</span>
           </div>
         </button>
       </div>
@@ -46,6 +46,7 @@ import Icono from "../componentes/Icono.vue"
 import { api } from "../api"
 import { cantidad, pesos } from "../formato"
 import { cerrarSesion, sesion } from "../sesion"
+import { t } from "../textos"
 import { showConfirm, showToast } from "@/utils/toast"
 
 const router = useRouter()

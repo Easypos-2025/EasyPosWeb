@@ -22,6 +22,7 @@ from ..servicios.pedidos import (MAX_NOMBRE_CUENTA, LineaIn, insertar_lineas, li
                                  preparar_lineas, siguiente_item, valor_linea)
 from ..servicios.precios import CLIENTE_CONSUMIDOR_FINAL
 from ..sesion import Mesero, mesero_actual
+from ..textos import t
 from .catalogo import cliente_valido
 from .mesas import mesa_existe
 
@@ -135,13 +136,13 @@ async def ver_pedido(nro: str = Query(min_length=1, max_length=255), mesero: Mes
 async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = Depends(mesero_actual),
                        emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
     if bool(data.mesa) == bool(data.cuenta_nueva):
-        raise HTTPException(status_code=422, detail="Escoja una mesa o escriba el nombre de la cuenta.")
+        raise HTTPException(status_code=422, detail=f"Escoja dónde montar el pedido: una opción de {t('cuentas')} o un nombre nuevo.")
     cliente = await cliente_valido(emp, data.id_cliente)
     lineas = await preparar_lineas(emp, tmp, data.lineas, cliente["id"])
     fecha = await fecha_negocio(tmp)
 
     if data.mesa and not await mesa_existe(emp, data.mesa.id, data.mesa.nombre):
-        raise HTTPException(status_code=404, detail="La mesa no existe.")
+        raise HTTPException(status_code=404, detail=f"'{data.mesa.nombre.strip()}' no existe.")
 
     async with _escritura() as conn:
         if data.mesa:
@@ -159,11 +160,11 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
                                     {"m": nombre_mesa})).scalar()
         if dueno is not None:
             if int(dueno or 0) == mesero.cod_empleado:
-                raise HTTPException(status_code=409, detail="Ya tiene un pedido en esa mesa. Agregue los productos a ese pedido.")
-            raise HTTPException(status_code=409, detail="Ya existe un pedido con ese nombre de mesa o cuenta.")
+                raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' ya tiene un pedido suyo. Agregue los {t('productos')} a ese pedido.")
+            raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' ya tiene un pedido abierto.")
         otro = await bloqueos.quien_bloquea(conn, id_mesa, nombre_mesa, mesero)
         if otro:
-            raise HTTPException(status_code=409, detail=f"La mesa '{nombre_mesa.strip()}' ya se encuentra abierta en {otro}.")
+            raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' está en uso en {otro}.")
 
         for _ in range(3):
             ahora = datetime.now()
@@ -204,7 +205,7 @@ async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = 
         pedido = await _pedido_mio(conn, data.nro_pedido, mesero)
         otro = await bloqueos.quien_bloquea(conn, int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"], mesero)
         if otro:
-            raise HTTPException(status_code=409, detail=f"La mesa '{pedido['Mesa'].strip()}' está abierta en {otro}.")
+            raise HTTPException(status_code=409, detail=f"'{pedido['Mesa'].strip()}' está en uso en {otro}.")
         item = await siguiente_item(conn, data.nro_pedido)
         await insertar_lineas(conn, data.nro_pedido, fecha, datetime.now(), lineas, item)
         await conn.commit()

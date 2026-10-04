@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import catalogo
 from .negocio import facturacion, fecha_negocio
+from ..textos import t
 from .precios import con_impuesto, lista_cliente, precio_base
 
 MAX_LINEAS          = 60
@@ -88,9 +89,9 @@ def hora_corta(ahora: datetime) -> str:
 
 async def preparar_lineas(emp: AsyncSession, tmp: AsyncSession, lineas: list[LineaIn], id_cliente: int) -> list[dict]:
     if not lineas:
-        raise HTTPException(status_code=422, detail="El pedido no tiene productos.")
+        raise HTTPException(status_code=422, detail=f"El pedido no tiene {t('productos')}.")
     if len(lineas) > MAX_LINEAS or sum(math.ceil(l.cantidad) for l in lineas) > MAX_UNIDADES:
-        raise HTTPException(status_code=422, detail="El pedido supera la cantidad máxima de productos.")
+        raise HTTPException(status_code=422, detail=f"El pedido supera la cantidad máxima de {t('productos')}.")
 
     fact = await facturacion(emp)
     lista = await lista_cliente(emp, id_cliente, sorted({l.id_plato for l in lineas}))
@@ -102,7 +103,7 @@ async def preparar_lineas(emp: AsyncSession, tmp: AsyncSession, lineas: list[Lin
     for l in lineas:
         plato = await catalogo.plato_visible(emp, l.id_plato)
         if not plato:
-            raise HTTPException(status_code=422, detail="Uno de los productos ya no está disponible. Actualice la carta.")
+            raise HTTPException(status_code=422, detail=f"Uno de los {t('productos')} ya no está disponible. Actualice la carta.")
         nombre = (plato["Nombre"] or "").strip()
 
         # Novedades: deben ser de la categoría del plato

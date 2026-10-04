@@ -5,14 +5,16 @@ import hashlib
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_emp, get_tmp
-from ..servicios import catalogo
+from ..servicios import catalogo, fotos
 from ..servicios.negocio import facturacion, fecha_negocio, opciones_toma
 from ..servicios.precios import CLIENTE_CONSUMIDOR_FINAL, con_impuesto, lista_cliente, precio_plato
 from ..sesion import Mesero, mesero_actual
+from ..textos import textos
 
 router = APIRouter(prefix="/api/ag", tags=["catalogo"])
 
@@ -34,7 +36,8 @@ async def config_toma(mesero: Mesero = Depends(mesero_actual),
                       emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
     return {"fecha_negocio": (await fecha_negocio(tmp)).isoformat(),
             **await opciones_toma(emp), **await facturacion(emp),
-            "cliente_default": await cliente_valido(emp, CLIENTE_CONSUMIDOR_FINAL)}
+            "cliente_default": await cliente_valido(emp, CLIENTE_CONSUMIDOR_FINAL),
+            "textos": textos()}
 
 
 @router.get("/catalogo")
@@ -47,6 +50,13 @@ async def carta(response: Response, cliente: int = Query(CLIENTE_CONSUMIDOR_FINA
     lista = await lista_cliente(emp, cliente)
     para_armar = await catalogo.platos_para_armar(emp)
     pres = await catalogo.presentaciones(emp)
+    idx_prod = fotos.indice(await fotos.carpeta(emp, "productos"))
+    idx_cat = fotos.indice(await fotos.carpeta(emp, "categorias"))
+
+    def url_foto(tipo: str, ident: int, idx: dict, nombre) -> str | None:
+        v = fotos.version(idx, nombre)
+        return f"/api/ag/fotos/{tipo}/{ident}?v={v}" if v is not None else None
+
     platos = []
     for p in await catalogo.platos_visibles(emp):
         item = {
@@ -55,6 +65,7 @@ async def carta(response: Response, cliente: int = Query(CLIENTE_CONSUMIDOR_FINA
             "pedir_precio": int(p["Pedir_Valor_Venta_Producto"] or 0),
             "pedir_descripcion": int(p["Pedir_Descripcion_Producto"] or 0),
             "armado": catalogo.tipo_armado(p, para_armar),
+            "foto": url_foto("plato", int(p["Id_Plato"]), idx_prod, p["Ruta_Foto"]),
             # % que se suma al precio digitado (solo si la empresa cobra impuesto aparte)
             "impuesto_aparte": float(p["Impuesto"] or 0)
                 if fact["paga_impuesto"] == 1 and fact["precios_incluyen_impuesto"] == 0 else 0,
@@ -67,7 +78,9 @@ async def carta(response: Response, cliente: int = Query(CLIENTE_CONSUMIDOR_FINA
             } for x in pres[int(p["Id_Plato"])]]
             item["precio"] = item["presentaciones"][0]["precio"]
         platos.append(item)
-    datos = {"categorias": await catalogo.categorias(emp), "platos": platos,
+    cats = [{"id": c["id"], "nombre": c["nombre"], "foto": url_foto("categoria", c["id"], idx_cat, c["Nombre_foto"])}
+            for c in await catalogo.categorias(emp)]
+    datos = {"categorias": cats, "platos": platos, "colores": await catalogo.colores(emp),
              "novedades": {str(k): v for k, v in (await catalogo.novedades(emp)).items()}}
 
     # Versión de la carta: si no cambió, el dispositivo no la vuelve a descargar
@@ -83,13 +96,13 @@ async def opciones_plato(id_plato: int, mesero: Mesero = Depends(mesero_actual),
                          emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
     plato = await catalogo.plato_visible(emp, id_plato)
     if not plato:
-        raise HTTPException(status_code=404, detail="El producto no está disponible.")
+        raise HTTPException(status_code=404, detail=f"{textos()['producto']} no disponible.")
     para_armar = await catalogo.platos_para_armar(emp)
     tipo = catalogo.tipo_armado(plato, para_armar)
     grupos = await catalogo.opciones(emp, plato, await fecha_negocio(tmp), para_armar)
     fact = await facturacion(emp)
     if tipo == "menu" and not grupos:
-        raise HTTPException(status_code=409, detail="El menú del día de este plato no está armado para hoy.")
+        raise HTTPException(status_code=409, detail="El menú del día no está armado para hoy.")
     # Al dispositivo solo le sirve id, nombre y si viene marcada por defecto
     return {"tipo": tipo, "grupos": [{
         "grupo": g["grupo"], "nombre": g["nombre"], "max": g["max"], "exigir": g["exigir"],
@@ -97,6 +110,27 @@ async def opciones_plato(id_plato: int, mesero: Mesero = Depends(mesero_actual),
                       # adicional que suma al plato (con el impuesto si la empresa lo cobra aparte)
                       "precio": con_impuesto(o["precio"], plato["Impuesto"], fact)} for o in g["opciones"]],
     } for g in grupos]}
+
+
+async def _foto(emp: AsyncSession, tipo: str, sql: str, ident: int) -> FileResponse:
+    nombre = (await emp.execute(text(sql), {"i": ident})).scalar()
+    ruta = fotos.archivo(await fotos.carpeta(emp, tipo), nombre)
+    if not ruta:
+        raise HTTPException(status_code=404, detail="Sin foto.")
+    # La URL lleva la versión (?v=) del archivo: el navegador la puede guardar
+    return FileResponse(fotos.miniatura(ruta), headers={"Cache-Control": "public, max-age=604800"})
+
+
+# Las fotos se piden desde <img> (sin encabezado de sesión): solo por id de un plato o
+# categoría visible, nunca por nombre de archivo, y solo dentro de la carpeta configurada.
+@router.get("/fotos/plato/{id_plato}")
+async def foto_plato(id_plato: int, emp: AsyncSession = Depends(get_emp)):
+    return await _foto(emp, "productos", "SELECT Ruta_Foto FROM platos WHERE Id_Plato = :i AND Activo = 0", id_plato)
+
+
+@router.get("/fotos/categoria/{cod}")
+async def foto_categoria(cod: int, emp: AsyncSession = Depends(get_emp)):
+    return await _foto(emp, "categorias", "SELECT Nombre_foto FROM categoria_platos WHERE Cod_Categoria = :i AND Activa = 1", cod)
 
 
 @router.get("/clientes")

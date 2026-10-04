@@ -2,6 +2,7 @@ import { createApp } from "vue"
 import { createRouter, createWebHashHistory } from "vue-router"
 import App from "./App.vue"
 import { sesion } from "./sesion"
+import { cargarTextos } from "./textos"
 import "./estilos.css"
 
 // Hash: el agente solo sirve archivos estáticos (no necesita reescribir rutas)
@@ -22,7 +23,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   if (to.meta.publica) return true
-  if (sesion.token) return true
+  if (sesion.token) { cargarTextos(); return true }
   return sesion.secreto && sesion.estado === "pendiente" ? "/espera" : (sesion.usuario ? "/ingresar" : "/registro")
 })
 

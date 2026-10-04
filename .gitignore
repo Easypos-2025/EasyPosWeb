@@ -44,3 +44,4 @@ backend/logs/
 # Agente Local (secreto de firma y logs del PC del negocio)
 backend/agente_local/secreto.key
 backend/agente_local/logs/
+backend/agente_local/cache_fotos/

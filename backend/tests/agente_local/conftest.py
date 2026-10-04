@@ -19,7 +19,8 @@ TABLAS_EMP = ["registro_dispositivos", "empleados", "meseros",
               "platos", "categoria_platos", "plato_impresoras", "impresoras", "novedades_categorias",
               "lista_precios_cliente", "clientes", "mesas", "zonas_asientos", "configuracion_facturacion",
               "variables_del_sistema", "inventario_porciones_plato", "plato_producto",
-              "plato_armar", "plato_armar_detalle", "menu_diario", "inventario_porciones", "categoria_productos"]
+              "plato_armar", "plato_armar_detalle", "menu_diario", "inventario_porciones", "categoria_productos",
+              "configuracion_sede", "configuracion_tamano_letra"]
 TABLAS_TMP = ["temp_registro_dispositivos", "temp_empleados", "temp_meseros",
               "temp_variables_del_sistema", "temp_comanda", "temp_detalle_comanda", "temp_detalle_comanda_parcial",
               "temp_plato_producto", "temp_plato_producto_parcial", "temp_novedades_plato_pedido", "temp_mesa_abierta",

@@ -18,7 +18,7 @@ from datetime import date
 
 _COLUMNAS_PLATO = """
     p.Id_Plato, p.Nombre, p.Valor, p.Cod_Categoria, p.Impuesto, p.Prioridad_Ofrecer,
-    p.Pedir_Valor_Venta_Producto, p.Pedir_Descripcion_Producto, p.Impresora
+    p.Pedir_Valor_Venta_Producto, p.Pedir_Descripcion_Producto, p.Impresora, p.Ruta_Foto
 """
 
 
@@ -44,13 +44,41 @@ async def plato_visible(emp: AsyncSession, id_plato: int) -> dict | None:
 
 
 async def categorias(emp: AsyncSession) -> list[dict]:
+    """Categorías activas con platos visibles, en orden alfabético (la primera es la de inicio)."""
     filas = (await emp.execute(text("""
-        SELECT c.Cod_Categoria, c.Nombre FROM categoria_platos c
+        SELECT c.Cod_Categoria, c.Nombre, c.Nombre_foto FROM categoria_platos c
         WHERE c.Activa = 1
           AND EXISTS (SELECT 1 FROM platos p WHERE p.Cod_Categoria = c.Cod_Categoria AND p.Activo = 0)
         ORDER BY c.Nombre
     """))).all()
-    return [{"id": int(c), "nombre": (n or "").strip()} for c, n in filas]
+    return [{"id": int(c), "nombre": (n or "").strip(), "Nombre_foto": f} for c, n, f in filas]
+
+
+def color_vb(valor) -> str | None:
+    """Color de VB6 → '#rrggbb'. Acepta el entero BGR en decimal (12648384, también como texto,
+    así viene zonas_asientos.Color) o el hexadecimal de VB '&H00C0FFC0&'."""
+    try:
+        t = str(valor or "").strip().upper()
+        c = int(t.replace("&H", "").replace("&", ""), 16) if t.startswith("&H") else int(t or 0)
+    except (TypeError, ValueError):
+        return None
+    if c <= 0 or c > 0xFFFFFF:
+        return None
+    return f"#{c & 0xFF:02x}{(c >> 8) & 0xFF:02x}{(c >> 16) & 0xFF:02x}"
+
+
+async def colores(emp: AsyncSession) -> dict:
+    """Colores que alterna el escritorio en los botones de categorías y productos."""
+    try:
+        f = (await emp.execute(text("""
+            SELECT Color_Primario_Categorias, Color_Secundarios_Categorias,
+                   Color_Primario_Productos, Color_Secundarios_Productos
+            FROM configuracion_tamano_letra LIMIT 1
+        """))).mappings().first() or {}
+    except Exception:
+        f = {}
+    return {"categorias": [color_vb(f.get("Color_Primario_Categorias")), color_vb(f.get("Color_Secundarios_Categorias"))],
+            "productos": [color_vb(f.get("Color_Primario_Productos")), color_vb(f.get("Color_Secundarios_Productos"))]}
 
 
 async def novedades(emp: AsyncSession) -> dict[int, list[dict]]:

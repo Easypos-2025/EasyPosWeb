@@ -52,7 +52,7 @@ async def _proteccion(request: Request, call_next):
     respuesta.headers["Referrer-Policy"] = "no-referrer"
     respuesta.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     if request.url.path.startswith("/api/"):
-        respuesta.headers["Cache-Control"] = "no-store"
+        respuesta.headers.setdefault("Cache-Control", "no-store")
     else:
         # Mini-app: solo código propio (sin CDN ni scripts en línea)
         respuesta.headers["Content-Security-Policy"] = (

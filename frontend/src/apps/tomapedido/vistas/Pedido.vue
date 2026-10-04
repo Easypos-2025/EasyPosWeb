@@ -10,6 +10,7 @@
           </button>
         </small>
       </div>
+      <button class="cancelar" @click="cancelar">Cancelar</button>
     </header>
 
     <div class="filtros" :class="{ 'filtros--ancho': esPC }">
@@ -18,34 +19,32 @@
         <button class="hamburguesa" title="Categorías" @click="alternarCategorias"><Icono nombre="menu" :tam="22" /></button>
         <div class="buscar">
           <Icono nombre="buscar" />
-          <input v-model="texto" class="entrada" placeholder="Buscar producto" />
+          <input v-model="texto" class="entrada" :placeholder="`Buscar ${t('producto')}`" />
           <button v-if="texto" class="buscar__limpiar" @click="texto = ''"><Icono nombre="cerrar" :tam="16" /></button>
         </div>
       </div>
       <div class="chips">
-        <button class="chip" :class="{ 'chip--activo': categoriaId === null }" @click="escogerCategoria(null)">Todo</button>
-        <button v-for="c in carta?.categorias || []" :key="c.id" class="chip" :class="{ 'chip--activo': categoriaId === c.id }"
-                @click="escogerCategoria(c.id)">{{ c.nombre }}</button>
+        <button v-for="(c, i) in carta?.categorias || []" :key="c.id" class="chip"
+                :class="{ 'chip--activo': categoriaId === c.id && !texto }"
+                :style="categoriaId === c.id && !texto ? null : colorAlterno(colores.categorias, i)"
+                @click="escogerCategoria(c.id)">
+          <img v-if="c.foto" :src="c.foto" class="chip__foto" alt="" loading="lazy" />{{ c.nombre }}
+        </button>
       </div>
     </div>
 
     <div class="cuerpo" :class="{ 'cuerpo--lateral': esPC && lateralAbierto }">
       <aside v-if="esPC && lateralAbierto" class="lateral">
-        <nav class="categorias">
-          <button class="categoria" :class="{ 'categoria--activa': categoriaId === null && !texto }" @click="escogerCategoria(null)">
-            <span>Todo</span><small>{{ carta?.platos.length || 0 }}</small>
-          </button>
-          <button v-for="c in carta?.categorias || []" :key="c.id" class="categoria"
-                  :class="{ 'categoria--activa': categoriaId === c.id && !texto }" @click="escogerCategoria(c.id)">
-            <span>{{ c.nombre }}</span><small>{{ conteo[c.id] || 0 }}</small>
-          </button>
-        </nav>
+        <ListaCategorias :categorias="carta?.categorias || []" :activa="texto ? null : categoriaId" :conteo="conteo"
+                         :colores="colores.categorias" @escoger="escogerCategoria" />
       </aside>
     <main class="contenido">
       <div v-if="cargando" class="cargando"><span class="giro"></span></div>
-      <p v-else-if="!productos.length" class="vacio">No hay productos {{ texto ? "con ese nombre" : "en esta categoría" }}.</p>
+      <p v-else-if="!productos.length" class="vacio">No hay {{ t("productos") }} {{ texto ? "con ese nombre" : "en esta categoría" }}.</p>
       <div class="productos">
-        <button v-for="p in productos" :key="p.id" class="producto tarjeta" @click="hojaProducto = p">
+        <button v-for="(p, i) in productos" :key="p.id" class="producto tarjeta" :class="{ 'producto--foto': p.foto }"
+                :style="colorAlterno(colores.productos, Math.floor(i / columnas))" @click="hojaProducto = p">
+          <span v-if="p.foto" class="producto__foto"><img :src="p.foto" alt="" loading="lazy" /></span>
           <span class="producto__nombre">{{ p.nombre }}</span>
           <span class="producto__pie">
             <b>{{ p.pedir_precio ? "Precio libre" : pesos(p.precio) }}</b>
@@ -64,15 +63,8 @@
           <b>Categorías</b>
           <button class="barra__btn" @click="verCategorias = false"><Icono nombre="cerrar" /></button>
         </div>
-        <nav class="categorias">
-          <button class="categoria" :class="{ 'categoria--activa': categoriaId === null && !texto }" @click="escogerCategoria(null)">
-            <span>Todo</span><small>{{ carta?.platos.length || 0 }}</small>
-          </button>
-          <button v-for="c in carta?.categorias || []" :key="c.id" class="categoria"
-                  :class="{ 'categoria--activa': categoriaId === c.id && !texto }" @click="escogerCategoria(c.id)">
-            <span>{{ c.nombre }}</span><small>{{ conteo[c.id] || 0 }}</small>
-          </button>
-        </nav>
+        <ListaCategorias :categorias="carta?.categorias || []" :activa="texto ? null : categoriaId" :conteo="conteo"
+                         :colores="colores.categorias" @escoger="escogerCategoria" />
       </aside>
     </div>
 
@@ -100,9 +92,11 @@ import Icono from "../componentes/Icono.vue"
 import ProductoSheet from "../componentes/ProductoSheet.vue"
 import CarritoSheet from "../componentes/CarritoSheet.vue"
 import ClienteSheet from "../componentes/ClienteSheet.vue"
+import ListaCategorias from "../componentes/ListaCategorias.vue"
 import { api } from "../api"
-import { cantidad, pesos, valorLinea } from "../formato"
+import { cantidad, colorAlterno, pesos, valorLinea } from "../formato"
 import { showConfirm, showToast } from "@/utils/toast"
+import { t, textos } from "../textos"
 
 const route = useRoute()
 const router = useRouter()
@@ -128,12 +122,24 @@ let mesaBloqueo = mesa ? { id_mesa: mesa.id, mesa: mesa.nombre } : null
 let enviado = false
 let latido = null
 
+const colores = computed(() => carta.value?.colores || { categorias: [], productos: [] })
+
+// Columnas de la carta (igual que el CSS) para alternar el color por fila como el escritorio
+const ancho = ref(window.innerWidth)
+const alRedimensionar = () => { ancho.value = window.innerWidth }
+const columnas = computed(() => {
+  const w = ancho.value
+  if (w <= 576) return 2
+  if (w <= 768) return 3
+  if (w >= 1025 && lateralAbierto.value) return w >= 1300 ? 4 : 3
+  return 4
+})
+
 const sinTildes = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 const productos = computed(() => {
   if (!carta.value) return []
   const t = sinTildes(texto.value.trim())
-  return carta.value.platos.filter(p =>
-    (t ? sinTildes(p.nombre).includes(t) : categoriaId.value === null || p.categoria === categoriaId.value))
+  return carta.value.platos.filter(p => (t ? sinTildes(p.nombre).includes(t) : p.categoria === categoriaId.value))
 })
 const total = computed(() => lineas.value.reduce((s, l) => s + valorLinea(l.unitario, l.cantidad), 0))
 const conteo = computed(() => (carta.value?.platos || []).reduce((m, p) => (m[p.categoria] = (m[p.categoria] || 0) + 1, m), {}))
@@ -170,6 +176,9 @@ const novedadesDe = (p) => carta.value?.novedades?.[String(p.categoria)] || []
 
 async function cargarCarta() {
   carta.value = await api.catalogo(cliente.value.id)
+  if (!carta.value.categorias.some(c => c.id === categoriaId.value)) {
+    categoriaId.value = carta.value.categorias[0]?.id ?? null
+  }
 }
 
 // Cambiar de cliente cambia la lista de precios: se recalcula lo que ya está en el carrito
@@ -246,14 +255,22 @@ function volver() {
   router.back()
 }
 
+// Vuelve a Mis cuentas; si hay productos sin enviar pide confirmación (igual que la flecha)
+function cancelar() {
+  router.replace("/cuentas")
+}
+
 onBeforeRouteLeave(async () => {
-  if (lineas.value.length && !enviado &&
-      !(await showConfirm("Tiene productos sin enviar. ¿Salir y descartarlos?", "Sí, descartar"))) return false
+  if (lineas.value.length && !enviado) {
+    if (!(await showConfirm(`Tiene ${t("productos")} sin enviar. ¿Salir y descartarlos?`, "Sí, descartar"))) return false
+    showToast(`${textos.productos} descartados`, "info", 1800)
+  }
   return true
 })
 
 onMounted(async () => {
   consultaPC.addEventListener("change", alCambiarAncho)
+  window.addEventListener("resize", alRedimensionar)
   try {
     config.value = await api.get("/config")
     cliente.value = config.value.cliente_default
@@ -278,6 +295,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   consultaPC.removeEventListener("change", alCambiarAncho)
+  window.removeEventListener("resize", alRedimensionar)
   clearInterval(latido)
   if (mesaBloqueo) api.post("/mesas/liberar", mesaBloqueo).catch(() => {})
 })
@@ -285,6 +303,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pantalla { min-height: 100vh; padding-bottom: 96px; }
+.cancelar { flex-shrink: 0; min-height: 38px; padding: 0 12px; border: 1.5px solid rgba(255,255,255,.5); border-radius: 10px; background: transparent; color: #fff; font-weight: 600; font-size: 14px; }
+.cancelar:active { background: rgba(255,255,255,.15); }
+.chips .chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip__foto { width: 26px; height: 26px; margin-left: -8px; border-radius: 50%; object-fit: cover; background: #fff; }
 .cliente-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font-size: 12px; opacity: .9; text-decoration: underline; text-underline-offset: 2px; }
 .cliente-btn:disabled { text-decoration: none; cursor: default; }
 
@@ -298,16 +320,6 @@ onBeforeUnmount(() => {
 .buscar .entrada { padding-left: 42px; padding-right: 42px; }
 .buscar__limpiar { position: absolute; right: 6px; top: 6px; width: 36px; height: 36px; border: 0; border-radius: 8px; background: var(--fondo); display: inline-flex; align-items: center; justify-content: center; }
 
-/* Lista vertical de categorías (columna en PC y panel en celular/tablet) */
-.categorias { display: flex; flex-direction: column; gap: 6px; }
-.categoria {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  min-height: 48px; padding: 0 14px; border: 0; border-radius: 12px; background: #fff;
-  box-shadow: var(--sombra); text-align: left; font-weight: 600;
-}
-.categoria small { flex-shrink: 0; padding: 2px 8px; border-radius: 999px; background: var(--fondo); color: var(--texto-suave); font-size: 12px; }
-.categoria--activa { background: var(--navy); color: #fff; }
-.categoria--activa small { background: rgba(255, 255, 255, .18); color: #fff; }
 
 .cuerpo--lateral { display: grid; grid-template-columns: 250px 1fr; max-width: 1320px; margin: 0 auto; }
 .cuerpo--lateral .contenido { max-width: none; margin: 0; }
@@ -335,6 +347,9 @@ onBeforeUnmount(() => {
   min-height: 96px; padding: 12px; border: 0; text-align: left;
 }
 .producto:active { transform: scale(.98); }
+.producto.producto--foto { padding-top: 0; }
+.producto__foto { display: block; height: 92px; margin: 0 -12px; border-radius: 14px 14px 0 0; overflow: hidden; background: #fff; }
+.producto__foto img { width: 100%; height: 100%; object-fit: contain; }
 .producto__nombre { font-weight: 700; font-size: 15px; line-height: 1.25; word-break: break-word; }
 .producto__pie { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
 .producto__pie b { color: var(--azul); }
@@ -366,5 +381,6 @@ onBeforeUnmount(() => {
   .productos { gap: 8px; }
   .producto { min-height: 88px; padding: 10px; }
   .producto__nombre { font-size: 14px; }
+  .producto__foto { height: 80px; margin: 0 -10px; }
 }
 </style>

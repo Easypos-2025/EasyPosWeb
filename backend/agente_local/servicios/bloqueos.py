@@ -51,7 +51,7 @@ async def bloquear(tmp: AsyncSession, id_mesa: int, mesa: str, mesero: Mesero) -
     """Bloquea (o renueva el bloqueo de) la mesa para este dispositivo. 409 si la tiene otro."""
     otro = await quien_bloquea(tmp, id_mesa, mesa, mesero)
     if otro:
-        raise HTTPException(status_code=409, detail=f"La mesa '{mesa.strip()}' ya se encuentra abierta en {otro}.")
+        raise HTTPException(status_code=409, detail=f"'{mesa.strip()}' está en uso en {otro}.")
     ahora = datetime.now()
     vence = ahora + timedelta(minutes=MINUTOS_BLOQUEO)
     renovado = (await tmp.execute(text("""
@@ -68,7 +68,7 @@ async def bloquear(tmp: AsyncSession, id_mesa: int, mesa: str, mesero: Mesero) -
                "a": ahora, "v": vence})
     except IntegrityError:
         await tmp.rollback()
-        raise HTTPException(status_code=409, detail=f"La mesa '{mesa.strip()}' ya se encuentra abierta en otro dispositivo.")
+        raise HTTPException(status_code=409, detail=f"'{mesa.strip()}' está en uso en otro dispositivo.")
     await tmp.execute(text("""
         INSERT INTO temp_mesa_abierta (Id_Mesa, Mesa, Abierta, Abierta_Desde) VALUES (:i, :m, 1, :desde)
     """), {"i": id_mesa, "m": mesa, "desde": mesero.nombre_dispositivo[:100]})

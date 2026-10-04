@@ -461,3 +461,65 @@ def test_menu_guardado_en_escritorio_se_ve_sin_recargar_temporales(cliente, db, 
     _sql(db, f"INSERT INTO {E}.menu_diario (Id_Menu, Id_Item, Fecha, Categoria, Descripcion, Agrupar, Seleccionado) "
              f"VALUES (53,146,'2026-10-03','01 SOPAS','FRIJOLADA',19,1)")
     assert cliente.get("/api/ag/catalogo/plato/15/opciones", headers=_hdr(h)).status_code == 200
+
+
+# ───────────── fotos y colores del escritorio ─────────────
+
+@pytest.fixture
+def carpetas_fotos(db, tmp_path):
+    from PIL import Image
+    prod, cat = tmp_path / "Productos", tmp_path / "Categorias"
+    prod.mkdir(); cat.mkdir()
+    Image.new("RGB", (1200, 800), "red").save(prod / "Hamburguesa.JPG")
+    Image.new("RGB", (200, 100), "blue").save(cat / "comidas.png")
+    (tmp_path / "secreto.key").write_text("no")
+    (prod / "virus.exe").write_text("no")
+    _sql(db, f"INSERT INTO {E}.configuracion_sede (Id_Sede, Ruta_Foto_Productos, Ruta_Foto_Categorias) "
+             f"VALUES (1, '{str(prod).replace(chr(92), chr(92)*2)}', '{str(cat).replace(chr(92), chr(92)*2)}')",
+         f"UPDATE {E}.platos SET Ruta_Foto='hamburguesa.jpg' WHERE Id_Plato=10",          # mayúsculas distintas
+         f"UPDATE {E}.platos SET Ruta_Foto='..\\..\\secreto.key' WHERE Id_Plato=11",
+         f"UPDATE {E}.platos SET Ruta_Foto='virus.exe' WHERE Id_Plato=14",
+         f"UPDATE {E}.platos SET Ruta_Foto='hamburguesa.jpg' WHERE Id_Plato=12",          # plato oculto
+         f"UPDATE {E}.categoria_platos SET Nombre_foto='comidas.png' WHERE Cod_Categoria=1",
+         f"INSERT INTO {E}.configuracion_tamano_letra (Color_Primario_Categorias, Color_Secundarios_Categorias, "
+         f"Color_Primario_Productos, Color_Secundarios_Productos) VALUES ('&H00C0FFC0&','&H00FFFFC0&','&H00C0FFC0&','')")
+    return prod
+
+
+def test_carta_fotos_y_colores(cliente, h, carpetas_fotos):
+    d = cliente.get("/api/ag/catalogo", headers=_hdr(h)).json()
+    platos = {p["id"]: p for p in d["platos"]}
+    assert platos[10]["foto"].startswith("/api/ag/fotos/plato/10?v=")
+    assert platos[11]["foto"] is None and platos[14]["foto"] is None       # ruta maliciosa / no es imagen
+    cats = {c["id"]: c for c in d["categorias"]}
+    assert cats[1]["foto"].startswith("/api/ag/fotos/categoria/1?v=") and cats[2]["foto"] is None
+    assert [c["nombre"] for c in d["categorias"]] == ["BEBIDAS", "COMIDAS"]  # orden alfabético
+    assert d["colores"] == {"categorias": ["#c0ffc0", "#c0ffff"], "productos": ["#c0ffc0", None]}
+
+
+def test_servir_fotos(cliente, h, carpetas_fotos):
+    from io import BytesIO
+    from PIL import Image
+    r = cliente.get("/api/ag/fotos/plato/10?v=1")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert "public" in r.headers["cache-control"]
+    assert max(Image.open(BytesIO(r.content)).size) <= 400                   # miniatura
+    assert cliente.get("/api/ag/fotos/categoria/1").status_code == 200
+    for ruta in ("/api/ag/fotos/plato/11", "/api/ag/fotos/plato/14", "/api/ag/fotos/plato/12",
+                 "/api/ag/fotos/plato/999", "/api/ag/fotos/categoria/3", "/api/ag/fotos/plato/..%2F..%2Fsecreto.key"):
+        assert cliente.get(ruta).status_code in (404, 422), ruta
+
+
+def test_color_vb():
+    from agente_local.servicios.catalogo import color_vb
+    assert color_vb("&H00C0FFC0&") == "#c0ffc0" and color_vb("&H00FFFFC0&") == "#c0ffff"
+    assert color_vb(12648384) == "#c0ffc0" and color_vb("12648384") == "#c0ffc0" and color_vb(255) == "#ff0000"
+    assert color_vb("") is None and color_vb(None) is None and color_vb("xyz") is None
+
+
+def test_textos_configurables(cliente, h, monkeypatch):
+    d = cliente.get("/api/ag/config", headers=_hdr(h)).json()["textos"]
+    assert (d["cuenta"], d["cuentas"], d["producto"], d["productos"]) == ("Cuenta", "Cuentas", "Producto", "Productos")
+    monkeypatch.setenv("AG_TEXTO_MESERO", "Vendedor")
+    d = cliente.get("/api/ag/config", headers=_hdr(h)).json()["textos"]
+    assert (d["mesero"], d["meseros"]) == ("Vendedor", "Vendedores")

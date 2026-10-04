@@ -7,7 +7,7 @@
       </div>
 
       <div class="hoja__cuerpo">
-        <p v-if="!lineas.length" class="vacio">No ha agregado productos.</p>
+        <p v-if="!lineas.length" class="vacio">No ha agregado {{ t("productos") }}.</p>
         <div v-for="l in lineas" :key="l.clave" class="linea">
           <div class="linea__info">
             <b>{{ l.nombre }}</b>
@@ -41,6 +41,7 @@
 import { computed } from "vue"
 import Icono from "./Icono.vue"
 import { cantidad, pesos, valorLinea } from "../formato"
+import { t } from "../textos"
 
 const props = defineProps({
   lineas: { type: Array, required: true },

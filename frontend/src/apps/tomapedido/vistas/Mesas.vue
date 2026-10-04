@@ -2,7 +2,7 @@
   <div class="pantalla">
     <header class="barra">
       <button class="barra__btn" @click="$router.replace('/cuentas')"><Icono nombre="atras" /></button>
-      <div class="barra__titulo"><h1>Escoja la mesa</h1></div>
+      <div class="barra__titulo"><h1>{{ textos.cuentas }}</h1><small>Escoja dónde montar el pedido</small></div>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
     </header>
 
@@ -17,7 +17,7 @@
       <div class="leyenda">
         <span><i class="punto punto--libre"></i>Libre</span>
         <span><i class="punto punto--mia"></i>Mía</span>
-        <span><i class="punto punto--ocupada"></i>Otro mesero</span>
+        <span><i class="punto punto--ocupada"></i>Otro {{ t("mesero") }}</span>
         <span><i class="punto punto--abierta"></i>Abierta en otro equipo</span>
       </div>
 
@@ -30,10 +30,10 @@
           <span class="mesa__estado">{{ TEXTO[m.estado] }}</span>
         </button>
       </div>
-      <p v-if="zona && !zona.mesas.length && !zona.dinamica" class="vacio">Esta zona no tiene mesas habilitadas.</p>
+      <p v-if="zona && !zona.mesas.length && !zona.dinamica" class="vacio">Esta zona no tiene {{ t("cuentas") }} habilitadas.</p>
 
       <button class="btn btn--ambar btn--bloque nueva" @click="pedirNombre = true">
-        <Icono nombre="mas" /> Cuenta nueva {{ zona?.dinamica ? "en " + zona.nombre : "sin mesa" }}
+        <Icono nombre="mas" /> Nueva {{ t("cuenta") }}{{ zona?.dinamica ? " en " + zona.nombre : "" }}
       </button>
     </main>
 
@@ -41,12 +41,12 @@
     <div v-if="pedirNombre" class="velo" @click.self="pedirNombre = false">
       <form class="hoja" @submit.prevent="cuentaNueva">
         <div class="hoja__cab">
-          <h2>Cuenta nueva</h2>
+          <h2>Nueva {{ t('cuenta') }}</h2>
           <button type="button" class="cerrar" @click="pedirNombre = false"><Icono nombre="cerrar" /></button>
         </div>
         <div class="hoja__cuerpo">
           <label class="campo">
-            <span>Nombre de la cuenta</span>
+            <span>Nombre</span>
             <input v-model.trim="nombreCuenta" class="entrada" maxlength="50" placeholder="Ej: Juan, Llevar 3, Barra" autofocus />
           </label>
         </div>
@@ -64,6 +64,7 @@ import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
 import { api } from "../api"
 import { showToast } from "@/utils/toast"
+import { t, textos } from "../textos"
 
 const TEXTO = { libre: "Libre", mia: "Mía", ocupada: "Ocupada", abierta: "En uso" }
 
@@ -107,8 +108,8 @@ async function cargar() {
 
 async function tocar(m) {
   if (m.estado === "mia") return router.push({ path: "/cuenta", query: { nro: m.nro_pedido } })
-  if (m.estado === "ocupada") return showToast("Esa mesa tiene un pedido de otro mesero.", "warning", 2500)
-  if (m.estado === "abierta") return showToast("Esa mesa está abierta en otro equipo.", "warning", 2500)
+  if (m.estado === "ocupada") return showToast(`'${m.nombre}' tiene un pedido de otro ${t("mesero")}.`, "warning", 2500)
+  if (m.estado === "abierta") return showToast(`'${m.nombre}' está en uso en otro equipo.`, "warning", 2500)
   ocupado.value = true
   try {
     // Se bloquea mientras se monta el pedido (vence sola si el celular se apaga)
