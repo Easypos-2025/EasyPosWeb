@@ -1,13 +1,21 @@
 <template>
-  <div class="pe-widget" @click="$router.push('/pos/facturas-electronicas')">
-    <div class="pe-widget-header">
+  <div class="pe-widget" :class="{ 'pe-widget--cerrado': !abierto }">
+    <!-- Plegable (por defecto plegada); plegada muestra el resumen en la barra -->
+    <div class="pe-widget-header" @click="alternar">
       <span class="pe-widget-title">
         <i class="bi bi-lightning-charge-fill pe-icon"></i>
         Facturación Electrónica DIAN
       </span>
-      <span class="pe-widget-link">Ver todas <i class="bi bi-arrow-right"></i></span>
+      <span v-if="!abierto && !loading" class="pe-widget-resumen" :class="{ 'pe-widget-resumen--alerta': pendientes > 0 }">
+        {{ pendientes }} pendientes · {{ enviadas }} enviadas hoy
+      </span>
+      <span class="pe-widget-link" @click.stop="$router.push('/pos/facturas-electronicas')">
+        Ver todas <i class="bi bi-arrow-right"></i>
+      </span>
+      <i class="bi pe-widget-chevron" :class="abierto ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
     </div>
 
+    <template v-if="abierto">
     <div v-if="loading" class="pe-widget-loading">
       <i class="bi bi-arrow-repeat spin"></i> Cargando…
     </div>
@@ -29,6 +37,7 @@
       <i class="bi bi-exclamation-triangle-fill"></i>
       {{ pendientes }} {{ pendientes === 1 ? 'factura pendiente' : 'facturas pendientes' }} de envío a la DIAN
     </div>
+    </template>
   </div>
 </template>
 
@@ -45,6 +54,14 @@ const pendientes     = ref(0)
 const enviadas       = ref(0)
 const valorPendiente = ref(0)
 let   _timer         = null
+
+// Plegada por defecto; el navegador recuerda la elección
+const CLAVE_ABIERTO = 'dash_pe_abierto'
+const abierto = ref((() => { try { return localStorage.getItem(CLAVE_ABIERTO) === '1' } catch { return false } })())
+function alternar() {
+  abierto.value = !abierto.value
+  try { localStorage.setItem(CLAVE_ABIERTO, abierto.value ? '1' : '0') } catch { /* sin almacenamiento */ }
+}
 
 async function cargar() {
   if (!companyId.value) return
@@ -92,7 +109,6 @@ watch(companyId, (v) => {
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   border-radius: 14px;
   padding: 16px 20px;
-  cursor: pointer;
   transition: transform .15s, box-shadow .15s;
   margin-bottom: 4px;
   border: 1px solid #334155;
@@ -106,7 +122,21 @@ watch(companyId, (v) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 14px;
+  cursor: pointer;
+}
+.pe-widget--cerrado { padding-top: 12px; padding-bottom: 12px; }
+.pe-widget--cerrado .pe-widget-header { margin-bottom: 0; }
+.pe-widget-title { flex: 1; }
+.pe-widget-resumen { font-size: 12px; font-weight: 600; color: #86efac; white-space: nowrap; }
+.pe-widget-resumen--alerta { color: #fca5a5; }
+.pe-widget-chevron { color: #cbd5e1; }
+@media (max-width: 576px) {
+  .pe-widget-resumen { display: none; }
+}
+@media (max-width: 768px) {
+  .pe-widget { padding: 12px 14px; }
 }
 .pe-widget-title {
   font-size: 14px;

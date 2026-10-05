@@ -9,7 +9,7 @@ Aquí irán llegando utilidades que hoy están en el programa de escritorio.
   GET  /api/ag/admin/errores           errores del agente y de los dispositivos
   POST /api/ag/admin/errores/{id}/resolver | reabrir
   GET  /api/ag/admin/dispositivos      dispositivos con su conexión
-  POST /api/ag/admin/dispositivos/{id}/bloquear | habilitar
+  POST /api/ag/admin/dispositivos/{id}/bloquear | habilitar | eliminar
   POST /api/ag/admin/fotos/sincronizar copiar las fotos de la web al escritorio
   POST /api/ag/admin/actualizar        aplicar ya la versión nueva (opción A; la B es al abrir turno)
 """
@@ -210,8 +210,19 @@ async def listar_dispositivos(_=Depends(admin_actual), emp: AsyncSession = Depen
     activos = {u for (u,) in (await emp.execute(text(
         "SELECT Usuario FROM registro_dispositivos WHERE Activo = 1"))).all()}
     limite = datetime.now() - timedelta(seconds=SEGUNDOS_CONECTADO)
-    return [{**dict(f), "activo_escritorio": f["usuario"] in activos,
-             "conectado": bool(f["ultimo_acceso"] and f["ultimo_acceso"] >= limite)} for f in filas]
+    return {"limite": await limite_dispositivos(emp),
+            "registrados": len((await emp.execute(text("SELECT Id_Dispositivo FROM registro_dispositivos"))).all()),
+            "dispositivos": [{**dict(f), "activo_escritorio": f["usuario"] in activos,
+                              "conectado": bool(f["ultimo_acceso"] and f["ultimo_acceso"] >= limite)} for f in filas]}
+
+
+async def limite_dispositivos(emp) -> int | None:
+    """Cupo de dispositivos de la empresa (configuracion_conexion.Dispositivos_Autorizados)."""
+    try:
+        v = (await emp.execute(text("SELECT Dispositivos_Autorizados FROM configuracion_conexion LIMIT 1"))).scalar()
+        return int(v) if v is not None else None
+    except Exception:
+        return None
 
 
 async def _bloqueo(tmp, id_disp: int, valor: int) -> None:
@@ -227,6 +238,37 @@ async def _bloqueo(tmp, id_disp: int, valor: int) -> None:
 async def bloquear_dispositivo(id_disp: int, request: Request, _=Depends(admin_actual), tmp: AsyncSession = Depends(get_tmp)):
     await _bloqueo(tmp, id_disp, 1)
     await auditoria.registrar("admin_bloquear", "ok", ip_cliente(request), id_dispositivo=id_disp)
+    return {"ok": True}
+
+
+@router.post("/dispositivos/{id_disp}/eliminar")
+async def eliminar_dispositivo(id_disp: int, request: Request, _=Depends(admin_actual),
+                               emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
+    """Libera el cupo (cambios de personal). Como la papelera del escritorio: borra el dispositivo de
+    registro_dispositivos. El mesero/empleado y sus pedidos no se tocan."""
+    d = (await tmp.execute(text("SELECT usuario, nombre_dispositivo, cod_empleado FROM ag_dispositivos WHERE id = :id"),
+                           {"id": id_disp})).mappings().first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Dispositivo no encontrado.")
+    try:
+        await emp.execute(text("DELETE FROM registro_dispositivos WHERE Usuario = :u"), {"u": d["usuario"]})
+        await emp.commit()
+    except Exception as e:
+        await emp.rollback()
+        if "denied" in str(e).lower():
+            raise HTTPException(status_code=409, detail="El agente no tiene permiso para eliminar dispositivos en la base "
+                                                        "de datos. Vuelva a ejecutar el instalador del agente (lo agrega).")
+        raise
+    await tmp.execute(text("DELETE FROM temp_registro_dispositivos WHERE Usuario = :u"), {"u": d["usuario"]})
+    bloqueadas = (await tmp.execute(text("SELECT id_mesa, mesa FROM ag_bloqueo_mesa WHERE id_dispositivo = :id"),
+                                    {"id": id_disp})).all()
+    for id_mesa, mesa in bloqueadas:
+        await tmp.execute(text("DELETE FROM temp_mesa_abierta WHERE Id_Mesa = :i AND Mesa = :m"), {"i": id_mesa, "m": mesa})
+    await tmp.execute(text("DELETE FROM ag_bloqueo_mesa WHERE id_dispositivo = :id"), {"id": id_disp})
+    await tmp.execute(text("DELETE FROM ag_dispositivos WHERE id = :id"), {"id": id_disp})
+    await tmp.commit()
+    await auditoria.registrar("admin_eliminar_dispositivo", "ok", ip_cliente(request), d["usuario"], d["cod_empleado"],
+                              detalle=d["nombre_dispositivo"])
     return {"ok": True}
 
 
@@ -264,6 +306,7 @@ async def actualizar_ahora(request: Request, _=Depends(admin_actual)):
         actualizador.aplicar("botón del panel")
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    await actualizador.publicar_aviso()
     await auditoria.registrar("actualizar", "ok", ip_cliente(request), detalle=actualizador.estado["descargada"])
     return {"ok": True, "nueva": actualizador.estado["descargada"]}
 

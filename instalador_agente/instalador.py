@@ -127,9 +127,11 @@ def crear_usuario_bd(d: dict, bd_empresa: str, bd_temp: str) -> str:
             usuario = f"'{USUARIO_BD}'@'{host}'"
             c.execute(f"CREATE USER IF NOT EXISTS {usuario} IDENTIFIED BY %s", (clave,))
             c.execute(f"ALTER USER {usuario} IDENTIFIED BY %s", (clave,))
-            # Empresa: solo lectura, salvo asignar fotos de la web a platos sin foto
+            # Empresa: solo lectura, salvo asignar las fotos de la web a los platos…
             c.execute(f"GRANT SELECT ON {_bd_grant(bd_empresa)}.* TO {usuario}")
             c.execute(f"GRANT UPDATE (Ruta_Foto) ON `{bd_empresa}`.`platos` TO {usuario}")
+            # …y eliminar dispositivos desde el panel (libera el cupo de Dispositivos_Autorizados)
+            c.execute(f"GRANT DELETE ON `{bd_empresa}`.`registro_dispositivos` TO {usuario}")
             # Temporales: pedidos y tablas propias del agente (ag_*)
             c.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX ON {_bd_grant(bd_temp)}.* TO {usuario}")
         c.execute("FLUSH PRIVILEGES")

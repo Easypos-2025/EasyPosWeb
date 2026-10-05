@@ -187,6 +187,40 @@ def aplicar(motivo: str) -> None:
     log.info("Actualización %s → %s iniciada (%s)", VERSION, nueva, motivo)
 
 
+def texto_aviso() -> str:
+    """Aviso para mostrar en el escritorio (vacío si no hay nada que avisar)."""
+    v = estado["vigente"] or {}
+    if estado["aplicando"]:
+        return f"Actualizando el EasyPos Agente Local a la versión {v.get('version')}…"
+    if disponible():
+        if estado["descargada"]:
+            return (f"Hay una actualización del EasyPos Agente Local (versión {v.get('version')}). "
+                    "Se instala sola al abrir turno, o ahora desde el Panel del Agente.")
+        return f"Descargando una actualización del EasyPos Agente Local (versión {v.get('version')})…"
+    return ""
+
+
+async def publicar_aviso() -> None:
+    """Deja el aviso en datatemppos.ag_config para que el programa de escritorio lo muestre:
+         SELECT valor FROM ag_config WHERE clave = 'aviso_escritorio'
+    Nunca lanza."""
+    from sqlalchemy import text
+
+    from .db import SesionTemp
+    v = estado["vigente"] or {}
+    valores = {"aviso_escritorio": texto_aviso(), "version_instalada": VERSION,
+               "version_disponible": v.get("version") if disponible() else ""}
+    try:
+        async with SesionTemp() as s:
+            for clave, valor in valores.items():
+                await s.execute(text("""
+                    INSERT INTO ag_config (clave, valor) VALUES (:c, :v) ON DUPLICATE KEY UPDATE valor = :v
+                """), {"c": clave, "v": (valor or "")[:255]})
+            await s.commit()
+    except Exception:
+        log.exception("No se pudo publicar el aviso para el escritorio")
+
+
 def al_abrir_turno(pedidos_abiertos: int) -> bool:
     """Opción B: se abrió turno en el escritorio. Se actualiza si hay versión lista y ningún
     pedido de los dispositivos está abierto (si los hay, espera al próximo turno)."""

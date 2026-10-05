@@ -123,6 +123,7 @@ async def ciclo() -> None:
             await latido()
             await enviar_errores()
             await actualizador.descargar_si_hace_falta()
+            await actualizador.publicar_aviso()          # para el dashboard del escritorio (ag_config)
             # Opción B: al abrir turno (cambia la fecha de negocio) y sin pedidos abiertos de dispositivos
             fecha, abiertos = await turno_y_pedidos()
             if fecha_turno and fecha != fecha_turno:

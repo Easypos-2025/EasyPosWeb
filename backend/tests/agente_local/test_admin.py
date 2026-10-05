@@ -70,16 +70,16 @@ def test_cambiar_clave_invalida_sesiones(cliente, admin):
 
 def test_latido_y_estado_de_dispositivos(cliente, db, admin, mesero):
     assert cliente.post("/api/ag/sesion/latido", headers=mesero).status_code == 200
-    d = cliente.get("/api/ag/admin/dispositivos", headers=admin).json()
+    d = cliente.get("/api/ag/admin/dispositivos", headers=admin).json()["dispositivos"]
     assert d[0]["nombre_dispositivo"] == "Cel Ana" and d[0]["conectado"] is True and d[0]["activo_escritorio"] is True
     _sql(db, f"UPDATE {T}.ag_dispositivos SET ultimo_acceso = NOW() - INTERVAL 5 MINUTE")
-    assert cliente.get("/api/ag/admin/dispositivos", headers=admin).json()[0]["conectado"] is False
+    assert cliente.get("/api/ag/admin/dispositivos", headers=admin).json()["dispositivos"][0]["conectado"] is False
     r = cliente.get("/api/ag/admin/resumen", headers=admin).json()
     assert r["dispositivos"]["total"] == 1 and r["dispositivos"]["conectados"] == 0
 
 
 def test_bloquear_dispositivo_corta_su_sesion(cliente, admin, mesero):
-    id_disp = cliente.get("/api/ag/admin/dispositivos", headers=admin).json()[0]["id"]
+    id_disp = cliente.get("/api/ag/admin/dispositivos", headers=admin).json()["dispositivos"][0]["id"]
     assert cliente.post(f"/api/ag/admin/dispositivos/{id_disp}/bloquear", headers=admin).status_code == 200
     assert cliente.get("/api/ag/pedidos", headers=mesero).status_code == 401
     assert cliente.post("/api/ag/sesion/ingresar", json={"usuario": "ana", "clave": "4321"}).status_code == 403
@@ -182,3 +182,44 @@ def test_sincronizar_fotos_de_la_web(cliente, db, admin, tmp_path, monkeypatch):
 
 def test_sincronizar_fotos_sin_clave(cliente, admin):
     assert cliente.post("/api/ag/admin/fotos/sincronizar", headers=admin).status_code == 409
+
+
+# ───────────── cupo de dispositivos y eliminar ─────────────
+
+def test_eliminar_dispositivo_libera_cupo(cliente, db, admin, mesero):
+    _sql(db, f"CREATE TABLE IF NOT EXISTS {E}.configuracion_conexion LIKE maduritos.configuracion_conexion",
+         f"DELETE FROM {E}.configuracion_conexion",
+         f"INSERT INTO {E}.configuracion_conexion (Id_Sede, Dispositivos_Autorizados) VALUES (1, 1)")
+    r = cliente.get("/api/ag/admin/dispositivos", headers=admin).json()
+    assert (r["limite"], r["registrados"]) == (1, 1)
+    # Cupo lleno: no se registran dispositivos nuevos
+    nuevo = cliente.post("/api/ag/dispositivos/registro", json={"nombre_dispositivo": "Cel Nuevo", "usuario": "nuevo", "clave": "1234"})
+    assert nuevo.status_code == 409 and "límite de 1" in nuevo.json()["detail"]
+    # Eliminar el de Ana: sale del escritorio y del agente, su sesión cae, el mesero se conserva
+    id_disp = r["dispositivos"][0]["id"]
+    _sql(db, f"INSERT INTO {T}.temp_mesa_abierta (Id_Mesa, Mesa, Abierta, Abierta_Desde) VALUES (1,'S-01',1,'Cel Ana')",
+         f"INSERT INTO {T}.ag_bloqueo_mesa (id_mesa, mesa, cod_empleado, id_dispositivo, desde, vence) "
+         f"VALUES (1,'S-01',1,{id_disp},NOW(),NOW() + INTERVAL 5 MINUTE)")
+    assert cliente.post(f"/api/ag/admin/dispositivos/{id_disp}/eliminar", headers=admin).status_code == 200
+    assert _filas(db, f"SELECT * FROM {E}.registro_dispositivos WHERE Usuario='ana'") == ()
+    assert _filas(db, f"SELECT * FROM {T}.temp_registro_dispositivos WHERE Usuario='ana'") == ()
+    assert _filas(db, f"SELECT * FROM {T}.temp_mesa_abierta") == () and _filas(db, f"SELECT * FROM {T}.ag_bloqueo_mesa") == ()
+    assert len(_filas(db, f"SELECT * FROM {E}.meseros WHERE nombres='ANA'")) == 1
+    assert cliente.get("/api/ag/pedidos", headers=mesero).status_code == 401
+    assert cliente.post("/api/ag/dispositivos/registro", json={"nombre_dispositivo": "Cel Nuevo", "usuario": "nuevo",
+                                                                "clave": "1234"}).status_code == 200
+    assert cliente.post("/api/ag/admin/dispositivos/999/eliminar", headers=admin).status_code == 404
+    _sql(db, f"DROP TABLE {E}.configuracion_conexion")
+
+
+def test_aviso_para_el_escritorio(cliente, db, monkeypatch):
+    from agente_local import actualizador, config
+    monkeypatch.setattr(config, "EMPAQUETADO", True)
+    monkeypatch.setitem(actualizador.estado, "vigente", {"version": "26.10.09-zzz"})
+    monkeypatch.setitem(actualizador.estado, "descargada", "26.10.09-zzz")
+    cliente.portal.call(actualizador.publicar_aviso)
+    avisos = {f["clave"]: f["valor"] for f in _filas(db, f"SELECT clave, valor FROM {T}.ag_config")}
+    assert "26.10.09-zzz" in avisos["aviso_escritorio"] and "abrir turno" in avisos["aviso_escritorio"]
+    monkeypatch.setitem(actualizador.estado, "vigente", None)
+    cliente.portal.call(actualizador.publicar_aviso)
+    assert _filas(db, f"SELECT valor FROM {T}.ag_config WHERE clave='aviso_escritorio'")[0]["valor"] == ""

@@ -106,6 +106,14 @@ async def registrar_dispositivo(data: RegistroIn, request: Request,
     if pendientes >= config.REGISTRO_MAX_PENDIENTES:
         raise HTTPException(status_code=429, detail="Hay demasiados dispositivos esperando activación en el escritorio.")
 
+    from .admin import limite_dispositivos
+    cupo = await limite_dispositivos(emp)
+    if cupo is not None:
+        registrados = (await emp.execute(text("SELECT COUNT(*) FROM registro_dispositivos"))).scalar() or 0
+        if registrados >= cupo:
+            raise HTTPException(status_code=409, detail=f"Se alcanzó el límite de {cupo} dispositivos autorizados. "
+                                                        "Pida en caja eliminar uno que ya no se use (Panel del Agente → Dispositivos).")
+
     p = {"u": data.usuario, "n": data.nombre_dispositivo}
     usuario_existe = (await emp.execute(text(
         "SELECT COUNT(*) FROM registro_dispositivos WHERE Usuario = :u"), p)).scalar() \

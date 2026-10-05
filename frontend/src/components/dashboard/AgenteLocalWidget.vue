@@ -28,7 +28,8 @@ import api from "@/services/apis"
 const agente = ref(null)
 const qr = ref("")
 const CLAVE = "dash_agente_abierto"
-const abierto = ref((() => { try { return localStorage.getItem(CLAVE) !== "0" } catch { return true } })())
+// Plegada por defecto; el navegador recuerda la elección
+const abierto = ref((() => { try { return localStorage.getItem(CLAVE) === "1" } catch { return false } })())
 
 async function cargarQr() {
   if (qr.value || !agente.value?.url_local) return
