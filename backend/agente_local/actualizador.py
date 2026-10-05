@@ -233,6 +233,20 @@ def al_abrir_turno(pedidos_abiertos: int) -> bool:
     return True
 
 
+async def revisar_resultado() -> None:
+    """Se llama al arrancar y en cada ciclo: el script escribe resultado.json cuando el agente nuevo
+    ya está corriendo (o tras volver al anterior), así que no basta con leerlo al arrancar."""
+    if not (DIR / "resultado.json").exists():
+        return
+    leer_resultado()
+    ultimo = estado["ultimo"] or {}
+    if ultimo.get("estado") != "OK":
+        from . import errores
+        await errores.registrar(origen="agente", tipo="SERVIDOR", nivel="CRITICO",
+                                titulo=f"La actualización a {ultimo.get('hacia')} falló y se volvió a la versión anterior",
+                                mensaje=ultimo.get("mensaje"))
+
+
 def leer_resultado() -> None:
     """Al arrancar: resultado de la última actualización (para el panel y la nube)."""
     archivo, reportado = DIR / "resultado.json", DIR / "resultado_reportado.json"

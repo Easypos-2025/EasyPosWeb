@@ -120,6 +120,7 @@ async def ciclo() -> None:
     fecha_turno = None
     while True:
         try:
+            await actualizador.revisar_resultado()       # resultado de una actualización recién aplicada
             await latido()
             await enviar_errores()
             await actualizador.descargar_si_hace_falta()

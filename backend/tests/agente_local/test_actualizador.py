@@ -81,6 +81,25 @@ def test_abrir_turno(act, monkeypatch):
     assert act.al_abrir_turno(0) is True and aplicadas == ["apertura de turno"]
 
 
+def test_resultado_escrito_despues_de_arrancar(act, tmp_path, monkeypatch):
+    """El script escribe el resultado cuando el agente nuevo ya arrancó: se detecta en el ciclo."""
+    import asyncio
+    registrados = []
+
+    async def registrar(**k):
+        registrados.append(k)
+    from agente_local import errores
+    monkeypatch.setattr(errores, "registrar", registrar)
+    asyncio.run(act.revisar_resultado())                        # aún no hay resultado
+    assert act.estado["reportar"] is None
+    (tmp_path / "resultado.json").write_text('{"estado": "OK", "desde": "a", "hacia": "b"}', encoding="utf-8-sig")
+    asyncio.run(act.revisar_resultado())
+    assert act.estado["reportar"].startswith("OK a → b") and registrados == []
+    (tmp_path / "resultado.json").write_text('{"estado": "REVERTIDO", "desde": "b", "hacia": "c"}', encoding="utf-8-sig")
+    asyncio.run(act.revisar_resultado())
+    assert registrados and registrados[0]["nivel"] == "CRITICO"
+
+
 def test_resultado_de_la_actualizacion(act, tmp_path):
     (tmp_path / "resultado.json").write_text('{"estado": "REVERTIDO", "desde": "a", "hacia": "b", "mensaje": "no respondió"}',
                                               encoding="utf-8-sig")

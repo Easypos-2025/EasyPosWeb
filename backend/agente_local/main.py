@@ -32,12 +32,8 @@ if not log.handlers:
 async def _ciclo(app: FastAPI):
     await crear_esquema()
     log.info("Agente Local %s iniciado en el puerto %s", VERSION, config.PUERTO)
-    actualizador.leer_resultado()
-    ultimo = actualizador.estado["ultimo"]
-    if actualizador.estado["reportar"] and ultimo and ultimo.get("estado") != "OK":
-        await errores.registrar(origen="agente", tipo="SERVIDOR", nivel="CRITICO",
-                                titulo=f"La actualización a {ultimo.get('hacia')} falló y se volvió a la versión anterior",
-                                mensaje=ultimo.get("mensaje"))
+    await actualizador.revisar_resultado()
+    actualizador.leer_resultado()                        # último resultado ya reportado (para el panel)
     tarea_nube = asyncio.create_task(nube.ciclo())      # latido, errores, fotos y actualizaciones
     yield
     tarea_nube.cancel()
