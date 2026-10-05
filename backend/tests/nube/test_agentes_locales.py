@@ -137,17 +137,26 @@ def test_regenerar_y_desactivar(cliente, claves):
     assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva}, json={}).status_code == 401
 
 
-def test_dashboard_empresa_ve_solo_su_agente(cliente, claves):
+def test_dashboard_empresa_ve_solo_su_agente(cliente, claves, db):
     a, _ = claves
     ag = {x["company_id"]: x for x in cliente.get("/api/agentes-locales").json()}[EMP_A]
     cliente.patch(f"/api/agentes-locales/{ag['id']}", json={"activo": True})
     nueva = cliente.post(f"/api/agentes-locales/{ag['id']}/clave").json()["clave"]
+    # Creado en la web pero aún sin instalar (nunca se ha conectado): la empresa no ve la tarjeta
+    with db.cursor() as c:
+        c.execute("UPDATE company_local_agents SET ultimo_contacto = NULL WHERE company_id = %s", (EMP_A,))
+    assert cliente.get("/api/mi-agente-local").json() == {"existe": False}
     cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva}, json={})        # sin dirección aún
     assert cliente.get("/api/mi-agente-local/qr.png").status_code == 404
+    # Dirección por nombre del PC: solo nombre:puerto (no se acepta nada que pueda inyectar)
     cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva},
-                 json={"url_local": "http://192.168.1.50:8090", "version": "0.1.0"})
+                 json={"url_local": "http://192.168.1.50:8090", "url_pc": "javascript:alert(1)//x:80"})
+    assert cliente.get("/api/mi-agente-local").json()["url_pc"] is None
+    cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva},
+                 json={"url_local": "http://192.168.1.50:8090", "url_pc": "http://CAJA-1:8090", "version": "0.1.0"})
     d = cliente.get("/api/mi-agente-local").json()
     assert d["existe"] and d["url_local"] == "http://192.168.1.50:8090" and d["en_linea"]
+    assert d["url_pc"] == "http://CAJA-1:8090"
     r = cliente.get("/api/mi-agente-local/qr.png")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     _Usuario.company_id = 123456789                     # empresa sin agente

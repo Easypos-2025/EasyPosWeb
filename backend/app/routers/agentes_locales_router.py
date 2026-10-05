@@ -73,7 +73,7 @@ class AgenteCambioIn(BaseModel):
 @router_admin.get("")
 async def listar(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     filas = (await db.execute(text("""
-        SELECT a.id, a.company_id, c.name AS empresa, a.codigo, a.clave_prefijo, a.url_local, a.ip_local,
+        SELECT a.id, a.company_id, c.name AS empresa, a.codigo, a.clave_prefijo, a.url_local, a.url_pc, a.ip_local,
                a.ip_publica, a.version, a.ultimo_contacto, a.activo, a.created_at,
                a.actualizacion, a.actualizacion_en
         FROM company_local_agents a
@@ -182,6 +182,7 @@ async def agente_actual(x_agente_clave: Optional[str] = Header(default=None),
 class LatidoIn(BaseModel):
     url_local: Optional[str] = Field(default=None, max_length=200)
     ip_local: Optional[str] = Field(default=None, max_length=45)
+    url_pc: Optional[str] = Field(default=None, max_length=200)          # http://NOMBRE-PC:8090
     version: Optional[str] = Field(default=None, max_length=40)
     actualizacion: Optional[str] = Field(default=None, max_length=255)   # resultado de su última actualización
 
@@ -190,11 +191,12 @@ class LatidoIn(BaseModel):
 async def latido(data: LatidoIn, request: Request, agente: dict = Depends(agente_actual),
                  db: AsyncSession = Depends(get_db)):
     url = data.url_local if data.url_local and re.match(r"^https?://[\w.\-:]+/?$", data.url_local) else None
+    url_pc = data.url_pc if data.url_pc and re.match(r"^http://[A-Za-z0-9_\-]{1,63}:\d{2,5}/?$", data.url_pc) else None
     await db.execute(text("""
         UPDATE company_local_agents
-        SET url_local = :u, ip_local = :ip, ip_publica = :pub, version = :v, ultimo_contacto = NOW()
+        SET url_local = :u, url_pc = :upc, ip_local = :ip, ip_publica = :pub, version = :v, ultimo_contacto = NOW()
         WHERE id = :id
-    """), {"u": url, "ip": data.ip_local, "pub": (request.client.host if request.client else None),
+    """), {"u": url, "upc": url_pc, "ip": data.ip_local, "pub": (request.client.host if request.client else None),
            "v": data.version, "id": agente["id"]})
     if data.actualizacion:
         await db.execute(text("""
@@ -283,17 +285,18 @@ router_empresa = APIRouter(prefix="/api/mi-agente-local", tags=["agente-local"],
 
 async def _agente_empresa(db: AsyncSession, company_id: int):
     return (await db.execute(text("""
-        SELECT url_local, version, ultimo_contacto, activo FROM company_local_agents WHERE company_id = :c
+        SELECT url_local, url_pc, version, ultimo_contacto, activo FROM company_local_agents WHERE company_id = :c
     """), {"c": company_id})).mappings().first()
 
 
 @router_empresa.get("")
 async def mi_agente(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     a = await _agente_empresa(db, user.company_id)
-    if not a or not a["activo"]:
+    # Solo se muestra cuando el agente ya se instaló y se conectó al menos una vez
+    if not a or not a["activo"] or not a["ultimo_contacto"]:
         return {"existe": False}
     en_linea = bool(a["ultimo_contacto"] and (datetime.now() - a["ultimo_contacto"]).total_seconds() < MINUTOS_EN_LINEA * 60)
-    return {"existe": True, "url_local": a["url_local"], "version": a["version"],
+    return {"existe": True, "url_local": a["url_local"], "url_pc": a["url_pc"], "version": a["version"],
             "ultimo_contacto": a["ultimo_contacto"], "en_linea": en_linea}
 
 

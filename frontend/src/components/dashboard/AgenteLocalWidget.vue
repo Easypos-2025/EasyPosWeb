@@ -16,6 +16,16 @@
         <code v-if="agente.url_local">{{ agente.url_local }}</code>
         <small>Funciona solo dentro de la red del negocio. En el celular: menú del navegador → "Agregar a pantalla de
           inicio" para dejar el ícono.</small>
+        <!-- PCs Windows: por el nombre del PC de caja, no cambia aunque el router le cambie la IP -->
+        <div v-if="agente.url_pc" class="alw-pc">
+          <p><i class="bi bi-pc-display"></i> <b>Computadores Windows del negocio:</b> use esta dirección, que no cambia
+            aunque cambien la IP de la caja:</p>
+          <code>{{ agente.url_pc }}</code>
+          <button class="btn btn-sm btn-outline-primary" @click="descargarAcceso">
+            <i class="bi bi-download"></i> Descargar acceso directo para PC
+          </button>
+          <small>Guarde el archivo en el escritorio de cada PC: queda el ícono "EasyPos Pedidos".</small>
+        </div>
       </div>
     </div>
   </div>
@@ -37,6 +47,17 @@ async function cargarQr() {
     const { data } = await api.get("/api/mi-agente-local/qr.png", { responseType: "blob" })
     qr.value = URL.createObjectURL(data)
   } catch { /* sin QR */ }
+}
+
+// Acceso directo de Windows (.url) a la dirección por nombre del PC de caja
+function descargarAcceso() {
+  const url = agente.value.url_pc.replace(/\/?$/, "/")
+  const archivo = new Blob([`[InternetShortcut]\r\nURL=${url}\r\n`], { type: "application/octet-stream" })
+  const a = document.createElement("a")
+  a.href = URL.createObjectURL(archivo)
+  a.download = "EasyPos Pedidos.url"
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }
 
 function alternar() {
@@ -62,7 +83,9 @@ onBeforeUnmount(() => qr.value && URL.revokeObjectURL(qr.value))
 .alw-qr { width: 150px; height: 150px; flex-shrink: 0; image-rendering: pixelated; }
 .alw-info p { margin: 0 0 6px; font-size: 14px; color: #475569; }
 .alw-info code { display: block; font-size: 18px; font-weight: 700; color: #1e3a5f; margin-bottom: 6px; word-break: break-all; }
-.alw-info small { color: #64748b; }
+.alw-info small { color: #64748b; display: block; }
+.alw-pc { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #cbd5e1; }
+.alw-pc .btn { margin-bottom: 6px; }
 
 @media (max-width: 768px) {
   .alw-cuerpo { flex-direction: column; text-align: center; }
@@ -71,5 +94,7 @@ onBeforeUnmount(() => qr.value && URL.revokeObjectURL(qr.value))
   .alw-cab { padding: 10px 12px; }
   .alw-tit { font-size: 14px; }
   .alw-qr { width: 140px; height: 140px; }
+  .alw-info code { font-size: 16px; }
+  .alw-pc .btn { width: 100%; }
 }
 </style>

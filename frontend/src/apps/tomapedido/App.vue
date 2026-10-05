@@ -36,6 +36,8 @@ async function latir() {
   try {
     const r = sesion.token ? await api.ping("/sesion/latido", "POST") : await api.ping("/salud")
     revisarVersion(r?.datos?.version)
+    // Dirección por nombre del PC de caja: guía al usuario si un día cambia la IP de la caja
+    if (r?.datos?.pc) try { localStorage.setItem("ag_caja_pc", r.datos.pc) } catch { /* sin almacenamiento */ }
   } catch { /* el aviso lo maneja conexion.ok */ }
 }
 

@@ -57,6 +57,12 @@
           <img v-if="qr" :src="qr" alt="Código QR de la toma de pedidos" />
           <code>{{ r.direccion }}</code>
           <small>En el celular: menú del navegador → "Agregar a pantalla de inicio" para dejar el ícono.</small>
+          <!-- PCs Windows: por el nombre del PC, no cambia aunque el router le cambie la IP -->
+          <div v-if="r.direccion_pc" class="qr__pc">
+            <p><b>Computadores Windows del negocio:</b> esta dirección no cambia aunque cambien la IP de la caja.</p>
+            <code>{{ r.direccion_pc }}</code>
+            <button class="btn btn--chico" @click="descargarAcceso"><Icono nombre="descargar" :tam="16" /> Descargar acceso directo para PC</button>
+          </div>
         </div>
       </div>
     </template>
@@ -80,6 +86,17 @@ const nubeOk = computed(() => !!r.value?.nube?.ultimo_ok &&
   (!r.value.nube.ultimo_error || new Date(r.value.nube.ultimo_ok) >= new Date(r.value.nube.ultimo_error)))
 
 const fecha = (v) => (v ? new Date(v).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "—")
+
+// Acceso directo de Windows (.url) a la dirección por nombre del PC de caja
+function descargarAcceso() {
+  const url = r.value.direccion_pc.replace(/\/?$/, "/")
+  const archivo = new Blob([["[InternetShortcut]", `URL=${url}`, ""].join(String.fromCharCode(13, 10))], { type: "application/octet-stream" })
+  const a = document.createElement("a")
+  a.href = URL.createObjectURL(archivo)
+  a.download = "EasyPos Pedidos.url"
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
 
 onMounted(async () => {
   try { qr.value = URL.createObjectURL(await api.admin.imagen("/qr.png")) } catch { /* sin QR */ }
@@ -115,6 +132,8 @@ dd { margin: 0; font-weight: 600; }
 .qr img { width: 180px; height: 180px; image-rendering: pixelated; }
 .qr code { display: block; margin: 8px 0; font-size: 18px; font-weight: 700; color: var(--navy); }
 .qr small { color: var(--texto-suave); }
+.qr__pc { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--borde, #cbd5e1); }
+.qr__pc code { font-size: 16px; }
 
 @media (max-width: 1200px) {
   .kpis { grid-template-columns: repeat(2, 1fr); }

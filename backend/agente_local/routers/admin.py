@@ -134,7 +134,7 @@ async def resumen(_=Depends(admin_actual), emp: AsyncSession = Depends(get_emp),
     n = nube.estado
     return {
         "empresa": (empresa or "").strip() or None, "version": VERSION,
-        "direccion": f"http://{nube.ip_local()}:{config.PUERTO}",
+        "direccion": f"http://{nube.ip_local()}:{config.PUERTO}", "direccion_pc": nube.url_pc(),
         "errores": {k: int(v) for k, v in dict(e).items()},
         "dispositivos": {k: int(v or 0) for k, v in dict(d).items()},
         "pedidos_abiertos": int(pedidos),

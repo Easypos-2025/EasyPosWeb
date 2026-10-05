@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import VERSION, auditoria, config, errores
+from .. import VERSION, auditoria, config, errores, nube
 from ..db import get_emp, get_tmp
 from ..seguridad import (cadena_aleatoria, cifrar_clave, crear_token, gastar_tiempo_clave,
                          hash_secreto, ip_cliente, leer_token, nuevo_secreto, verificar_clave)
@@ -278,7 +278,8 @@ async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp:
     await tmp.execute(text("UPDATE ag_dispositivos SET ultimo_acceso = :f, ultima_ip = :ip WHERE id = :id"),
                       {"f": datetime.now(), "ip": ip_cliente(request), "id": mesero.id_dispositivo})
     await tmp.commit()
-    return {"ok": True, "version": VERSION}        # la mini-app se recarga sola si el agente se actualizó
+    # version: la mini-app se recarga sola si el agente se actualizó; pc: dirección por nombre del PC
+    return {"ok": True, "version": VERSION, "pc": nube.url_pc()}
 
 
 class EventoDispositivoIn(BaseModel):

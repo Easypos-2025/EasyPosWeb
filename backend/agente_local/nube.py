@@ -13,6 +13,7 @@ funcionando en la red local y reintenta en el siguiente ciclo.
 import asyncio
 import json
 import logging
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -44,6 +45,13 @@ def ip_local() -> str:
         return "127.0.0.1"
 
 
+def url_pc() -> str | None:
+    """Dirección por el nombre del PC: no cambia aunque el router le cambie la IP. Los PCs Windows
+    de la red la resuelven por su nombre; los celulares no (siguen con el QR por IP)."""
+    nombre = socket.gethostname().split(".")[0]
+    return f"http://{nombre}:{config.PUERTO}" if re.fullmatch(r"[A-Za-z0-9_-]{1,63}", nombre) else None
+
+
 def _pedir(metodo: str, ruta: str, cuerpo=None, timeout: int = 15):
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
     req = urllib.request.Request(config.NUBE_URL + ruta, data=datos, method=metodo, headers={
@@ -70,7 +78,8 @@ async def latido() -> None:
     from . import actualizador
     reporte = actualizador.estado["reportar"]
     r = await pedir("POST", "/api/agente/latido", {
-        "url_local": f"http://{ip_local()}:{config.PUERTO}", "ip_local": ip_local(), "version": VERSION,
+        "url_local": f"http://{ip_local()}:{config.PUERTO}", "ip_local": ip_local(), "url_pc": url_pc(),
+        "version": VERSION,
         "actualizacion": reporte})
     if reporte:
         actualizador.estado["reportar"] = None

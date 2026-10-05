@@ -23,6 +23,11 @@ def _fila(db, sql, *p):
 def test_salud_y_encabezados(cliente):
     r = cliente.get("/api/ag/salud")
     assert r.status_code == 200 and r.json()["ok"] is True
+    # Dirección por el nombre del PC (no cambia con la IP): http://NOMBRE:PUERTO
+    import re, socket
+    from agente_local import config
+    assert r.json()["pc"] == f"http://{socket.gethostname().split('.')[0]}:{config.PUERTO}"
+    assert re.fullmatch(r"http://[A-Za-z0-9_-]+:\d+", r.json()["pc"])
     assert r.headers["X-Frame-Options"] == "DENY"
     assert r.headers["X-Content-Type-Options"] == "nosniff"
     assert r.headers["Cache-Control"] == "no-store"

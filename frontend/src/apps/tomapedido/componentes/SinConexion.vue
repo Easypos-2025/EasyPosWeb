@@ -9,6 +9,11 @@
       <ol class="sc__pasos">
         <li>Verifique que este dispositivo esté conectado al <b>wifi del negocio</b> (no a datos móviles).</li>
         <li>Verifique que el <b>equipo de caja esté encendido</b>.</li>
+        <!-- Si cambiaron el router o la IP de la caja, la dirección vieja ya no sirve -->
+        <li v-if="!esPC">Si cambiaron el router o la red del negocio, <b>escanee de nuevo el código QR</b>
+          (pídalo en caja: está en el dashboard de EasyPosWeb) e ingrese con su usuario y clave.</li>
+        <li v-else-if="pcNuevo">Si cambiaron el router o la red del negocio, use el acceso directo
+          <b>EasyPos Pedidos</b> o escriba en el navegador: <code class="sc__dir">{{ pcNuevo }}</code></li>
         <li>Si sigue igual, <b>avise en caja</b>: el programa EasyPos Agente debe estar abierto.</li>
       </ol>
       <button class="btn btn--bloque sc__btn" :disabled="probando" @click="$emit('reintentar')">
@@ -30,6 +35,17 @@ defineEmits(["reintentar"])
 
 const desde = computed(() => conexion.desde
   ? conexion.desde.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }) : "")
+
+// Computador (sin cámara para el QR): se le indica la dirección por nombre del PC de caja,
+// que no cambia con la IP. Si ya entró por ese nombre, no se repite.
+const ua = navigator.userAgent
+const esPC = /Windows NT|Macintosh|CrOS|X11/.test(ua) && !/Android|iPhone|iPad|Mobile/.test(ua)
+const pcNuevo = (() => {
+  try {
+    const pc = localStorage.getItem("ag_caja_pc") || ""
+    return pc && new URL(pc).hostname.toLowerCase() !== location.hostname.toLowerCase() ? pc : ""
+  } catch { return "" }
+})()
 </script>
 
 <style scoped>
@@ -44,6 +60,7 @@ const desde = computed(() => conexion.desde
 .sc__sub { margin: 0 0 14px; color: var(--texto-suave); font-size: 15px; }
 .sc__pasos { text-align: left; margin: 0 0 18px; padding-left: 22px; font-size: 15px; line-height: 1.45; }
 .sc__pasos li { margin-bottom: 8px; }
+.sc__dir { display: block; margin-top: 4px; font-weight: 700; color: var(--navy); word-break: break-all; user-select: all; }
 .sc__btn { background: var(--rojo); color: #fff; }
 .sc__auto { margin: 10px 0 0; font-size: 12px; color: var(--texto-suave); }
 

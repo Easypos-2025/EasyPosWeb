@@ -37,6 +37,8 @@ const ICONOS = {
   nube:      ["M18 10h-1.3A7 7 0 1 0 9 19h9a5 5 0 0 0 0-10z"],
   copiar:    ["M9 9h11v11H9z", "M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"],
   wifi:      ["M5 12.5a10 10 0 0 1 14 0", "M8.5 16a5 5 0 0 1 7 0", "M12 20h.01", "M2 9a15 15 0 0 1 20 0"],
+  descargar: ["M12 3v12", "M7 10l5 5 5-5", "M4 21h16"],
+  pc:        ["M3 4h18v12H3z", "M8 20h8", "M12 16v4"],
 }
 const trazos = computed(() => ICONOS[props.nombre] || [])
 </script>
