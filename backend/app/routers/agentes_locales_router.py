@@ -257,12 +257,21 @@ async def recibir_errores(data: ErroresIn, request: Request, agente: dict = Depe
 
 @router_agente.get("/fotos-platos")
 async def fotos_platos(agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    # Foto subida en la web: URL de Spaces (https://…) o ruta del servidor (/uploads/…); un nombre de
+    # archivo del escritorio (ej. "aji.jpg") no es foto de la web
     filas = (await db.execute(text("""
         SELECT id, photo_path, updated_at FROM pos_dishes
-        WHERE company_id = :c AND photo_path LIKE 'http%'
+        WHERE company_id = :c AND (photo_path LIKE 'http%' OR photo_path LIKE '/uploads/%')
     """), {"c": agente["company_id"]})).mappings().all()
-    return [{"id_plato": int(f["id"]), "url": f["photo_path"],
+    return [{"id_plato": int(f["id"]), "url": url_publica(f["photo_path"]),
              "actualizado": f["updated_at"].isoformat() if f["updated_at"] else None} for f in filas]
+
+
+def url_publica(ruta: str) -> str:
+    """Las rutas /uploads/… se sirven desde el dominio público de EasyPosWeb."""
+    if ruta.startswith("/uploads/"):
+        return os.getenv("APP_PUBLIC_URL", "https://easyposweb.com").rstrip("/") + ruta
+    return ruta
 
 
 # ───────────────────────────── Empresa (su propio agente) ─────────────────────────────

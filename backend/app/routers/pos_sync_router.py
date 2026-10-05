@@ -586,8 +586,8 @@ async def push_dishes(
                     preparation_time          = VALUES(preparation_time),
                     active                    = VALUES(active),
                     category_id               = VALUES(category_id),
-                    -- Una foto subida en la web (URL) no la pisa el nombre de archivo del escritorio
-                    photo_path                = IF(photo_path LIKE 'http%', photo_path, VALUES(photo_path)),
+                    -- Una foto subida en la web (URL o /uploads/…) no la pisa el nombre de archivo del escritorio
+                    photo_path                = IF(photo_path LIKE 'http%' OR photo_path LIKE '/uploads/%', photo_path, VALUES(photo_path)),
                     `procedure`               = VALUES(`procedure`),
                     description               = VALUES(description),
                     printer                   = VALUES(printer),
@@ -1956,7 +1956,7 @@ async def push_categories(
                 ON DUPLICATE KEY UPDATE
                     name        = VALUES(name),
                     description = VALUES(description),
-                    photo_name  = IF(photo_name LIKE 'http%', photo_name, VALUES(photo_name)),
+                    photo_name  = IF(photo_name LIKE 'http%' OR photo_name LIKE '/uploads/%', photo_name, VALUES(photo_name)),
                     is_active   = VALUES(is_active),
                     color       = VALUES(color),
                     synced      = 1,
@@ -2024,7 +2024,7 @@ async def push_dish_categories(
                 ON DUPLICATE KEY UPDATE
                     parent_category_id = VALUES(parent_category_id),
                     name               = VALUES(name),
-                    photo_name         = IF(photo_name LIKE 'http%', photo_name, VALUES(photo_name)),
+                    photo_name         = IF(photo_name LIKE 'http%' OR photo_name LIKE '/uploads/%', photo_name, VALUES(photo_name)),
                     percentage         = VALUES(percentage),
                     shift              = VALUES(shift),
                     monday             = VALUES(monday),

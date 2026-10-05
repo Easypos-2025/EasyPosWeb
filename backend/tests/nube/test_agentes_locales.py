@@ -42,7 +42,8 @@ def db():
         c.execute("INSERT INTO pos_dishes (id, company_id, name, price, photo_path) VALUES "
                   "(501, %s, 'CON FOTO WEB', 1000, 'https://cdn.ejemplo.com/dishes/1/501.webp'),"
                   "(502, %s, 'FOTO DEL ESCRITORIO', 1000, 'aji.jpg'),"
-                  "(503, %s, 'DE OTRA EMPRESA', 1000, 'https://cdn.ejemplo.com/otra.webp')", (EMP_A, EMP_A, EMP_B))
+                  "(504, %s, 'FOTO EN EL SERVIDOR', 1000, '/uploads/dishes/1/504_ab12.webp'),"
+                  "(503, %s, 'DE OTRA EMPRESA', 1000, 'https://cdn.ejemplo.com/otra.webp')", (EMP_A, EMP_A, EMP_A, EMP_B))
     yield con
     with con.cursor() as c:
         for e in (EMP_A, EMP_B):
@@ -110,7 +111,9 @@ def test_clave_invalida(cliente, claves):
 def test_fotos_solo_de_su_empresa(cliente, claves):
     a, b = claves
     fotos = cliente.get("/api/agente/fotos-platos", headers={"X-Agente-Clave": a}).json()
-    assert [f["id_plato"] for f in fotos] == [501]                     # ni la del escritorio ni la de otra empresa
+    # La de Spaces y la del servidor (/uploads, con el dominio público); ni la del escritorio ni la de otra empresa
+    assert sorted(f["id_plato"] for f in fotos) == [501, 504]
+    assert next(f for f in fotos if f["id_plato"] == 504)["url"] == "https://easyposweb.com/uploads/dishes/1/504_ab12.webp"
     assert [f["id_plato"] for f in cliente.get("/api/agente/fotos-platos", headers={"X-Agente-Clave": b}).json()] == [503]
 
 

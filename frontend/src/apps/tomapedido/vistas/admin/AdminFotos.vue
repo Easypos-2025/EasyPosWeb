@@ -3,8 +3,9 @@
     <div class="cab"><h2>Fotos de la web</h2></div>
     <div class="tarjeta panel">
       <p>Copia al programa de escritorio las fotos de los productos que se subieron en EasyPosWeb. Se guardan en la
-        carpeta de fotos de productos configurada en el escritorio (convertidas a JPG) y se asignan
-        <b>solo a los productos que no tienen foto</b>; las fotos que ya tiene el escritorio no se cambian.</p>
+        carpeta de fotos de productos configurada en el escritorio (convertidas a JPG).</p>
+      <p><b>La web manda:</b> si un producto tiene foto en EasyPosWeb, esa reemplaza la del escritorio. Si prefiere
+        conservar las fotos del escritorio, no suba fotos de esos productos en la web.</p>
       <p class="sub">Se hace automáticamente una vez al día; con este botón se hace ahora.</p>
       <button class="btn btn--primario" :disabled="trabajando || !r?.nube?.configurada" @click="sincronizar">
         <span v-if="trabajando" class="giro" style="width:20px;height:20px;border-width:2px"></span>
@@ -17,7 +18,7 @@
         <p v-if="resultado.error" class="aviso">{{ resultado.error }}</p>
         <ul v-else>
           <li><b>{{ resultado.descargadas }}</b> fotos descargadas</li>
-          <li><b>{{ resultado.asignadas }}</b> asignadas a productos sin foto</li>
+          <li><b>{{ resultado.asignadas }}</b> asignadas a productos del escritorio</li>
           <li><b>{{ resultado.sin_cambios }}</b> sin cambios</li>
           <li v-if="resultado.fallidas"><b>{{ resultado.fallidas }}</b> no se pudieron descargar</li>
         </ul>

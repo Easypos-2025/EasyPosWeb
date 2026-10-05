@@ -4,7 +4,9 @@ Fotos de los platos subidas en la web → carpeta de fotos del escritorio.
   · La nube entrega las fotos de SU empresa (pos_dishes.id = Id_Plato del escritorio).
   · Se guardan como "web_<Id_Plato>.jpg" (el VB6 no muestra .webp) en
     configuracion_sede.Ruta_Foto_Productos.
-  · platos.Ruta_Foto se llena SOLO en los platos que no tienen foto (no pisa las del escritorio).
+  · LA WEB MANDA (decisión del usuario 2026-10-05): si el plato tiene foto en la web, esa queda en
+    platos.Ruta_Foto aunque el escritorio tuviera otra. Una sede que prefiera sus fotos del
+    escritorio simplemente no sube fotos en la web.
   · Solo HTTPS, máximo 10 MB y debe ser una imagen válida.
 """
 import io
@@ -62,7 +64,7 @@ async def sincronizar() -> dict:
                     resumen["descargadas"] += 1
                 n = (await emp.execute(text("""
                     UPDATE platos SET Ruta_Foto = :n
-                    WHERE Id_Plato = :i AND (Ruta_Foto IS NULL OR TRIM(Ruta_Foto) = '')
+                    WHERE Id_Plato = :i AND (Ruta_Foto IS NULL OR Ruta_Foto <> :n)
                 """), {"n": nombre, "i": id_plato})).rowcount
                 resumen["asignadas"] += n
             except Exception:

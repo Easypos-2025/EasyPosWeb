@@ -171,9 +171,12 @@ def test_sincronizar_fotos_de_la_web(cliente, db, admin, tmp_path, monkeypatch):
                         lambda url, destino: (url.startswith("https://") or (_ for _ in ()).throw(ValueError()))
                         and Image.new("RGB", (50, 50), "green").save(destino, "JPEG"))
     r = cliente.post("/api/ag/admin/fotos/sincronizar", headers=admin).json()
-    assert r["descargadas"] == 2 and r["asignadas"] == 1 and r["fallidas"] == 1
+    assert r["descargadas"] == 2 and r["asignadas"] == 2 and r["fallidas"] == 1
     fotos = {f["Id_Plato"]: f["Ruta_Foto"] for f in _filas(db, f"SELECT Id_Plato, Ruta_Foto FROM {E}.platos WHERE Id_Plato IN (700,701)")}
-    assert fotos == {700: "web_700.jpg", 701: "propia.jpg"}                       # no pisa la foto del escritorio
+    assert fotos == {700: "web_700.jpg", 701: "web_701.jpg"}                     # la web manda
+    # Sin cambios en la web: no se vuelve a descargar ni a asignar
+    r2 = cliente.post("/api/ag/admin/fotos/sincronizar", headers=admin).json()
+    assert r2["asignadas"] == 0
     assert (tmp_path / "web_700.jpg").exists() and (tmp_path / "web_701.jpg").exists()
 
 
