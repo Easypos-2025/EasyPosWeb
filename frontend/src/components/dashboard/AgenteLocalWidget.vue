@@ -27,9 +27,9 @@ import api from "@/services/apis"
 
 const agente = ref(null)
 const qr = ref("")
-const CLAVE = "dash_agente_abierto"
-// Plegada por defecto; el navegador recuerda la elección
-const abierto = ref((() => { try { return localStorage.getItem(CLAVE) === "1" } catch { return false } })())
+// Siempre inicia plegada (se borra la elección que se recordaba antes)
+const abierto = ref(false)
+try { localStorage.removeItem("dash_agente_abierto") } catch { /* sin almacenamiento */ }
 
 async function cargarQr() {
   if (qr.value || !agente.value?.url_local) return
@@ -41,13 +41,11 @@ async function cargarQr() {
 
 function alternar() {
   abierto.value = !abierto.value
-  try { localStorage.setItem(CLAVE, abierto.value ? "1" : "0") } catch { /* sin almacenamiento */ }
   if (abierto.value) cargarQr()
 }
 
 onMounted(async () => {
   try { agente.value = (await api.get("/api/mi-agente-local")).data } catch { agente.value = null }
-  if (abierto.value) cargarQr()
 })
 onBeforeUnmount(() => qr.value && URL.revokeObjectURL(qr.value))
 </script>

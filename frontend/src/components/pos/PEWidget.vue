@@ -55,12 +55,11 @@ const enviadas       = ref(0)
 const valorPendiente = ref(0)
 let   _timer         = null
 
-// Plegada por defecto; el navegador recuerda la elección
-const CLAVE_ABIERTO = 'dash_pe_abierto'
-const abierto = ref((() => { try { return localStorage.getItem(CLAVE_ABIERTO) === '1' } catch { return false } })())
+// Siempre inicia plegada (se borra la elección que se recordaba antes)
+const abierto = ref(false)
+try { localStorage.removeItem('dash_pe_abierto') } catch { /* sin almacenamiento */ }
 function alternar() {
   abierto.value = !abierto.value
-  try { localStorage.setItem(CLAVE_ABIERTO, abierto.value ? '1' : '0') } catch { /* sin almacenamiento */ }
 }
 
 async function cargar() {
