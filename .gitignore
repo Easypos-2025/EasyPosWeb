@@ -49,3 +49,4 @@ backend/agente_local/cache_fotos/
 # Instalador del agente (se genera con instalador_agente/construir.py)
 instalador_agente/construccion/
 instalador_agente/salida/
+backend/agente_local/_version.py

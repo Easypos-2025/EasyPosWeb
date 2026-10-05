@@ -25,6 +25,11 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
      - **REGLA — recarga del backend sin caída**: nunca `systemctl restart easyposweb` ni `reload`/HUP en un deploy. Cada worker tarda ~30 s en cargar el código: restart deja la app sin responder y HUP apaga los workers viejos antes de que los nuevos estén listos. `deploy/recargar_sin_caida.sh` valida que el código importe (si no, no toca nada), agrega 3 workers nuevos (TTIN), espera su startup y luego retira los 3 viejos (TTOU). Verificado: 124/124 respuestas 200 durante el relevo. `systemctl restart` solo si el servicio está caído o cambió `requirements.txt`/la unidad systemd.
   5. Actualizar `app_version` en BD del servidor con el número de compilación nuevo:
      `ssh -i C:\Users\Personal\.ssh\id_ed25519 root@209.38.152.254 "mysql -u root -p123456 easyposweb -e \"UPDATE system_config SET config_value='[BUILD]' WHERE config_key='app_version';\"""`
+  5b. **Agente Local (actualización de las sedes)**: si el commit incluye cambios en `backend/agente_local/`, `frontend/src/apps/tomapedido/`, `frontend/vite.tomapedido.config.js` o `instalador_agente/`, después del deploy ejecutar desde la raíz:
+     `venv\Scripts\python instalador_agente\construir.py --publicar`
+     - Genera el instalador y el paquete de actualización (versión `AA.MM.DD-commit`), lo sube a `/var/www/easyposweb/descargas_agente` y lo deja como versión vigente. Las sedes lo descargan solas y se actualizan con el botón del panel del agente (opción A) o al abrir turno (opción B); si la versión nueva no arranca, vuelven solas a la anterior.
+     - Si una migración nueva crea tablas que usa el agente, aplicarla en el servidor antes de publicar.
+     - Reportar también: **"Agente publicado: v[VERSIÓN]"**.
   6. Reportar al usuario: **"Deploy listo. Compilación: v[BUILD]"** — donde BUILD = `YY.MM.DD·shortHash`
   - El footer ya muestra el BUILD automáticamente al hacer build en servidor (vite.config `__APP_BUILD__`).
 - **Switch-Profile**: Para cambiar perfil: `cp CLAUDE.md CLAUDE_PERFIL_[ANT].md` y luego `cp CLAUDE_PERFIL_[NUEVO].md CLAUDE.md`.

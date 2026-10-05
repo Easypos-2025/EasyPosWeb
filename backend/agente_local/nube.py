@@ -5,6 +5,7 @@ Comunicación del agente con la nube (EasyPosWeb), con la clave propia de la emp
   · latido cada minuto: URL/IP local y versión (la nube sabe dónde está el agente)
   · errores pendientes de ag_errores → Monitor de Errores de la nube (tipo AGENTE_LOCAL)
   · fotos de los platos subidas en la web → carpeta de fotos del escritorio (una vez al día)
+  · versión vigente del agente → descarga y, al abrir turno, actualización (actualizador.py)
 
 Todo es de salida (el PC de caja no abre puertos a internet). Sin internet el agente sigue
 funcionando en la red local y reintenta en el siguiente ciclo.
@@ -66,9 +67,24 @@ async def pedir(metodo: str, ruta: str, cuerpo=None, timeout: int = 15):
 
 
 async def latido() -> None:
+    from . import actualizador
+    reporte = actualizador.estado["reportar"]
     r = await pedir("POST", "/api/agente/latido", {
-        "url_local": f"http://{ip_local()}:{config.PUERTO}", "ip_local": ip_local(), "version": VERSION})
+        "url_local": f"http://{ip_local()}:{config.PUERTO}", "ip_local": ip_local(), "version": VERSION,
+        "actualizacion": reporte})
+    if reporte:
+        actualizador.estado["reportar"] = None
     estado["empresa"] = (r or {}).get("empresa")
+    actualizador.estado["vigente"] = (r or {}).get("version_vigente")
+
+
+async def turno_y_pedidos() -> tuple[str, int]:
+    """Fecha de negocio (cambia al abrir turno en el escritorio) y pedidos abiertos de los dispositivos."""
+    from .servicios.negocio import fecha_negocio
+    async with SesionTemp() as s:
+        fecha = await fecha_negocio(s)
+        abiertos = (await s.execute(text("SELECT COUNT(*) FROM temp_comanda WHERE Movil = 1 AND Salio = 0"))).scalar() or 0
+    return fecha.isoformat(), int(abiertos)
 
 
 async def enviar_errores() -> int:
@@ -98,12 +114,20 @@ async def ciclo() -> None:
     if not config.NUBE_CLAVE:
         estado["mensaje"] = "Sin clave de la nube (AG_NUBE_CLAVE): el agente no reporta a la nube."
         return
+    from . import actualizador
     from .servicios import fotos_web           # evita importación circular al arrancar
     proximas_fotos = datetime.now() + timedelta(minutes=2)
+    fecha_turno = None
     while True:
         try:
             await latido()
             await enviar_errores()
+            await actualizador.descargar_si_hace_falta()
+            # Opción B: al abrir turno (cambia la fecha de negocio) y sin pedidos abiertos de dispositivos
+            fecha, abiertos = await turno_y_pedidos()
+            if fecha_turno and fecha != fecha_turno:
+                actualizador.al_abrir_turno(abiertos)
+            fecha_turno = fecha
             if datetime.now() >= proximas_fotos:
                 estado["fotos"] = await fotos_web.sincronizar()
                 proximas_fotos = datetime.now() + timedelta(hours=24)

@@ -67,8 +67,21 @@ def ejecutar(args, entrada: str | None = None, cwd=None, revisar: bool = True) -
     r = subprocess.run(args, input=entrada, capture_output=True, text=True, cwd=cwd, creationflags=SIN_VENTANA,
                        encoding="utf-8", errors="replace")
     if revisar and r.returncode != 0:
-        raise RuntimeError(f"{' '.join(map(str, args))[:120]}\n{(r.stderr or r.stdout).strip()[:600]}")
+        salida = (r.stderr or r.stdout or "").strip()
+        registrar_log(f"FALLÓ: {' '.join(map(str, args))}\n{salida}")
+        # La causa real está al final del mensaje
+        raise RuntimeError(f"{Path(str(args[0])).name} {' '.join(map(str, args[1:]))[:80]}\n\n…{salida[-700:]}")
     return r.stdout
+
+
+def registrar_log(texto: str) -> None:
+    """Detalle completo de la instalación en C:\\EasyPos\\AgenteLocal\\instalacion.log."""
+    try:
+        DESTINO.mkdir(parents=True, exist_ok=True)
+        with open(DESTINO / "instalacion.log", "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {texto}\n")
+    except OSError:
+        pass
 
 
 def conectar(d: dict, base: str | None = None):
@@ -430,7 +443,9 @@ class Asistente(tk.Tk):
                 raise RuntimeError("El agente no respondió. Revise C:\\EasyPos\\AgenteLocal\\logs\\agente.log")
             self.after(0, lambda: self.paso_listo(puerto))
         except Exception as e:
-            mensaje = f"No se completó la instalación:\n\n{e}"     # la variable e no existe fuera del except
+            registrar_log(f"Instalación incompleta: {e}")
+            mensaje = (f"No se completó la instalación:\n\n{e}\n\n"         # la variable e no existe fuera del except
+                       f"Detalle completo en {DESTINO}\\instalacion.log")
             self.after(0, lambda: messagebox.showerror(TITULO, mensaje))
             self.after(0, lambda: self.botones(self.paso_claves, "Volver"))
 

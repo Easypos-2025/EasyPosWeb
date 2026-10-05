@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import VERSION, config, errores, nube
+from . import VERSION, actualizador, config, errores, nube
 from .db import motor_empresa, motor_temp
 from .esquema import crear_esquema
 from .seguridad import ip_cliente
@@ -32,7 +32,13 @@ if not log.handlers:
 async def _ciclo(app: FastAPI):
     await crear_esquema()
     log.info("Agente Local %s iniciado en el puerto %s", VERSION, config.PUERTO)
-    tarea_nube = asyncio.create_task(nube.ciclo())      # latido, errores a la nube y fotos de la web
+    actualizador.leer_resultado()
+    ultimo = actualizador.estado["ultimo"]
+    if actualizador.estado["reportar"] and ultimo and ultimo.get("estado") != "OK":
+        await errores.registrar(origen="agente", tipo="SERVIDOR", nivel="CRITICO",
+                                titulo=f"La actualización a {ultimo.get('hacia')} falló y se volvió a la versión anterior",
+                                mensaje=ultimo.get("mensaje"))
+    tarea_nube = asyncio.create_task(nube.ciclo())      # latido, errores, fotos y actualizaciones
     yield
     tarea_nube.cancel()
     await motor_empresa.dispose()

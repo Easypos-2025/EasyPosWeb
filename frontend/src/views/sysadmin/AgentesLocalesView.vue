@@ -14,6 +14,30 @@
       escritorio. Cada empresa tiene su propia clave; el código es el mismo del directorio del escritorio.
     </p>
 
+    <!-- Versión vigente del agente (las sedes se actualizan solas: botón del panel o al abrir turno) -->
+    <div class="al-version">
+      <div>
+        <span>Versión vigente</span>
+        <b>{{ vigente?.version || "Sin publicar" }}</b>
+        <small v-if="vigente">{{ fechaHora(vigente.publicado_en) }}{{ vigente.notas ? " · " + vigente.notas : "" }}</small>
+      </div>
+      <div class="al-version-cont">
+        <span class="al-estado al-estado--ok">{{ alDia }} al día</span>
+        <span v-if="atrasadas" class="al-estado al-estado--warn">{{ atrasadas }} por actualizar</span>
+      </div>
+      <button v-if="versiones.length > 1" class="al-btn al-btn--ghost" @click="verVersiones = !verVersiones">
+        <i class="bi bi-clock-history"></i> Versiones
+      </button>
+    </div>
+    <div v-if="verVersiones" class="al-versiones">
+      <div v-for="v in versiones" :key="v.id" class="al-ver" :class="{ 'al-ver--vigente': v.vigente }">
+        <div><b>{{ v.version }}</b><small>{{ fechaHora(v.publicado_en) }} · {{ v.sedes }} sedes · {{ Math.round(v.tamano / 1048576) }} MB</small>
+          <small v-if="v.notas">{{ v.notas }}</small></div>
+        <span v-if="v.vigente" class="al-estado al-estado--ok">Vigente</span>
+        <button v-else class="al-btn al-btn--ghost" @click="hacerVigente(v)">Volver a esta</button>
+      </div>
+    </div>
+
     <div v-if="cargando && !agentes.length" class="al-vacio">Cargando…</div>
     <div v-else-if="!agentes.length" class="al-vacio">No hay agentes asignados.</div>
 
@@ -29,8 +53,12 @@
         <div class="al-datos">
           <div><span>URL local</span><b>{{ a.url_local || "—" }}</b></div>
           <div><span>IP pública</span><b>{{ a.ip_publica || "—" }}</b></div>
-          <div><span>Versión</span><b>{{ a.version || "—" }}</b></div>
+          <div><span>Versión</span><b>{{ a.version || "—" }}
+            <i v-if="a.version && vigente" :class="a.al_dia ? 'bi bi-check-circle-fill al-ok' : 'bi bi-arrow-up-circle-fill al-warn'"
+               :title="a.al_dia ? 'Al día' : 'Por actualizar'"></i></b></div>
           <div><span>Último contacto</span><b>{{ fechaHora(a.ultimo_contacto) }}</b></div>
+          <div v-if="a.actualizacion" class="al-full"><span>Última actualización ({{ fechaHora(a.actualizacion_en) }})</span>
+            <b :class="a.actualizacion.startsWith('OK') ? 'al-ok' : 'al-warn'">{{ a.actualizacion }}</b></div>
         </div>
         <div class="al-acc">
           <button class="al-btn al-btn--ghost" @click="regenerar(a)"><i class="bi bi-key"></i> Nueva clave</button>
@@ -94,6 +122,12 @@ const cargando = ref(false)
 const guardando = ref(false)
 const nuevo = ref(null)
 const claveMostrada = ref(null)
+const versiones = ref([])
+const verVersiones = ref(false)
+const vigente = computed(() => versiones.value.find(v => v.vigente) || null)
+const activos = computed(() => agentes.value.filter(a => a.activo && a.version))
+const alDia = computed(() => activos.value.filter(a => a.al_dia).length)
+const atrasadas = computed(() => activos.value.length - alDia.value)
 
 const empresasLibres = computed(() => {
   const usadas = new Set(agentes.value.map(a => a.company_id))
@@ -114,7 +148,9 @@ function fechaHora(v) {
 async function cargar() {
   cargando.value = true
   try {
-    agentes.value = (await api.get("/api/agentes-locales")).data
+    const [ag, ve] = await Promise.all([api.get("/api/agentes-locales"), api.get("/api/agentes-locales/versiones")])
+    agentes.value = ag.data
+    versiones.value = ve.data
   } catch (e) {
     showToast(e.response?.data?.detail || "No fue posible cargar los agentes", "error", 3000)
   } finally {
@@ -165,6 +201,17 @@ async function alternar(a) {
   }
 }
 
+async function hacerVigente(v) {
+  if (!(await showConfirm(`¿Volver a la versión ${v.version}? Las sedes la instalarán como actualización.`, "Sí, volver"))) return
+  try {
+    await api.post(`/api/agentes-locales/versiones/${v.id}/vigente`)
+    showToast("Versión vigente cambiada", "success", 1500)
+    await cargar()
+  } catch (e) {
+    showToast(e.response?.data?.detail || "No fue posible cambiar la versión", "error", 3500)
+  }
+}
+
 async function copiar() {
   try {
     await navigator.clipboard.writeText(claveMostrada.value.clave)
@@ -183,6 +230,22 @@ onMounted(cargar)
 .al-title { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .al-head-acc { display: flex; gap: 8px; }
 .al-nota { color: #64748b; font-size: 14px; margin: 8px 0 16px; }
+.al-version { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: #fff; border-radius: 14px; padding: 12px 16px; margin-bottom: 12px;
+              box-shadow: 0 1px 3px rgba(15,23,42,.08); }
+.al-version > div:first-child { flex: 1; min-width: 200px; }
+.al-version span { display: block; font-size: 12px; color: #64748b; }
+.al-version b { font-size: 16px; }
+.al-version small { display: block; color: #64748b; }
+.al-version-cont { display: flex; gap: 6px; }
+.al-versiones { background: #fff; border-radius: 14px; padding: 6px 16px; margin-bottom: 12px; }
+.al-ver { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+.al-ver:last-child { border-bottom: 0; }
+.al-ver > div { flex: 1; }
+.al-ver small { display: block; color: #64748b; }
+.al-ver--vigente b { color: #166534; }
+.al-ok { color: #16a34a; }
+.al-warn { color: #d97706; }
+.al-full { grid-column: 1 / -1; }
 .al-vacio { text-align: center; color: #64748b; padding: 30px; }
 .al-lista { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .al-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 3px rgba(15,23,42,.08), 0 4px 12px rgba(15,23,42,.06); padding: 14px; display: flex; flex-direction: column; gap: 12px; }

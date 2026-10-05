@@ -34,7 +34,12 @@ def _clave_admin(desde_stdin: bool = False) -> None:
         async with SesionTemp() as s:
             await fijar_clave_admin(s, clave)
         await motor_empresa.dispose(); await motor_temp.dispose()
-    asyncio.run(guardar())
+    try:
+        asyncio.run(guardar())
+    except Exception as e:
+        # Mensaje corto con la causa real (ej. acceso denegado a la BD), no el rastro completo
+        causa = getattr(e, "orig", None) or e
+        sys.exit(f"No fue posible guardar la clave del administrador: {type(causa).__name__}: {causa}")
     print("Clave del administrador guardada.")
 
 

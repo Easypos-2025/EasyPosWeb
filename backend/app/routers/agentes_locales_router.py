@@ -14,9 +14,11 @@ La clave es por empresa (no la global de la sincronización del escritorio). En 
 su SHA-256 y se muestra una sola vez al crearla o regenerarla.
 """
 import hashlib
+import os
 import re
 import secrets
 from datetime import datetime
+from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -25,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import require_sysadmin
+from app.auth.dependencies import get_current_user, require_sysadmin
 from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.services import error_log
@@ -36,6 +38,16 @@ router_agente = APIRouter(prefix="/api/agente", tags=["agente-local"])
 
 _RE_CODIGO = r"^[A-Za-z0-9_-]{2,20}$"
 MINUTOS_EN_LINEA = 3
+# Paquetes de actualización del agente (privados: solo se entregan a un agente con su clave)
+DIR_DESCARGAS = Path(os.getenv("AGENTE_DESCARGAS_DIR", "/var/www/easyposweb/descargas_agente"))
+
+
+async def version_vigente(db: AsyncSession) -> Optional[dict]:
+    fila = (await db.execute(text("""
+        SELECT id, version, archivo, sha256, tamano, notas, publicado_en FROM agente_versiones
+        WHERE vigente = 1 ORDER BY publicado_en DESC LIMIT 1
+    """))).mappings().first()
+    return dict(fila) if fila else None
 
 
 def _hash(clave: str) -> str:
@@ -62,13 +74,16 @@ class AgenteCambioIn(BaseModel):
 async def listar(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     filas = (await db.execute(text("""
         SELECT a.id, a.company_id, c.name AS empresa, a.codigo, a.clave_prefijo, a.url_local, a.ip_local,
-               a.ip_publica, a.version, a.ultimo_contacto, a.activo, a.created_at
+               a.ip_publica, a.version, a.ultimo_contacto, a.activo, a.created_at,
+               a.actualizacion, a.actualizacion_en
         FROM company_local_agents a
         JOIN companies c ON c.id_company = a.company_id
         ORDER BY c.name
     """))).mappings().all()
     ahora = datetime.now()
-    return [{**dict(f), "en_linea": bool(f["activo"] and f["ultimo_contacto"]
+    vigente = await version_vigente(db)
+    return [{**dict(f), "version_vigente": vigente["version"] if vigente else None,
+             "al_dia": bool(vigente and f["version"] == vigente["version"]), "en_linea": bool(f["activo"] and f["ultimo_contacto"]
                                            and (ahora - f["ultimo_contacto"]).total_seconds() < MINUTOS_EN_LINEA * 60)}
             for f in filas]
 
@@ -90,6 +105,27 @@ async def crear(data: AgenteNuevoIn, db: AsyncSession = Depends(get_db), user=De
         await db.rollback()
         raise HTTPException(status_code=409, detail="Esa empresa ya tiene agente o el código ya está en uso.")
     return {"ok": True, "clave": clave}
+
+
+@router_admin.get("/versiones")
+async def listar_versiones(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
+    filas = (await db.execute(text("""
+        SELECT v.id, v.version, v.sha256, v.tamano, v.notas, v.vigente, v.publicado_en,
+               (SELECT COUNT(*) FROM company_local_agents a WHERE a.version = v.version AND a.activo = 1) AS sedes
+        FROM agente_versiones v ORDER BY v.publicado_en DESC
+    """))).mappings().all()
+    return [dict(f) for f in filas]
+
+
+@router_admin.post("/versiones/{id_version}/vigente")
+async def hacer_vigente(id_version: int, db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
+    """Permite volver a una versión anterior: las sedes la toman como actualización."""
+    existe = (await db.execute(text("SELECT archivo FROM agente_versiones WHERE id = :id"), {"id": id_version})).scalar()
+    if not existe or not (DIR_DESCARGAS / existe).is_file():
+        raise HTTPException(status_code=404, detail="Versión no encontrada o sin archivo en el servidor.")
+    await db.execute(text("UPDATE agente_versiones SET vigente = (id = :id)"), {"id": id_version})
+    await db.commit()
+    return {"ok": True}
 
 
 @router_admin.post("/{agente_id}/clave")
@@ -147,6 +183,7 @@ class LatidoIn(BaseModel):
     url_local: Optional[str] = Field(default=None, max_length=200)
     ip_local: Optional[str] = Field(default=None, max_length=45)
     version: Optional[str] = Field(default=None, max_length=40)
+    actualizacion: Optional[str] = Field(default=None, max_length=255)   # resultado de su última actualización
 
 
 @router_agente.post("/latido")
@@ -159,8 +196,26 @@ async def latido(data: LatidoIn, request: Request, agente: dict = Depends(agente
         WHERE id = :id
     """), {"u": url, "ip": data.ip_local, "pub": (request.client.host if request.client else None),
            "v": data.version, "id": agente["id"]})
+    if data.actualizacion:
+        await db.execute(text("""
+            UPDATE company_local_agents SET actualizacion = :a, actualizacion_en = NOW() WHERE id = :id
+        """), {"a": data.actualizacion, "id": agente["id"]})
     await db.commit()
-    return {"ok": True, "empresa": agente["empresa"], "codigo": agente["codigo"]}
+    vigente = await version_vigente(db)
+    return {"ok": True, "empresa": agente["empresa"], "codigo": agente["codigo"],
+            "version_vigente": {k: vigente[k] for k in ("version", "sha256", "tamano", "notas")} if vigente else None}
+
+
+@router_agente.get("/descarga/{version}")
+async def descargar_version(version: str, agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    """Paquete de actualización (solo a un agente con su clave; la versión debe estar publicada)."""
+    from fastapi.responses import FileResponse
+    archivo = (await db.execute(text("SELECT archivo FROM agente_versiones WHERE version = :v"),
+                                {"v": version[:40]})).scalar()
+    ruta = (DIR_DESCARGAS / archivo).resolve() if archivo else None
+    if not ruta or ruta.parent != DIR_DESCARGAS.resolve() or not ruta.is_file():
+        raise HTTPException(status_code=404, detail="Versión no disponible.")
+    return FileResponse(ruta, media_type="application/zip", filename=archivo)
 
 
 class EventoAgenteIn(BaseModel):
@@ -208,3 +263,40 @@ async def fotos_platos(agente: dict = Depends(agente_actual), db: AsyncSession =
     """), {"c": agente["company_id"]})).mappings().all()
     return [{"id_plato": int(f["id"]), "url": f["photo_path"],
              "actualizado": f["updated_at"].isoformat() if f["updated_at"] else None} for f in filas]
+
+
+# ───────────────────────────── Empresa (su propio agente) ─────────────────────────────
+# Para el dashboard de la empresa: dirección local del agente y QR para los celulares.
+# La empresa es la efectiva del usuario (topbar validada en el servidor), nunca la del navegador.
+
+router_empresa = APIRouter(prefix="/api/mi-agente-local", tags=["agente-local"], dependencies=[Depends(tenant_guard)])
+
+
+async def _agente_empresa(db: AsyncSession, company_id: int):
+    return (await db.execute(text("""
+        SELECT url_local, version, ultimo_contacto, activo FROM company_local_agents WHERE company_id = :c
+    """), {"c": company_id})).mappings().first()
+
+
+@router_empresa.get("")
+async def mi_agente(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    a = await _agente_empresa(db, user.company_id)
+    if not a or not a["activo"]:
+        return {"existe": False}
+    en_linea = bool(a["ultimo_contacto"] and (datetime.now() - a["ultimo_contacto"]).total_seconds() < MINUTOS_EN_LINEA * 60)
+    return {"existe": True, "url_local": a["url_local"], "version": a["version"],
+            "ultimo_contacto": a["ultimo_contacto"], "en_linea": en_linea}
+
+
+@router_empresa.get("/qr.png")
+async def mi_agente_qr(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    a = await _agente_empresa(db, user.company_id)
+    if not a or not a["activo"] or not a["url_local"]:
+        raise HTTPException(status_code=404, detail="El agente aún no ha reportado su dirección.")
+    import io
+
+    import qrcode
+    from fastapi.responses import Response
+    buf = io.BytesIO()
+    qrcode.make(a["url_local"].rstrip("/") + "/", box_size=8, border=2).save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})

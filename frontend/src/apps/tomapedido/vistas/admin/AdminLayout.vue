@@ -24,6 +24,7 @@
       </nav>
 
       <main class="ad__contenido">
+        <AvisoActualizacion />
         <router-view />
       </main>
     </div>
@@ -34,6 +35,7 @@
 import { computed, onBeforeUnmount, onMounted, provide, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import Icono from "../../componentes/Icono.vue"
+import AvisoActualizacion from "../../componentes/AvisoActualizacion.vue"
 import { api, guardarAdmin } from "../../api"
 
 // Menú del panel (agregar aquí las nuevas utilidades)
@@ -62,6 +64,7 @@ async function cargarResumen() {
   try { resumen.value = await api.admin.get("/resumen") } catch { /* se reintenta en el próximo ciclo */ }
 }
 provide("resumen", resumen)
+provide("actualizacion", computed(() => resumen.value?.actualizacion || null))
 provide("recargarResumen", cargarResumen)
 onMounted(() => { cargarResumen(); temporizador = setInterval(cargarResumen, 20000) })
 onBeforeUnmount(() => clearInterval(temporizador))

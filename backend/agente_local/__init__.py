@@ -8,4 +8,8 @@ Reemplaza la API PHP `/easypos/public/api`. Es independiente del backend de la n
 (no importa nada de `app/`): las tablas del escritorio no tienen `company_id`.
 """
 
-VERSION = "0.1.0"
+# La versión la escribe instalador_agente/construir.py (AA.MM.DD-commit); en desarrollo es "dev"
+try:
+    from ._version import VERSION
+except ImportError:
+    VERSION = "dev"

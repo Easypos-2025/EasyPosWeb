@@ -11,6 +11,7 @@ Aquí irán llegando utilidades que hoy están en el programa de escritorio.
   GET  /api/ag/admin/dispositivos      dispositivos con su conexión
   POST /api/ag/admin/dispositivos/{id}/bloquear | habilitar
   POST /api/ag/admin/fotos/sincronizar copiar las fotos de la web al escritorio
+  POST /api/ag/admin/actualizar        aplicar ya la versión nueva (opción A; la B es al abrir turno)
 """
 from datetime import datetime, timedelta, timezone
 
@@ -21,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import VERSION, auditoria, config, nube
+from .. import VERSION, actualizador, auditoria, config, nube
 from ..db import get_emp, get_tmp
 from ..seguridad import cifrar_clave, gastar_tiempo_clave, ip_cliente, verificar_clave
 
@@ -139,7 +140,17 @@ async def resumen(_=Depends(admin_actual), emp: AsyncSession = Depends(get_emp),
         "pedidos_abiertos": int(pedidos),
         "nube": {"configurada": n["configurada"], "mensaje": n["mensaje"], "empresa": n["empresa"],
                  "ultimo_ok": n["ultimo_ok"], "ultimo_error": n["ultimo_error"], "fotos": n["fotos"]},
+        "actualizacion": estado_actualizacion(),
     }
+
+
+def estado_actualizacion() -> dict:
+    a = actualizador.estado
+    v = a["vigente"] or {}
+    return {"instalada": VERSION, "disponible": actualizador.disponible(), "nueva": v.get("version"),
+            "notas": v.get("notas"), "lista": bool(a["descargada"] and a["descargada"] == v.get("version")),
+            "descargando": a["descargando"], "aplicando": a["aplicando"], "error": a["error"],
+            "ultimo": a["ultimo"], "desarrollo": not config.EMPAQUETADO}
 
 
 # ───────────────────────────── errores ─────────────────────────────
@@ -239,6 +250,22 @@ async def qr_direccion(_=Depends(admin_actual)):
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
+
+
+# ───────────────────────────── actualización (opción A) ─────────────────────────────
+
+@router.post("/actualizar")
+async def actualizar_ahora(request: Request, _=Depends(admin_actual)):
+    if not actualizador.disponible():
+        raise HTTPException(status_code=409, detail="El agente ya tiene la versión vigente.")
+    if not actualizador.estado["descargada"]:
+        await actualizador.descargar_si_hace_falta()
+    try:
+        actualizador.aplicar("botón del panel")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    await auditoria.registrar("actualizar", "ok", ip_cliente(request), detalle=actualizador.estado["descargada"])
+    return {"ok": True, "nueva": actualizador.estado["descargada"]}
 
 
 # ───────────────────────────── fotos de la web ─────────────────────────────

@@ -42,6 +42,13 @@
             <dt>Empresa en la nube</dt><dd>{{ r.nube.empresa || "—" }}</dd>
             <dt>Último contacto</dt><dd>{{ fecha(r.nube.ultimo_ok) }}</dd>
             <dt>Versión del agente</dt><dd>{{ r.version }}</dd>
+            <template v-if="r.actualizacion?.ultimo">
+              <dt>Última actualización</dt>
+              <dd :class="r.actualizacion.ultimo.estado === 'OK' ? 'ok' : 'mal'">
+                {{ r.actualizacion.ultimo.estado === "OK" ? "Correcta" : "Falló (volvió a la anterior)" }}
+                · {{ r.actualizacion.ultimo.desde }} → {{ r.actualizacion.ultimo.hacia }}
+              </dd>
+            </template>
           </dl>
         </div>
         <div class="tarjeta panel qr">

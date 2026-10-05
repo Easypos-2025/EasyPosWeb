@@ -10,9 +10,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import require_sysadmin
+from app.auth.dependencies import get_current_user, require_sysadmin
 from app.auth.tenant import tenant_guard
-from app.routers.agentes_locales_router import router_admin, router_agente
+from app.routers.agentes_locales_router import router_admin, router_agente, router_empresa
 
 BD = dict(host="localhost", user="root", password="123456", database="easyposweb", autocommit=True,
           init_command="SET SESSION sql_mode='NO_ENGINE_SUBSTITUTION'")   # datos de prueba mínimos
@@ -21,6 +21,12 @@ EMP_A, EMP_B = 990001, 990002
 
 class _Sysadmin:
     id = 1
+
+
+class _Usuario:
+    """Usuario de la empresa efectiva (la resuelve el servidor; aquí se fija para la prueba)."""
+    id = 2
+    company_id = EMP_A
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +57,9 @@ def cliente(db):
     app = FastAPI()
     app.include_router(router_admin)
     app.include_router(router_agente)
+    app.include_router(router_empresa)
     app.dependency_overrides[require_sysadmin] = lambda: _Sysadmin()
+    app.dependency_overrides[get_current_user] = lambda: _Usuario()
     app.dependency_overrides[tenant_guard] = lambda: None
     with TestClient(app) as c:
         yield c
@@ -124,3 +132,55 @@ def test_regenerar_y_desactivar(cliente, claves):
     assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva}, json={}).status_code == 200
     cliente.patch(f"/api/agentes-locales/{ag['id']}", json={"activo": False})
     assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva}, json={}).status_code == 401
+
+
+def test_dashboard_empresa_ve_solo_su_agente(cliente, claves):
+    a, _ = claves
+    ag = {x["company_id"]: x for x in cliente.get("/api/agentes-locales").json()}[EMP_A]
+    cliente.patch(f"/api/agentes-locales/{ag['id']}", json={"activo": True})
+    nueva = cliente.post(f"/api/agentes-locales/{ag['id']}/clave").json()["clave"]
+    cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva}, json={})        # sin dirección aún
+    assert cliente.get("/api/mi-agente-local/qr.png").status_code == 404
+    cliente.post("/api/agente/latido", headers={"X-Agente-Clave": nueva},
+                 json={"url_local": "http://192.168.1.50:8090", "version": "0.1.0"})
+    d = cliente.get("/api/mi-agente-local").json()
+    assert d["existe"] and d["url_local"] == "http://192.168.1.50:8090" and d["en_linea"]
+    r = cliente.get("/api/mi-agente-local/qr.png")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    _Usuario.company_id = 123456789                     # empresa sin agente
+    assert cliente.get("/api/mi-agente-local").json() == {"existe": False}
+    _Usuario.company_id = EMP_A
+    cliente.patch(f"/api/agentes-locales/{ag['id']}", json={"activo": False})
+    assert cliente.get("/api/mi-agente-local").json() == {"existe": False}
+
+
+# ───────────── versiones y actualización de las sedes ─────────────
+
+def test_versiones_descarga_y_vigente(cliente, db, claves, tmp_path, monkeypatch):
+    from app.routers import agentes_locales_router as r
+    monkeypatch.setattr(r, "DIR_DESCARGAS", tmp_path)
+    (tmp_path / "agente-v1.zip").write_bytes(b"version uno")
+    (tmp_path / "agente-v2.zip").write_bytes(b"version dos")
+    (tmp_path.parent / "secreto.txt").write_text("no")
+    with db.cursor() as c:
+        c.execute("DELETE FROM agente_versiones WHERE version IN ('t-v1','t-v2')")
+        c.execute("INSERT INTO agente_versiones (version, archivo, sha256, tamano, vigente) VALUES "
+                  "('t-v1','agente-v1.zip',%s,11,0),('t-v2','agente-v2.zip',%s,11,1)",
+                  (hashlib.sha256(b"version uno").hexdigest(), hashlib.sha256(b"version dos").hexdigest()))
+    _, b = claves
+    h = {"X-Agente-Clave": b}
+    d = cliente.post("/api/agente/latido", headers=h, json={"version": "t-v1", "actualizacion": "OK t-v0 → t-v1"}).json()
+    assert d["version_vigente"]["version"] == "t-v2" and d["version_vigente"]["sha256"] == hashlib.sha256(b"version dos").hexdigest()
+    ag = {x["company_id"]: x for x in cliente.get("/api/agentes-locales").json()}[EMP_B]
+    assert ag["al_dia"] is False and ag["version_vigente"] == "t-v2" and ag["actualizacion"] == "OK t-v0 → t-v1"
+    r2 = cliente.get("/api/agente/descarga/t-v2", headers=h)
+    assert r2.status_code == 200 and r2.content == b"version dos"
+    assert cliente.get("/api/agente/descarga/t-v2").status_code == 401                        # sin clave
+    assert cliente.get("/api/agente/descarga/no-existe", headers=h).status_code == 404
+    assert cliente.get("/api/agente/descarga/..%2Fsecreto.txt", headers=h).status_code == 404
+    # Volver a la versión anterior
+    v1 = next(v for v in cliente.get("/api/agentes-locales/versiones").json() if v["version"] == "t-v1")
+    assert cliente.post(f"/api/agentes-locales/versiones/{v1['id']}/vigente").status_code == 200
+    assert cliente.post("/api/agente/latido", headers=h, json={}).json()["version_vigente"]["version"] == "t-v1"
+    with db.cursor() as c:
+        c.execute("DELETE FROM agente_versiones WHERE version IN ('t-v1','t-v2')")
