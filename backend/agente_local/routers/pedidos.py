@@ -217,40 +217,9 @@ async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = 
 
 @router.post("/pedido/quitar")
 async def quitar_linea(data: QuitarIn, request: Request, mesero: Mesero = Depends(mesero_actual)):
-    """Quita una línea completa (todas sus unidades e impresoras) si nada de ella se ha impreso."""
-    async with _escritura() as conn:
-        pedido = await _pedido_mio(conn, data.nro_pedido, mesero)
-        p = {"n": data.nro_pedido, "d": str(data.depende)}
-        filas = (await conn.execute(text("""
-            SELECT Item, Impreso, Salio FROM temp_detalle_comanda WHERE Nro_pedido = :n AND Depende = :d
-            UNION ALL
-            SELECT Item, Impreso, Salio FROM temp_detalle_comanda_parcial WHERE Nro_pedido = :n AND Depende = :d
-        """), p)).mappings().all()
-        if not filas:
-            raise HTTPException(status_code=404, detail="Producto no encontrado en el pedido.")
-        if any(int(f["Impreso"] or 0) or int(f["Salio"] or 0) for f in filas):
-            raise HTTPException(status_code=409, detail="Ese producto ya se imprimió; no se puede quitar desde aquí.")
-
-        items = sorted({int(f["Item"]) for f in filas})
-        await conn.execute(text("DELETE FROM temp_detalle_comanda WHERE Nro_pedido = :n AND Depende = :d"), p)
-        await conn.execute(text("DELETE FROM temp_detalle_comanda_parcial WHERE Nro_pedido = :n AND Depende = :d"), p)
-        for item in items:
-            for tabla in ("temp_plato_producto", "temp_plato_producto_parcial"):
-                await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n AND Item = :i"),
-                                   {"n": data.nro_pedido, "i": item})
-        await conn.execute(text("""
-            DELETE FROM temp_novedades_plato_pedido WHERE Nro_Pedido = :n AND Item = :d AND Depende = :d
-        """), {"n": data.nro_pedido, "d": data.depende})
-
-        # Pedido sin productos: se retira para liberar la mesa
-        vacio = not (await conn.execute(text("SELECT COUNT(*) FROM temp_detalle_comanda WHERE Nro_pedido = :n"),
-                                        {"n": data.nro_pedido})).scalar()
-        if vacio:
-            await conn.execute(text("DELETE FROM temp_comanda WHERE Nro_Pedido = :n AND Mesero = :c"),
-                               {"n": data.nro_pedido, "c": mesero.cod_empleado})
-            await bloqueos.liberar(conn, int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"], mesero)
-        await conn.commit()
-
-    await auditoria.registrar("pedido_quitar", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
-                              mesero.id_dispositivo, detalle=f"{data.nro_pedido} · línea {data.depende}")
-    return {"ok": True, "pedido_eliminado": vacio}
+    """Regla del negocio (2026-10-05): desde la toma de pedidos NO se elimina nada ya enviado (ni
+    productos ni la cuenta), aunque no esté impreso; solo se quita del carrito mientras se monta.
+    Eliminar lo enviado se hace únicamente en el escritorio."""
+    await auditoria.registrar("pedido_quitar", "rechazado", ip_cliente(request), mesero.usuario,
+                              mesero.cod_empleado, mesero.id_dispositivo, detalle=data.nro_pedido)
+    raise HTTPException(status_code=403, detail="Lo enviado solo se elimina desde el escritorio (solicítelo en caja).")

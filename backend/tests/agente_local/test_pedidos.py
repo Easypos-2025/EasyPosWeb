@@ -336,24 +336,8 @@ def test_agregar_con_mesa_abierta_en_otro_equipo(cliente, db, h):
     assert r.status_code == 409
 
 
-def test_quitar_solo_no_impresos(cliente, db, h):
-    nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 2, "novedades": [1]}, {"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
-    # El escritorio imprimió la gaseosa
-    _sql(db, f"UPDATE {T}.temp_detalle_comanda SET Impreso=1 WHERE Id_Plato=11")
-    assert cliente.post("/api/ag/pedido/quitar", json={"nro_pedido": nro, "depende": 5}, headers=_hdr(h)).status_code == 409
-    r = cliente.post("/api/ag/pedido/quitar", json={"nro_pedido": nro, "depende": 1}, headers=_hdr(h))
-    assert r.status_code == 200 and r.json()["pedido_eliminado"] is False
-    assert _filas(db, f"SELECT COUNT(*) n FROM {T}.temp_detalle_comanda WHERE Nro_pedido=%s AND Id_Plato=10", nro)[0]["n"] == 0
-    assert _filas(db, f"SELECT COUNT(*) n FROM {T}.temp_detalle_comanda_parcial WHERE Nro_pedido=%s AND Id_Plato=10", nro)[0]["n"] == 0
-    assert _filas(db, f"SELECT COUNT(*) n FROM {T}.temp_plato_producto WHERE Nro_Pedido=%s", nro)[0]["n"] == 0
-    assert _filas(db, f"SELECT COUNT(*) n FROM {T}.temp_novedades_plato_pedido WHERE Nro_Pedido=%s", nro)[0]["n"] == 0
 
 
-def test_quitar_todo_elimina_pedido(cliente, db, h):
-    nro = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
-    r = cliente.post("/api/ag/pedido/quitar", json={"nro_pedido": nro, "depende": 1}, headers=_hdr(h))
-    assert r.json()["pedido_eliminado"] is True
-    assert _filas(db, f"SELECT * FROM {T}.temp_comanda") == ()
 
 
 def test_auditoria_de_pedidos(cliente, db, h):
@@ -417,11 +401,6 @@ def test_precio_digitado_con_impuesto_aparte(cliente, db, h):
     assert _filas(db, f"SELECT Valor FROM {T}.temp_detalle_comanda WHERE Nro_pedido=%s", nro)[0]["Valor"] == 1080
 
 
-def test_quitar_borra_inventario_parcial(cliente, db, h):
-    nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 1}, {"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
-    assert _filas(db, f"SELECT COUNT(*) n FROM {T}.temp_plato_producto_parcial WHERE Nro_Pedido=%s", nro)[0]["n"] == 2
-    cliente.post("/api/ag/pedido/quitar", json={"nro_pedido": nro, "depende": 1}, headers=_hdr(h))
-    assert _filas(db, f"SELECT COUNT(*) n FROM {T}.temp_plato_producto_parcial WHERE Nro_Pedido=%s", nro)[0]["n"] == 0
 
 
 def test_cantidad_decimal_como_escritorio(cliente, db, h):
@@ -523,3 +502,13 @@ def test_textos_configurables(cliente, h, monkeypatch):
     monkeypatch.setenv("AG_TEXTO_MESERO", "Vendedor")
     d = cliente.get("/api/ag/config", headers=_hdr(h)).json()["textos"]
     assert (d["mesero"], d["meseros"]) == ("Vendedor", "Vendedores")
+
+
+def test_lo_enviado_no_se_quita_desde_la_toma_de_pedidos(cliente, db, h):
+    """Regla del negocio: lo enviado (aunque no esté impreso) solo se elimina desde el escritorio."""
+    nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 1}, {"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
+    r = cliente.post("/api/ag/pedido/quitar", json={"nro_pedido": nro, "depende": 1}, headers=_hdr(h))
+    assert r.status_code == 403 and "escritorio" in r.json()["detail"]
+    assert len(_filas(db, f"SELECT * FROM {T}.temp_detalle_comanda WHERE Nro_pedido=%s", nro)) == 3
+    assert len(_filas(db, f"SELECT * FROM {T}.temp_comanda WHERE Nro_Pedido=%s", nro)) == 1
+    assert "rechazado" in [f["resultado"] for f in _filas(db, f"SELECT resultado FROM {T}.ag_auditoria WHERE evento='pedido_quitar'")]

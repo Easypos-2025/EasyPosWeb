@@ -24,14 +24,11 @@
           </div>
           <div class="linea__der">
             <b>{{ pesos(l.subtotal) }}</b>
-            <button v-if="l.puede_quitar" class="quitar" :disabled="quitando" title="Quitar" @click="quitar(l)">
-              <Icono nombre="basura" :tam="18" />
-            </button>
           </div>
         </div>
         <div class="total"><span>Total</span><b>{{ pesos(pedido.total) }}</b></div>
       </div>
-      <p class="nota">Solo puede quitar {{ t("productos") }} que aún no se han impreso.</p>
+      <p class="nota">Lo enviado ya no se puede quitar desde aquí: para eliminar {{ t("productos") }} o la cuenta, solicítelo en caja.</p>
     </main>
 
     <div class="accion-fija">
@@ -49,7 +46,7 @@ import { useRoute, useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
 import { api } from "../api"
 import { cantidad, pesos } from "../formato"
-import { showConfirm, showToast } from "@/utils/toast"
+import { showToast } from "@/utils/toast"
 import { t, textos } from "../textos"
 
 const route = useRoute()
@@ -57,7 +54,6 @@ const router = useRouter()
 const nro = String(route.query.nro || "")
 const pedido = ref(null)
 const cargando = ref(false)
-const quitando = ref(false)
 let temporizador = null
 
 async function cargar() {
@@ -69,25 +65,6 @@ async function cargar() {
     if (e.estado === 404) router.replace("/cuentas")     // ya se facturó o se eliminó
   } finally {
     cargando.value = false
-  }
-}
-
-async function quitar(l) {
-  if (!(await showConfirm(`¿Quitar ${l.nombre} del pedido?`, "Sí, quitar"))) return
-  quitando.value = true
-  try {
-    const r = await api.post("/pedido/quitar", { nro_pedido: nro, depende: l.depende })
-    if (r.pedido_eliminado) {
-      showToast("El pedido quedó vacío y se eliminó.", "info", 2500)
-      return router.replace("/cuentas")
-    }
-    showToast(`${textos.producto} quitado`, "success", 1200)
-    await cargar()
-  } catch (e) {
-    showToast(e.message, "error", 3500)
-    await cargar()
-  } finally {
-    quitando.value = false
   }
 }
 
@@ -107,7 +84,6 @@ onBeforeUnmount(() => clearInterval(temporizador))
 .estado { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .estado--impreso { background: var(--verde-claro); color: var(--verde); }
 .estado--pendiente { background: var(--ambar-claro); color: #92400e; }
-.quitar { width: 38px; height: 38px; border: 0; border-radius: 10px; background: var(--rojo-claro); color: var(--rojo); display: inline-flex; align-items: center; justify-content: center; }
 .total { display: flex; justify-content: space-between; align-items: center; padding: 14px 0 10px; font-size: 18px; }
 .total b { font-size: 22px; color: var(--azul); }
 .nota { text-align: center; color: var(--texto-suave); font-size: 13px; }

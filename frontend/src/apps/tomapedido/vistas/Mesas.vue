@@ -7,12 +7,12 @@
     </header>
 
     <main class="contenido">
-      <div class="chips">
+      <CarrilChips :activo="zonaId">
         <button v-for="z in zonas" :key="z.id" class="chip" :class="{ 'chip--activo': z.id === zonaId, 'chip--color': z.color }"
                 :style="estiloZona(z)" @click="zonaId = z.id">
           {{ z.nombre }}
         </button>
-      </div>
+      </CarrilChips>
 
       <div class="leyenda">
         <span><i class="punto punto--libre"></i>Libre</span>
@@ -62,6 +62,7 @@
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
+import CarrilChips from "../componentes/CarrilChips.vue"
 import { api } from "../api"
 import { showToast } from "@/utils/toast"
 import { t, textos } from "../textos"

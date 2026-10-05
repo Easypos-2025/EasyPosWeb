@@ -23,14 +23,14 @@
           <button v-if="texto" class="buscar__limpiar" @click="texto = ''"><Icono nombre="cerrar" :tam="16" /></button>
         </div>
       </div>
-      <div class="chips">
+      <CarrilChips :activo="categoriaId">
         <button v-for="(c, i) in carta?.categorias || []" :key="c.id" class="chip"
                 :class="{ 'chip--activo': categoriaId === c.id && !texto }"
                 :style="categoriaId === c.id && !texto ? null : colorAlterno(colores.categorias, i)"
                 @click="escogerCategoria(c.id)">
           <img v-if="c.foto" :src="c.foto" class="chip__foto" alt="" loading="lazy" />{{ c.nombre }}
         </button>
-      </div>
+      </CarrilChips>
     </div>
 
     <div class="cuerpo" :class="{ 'cuerpo--lateral': esPC && lateralAbierto }">
@@ -93,6 +93,7 @@ import ProductoSheet from "../componentes/ProductoSheet.vue"
 import CarritoSheet from "../componentes/CarritoSheet.vue"
 import ClienteSheet from "../componentes/ClienteSheet.vue"
 import ListaCategorias from "../componentes/ListaCategorias.vue"
+import CarrilChips from "../componentes/CarrilChips.vue"
 import { api } from "../api"
 import { cantidad, colorAlterno, pesos, valorLinea } from "../formato"
 import { showConfirm, showToast } from "@/utils/toast"
@@ -221,20 +222,18 @@ async function enviar() {
     descripcion: l.descripcion, novedades: l.novedades, opciones: l.opciones,
   }))
   try {
-    let numero = nro
     if (nro) {
       await api.post("/pedido/agregar", { nro_pedido: nro, lineas: detalle })
     } else {
-      const r = await api.post("/pedidos", {
+      await api.post("/pedidos", {
         ...(mesa ? { mesa } : { cuenta_nueva: cuentaNueva }),
         id_cliente: cliente.value.id, lineas: detalle,
       })
-      numero = r.nro_pedido
       mesaBloqueo = null            // el agente libera la mesa al crear el pedido
     }
     enviado = true
-    showToast("Pedido enviado", "success", 1800)
-    router.replace({ path: "/cuenta", query: { nro: numero } })
+    showToast(`Pedido enviado · ${titulo.value}`, "success", 1800)
+    router.replace("/cuentas")
   } catch (e) {
     showToast(e.message, "error", 4000)
   } finally {
@@ -305,7 +304,7 @@ onBeforeUnmount(() => {
 .pantalla { min-height: 100vh; padding-bottom: 96px; }
 .cancelar { flex-shrink: 0; min-height: 38px; padding: 0 12px; border: 1.5px solid rgba(255,255,255,.5); border-radius: 10px; background: transparent; color: #fff; font-weight: 600; font-size: 14px; }
 .cancelar:active { background: rgba(255,255,255,.15); }
-.chips .chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; }
 .chip__foto { width: 26px; height: 26px; margin-left: -8px; border-radius: 50%; object-fit: cover; background: #fff; }
 .cliente-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font-size: 12px; opacity: .9; text-decoration: underline; text-underline-offset: 2px; }
 .cliente-btn:disabled { text-decoration: none; cursor: default; }
