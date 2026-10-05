@@ -2,7 +2,7 @@
   <div class="pantalla">
     <header class="barra">
       <div class="barra__titulo">
-        <h1>Mis {{ t('cuentas') }}</h1>
+        <h1>{{ textos.cuentas }} abiertas</h1>
         <small>{{ sesion.mesero?.nombre }} · {{ sesion.nombre_dispositivo }}</small>
       </div>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
@@ -13,7 +13,7 @@
       <div v-if="cargando && !cuentas.length" class="cargando"><span class="giro"></span></div>
       <div v-else-if="!cuentas.length" class="vacio">
         <Icono nombre="lista" :tam="40" />
-        <p>No tiene {{ t('cuentas') }} abiertas.</p>
+        <p>No hay {{ t('cuentas') }} abiertas.</p>
       </div>
 
       <div class="cuentas">
@@ -23,6 +23,8 @@
             <span>{{ c.mesa }}</span>
           </div>
           <div class="cuenta__total">{{ pesos(c.total) }}</div>
+          <!-- Todos ven todas: un dispositivo lo usan varios meseros -->
+          <div v-if="c.mesero" class="cuenta__mesero"><Icono nombre="usuario" :tam="14" /> {{ c.mesero }}</div>
           <div class="cuenta__info">
             <span><Icono nombre="reloj" :tam="14" /> {{ c.hora }}</span>
             <span>{{ cantidad(c.unidades) }} {{ c.unidades === 1 ? t("producto") : t("productos") }}</span>
@@ -46,7 +48,7 @@ import Icono from "../componentes/Icono.vue"
 import { api } from "../api"
 import { cantidad, pesos } from "../formato"
 import { cerrarSesion, sesion } from "../sesion"
-import { t } from "../textos"
+import { t, textos } from "../textos"
 import { showConfirm, showToast } from "@/utils/toast"
 
 const router = useRouter()
@@ -91,6 +93,7 @@ onBeforeUnmount(() => clearInterval(temporizador))
 .cuenta__mesa { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; min-width: 0; }
 .cuenta__mesa span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cuenta__total { font-weight: 800; font-size: 17px; color: var(--azul); }
+.cuenta__mesero { grid-column: 1 / -1; display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600; color: var(--navy); overflow-wrap: anywhere; }
 .cuenta__info { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--texto-suave); font-size: 13px; }
 .cuenta__info span { display: inline-flex; align-items: center; gap: 4px; }
 .accion-fija {

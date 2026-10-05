@@ -4,7 +4,7 @@
       <button class="barra__btn" @click="$router.replace('/cuentas')"><Icono nombre="atras" /></button>
       <div class="barra__titulo">
         <h1>{{ pedido?.mesa || textos.cuenta }}</h1>
-        <small v-if="pedido">{{ pedido.cliente.nombre }} · {{ pedido.hora }}</small>
+        <small v-if="pedido">{{ pedido.mesero ? `${textos.mesero}: ${pedido.mesero} · ` : "" }}{{ pedido.cliente.nombre }} · {{ pedido.hora }}</small>
       </div>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
     </header>

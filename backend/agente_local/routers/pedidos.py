@@ -1,5 +1,8 @@
 """
-Pedidos del mesero: solo ve y modifica los suyos (temp_comanda.Mesero = su código).
+Pedidos montados desde la toma de pedidos (temp_comanda.Movil = 1): todos los dispositivos los
+ven y les agregan, porque un mismo dispositivo lo usan varios meseros. Cada pedido queda
+asignado al mesero del día que se escoge al montarlo (temp_comanda.Mesero), no al usuario
+del dispositivo. Los pedidos montados en el escritorio (Movil = 0) se manejan solo allá.
 
 Las escrituras usan una conexión propia con un candado de MariaDB (GET_LOCK) para que dos
 dispositivos no creen a la vez la misma cuenta, el mismo Nro_Pedido o los mismos Items.
@@ -16,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import auditoria
 from ..db import get_emp, get_tmp, motor_temp
 from ..seguridad import ip_cliente
-from ..servicios import bloqueos
+from ..servicios import bloqueos, meseros
 from ..servicios.negocio import fecha_negocio
 from ..servicios.pedidos import (MAX_NOMBRE_CUENTA, LineaIn, insertar_lineas, limpiar_texto, numero_pedido,
                                  preparar_lineas, siguiente_item, valor_linea)
@@ -40,6 +43,7 @@ class PedidoNuevoIn(BaseModel):
     mesa: MesaPedidoIn | None = None                       # mesa existente…
     cuenta_nueva: str | None = Field(default=None, max_length=MAX_NOMBRE_CUENTA)   # …o cuenta con nombre
     id_cliente: int = Field(default=CLIENTE_CONSUMIDOR_FINAL, ge=0)
+    mesero: int = Field(gt=0)                              # mesero del día al que se asigna
     lineas: list[LineaIn] = Field(max_length=60)
 
 
@@ -71,11 +75,12 @@ async def _escritura():
             await conn.commit()
 
 
-async def _pedido_mio(db, nro: str, mesero: Mesero):
+async def _pedido_movil(db, nro: str):
+    """Pedido abierto montado desde la toma de pedidos (cualquier dispositivo)."""
     fila = (await db.execute(text("""
-        SELECT Nro_Pedido, Mesa, Imprimio_Precuenta, Id_Cliente, Hora, Salio
-        FROM temp_comanda WHERE Nro_Pedido = :n AND Mesero = :c
-    """), {"n": nro, "c": mesero.cod_empleado})).mappings().first()
+        SELECT Nro_Pedido, Mesa, Imprimio_Precuenta, Id_Cliente, Hora, Salio, Mesero
+        FROM temp_comanda WHERE Nro_Pedido = :n AND Movil = 1
+    """), {"n": nro})).mappings().first()
     if not fila or int(fila["Salio"] or 0) != 0:
         raise HTTPException(status_code=404, detail="Pedido no encontrado.")
     return fila
@@ -83,27 +88,37 @@ async def _pedido_mio(db, nro: str, mesero: Mesero):
 
 # ───────────────────────────── consultas ─────────────────────────────
 
+@router.get("/meseros-dia")
+async def meseros_del_dia(_: Mesero = Depends(mesero_actual), tmp: AsyncSession = Depends(get_tmp)):
+    lista = await meseros.del_dia(tmp)
+    return {"meseros": lista, "aviso": None if lista else meseros.sin_meseros()}
+
+
 @router.get("/pedidos")
-async def mis_pedidos(mesero: Mesero = Depends(mesero_actual), tmp: AsyncSession = Depends(get_tmp)):
+async def pedidos_abiertos(_: Mesero = Depends(mesero_actual), emp: AsyncSession = Depends(get_emp),
+                           tmp: AsyncSession = Depends(get_tmp)):
+    """Todos los pedidos abiertos de la toma de pedidos, de cualquier dispositivo y mesero."""
     filas = (await tmp.execute(text("""
-        SELECT c.Nro_Pedido, c.Mesa, c.Imprimio_Precuenta, c.Hora, c.Id_Cliente,
+        SELECT c.Nro_Pedido, c.Mesa, c.Imprimio_Precuenta, c.Hora, c.Id_Cliente, c.Mesero,
                COALESCE(SUM(CASE WHEN d.Mostrar = 1 THEN d.Valor END), 0) AS total,
                COALESCE(SUM(CASE WHEN d.Mostrar = 1 THEN d.Cantidad END), 0) AS unidades
         FROM temp_comanda c
         LEFT JOIN temp_detalle_comanda d ON d.Nro_pedido = c.Nro_Pedido
-        WHERE c.Mesero = :c AND c.Salio = 0
-        GROUP BY c.Nro_Pedido, c.Mesa, c.Imprimio_Precuenta, c.Hora, c.Id_Cliente
+        WHERE c.Movil = 1 AND c.Salio = 0
+        GROUP BY c.Nro_Pedido, c.Mesa, c.Imprimio_Precuenta, c.Hora, c.Id_Cliente, c.Mesero
         ORDER BY c.Mesa
-    """), {"c": mesero.cod_empleado})).mappings().all()
+    """))).mappings().all()
+    nombres = await meseros.nombres(emp, tmp, {f["Mesero"] for f in filas})
     return [{"nro_pedido": f["Nro_Pedido"], "mesa": f["Mesa"], "id_mesa": int(f["Imprimio_Precuenta"] or 0),
              "hora": f["Hora"], "id_cliente": int(f["Id_Cliente"] or 0),
+             "mesero": nombres.get(int(f["Mesero"] or 0)) or "",
              "total": int(f["total"] or 0), "unidades": round(float(f["unidades"] or 0), 3)} for f in filas]
 
 
 @router.get("/pedido")
-async def ver_pedido(nro: str = Query(min_length=1, max_length=255), mesero: Mesero = Depends(mesero_actual),
+async def ver_pedido(nro: str = Query(min_length=1, max_length=255), _: Mesero = Depends(mesero_actual),
                      emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
-    pedido = await _pedido_mio(tmp, nro, mesero)
+    pedido = await _pedido_movil(tmp, nro)
     filas = (await tmp.execute(text("""
         SELECT Item, Depende, Id_Plato, Descripcion, Producto_Personalizado, Cantidad, Valor, Novedad,
                Impreso, Salio, Mostrar
@@ -124,8 +139,10 @@ async def ver_pedido(nro: str = Query(min_length=1, max_length=255), mesero: Mes
             L["subtotal"] += int(f["Valor"] or 0)
             L["impreso"] = L["impreso"] and bool(int(f["Impreso"] or 0))
     lista = list(lineas.values())
+    cod = int(pedido["Mesero"] or 0)
     return {"nro_pedido": pedido["Nro_Pedido"], "mesa": pedido["Mesa"],
             "id_mesa": int(pedido["Imprimio_Precuenta"] or 0), "hora": pedido["Hora"],
+            "mesero": (await meseros.nombres(emp, tmp, {cod})).get(cod) or "",
             "cliente": await cliente_valido(emp, int(pedido["Id_Cliente"] or CLIENTE_CONSUMIDOR_FINAL)),
             "lineas": lista, "total": sum(L["subtotal"] for L in lista)}
 
@@ -156,12 +173,13 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
                 {"b": ID_CUENTA_NUEVA})).scalar()
             id_mesa = int(maximo) + 1 if maximo else ID_CUENTA_NUEVA
 
-        dueno = (await conn.execute(text("SELECT Mesero FROM temp_comanda WHERE Mesa = :m LIMIT 1"),
+        await meseros.validar(conn, data.mesero)
+        movil = (await conn.execute(text("SELECT Movil FROM temp_comanda WHERE Mesa = :m LIMIT 1"),
                                     {"m": nombre_mesa})).scalar()
-        if dueno is not None:
-            if int(dueno or 0) == mesero.cod_empleado:
-                raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' ya tiene un pedido suyo. Agregue los {t('productos')} a ese pedido.")
-            raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' ya tiene un pedido abierto.")
+        if movil is not None:
+            if int(movil or 0) == 1:
+                raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' ya tiene un pedido abierto. Agregue los {t('productos')} a ese pedido.")
+            raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' tiene un pedido montado en caja.")
         otro = await bloqueos.quien_bloquea(conn, id_mesa, nombre_mesa, mesero)
         if otro:
             raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' está en uso en {otro}.")
@@ -182,13 +200,13 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
                  Imprimio_Precuenta, Nro_Comenzales, Nro_Puestos, Domicilio, Id_Cliente, Movil)
             VALUES (:n, :f, '0', :mesa, :hora, :mesero, 0, 0, 0, 0, :id_mesa, 1, 1, 0, :cli, 1)
         """), {"n": nro, "f": fecha.strftime("%Y/%m/%d"), "mesa": nombre_mesa, "hora": ahora.strftime("%I:%M:%S %p"),
-               "mesero": mesero.cod_empleado, "id_mesa": id_mesa, "cli": cliente["id"]})
+               "mesero": data.mesero, "id_mesa": id_mesa, "cli": cliente["id"]})
         await insertar_lineas(conn, nro, fecha, ahora, lineas, 1)
         await bloqueos.liberar(conn, id_mesa, nombre_mesa, mesero)
         await conn.commit()
 
     await auditoria.registrar("pedido_nuevo", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
-                              mesero.id_dispositivo, detalle=f"{nro} · {nombre_mesa}")
+                              mesero.id_dispositivo, detalle=f"{nro} · {nombre_mesa} · {t('mesero')} {data.mesero}")
     return {"nro_pedido": nro, "mesa": nombre_mesa, "id_mesa": id_mesa,
             "total": sum(valor_linea(L["valor"], L["cantidad"]) for L in lineas)}
 
@@ -196,13 +214,13 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
 @router.post("/pedido/agregar")
 async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = Depends(mesero_actual),
                             emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
-    pedido = await _pedido_mio(tmp, data.nro_pedido, mesero)
+    pedido = await _pedido_movil(tmp, data.nro_pedido)
     # Los precios salen de la lista del cliente del pedido
     lineas = await preparar_lineas(emp, tmp, data.lineas, int(pedido["Id_Cliente"] or CLIENTE_CONSUMIDOR_FINAL))
     fecha = await fecha_negocio(tmp)
 
     async with _escritura() as conn:
-        pedido = await _pedido_mio(conn, data.nro_pedido, mesero)
+        pedido = await _pedido_movil(conn, data.nro_pedido)
         otro = await bloqueos.quien_bloquea(conn, int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"], mesero)
         if otro:
             raise HTTPException(status_code=409, detail=f"'{pedido['Mesa'].strip()}' está en uso en {otro}.")

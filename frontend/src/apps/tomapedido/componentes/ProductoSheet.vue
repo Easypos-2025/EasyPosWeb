@@ -68,6 +68,13 @@
           </div>
         </section>
 
+        <!-- Novedad libre: lo que no está en la lista (va a la comanda) -->
+        <section class="bloque">
+          <h3>Otra novedad <small>{{ nota.length }}/{{ MAX_NOTA }}</small></h3>
+          <input v-model="nota" class="entrada" :maxlength="MAX_NOTA" placeholder="Escriba aquí si no está en la lista"
+                 enterkeyhint="done" autocomplete="off" />
+        </section>
+
         <!-- Cantidad (admite decimales: fruver, distribuidoras) -->
         <section class="bloque">
           <h3>Cantidad</h3>
@@ -106,6 +113,8 @@ const presentacion = ref(props.plato.presentaciones?.[0] || null)
 const precioTxt = ref("")
 const descripcion = ref(props.plato.nombre)
 const novSel = reactive(new Set())
+const MAX_NOTA = 100
+const nota = ref("")
 const cantTxt = ref("1")
 const grupos = ref([])
 const seleccion = reactive({})          // grupo → Set de ids
@@ -189,6 +198,7 @@ function agregar() {
     }
   }
   const novs = props.novedades.filter(n => novSel.has(n.id))
+  const libre = nota.value.replace(/\s+/g, " ").trim().toUpperCase()
   emit("agregar", {
     clave: `${Date.now()}-${Math.random()}`,
     id_plato: props.plato.id,
@@ -199,8 +209,9 @@ function agregar() {
     precio: props.plato.pedir_precio ? Number(precioTxt.value) : null,
     descripcion: props.plato.pedir_descripcion ? descripcion.value.trim() : null,
     novedades: novs.map(n => n.id),
+    nota: libre || null,
     opciones,
-    detalle: [...novs.map(n => n.nombre), ...textos].join(" · "),
+    detalle: [...novs.map(n => n.nombre), ...(libre ? [libre] : []), ...textos].join(" · "),
     adicional: adicional.value,
     unitario: unitario.value,
   })

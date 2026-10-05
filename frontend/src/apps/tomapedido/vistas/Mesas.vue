@@ -16,8 +16,8 @@
 
       <div class="leyenda">
         <span><i class="punto punto--libre"></i>Libre</span>
-        <span><i class="punto punto--mia"></i>Mía</span>
-        <span><i class="punto punto--ocupada"></i>Otro {{ t("mesero") }}</span>
+        <span><i class="punto punto--pedido"></i>Con pedido</span>
+        <span><i class="punto punto--ocupada"></i>Pedido en caja</span>
         <span><i class="punto punto--abierta"></i>Abierta en otro equipo</span>
       </div>
 
@@ -27,7 +27,7 @@
         <button v-for="m in zona?.mesas || []" :key="m.id" class="mesa" :class="'mesa--' + m.estado"
                 :style="estiloMesa(m)" :disabled="ocupado" @click="tocar(m)">
           <span class="mesa__nombre">{{ m.nombre }}</span>
-          <span class="mesa__estado">{{ TEXTO[m.estado] }}</span>
+          <span class="mesa__estado">{{ m.estado === "pedido" && m.mesero ? m.mesero : TEXTO[m.estado] }}</span>
         </button>
       </div>
       <p v-if="zona && !zona.mesas.length && !zona.dinamica" class="vacio">Esta zona no tiene {{ t("cuentas") }} habilitadas.</p>
@@ -67,7 +67,7 @@ import { api } from "../api"
 import { showToast } from "@/utils/toast"
 import { t, textos } from "../textos"
 
-const TEXTO = { libre: "Libre", mia: "Mía", ocupada: "Ocupada", abierta: "En uso" }
+const TEXTO = { libre: "Libre", pedido: "Con pedido", ocupada: "En caja", abierta: "En uso" }
 
 const router = useRouter()
 const zonas = ref([])
@@ -108,8 +108,9 @@ async function cargar() {
 }
 
 async function tocar(m) {
-  if (m.estado === "mia") return router.push({ path: "/cuenta", query: { nro: m.nro_pedido } })
-  if (m.estado === "ocupada") return showToast(`'${m.nombre}' tiene un pedido de otro ${t("mesero")}.`, "warning", 2500)
+  // Pedido de la toma de pedidos (cualquier dispositivo o mesero): se abre para ver o agregar
+  if (m.estado === "pedido") return router.push({ path: "/cuenta", query: { nro: m.nro_pedido } })
+  if (m.estado === "ocupada") return showToast(`'${m.nombre}' tiene un pedido montado en caja.`, "warning", 2500)
   if (m.estado === "abierta") return showToast(`'${m.nombre}' está en uso en otro equipo.`, "warning", 2500)
   ocupado.value = true
   try {
@@ -139,7 +140,7 @@ onMounted(cargar)
 .chip--color.chip--activo { box-shadow: 0 0 0 3px var(--navy); }
 .punto { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .punto--libre { background: #fff; border: 2px solid var(--verde); }
-.punto--mia { background: var(--azul); }
+.punto--pedido { background: var(--azul); }
 .punto--ocupada { background: #94a3b8; }
 .punto--abierta { background: var(--ambar); }
 
@@ -152,7 +153,8 @@ onMounted(cargar)
 .mesa:active { transform: scale(.97); }
 .mesa__nombre { font-weight: 800; font-size: 16px; text-align: center; word-break: break-word; }
 .mesa__estado { font-size: 12px; opacity: .75; }
-.mesa--mia { background: var(--azul); border-color: var(--azul); color: #fff; }
+.mesa--pedido { background: var(--azul); border-color: var(--azul); color: #fff; }
+.mesa--pedido .mesa__estado { opacity: .95; font-weight: 600; overflow-wrap: anywhere; text-align: center; }
 .mesa--ocupada { background: #e2e8f0; border-color: #cbd5e1; color: #64748b; }
 .mesa--abierta { background: var(--ambar-claro); border-color: var(--ambar); }
 .nueva { margin-top: 16px; }

@@ -4,6 +4,7 @@ from conftest import BD_EMP, BD_TMP, activar_en_escritorio
 
 E, T = BD_EMP, BD_TMP
 FECHA_TURNO = "2026/10/03"      # fecha de negocio del turno (distinta a la del calendario)
+LAURA, PEDRO = 601, 602         # meseros del día (temp_meseros_dia)
 
 
 def _sql(db, *sentencias):
@@ -24,6 +25,7 @@ def datos(db):
          f"INSERT INTO {E}.configuracion_facturacion (Id_Sede, Paga_Impuesto, Precios_Incluyen_Impuesto) VALUES (1,0,0)",
          f"INSERT INTO {E}.variables_del_sistema (Id_Sede, Fecha, Pedir_Cantidad_Mod_Mesas) VALUES (1,'2026-10-04',1)",
          f"INSERT INTO {T}.temp_variables_del_sistema (Id_Sede, Fecha) VALUES (1,'{FECHA_TURNO}')",
+         f"INSERT INTO {T}.temp_meseros_dia (cod_empleado, nombres, estado) VALUES ({LAURA},'LAURA',1),({PEDRO},'PEDRO',1)",
          f"INSERT INTO {E}.categoria_platos (Cod_Categoria, Nombre, Activa) VALUES (1,'COMIDAS',1),(2,'BEBIDAS',1),(3,'OCULTA',0)",
          # Activo = 0 es visible (invertido en el escritorio)
          f"""INSERT INTO {E}.platos (Id_Plato, Nombre, Valor, Cod_Categoria, Activo, Impuesto, Prioridad_Ofrecer,
@@ -85,7 +87,7 @@ def _otro_mesero(cliente, db):
 
 
 def _crear(cliente, h, lineas, **extra):
-    cuerpo = {"mesa": {"id": 1, "nombre": "S-01"}, "lineas": lineas, **extra}
+    cuerpo = {"mesa": {"id": 1, "nombre": "S-01"}, "mesero": LAURA, "lineas": lineas, **extra}
     return cliente.post("/api/ag/pedidos", json=cuerpo, headers=_hdr(h))
 
 
@@ -163,7 +165,7 @@ def test_pedido_forma_escritorio(cliente, db, h):
 
     c = _filas(db, f"SELECT * FROM {T}.temp_comanda WHERE Nro_Pedido=%s", nro)[0]
     assert (c["Mesa"], c["Imprimio_Precuenta"], c["Mesero"], c["Movil"], c["Salio"], c["Id_Cliente"]) == \
-           ("S-01", 1, h["_cod"], 1, 0, 1)
+           ("S-01", 1, LAURA, 1, 0, 1)
     assert c["Fecha"] == FECHA_TURNO
 
     det = _filas(db, f"SELECT Item, Id_Plato, Mostrar, Impresora, Depende, Valor, Novedad, Impreso, Fecha, Producto_Personalizado "
@@ -184,6 +186,26 @@ def test_pedido_forma_escritorio(cliente, db, h):
 
     nov = _filas(db, f"SELECT Item, Depende, Id_Novedad, Novedad FROM {T}.temp_novedades_plato_pedido WHERE Nro_Pedido=%s", nro)
     assert [(n["Item"], n["Depende"], n["Id_Novedad"]) for n in nov] == [(1, 1, 1)]
+
+
+def test_novedad_libre(cliente, db, h):
+    """Lo que no está en la lista: Id_Novedad = 0 con la categoría del producto (como el escritorio)."""
+    r = _crear(cliente, h, [{"id_plato": 10, "cantidad": 1, "novedades": [1], "nota": "  salsa\x00   aparte "}])
+    assert r.status_code == 200, r.text
+    nro = r.json()["nro_pedido"]
+    nov = _filas(db, f"SELECT Id_Consecutivo, Cod_Categoria, Id_Novedad, Novedad FROM {T}.temp_novedades_plato_pedido "
+                     f"WHERE Nro_Pedido=%s ORDER BY Id_Consecutivo", nro)
+    cat = _filas(db, f"SELECT Cod_Categoria FROM {E}.platos WHERE Id_Plato=10")[0]["Cod_Categoria"]
+    assert [(n["Id_Novedad"], n["Novedad"].strip()) for n in nov] == [(1, "SIN CEBOLLA"), (0, "SALSA APARTE")]
+    assert nov[1]["Cod_Categoria"] == cat
+    det = _filas(db, f"SELECT Novedad FROM {T}.temp_detalle_comanda WHERE Nro_pedido=%s AND Mostrar=1", nro)[0]
+    assert det["Novedad"] == "SIN CEBOLLA - SALSA APARTE"
+    # Tope de largo; vacía o solo espacios no guarda nada
+    assert _crear(cliente, h, [{"id_plato": 10, "cantidad": 1, "nota": "x" * 101}]).status_code == 422
+    r = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1, "nota": "   "}], mesa=None, cuenta_nueva="NOTA VACIA")
+    assert r.status_code == 200, r.text
+    nro = r.json()["nro_pedido"]
+    assert not _filas(db, f"SELECT * FROM {T}.temp_novedades_plato_pedido WHERE Nro_Pedido=%s", nro)
 
 
 def test_precio_de_lista_al_guardar(cliente, db, h):
@@ -242,21 +264,21 @@ def test_productos_no_disponibles_y_topes(cliente, h):
 
 
 def test_mesa_invalida_u_ocupada(cliente, db, h):
-    assert cliente.post("/api/ag/pedidos", json={"mesa": {"id": 5, "nombre": "T-01"}, "lineas": [{"id_plato": 11, "cantidad": 1}]},
-                        headers=_hdr(h)).status_code == 404
+    assert _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesa={"id": 5, "nombre": "T-01"}).status_code == 404
     assert _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}]).status_code == 200
     assert _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}]).status_code == 409                   # ya tiene pedido
     otro = _otro_mesero(cliente, db)
-    assert cliente.post("/api/ag/pedidos", json={"mesa": {"id": 1, "nombre": "S-01"}, "lineas": [{"id_plato": 11, "cantidad": 1}]},
-                        headers=otro).status_code == 409
+    r = cliente.post("/api/ag/pedidos", json={"mesa": {"id": 1, "nombre": "S-01"}, "mesero": PEDRO,
+                                             "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=otro)
+    assert r.status_code == 409 and "Agregue" in r.json()["detail"]
 
 
 def test_cuenta_nueva(cliente, db, h):
-    r1 = cliente.post("/api/ag/pedidos", json={"cuenta_nueva": "juan perez", "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
-    r2 = cliente.post("/api/ag/pedidos", json={"cuenta_nueva": "llevar 2", "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
+    r1 = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesa=None, cuenta_nueva="juan perez")
+    r2 = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesa=None, cuenta_nueva="llevar 2")
     assert (r1.json()["id_mesa"], r1.json()["mesa"]) == (1000, "JUAN PEREZ")
     assert r2.json()["id_mesa"] == 1001
-    dup = cliente.post("/api/ag/pedidos", json={"cuenta_nueva": "Juan Perez", "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
+    dup = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesa=None, cuenta_nueva="Juan Perez")
     assert dup.status_code == 409
 
 
@@ -269,7 +291,8 @@ def test_mesas_estados(cliente, db, h):
     zonas = {z["nombre"]: z for z in d["zonas"]}
     assert list(zonas) == ["CLIENTES", "SALON"]                  # orden alfabético, sin la zona inactiva
     salon = {m["nombre"]: m["estado"] for m in zonas["SALON"]["mesas"]}
-    assert salon == {"S-01": "mia", "S-02": "abierta", "S-99": "libre"}    # mesas.Activa no filtra
+    assert salon == {"S-01": "pedido", "S-02": "abierta", "S-99": "libre"}    # mesas.Activa no filtra
+    assert zonas["SALON"]["mesas"][0]["mesero"] == "LAURA"                    # nombre del mesero asignado
     assert zonas["CLIENTES"]["dinamica"] == 1
     assert zonas["SALON"]["color"] == "#c0ffc0" and zonas["CLIENTES"]["color"] is None
     assert d["alto"] == 47                                       # 700 twips de CLIENTES (primera alfabética)
@@ -307,17 +330,40 @@ def test_pedido_libera_bloqueo_propio(cliente, db, h):
 
 # ───────────── pedidos del mesero ─────────────
 
-def test_solo_ve_sus_pedidos(cliente, db, h):
+def test_todos_ven_todos_los_pedidos(cliente, db, h):
+    """Un dispositivo lo usan varios meseros: todos ven y agregan a todos los pedidos de la toma
+    de pedidos, con el nombre del mesero asignado. Los montados en caja (Movil = 0) no."""
     nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 2}]).json()["nro_pedido"]
+    _sql(db, f"INSERT INTO {T}.temp_comanda (Nro_Pedido, Fecha, Mesa, Mesero, Salio, Movil) VALUES ('CAJA-1','{FECHA_TURNO}','S-02',{PEDRO},0,0)")
     otro = _otro_mesero(cliente, db)
-    assert cliente.get("/api/ag/pedidos", headers=otro).json() == []
-    assert cliente.get("/api/ag/pedido", params={"nro": nro}, headers=otro).status_code == 404
-    assert cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]},
-                        headers=otro).status_code == 404
-    mios = cliente.get("/api/ag/pedidos", headers=_hdr(h)).json()
-    assert len(mios) == 1 and mios[0]["total"] == 40000 and mios[0]["unidades"] == 2
-    d = cliente.get("/api/ag/pedido", params={"nro": nro}, headers=_hdr(h)).json()
-    assert d["lineas"][0]["cantidad"] == 2 and d["total"] == 40000 and d["cliente"]["id"] == 1
+    for quien in (_hdr(h), otro):
+        todos = cliente.get("/api/ag/pedidos", headers=quien).json()
+        assert [(p["nro_pedido"], p["mesero"], p["total"], p["unidades"]) for p in todos] == [(nro, "LAURA", 40000, 2)]
+    d = cliente.get("/api/ag/pedido", params={"nro": nro}, headers=otro).json()
+    assert d["lineas"][0]["cantidad"] == 2 and d["total"] == 40000 and d["cliente"]["id"] == 1 and d["mesero"] == "LAURA"
+    r = cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=otro)
+    assert r.status_code == 200
+    # Agregar no cambia el mesero del pedido
+    assert _filas(db, f"SELECT Mesero FROM {T}.temp_comanda WHERE Nro_Pedido=%s", nro)[0]["Mesero"] == LAURA
+    # El de caja no se ve ni se toca desde aquí
+    assert cliente.get("/api/ag/pedido", params={"nro": "CAJA-1"}, headers=otro).status_code == 404
+    assert cliente.post("/api/ag/mesas/bloquear", json={"id_mesa": 2, "mesa": "S-02"}, headers=otro).status_code == 409
+
+
+def test_meseros_del_dia(cliente, db, h):
+    r = cliente.get("/api/ag/meseros-dia", headers=_hdr(h)).json()
+    assert r["meseros"] == [{"cod": LAURA, "nombre": "LAURA"}, {"cod": PEDRO, "nombre": "PEDRO"}] and r["aviso"] is None
+    assert cliente.get("/api/ag/meseros-dia").status_code == 401
+    # Mesero que no está en los del día (o inventado por el dispositivo): rechazado
+    assert _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesero=h["_cod"]).status_code == 422
+    assert _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesero=None).status_code == 422
+    # Sin meseros del día no se monta el pedido
+    _sql(db, f"DELETE FROM {T}.temp_meseros_dia")
+    r = cliente.get("/api/ag/meseros-dia", headers=_hdr(h)).json()
+    assert r["meseros"] == [] and "meseros del día" in r["aviso"]
+    r = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}])
+    assert r.status_code == 409 and "meseros del día" in r.json()["detail"]
+    assert not _filas(db, f"SELECT * FROM {T}.temp_comanda")
 
 
 def test_agregar_productos_continua_items(cliente, db, h):

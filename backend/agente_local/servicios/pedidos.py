@@ -41,6 +41,7 @@ MAX_UNIDADES        = 200
 TOPE_PRECIO         = 100_000_000
 MAX_DESCRIPCION     = 150
 MAX_NOMBRE_CUENTA   = 50
+MAX_NOTA            = 100            # novedad libre por línea
 
 
 class OpcionIn(BaseModel):
@@ -55,6 +56,7 @@ class LineaIn(BaseModel):
     precio: int | None = Field(default=None, ge=0, le=TOPE_PRECIO)
     descripcion: str | None = Field(default=None, max_length=300)
     novedades: list[int] = Field(default_factory=list, max_length=30)
+    nota: str | None = Field(default=None, max_length=MAX_NOTA)      # novedad libre (escrita por el mesero)
     opciones: list[OpcionIn] = Field(default_factory=list, max_length=40)
 
     @field_validator("cantidad")
@@ -170,10 +172,14 @@ async def preparar_lineas(emp: AsyncSession, tmp: AsyncSession, lineas: list[Lin
             if not personalizado:
                 raise HTTPException(status_code=422, detail=f"Digite la descripción de '{nombre}'.")
 
+        # Novedad libre: como el escritorio, Id_Novedad = 0 con la categoría del producto
+        nota = limpiar_texto(l.nota, MAX_NOTA).upper()
+
         preparadas.append({
             "plato": plato, "nombre": nombre, "cantidad": l.cantidad, "valor": valor,
-            "personalizado": personalizado, "novedades": novs, "selecciones": selecciones,
-            "novedad_txt": limpiar_texto(" - ".join([n["nombre"] for n in novs] + [s["nombre"] for s in selecciones]), 250),
+            "personalizado": personalizado, "novedades": novs, "nota": nota, "selecciones": selecciones,
+            "novedad_txt": limpiar_texto(" - ".join([n["nombre"] for n in novs] + ([nota] if nota else [])
+                                                    + [s["nombre"] for s in selecciones]), 250),
             "impresoras": await catalogo.impresoras_plato(emp, plato),
             "receta": await catalogo.receta_fija(emp, l.id_plato),
             "factor": factor,
@@ -240,6 +246,13 @@ async def insertar_lineas(tmp: AsyncSession, nro: str, fecha: date, ahora: datet
                 VALUES (:c, :nro, :item, :item, :cat, :idn, :nov)
             """), {"c": consecutivo, "nro": nro, "item": inicial, "cat": plato["Cod_Categoria"],
                    "idn": n["id"], "nov": n["nombre"]})
+        if L["nota"]:
+            consecutivo += 1
+            await tmp.execute(text("""
+                INSERT INTO temp_novedades_plato_pedido
+                    (Id_Consecutivo, Nro_Pedido, Item, Depende, Cod_Categoria, Id_Novedad, Novedad)
+                VALUES (:c, :nro, :item, :item, :cat, 0, :nov)
+            """), {"c": consecutivo, "nro": nro, "item": inicial, "cat": plato["Cod_Categoria"], "nov": L["nota"] + " "})
         if L["selecciones"]:
             consecutivo += 1
             await tmp.execute(text("""

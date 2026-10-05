@@ -8,6 +8,11 @@
           <button class="cliente-btn" :disabled="!!nro" @click="verCliente = true">
             <Icono nombre="usuario" :tam="13" /> {{ cliente?.nombre || "…" }}
           </button>
+          <!-- Mesero del día asignado al pedido (al agregar se conserva el que ya tiene) -->
+          <button v-if="!nro" class="cliente-btn mesero-btn" @click="verMesero = true">
+            {{ textos.mesero }}: {{ meseroSel?.nombre || "escoger" }}
+          </button>
+          <span v-else-if="meseroPedido" class="mesero-btn">{{ textos.mesero }}: {{ meseroPedido }}</span>
         </small>
       </div>
       <button class="cancelar" @click="cancelar">Cancelar</button>
@@ -82,6 +87,25 @@
                   @quitar="quitar" @enviar="enviar" @cerrar="verCarrito = false" />
     <ClienteSheet v-if="verCliente && config" :actual="cliente" :por-defecto="config.cliente_default"
                   @escoger="cambiarCliente" @cerrar="verCliente = false" />
+    <MeseroSheet v-if="verMesero && meseros.length" :meseros="meseros" :actual="meseroSel?.cod" :titulo="titulo"
+                 :cerrable="!!meseroSel" @escoger="escogerMesero" @cerrar="verMesero = false" @volver="cancelar" />
+
+    <!-- Sin meseros del día no se monta el pedido: la caja debe registrarlos -->
+    <div v-if="sinMeseros" class="velo">
+      <div class="hoja">
+        <div class="hoja__cuerpo sin-meseros">
+          <span class="sin-meseros__ico"><Icono nombre="alerta" :tam="38" /></span>
+          <h2>Sin {{ t("meseros") }} del día</h2>
+          <p>{{ sinMeseros }}</p>
+        </div>
+        <div class="hoja__pie sin-meseros__acc">
+          <button class="btn btn--primario btn--bloque" :disabled="revisando" @click="cargarMeseros">
+            <Icono nombre="refrescar" :tam="18" /> Ya los agregaron
+          </button>
+          <button class="btn btn--bloque" @click="cancelar">Volver</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -94,6 +118,7 @@ import CarritoSheet from "../componentes/CarritoSheet.vue"
 import ClienteSheet from "../componentes/ClienteSheet.vue"
 import ListaCategorias from "../componentes/ListaCategorias.vue"
 import CarrilChips from "../componentes/CarrilChips.vue"
+import MeseroSheet from "../componentes/MeseroSheet.vue"
 import { api } from "../api"
 import { cantidad, colorAlterno, pesos, valorLinea } from "../formato"
 import { showConfirm, showToast } from "@/utils/toast"
@@ -122,6 +147,38 @@ const verCliente = ref(false)
 let mesaBloqueo = mesa ? { id_mesa: mesa.id, mesa: mesa.nombre } : null
 let enviado = false
 let latido = null
+
+// Mesero del día al que se asigna el pedido nuevo (queda preseleccionado el último de este dispositivo)
+const CLAVE_MESERO = "ag_ultimo_mesero"
+const meseros = ref([])
+const meseroSel = ref(null)
+const meseroPedido = ref("")
+const verMesero = ref(false)
+const sinMeseros = ref("")
+const revisando = ref(false)
+
+async function cargarMeseros() {
+  revisando.value = true
+  try {
+    const r = await api.get("/meseros-dia")
+    meseros.value = r.meseros
+    sinMeseros.value = r.meseros.length ? "" : r.aviso
+    let ultimo = 0
+    try { ultimo = Number(localStorage.getItem(CLAVE_MESERO)) } catch { /* sin almacenamiento */ }
+    meseroSel.value = r.meseros.find(m => m.cod === (meseroSel.value?.cod ?? ultimo)) || null
+    verMesero.value = r.meseros.length > 0
+  } catch (e) {
+    showToast(e.message, "error", 4000)
+  } finally {
+    revisando.value = false
+  }
+}
+
+function escogerMesero(m) {
+  meseroSel.value = m
+  verMesero.value = false
+  try { localStorage.setItem(CLAVE_MESERO, String(m.cod)) } catch { /* sin almacenamiento */ }
+}
 
 const colores = computed(() => carta.value?.colores || { categorias: [], productos: [] })
 
@@ -216,10 +273,16 @@ function quitar(l) {
 }
 
 async function enviar() {
+  if (!nro && !meseroSel.value) {
+    verCarrito.value = false
+    if (sinMeseros.value || !meseros.value.length) return cargarMeseros()
+    verMesero.value = true
+    return showToast(`Escoja el ${t("mesero")} del pedido.`, "warning", 2500)
+  }
   enviando.value = true
   const detalle = lineas.value.map(l => ({
     id_plato: l.id_plato, cantidad: l.cantidad, presentacion: l.presentacion, precio: l.precio,
-    descripcion: l.descripcion, novedades: l.novedades, opciones: l.opciones,
+    descripcion: l.descripcion, novedades: l.novedades, nota: l.nota, opciones: l.opciones,
   }))
   try {
     if (nro) {
@@ -227,7 +290,7 @@ async function enviar() {
     } else {
       await api.post("/pedidos", {
         ...(mesa ? { mesa } : { cuenta_nueva: cuentaNueva }),
-        id_cliente: cliente.value.id, lineas: detalle,
+        id_cliente: cliente.value.id, mesero: meseroSel.value.cod, lineas: detalle,
       })
       mesaBloqueo = null            // el agente libera la mesa al crear el pedido
     }
@@ -254,7 +317,7 @@ function volver() {
   router.back()
 }
 
-// Vuelve a Mis cuentas; si hay productos sin enviar pide confirmación (igual que la flecha)
+// Vuelve a las cuentas abiertas; si hay productos sin enviar pide confirmación (igual que la flecha)
 function cancelar() {
   router.replace("/cuentas")
 }
@@ -277,9 +340,11 @@ onMounted(async () => {
       const p = await api.get("/pedido", { nro })
       cliente.value = p.cliente
       titulo.value = p.mesa
+      meseroPedido.value = p.mesero
       mesaBloqueo = { id_mesa: p.id_mesa, mesa: p.mesa }
       await api.post("/mesas/bloquear", mesaBloqueo)
     }
+    if (!nro) await cargarMeseros()
     await cargarCarta()
     // Mantiene la mesa bloqueada mientras se toma el pedido (el bloqueo vence a los 10 min)
     if (mesaBloqueo) latido = setInterval(bloquear, 4 * 60 * 1000)
@@ -308,6 +373,13 @@ onBeforeUnmount(() => {
 .chip__foto { width: 26px; height: 26px; margin-left: -8px; border-radius: 50%; object-fit: cover; background: #fff; }
 .cliente-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font-size: 12px; opacity: .9; text-decoration: underline; text-underline-offset: 2px; }
 .cliente-btn:disabled { text-decoration: none; cursor: default; }
+.mesero-btn { margin-left: 10px; font-size: 12px; }
+.sin-meseros { text-align: center; }
+.sin-meseros__ico { width: 72px; height: 72px; margin: 4px auto 10px; border-radius: 50%; background: var(--ambar-claro); color: #b45309;
+                    display: flex; align-items: center; justify-content: center; }
+.sin-meseros h2 { margin: 0 0 8px; font-size: 20px; }
+.sin-meseros p { margin: 0; color: var(--texto-suave); font-size: 15px; }
+.sin-meseros__acc { display: flex; flex-direction: column; gap: 8px; }
 
 .filtros { position: sticky; top: var(--barra-alto); z-index: 15; background: var(--fondo); padding: 10px 12px 0; max-width: 1100px; margin: 0 auto; }
 .filtros--ancho { max-width: 1320px; }

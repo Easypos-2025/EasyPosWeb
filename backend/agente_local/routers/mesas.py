@@ -4,7 +4,8 @@ Como el escritorio: se muestran las zonas activas (zonas_asientos.Activa = 1) co
 (mesas.Activa no se usa para esto). Cada zona trae su color, y el alto de los botones es el de la
 primera zona en orden alfabético (aplica a todas).
 Estado de cada mesa (datatemppos):
-  libre · mia (tiene un pedido mío) · ocupada (pedido de otro mesero) · abierta (en otro equipo)
+  libre · pedido (pedido de la toma de pedidos: cualquier dispositivo lo abre y le agrega, con el
+  nombre del mesero asignado) · ocupada (pedido montado en caja) · abierta (en otro equipo)
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -12,10 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_emp, get_tmp
-from ..servicios import bloqueos
+from ..servicios import bloqueos, meseros
 from ..servicios.catalogo import color_vb
 from ..sesion import Mesero, mesero_actual
-from ..textos import t
 
 router = APIRouter(prefix="/api/ag", tags=["mesas"])
 
@@ -40,7 +40,8 @@ async def listar_mesas(mesero: Mesero = Depends(mesero_actual),
     altura = (await emp.execute(text(
         "SELECT Altura FROM zonas_asientos ORDER BY Ubicacion LIMIT 1"))).scalar()
     pedidos = {r["Mesa"]: r for r in (await tmp.execute(text(
-        "SELECT Mesa, Mesero, Nro_Pedido FROM temp_comanda"))).mappings().all()}
+        "SELECT Mesa, Mesero, Nro_Pedido, Movil FROM temp_comanda"))).mappings().all()}
+    nombres = await meseros.nombres(emp, tmp, {p["Mesero"] for p in pedidos.values() if int(p["Movil"] or 0) == 1})
     abiertas = {int(r[0]) for r in (await tmp.execute(text(
         "SELECT Id_Mesa FROM temp_mesa_abierta WHERE Abierta = 1"))).all()}
     mias = {int(r[0]) for r in (await tmp.execute(text(
@@ -49,8 +50,9 @@ async def listar_mesas(mesero: Mesero = Depends(mesero_actual),
     def estado(m) -> dict:
         p = pedidos.get(m["Mesa"])
         if p:
-            if int(p["Mesero"] or 0) == mesero.cod_empleado:
-                return {"estado": "mia", "nro_pedido": p["Nro_Pedido"]}
+            if int(p["Movil"] or 0) == 1:
+                return {"estado": "pedido", "nro_pedido": p["Nro_Pedido"],
+                        "mesero": nombres.get(int(p["Mesero"] or 0)) or ""}
             return {"estado": "ocupada"}
         if int(m["Id_Mesa"]) in abiertas and int(m["Id_Mesa"]) not in mias:
             return {"estado": "abierta"}
@@ -76,19 +78,19 @@ async def mesa_existe(emp: AsyncSession, id_mesa: int, mesa: str) -> bool:
 
 
 async def _mesa_permitida(emp: AsyncSession, tmp: AsyncSession, data: MesaIn, mesero: Mesero) -> None:
-    """Mesa de una zona activa, o cuenta (Id >= 1000) de un pedido mío."""
+    """Mesa de una zona activa, o cuenta (Id >= 1000) de un pedido de la toma de pedidos."""
     existe = await mesa_existe(emp, data.id_mesa, data.mesa)
     if not existe:
         existe = (await tmp.execute(text("""
-            SELECT COUNT(*) FROM temp_comanda WHERE Imprimio_Precuenta = :i AND Mesa = :m AND Mesero = :c
-        """), {"i": data.id_mesa, "m": data.mesa, "c": mesero.cod_empleado})).scalar()
+            SELECT COUNT(*) FROM temp_comanda WHERE Imprimio_Precuenta = :i AND Mesa = :m AND Movil = 1
+        """), {"i": data.id_mesa, "m": data.mesa})).scalar()
     if not existe:
         raise HTTPException(status_code=404, detail=f"'{data.mesa.strip()}' no existe.")
-    otro = (await tmp.execute(text("""
-        SELECT COUNT(*) FROM temp_comanda WHERE Mesa = :m AND Mesero <> :c
-    """), {"m": data.mesa, "c": mesero.cod_empleado})).scalar()
-    if otro:
-        raise HTTPException(status_code=409, detail=f"'{data.mesa.strip()}' tiene un pedido de otro {t('mesero')}.")
+    en_caja = (await tmp.execute(text("""
+        SELECT COUNT(*) FROM temp_comanda WHERE Mesa = :m AND Movil = 0
+    """), {"m": data.mesa})).scalar()
+    if en_caja:
+        raise HTTPException(status_code=409, detail=f"'{data.mesa.strip()}' tiene un pedido montado en caja.")
 
 
 @router.post("/mesas/bloquear")
