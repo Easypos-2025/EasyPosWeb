@@ -1046,6 +1046,26 @@ async def pull_invoice_details(
 # ═════════════════════════════════════════
 # INVOICE PAYMENT METHODS (factura_forma_pago)
 # ═════════════════════════════════════════
+async def _pasar_forma_pago(db: AsyncSession, tabla: str, p: dict) -> None:
+    """"Pasar Crédito/Débito" del escritorio cambia la forma de pago de una fila ya subida: la fila
+    se identifica por factura + pedido + item. Si llega con otra forma de pago / tarjeta, se actualiza
+    esa misma fila (luego el upsert le pone el valor) en vez de crear otra. Nunca se borra nada."""
+    llave = {"cid": p["company_id"], "inv": p["invoice_number"], "item": p["item"],
+             "on": p.get("order_number") or "", "pm": p["payment_method_id"], "card": p["card_id"]}
+    existe = (await db.execute(text(f"""
+        SELECT 1 FROM {tabla} WHERE company_id = :cid AND invoice_number = :inv AND item = :item
+          AND payment_method_id = :pm AND card_id = :card LIMIT 1
+    """), llave)).first()
+    if existe:
+        return
+    await db.execute(text(f"""
+        UPDATE {tabla} SET payment_method_id = :pm, card_id = :card
+        WHERE company_id = :cid AND invoice_number = :inv AND item = :item
+          AND COALESCE(order_number, '') = :on
+        ORDER BY updated_at DESC LIMIT 1
+    """), llave)
+
+
 class InvoicePaymentIn(BaseModel):
     item: int
     payment_method_id: int
@@ -1072,6 +1092,7 @@ async def push_invoice_payments(
     for p in payments:
         key = f"{p.item}|{p.payment_method_id}|{p.card_id}|{p.invoice_number}"
         try:
+            await _pasar_forma_pago(db, "pos_invoice_payment_methods", p.dict())
             await db.execute(text("""
                 INSERT INTO pos_invoice_payment_methods (
                     item, payment_method_id, card_id, invoice_number, company_id,
@@ -1322,6 +1343,7 @@ async def push_receipt_payments(
     for p in payments:
         key = f"{p.item}|{p.payment_method_id}|{p.card_id}|{p.invoice_number}"
         try:
+            await _pasar_forma_pago(db, "pos_receipt_payment_methods", p.dict())
             await db.execute(text("""
                 INSERT INTO pos_receipt_payment_methods (
                     item, payment_method_id, card_id, invoice_number, company_id,

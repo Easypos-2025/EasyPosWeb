@@ -20,6 +20,7 @@ from app.utils.excel_ventas import build_ventas_excel
 from app.routers.metricas_router import _query_export
 
 from app.services import periodos as per
+from app.services.formas_pago import pago_vigente_sql
 
 from pydantic import BaseModel
 
@@ -426,6 +427,7 @@ async def get_venta_detalle(
             LEFT JOIN pos_payment_types pt
                    ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
             WHERE pm.invoice_number = :numero AND pm.company_id = :cid
+              AND """ + pago_vigente_sql("pm", "pos_receipt_payment_methods") + """
             ORDER BY pm.item
         """), {"cid": cid, "numero": numero})
         pagos_detalle = [{"amount": float(r.amount or 0), "name": r.name} for r in pm_rows]

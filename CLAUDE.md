@@ -208,6 +208,8 @@ Catálogo de formas de pago con sus variantes:
 - `Seleccionar_Tarjeta`: al seleccionar esta forma de pago, debe aparecer la opción de escoger la tarjeta usada de una lista (`tarjetas_baucher.Activa = 1`).
 - `Pedir_Observacion`: exige capturar una observación para poder continuar con el proceso.
 - `Pedir_Cliente`: obliga a seleccionar un cliente de la tabla `clientes`.
+- **REGLA — `forma_pago.Suma_Efectivo` NO se usa**: se omite en todo sitio relacionado con consultas de recibos/facturas y sus formas de pago (cuadre, métricas, consultas, reportes, impresión; web y funciones VB). El efectivo sale de `factura_forma_pago.Valor` / `recibos_forma_pago.Valor` de la forma de pago EFECTIVO (en VB: `Id_Forma_Pago = Var_Id_forma_pago_Efectivo`; en web: `app/services/formas_pago.py`) o de `Valor_Efectivo` del encabezado.
+- **Fila de forma de pago = Nro_Factura + Nro_Pedido + Item**: "Pasar Crédito/Débito" del escritorio cambia la forma de pago de esa misma fila; en la web vale solo la más reciente (`formas_pago.pago_vigente_sql`). Nunca se borran filas de las tablas reales.
 - `Forma_Pago_Default`: identifica la forma de pago por defecto (generalmente EFECTIVO), la cual el sistema usa automáticamente al momento de liquidar un recibo. El usuario puede cambiarla a una o varias, pero siempre debe quedar una marcada como default.
 
 Debe existir una forma de pago **CREDITO** (`forma_pago.Descripcion_Forma_Pago = "CREDITO"`), que obligatoriamente debe tener activo `Pedir_Cliente` para seleccionar el cliente al que se le asigna el crédito.

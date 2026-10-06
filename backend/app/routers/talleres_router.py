@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from app.routers.pos_shift_router import require_open_shift
 from app.services import recibo_caja as rc
 from app.services import permisos
+from app.services.formas_pago import pago_vigente_sql
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/talleres", tags=["talleres"], dependencies=[Depends(tenant_guard)])
@@ -2060,6 +2061,7 @@ async def imprimir_pos(
         FROM pos_receipt_payment_methods prm
         LEFT JOIN pos_payment_types pt ON pt.id = prm.payment_method_id AND pt.company_id = prm.company_id
         WHERE prm.invoice_number = :rn AND prm.company_id = :cid
+          AND """ + pago_vigente_sql("prm", "pos_receipt_payment_methods") + """
     """), {"rn": receipt_number, "cid": company_id})).mappings().all()
 
     company_name = (await db.execute(text(

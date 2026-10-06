@@ -32,6 +32,7 @@ from app.auth.tenant import tenant_guard
 from app.models.user_model import User
 from app.routers.pos_shift_router import _id_caja_header, _turno_abierto
 from app.services import config_facturacion as cfg_svc
+from app.services.formas_pago import pago_vigente_sql
 
 router = APIRouter(prefix="/api/pos/recibo-impresion", tags=["POS Recibo Impresión"],
                    dependencies=[Depends(tenant_guard)])
@@ -118,6 +119,7 @@ async def _datos_recibo(db: AsyncSession, cid: int, rn: str) -> dict:
         FROM pos_receipt_payment_methods prm
         LEFT JOIN pos_payment_types pt ON pt.id = prm.payment_method_id AND pt.company_id = prm.company_id
         WHERE prm.company_id = :cid AND prm.invoice_number = :rn AND prm.date = :d
+          AND """ + pago_vigente_sql("prm", "pos_receipt_payment_methods") + """
         ORDER BY prm.item
     """), {"cid": cid, "rn": rn, "d": rc["date"]})).mappings().all()
 

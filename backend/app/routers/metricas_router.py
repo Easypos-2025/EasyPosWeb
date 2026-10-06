@@ -17,6 +17,7 @@ from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.utils.excel_ventas import build_ventas_excel
+from app.services.formas_pago import pago_vigente_sql
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/metricas", tags=["Métricas"], dependencies=[Depends(tenant_guard)])
@@ -200,7 +201,7 @@ _FP_EXPR = """
     FROM {tabla} pm
     LEFT JOIN pos_payment_types pt
            ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
-    WHERE pm.company_id = :cid {extra}
+    WHERE pm.company_id = :cid {extra} AND {vigente}
     GROUP BY {date_col}, forma_pago
 """
 
@@ -212,10 +213,10 @@ def _fp_sql(tipo: str, date_group: str, year_filter: str) -> str:
 
     q_fact = _FP_EXPR.format(
         date_col=fact_date, tabla="pos_invoice_payment_methods",
-        extra=extra_f)
+        extra=extra_f, vigente=pago_vigente_sql("pm", "pos_invoice_payment_methods"))
     q_rec = _FP_EXPR.format(
         date_col=fact_date, tabla="pos_receipt_payment_methods",
-        extra=extra_r)
+        extra=extra_r, vigente=pago_vigente_sql("pm", "pos_receipt_payment_methods"))
 
     if tipo == "facturas":
         return q_fact
@@ -598,6 +599,7 @@ def _sql_fp_facturas():
         FROM pos_invoice_payment_methods pm
         LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
         WHERE pm.company_id = :cid AND pm.date BETWEEN :desde AND :hasta
+          AND """ + pago_vigente_sql("pm", "pos_invoice_payment_methods") + """
         ORDER BY pm.date, pm.invoice_number, pm.item
     """
 
@@ -618,6 +620,7 @@ def _sql_fp_recibos():
         FROM pos_receipt_payment_methods pm
         LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
         WHERE pm.company_id = :cid AND pm.date BETWEEN :desde AND :hasta
+          AND """ + pago_vigente_sql("pm", "pos_receipt_payment_methods") + """
         ORDER BY pm.date, pm.invoice_number, pm.item
     """
 

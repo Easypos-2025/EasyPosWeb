@@ -11,10 +11,10 @@ recibos por caja_recibos.Id_Caja (closing_id), facturas por caja_facturas.Id_Caj
 gastos / compras / otros ingresos / otros egresos / vales por register_id.
 
 Reglas de efectivo (como el escritorio):
-  · Entra en efectivo la parte pagada con la forma de pago EFECTIVO (las demás son Otros) de la
-    venta, la propina y el domicilio; en recibos con varias formas de pago se reparte en proporción.
-  · Salen completas la propina y el domicilio: se les pagan en efectivo al mesero y al
-    domiciliario aunque el cliente haya pagado con tarjeta.
+  · Venta en efectivo = lo pagado con la forma de pago EFECTIVO (las demás son Otros) menos el
+    domicilio y la propina en efectivo (_reparto_efectivo); los desgloses muestran ese reparto real.
+  · Propina y domicilio entran y salen completos en el cuadre (neutros, como el escritorio).
+  · Formas de pago: una fila por factura + pedido + item, la más reciente.
   · Gastos, compras, otros egresos/ingresos, vales y abonos de vales: efectivo = valor − lo pagado con otras
     formas de pago (pos_cash_movement_payments).
 """
@@ -24,7 +24,7 @@ from typing import Optional
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.formas_pago import es_efectivo_sql
+from app.services.formas_pago import es_efectivo_sql, pago_vigente_sql
 
 # Movimientos de dinero del turno: (clave, tabla, título, type_id en pos_cash_movement_payments, sentido)
 MOVIMIENTOS = [
@@ -110,10 +110,11 @@ async def _documentos(db: AsyncSession, cid: int, ids: list[int], tipo: str) -> 
         return []
     nums = list(docs)
     for pm in (await db.execute(_in(f"""
-        SELECT pm.invoice_number, pm.amount, COALESCE(pt.name, 'Pago') name, {es_efectivo_sql('pt')} cash
+        SELECT pm.invoice_number, pm.amount, COALESCE(pm.delivery_amount, 0) delivery_amount,
+               COALESCE(pt.name, 'Pago') name, {es_efectivo_sql('pt')} cash
         FROM {f['pagos']} pm
         LEFT JOIN pos_payment_types pt ON pt.id = pm.payment_method_id AND pt.company_id = pm.company_id
-        WHERE pm.company_id = :cid AND pm.invoice_number IN :nums
+        WHERE pm.company_id = :cid AND pm.invoice_number IN :nums AND {pago_vigente_sql('pm', f['pagos'])}
         ORDER BY pm.item
     """, "nums"), {"cid": cid, "nums": nums})).mappings().all():
         docs[str(pm["invoice_number"])]["pagos"].append(dict(pm))
@@ -123,6 +124,24 @@ async def _documentos(db: AsyncSession, cid: int, ids: list[int], tipo: str) -> 
     """, "nums"), {"cid": cid, "nums": nums})).mappings().all():
         docs[str(d["invoice_number"])]["domicilio"] = float(d["amount"] or 0)
     return list(docs.values())
+
+
+def _reparto_efectivo(pagos: list[dict], venta: float, tip: float, dom: float) -> tuple[float, float, float]:
+    """(venta, propina, domicilio) en efectivo de un documento, como el escritorio
+    (ObtenerTotales_Recibos): el domicilio sale del Valor_Domicilio de cada forma de pago (si no
+    viene, del efectivo primero); la propina se toma primero del efectivo que queda y lo que falte
+    va a Otros; la venta en efectivo es lo restante. Sin formas de pago → todo efectivo."""
+    if not pagos:
+        return venta, tip, dom
+    ef = sum(float(p["amount"] or 0) for p in pagos if int(p["cash"] or 0))
+    dom_filas = sum(float(p["delivery_amount"] or 0) for p in pagos)
+    if dom_filas:
+        dom_ef = sum(float(p["delivery_amount"] or 0) for p in pagos if int(p["cash"] or 0))
+    else:
+        dom_ef = min(dom, max(ef, 0.0))
+    resto = ef - dom_ef
+    tip_ef = min(tip, max(resto, 0.0))
+    return min(max(resto - tip_ef, 0.0), venta), tip_ef, dom_ef
 
 
 async def _movimientos(db: AsyncSession, cid: int, ids: list[int]) -> dict:
@@ -174,15 +193,15 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
     validos = {"recibos": [], "facturas": []}
     for d in docs:
         num = d["receipt_number"]
+        pagado = sum(float(p["amount"] or 0) for p in d["pagos"])
+        d["total"] = pagado or float(d["venta"] or 0) + float(d["tip"] or 0) + float(d["domicilio"] or 0)
         if int(d["voided"] or 0):
             anuladas.append({"numero": num, "valor": _r(d["total"])})
             continue
-        pagado = sum(float(p["amount"] or 0) for p in d["pagos"])
-        en_ef = sum(float(p["amount"] or 0) for p in d["pagos"] if int(p["cash"] or 0))
-        f = (en_ef / pagado) if pagado else 1.0
         v, t, dm = float(d["venta"] or 0), float(d["tip"] or 0), float(d["domicilio"] or 0)
+        d_ef, d_tip, d_dom = _reparto_efectivo(d["pagos"], v, t, dm)
         venta += v; tip += t; dom += dm
-        venta_ef += v * f; tip_ef += t * f; dom_ef += dm * f
+        venta_ef += d_ef; tip_ef += d_tip; dom_ef += d_dom
         for p in d["pagos"]:
             formas[p["name"]] = formas.get(p["name"], 0.0) + float(p["amount"] or 0)
         cuentas.append({"numero": num, "valor": _r(d["total"])})
@@ -212,8 +231,8 @@ async def calcular(db: AsyncSession, cid: int, fecha: str, modo: str, origen: st
     ef_mov = {k: sum(m["efectivo"] for m in movs[k]) for k in movs}
     entran = [{"clave": "base_inicial", "label": "Base Inicial", "valor": _r(b_ini), "fija": True},
               {"clave": "venta", "label": "Efectivo Venta", "valor": _r(venta_ef)},
-              {"clave": "domicilio", "label": "Efectivo Domicilio", "valor": _r(dom_ef)},
-              {"clave": "propina", "label": "Efectivo Propina", "valor": _r(tip_ef)},
+              {"clave": "domicilio", "label": "Efectivo Domicilio", "valor": _r(dom)},
+              {"clave": "propina", "label": "Efectivo Propina", "valor": _r(tip)},
               {"clave": "otros_ingresos", "label": "Efectivo Otros Ingresos", "valor": ef_mov["otros_ingresos"], "ver": True},
               {"clave": "abono_vales", "label": "Efectivo Abono Vales", "valor": ef_mov["abono_vales"], "ver": True}]
     salen = [{"clave": "base_final", "label": "Base Final", "valor": _r(b_fin), "fija": True},
