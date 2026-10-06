@@ -66,15 +66,36 @@ def validar_credito(tipo: dict) -> None:
             headers={"X-Error-Code": CREDITO_NO_CONFIGURADO})
 
 
+# Comanda de cada documento (para el Nro_Pedido): facturas → comanda, recibos → recibos_comanda
+_COMANDA = {"pos_invoice_payment_methods": ("pos_orders", "invoice_number"),
+            "pos_receipt_payment_methods": ("pos_receipt_orders", "receipt_number")}
+
+
+def pedido_sql(alias: str, tabla: str) -> str:
+    """Nro_Pedido de una fila de forma de pago: el suyo o, si llegó vacío del escritorio (recibos_forma_pago
+    casi nunca lo guarda; "Pasar Crédito/Débito" sube la fila sin él), el de la comanda del documento."""
+    ordenes, num = _COMANDA[tabla]
+    return (f"COALESCE(NULLIF({alias}.order_number, ''), (SELECT MIN(o.order_number) FROM {ordenes} o "
+            f"WHERE o.company_id = {alias}.company_id AND o.{num} = {alias}.invoice_number), '')")
+
+
+async def pedido_documento(db: AsyncSession, tabla: str, cid: int, numero: str) -> str:
+    ordenes, num = _COMANDA[tabla]
+    return str((await db.execute(text(
+        f"SELECT MIN(order_number) FROM {ordenes} WHERE company_id = :cid AND {num} = :n"
+    ), {"cid": cid, "n": numero})).scalar() or "")
+
+
 def pago_vigente_sql(alias: str, tabla: str) -> str:
     """Condición SQL: la fila de recibos_forma_pago / facturas_forma_pago es la vigente.
-    Una fila de pago se identifica por factura + pedido + item; "Pasar Crédito/Débito" del escritorio
-    cambia la forma de pago de esa misma fila y la web pudo conservar la anterior (nunca se borra),
-    así que vale solo la más reciente."""
+    Una fila de pago se identifica por factura + Nro_Pedido + item (pedido_sql); "Pasar Crédito/Débito"
+    del escritorio cambia la forma de pago de esa misma fila y la web pudo conservar la anterior
+    (nunca se borra), así que vale solo la más reciente."""
     return f"""NOT EXISTS (
         SELECT 1 FROM {tabla} pv
         WHERE pv.company_id = {alias}.company_id AND pv.invoice_number = {alias}.invoice_number
-          AND pv.item = {alias}.item AND COALESCE(pv.order_number, '') = COALESCE({alias}.order_number, '')
+          AND pv.item = {alias}.item
+          AND {pedido_sql('pv', tabla)} = {pedido_sql(alias, tabla)}
           AND (pv.updated_at > {alias}.updated_at
                OR (pv.updated_at = {alias}.updated_at
                    AND (pv.payment_method_id > {alias}.payment_method_id

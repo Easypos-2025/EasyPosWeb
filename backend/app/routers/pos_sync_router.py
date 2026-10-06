@@ -1048,22 +1048,31 @@ async def pull_invoice_details(
 # ═════════════════════════════════════════
 async def _pasar_forma_pago(db: AsyncSession, tabla: str, p: dict) -> None:
     """"Pasar Crédito/Débito" del escritorio cambia la forma de pago de una fila ya subida: la fila
-    se identifica por factura + pedido + item. Si llega con otra forma de pago / tarjeta, se actualiza
+    se identifica por factura + Nro_Pedido + item (si el pedido llega vacío se toma el de la comanda
+    del documento, formas_pago.pedido_sql). Si llega con otra forma de pago / tarjeta, se actualiza
     esa misma fila (luego el upsert le pone el valor) en vez de crear otra. Nunca se borra nada."""
+    from app.services.formas_pago import pedido_documento, pedido_sql
     llave = {"cid": p["company_id"], "inv": p["invoice_number"], "item": p["item"],
-             "on": p.get("order_number") or "", "pm": p["payment_method_id"], "card": p["card_id"]}
+             "pm": p["payment_method_id"], "card": p["card_id"]}
     existe = (await db.execute(text(f"""
         SELECT 1 FROM {tabla} WHERE company_id = :cid AND invoice_number = :inv AND item = :item
           AND payment_method_id = :pm AND card_id = :card LIMIT 1
     """), llave)).first()
     if existe:
         return
-    await db.execute(text(f"""
-        UPDATE {tabla} SET payment_method_id = :pm, card_id = :card
-        WHERE company_id = :cid AND invoice_number = :inv AND item = :item
-          AND COALESCE(order_number, '') = :on
-        ORDER BY updated_at DESC LIMIT 1
-    """), llave)
+    llave["ped"] = (p.get("order_number") or "").strip() or         await pedido_documento(db, tabla, p["company_id"], p["invoice_number"])
+    ids = (await db.execute(text(f"""
+        SELECT t.payment_method_id, t.card_id FROM {tabla} t
+        WHERE t.company_id = :cid AND t.invoice_number = :inv AND t.item = :item
+          AND {pedido_sql('t', tabla)} = :ped
+        ORDER BY t.updated_at DESC LIMIT 1
+    """), llave)).first()
+    if ids:
+        await db.execute(text(f"""
+            UPDATE {tabla} SET payment_method_id = :pm, card_id = :card
+            WHERE company_id = :cid AND invoice_number = :inv AND item = :item
+              AND payment_method_id = :viejo_pm AND card_id = :viejo_card
+        """), llave | {"viejo_pm": ids[0], "viejo_card": ids[1]})
 
 
 class InvoicePaymentIn(BaseModel):

@@ -93,7 +93,6 @@ async def get_ventas(
                 COALESCE(i.cash_amount, 0)
                   + COALESCE(i.credit_card_amount, 0)
                   + COALESCE(i.debit_card_amount, 0)
-                  + COALESCE(i.adjustment, 0)
                   - COALESCE(i.discount, 0)                AS valor,
                 COALESCE(i.tip, 0) + COALESCE(i.extra_tip, 0) AS propina,
                 COALESCE(
@@ -127,7 +126,6 @@ async def get_ventas(
                 COALESCE(rc.cash_amount, 0)
                   + COALESCE(rc.credit_card_amount, 0)
                   + COALESCE(rc.debit_card_amount, 0)
-                  + COALESCE(rc.adjustment, 0)
                   - COALESCE(rc.discount, 0)              AS valor,
                 COALESCE(rc.tip, 0) + COALESCE(rc.extra_tip, 0) AS propina,
                 COALESCE(
@@ -180,7 +178,7 @@ async def get_ventas_resumen(
         r = (await db.execute(text(f"""
             SELECT COUNT(*) n,
                    COALESCE(SUM(COALESCE(x.cash_amount,0) + COALESCE(x.credit_card_amount,0)
-                       + COALESCE(x.debit_card_amount,0) + COALESCE(x.adjustment,0) - COALESCE(x.discount,0)), 0) v,
+                       + COALESCE(x.debit_card_amount,0) - COALESCE(x.discount,0)), 0) v,
                    COALESCE(SUM(COALESCE(x.tip,0) + COALESCE(x.extra_tip,0)), 0) p,
                    COALESCE((SELECT SUM(d.amount) FROM {dom} d
                              JOIN {tabla} y ON y.{num} = d.invoice_number AND y.company_id = d.company_id
@@ -283,12 +281,10 @@ async def get_venta_detalle(
                 COALESCE(i.cash_amount, 0)
                   + COALESCE(i.credit_card_amount, 0)
                   + COALESCE(i.debit_card_amount, 0)
-                  + COALESCE(i.adjustment, 0)
                   - COALESCE(i.discount, 0)               AS total,
                 COALESCE(i.cash_amount, 0)                AS efectivo,
                 COALESCE(i.credit_card_amount, 0)         AS tarjeta_credito,
                 COALESCE(i.debit_card_amount, 0)          AS tarjeta_debito,
-                COALESCE(i.adjustment, 0)                 AS ajuste,
                 COALESCE(i.discount, 0)                   AS descuento,
                 COALESCE(i.shift, '')                     AS turno,
                 COALESCE(o.table_name, '')                AS mesa,
@@ -338,12 +334,10 @@ async def get_venta_detalle(
                 COALESCE(rc.cash_amount, 0)
                   + COALESCE(rc.credit_card_amount, 0)
                   + COALESCE(rc.debit_card_amount, 0)
-                  + COALESCE(rc.adjustment, 0)
                   - COALESCE(rc.discount, 0)             AS total,
                 COALESCE(rc.cash_amount, 0)               AS efectivo,
                 COALESCE(rc.credit_card_amount, 0)        AS tarjeta_credito,
                 COALESCE(rc.debit_card_amount, 0)         AS tarjeta_debito,
-                COALESCE(rc.adjustment, 0)                AS ajuste,
                 COALESCE(rc.discount, 0)                  AS descuento,
                 COALESCE(rc.shift, '')                    AS turno,
                 COALESCE(ro.table_name, '')               AS mesa,

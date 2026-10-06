@@ -248,7 +248,7 @@ async def command_history(
                 COALESCE(w.name, '')                                AS mesero,
                 COALESCE(o.order_number, '')                        AS order_number,
                 COALESCE(i.cash_amount,0)+COALESCE(i.credit_card_amount,0)
-                  +COALESCE(i.debit_card_amount,0)+COALESCE(i.adjustment,0)
+                  +COALESCE(i.debit_card_amount,0)
                   -COALESCE(i.discount,0)                          AS valor,
                 'factura'                                           AS tipo
             FROM pos_invoices i
@@ -277,7 +277,7 @@ async def command_history(
                 COALESCE(w.name, '')                                AS mesero,
                 COALESCE(ro.order_number, '')                       AS order_number,
                 COALESCE(rc.cash_amount,0)+COALESCE(rc.credit_card_amount,0)
-                  +COALESCE(rc.debit_card_amount,0)+COALESCE(rc.adjustment,0)
+                  +COALESCE(rc.debit_card_amount,0)
                   -COALESCE(rc.discount,0)                         AS valor,
                 'recibo'                                            AS tipo
             FROM pos_receipts rc

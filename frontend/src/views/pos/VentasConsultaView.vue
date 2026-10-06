@@ -245,7 +245,6 @@
                     <div v-if="detalle.header.efectivo>0"        class="vc-pago-row"><span>Efectivo</span><span>{{ fmt(detalle.header.efectivo) }}</span></div>
                     <div v-if="detalle.header.tarjeta_credito>0" class="vc-pago-row"><span>T. Crédito</span><span>{{ fmt(detalle.header.tarjeta_credito) }}</span></div>
                     <div v-if="detalle.header.tarjeta_debito>0"  class="vc-pago-row"><span>T. Débito</span><span>{{ fmt(detalle.header.tarjeta_debito) }}</span></div>
-                    <div v-if="detalle.header.ajuste!=0"         class="vc-pago-row"><span>Ajuste</span><span>{{ fmt(detalle.header.ajuste) }}</span></div>
                     <div v-if="detalle.header.descuento>0"       class="vc-pago-row text-danger"><span>Descuento</span><span>-{{ fmt(detalle.header.descuento) }}</span></div>
                   </template>
                   <div class="vc-pago-row vc-pago-total"><span>Total</span><span>{{ fmt(detalle.header.total) }}</span></div>

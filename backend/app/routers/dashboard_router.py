@@ -231,7 +231,7 @@ async def get_sysadmin_company_billing(
     fact = (await db.execute(text(f"""
         SELECT COUNT(*) AS cnt,
                COALESCE(SUM(COALESCE(cash_amount,0)+COALESCE(credit_card_amount,0)
-                            +COALESCE(debit_card_amount,0)+COALESCE(adjustment,0)
+                            +COALESCE(debit_card_amount,0)
                             -COALESCE(discount,0)),0) AS total
         FROM pos_invoices i
         WHERE i.company_id = :cid AND {df} AND i.voided = 0
@@ -240,7 +240,7 @@ async def get_sysadmin_company_billing(
     rec = (await db.execute(text(f"""
         SELECT COUNT(*) AS cnt,
                COALESCE(SUM(COALESCE(cash_amount,0)+COALESCE(credit_card_amount,0)
-                            +COALESCE(debit_card_amount,0)+COALESCE(adjustment,0)
+                            +COALESCE(debit_card_amount,0)
                             -COALESCE(discount,0)),0) AS total
         FROM pos_receipts rc
         WHERE rc.company_id = :cid AND {dr} AND rc.voided = 0
