@@ -1,8 +1,11 @@
 """
-Pedidos montados desde la toma de pedidos (temp_comanda.Movil = 1): todos los dispositivos los
-ven y les agregan, porque un mismo dispositivo lo usan varios meseros. Cada pedido queda
-asignado al mesero del día que se escoge al montarlo (temp_comanda.Mesero), no al usuario
-del dispositivo. Los pedidos montados en el escritorio (Movil = 0) se manejan solo allá.
+Pedidos abiertos: todos los dispositivos ven y agregan a TODOS los pedidos (de la toma de pedidos
+o de caja), porque un mismo dispositivo lo usan varios meseros. Reglas del escritorio:
+  · Salio = 0 en temp_comanda y en temp_detalle_comanda = enviado/abierto; Salio = 1 = se está
+    montando en el escritorio (no se muestra en ninguna parte hasta que se envía).
+  · Domicilio = 1: pedidos de domicilio, no se muestran aquí.
+Cada pedido nuevo queda asignado al mesero del día que se escoge al montarlo (temp_comanda.Mesero),
+no al usuario del dispositivo. Agregar productos conserva el mesero del pedido.
 
 Las escrituras usan una conexión propia con un candado de MariaDB (GET_LOCK) para que dos
 dispositivos no creen a la vez la misma cuenta, el mismo Nro_Pedido o los mismos Items.
@@ -75,11 +78,15 @@ async def _escritura():
             await conn.commit()
 
 
-async def _pedido_movil(db, nro: str):
-    """Pedido abierto montado desde la toma de pedidos (cualquier dispositivo)."""
-    fila = (await db.execute(text("""
+# Pedido visible: enviado (Salio = 0) y que no es domicilio
+VISIBLE = "Salio = 0 AND COALESCE(Domicilio, 0) <> 1"
+
+
+async def _pedido_abierto(db, nro: str):
+    """Pedido abierto de cualquier origen (toma de pedidos o caja), que no sea domicilio."""
+    fila = (await db.execute(text(f"""
         SELECT Nro_Pedido, Mesa, Imprimio_Precuenta, Id_Cliente, Hora, Salio, Mesero
-        FROM temp_comanda WHERE Nro_Pedido = :n AND Movil = 1
+        FROM temp_comanda WHERE Nro_Pedido = :n AND {VISIBLE}
     """), {"n": nro})).mappings().first()
     if not fila or int(fila["Salio"] or 0) != 0:
         raise HTTPException(status_code=404, detail="Pedido no encontrado.")
@@ -97,14 +104,15 @@ async def meseros_del_dia(_: Mesero = Depends(mesero_actual), tmp: AsyncSession 
 @router.get("/pedidos")
 async def pedidos_abiertos(_: Mesero = Depends(mesero_actual), emp: AsyncSession = Depends(get_emp),
                            tmp: AsyncSession = Depends(get_tmp)):
-    """Todos los pedidos abiertos de la toma de pedidos, de cualquier dispositivo y mesero."""
+    """Todos los pedidos abiertos (de cualquier dispositivo, mesero o de caja), sin domicilios.
+    Solo cuenta el detalle enviado (Salio = 0)."""
     filas = (await tmp.execute(text("""
         SELECT c.Nro_Pedido, c.Mesa, c.Imprimio_Precuenta, c.Hora, c.Id_Cliente, c.Mesero,
                COALESCE(SUM(CASE WHEN d.Mostrar = 1 THEN d.Valor END), 0) AS total,
                COALESCE(SUM(CASE WHEN d.Mostrar = 1 THEN d.Cantidad END), 0) AS unidades
         FROM temp_comanda c
-        LEFT JOIN temp_detalle_comanda d ON d.Nro_pedido = c.Nro_Pedido
-        WHERE c.Movil = 1 AND c.Salio = 0
+        LEFT JOIN temp_detalle_comanda d ON d.Nro_pedido = c.Nro_Pedido AND d.Salio = 0
+        WHERE c.Salio = 0 AND COALESCE(c.Domicilio, 0) <> 1
         GROUP BY c.Nro_Pedido, c.Mesa, c.Imprimio_Precuenta, c.Hora, c.Id_Cliente, c.Mesero
         ORDER BY c.Mesa
     """))).mappings().all()
@@ -118,11 +126,11 @@ async def pedidos_abiertos(_: Mesero = Depends(mesero_actual), emp: AsyncSession
 @router.get("/pedido")
 async def ver_pedido(nro: str = Query(min_length=1, max_length=255), _: Mesero = Depends(mesero_actual),
                      emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
-    pedido = await _pedido_movil(tmp, nro)
+    pedido = await _pedido_abierto(tmp, nro)
     filas = (await tmp.execute(text("""
         SELECT Item, Depende, Id_Plato, Descripcion, Producto_Personalizado, Cantidad, Valor, Novedad,
                Impreso, Salio, Mostrar
-        FROM temp_detalle_comanda WHERE Nro_pedido = :n ORDER BY Item
+        FROM temp_detalle_comanda WHERE Nro_pedido = :n AND Salio = 0 ORDER BY Item
     """), {"n": nro})).mappings().all()
     lineas: dict[str, dict] = {}
     for f in filas:
@@ -174,12 +182,12 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
             id_mesa = int(maximo) + 1 if maximo else ID_CUENTA_NUEVA
 
         await meseros.validar(conn, data.mesero)
-        movil = (await conn.execute(text("SELECT Movil FROM temp_comanda WHERE Mesa = :m LIMIT 1"),
-                                    {"m": nombre_mesa})).scalar()
-        if movil is not None:
-            if int(movil or 0) == 1:
+        existente = (await conn.execute(text(f"SELECT {VISIBLE} AS visible FROM temp_comanda WHERE Mesa = :m LIMIT 1"),
+                                        {"m": nombre_mesa})).scalar()
+        if existente is not None:
+            if int(existente or 0) == 1:
                 raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' ya tiene un pedido abierto. Agregue los {t('productos')} a ese pedido.")
-            raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' tiene un pedido montado en caja.")
+            raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' está en uso en caja.")
         otro = await bloqueos.quien_bloquea(conn, id_mesa, nombre_mesa, mesero)
         if otro:
             raise HTTPException(status_code=409, detail=f"'{nombre_mesa.strip()}' está en uso en {otro}.")
@@ -214,13 +222,13 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
 @router.post("/pedido/agregar")
 async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = Depends(mesero_actual),
                             emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
-    pedido = await _pedido_movil(tmp, data.nro_pedido)
+    pedido = await _pedido_abierto(tmp, data.nro_pedido)
     # Los precios salen de la lista del cliente del pedido
     lineas = await preparar_lineas(emp, tmp, data.lineas, int(pedido["Id_Cliente"] or CLIENTE_CONSUMIDOR_FINAL))
     fecha = await fecha_negocio(tmp)
 
     async with _escritura() as conn:
-        pedido = await _pedido_movil(conn, data.nro_pedido)
+        pedido = await _pedido_abierto(conn, data.nro_pedido)
         otro = await bloqueos.quien_bloquea(conn, int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"], mesero)
         if otro:
             raise HTTPException(status_code=409, detail=f"'{pedido['Mesa'].strip()}' está en uso en {otro}.")

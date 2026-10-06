@@ -298,15 +298,10 @@ async def qr_direccion(_=Depends(admin_actual)):
 
 @router.post("/actualizar")
 async def actualizar_ahora(request: Request, _=Depends(admin_actual)):
-    if not actualizador.disponible():
-        raise HTTPException(status_code=409, detail="El agente ya tiene la versión vigente.")
-    if not actualizador.estado["descargada"]:
-        await actualizador.descargar_si_hace_falta()
     try:
-        actualizador.aplicar("botón del panel")
+        await actualizador.aplicar_ahora("botón del panel")
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    await actualizador.publicar_aviso()
     await auditoria.registrar("actualizar", "ok", ip_cliente(request), detalle=actualizador.estado["descargada"])
     return {"ok": True, "nueva": actualizador.estado["descargada"]}
 

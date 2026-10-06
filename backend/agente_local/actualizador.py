@@ -187,6 +187,26 @@ def aplicar(motivo: str) -> None:
     log.info("Actualización %s → %s iniciada (%s)", VERSION, nueva, motivo)
 
 
+async def aplicar_ahora(motivo: str) -> str:
+    """Opción A (panel del agente o pantalla de los meseros): descarga si falta y aplica.
+    Solo instala la versión vigente publicada, verificada por su huella. Lanza RuntimeError."""
+    if not disponible():
+        raise RuntimeError("El agente ya tiene la versión vigente.")
+    if not estado["descargada"]:
+        await descargar_si_hace_falta()
+    aplicar(motivo)
+    await publicar_aviso()
+    return estado["descargada"]
+
+
+def para_dispositivos() -> dict:
+    """Lo que ve la mini-app: solo si hay una versión nueva lista para instalar."""
+    v = estado["vigente"] or {}
+    lista = bool(disponible() and estado["descargada"] and estado["descargada"] == v.get("version"))
+    return {"lista": lista, "aplicando": bool(estado["aplicando"]),
+            "nueva": v.get("version") if lista else None, "notas": v.get("notas") if lista else None}
+
+
 def texto_aviso() -> str:
     """Aviso para mostrar en el escritorio (vacío si no hay nada que avisar)."""
     v = estado["vigente"] or {}

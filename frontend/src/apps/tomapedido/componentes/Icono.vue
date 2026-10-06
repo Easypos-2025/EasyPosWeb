@@ -39,6 +39,8 @@ const ICONOS = {
   wifi:      ["M5 12.5a10 10 0 0 1 14 0", "M8.5 16a5 5 0 0 1 7 0", "M12 20h.01", "M2 9a15 15 0 0 1 20 0"],
   descargar: ["M12 3v12", "M7 10l5 5 5-5", "M4 21h16"],
   pc:        ["M3 4h18v12H3z", "M8 20h8", "M12 16v4"],
+  expandir:  ["M8 3H3v5", "M16 3h5v5", "M8 21H3v-5", "M16 21h5v-5"],
+  contraer:  ["M3 8h5V3", "M21 8h-5V3", "M3 16h5v5", "M21 16h-5v5"],
 }
 const trazos = computed(() => ICONOS[props.nombre] || [])
 </script>

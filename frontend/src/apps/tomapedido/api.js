@@ -15,6 +15,8 @@ export class ErrorApi extends Error {
 }
 
 export const conexion = reactive({ ok: true, desde: null })
+// Versión nueva del agente lista para instalar (llega con el latido; aviso en "Cuentas abiertas")
+export const actualizacion = reactive({ lista: false, aplicando: false, nueva: null, notas: null })
 
 const COLA = "ag_cola_errores"
 const ADMIN = "ag_admin"

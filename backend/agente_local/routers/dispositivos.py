@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import VERSION, auditoria, config, errores, nube
+from .. import VERSION, actualizador, auditoria, config, errores, nube
 from ..db import get_emp, get_tmp
 from ..seguridad import (cadena_aleatoria, cifrar_clave, crear_token, gastar_tiempo_clave,
                          hash_secreto, ip_cliente, leer_token, nuevo_secreto, verificar_clave)
@@ -278,8 +278,22 @@ async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp:
     await tmp.execute(text("UPDATE ag_dispositivos SET ultimo_acceso = :f, ultima_ip = :ip WHERE id = :id"),
                       {"f": datetime.now(), "ip": ip_cliente(request), "id": mesero.id_dispositivo})
     await tmp.commit()
-    # version: la mini-app se recarga sola si el agente se actualizó; pc: dirección por nombre del PC
-    return {"ok": True, "version": VERSION, "pc": nube.url_pc()}
+    # version: la mini-app se recarga sola si el agente se actualizó; pc: dirección por nombre del PC;
+    # actualizacion: versión nueva lista para instalar (aviso en la pantalla de los meseros)
+    return {"ok": True, "version": VERSION, "pc": nube.url_pc(), "actualizacion": actualizador.para_dispositivos()}
+
+
+@router.post("/actualizar")
+async def actualizar_desde_dispositivo(request: Request, mesero: Mesero = Depends(mesero_actual)):
+    """Los meseros usan más la toma de pedidos que el panel: desde allí también se puede aplicar la
+    actualización. Solo instala la versión vigente publicada (verificada por su huella)."""
+    try:
+        nueva = await actualizador.aplicar_ahora(f"dispositivo {mesero.nombre_dispositivo}")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    await auditoria.registrar("actualizar", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
+                              mesero.id_dispositivo, detalle=nueva)
+    return {"ok": True, "nueva": nueva}
 
 
 class EventoDispositivoIn(BaseModel):

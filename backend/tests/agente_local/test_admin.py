@@ -71,6 +71,10 @@ def test_cambiar_clave_invalida_sesiones(cliente, admin):
 def test_latido_y_estado_de_dispositivos(cliente, db, admin, mesero):
     r = cliente.post("/api/ag/sesion/latido", headers=mesero)
     assert r.status_code == 200 and r.json()["pc"].startswith("http://")
+    assert r.json()["actualizacion"]["lista"] is False                     # sin versión nueva, sin aviso
+    # Actualizar desde un dispositivo: solo la versión vigente publicada (aquí no hay ninguna)
+    assert cliente.post("/api/ag/actualizar", headers=mesero).status_code == 409
+    assert cliente.post("/api/ag/actualizar").status_code == 401
     d = cliente.get("/api/ag/admin/dispositivos", headers=admin).json()["dispositivos"]
     assert d[0]["nombre_dispositivo"] == "Cel Ana" and d[0]["conectado"] is True and d[0]["activo_escritorio"] is True
     _sql(db, f"UPDATE {T}.ag_dispositivos SET ultimo_acceso = NOW() - INTERVAL 5 MINUTE")

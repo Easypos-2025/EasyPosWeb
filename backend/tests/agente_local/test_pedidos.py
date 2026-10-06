@@ -331,23 +331,43 @@ def test_pedido_libera_bloqueo_propio(cliente, db, h):
 # ───────────── pedidos del mesero ─────────────
 
 def test_todos_ven_todos_los_pedidos(cliente, db, h):
-    """Un dispositivo lo usan varios meseros: todos ven y agregan a todos los pedidos de la toma
-    de pedidos, con el nombre del mesero asignado. Los montados en caja (Movil = 0) no."""
+    """Un dispositivo lo usan varios meseros: todos ven y agregan a todos los pedidos abiertos (de la
+    toma de pedidos o de caja), con el nombre del mesero. No se muestran los domicilios ni lo que se
+    está montando en el escritorio (Salio = 1, en encabezado o detalle)."""
     nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 2}]).json()["nro_pedido"]
-    _sql(db, f"INSERT INTO {T}.temp_comanda (Nro_Pedido, Fecha, Mesa, Mesero, Salio, Movil) VALUES ('CAJA-1','{FECHA_TURNO}','S-02',{PEDRO},0,0)")
+    _sql(db,
+         f"""INSERT INTO {T}.temp_comanda (Nro_Pedido, Fecha, Mesa, Mesero, Salio, Movil, Domicilio, Imprimio_Precuenta, Id_Cliente) VALUES
+             ('CAJA-1','{FECHA_TURNO}','S-02',{PEDRO},0,0,0,2,1),
+             ('DOMI-1','{FECHA_TURNO}','DOMICILIO 1',{PEDRO},0,0,1,0,1),
+             ('MONTANDO','{FECHA_TURNO}','S-99',{PEDRO},1,0,0,3,1)""",
+         # Caja: una fila enviada (Salio = 0) y otra que aún se está montando (Salio = 1)
+         f"""INSERT INTO {T}.temp_detalle_comanda (Nro_pedido, Fecha, Id_Plato, Item, Descripcion, Cantidad, Valor, Salio, Mostrar, Depende, Impreso) VALUES
+             ('CAJA-1','2026-10-03',11,1,'GASEOSA',1,4000,0,1,'1',1),
+             ('CAJA-1','2026-10-03',10,2,'HAMBURGUESA',1,20000,1,1,'2',0)""")
     otro = _otro_mesero(cliente, db)
     for quien in (_hdr(h), otro):
         todos = cliente.get("/api/ag/pedidos", headers=quien).json()
-        assert [(p["nro_pedido"], p["mesero"], p["total"], p["unidades"]) for p in todos] == [(nro, "LAURA", 40000, 2)]
+        assert sorted((p["nro_pedido"], p["mesero"], p["total"], p["unidades"]) for p in todos) == \
+               sorted([(nro, "LAURA", 40000, 2), ("CAJA-1", "PEDRO", 4000, 1)])
+    caja = cliente.get("/api/ag/pedido", params={"nro": "CAJA-1"}, headers=otro).json()
+    assert [L["nombre"] for L in caja["lineas"]] == ["GASEOSA"] and caja["total"] == 4000
+    for oculto in ("DOMI-1", "MONTANDO"):
+        assert cliente.get("/api/ag/pedido", params={"nro": oculto}, headers=otro).status_code == 404
     d = cliente.get("/api/ag/pedido", params={"nro": nro}, headers=otro).json()
     assert d["lineas"][0]["cantidad"] == 2 and d["total"] == 40000 and d["cliente"]["id"] == 1 and d["mesero"] == "LAURA"
     r = cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=otro)
     assert r.status_code == 200
     # Agregar no cambia el mesero del pedido
     assert _filas(db, f"SELECT Mesero FROM {T}.temp_comanda WHERE Nro_Pedido=%s", nro)[0]["Mesero"] == LAURA
-    # El de caja no se ve ni se toca desde aquí
-    assert cliente.get("/api/ag/pedido", params={"nro": "CAJA-1"}, headers=otro).status_code == 404
-    assert cliente.post("/api/ag/mesas/bloquear", json={"id_mesa": 2, "mesa": "S-02"}, headers=otro).status_code == 409
+    # Al de caja también se le agrega; a lo que se está montando en caja, no
+    assert cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": "CAJA-1", "lineas": [{"id_plato": 11, "cantidad": 1}]},
+                        headers=otro).status_code == 200
+    assert cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": "MONTANDO", "lineas": [{"id_plato": 11, "cantidad": 1}]},
+                        headers=otro).status_code == 404
+    assert cliente.post("/api/ag/mesas/bloquear", json={"id_mesa": 3, "mesa": "S-99"}, headers=otro).status_code == 409
+    estados = {m["nombre"]: (m["estado"], m.get("mesero")) for z in cliente.get("/api/ag/mesas", headers=otro).json()["zonas"]
+               for m in z["mesas"]}
+    assert estados["S-02"] == ("pedido", "PEDRO") and estados["S-99"][0] == "ocupada"
 
 
 def test_meseros_del_dia(cliente, db, h):

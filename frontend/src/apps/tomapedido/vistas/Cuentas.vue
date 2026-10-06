@@ -5,11 +5,30 @@
         <h1>{{ textos.cuentas }} abiertas</h1>
         <small>{{ sesion.mesero?.nombre }} · {{ sesion.nombre_dispositivo }}</small>
       </div>
+      <button v-if="puedeCompleta" class="barra__btn" :title="completa ? 'Salir de pantalla completa' : 'Pantalla completa'"
+              @click="alternarCompleta"><Icono :nombre="completa ? 'contraer' : 'expandir'" /></button>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
       <button class="barra__btn" title="Salir" @click="salir"><Icono nombre="salir" /></button>
     </header>
 
     <main class="contenido">
+      <!-- Versión nueva del agente: los meseros la pueden instalar (usan más esta pantalla que el panel) -->
+      <div v-if="actualizacion.lista || actualizacion.aplicando" class="aviso-act tarjeta">
+        <span class="aviso-act__ico"><Icono nombre="refrescar" :tam="22" /></span>
+        <div class="aviso-act__txt">
+          <template v-if="actualizacion.aplicando">
+            <b>Actualizando la toma de pedidos…</b>
+            <small>Vuelve sola en menos de un minuto.</small>
+          </template>
+          <template v-else>
+            <b>Actualización disponible: versión {{ actualizacion.nueva }}</b>
+            <small v-if="actualizacion.notas">{{ actualizacion.notas }}</small>
+            <small>Si no la aplica ahora, se instala sola al abrir el próximo turno.</small>
+          </template>
+        </div>
+        <button v-if="!actualizacion.aplicando" class="btn btn--primario aviso-act__btn" :disabled="actualizando"
+                @click="actualizar">Actualizar ahora</button>
+      </div>
       <div v-if="cargando && !cuentas.length" class="cargando"><span class="giro"></span></div>
       <div v-else-if="!cuentas.length" class="vacio">
         <Icono nombre="lista" :tam="40" />
@@ -45,7 +64,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
-import { api } from "../api"
+import { actualizacion, api } from "../api"
 import { cantidad, pesos } from "../formato"
 import { cerrarSesion, sesion } from "../sesion"
 import { t, textos } from "../textos"
@@ -54,7 +73,32 @@ import { showConfirm, showToast } from "@/utils/toast"
 const router = useRouter()
 const cuentas = ref([])
 const cargando = ref(false)
+const actualizando = ref(false)
 let temporizador = null
+
+// Pantalla completa (iPhone no la permite en páginas: allí se usa "Agregar a inicio")
+const puedeCompleta = !!document.fullscreenEnabled
+const completa = ref(!!document.fullscreenElement)
+const alCambiarCompleta = () => { completa.value = !!document.fullscreenElement }
+function alternarCompleta() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+  else document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {})
+}
+
+async function actualizar() {
+  if (!(await showConfirm("Mientras se actualiza (menos de un minuto) ningún dispositivo podrá tomar pedidos. "
+    + "Los pedidos ya enviados no se pierden. ¿Actualizar ahora?", "Sí, actualizar"))) return
+  actualizando.value = true
+  try {
+    await api.post("/actualizar")
+    actualizacion.aplicando = true
+    showToast("Actualizando… la toma de pedidos vuelve en menos de un minuto.", "info", 5000)
+  } catch (e) {
+    showToast(e.message, "error", 4000)
+  } finally {
+    actualizando.value = false
+  }
+}
 
 async function cargar() {
   cargando.value = true
@@ -78,8 +122,14 @@ async function salir() {
   router.replace("/ingresar")
 }
 
-onMounted(() => { cargar(); temporizador = setInterval(cargar, 20000) })
-onBeforeUnmount(() => clearInterval(temporizador))
+onMounted(() => {
+  cargar(); temporizador = setInterval(cargar, 20000)
+  document.addEventListener("fullscreenchange", alCambiarCompleta)
+})
+onBeforeUnmount(() => {
+  clearInterval(temporizador)
+  document.removeEventListener("fullscreenchange", alCambiarCompleta)
+})
 </script>
 
 <style scoped>
@@ -96,6 +146,13 @@ onBeforeUnmount(() => clearInterval(temporizador))
 .cuenta__mesero { grid-column: 1 / -1; display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600; color: var(--navy); overflow-wrap: anywhere; }
 .cuenta__info { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--texto-suave); font-size: 13px; }
 .cuenta__info span { display: inline-flex; align-items: center; gap: 4px; }
+.aviso-act { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 12px; border: 2px solid var(--azul); }
+.aviso-act__ico { width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: var(--azul-claro); color: var(--azul);
+                  display: inline-flex; align-items: center; justify-content: center; }
+.aviso-act__txt { flex: 1; min-width: 0; }
+.aviso-act__txt b { display: block; }
+.aviso-act__txt small { display: block; color: var(--texto-suave); font-size: 13px; overflow-wrap: anywhere; }
+.aviso-act__btn { flex-shrink: 0; }
 .accion-fija {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
@@ -108,6 +165,10 @@ onBeforeUnmount(() => clearInterval(temporizador))
 }
 @media (max-width: 768px) and (min-width: 577px) {
   .cuentas { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .aviso-act { flex-wrap: wrap; }
+  .aviso-act__btn { width: 100%; }
 }
 @media (max-width: 576px) {
   .cuenta { padding: 12px; }

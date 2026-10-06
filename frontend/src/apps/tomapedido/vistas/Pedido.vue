@@ -38,7 +38,7 @@
       </CarrilChips>
     </div>
 
-    <div class="cuerpo" :class="{ 'cuerpo--lateral': esPC && lateralAbierto }">
+    <div class="cuerpo" :class="{ 'cuerpo--pc': esPC, 'cuerpo--lateral': esPC && lateralAbierto }">
       <aside v-if="esPC && lateralAbierto" class="lateral">
         <ListaCategorias :categorias="carta?.categorias || []" :activa="texto ? null : categoriaId" :conteo="conteo"
                          :colores="colores.categorias" @escoger="escogerCategoria" />
@@ -59,6 +59,10 @@
         </button>
       </div>
     </main>
+      <!-- PC: lo que se va montando, a la derecha, con el botón Enviar -->
+      <aside v-if="esPC" class="panel-pedido">
+        <CarritoSheet panel :lineas="lineas" :titulo="titulo" :enviando="enviando" @quitar="quitar" @enviar="enviar" />
+      </aside>
     </div>
 
     <!-- Panel de categorías (celular y tablet) -->
@@ -73,7 +77,7 @@
       </aside>
     </div>
 
-    <div v-if="lineas.length" class="carrito-barra">
+    <div v-if="lineas.length && !esPC" class="carrito-barra">
       <button class="btn btn--primario btn--bloque" @click="verCarrito = true">
         <Icono nombre="carrito" />
         <span>Ver pedido ({{ lineas.length }})</span>
@@ -83,7 +87,7 @@
 
     <ProductoSheet v-if="hojaProducto" :plato="hojaProducto" :novedades="novedadesDe(hojaProducto)"
                    @agregar="agregar" @cerrar="hojaProducto = null" />
-    <CarritoSheet v-if="verCarrito" :lineas="lineas" :titulo="titulo" :enviando="enviando"
+    <CarritoSheet v-if="verCarrito && !esPC" :lineas="lineas" :titulo="titulo" :enviando="enviando"
                   @quitar="quitar" @enviar="enviar" @cerrar="verCarrito = false" />
     <ClienteSheet v-if="verCliente && config" :actual="cliente" :por-defecto="config.cliente_default"
                   @escoger="cambiarCliente" @cerrar="verCliente = false" />
@@ -189,7 +193,8 @@ const columnas = computed(() => {
   const w = ancho.value
   if (w <= 576) return 2
   if (w <= 768) return 3
-  if (w >= 1025 && lateralAbierto.value) return w >= 1300 ? 4 : 3
+  // PC: 2/3 del ancho para los productos (el otro tercio es el pedido)
+  if (w >= 1025) return lateralAbierto.value ? (w >= 1500 ? 3 : 2) : (w >= 1500 ? 4 : 3)
   return 4
 })
 
@@ -264,7 +269,8 @@ async function cambiarCliente(c) {
 function agregar(linea) {
   lineas.value.push(linea)
   hojaProducto.value = null
-  showToast(`${linea.nombre} agregado`, "success", 1000)
+  // En PC se ve en el panel del pedido (el aviso taparía el botón Enviar)
+  if (!esPC.value) showToast(`${linea.nombre} agregado`, "success", 1000)
 }
 
 function quitar(l) {
@@ -382,7 +388,7 @@ onBeforeUnmount(() => {
 .sin-meseros__acc { display: flex; flex-direction: column; gap: 8px; }
 
 .filtros { position: sticky; top: var(--barra-alto); z-index: 15; background: var(--fondo); padding: 10px 12px 0; max-width: 1100px; margin: 0 auto; }
-.filtros--ancho { max-width: 1320px; }
+.filtros--ancho { max-width: 1600px; }
 .filtros__fila { display: flex; gap: 8px; margin-bottom: 8px; }
 .hamburguesa { width: 48px; height: 48px; flex-shrink: 0; border-radius: 12px; border: 1.5px solid var(--borde); background: #fff; color: var(--navy); display: inline-flex; align-items: center; justify-content: center; }
 .hamburguesa:active { background: var(--azul-claro); }
@@ -392,8 +398,14 @@ onBeforeUnmount(() => {
 .buscar__limpiar { position: absolute; right: 6px; top: 6px; width: 36px; height: 36px; border: 0; border-radius: 8px; background: var(--fondo); display: inline-flex; align-items: center; justify-content: center; }
 
 
-.cuerpo--lateral { display: grid; grid-template-columns: 250px 1fr; max-width: 1320px; margin: 0 auto; }
-.cuerpo--lateral .contenido { max-width: none; margin: 0; }
+/* PC: productos y pedido en relación 2:1 (más la columna de categorías si está abierta) */
+.cuerpo--pc { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); max-width: 1600px; margin: 0 auto; }
+.cuerpo--pc.cuerpo--lateral { grid-template-columns: 230px minmax(0, 2fr) minmax(320px, 1fr); }
+.cuerpo--pc .contenido { max-width: none; margin: 0; }
+.panel-pedido {
+  position: sticky; top: calc(var(--barra-alto) + 112px); align-self: start;
+  height: calc(100vh - var(--barra-alto) - 130px); padding: 20px 20px 20px 0;
+}
 .lateral {
   position: sticky; top: calc(var(--barra-alto) + 112px); align-self: start;
   max-height: calc(100vh - var(--barra-alto) - 130px); overflow-y: auto; padding: 20px 0 20px 20px;
@@ -435,15 +447,18 @@ onBeforeUnmount(() => {
 .carrito-barra .btn { max-width: 620px; margin: 0 auto; display: flex; justify-content: flex-start; box-shadow: 0 6px 18px rgba(37, 99, 235, .35); }
 .carrito-barra__total { margin-left: auto; }
 
-@media (min-width: 1025px) {
-  .cuerpo--lateral .productos { grid-template-columns: repeat(3, 1fr); }
-}
-@media (min-width: 1300px) {
-  .cuerpo--lateral .productos { grid-template-columns: repeat(4, 1fr); }
-}
 @media (min-width: 769px) {
   .productos { grid-template-columns: repeat(4, 1fr); }
   .filtros { padding: 14px 20px 0; }
+}
+@media (min-width: 1025px) {
+  .pantalla { padding-bottom: 0; }
+  .cuerpo--pc .productos { grid-template-columns: repeat(3, 1fr); }
+  .cuerpo--pc.cuerpo--lateral .productos { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1500px) {
+  .cuerpo--pc .productos { grid-template-columns: repeat(4, 1fr); }
+  .cuerpo--pc.cuerpo--lateral .productos { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 768px) and (min-width: 577px) {
   .productos { grid-template-columns: repeat(3, 1fr); }

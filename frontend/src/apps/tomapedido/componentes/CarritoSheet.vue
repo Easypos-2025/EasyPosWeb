@@ -1,13 +1,15 @@
 <template>
-  <div class="velo" @click.self="$emit('cerrar')">
-    <div class="hoja">
+  <!-- Celular/tablet: hoja que se abre con "Ver pedido". PC (panel): siempre visible a la derecha,
+       se va llenando mientras se monta el pedido y se envía sin pasos previos. -->
+  <div :class="panel ? 'panel' : 'velo'" @click.self="!panel && $emit('cerrar')">
+    <div :class="panel ? 'panel__caja tarjeta' : 'hoja'">
       <div class="hoja__cab">
-        <h2>Pedido · {{ titulo }}</h2>
-        <button class="cerrar" @click="$emit('cerrar')"><Icono nombre="cerrar" /></button>
+        <h2>Pedido · {{ titulo }}<small v-if="panel && lineas.length"> ({{ lineas.length }})</small></h2>
+        <button v-if="!panel" class="cerrar" @click="$emit('cerrar')"><Icono nombre="cerrar" /></button>
       </div>
 
       <div class="hoja__cuerpo">
-        <p v-if="!lineas.length" class="vacio">No ha agregado {{ t("productos") }}.</p>
+        <p v-if="!lineas.length" class="vacio">{{ panel ? `Toque un ${t("producto")} para agregarlo al pedido.` : `No ha agregado ${t("productos")}.` }}</p>
         <div v-for="l in lineas" :key="l.clave" class="linea">
           <div class="linea__info">
             <b>{{ l.nombre }}</b>
@@ -47,6 +49,7 @@ const props = defineProps({
   lineas: { type: Array, required: true },
   titulo: { type: String, default: "" },
   enviando: { type: Boolean, default: false },
+  panel: { type: Boolean, default: false },
 })
 defineEmits(["cerrar", "quitar", "enviar"])
 
@@ -73,6 +76,13 @@ function cambiar(l, d) {
 .quitar { width: 38px; height: 38px; border: 0; border-radius: 10px; background: var(--rojo-claro); color: var(--rojo); display: inline-flex; align-items: center; justify-content: center; }
 .total { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 18px; }
 .total b { font-size: 22px; color: var(--azul); }
+
+/* Panel fijo (PC) */
+.panel { height: 100%; }
+.panel__caja { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding: 0; }
+.panel__caja .hoja__cab h2 small { font-size: 14px; color: var(--texto-suave); font-weight: 600; }
+.panel__caja .linea { flex-direction: column; align-items: stretch; }
+.panel__caja .vacio { margin-top: 30px; }
 
 @media (min-width: 577px) {
   .linea { flex-direction: row; align-items: center; justify-content: space-between; }

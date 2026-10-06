@@ -7,7 +7,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import SinConexion from "./componentes/SinConexion.vue"
-import { api, conexion, enviarCola } from "./api"
+import { actualizacion, api, conexion, enviarCola } from "./api"
 import { sesion } from "./sesion"
 
 const probando = ref(false)
@@ -38,6 +38,7 @@ async function latir() {
     revisarVersion(r?.datos?.version)
     // Dirección por nombre del PC de caja: guía al usuario si un día cambia la IP de la caja
     if (r?.datos?.pc) try { localStorage.setItem("ag_caja_pc", r.datos.pc) } catch { /* sin almacenamiento */ }
+    if (r?.datos?.actualizacion) Object.assign(actualizacion, r.datos.actualizacion)
   } catch { /* el aviso lo maneja conexion.ok */ }
 }
 
@@ -52,10 +53,23 @@ watch(() => conexion.ok, (ok) => {
   if (!ok) reintento = setInterval(probar, 5000)
 })
 
+// Pantalla completa (como F11): el navegador solo la permite tras un toque o clic del usuario, así
+// que se activa en el primer toque de la toma de pedidos (no en el panel de administración).
+// iPhone no la permite en páginas: allí sirve "Agregar a inicio" (abre sin la barra de Safari).
+function pantallaCompleta() {
+  const yaEsApp = window.matchMedia("(display-mode: standalone)").matches
+  if (route.path.startsWith("/admin") || yaEsApp || !document.fullscreenEnabled || document.fullscreenElement) return
+  document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => { /* el navegador no lo permitió */ })
+}
+
 onMounted(() => {
+  document.addEventListener("pointerdown", pantallaCompleta, { once: true, capture: true })
   latir()
   enviarCola()
   latido = setInterval(latir, 30000)
 })
-onBeforeUnmount(() => { clearInterval(latido); clearInterval(reintento) })
+onBeforeUnmount(() => {
+  clearInterval(latido); clearInterval(reintento)
+  document.removeEventListener("pointerdown", pantallaCompleta, { capture: true })
+})
 </script>
