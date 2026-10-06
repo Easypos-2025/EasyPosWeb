@@ -1,4 +1,5 @@
 import axios from "axios"
+import { esErrorEfectivo, mostrarAvisoEfectivo } from "@/utils/efectivoAviso"
 
 const apiComanda = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
@@ -24,6 +25,8 @@ apiComanda.interceptors.response.use(
   res => res,
   async err => {
     const original = err.config
+    // Forma de pago EFECTIVO sin configurar: el servidor bloquea → ventana que explica cómo corregirlo
+    if (esErrorEfectivo(err)) mostrarAvisoEfectivo(err.response.data?.detail)
     const usedWaiterToken = !!localStorage.getItem("waiter_token")
     const adminToken = localStorage.getItem("token")
 

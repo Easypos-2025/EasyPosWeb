@@ -21,8 +21,10 @@ from app.services import permisos
 from app.auth import tenant
 from app.services import clientes as clientes_svc
 from app.auth.jwt_handler import create_access_token, decode_access_token
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/pos/comanda", tags=["POS Comanda"])
+router = APIRouter(prefix="/api/pos/comanda", tags=["POS Comanda"],
+                   dependencies=[Depends(efectivo_guard(solo_escritura=True, excluir=("/auth/mesero", "/cocina/tv-token", "/menu-diario-admin")))])
 
 _BOG = timezone(timedelta(hours=-5))
 

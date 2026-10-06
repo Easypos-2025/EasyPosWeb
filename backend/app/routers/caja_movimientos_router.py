@@ -31,10 +31,11 @@ from app.database import get_db
 from app.models.user_model import User
 from app.routers.pos_shift_router import _BOG, _VIGENTE, _id_caja_header, _turno_abierto, exigir_usuario_caja
 from app.services import periodos as per
-from app.services.formas_pago import es_efectivo_sql
+from app.services.formas_pago import es_efectivo_sql, exigir_efectivo
 from app.services.permisos import permisos_usuario
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/caja/movimientos", tags=["Caja Movimientos"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/caja/movimientos", tags=["Caja Movimientos"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard())])
 
 # tipo (ruta) → (tabla, tipo_concepto = type_id de la forma de pago, título)
 TIPOS = {
@@ -98,13 +99,13 @@ async def _formas_pago(db: AsyncSession, cid: int) -> list[dict]:
 
 async def validar_pagos(db: AsyncSession, cid: int, total: int, payments: List[PagoIn]) -> List[PagoIn]:
     """Formas de pago de la empresa y activas, que sumen exactamente `total`.
-    Sin formas → todo en EFECTIVO (o la forma por defecto)."""
+    Sin formas → todo en EFECTIVO (la forma de pago Default y activa)."""
     fps = {f["id"]: f for f in await _formas_pago(db, cid)}
     pagos = [p for p in payments if p.amount > 0]
     if not pagos:
-        fp = next((f for f in fps.values() if f["es_efectivo"]), None) or next((f for f in fps.values() if f["is_default"]), None)
+        fp = next((f for f in fps.values() if f["es_efectivo"]), None)
         if not fp:
-            raise HTTPException(status_code=422, detail="La empresa no tiene la forma de pago EFECTIVO activa")
+            await exigir_efectivo(db, cid)
         pagos = [PagoIn(payment_method_id=fp["id"], amount=total)]
     for p in pagos:
         fp = fps.get(p.payment_method_id)

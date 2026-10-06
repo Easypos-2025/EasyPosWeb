@@ -14,6 +14,7 @@ from app.services import recibo_caja as rc
 from app.services import permisos
 from pathlib import Path
 import uuid, shutil
+from app.auth.efectivo_guard import efectivo_guard
 
 def bogota_now() -> str:
     """Hora actual en Colombia (UTC-5) como string para MySQL."""
@@ -23,7 +24,7 @@ _UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads" / "parking"
 _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
-router = APIRouter(prefix="/api/parking", tags=["parking"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/parking", tags=["parking"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard(solo_escritura=True))])
 # ── Upload foto de vehículo ───────────────────────────────────────────────────
 
 _MAX_FOTO = 10 * 1024 * 1024

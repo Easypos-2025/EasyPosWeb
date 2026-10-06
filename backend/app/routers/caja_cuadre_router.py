@@ -30,8 +30,9 @@ from app.routers.pos_shift_router import (_BOG, _es_admin, _es_escritorio, _hoy,
 from app.services import cuadre_caja as svc
 from app.services.permisos import permisos_usuario
 from app.services import periodos as per
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/caja/cuadre", tags=["Caja Cuadre"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/caja/cuadre", tags=["Caja Cuadre"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard())])
 
 Fecha = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 Modo = Literal["todos", "usuario", "caja"]

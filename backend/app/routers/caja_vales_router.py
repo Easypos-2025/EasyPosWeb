@@ -37,8 +37,9 @@ from app.routers.caja_movimientos_router import (
 from app.routers.pos_shift_router import _id_caja_header, _turno_abierto, exigir_usuario_caja
 from app.services import periodos as per
 from app.services.permisos import permisos_usuario
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/caja/vales", tags=["Caja Vales"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/caja/vales", tags=["Caja Vales"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard())])
 
 TIPO_VALE, TIPO_ABONO = 5, 6
 Periodo = Literal["dia", "mes", "anio"]

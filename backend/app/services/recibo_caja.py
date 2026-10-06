@@ -15,13 +15,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import consecutivo_service as cs
-from app.services.formas_pago import es_efectivo_sql
+from app.services.formas_pago import es_efectivo_sql, exigir_efectivo, validar_credito
 
 
 async def preparar_pagos(db: AsyncSession, cid: int, total: int, pagos: list) -> list[dict]:
     """[{payment_method_id, amount, notes}] validados contra la empresa; sin pagos → EFECTIVO por el total."""
     tipos = {int(r["id"]): r for r in (await db.execute(text(
-        f"SELECT id, name, is_default, ask_notes, {es_efectivo_sql('pos_payment_types')} AS es_efectivo "
+        f"SELECT id, name, is_default, ask_notes, ask_customer, {es_efectivo_sql('pos_payment_types')} AS es_efectivo "
         "FROM pos_payment_types WHERE company_id = :cid AND is_active = 1"
     ), {"cid": cid})).mappings().all()}
     out = []
@@ -37,12 +37,13 @@ async def preparar_pagos(db: AsyncSession, cid: int, total: int, pagos: list) ->
         notes = str(p.get("notes") or "").strip()[:255]
         if tipos[pm]["ask_notes"] and not notes:
             raise HTTPException(status_code=422, detail=f"La forma de pago {tipos[pm]['name']} exige una observación")
+        validar_credito(tipos[pm])
         if amt > 0:
             out.append({"payment_method_id": pm, "amount": int(round(amt)), "notes": notes})
     if not out:
-        ef = next((t for t in tipos.values() if t["es_efectivo"]), None) or next((t for t in tipos.values() if t["is_default"]), None)
+        ef = next((t for t in tipos.values() if t["es_efectivo"]), None)
         if not ef:
-            raise HTTPException(status_code=422, detail="La empresa no tiene la forma de pago EFECTIVO activa")
+            await exigir_efectivo(db, cid)
         out = [{"payment_method_id": int(ef["id"]), "amount": int(total), "notes": ""}]
     pagado = sum(p["amount"] for p in out)
     if abs(pagado - int(total)) > 1:      # tolerancia $1 por redondeo

@@ -14,6 +14,18 @@
       </button>
     </div>
 
+    <!-- ── Forma de pago EFECTIVO = la Default y Activa (bloquea todo si falta) ── -->
+    <div v-if="avisoEfectivo.estado && !avisoEfectivo.estado.ok" class="efx-banner">
+      <i class="bi bi-exclamation-octagon-fill"></i>
+      <div>
+        <strong>El sistema está bloqueado: falta configurar la forma de pago EFECTIVO.</strong>
+        <div>{{ problemaEfectivo }} Marque UNA forma de pago (la de efectivo) como <strong>Predeterminado</strong> y <strong>Activo</strong>; mientras tanto no se puede registrar ni consultar nada.</div>
+      </div>
+    </div>
+    <div v-else-if="avisoEfectivo.estado?.ok" class="efx-okchip">
+      <i class="bi bi-cash-coin"></i> Efectivo del sistema: <strong>{{ avisoEfectivo.estado.nombre }}</strong> (Predeterminado y Activo)
+    </div>
+
     <!-- ── Billetes rápidos (tarjetas al pagar en efectivo) ─────────────── -->
     <div class="billetes-card">
       <div class="billetes-hdr">
@@ -252,6 +264,7 @@ import { useCompanyStore } from "@/stores/companyStore"
 import { useModuleName } from "@/composables/useModuleName"
 import api from "@/services/apis"
 import { showToast, showConfirm } from "@/utils/toast"
+import { avisoEfectivo, revisarEfectivo } from "@/utils/efectivoAviso"
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
@@ -293,7 +306,16 @@ async function load() {
     showToast("Error cargando formas de pago", "error")
   }
   loading.value = false
+  revisarEfectivo({ forzar: true, abrir: false })
 }
+
+const problemaEfectivo = computed(() => {
+  const e = avisoEfectivo.estado
+  if (!e || e.ok) return ""
+  if (e.problema === "ninguna") return "No hay ninguna forma de pago Predeterminada."
+  if (e.problema === "varias") return `Hay ${e.defaults.length} Predeterminadas (${e.defaults.join(", ")}) y solo puede haber una.`
+  return `La Predeterminada «${e.defaults[0]}» está inactiva.`
+})
 
 // ── Billetes rápidos (máx. 10, con foto) ─────────────────────────────────────
 const MAX_BILLETES   = 10
@@ -402,6 +424,7 @@ async function save() {
       showToast("Forma de pago creada", "success")
     }
     modal.value = false
+    revisarEfectivo({ forzar: true, abrir: false })
   } catch (e) {
     showToast(e?.response?.data?.detail ?? "Error al guardar", "error")
   }
@@ -416,6 +439,7 @@ async function toggleActive(item) {
       company_id: companyId.value,
     })
     item.is_active = res.data.is_active
+    revisarEfectivo({ forzar: true, abrir: false })
   } catch (e) {
     showToast(e?.response?.data?.detail ?? "Error al cambiar estado", "error")
   }
@@ -431,6 +455,7 @@ async function remove(item) {
     })
     items.value = items.value.filter(i => i.id !== item.id)
     showToast("Forma de pago eliminada", "success")
+    revisarEfectivo({ forzar: true, abrir: false })
   } catch (e) {
     showToast(e?.response?.data?.detail ?? "Error al eliminar", "error")
   }
@@ -440,6 +465,13 @@ onMounted(() => { load(); cargarBilletes() })
 </script>
 
 <style scoped>
+/* ── Forma de pago EFECTIVO ─────────────────────────────────────────── */
+.efx-banner { display: flex; gap: 12px; align-items: flex-start; background: #fef2f2; border: 1px solid #fecaca; border-left: 6px solid #dc2626; color: #7f1d1d; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: .92rem; }
+.efx-banner > i { font-size: 1.6rem; color: #dc2626; line-height: 1; }
+.efx-okchip { display: inline-flex; gap: 6px; align-items: center; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 999px; padding: 6px 12px; margin-bottom: 14px; font-size: .88rem; }
+@media (max-width: 768px) { .efx-banner { font-size: .88rem; } }
+@media (max-width: 576px) { .efx-banner { padding: 10px; gap: 8px; } .efx-banner > i { font-size: 1.3rem; } .efx-okchip { font-size: .8rem; } }
+
 /* ── Página ─────────────────────────────────────────────────────────── */
 .billetes-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); padding: 12px 14px; margin-bottom: 14px; }
 .billetes-hdr  { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }

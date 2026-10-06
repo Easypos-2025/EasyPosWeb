@@ -7,11 +7,22 @@ App.vue SOLO renderiza las rutas.
 */
 
 import { onMounted, ref } from "vue"
+import { useRouter } from "vue-router"
 import api from "@/services/apis"
 import { applyTheme } from "@/utils/theme"
+import EfectivoNoConfiguradoModal from "@/components/common/EfectivoNoConfiguradoModal.vue"
+import { revisarEfectivo } from "@/utils/efectivoAviso"
 
 export default {
+  components: { EfectivoNoConfiguradoModal },
   setup() {
+    // Forma de pago EFECTIVO (Default + Activa): se revisa al entrar y al navegar (máx. cada 2 min);
+    // en Formas de Pago no se abre la ventana (es donde se corrige).
+    const router = useRouter()
+    router.afterEach(to => {
+      const libre = ["/payment-types", "/login", "/tv/", "/pos/cocina"].some(p => to.path.startsWith(p))
+      if (!libre) revisarEfectivo()
+    })
 
     const isReady = ref(false)
 
@@ -73,4 +84,5 @@ export default {
   VISTA PRINCIPAL DE RUTAS
   ================================================= -->
   <router-view v-if="isReady" />
+  <EfectivoNoConfiguradoModal />
 </template>

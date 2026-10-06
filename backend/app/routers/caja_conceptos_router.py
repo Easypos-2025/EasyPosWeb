@@ -24,8 +24,9 @@ from app.auth.dependencies import get_current_user
 from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.models.user_model import User
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/caja/conceptos", tags=["Caja Conceptos"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/caja/conceptos", tags=["Caja Conceptos"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard(solo_escritura=True))])
 
 TIPOS = {1: "Gastos", 2: "Compras", 3: "Otros Egresos", 4: "Otros Ingresos"}
 Desc = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]

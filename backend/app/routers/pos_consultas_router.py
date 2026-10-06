@@ -23,8 +23,10 @@ from app.services import periodos as per
 from app.services.formas_pago import pago_vigente_sql
 
 from pydantic import BaseModel
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/pos-consultas", tags=["POS Consultas"])
+router = APIRouter(prefix="/api/pos-consultas", tags=["POS Consultas"],
+                   dependencies=[Depends(efectivo_guard())])
 
 
 # ─── Auth + company helper ─────────────────────────────────────────────────────

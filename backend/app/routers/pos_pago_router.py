@@ -34,13 +34,14 @@ from app.models.user_model import User
 from app.routers.pos_shift_router import require_open_shift
 from app.routers.pos_comanda_router import _recalc_total
 from app.services import consecutivo_service as cs
-from app.services.formas_pago import es_efectivo_sql
+from app.services.formas_pago import es_efectivo_sql, validar_credito
 from app.services import clientes as clientes_svc
 from app.services import comanda_armado as armado_svc
 from app.services import config_facturacion as cfg_facturacion
 from app.services import permisos
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/pos/pago", tags=["POS Pago"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/pos/pago", tags=["POS Pago"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard())])
 
 _BOG = timezone(timedelta(hours=-5))
 Money = Annotated[float, Field(ge=0, le=2_000_000_000)]
@@ -381,10 +382,12 @@ async def registrar_recibo(
     #    no es forma de pago: sale de lo que entregó el cliente (cash_received) menos
     #    lo pagado en efectivo. Venta en $0 (descuento 100 %) → una línea de efectivo en $0.
     tipos = {int(r["id"]): r for r in (await db.execute(text(
-        f"SELECT id, name, {es_efectivo_sql('pos_payment_types')} AS es_efectivo FROM pos_payment_types WHERE company_id=:cid AND is_active=1"
+        f"SELECT id, name, ask_customer, {es_efectivo_sql('pos_payment_types')} AS es_efectivo FROM pos_payment_types WHERE company_id=:cid AND is_active=1"
     ), {"cid": cid})).mappings().all()}
     if any(p.payment_method_id not in tipos for p in body.payments):
         raise HTTPException(status_code=422, detail="Forma de pago no válida o inactiva")
+    for p in body.payments:
+        validar_credito(tipos[p.payment_method_id])
     pagos = [{"pm": p.payment_method_id, "amount": int(round(p.amount)), "notes": (p.notes or "").strip()}
              for p in body.payments if p.amount > 0]
     if not pagos:

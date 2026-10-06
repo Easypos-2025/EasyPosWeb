@@ -6,6 +6,7 @@ Vue con el backend FastAPI
 import axios from "axios"
 import { leerIdCaja } from "./idCaja"
 import { setLastErrorRef, reportError } from "@/utils/errorReporter"
+import { esErrorEfectivo, mostrarAvisoEfectivo } from "@/utils/efectivoAviso"
 
 /* =========================================
 CONFIGURACIÓN BASE
@@ -79,6 +80,9 @@ api.interceptors.response.use(
   err => {
     const publicPaths = ["/tv/", "/pos/cocina", "/pos/comanda/login", "/pos/comanda/"]
     const isPublicPage = publicPaths.some(p => window.location.pathname.startsWith(p))
+
+    // Forma de pago EFECTIVO sin configurar: el servidor bloquea → ventana que explica cómo corregirlo
+    if (esErrorEfectivo(err)) mostrarAvisoEfectivo(err.response.data?.detail)
 
     if (err.response?.status === 401 && !_redirecting && !isPublicPage) {
       _redirecting = true

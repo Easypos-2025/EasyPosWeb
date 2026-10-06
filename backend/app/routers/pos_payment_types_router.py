@@ -11,6 +11,7 @@ from sqlalchemy import text
 from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.utils.storage import upload_file, delete_file
+from app.services.formas_pago import estado_efectivo
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
 router = APIRouter(prefix="/api/payment-types", tags=["Payment Types"], dependencies=[Depends(tenant_guard)])
@@ -133,6 +134,27 @@ async def quitar_foto_billete(
         await delete_file(old)
     return {"ok": True}
 
+# ─── Estado de la forma de pago EFECTIVO (Default + Activa) ───────────────────
+@router.get("/estado-efectivo")
+async def get_estado_efectivo(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """¿La empresa tiene exactamente una forma de pago Default y Activa? Si no, la web bloquea
+    registros y reportes (efectivo_guard) y muestra la ventana con el problema exacto."""
+    return await estado_efectivo(db, current_user.company_id)
+
+
+_MSG_DEFAULT = ("Siempre debe quedar UNA forma de pago Default y Activa (EFECTIVO): es la que el sistema "
+                "usa para el efectivo. Para cambiarla, marque otra forma de pago como Default.")
+
+
+async def _es_default(db: AsyncSession, cid: int, pid: int) -> bool:
+    return bool((await db.execute(text(
+        "SELECT COALESCE(is_default, 0) FROM pos_payment_types WHERE id = :pid AND company_id = :cid"
+    ), {"pid": pid, "cid": cid})).scalar())
+
+
 # ─── Listar ────────────────────────────────────────────────────────────────────
 @router.get("")
 async def list_payment_types(
@@ -170,6 +192,8 @@ async def create_payment_type(
     next_id = int(row["next_id"])
 
     is_default = int(bool(body.get("is_default", 0)))
+    if is_default and not int(bool(body.get("is_active", 1))):
+        raise HTTPException(status_code=422, detail="La forma de pago Default debe estar Activa")
 
     # Si es default, quitar default al resto
     if is_default:
@@ -222,6 +246,11 @@ async def update_payment_type(
         raise HTTPException(status_code=404, detail="Forma de pago no encontrada")
 
     is_default = int(bool(body.get("is_default", 0)))
+    is_active = int(bool(body.get("is_active", 1)))
+    if is_default and not is_active:
+        raise HTTPException(status_code=422, detail="La forma de pago Default debe estar Activa")
+    if not is_default and await _es_default(db, company_id, payment_id):
+        raise HTTPException(status_code=422, detail=_MSG_DEFAULT)
     if is_default:
         await db.execute(text(
             "UPDATE pos_payment_types SET is_default = 0 WHERE company_id = :cid AND id != :pid"
@@ -240,7 +269,7 @@ async def update_payment_type(
         WHERE id = :pid AND company_id = :cid
     """), {
         "name":     name,
-        "active":   int(bool(body.get("is_active", 1))),
+        "active":   is_active,
         "def":      is_default,
         "card":     int(bool(body.get("select_card", 0))),
         "notes":    int(bool(body.get("ask_notes", 0))),
@@ -262,6 +291,9 @@ async def delete_payment_type(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    if await _es_default(db, company_id, payment_id):
+        raise HTTPException(status_code=422, detail=_MSG_DEFAULT)
+
     # Verificar que no tenga pagos registrados
     used = (await db.execute(text("""
         SELECT COUNT(*) AS cnt FROM pos_receipt_payment_methods
@@ -300,6 +332,8 @@ async def toggle_active(
         raise HTTPException(status_code=404, detail="Forma de pago no encontrada")
 
     new_val = 0 if row["is_active"] else 1
+    if not new_val and await _es_default(db, company_id, payment_id):
+        raise HTTPException(status_code=422, detail=_MSG_DEFAULT)
     await db.execute(text(
         "UPDATE pos_payment_types SET is_active = :v WHERE id = :pid AND company_id = :cid"
     ), {"v": new_val, "pid": payment_id, "cid": company_id})

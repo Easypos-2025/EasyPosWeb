@@ -10,9 +10,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 import os, uuid, shutil
 from pathlib import Path
+from app.auth.efectivo_guard import efectivo_guard
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
-router = APIRouter(prefix="/api/parqueadero", tags=["parqueadero"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/parqueadero", tags=["parqueadero"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard(solo_escritura=True))])
 UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads" / "parqueadero"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 

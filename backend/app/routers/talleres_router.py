@@ -11,10 +11,11 @@ from datetime import datetime, timezone, timedelta
 from app.routers.pos_shift_router import require_open_shift
 from app.services import recibo_caja as rc
 from app.services import permisos
-from app.services.formas_pago import pago_vigente_sql
+from app.services.formas_pago import es_efectivo_sql, pago_vigente_sql
+from app.auth.efectivo_guard import efectivo_guard
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
-router = APIRouter(prefix="/api/talleres", tags=["talleres"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/talleres", tags=["talleres"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard(solo_escritura=True))])
 # ── KPI Dashboard ─────────────────────────────────────────────────────────────
 
 @router.get("/kpi")
@@ -1777,7 +1778,7 @@ async def get_payment_types(
     _=Depends(get_current_user),
 ):
     rows = (await db.execute(text("""
-        SELECT id, name, (UPPER(TRIM(name)) = 'EFECTIVO') AS es_efectivo, is_default, ask_notes
+        SELECT id, name, """ + es_efectivo_sql("pos_payment_types") + """ AS es_efectivo, is_default, ask_notes
         FROM pos_payment_types
         WHERE company_id = :cid AND is_active = 1
         ORDER BY is_default DESC, name

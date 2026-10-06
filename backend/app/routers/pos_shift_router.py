@@ -26,8 +26,10 @@ from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
 from app.routers.pos_comanda_router import _auth_comanda
+from app.auth.efectivo_guard import efectivo_guard
 
-router = APIRouter(prefix="/api/pos/turno", tags=["POS Turno de Caja"])
+router = APIRouter(prefix="/api/pos/turno", tags=["POS Turno de Caja"],
+                   dependencies=[Depends(efectivo_guard(solo_escritura=True))])
 
 # Hora de Colombia (el servidor corre en UTC): la apertura/cierre y la regla "caja del día"
 _BOG = timezone(timedelta(hours=-5))

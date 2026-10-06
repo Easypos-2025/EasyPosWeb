@@ -33,9 +33,10 @@ from app.models.user_model import User
 from app.routers.pos_shift_router import _id_caja_header, _turno_abierto
 from app.services import config_facturacion as cfg_svc
 from app.services.formas_pago import pago_vigente_sql
+from app.auth.efectivo_guard import efectivo_guard
 
 router = APIRouter(prefix="/api/pos/recibo-impresion", tags=["POS Recibo Impresión"],
-                   dependencies=[Depends(tenant_guard)])
+                   dependencies=[Depends(tenant_guard), Depends(efectivo_guard())])
 
 ReceiptNo = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50,
                                              pattern=r"^[A-Za-z0-9_-]+$")]

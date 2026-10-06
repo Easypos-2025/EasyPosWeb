@@ -18,9 +18,10 @@ from app.models.user_session_model import UserSession
 from app.models.user_model import User
 from app.utils.excel_ventas import build_ventas_excel
 from app.services.formas_pago import pago_vigente_sql
+from app.auth.efectivo_guard import efectivo_guard
 
 # Aislamiento multi-tenant: valida todo company_id que envíe el navegador (CLAUDE.md §6)
-router = APIRouter(prefix="/api/metricas", tags=["Métricas"], dependencies=[Depends(tenant_guard)])
+router = APIRouter(prefix="/api/metricas", tags=["Métricas"], dependencies=[Depends(tenant_guard), Depends(efectivo_guard())])
 _MESES_ES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
     5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
