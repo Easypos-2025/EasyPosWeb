@@ -35,20 +35,10 @@
         <p>No hay {{ t('cuentas') }} abiertas.</p>
       </div>
 
+      <!-- Todas las cuentas (un dispositivo lo usan varios meseros), con el estilo de tarjetas de la web -->
       <div class="cuentas">
-        <button v-for="c in cuentas" :key="c.nro_pedido" class="cuenta tarjeta" @click="abrir(c)">
-          <div class="cuenta__mesa">
-            <Icono nombre="mesa" :tam="18" />
-            <span>{{ c.mesa }}</span>
-          </div>
-          <div class="cuenta__total">{{ pesos(c.total) }}</div>
-          <!-- Todos ven todas: un dispositivo lo usan varios meseros -->
-          <div v-if="c.mesero" class="cuenta__mesero"><Icono nombre="usuario" :tam="14" /> {{ c.mesero }}</div>
-          <div class="cuenta__info">
-            <span><Icono nombre="reloj" :tam="14" /> {{ c.hora }}</span>
-            <span>{{ cantidad(c.unidades) }} {{ c.unidades === 1 ? t("producto") : t("productos") }}</span>
-          </div>
-        </button>
+        <TarjetaCuenta v-for="c in cuentas" :key="c.nro_pedido" :cuenta="c" :estilo="preferencias.estilo"
+                       :ahora="ahora" @abrir="abrir(c)" />
       </div>
     </main>
 
@@ -64,8 +54,8 @@
 import { onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
-import { actualizacion, api } from "../api"
-import { cantidad, pesos } from "../formato"
+import TarjetaCuenta from "../componentes/TarjetaCuenta.vue"
+import { actualizacion, api, preferencias } from "../api"
 import { cerrarSesion, sesion } from "../sesion"
 import { t, textos } from "../textos"
 import { showConfirm, showToast } from "@/utils/toast"
@@ -74,6 +64,7 @@ const router = useRouter()
 const cuentas = ref([])
 const cargando = ref(false)
 const actualizando = ref(false)
+const ahora = ref(Date.now())             // la alerta de "más de una hora abierta" se refresca con cada carga
 let temporizador = null
 
 // Pantalla completa (iPhone no la permite en páginas: allí se usa "Agregar a inicio")
@@ -104,6 +95,7 @@ async function cargar() {
   cargando.value = true
   try {
     cuentas.value = await api.get("/pedidos")
+    ahora.value = Date.now()
   } catch (e) {
     showToast(e.message, "error", 3000)
   } finally {
@@ -134,18 +126,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pantalla { min-height: 100vh; padding-bottom: 90px; }
-.cuentas { display: grid; grid-template-columns: 1fr; gap: 10px; }
-.cuenta {
-  display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center;
-  width: 100%; padding: 14px; border: 0; text-align: left;
-}
-.cuenta:active { transform: scale(.99); }
-.cuenta__mesa { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; min-width: 0; }
-.cuenta__mesa span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cuenta__total { font-weight: 800; font-size: 17px; color: var(--azul); }
-.cuenta__mesero { grid-column: 1 / -1; display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600; color: var(--navy); overflow-wrap: anywhere; }
-.cuenta__info { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--texto-suave); font-size: 13px; }
-.cuenta__info span { display: inline-flex; align-items: center; gap: 4px; }
+.cuentas { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 18px; padding: 6px 0 10px; }
 .aviso-act { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 12px; border: 2px solid var(--azul); }
 .aviso-act__ico { width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: var(--azul-claro); color: var(--azul);
                   display: inline-flex; align-items: center; justify-content: center; }
@@ -161,17 +142,13 @@ onBeforeUnmount(() => {
 .accion-fija .btn { max-width: 520px; margin: 0 auto; display: flex; box-shadow: 0 6px 18px rgba(37, 99, 235, .35); }
 
 @media (min-width: 769px) {
-  .cuentas { grid-template-columns: repeat(3, 1fr); }
-}
-@media (max-width: 768px) and (min-width: 577px) {
-  .cuentas { grid-template-columns: repeat(2, 1fr); }
+  .cuentas { gap: 24px; justify-content: flex-start; }
 }
 @media (max-width: 768px) {
   .aviso-act { flex-wrap: wrap; }
   .aviso-act__btn { width: 100%; }
 }
 @media (max-width: 576px) {
-  .cuenta { padding: 12px; }
-  .cuenta__mesa, .cuenta__total { font-size: 16px; }
+  .cuentas { gap: 12px; }
 }
 </style>

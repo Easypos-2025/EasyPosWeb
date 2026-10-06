@@ -280,7 +280,9 @@ async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp:
     await tmp.commit()
     # version: la mini-app se recarga sola si el agente se actualizó; pc: dirección por nombre del PC;
     # actualizacion: versión nueva lista para instalar (aviso en la pantalla de los meseros)
-    return {"ok": True, "version": VERSION, "pc": nube.url_pc(), "actualizacion": actualizador.para_dispositivos()}
+    # estilo: tarjetas de las cuentas abiertas, el mismo que la empresa escogió en la web
+    return {"ok": True, "version": VERSION, "pc": nube.url_pc(), "actualizacion": actualizador.para_dispositivos(),
+            "estilo": await nube.estilo_tarjetas(tmp)}
 
 
 @router.post("/actualizar")

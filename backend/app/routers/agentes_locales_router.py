@@ -38,6 +38,8 @@ router_agente = APIRouter(prefix="/api/agente", tags=["agente-local"])
 
 _RE_CODIGO = r"^[A-Za-z0-9_-]{2,20}$"
 MINUTOS_EN_LINEA = 3
+# Mismos estilos de pos_dashboard_router.VALID_CARD_STYLES (company_configs.pos_card_style)
+ESTILOS_TARJETAS = {"oval-wood", "circular-gold", "checkered", "minimal-card", "ticket", "bubble"}
 # Paquetes de actualización del agente (privados: solo se entregan a un agente con su clave)
 DIR_DESCARGAS = Path(os.getenv("AGENTE_DESCARGAS_DIR", "/var/www/easyposweb/descargas_agente"))
 
@@ -204,7 +206,11 @@ async def latido(data: LatidoIn, request: Request, agente: dict = Depends(agente
         """), {"a": data.actualizacion, "id": agente["id"]})
     await db.commit()
     vigente = await version_vigente(db)
+    # Estilo de tarjetas de las cuentas abiertas que la empresa escogió en la web (también en la mini-app)
+    estilo = (await db.execute(text("SELECT pos_card_style FROM company_configs WHERE company_id = :c"),
+                               {"c": agente["company_id"]})).scalar()
     return {"ok": True, "empresa": agente["empresa"], "codigo": agente["codigo"],
+            "estilo_tarjetas": estilo if estilo in ESTILOS_TARJETAS else "oval-wood",
             "version_vigente": {k: vigente[k] for k in ("version", "sha256", "tamano", "notas")} if vigente else None}
 
 

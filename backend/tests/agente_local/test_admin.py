@@ -72,6 +72,19 @@ def test_latido_y_estado_de_dispositivos(cliente, db, admin, mesero):
     r = cliente.post("/api/ag/sesion/latido", headers=mesero)
     assert r.status_code == 200 and r.json()["pc"].startswith("http://")
     assert r.json()["actualizacion"]["lista"] is False                     # sin versión nueva, sin aviso
+    # Estilo de tarjetas: el de la web (llega con el latido de la nube); se guarda para trabajar sin internet
+    from agente_local import nube
+    nube.estado.pop("estilo_tarjetas", None)
+    assert cliente.post("/api/ag/sesion/latido", headers=mesero).json()["estilo"] == "oval-wood"
+    with db.cursor() as c:                                                  # lo que guarda guardar_estilo()
+        c.execute(f"INSERT INTO {T}.ag_config (clave, valor) VALUES ('estilo_tarjetas', 'bubble')")
+    nube.estado.pop("estilo_tarjetas", None)                               # como al reiniciar el agente
+    assert cliente.post("/api/ag/sesion/latido", headers=mesero).json()["estilo"] == "bubble"
+    with db.cursor() as c:                                                  # valor desconocido: el de defecto
+        c.execute(f"UPDATE {T}.ag_config SET valor = '<script>' WHERE clave = 'estilo_tarjetas'")
+    nube.estado.pop("estilo_tarjetas", None)
+    assert cliente.post("/api/ag/sesion/latido", headers=mesero).json()["estilo"] == "oval-wood"
+    nube.estado.pop("estilo_tarjetas", None)
     # Actualizar desde un dispositivo: solo la versión vigente publicada (aquí no hay ninguna)
     assert cliente.post("/api/ag/actualizar", headers=mesero).status_code == 409
     assert cliente.post("/api/ag/actualizar").status_code == 401

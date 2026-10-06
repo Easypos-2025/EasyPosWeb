@@ -7,7 +7,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import SinConexion from "./componentes/SinConexion.vue"
-import { actualizacion, api, conexion, enviarCola } from "./api"
+import { actualizacion, api, conexion, enviarCola, preferencias } from "./api"
 import { sesion } from "./sesion"
 
 const probando = ref(false)
@@ -39,6 +39,10 @@ async function latir() {
     // Dirección por nombre del PC de caja: guía al usuario si un día cambia la IP de la caja
     if (r?.datos?.pc) try { localStorage.setItem("ag_caja_pc", r.datos.pc) } catch { /* sin almacenamiento */ }
     if (r?.datos?.actualizacion) Object.assign(actualizacion, r.datos.actualizacion)
+    if (r?.datos?.estilo && r.datos.estilo !== preferencias.estilo) {
+      preferencias.estilo = r.datos.estilo
+      try { localStorage.setItem("ag_estilo_tarjetas", r.datos.estilo) } catch { /* sin almacenamiento */ }
+    }
   } catch { /* el aviso lo maneja conexion.ok */ }
 }
 

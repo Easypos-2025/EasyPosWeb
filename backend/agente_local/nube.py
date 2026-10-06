@@ -85,6 +85,31 @@ async def latido() -> None:
         actualizador.estado["reportar"] = None
     estado["empresa"] = (r or {}).get("empresa")
     actualizador.estado["vigente"] = (r or {}).get("version_vigente")
+    await guardar_estilo((r or {}).get("estilo_tarjetas"))
+
+
+# Estilo de tarjetas de las cuentas abiertas: lo escoge la empresa en la web (company_configs.pos_card_style).
+# Se guarda en ag_config para que la mini-app lo use aunque no haya internet.
+ESTILOS_TARJETAS = {"oval-wood", "circular-gold", "checkered", "minimal-card", "ticket", "bubble"}
+ESTILO_DEFECTO = "oval-wood"
+
+
+async def guardar_estilo(estilo: str | None) -> None:
+    if estilo not in ESTILOS_TARJETAS or estilo == estado.get("estilo_tarjetas"):
+        return
+    async with SesionTemp() as s:
+        await s.execute(text("""
+            INSERT INTO ag_config (clave, valor) VALUES ('estilo_tarjetas', :v) ON DUPLICATE KEY UPDATE valor = :v
+        """), {"v": estilo})
+        await s.commit()
+    estado["estilo_tarjetas"] = estilo
+
+
+async def estilo_tarjetas(tmp) -> str:
+    if not estado.get("estilo_tarjetas"):
+        guardado = (await tmp.execute(text("SELECT valor FROM ag_config WHERE clave = 'estilo_tarjetas'"))).scalar()
+        estado["estilo_tarjetas"] = guardado if guardado in ESTILOS_TARJETAS else ESTILO_DEFECTO
+    return estado["estilo_tarjetas"]
 
 
 async def turno_y_pedidos() -> tuple[str, int]:

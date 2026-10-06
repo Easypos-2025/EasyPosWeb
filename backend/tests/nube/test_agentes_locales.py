@@ -95,6 +95,7 @@ def test_latido_actualiza_contacto(cliente, claves):
     r = cliente.post("/api/agente/latido", headers={"X-Agente-Clave": a},
                      json={"url_local": "http://192.168.1.2:8090", "ip_local": "192.168.1.2", "version": "0.1.0"})
     assert r.status_code == 200 and r.json()["codigo"] == "T990001"
+    assert r.json()["estilo_tarjetas"] == "oval-wood"                    # empresa sin estilo escogido
     ag = {x["company_id"]: x for x in cliente.get("/api/agentes-locales").json()}[EMP_A]
     assert ag["url_local"] == "http://192.168.1.2:8090" and ag["en_linea"] is True
     # Una URL con ruta o esquema raro no se guarda
@@ -125,6 +126,22 @@ def test_errores_al_monitor(cliente, claves):
     assert r.status_code == 200 and r.json()["refs"][0].startswith("ERR-")
     assert cliente.post("/api/agente/errores", headers={"X-Agente-Clave": a},
                         json={"eventos": [{"titulo": "x", "tipo": "SEGURIDAD"}]}).status_code == 422
+
+
+def test_estilo_de_tarjetas_de_la_empresa(cliente, claves, db):
+    """El agente recibe el estilo de tarjetas que la empresa escogió en la web."""
+    a, _ = claves
+    with db.cursor() as c:
+        c.execute("INSERT INTO company_configs (company_id, pos_card_style) VALUES (%s, 'ticket') "
+                  "ON DUPLICATE KEY UPDATE pos_card_style = 'ticket'", (EMP_A,))
+    try:
+        assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": a}, json={}).json()["estilo_tarjetas"] == "ticket"
+        with db.cursor() as c:
+            c.execute("UPDATE company_configs SET pos_card_style = 'raro' WHERE company_id = %s", (EMP_A,))
+        assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": a}, json={}).json()["estilo_tarjetas"] == "oval-wood"
+    finally:
+        with db.cursor() as c:
+            c.execute("DELETE FROM company_configs WHERE company_id = %s", (EMP_A,))
 
 
 def test_regenerar_y_desactivar(cliente, claves):
