@@ -208,6 +208,41 @@ def test_novedad_libre(cliente, db, h):
     assert not _filas(db, f"SELECT * FROM {T}.temp_novedades_plato_pedido WHERE Nro_Pedido=%s", nro)
 
 
+def _cola(db, nro):
+    return _filas(db, f"SELECT Item, Mesero, Nro_Mesa, Nuevo, Enviada_MySql, Enviado_Desde, Impresora, Depende, Fecha, Cantidad "
+                      f"FROM {T}.temp_impresion_tirilla_comanda WHERE Nro_pedido=%s ORDER BY Item, Nuevo", nro)
+
+
+def test_enviar_pedido_a_la_cola_de_impresion(cliente, db, h):
+    """Enviar_Pedido_Impresion del VB6: al enviar, lo no impreso pasa a temp_impresion_tirilla_comanda."""
+    _sql(db, f"UPDATE {E}.variables_del_sistema SET Imprimir_Tirilla_Comanda=1, Imprimir_Comanda_Plazoleta=0, Actualizar_Tablas_Manualmente=0")
+    nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 2}, {"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
+    cola = _cola(db, nro)
+    # Todas las filas (por unidad e impresora), como pedido nuevo; LAURA no está en temp_meseros → se toma de los del día
+    assert [(c["Item"], c["Impresora"], c["Depende"], c["Nuevo"]) for c in cola] == \
+           [(1, "COCINA", 1, 1), (2, "BARRA", 1, 1), (3, "COCINA", 1, 1), (4, "BARRA", 1, 1), (5, "BARRA", 5, 1)]
+    assert {(c["Mesero"], c["Nro_Mesa"], c["Enviado_Desde"], c["Enviada_MySql"], str(c["Fecha"])) for c in cola} == \
+           {("LAURA", "S-01", "Cel Ana", 0, "2026-10-03")}
+    # Agregar: solo lo nuevo (lo anterior aún sin imprimir no se repite) y con Nuevo = 0
+    cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
+    cola = _cola(db, nro)
+    assert len(cola) == 6 and [(c["Item"], c["Nuevo"]) for c in cola][-1] == (6, 0)
+    # Plazoleta o actualizar manualmente → la cola del pedido queda con Enviada_MySql = 1
+    _sql(db, f"UPDATE {E}.variables_del_sistema SET Imprimir_Comanda_Plazoleta=1")
+    cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
+    assert {c["Enviada_MySql"] for c in _cola(db, nro)} == {1} and len(_cola(db, nro)) == 7
+    # Lo ya impreso por el escritorio no se vuelve a encolar
+    _sql(db, f"DELETE FROM {T}.temp_impresion_tirilla_comanda", f"UPDATE {T}.temp_detalle_comanda SET Impreso=1")
+    cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
+    assert [c["Item"] for c in _cola(db, nro)] == [8]
+
+
+def test_sin_banderas_de_impresion_no_se_encola(cliente, db, h):
+    _sql(db, f"UPDATE {E}.variables_del_sistema SET Imprimir_Tirilla_Comanda=0, Imprimir_Comanda_Plazoleta=0, Actualizar_Tablas_Manualmente=1")
+    nro = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
+    assert not _cola(db, nro)
+
+
 def test_precio_de_lista_al_guardar(cliente, db, h):
     r = _crear(cliente, h, [{"id_plato": 10, "cantidad": 1}], id_cliente=194)
     nro = r.json()["nro_pedido"]

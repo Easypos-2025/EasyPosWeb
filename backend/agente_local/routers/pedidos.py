@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import auditoria
 from ..db import get_emp, get_tmp, motor_temp
 from ..seguridad import ip_cliente
-from ..servicios import bloqueos, meseros
+from ..servicios import bloqueos, impresion, meseros
 from ..servicios.negocio import fecha_negocio
 from ..servicios.pedidos import (MAX_NOMBRE_CUENTA, LineaIn, insertar_lineas, limpiar_texto, numero_pedido,
                                  preparar_lineas, siguiente_item, valor_linea)
@@ -210,6 +210,8 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
         """), {"n": nro, "f": fecha.strftime("%Y/%m/%d"), "mesa": nombre_mesa, "hora": ahora.strftime("%I:%M:%S %p"),
                "mesero": data.mesero, "id_mesa": id_mesa, "cli": cliente["id"]})
         await insertar_lineas(conn, nro, fecha, ahora, lineas, 1)
+        # Enviar_Pedido_Impresion: a la cola que el escritorio manda a las impresoras
+        await impresion.enviar_pedido_impresion(conn, emp, nro, True, fecha, ahora, mesero.nombre_dispositivo)
         await bloqueos.liberar(conn, id_mesa, nombre_mesa, mesero)
         await conn.commit()
 
@@ -233,7 +235,9 @@ async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = 
         if otro:
             raise HTTPException(status_code=409, detail=f"'{pedido['Mesa'].strip()}' está en uso en {otro}.")
         item = await siguiente_item(conn, data.nro_pedido)
-        await insertar_lineas(conn, data.nro_pedido, fecha, datetime.now(), lineas, item)
+        ahora = datetime.now()
+        await insertar_lineas(conn, data.nro_pedido, fecha, ahora, lineas, item)
+        await impresion.enviar_pedido_impresion(conn, emp, data.nro_pedido, False, fecha, ahora, mesero.nombre_dispositivo)
         await conn.commit()
 
     await auditoria.registrar("pedido_agregar", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
