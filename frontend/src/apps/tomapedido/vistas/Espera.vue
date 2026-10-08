@@ -18,6 +18,7 @@
 
       <button class="btn btn--primario btn--bloque" @click="revisar(true)">Ya me activaron</button>
       <button class="acceso__enlace" @click="otroUsuario">Usar otro usuario</button>
+      <VersionAgente />
     </div>
   </div>
 </template>
@@ -26,6 +27,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
+import VersionAgente from "../componentes/VersionAgente.vue"
 import { api } from "../api"
 import { guardarSesion, sesion } from "../sesion"
 import { showToast } from "@/utils/toast"

@@ -28,6 +28,7 @@
         <template v-else>Registrar</template>
       </button>
       <button type="button" class="acceso__enlace" @click="$router.push('/ingresar')">Ya tengo usuario: ingresar</button>
+      <VersionAgente />
     </form>
   </div>
 </template>
@@ -36,6 +37,7 @@
 import { reactive, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
+import VersionAgente from "../componentes/VersionAgente.vue"
 import { api } from "../api"
 import { guardarSesion } from "../sesion"
 

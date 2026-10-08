@@ -14,6 +14,7 @@ La clave es por empresa (no la global de la sincronización del escritorio). En 
 su SHA-256 y se muestra una sola vez al crearla o regenerarla.
 """
 import hashlib
+import logging
 import os
 import re
 import secrets
@@ -31,6 +32,8 @@ from app.auth.dependencies import get_current_user, require_sysadmin
 from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.services import error_log
+
+log = logging.getLogger(__name__)
 
 router_admin = APIRouter(prefix="/api/agentes-locales", tags=["agentes-locales"],
                          dependencies=[Depends(tenant_guard)])
@@ -160,6 +163,28 @@ async def cambiar(agente_id: int, data: AgenteCambioIn, db: AsyncSession = Depen
         raise HTTPException(status_code=409, detail="El código ya está en uso.")
     if not n:
         raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    return {"ok": True}
+
+
+class AgenteEliminarIn(BaseModel):
+    codigo: str = Field(min_length=1, max_length=20)     # confirmación: se escribe el código del agente
+
+
+@router_admin.delete("/{agente_id}")
+async def eliminar(agente_id: int, data: AgenteEliminarIn, db: AsyncSession = Depends(get_db),
+                   user=Depends(require_sysadmin)):
+    """Libera la empresa y el código (p. ej. un agente de prueba). La clave queda inválida: el agente
+    instalado con ella es rechazado de inmediato. Las versiones publicadas no se tocan."""
+    fila = (await db.execute(text("SELECT company_id, codigo FROM company_local_agents WHERE id = :id"),
+                             {"id": agente_id})).mappings().first()
+    if not fila:
+        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    if data.codigo.strip() != fila["codigo"]:
+        raise HTTPException(status_code=422, detail="El código escrito no coincide con el del agente.")
+    await db.execute(text("DELETE FROM company_local_agents WHERE id = :id"), {"id": agente_id})
+    await db.commit()
+    log.warning("Agente local eliminado: id=%s empresa=%s codigo=%s por usuario=%s",
+                agente_id, fila["company_id"], fila["codigo"], getattr(user, "id", None))
     return {"ok": True}
 
 

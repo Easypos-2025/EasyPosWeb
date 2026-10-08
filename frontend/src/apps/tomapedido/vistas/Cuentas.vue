@@ -40,6 +40,7 @@
         <TarjetaCuenta v-for="c in cuentas" :key="c.nro_pedido" :cuenta="c" :estilo="preferencias.estilo"
                        :ahora="ahora" @abrir="abrir(c)" />
       </div>
+      <VersionAgente />
     </main>
 
     <div class="accion-fija">
@@ -54,6 +55,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
+import VersionAgente from "../componentes/VersionAgente.vue"
 import TarjetaCuenta from "../componentes/TarjetaCuenta.vue"
 import { actualizacion, api, preferencias } from "../api"
 import { cerrarSesion, sesion } from "../sesion"

@@ -3,7 +3,12 @@ import pytest
 from conftest import BD_EMP, BD_TMP, activar_en_escritorio
 
 E, T = BD_EMP, BD_TMP
-FECHA_TURNO = "2026/10/03"      # fecha de negocio del turno (distinta a la del calendario)
+from datetime import date, timedelta
+
+# Fecha de negocio = variables_del_sistema.Fecha de la BD de la empresa; se comanda solo si es la de hoy
+HOY = date.today()
+ISO, AYER = HOY.isoformat(), (HOY - timedelta(days=1)).isoformat()
+FECHA_TURNO = HOY.strftime("%Y/%m/%d")    # como la graba el escritorio en temp_comanda.Fecha
 LAURA, PEDRO = 601, 602         # meseros del día (temp_meseros_dia)
 
 
@@ -23,8 +28,9 @@ def _filas(db, sql, *p):
 def datos(db):
     _sql(db,
          f"INSERT INTO {E}.configuracion_facturacion (Id_Sede, Paga_Impuesto, Precios_Incluyen_Impuesto) VALUES (1,0,0)",
-         f"INSERT INTO {E}.variables_del_sistema (Id_Sede, Fecha, Pedir_Cantidad_Mod_Mesas) VALUES (1,'2026-10-04',1)",
-         f"INSERT INTO {T}.temp_variables_del_sistema (Id_Sede, Fecha) VALUES (1,'{FECHA_TURNO}')",
+         f"INSERT INTO {E}.variables_del_sistema (Id_Sede, Fecha, Pedir_Cantidad_Mod_Mesas, Cerrar_Dia) VALUES (1,'{ISO}',1,0)",
+         # La de datatemppos es otra a propósito: los pedidos usan la de la BD de la empresa
+         f"INSERT INTO {T}.temp_variables_del_sistema (Id_Sede, Fecha) VALUES (1,'2020/01/01')",
          f"INSERT INTO {T}.temp_meseros_dia (cod_empleado, nombres, estado) VALUES ({LAURA},'LAURA',1),({PEDRO},'PEDRO',1)",
          f"INSERT INTO {E}.categoria_platos (Cod_Categoria, Nombre, Activa) VALUES (1,'COMIDAS',1),(2,'BEBIDAS',1),(3,'OCULTA',0)",
          # Activo = 0 es visible (invertido en el escritorio)
@@ -56,8 +62,8 @@ def datos(db):
          # Menú del día (BD de la empresa): grupos en plato_armar, menú de la fecha del turno con Seleccionado = 1
          f"INSERT INTO {E}.plato_armar (Id_Plato, Cod_Categoria, Cantidad_Elegir, Activa, Exgir_Seleccion) VALUES (15,19,1,1,1),(16,7,2,1,0)",
          f"""INSERT INTO {E}.menu_diario (Id_Menu, Id_Item, Fecha, Categoria, Descripcion, Agrupar, Seleccionado) VALUES
-             (52,146,'2026-10-03','01 SOPAS','FRIJOLADA',19,1),(52,151,'2026-10-03','01 SOPAS','SANCOCHO',19,1),
-             (52,160,'2026-10-03','01 SOPAS','NO ESCOGIDA HOY',19,0),(51,999,'2026-10-02','01 SOPAS','DE AYER',19,1)""",
+             (52,146,'{ISO}','01 SOPAS','FRIJOLADA',19,1),(52,151,'{ISO}','01 SOPAS','SANCOCHO',19,1),
+             (52,160,'{ISO}','01 SOPAS','NO ESCOGIDA HOY',19,0),(51,999,'{AYER}','01 SOPAS','DE AYER',19,1)""",
          f"INSERT INTO {E}.categoria_productos (Cod_Categoria, Nombre, Activa) VALUES (7,'PROTEINA',1)",
          f"INSERT INTO {E}.plato_armar_detalle (Id_Plato, Cod_Categoria, Item, Posicion, Cantidad_Descontar, Por_Default, Precio_Insumo) VALUES (16,7,1,501,1.5,1,0),(16,7,2,502,2,0,3000)",
          f"""INSERT INTO {E}.inventario_porciones (Id_Grupo, Id_Item, Descripcion, Posicion, Agrupar) VALUES
@@ -176,7 +182,8 @@ def test_pedido_forma_escritorio(cliente, db, h):
                        (3, 10, 1, "COCINA", "1"), (4, 10, 0, "BARRA", "1"),
                        (5, 11, 1, "BARRA", "5")]
     assert all(d["Impreso"] == 0 for d in det)
-    assert str(det[0]["Fecha"]) == "2026-10-03"                        # fecha de negocio
+    assert str(det[0]["Fecha"]) == ISO                                 # fecha de negocio
+    assert nro.startswith(f"Cel Ana-{FECHA_TURNO}")                   # Nro_Pedido con la fecha de negocio
     assert det[0]["Novedad"] == "SIN CEBOLLA" and det[0]["Producto_Personalizado"] == "HAMBURGUESA"
     assert len(_filas(db, f"SELECT * FROM {T}.temp_detalle_comanda_parcial WHERE Nro_pedido=%s", nro)) == 5
 
@@ -222,7 +229,7 @@ def test_enviar_pedido_a_la_cola_de_impresion(cliente, db, h):
     assert [(c["Item"], c["Impresora"], c["Depende"], c["Nuevo"]) for c in cola] == \
            [(1, "COCINA", 1, 1), (2, "BARRA", 1, 1), (3, "COCINA", 1, 1), (4, "BARRA", 1, 1), (5, "BARRA", 5, 1)]
     assert {(c["Mesero"], c["Nro_Mesa"], c["Enviado_Desde"], c["Enviada_MySql"], str(c["Fecha"])) for c in cola} == \
-           {("LAURA", "S-01", "Cel Ana", 0, "2026-10-03")}
+           {("LAURA", "S-01", "Cel Ana", 0, ISO)}
     # Agregar: solo lo nuevo (lo anterior aún sin imprimir no se repite) y con Nuevo = 0
     cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
     cola = _cola(db, nro)
@@ -241,6 +248,22 @@ def test_sin_banderas_de_impresion_no_se_encola(cliente, db, h):
     _sql(db, f"UPDATE {E}.variables_del_sistema SET Imprimir_Tirilla_Comanda=0, Imprimir_Comanda_Plazoleta=0, Actualizar_Tablas_Manualmente=1")
     nro = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
     assert not _cola(db, nro)
+
+
+def test_caja_cerrada_no_deja_comandar(cliente, db, h):
+    """Se comanda solo con Cerrar_Dia = 0 y Fecha = hoy (BD de la empresa); si no, pantalla de caja cerrada."""
+    nro = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
+    assert cliente.post("/api/ag/sesion/latido", headers=_hdr(h)).json()["caja"]["abierta"] is True
+    for cambio, motivo in ((f"Cerrar_Dia=1", "cerrada"), (f"Cerrar_Dia=0, Fecha='{AYER}'", "fecha")):
+        _sql(db, f"UPDATE {E}.variables_del_sistema SET {cambio}")
+        caja = cliente.post("/api/ag/sesion/latido", headers=_hdr(h)).json()["caja"]
+        assert caja["abierta"] is False and caja["motivo"] == motivo and "escritorio" in caja["mensaje"]
+        r = _crear(cliente, h, [{"id_plato": 11, "cantidad": 1}], mesa={"id": 2, "nombre": "S-02"})
+        assert r.status_code == 409 and r.headers["X-Error-Code"] == "CAJA_CERRADA"
+        r = cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]},
+                         headers=_hdr(h))
+        assert r.status_code == 409
+    assert len(_filas(db, f"SELECT * FROM {T}.temp_comanda")) == 1     # no se grabó nada con la caja cerrada
 
 
 def test_precio_de_lista_al_guardar(cliente, db, h):
@@ -377,8 +400,8 @@ def test_todos_ven_todos_los_pedidos(cliente, db, h):
              ('MONTANDO','{FECHA_TURNO}','S-99',{PEDRO},1,0,0,3,1)""",
          # Caja: una fila enviada (Salio = 0) y otra que aún se está montando (Salio = 1)
          f"""INSERT INTO {T}.temp_detalle_comanda (Nro_pedido, Fecha, Id_Plato, Item, Descripcion, Cantidad, Valor, Salio, Mostrar, Depende, Impreso) VALUES
-             ('CAJA-1','2026-10-03',11,1,'GASEOSA',1,4000,0,1,'1',1),
-             ('CAJA-1','2026-10-03',10,2,'HAMBURGUESA',1,20000,1,1,'2',0)""")
+             ('CAJA-1','{ISO}',11,1,'GASEOSA',1,4000,0,1,'1',1),
+             ('CAJA-1','{ISO}',10,2,'HAMBURGUESA',1,20000,1,1,'2',0)""")
     otro = _otro_mesero(cliente, db)
     for quien in (_hdr(h), otro):
         todos = cliente.get("/api/ag/pedidos", headers=quien).json()
@@ -539,7 +562,7 @@ def test_menu_guardado_en_escritorio_se_ve_sin_recargar_temporales(cliente, db, 
     _sql(db, f"DELETE FROM {E}.menu_diario")
     assert cliente.get("/api/ag/catalogo/plato/15/opciones", headers=_hdr(h)).status_code == 409
     _sql(db, f"INSERT INTO {E}.menu_diario (Id_Menu, Id_Item, Fecha, Categoria, Descripcion, Agrupar, Seleccionado) "
-             f"VALUES (53,146,'2026-10-03','01 SOPAS','FRIJOLADA',19,1)")
+             f"VALUES (53,146,'{ISO}','01 SOPAS','FRIJOLADA',19,1)")
     assert cliente.get("/api/ag/catalogo/plato/15/opciones", headers=_hdr(h)).status_code == 200
 
 

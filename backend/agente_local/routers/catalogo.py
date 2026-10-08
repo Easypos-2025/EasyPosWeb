@@ -34,7 +34,7 @@ async def cliente_valido(emp: AsyncSession, id_cliente: int) -> dict:
 @router.get("/config")
 async def config_toma(mesero: Mesero = Depends(mesero_actual),
                       emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
-    return {"fecha_negocio": (await fecha_negocio(tmp)).isoformat(),
+    return {"fecha_negocio": (await fecha_negocio(emp)).isoformat(),
             **await opciones_toma(emp), **await facturacion(emp),
             "cliente_default": await cliente_valido(emp, CLIENTE_CONSUMIDOR_FINAL),
             "textos": textos()}
@@ -99,7 +99,7 @@ async def opciones_plato(id_plato: int, mesero: Mesero = Depends(mesero_actual),
         raise HTTPException(status_code=404, detail=f"{textos()['producto']} no disponible.")
     para_armar = await catalogo.platos_para_armar(emp)
     tipo = catalogo.tipo_armado(plato, para_armar)
-    grupos = await catalogo.opciones(emp, plato, await fecha_negocio(tmp), para_armar)
+    grupos = await catalogo.opciones(emp, plato, await fecha_negocio(emp), para_armar)
     fact = await facturacion(emp)
     if tipo == "menu" and not grupos:
         raise HTTPException(status_code=409, detail="El menú del día no está armado para hoy.")

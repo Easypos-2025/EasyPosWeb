@@ -17,7 +17,7 @@ import re
 import socket
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -114,9 +114,9 @@ async def estilo_tarjetas(tmp) -> str:
 
 async def turno_y_pedidos() -> tuple[str, int]:
     """Fecha de negocio (cambia al abrir turno en el escritorio) y pedidos abiertos de los dispositivos."""
-    from .servicios.negocio import fecha_negocio
+    from .servicios.negocio import fecha_turno_escritorio
     async with SesionTemp() as s:
-        fecha = await fecha_negocio(s)
+        fecha = await fecha_turno_escritorio(s) or date.today()
         abiertos = (await s.execute(text("SELECT COUNT(*) FROM temp_comanda WHERE Movil = 1 AND Salio = 0"))).scalar() or 0
     return fecha.isoformat(), int(abiertos)
 

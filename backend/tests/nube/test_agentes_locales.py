@@ -213,3 +213,16 @@ def test_versiones_descarga_y_vigente(cliente, db, claves, tmp_path, monkeypatch
     assert cliente.post("/api/agente/latido", headers=h, json={}).json()["version_vigente"]["version"] == "t-v1"
     with db.cursor() as c:
         c.execute("DELETE FROM agente_versiones WHERE version IN ('t-v1','t-v2')")
+
+
+def test_eliminar_libera_empresa_y_codigo(cliente, claves):
+    """SYSADMIN elimina un agente (p. ej. de prueba): se confirma con el código; la clave deja de servir."""
+    _, b = claves
+    ag = {x["company_id"]: x for x in cliente.get("/api/agentes-locales").json()}[EMP_B]
+    assert cliente.request("DELETE", f"/api/agentes-locales/{ag['id']}", json={"codigo": "OTRO"}).status_code == 422
+    assert cliente.request("DELETE", f"/api/agentes-locales/{ag['id']}", json={"codigo": "T990002"}).status_code == 200
+    assert EMP_B not in {x["company_id"] for x in cliente.get("/api/agentes-locales").json()}
+    assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": b}, json={}).status_code == 401
+    assert cliente.request("DELETE", f"/api/agentes-locales/{ag['id']}", json={"codigo": "T990002"}).status_code == 404
+    # La empresa y el código quedan libres para asignarlos de nuevo
+    assert cliente.post("/api/agentes-locales", json={"company_id": EMP_B, "codigo": "T990002"}).status_code == 200

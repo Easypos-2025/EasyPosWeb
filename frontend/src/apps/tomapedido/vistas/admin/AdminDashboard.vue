@@ -61,7 +61,13 @@
           <div v-if="r.direccion_pc" class="qr__pc">
             <p><b>Computadores Windows del negocio:</b> esta dirección no cambia aunque cambien la IP de la caja.</p>
             <code>{{ r.direccion_pc }}</code>
-            <button class="btn btn--chico" @click="descargarAcceso"><Icono nombre="descargar" :tam="16" /> Descargar acceso directo para PC</button>
+            <button class="btn btn--chico" @click="copiar"><Icono :nombre="copiado ? 'check' : 'copiar'" :tam="16" /> {{ copiado ? "Dirección copiada" : "Copiar dirección" }}</button>
+            <ol class="guia">
+              <li>En ese PC abra la dirección en <b>Chrome</b> o <b>Edge</b>.</li>
+              <li><b>Chrome:</b> menú ⋮ → Transmitir, guardar y compartir → <b>Crear acceso directo</b> → marque
+                "Abrir como ventana". <b>Edge:</b> menú ⋯ → Aplicaciones → <b>Instalar este sitio como aplicación</b>.</li>
+              <li>Queda el ícono en el escritorio y abre sin la barra del navegador.</li>
+            </ol>
           </div>
         </div>
       </div>
@@ -87,15 +93,19 @@ const nubeOk = computed(() => !!r.value?.nube?.ultimo_ok &&
 
 const fecha = (v) => (v ? new Date(v).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "—")
 
-// Acceso directo de Windows (.url) a la dirección por nombre del PC de caja
-function descargarAcceso() {
-  const url = r.value.direccion_pc.replace(/\/?$/, "/")
-  const archivo = new Blob([["[InternetShortcut]", `URL=${url}`, ""].join(String.fromCharCode(13, 10))], { type: "application/octet-stream" })
-  const a = document.createElement("a")
-  a.href = URL.createObjectURL(archivo)
-  a.download = "EasyPos Pedidos.url"
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+// Copiar la dirección por nombre del PC (Chrome bloquea la descarga de accesos directos .url). El panel
+// se abre por http en la red local, donde el navegador no da la API de portapapeles: se copia seleccionando.
+const copiado = ref(false)
+function copiar() {
+  const campo = document.createElement("textarea")
+  campo.value = r.value.direccion_pc
+  campo.setAttribute("readonly", "")
+  campo.style.position = "fixed"; campo.style.opacity = "0"
+  document.body.appendChild(campo)
+  campo.select()
+  try { copiado.value = document.execCommand("copy") } catch { copiado.value = false }
+  document.body.removeChild(campo)
+  if (copiado.value) setTimeout(() => { copiado.value = false }, 2500)
 }
 
 onMounted(async () => {
@@ -134,6 +144,8 @@ dd { margin: 0; font-weight: 600; }
 .qr small { color: var(--texto-suave); }
 .qr__pc { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--borde, #cbd5e1); }
 .qr__pc code { font-size: 16px; }
+.guia { margin: 10px 0 0; padding-left: 18px; text-align: left; font-size: 13px; color: var(--texto-suave); }
+.guia li { margin-bottom: 4px; }
 
 @media (max-width: 1200px) {
   .kpis { grid-template-columns: repeat(2, 1fr); }

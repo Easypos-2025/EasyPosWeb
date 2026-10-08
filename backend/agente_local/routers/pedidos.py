@@ -23,7 +23,7 @@ from .. import auditoria
 from ..db import get_emp, get_tmp, motor_temp
 from ..seguridad import ip_cliente
 from ..servicios import bloqueos, impresion, meseros
-from ..servicios.negocio import fecha_negocio
+from ..servicios.negocio import exigir_caja_abierta
 from ..servicios.pedidos import (MAX_NOMBRE_CUENTA, LineaIn, insertar_lineas, limpiar_texto, numero_pedido,
                                  preparar_lineas, siguiente_item, valor_linea)
 from ..servicios.precios import CLIENTE_CONSUMIDOR_FINAL
@@ -162,9 +162,9 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
                        emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
     if bool(data.mesa) == bool(data.cuenta_nueva):
         raise HTTPException(status_code=422, detail=f"Escoja dónde montar el pedido: una opción de {t('cuentas')} o un nombre nuevo.")
+    fecha = await exigir_caja_abierta(emp)           # con la caja cerrada no se comanda
     cliente = await cliente_valido(emp, data.id_cliente)
     lineas = await preparar_lineas(emp, tmp, data.lineas, cliente["id"])
-    fecha = await fecha_negocio(tmp)
 
     if data.mesa and not await mesa_existe(emp, data.mesa.id, data.mesa.nombre):
         raise HTTPException(status_code=404, detail=f"'{data.mesa.nombre.strip()}' no existe.")
@@ -194,7 +194,7 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
 
         for _ in range(3):
             ahora = datetime.now()
-            nro = numero_pedido(mesero.nombre_dispositivo, ahora)
+            nro = numero_pedido(mesero.nombre_dispositivo, fecha, ahora)
             if not (await conn.execute(text("SELECT COUNT(*) FROM temp_comanda WHERE Nro_Pedido = :n"),
                                        {"n": nro})).scalar():
                 break
@@ -224,10 +224,10 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
 @router.post("/pedido/agregar")
 async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = Depends(mesero_actual),
                             emp: AsyncSession = Depends(get_emp), tmp: AsyncSession = Depends(get_tmp)):
+    fecha = await exigir_caja_abierta(emp)
     pedido = await _pedido_abierto(tmp, data.nro_pedido)
     # Los precios salen de la lista del cliente del pedido
     lineas = await preparar_lineas(emp, tmp, data.lineas, int(pedido["Id_Cliente"] or CLIENTE_CONSUMIDOR_FINAL))
-    fecha = await fecha_negocio(tmp)
 
     async with _escritura() as conn:
         pedido = await _pedido_abierto(conn, data.nro_pedido)

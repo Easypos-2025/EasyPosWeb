@@ -98,7 +98,7 @@ async def preparar_lineas(emp: AsyncSession, tmp: AsyncSession, lineas: list[Lin
     fact = await facturacion(emp)
     lista = await lista_cliente(emp, id_cliente, sorted({l.id_plato for l in lineas}))
     para_armar = await catalogo.platos_para_armar(emp)
-    fecha = await fecha_negocio(tmp)
+    fecha = await fecha_negocio(emp)
     novedades_cat = await catalogo.novedades(emp)
 
     preparadas = []
@@ -272,6 +272,6 @@ async def siguiente_item(tmp: AsyncSession, nro: str) -> int:
     return int(maximo or 0) + 1
 
 
-def numero_pedido(nombre_dispositivo: str, ahora: datetime) -> str:
-    """Igual que la app anterior: dispositivo + fecha y hora (no se repite por dispositivo)."""
-    return f"{nombre_dispositivo}-{ahora:%Y/%m/%d}{ahora:%I:%M:%S %p}"
+def numero_pedido(nombre_dispositivo: str, fecha: date, ahora: datetime) -> str:
+    """Igual que la app anterior: dispositivo + fecha de negocio + hora (no se repite por dispositivo)."""
+    return f"{nombre_dispositivo}-{fecha:%Y/%m/%d}{ahora:%I:%M:%S %p}"

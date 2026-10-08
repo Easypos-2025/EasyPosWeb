@@ -26,6 +26,7 @@ from .. import VERSION, actualizador, auditoria, config, errores, nube
 from ..db import get_emp, get_tmp
 from ..seguridad import (cadena_aleatoria, cifrar_clave, crear_token, gastar_tiempo_clave,
                          hash_secreto, ip_cliente, leer_token, nuevo_secreto, verificar_clave)
+from ..servicios.negocio import estado_caja, mensaje_caja
 from ..sesion import Mesero, activacion_escritorio, estado_de, mesero_actual
 
 router = APIRouter(prefix="/api/ag", tags=["dispositivos"])
@@ -273,7 +274,8 @@ async def yo(mesero: Mesero = Depends(mesero_actual), emp: AsyncSession = Depend
 # ───────────────────────────── conexión y errores del dispositivo ─────────────────────────────
 
 @router.post("/sesion/latido")
-async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp: AsyncSession = Depends(get_tmp)):
+async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp: AsyncSession = Depends(get_tmp),
+                 emp: AsyncSession = Depends(get_emp)):
     """El dispositivo avisa que sigue conectado (el panel muestra quién perdió la conexión)."""
     await tmp.execute(text("UPDATE ag_dispositivos SET ultimo_acceso = :f, ultima_ip = :ip WHERE id = :id"),
                       {"f": datetime.now(), "ip": ip_cliente(request), "id": mesero.id_dispositivo})
@@ -282,7 +284,13 @@ async def latido(request: Request, mesero: Mesero = Depends(mesero_actual), tmp:
     # actualizacion: versión nueva lista para instalar (aviso en la pantalla de los meseros)
     # estilo: tarjetas de las cuentas abiertas, el mismo que la empresa escogió en la web
     return {"ok": True, "version": VERSION, "pc": nube.url_pc(), "actualizacion": actualizador.para_dispositivos(),
-            "estilo": await nube.estilo_tarjetas(tmp)}
+            "estilo": await nube.estilo_tarjetas(tmp), "caja": await _caja(emp)}
+
+
+async def _caja(emp: AsyncSession) -> dict:
+    """Caja cerrada (o con otra fecha): la mini-app muestra la pantalla de "Caja cerrada"."""
+    estado = await estado_caja(emp)
+    return {**estado, "mensaje": None if estado["abierta"] else mensaje_caja(estado)}
 
 
 @router.post("/actualizar")

@@ -65,6 +65,9 @@
           <button class="al-btn" :class="a.activo ? 'al-btn--peligro' : 'al-btn--ok'" @click="alternar(a)">
             <i :class="a.activo ? 'bi bi-pause-circle' : 'bi bi-play-circle'"></i> {{ a.activo ? "Desactivar" : "Activar" }}
           </button>
+          <button class="al-btn al-btn--peligro" @click="porEliminar = { ...a, confirmacion: '' }">
+            <i class="bi bi-trash"></i> Eliminar
+          </button>
         </div>
       </div>
     </div>
@@ -87,6 +90,26 @@
         <div class="al-modal-acc">
           <button type="button" class="al-btn al-btn--ghost" @click="nuevo = null">Cancelar</button>
           <button class="al-btn" :disabled="guardando || !nuevo.company_id || !nuevo.codigo">Asignar</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Eliminar: libera la empresa y el código; se confirma escribiendo el código -->
+    <div v-if="porEliminar" class="al-velo" @click.self="porEliminar = null">
+      <form class="al-modal" @submit.prevent="eliminar">
+        <h3><i class="bi bi-trash"></i> Eliminar agente</h3>
+        <p class="al-aviso">Se elimina el agente de <b>{{ porEliminar.empresa }}</b>: la empresa y el código quedan libres
+          para asignarlos de nuevo y el agente instalado con esta clave deja de comunicarse con la nube de inmediato.
+          En el PC donde estaba instalado, desinstálelo con el instalador.</p>
+        <label class="al-campo">
+          <span>Para confirmar escriba el código <b>{{ porEliminar.codigo }}</b></span>
+          <input v-model.trim="porEliminar.confirmacion" class="form-control" maxlength="20" autocomplete="off" />
+        </label>
+        <div class="al-modal-acc">
+          <button type="button" class="al-btn al-btn--ghost" @click="porEliminar = null">Cancelar</button>
+          <button class="al-btn al-btn--peligro" :disabled="guardando || porEliminar.confirmacion !== porEliminar.codigo">
+            Eliminar
+          </button>
         </div>
       </form>
     </div>
@@ -122,6 +145,7 @@ const cargando = ref(false)
 const guardando = ref(false)
 const nuevo = ref(null)
 const claveMostrada = ref(null)
+const porEliminar = ref(null)
 const versiones = ref([])
 const verVersiones = ref(false)
 const vigente = computed(() => versiones.value.find(v => v.vigente) || null)
@@ -175,6 +199,21 @@ async function crear() {
     await cargar()
   } catch (e) {
     showToast(e.response?.data?.detail || "No fue posible asignar el agente", "error", 3500)
+  } finally {
+    guardando.value = false
+  }
+}
+
+async function eliminar() {
+  const a = porEliminar.value
+  guardando.value = true
+  try {
+    await api.delete(`/api/agentes-locales/${a.id}`, { data: { codigo: a.confirmacion } })
+    showToast(`Agente de ${a.empresa} eliminado`, "success")
+    porEliminar.value = null
+    await cargar()
+  } catch (e) {
+    showToast(e.response?.data?.detail || "No se pudo eliminar el agente.", "error")
   } finally {
     guardando.value = false
   }

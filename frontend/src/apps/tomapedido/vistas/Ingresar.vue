@@ -20,7 +20,7 @@
         <template v-else>Ingresar</template>
       </button>
       <button type="button" class="acceso__enlace" @click="$router.push('/registro')">Registrar este dispositivo</button>
-      <p class="acceso__pie">Compilación {{ build }}</p>
+      <VersionAgente />
     </form>
   </div>
 </template>
@@ -29,6 +29,7 @@
 import { onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
+import VersionAgente from "../componentes/VersionAgente.vue"
 import { api } from "../api"
 import { guardarSesion, sesion } from "../sesion"
 
@@ -38,7 +39,6 @@ const clave = ref("")
 const error = ref("")
 const enviando = ref(false)
 const campoClave = ref(null)
-const build = typeof __APP_BUILD__ !== "undefined" ? __APP_BUILD__ : "dev"
 
 async function ingresar() {
   error.value = ""

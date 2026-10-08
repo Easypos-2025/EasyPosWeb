@@ -17,6 +17,10 @@ export class ErrorApi extends Error {
 export const conexion = reactive({ ok: true, desde: null })
 // Versión nueva del agente lista para instalar (llega con el latido; aviso en "Cuentas abiertas")
 export const actualizacion = reactive({ lista: false, aplicando: false, nueva: null, notas: null })
+// Caja (turno) del escritorio: cerrada o con otra fecha → no se comanda (pantalla "Caja cerrada")
+export const caja = reactive({ abierta: true, motivo: null, mensaje: null, fecha: null })
+// Versión del agente (compilación) que se muestra en la toma de pedidos
+export const agente = reactive({ version: null })
 // Estilo de tarjetas de las cuentas abiertas (el que la empresa escogió en la web; llega con el latido)
 export const preferencias = reactive({
   estilo: (() => { try { return localStorage.getItem("ag_estilo_tarjetas") || "oval-wood" } catch { return "oval-wood" } })(),
@@ -109,6 +113,9 @@ async function pedir(metodo, ruta, { cuerpo, params, encabezados = {}, comoAdmin
       // Sesión vencida, reemplazada por otro ingreso o dispositivo desactivado
       cerrarSesion()
       if (!location.hash.startsWith("#/ingresar")) location.hash = "#/ingresar"
+    }
+    if (r.status === 409 && r.headers.get("X-Error-Code") === "CAJA_CERRADA") {
+      Object.assign(caja, { abierta: false, mensaje: datos?.detail || null })
     }
     if (r.status >= 500 && !silencioso) {
       encolarError({ tipo: "VISTA", nivel: "ERROR", titulo: `Error del agente en ${ruta.split("?")[0]}`,

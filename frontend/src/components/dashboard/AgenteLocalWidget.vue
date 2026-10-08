@@ -21,10 +21,15 @@
           <p><i class="bi bi-pc-display"></i> <b>Computadores Windows del negocio:</b> use esta dirección, que no cambia
             aunque cambien la IP de la caja:</p>
           <code>{{ agente.url_pc }}</code>
-          <button class="btn btn-sm btn-outline-primary" @click="descargarAcceso">
-            <i class="bi bi-download"></i> Descargar acceso directo para PC
+          <button class="btn btn-sm btn-outline-primary" @click="copiar">
+            <i class="bi" :class="copiado ? 'bi-check2' : 'bi-clipboard'"></i> {{ copiado ? "Dirección copiada" : "Copiar dirección" }}
           </button>
-          <small>Guarde el archivo en el escritorio de cada PC: queda el ícono "EasyPos Pedidos".</small>
+          <ol class="alw-guia">
+            <li>En ese PC abra la dirección en <b>Chrome</b> o <b>Edge</b>.</li>
+            <li><b>Chrome:</b> menú ⋮ → Transmitir, guardar y compartir → <b>Crear acceso directo</b> → marque
+              "Abrir como ventana". <b>Edge:</b> menú ⋯ → Aplicaciones → <b>Instalar este sitio como aplicación</b>.</li>
+            <li>Queda el ícono en el escritorio y abre sin la barra del navegador.</li>
+          </ol>
         </div>
       </div>
     </div>
@@ -49,15 +54,15 @@ async function cargarQr() {
   } catch { /* sin QR */ }
 }
 
-// Acceso directo de Windows (.url) a la dirección por nombre del PC de caja
-function descargarAcceso() {
-  const url = agente.value.url_pc.replace(/\/?$/, "/")
-  const archivo = new Blob([`[InternetShortcut]\r\nURL=${url}\r\n`], { type: "application/octet-stream" })
-  const a = document.createElement("a")
-  a.href = URL.createObjectURL(archivo)
-  a.download = "EasyPos Pedidos.url"
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+// Copiar la dirección por nombre del PC de caja (Chrome bloquea la descarga de accesos directos .url):
+// con ella se crea el ícono desde el navegador ("Crear acceso directo" / "Instalar como aplicación")
+const copiado = ref(false)
+async function copiar() {
+  try {
+    await navigator.clipboard.writeText(agente.value.url_pc)
+    copiado.value = true
+    setTimeout(() => { copiado.value = false }, 2500)
+  } catch { /* sin permiso de portapapeles: la dirección queda visible para copiarla a mano */ }
 }
 
 function alternar() {
@@ -86,6 +91,8 @@ onBeforeUnmount(() => qr.value && URL.revokeObjectURL(qr.value))
 .alw-info small { color: #64748b; display: block; }
 .alw-pc { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #cbd5e1; }
 .alw-pc .btn { margin-bottom: 6px; }
+.alw-guia { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: #475569; text-align: left; }
+.alw-guia li { margin-bottom: 4px; }
 
 @media (max-width: 768px) {
   .alw-cuerpo { flex-direction: column; text-align: center; }
