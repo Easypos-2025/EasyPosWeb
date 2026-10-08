@@ -106,3 +106,24 @@ def test_resultado_de_la_actualizacion(act, tmp_path):
     act.leer_resultado()
     assert act.estado["ultimo"]["estado"] == "REVERTIDO" and "REVERTIDO a → b" in act.estado["reportar"]
     assert (tmp_path / "resultado_reportado.json").exists() and not (tmp_path / "resultado.json").exists()
+
+
+def test_forzada_desde_la_nube(act, monkeypatch):
+    """Opción C: la nube pide forzar; se aplica solo con la versión vigente ya descargada y verificada."""
+    aplicadas = []
+    monkeypatch.setattr(act, "aplicar", lambda motivo: aplicadas.append(motivo))
+    act.estado.update(vigente=VIG, forzar=True)
+    assert act.forzada() is False and aplicadas == []                # aún no descargada
+    act.estado["descargada"] = VIG["version"]
+    assert act.forzada() is True and aplicadas == ["forzada desde la nube"]
+    act.estado.update(forzar=False, aplicando=False)
+    assert act.forzada() is False                                    # sin pedido de la nube no se fuerza
+
+
+def test_sin_uso_espera_version_lista(act, monkeypatch):
+    """Opción D: sin versión lista no consulta nada ni aplica."""
+    import asyncio
+    aplicadas = []
+    monkeypatch.setattr(act, "aplicar", lambda motivo: aplicadas.append(motivo))
+    act.estado.update(vigente=VIG, descargada=None, forzar=False)
+    assert asyncio.run(act.sin_uso()) is False and aplicadas == []

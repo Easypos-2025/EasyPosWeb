@@ -226,3 +226,21 @@ def test_eliminar_libera_empresa_y_codigo(cliente, claves):
     assert cliente.request("DELETE", f"/api/agentes-locales/{ag['id']}", json={"codigo": "T990002"}).status_code == 404
     # La empresa y el código quedan libres para asignarlos de nuevo
     assert cliente.post("/api/agentes-locales", json={"company_id": EMP_B, "codigo": "T990002"}).status_code == 200
+
+
+def test_forzar_actualizacion(cliente, claves, db):  # noqa: ARG001 (claves crea los agentes)
+    """SYSADMIN fuerza la actualización: el agente lo recibe en el latido; se desmarca al tener la vigente."""
+    ag = {x["company_id"]: x for x in cliente.get("/api/agentes-locales").json()}[EMP_A]
+    cliente.patch(f"/api/agentes-locales/{ag['id']}", json={"activo": True})        # otras pruebas lo dejan inactivo
+    a = cliente.post(f"/api/agentes-locales/{ag['id']}/clave").json()["clave"]
+    assert cliente.post("/api/agente/latido", headers={"X-Agente-Clave": a}, json={}).json()["forzar_actualizacion"] is False
+    assert cliente.post(f"/api/agentes-locales/{ag['id']}/forzar").status_code == 200
+    assert cliente.post("/api/agentes-locales/999999999/forzar").status_code == 404
+    r = cliente.post("/api/agente/latido", headers={"X-Agente-Clave": a}, json={"version": "0.0.1-vieja"}).json()
+    assert r["forzar_actualizacion"] is True
+    vigente = r["version_vigente"]
+    if vigente:                                    # con una versión publicada: al reportarla se desmarca
+        r = cliente.post("/api/agente/latido", headers={"X-Agente-Clave": a}, json={"version": vigente["version"]}).json()
+        assert r["forzar_actualizacion"] is False
+    with db.cursor() as c:
+        c.execute("UPDATE company_local_agents SET forzar_actualizacion = 0 WHERE company_id = %s", (EMP_A,))

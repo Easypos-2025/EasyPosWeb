@@ -177,7 +177,10 @@ async def opciones(emp: AsyncSession, plato: dict, fecha: date, para_armar: set[
                                   "por_defecto": int(r["Por_Default"] or 0),
                                   # Adicional que se suma al valor del plato en ese pedido
                                   "precio": float(r["Precio_Insumo"] or 0)})
-    return list(grupos.values())
+    # Grupos y opciones de cada grupo en orden alfabético (la mini-app los muestra en acordeón)
+    for g in grupos.values():
+        g["opciones"].sort(key=lambda o: o["nombre"].casefold())
+    return sorted(grupos.values(), key=lambda g: g["nombre"].casefold())
 
 
 async def impresoras_plato(emp: AsyncSession, plato: dict) -> list[str]:

@@ -41,11 +41,17 @@
         <section v-if="plato.armado" class="bloque">
           <div v-if="cargandoOps" class="cargando"><span class="giro"></span></div>
           <p v-else-if="errorOps" class="aviso">{{ errorOps }}</p>
-          <div v-for="g in grupos" :key="g.grupo" class="grupo">
-            <h3>{{ g.nombre }}
+          <!-- Acordeón (orden alfabético): solo un grupo abierto; el encabezado dice cuántos lleva escogidos -->
+          <div v-for="g in grupos" :key="g.grupo" class="grupo" :class="{ 'grupo--abierto': abierto === g.grupo }">
+            <button type="button" class="grupo__cab" :aria-expanded="abierto === g.grupo" @click="abrir(g)">
+              <span class="grupo__nombre">{{ g.nombre }}</span>
+              <span class="grupo__cuenta" :class="{ 'grupo__cuenta--falta': g.exigir && !seleccion[g.grupo]?.size }">
+                {{ seleccion[g.grupo]?.size || 0 }} {{ (seleccion[g.grupo]?.size || 0) === 1 ? "seleccionado" : "seleccionados" }}
+              </span>
               <small>{{ g.exigir ? "obligatorio · " : "" }}{{ g.max ? `máximo ${g.max}` : "libre" }}</small>
-            </h3>
-            <div class="opciones">
+              <Icono nombre="atras" :tam="18" class="grupo__flecha" />
+            </button>
+            <div v-show="abierto === g.grupo" class="opciones">
               <button v-for="o in g.opciones" :key="o.id" class="opcion" :class="{ 'opcion--activa': elegida(g, o) }"
                       @click="alternar(g, o)">
                 <Icono v-if="elegida(g, o)" nombre="check" :tam="16" />
@@ -117,6 +123,7 @@ const MAX_NOTA = 100
 const nota = ref("")
 const cantTxt = ref("1")
 const grupos = ref([])
+const abierto = ref(null)               // grupo desplegado del acordeón
 const seleccion = reactive({})          // grupo → Set de ids
 const cargandoOps = ref(false)
 const errorOps = ref("")
@@ -149,6 +156,10 @@ function sumar(d) {
 }
 
 const elegida = (g, o) => !!seleccion[g.grupo]?.has(o.id)
+function abrir(g) {
+  abierto.value = abierto.value === g.grupo ? null : g.grupo
+}
+
 function alternar(g, o) {
   const s = seleccion[g.grupo] || (seleccion[g.grupo] = new Set())
   if (s.has(o.id)) return s.delete(o.id)
@@ -163,6 +174,7 @@ async function cargarOpciones() {
   try {
     const r = await api.get(`/catalogo/plato/${props.plato.id}/opciones`)
     grupos.value = r.grupos
+    abierto.value = r.grupos[0]?.grupo ?? null       // solo el primero desplegado
     for (const g of r.grupos) {
       seleccion[g.grupo] = new Set()
       for (const o of g.opciones.filter(x => x.por_defecto)) {
@@ -182,7 +194,10 @@ function validar() {
   if (props.plato.pedir_precio && !(Number(precioTxt.value) > 0)) return "Digite el precio de venta."
   if (props.plato.pedir_descripcion && !descripcion.value.trim()) return "Digite la descripción."
   for (const g of grupos.value) {
-    if (g.exigir && !seleccion[g.grupo]?.size) return `Escoja una opción de ${g.nombre}.`
+    if (g.exigir && !seleccion[g.grupo]?.size) {
+      abierto.value = g.grupo                      // muestra el grupo que falta
+      return `Escoja una opción de ${g.nombre}.`
+    }
   }
   return ""
 }
@@ -224,7 +239,18 @@ onMounted(cargarOpciones)
 .bloque { margin-bottom: 18px; }
 .bloque h3 { margin: 0 0 8px; font-size: 15px; }
 .bloque h3 small { font-weight: 500; color: var(--texto-suave); margin-left: 6px; font-size: 12px; }
-.grupo + .grupo { margin-top: 14px; }
+.grupo { border: 1.5px solid var(--borde); border-radius: 12px; background: #fff; overflow: hidden; }
+.grupo + .grupo { margin-top: 10px; }
+.grupo--abierto { border-color: var(--azul); }
+.grupo__cab { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; min-height: 52px;
+              padding: 10px 12px; border: 0; background: transparent; text-align: left; font: inherit; }
+.grupo__nombre { font-weight: 700; font-size: 15px; }
+.grupo__cuenta { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--azul-claro); color: var(--azul); }
+.grupo__cuenta--falta { background: var(--ambar-claro); color: #92400e; }
+.grupo__cab small { color: var(--texto-suave); font-size: 12px; }
+.grupo__flecha { margin-left: auto; transform: rotate(-90deg); transition: transform .15s; color: var(--texto-suave); }
+.grupo--abierto .grupo__flecha { transform: rotate(90deg); }
+.grupo .opciones { padding: 0 12px 12px; }
 .nota { color: var(--texto-suave); }
 .aviso { margin: 0 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--ambar-claro); color: #92400e; font-size: 14px; }
 

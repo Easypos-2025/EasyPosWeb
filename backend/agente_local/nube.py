@@ -85,6 +85,7 @@ async def latido() -> None:
         actualizador.estado["reportar"] = None
     estado["empresa"] = (r or {}).get("empresa")
     actualizador.estado["vigente"] = (r or {}).get("version_vigente")
+    actualizador.estado["forzar"] = bool((r or {}).get("forzar_actualizacion"))
     await guardar_estilo((r or {}).get("estilo_tarjetas"))
 
 
@@ -164,6 +165,9 @@ async def ciclo() -> None:
             if fecha_turno and fecha != fecha_turno:
                 actualizador.al_abrir_turno(abiertos)
             fecha_turno = fecha
+            # Opción C (forzada desde la nube) y D (horas sin uso)
+            if not actualizador.forzada():
+                await actualizador.sin_uso()
             if datetime.now() >= proximas_fotos:
                 estado["fotos"] = await fotos_web.sincronizar()
                 proximas_fotos = datetime.now() + timedelta(hours=24)

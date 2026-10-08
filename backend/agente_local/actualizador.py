@@ -5,9 +5,12 @@ Actualización del agente instalado (solo el ejecutable; en desarrollo la versi�
   2. Si es distinta a la instalada, se descarga en segundo plano a actualizaciones/ y se
      verifica la huella SHA-256 (si no coincide, se descarta).
   3. Se aplica:
-       A. con el botón "Actualizar ahora" del panel del administrador, o
+       A. con el botón "Actualizar ahora" del panel del administrador o de la pantalla de los meseros,
        B. sola al ABRIR TURNO (cambia la fecha de negocio en datatemppos) si no hay pedidos
-          abiertos de los dispositivos.
+          abiertos de los dispositivos,
+       C. FORZADA desde la nube (SYSADMIN → Agentes locales → "Forzar actualización"), o
+       D. sola en HORAS SIN USO: nadie ha montado ni enviado pedidos en MINUTOS_SIN_USO minutos y no
+          hay mesas bloqueadas (las cuentas abiertas están en la BD y no se pierden).
   4. Para reemplazarse a sí mismo registra una tarea de Windows de un solo uso (cuenta SYSTEM)
      que: detiene el agente, guarda el programa actual en actualizaciones/respaldo, descomprime
      el nuevo, lo arranca y espera que responda con la versión nueva. Si no responde en ~1 minuto
@@ -18,8 +21,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import subprocess
 import urllib.request
+from datetime import datetime, timedelta
 
 from . import VERSION, config
 
@@ -30,6 +35,9 @@ TAREA_PRINCIPAL = "EasyPos Agente Local"
 TAREA_ACTUALIZAR = "EasyPos Agente Actualizar"
 ARCHIVOS = ("_internal", "app", "EasyPosAgente.exe", "easypos.ico")
 SIN_VENTANA = 0x08000000
+MINUTOS_SIN_USO = int(os.getenv("AG_ACTUALIZAR_SIN_USO_MIN", "20"))
+# Eventos de la auditoría que indican que alguien está tomando pedidos
+EVENTOS_DE_USO = ("pedido_nuevo", "pedido_agregar")
 
 estado = {
     "vigente": None,        # {version, sha256, tamano, notas} informada por la nube
@@ -39,6 +47,7 @@ estado = {
     "ultimo": None,         # resultado de la última actualización (resultado.json)
     "reportar": None,       # texto pendiente de enviar a la nube en el próximo latido
     "error": None,
+    "forzar": False,        # la nube pidió aplicar la versión vigente apenas esté descargada
 }
 
 
@@ -239,6 +248,43 @@ async def publicar_aviso() -> None:
             await s.commit()
     except Exception:
         log.exception("No se pudo publicar el aviso para el escritorio")
+
+
+def lista() -> bool:
+    """Hay una versión nueva descargada y verificada, y no se está aplicando."""
+    v = estado["vigente"] or {}
+    return bool(disponible() and estado["descargada"] and estado["descargada"] == v.get("version")
+                and not estado["aplicando"])
+
+
+def forzada() -> bool:
+    """Opción C: la nube pidió forzar la actualización."""
+    if not (estado["forzar"] and lista()):
+        return False
+    aplicar("forzada desde la nube")
+    return True
+
+
+async def sin_uso() -> bool:
+    """Opción D: nadie está tomando pedidos (sin pedidos enviados en MINUTOS_SIN_USO minutos y sin
+    mesas bloqueadas). Los dispositivos que solo están abiertos en Cuentas no cuentan como uso."""
+    if not lista():
+        return False
+    from sqlalchemy import bindparam, text
+
+    from .db import SesionTemp
+    limite = datetime.now() - timedelta(minutes=MINUTOS_SIN_USO)
+    async with SesionTemp() as s:
+        reciente = (await s.execute(
+            text("SELECT COUNT(*) FROM ag_auditoria WHERE evento IN :e AND fecha >= :l")
+            .bindparams(bindparam("e", expanding=True)),
+            {"e": list(EVENTOS_DE_USO), "l": limite})).scalar()
+        bloqueadas = (await s.execute(text("SELECT COUNT(*) FROM ag_bloqueo_mesa WHERE vence > :a"),
+                                      {"a": datetime.now()})).scalar()
+    if reciente or bloqueadas:
+        return False
+    aplicar(f"sin uso {MINUTOS_SIN_USO} min")
+    return True
 
 
 def al_abrir_turno(pedidos_abiertos: int) -> bool:

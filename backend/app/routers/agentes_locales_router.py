@@ -80,7 +80,7 @@ async def listar(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)
     filas = (await db.execute(text("""
         SELECT a.id, a.company_id, c.name AS empresa, a.codigo, a.clave_prefijo, a.url_local, a.url_pc, a.ip_local,
                a.ip_publica, a.version, a.ultimo_contacto, a.activo, a.created_at,
-               a.actualizacion, a.actualizacion_en
+               a.actualizacion, a.actualizacion_en, a.forzar_actualizacion
         FROM company_local_agents a
         JOIN companies c ON c.id_company = a.company_id
         ORDER BY c.name
@@ -130,6 +130,19 @@ async def hacer_vigente(id_version: int, db: AsyncSession = Depends(get_db), _=D
         raise HTTPException(status_code=404, detail="Versión no encontrada o sin archivo en el servidor.")
     await db.execute(text("UPDATE agente_versiones SET vigente = (id = :id)"), {"id": id_version})
     await db.commit()
+    return {"ok": True}
+
+
+@router_admin.post("/{agente_id}/forzar")
+async def forzar_actualizacion(agente_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
+    """El agente aplica la versión vigente apenas la tenga descargada (la recibe en el próximo latido).
+    Se desmarca sola cuando el agente reporta la versión vigente."""
+    n = (await db.execute(text("UPDATE company_local_agents SET forzar_actualizacion = 1 WHERE id = :id"),
+                          {"id": agente_id})).rowcount
+    if not n:
+        raise HTTPException(status_code=404, detail="Agente no encontrado.")
+    await db.commit()
+    log.info("Actualización forzada del agente id=%s por usuario=%s", agente_id, getattr(user, "id", None))
     return {"ok": True}
 
 
@@ -229,13 +242,20 @@ async def latido(data: LatidoIn, request: Request, agente: dict = Depends(agente
         await db.execute(text("""
             UPDATE company_local_agents SET actualizacion = :a, actualizacion_en = NOW() WHERE id = :id
         """), {"a": data.actualizacion, "id": agente["id"]})
-    await db.commit()
     vigente = await version_vigente(db)
+    # Forzar actualización: se desmarca cuando el agente ya tiene la versión vigente
+    if vigente and data.version == vigente["version"]:
+        await db.execute(text("UPDATE company_local_agents SET forzar_actualizacion = 0 WHERE id = :id"),
+                         {"id": agente["id"]})
+    forzar = (await db.execute(text("SELECT forzar_actualizacion FROM company_local_agents WHERE id = :id"),
+                               {"id": agente["id"]})).scalar()
+    await db.commit()
     # Estilo de tarjetas de las cuentas abiertas que la empresa escogió en la web (también en la mini-app)
     estilo = (await db.execute(text("SELECT pos_card_style FROM company_configs WHERE company_id = :c"),
                                {"c": agente["company_id"]})).scalar()
     return {"ok": True, "empresa": agente["empresa"], "codigo": agente["codigo"],
             "estilo_tarjetas": estilo if estilo in ESTILOS_TARJETAS else "oval-wood",
+            "forzar_actualizacion": bool(forzar),
             "version_vigente": {k: vigente[k] for k in ("version", "sha256", "tamano", "notas")} if vigente else None}
 
 

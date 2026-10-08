@@ -62,6 +62,11 @@
         </div>
         <div class="al-acc">
           <button class="al-btn al-btn--ghost" @click="regenerar(a)"><i class="bi bi-key"></i> Nueva clave</button>
+          <!-- Sede atrasada: se actualiza apenas tenga la versión descargada (máx. 1 min tras su próximo latido) -->
+          <span v-if="a.forzar_actualizacion && !a.al_dia" class="al-forzada"><i class="bi bi-hourglass-split"></i> Actualización forzada pendiente</span>
+          <button v-else-if="a.activo && a.version && vigente && !a.al_dia" class="al-btn al-btn--ghost" @click="forzar(a)">
+            <i class="bi bi-arrow-up-circle"></i> Forzar actualización
+          </button>
           <button class="al-btn" :class="a.activo ? 'al-btn--peligro' : 'al-btn--ok'" @click="alternar(a)">
             <i :class="a.activo ? 'bi bi-pause-circle' : 'bi bi-play-circle'"></i> {{ a.activo ? "Desactivar" : "Activar" }}
           </button>
@@ -219,6 +224,18 @@ async function eliminar() {
   }
 }
 
+async function forzar(a) {
+  if (!(await showConfirm(`El agente de ${a.empresa} se actualizará a la versión ${vigente.value.version} apenas la descargue; `
+    + "sus dispositivos quedan sin conexión menos de un minuto. ¿Forzar la actualización?", "Sí, forzar"))) return
+  try {
+    await api.post(`/api/agentes-locales/${a.id}/forzar`)
+    showToast("Se actualizará en su próximo contacto con la nube", "success")
+    await cargar()
+  } catch (e) {
+    showToast(e.response?.data?.detail || "No se pudo forzar la actualización.", "error")
+  }
+}
+
 async function regenerar(a) {
   if (!(await showConfirm(`La clave actual de ${a.empresa} dejará de funcionar. ¿Generar una nueva?`, "Sí, generar"))) return
   try {
@@ -305,6 +322,8 @@ onMounted(cargar)
 .al-btn--peligro { background: #fee2e2; color: #b91c1c; }
 .al-btn--ok { background: #dcfce7; color: #166534; }
 .al-velo { position: fixed; inset: 0; z-index: 1050; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.al-forzada { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #b45309;
+              background: #fef3c7; border-radius: 8px; padding: 6px 10px; }
 .al-modal { width: 100%; max-width: 480px; background: #fff; border-radius: 16px; padding: 20px; }
 .al-modal h3 { margin: 0 0 14px; font-size: 18px; display: flex; gap: 8px; align-items: center; }
 .al-campo { display: block; margin-bottom: 12px; }

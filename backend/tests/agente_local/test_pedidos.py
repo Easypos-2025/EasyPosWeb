@@ -146,6 +146,19 @@ def test_opciones_menu_del_dia_fecha_turno(cliente, h):
     assert d["tipo"] == "menu" and nombres == ["FRIJOLADA", "SANCOCHO"]      # sin el de ayer
 
 
+def test_opciones_de_armado_en_orden_alfabetico(cliente, db, h):
+    """Grupos y opciones de cada grupo en orden alfabético (la mini-app los muestra en acordeón)."""
+    _sql(db,
+         f"INSERT INTO {E}.categoria_productos (Cod_Categoria, Nombre, Activa) VALUES (3,'ACOMPAÑANTES',1)",
+         f"INSERT INTO {E}.plato_armar (Id_Plato, Cod_Categoria, Cantidad_Elegir, Activa, Exgir_Seleccion) VALUES (16,3,0,1,0)",
+         f"INSERT INTO {E}.inventario_porciones (Id_Grupo, Id_Item, Descripcion, Posicion, Agrupar) VALUES (5,601,'YUCA',601,3),(5,602,'ARROZ',602,3)",
+         f"INSERT INTO {E}.plato_armar_detalle (Id_Plato, Cod_Categoria, Item, Posicion, Cantidad_Descontar, Por_Default, Precio_Insumo) VALUES (16,3,1,601,1,0,0),(16,3,2,602,1,0,0)")
+    grupos = cliente.get("/api/ag/catalogo/plato/16/opciones", headers=_hdr(h)).json()["grupos"]
+    assert [g["nombre"] for g in grupos] == ["ACOMPAÑANTES", "PROTEINA"]
+    assert [o["nombre"] for o in grupos[0]["opciones"]] == ["ARROZ", "YUCA"]
+    assert [o["nombre"] for o in grupos[1]["opciones"]] == ["POLLO", "RES"]
+
+
 def test_menu_no_armado_bloquea(cliente, db, h):
     _sql(db, f"DELETE FROM {E}.menu_diario")
     assert cliente.get("/api/ag/catalogo/plato/15/opciones", headers=_hdr(h)).status_code == 409

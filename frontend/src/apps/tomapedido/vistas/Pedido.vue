@@ -110,6 +110,24 @@
         </div>
       </div>
     </div>
+
+    <!-- Inactividad: tras 3 minutos sin tocar la pantalla pregunta si sigue; si nadie responde en 30 s
+         vuelve a Cuentas abiertas (lo no enviado se descarta; una cuenta existente queda como estaba) -->
+    <div v-if="avisoInactivo" class="velo inactivo">
+      <div class="hoja">
+        <div class="hoja__cuerpo inactivo__cuerpo">
+          <span class="inactivo__seg">{{ segundos }}</span>
+          <h2>¿Sigue tomando el pedido de {{ titulo.trim() }}?</h2>
+          <p v-if="lineas.length">Si no responde, se {{ lineas.length === 1 ? "descarta" : "descartan" }} {{ lineas.length }}
+            {{ lineas.length === 1 ? t("producto") : t("productos") }} sin enviar{{ nro ? " (lo ya enviado queda igual)" : "" }}.</p>
+          <p v-else>Si no responde, la pantalla se cierra y {{ nro ? "la cuenta queda como estaba" : "la mesa queda libre" }}.</p>
+        </div>
+        <div class="hoja__pie inactivo__acc">
+          <button class="btn btn--primario btn--bloque" @click="seguir">Sí, continuar</button>
+          <button class="btn btn--bloque" @click="salirPorInactividad">Salir</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -328,8 +346,54 @@ function cancelar() {
   router.replace("/cuentas")
 }
 
+// ── Inactividad (dispositivos compartidos): no deja una mesa bloqueada ni un pedido a medias ──
+const MINUTOS_INACTIVO = 3
+const SEGUNDOS_AVISO = 30
+const avisoInactivo = ref(false)
+const segundos = ref(SEGUNDOS_AVISO)
+let reloj = null
+let cuenta = null
+let porInactividad = false
+
+function reiniciarInactividad() {
+  if (avisoInactivo.value) return                 // con el aviso abierto solo cuentan sus botones
+  clearTimeout(reloj)
+  reloj = setTimeout(mostrarAviso, MINUTOS_INACTIVO * 60 * 1000)
+}
+
+function mostrarAviso() {
+  if (enviando.value) return reiniciarInactividad()
+  avisoInactivo.value = true
+  segundos.value = SEGUNDOS_AVISO
+  cuenta = setInterval(() => {
+    segundos.value -= 1
+    if (segundos.value <= 0) salirPorInactividad()
+  }, 1000)
+}
+
+function seguir() {
+  clearInterval(cuenta)
+  avisoInactivo.value = false
+  reiniciarInactividad()
+}
+
+// Pedido nuevo: la mesa queda libre. Agregando: la cuenta queda con lo que ya tenía. En ambos casos se
+// quita el bloqueo de la mesa al salir (onBeforeUnmount) y no se graba nada.
+function salirPorInactividad() {
+  clearInterval(cuenta)
+  const descartados = lineas.value.length
+  porInactividad = true
+  avisoInactivo.value = false
+  router.replace("/cuentas")
+  showToast(descartados
+    ? `Se cerró por inactividad: ${descartados} ${descartados === 1 ? t("producto") : t("productos")} sin enviar descartados`
+    : "Se cerró por inactividad", "info", 4000)
+}
+
+const EVENTOS_ACTIVIDAD = ["pointerdown", "keydown", "touchstart", "wheel"]
+
 onBeforeRouteLeave(async () => {
-  if (lineas.value.length && !enviado) {
+  if (lineas.value.length && !enviado && !porInactividad) {
     if (!(await showConfirm(`Tiene ${t("productos")} sin enviar. ¿Salir y descartarlos?`, "Sí, descartar"))) return false
     showToast(`${textos.productos} descartados`, "info", 1800)
   }
@@ -338,6 +402,9 @@ onBeforeRouteLeave(async () => {
 
 onMounted(async () => {
   consultaPC.addEventListener("change", alCambiarAncho)
+  EVENTOS_ACTIVIDAD.forEach(e => document.addEventListener(e, reiniciarInactividad, { capture: true, passive: true }))
+  document.addEventListener("scroll", reiniciarInactividad, { capture: true, passive: true })
+  reiniciarInactividad()
   window.addEventListener("resize", alRedimensionar)
   try {
     config.value = await api.get("/config")
@@ -367,6 +434,9 @@ onBeforeUnmount(() => {
   consultaPC.removeEventListener("change", alCambiarAncho)
   window.removeEventListener("resize", alRedimensionar)
   clearInterval(latido)
+  clearTimeout(reloj); clearInterval(cuenta)
+  EVENTOS_ACTIVIDAD.forEach(e => document.removeEventListener(e, reiniciarInactividad, { capture: true }))
+  document.removeEventListener("scroll", reiniciarInactividad, { capture: true })
   if (mesaBloqueo) api.post("/mesas/liberar", mesaBloqueo).catch(() => {})
 })
 </script>
@@ -381,6 +451,13 @@ onBeforeUnmount(() => {
 .cliente-btn:disabled { text-decoration: none; cursor: default; }
 .mesero-btn { margin-left: 10px; font-size: 12px; }
 .sin-meseros { text-align: center; }
+.inactivo { z-index: 70; }
+.inactivo__cuerpo { text-align: center; }
+.inactivo__seg { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; margin: 4px auto 10px;
+                 border-radius: 50%; background: var(--ambar-claro); color: #b45309; font-size: 26px; font-weight: 800; }
+.inactivo__cuerpo h2 { margin: 0 0 8px; font-size: 20px; }
+.inactivo__cuerpo p { margin: 0; color: var(--texto-suave); font-size: 15px; }
+.inactivo__acc { display: flex; flex-direction: column; gap: 8px; }
 .sin-meseros__ico { width: 72px; height: 72px; margin: 4px auto 10px; border-radius: 50%; background: var(--ambar-claro); color: #b45309;
                     display: flex; align-items: center; justify-content: center; }
 .sin-meseros h2 { margin: 0 0 8px; font-size: 20px; }
