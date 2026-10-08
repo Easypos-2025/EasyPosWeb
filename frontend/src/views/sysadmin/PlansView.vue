@@ -285,7 +285,7 @@
               <label>Moneda</label>
               <select v-model="newPriceCurrency" class="form-input">
                 <option value="">-- Seleccionar --</option>
-                <option v-for="c in availableCurrencies" :key="c" :value="c">{{ c }}</option>
+                <option v-for="c in $ordenAlfa(availableCurrencies)" :key="c" :value="c">{{ c }}</option>
               </select>
             </div>
             <div class="form-group">

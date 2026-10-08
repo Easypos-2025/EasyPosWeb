@@ -63,7 +63,7 @@
               <label>Categoría</label>
               <select v-model="form.categoria_id" class="pq-input">
                 <option :value="null">— Sin categoría —</option>
-                <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+                <option v-for="c in $ordenAlfa(categorias, 'nombre')" :key="c.id" :value="c.id">{{ c.nombre }}</option>
               </select>
             </div>
           </div>

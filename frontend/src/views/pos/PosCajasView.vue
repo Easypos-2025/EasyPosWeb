@@ -61,7 +61,7 @@
           <div class="campo"><label>Impresora de recibos</label>
             <select v-model.number="modal.printer_id" class="inp">
               <option :value="0">— La de Configuración Facturación —</option>
-              <option v-for="p in impresoras" :key="p.id" :value="p.id">{{ p.name }}{{ p.connection_type ? ` · ${p.connection_type}` : '' }}</option>
+              <option v-for="p in $ordenAlfa(impresoras, 'name')" :key="p.id" :value="p.id">{{ p.name }}{{ p.connection_type ? ` · ${p.connection_type}` : '' }}</option>
             </select>
             <p class="tip-printer">Se propone al imprimir los recibos de los turnos abiertos en esta caja.</p>
           </div>

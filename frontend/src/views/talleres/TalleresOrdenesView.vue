@@ -209,7 +209,7 @@
                 <label>Jefe de área *</label>
                 <select v-model="orden.jefe_responsable_id" :class="['form-ctrl', { 'fc-error': errores.jefe }]">
                   <option value="">— Sin asignar —</option>
-                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                  <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                     {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
                   </option>
                 </select>
@@ -219,7 +219,7 @@
                 <label>Operario principal *</label>
                 <select v-model="orden.operario_id" :class="['form-ctrl', { 'fc-error': errores.operario }]">
                   <option value="">— Sin asignar —</option>
-                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                  <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                     {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
                   </option>
                 </select>
@@ -253,7 +253,7 @@
                     <label>¿Convenio empresarial?</label>
                     <select v-model="orden.convenio_id" class="form-ctrl">
                       <option value="">— Particular —</option>
-                      <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+                      <option v-for="c in $ordenAlfa(convenios, 'nombre_empresa')" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
                     </select>
                   </div>
                 </div>
@@ -416,7 +416,7 @@
           <div class="fg">
             <label>Tipo de vehículo *</label>
             <select v-model="nuevoVehiculo.tipo" class="form-ctrl">
-              <option v-for="t in tiposVehiculo" :key="t.id" :value="t.nombre">{{ t.nombre }}</option>
+              <option v-for="t in $ordenAlfa(tiposVehiculo, 'nombre')" :key="t.id" :value="t.nombre">{{ t.nombre }}</option>
             </select>
           </div>
           <div class="fg">
@@ -501,7 +501,7 @@
                 <label>Jefe de área *</label>
                 <select v-model="orden.jefe_responsable_id" :class="['form-ctrl', { 'fc-error': errores.jefe }]">
                   <option value="">— Sin asignar —</option>
-                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                  <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                     {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
                   </option>
                 </select>
@@ -511,7 +511,7 @@
                 <label>Operario principal *</label>
                 <select v-model="orden.operario_id" :class="['form-ctrl', { 'fc-error': errores.operario }]">
                   <option value="">— Sin asignar —</option>
-                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                  <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                     {{ w.name }}{{ w.profession_nombre ? ` — ${w.profession_nombre}` : '' }}
                   </option>
                 </select>
@@ -543,7 +543,7 @@
                     <label>¿Convenio empresarial?</label>
                     <select v-model="orden.convenio_id" class="form-ctrl">
                       <option value="">— Particular —</option>
-                      <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+                      <option v-for="c in $ordenAlfa(convenios, 'nombre_empresa')" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
                     </select>
                   </div>
                 </div>
@@ -643,7 +643,7 @@
               <div class="fg">
                 <label>Tipo</label>
                 <select v-model="editForm.tipo" class="form-ctrl">
-                  <option v-for="t in tiposVehiculo" :key="t.id" :value="t.nombre">{{ t.nombre }}</option>
+                  <option v-for="t in $ordenAlfa(tiposVehiculo, 'nombre')" :key="t.id" :value="t.nombre">{{ t.nombre }}</option>
                 </select>
               </div>
               <div class="fg"><label>Marca</label><input v-model="editForm.marca" class="form-ctrl" /></div>

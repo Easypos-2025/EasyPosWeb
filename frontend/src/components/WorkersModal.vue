@@ -78,7 +78,7 @@
                 <label class="form-label-sm">Profesión</label>
                 <select v-model="workerForm.profession_id" class="form-select form-select-sm">
                   <option :value="null">— Sin profesión —</option>
-                  <option v-for="p in professions" :key="p.id" :value="p.id">{{ p.name }}</option>
+                  <option v-for="p in $ordenAlfa(professions, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select>
               </div>
               <div class="col-md-3 col-12">

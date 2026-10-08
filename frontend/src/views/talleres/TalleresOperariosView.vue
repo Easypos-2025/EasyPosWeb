@@ -49,7 +49,7 @@
       <input v-model="search" class="form-control" placeholder="Buscar operario…" style="max-width:220px" />
       <select v-model="filterProfesion" class="form-select" style="max-width:200px">
         <option value="">Todas las profesiones</option>
-        <option v-for="p in profesionesList" :key="p" :value="p">{{ p }}</option>
+        <option v-for="p in $ordenAlfa(profesionesList)" :key="p" :value="p">{{ p }}</option>
       </select>
       <label class="toggle-label">
         <input type="checkbox" v-model="soloConSaldo" />

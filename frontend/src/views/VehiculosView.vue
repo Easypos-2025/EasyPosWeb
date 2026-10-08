@@ -115,7 +115,7 @@
                 <label>Tipo de vehículo</label>
                 <select v-model="form.vehicle_type_id" class="form-select">
                   <option :value="null">— Seleccionar —</option>
-                  <option v-for="t in tiposVehiculo" :key="t.id" :value="t.id">{{ t.nombre }}</option>
+                  <option v-for="t in $ordenAlfa(tiposVehiculo, 'nombre')" :key="t.id" :value="t.id">{{ t.nombre }}</option>
                 </select>
               </div>
               <div class="fg">

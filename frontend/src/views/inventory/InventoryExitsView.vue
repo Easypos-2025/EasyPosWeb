@@ -102,7 +102,7 @@
           <label>Insumo</label>
           <select v-model="form.id_item" class="form-control">
             <option value="">— Seleccionar —</option>
-            <option v-for="s in supplyItems" :key="s.id_item" :value="s.id_item">
+            <option v-for="s in $ordenAlfa(supplyItems, 'description')" :key="s.id_item" :value="s.id_item">
               {{ s.description }} — Stock: {{ fmt(s.stock_qty) }} {{ s.unit_name }}
             </option>
           </select>

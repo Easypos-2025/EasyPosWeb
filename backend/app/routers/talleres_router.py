@@ -1798,7 +1798,7 @@ async def get_printers(
         SELECT id, name, ip, port, connection_type, bluetooth_address, usb_device_id, is_active
         FROM pos_printers
         WHERE company_id = :cid AND is_active = 1
-        ORDER BY id
+        ORDER BY name
     """), {"cid": company_id})).mappings().all()
     return [dict(r) for r in rows]
 

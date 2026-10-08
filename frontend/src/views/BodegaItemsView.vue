@@ -87,7 +87,7 @@
               <label>Unidad</label>
               <select v-model="form.unidad_id" class="form-select">
                 <option :value="null">— Sin unidad —</option>
-                <option v-for="u in unidades" :key="u.id" :value="u.id">
+                <option v-for="u in $ordenAlfa(unidades, 'name')" :key="u.id" :value="u.id">
                   {{ u.name }}{{ u.abreviatura ? ' (' + u.abreviatura + ')' : '' }}
                 </option>
               </select>

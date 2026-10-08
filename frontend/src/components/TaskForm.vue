@@ -15,7 +15,7 @@
       <div>
         <label>Encargado:</label>
         <select v-model="encargadoId" required>
-          <option v-for="u in usuarios" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+          <option v-for="u in $ordenAlfa(usuarios, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
         </select>
       </div>
 

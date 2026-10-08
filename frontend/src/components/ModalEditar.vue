@@ -24,7 +24,7 @@
     <select v-model="localTarea.tecnico_id">
 
       <option
-        v-for="t in tecnicos"
+        v-for="t in $ordenAlfa(tecnicos, 'nombre')"
         :key="t.id"
         :value="t.id"
       >

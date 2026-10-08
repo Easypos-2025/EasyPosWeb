@@ -123,7 +123,7 @@
             <label>Activo sobre el que se realizará *</label>
             <select v-model="form.asset_id" data-v="asset" class="form-select" @change="clearError">
               <option :value="null">— Seleccionar activo —</option>
-              <option v-for="a in assets" :key="a.id" :value="a.id">{{ a.name }}</option>
+              <option v-for="a in $ordenAlfa(assets, 'name')" :key="a.id" :value="a.id">{{ a.name }}</option>
             </select>
           </div>
 
@@ -162,7 +162,7 @@
               <label>Responsable / Asignado a *</label>
               <select v-model="form.assigned_to" data-v="assigned" class="form-select" @change="clearError">
                 <option :value="null">— Seleccionar responsable —</option>
-                <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                <option v-for="u in $ordenAlfa(users, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
             </div>
           </Transition>
@@ -211,7 +211,7 @@
               <label>Activo relacionado</label>
               <select v-model="form.asset_id" class="form-select">
                 <option :value="null">— Sin activo —</option>
-                <option v-for="a in assets" :key="a.id" :value="a.id">{{ a.name }}</option>
+                <option v-for="a in $ordenAlfa(assets, 'name')" :key="a.id" :value="a.id">{{ a.name }}</option>
               </select>
             </div>
 
@@ -230,7 +230,7 @@
               <label>Asignado a</label>
               <select v-model="form.assigned_to" class="form-select">
                 <option :value="null">— Sin asignar —</option>
-                <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                <option v-for="u in $ordenAlfa(users, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
             </div>
             <div class="fg">
@@ -240,7 +240,7 @@
               </div>
               <select v-model="form.worker_id" class="form-select">
                 <option :value="null">— Sin ejecutor —</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">
+                <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                   {{ w.name }}{{ w.profession_name ? ' — ' + w.profession_name : '' }}
                 </option>
               </select>
@@ -291,7 +291,7 @@
             <div class="collab-add-row">
               <select v-model="newCollabUserId" class="form-select form-select-sm">
                 <option :value="null">— Agregar colaborador —</option>
-                <option v-for="u in availableForCollab" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                <option v-for="u in $ordenAlfa(availableForCollab, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
               <button class="btn btn-outline-primary btn-sm" :disabled="!newCollabUserId || addingCollab"
                 @click="addCollab">

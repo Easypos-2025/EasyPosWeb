@@ -207,7 +207,7 @@
         </div>
         <div v-for="(pg, i) in pagos" :key="i" class="pkc-fp">
           <select v-model.number="pg.payment_method_id" class="pkc-fp-sel">
-            <option v-for="fp in formasPago" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
+            <option v-for="fp in $ordenAlfa(formasPago, 'name')" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
           </select>
           <input v-model.number="pg.amount" type="number" min="0" class="pkc-fp-val" />
           <button v-if="pagos.length > 1" type="button" class="pkc-fp-del" @click="pagos.splice(i, 1)"><i class="bi bi-trash"></i></button>

@@ -12,7 +12,7 @@
       <div class="map-header-right">
         <select v-model="selectedProfileId" class="profile-select" @change="loadMap">
           <option value="">— Seleccionar perfil —</option>
-          <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <button
           v-if="selectedProfileId"

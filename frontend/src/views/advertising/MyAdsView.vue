@@ -167,7 +167,7 @@
               <label class="form-lbl">Perfil objetivo</label>
               <select v-model="form.target_profile_id" class="form-ctrl" @change="onProfileChange">
                 <option :value="null">Todos los perfiles</option>
-                <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
             </div>
             <div>

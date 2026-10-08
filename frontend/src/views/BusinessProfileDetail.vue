@@ -9,7 +9,7 @@
       <label class="form-label">Seleccionar perfil</label>
       <select class="form-select" v-model="selectedProfileId" @change="onChangeProfile">
         <option disabled value="">Seleccione un perfil</option>
-        <option v-for="p in profiles" :key="p.id" :value="p.id">
+        <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">
           {{ p.name }}
         </option>
       </select>

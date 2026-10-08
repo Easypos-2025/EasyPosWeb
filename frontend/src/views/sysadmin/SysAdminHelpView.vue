@@ -18,7 +18,7 @@
       <select v-model="filterProfile" class="sh-select">
         <option value="">Todos los perfiles</option>
         <option value="__general__">General (sin perfil)</option>
-        <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+        <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
       <select v-model="filterCategory" class="sh-select">
         <option value="">Todas las categorías</option>
@@ -88,7 +88,7 @@
                 <label class="sh-label">Perfil</label>
                 <select v-model="form.profile_id" class="sh-select">
                   <option :value="null">General (todos los perfiles)</option>
-                  <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                  <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select>
               </div>
               <div class="sh-field">
@@ -114,7 +114,7 @@
                 <option value="">— Seleccionar vista del sistema —</option>
                 <optgroup label="Vistas del asociado">
                   <option
-                    v-for="m in modules.filter(x => !x.is_sysadmin)"
+                    v-for="m in $ordenAlfa(modules.filter(x => !x.is_sysadmin), 'name')"
                     :key="m.id"
                     :value="m.route"
                     :selected="form.view_route === m.route"
@@ -122,7 +122,7 @@
                 </optgroup>
                 <optgroup label="Vistas SYSADMIN">
                   <option
-                    v-for="m in modules.filter(x => x.is_sysadmin)"
+                    v-for="m in $ordenAlfa(modules.filter(x => x.is_sysadmin), 'name')"
                     :key="m.id"
                     :value="m.route"
                     :selected="form.view_route === m.route"

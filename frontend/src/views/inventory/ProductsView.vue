@@ -37,7 +37,7 @@
       <input v-model="search" class="form-control" :placeholder="`Buscar ${tab === 'servicio' ? 'servicio' : 'producto'}…`" style="max-width:260px" />
       <select v-model="filterCat" class="form-select" style="max-width:180px">
         <option value="">Todas las categorías</option>
-        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+        <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
       <select v-if="tab === 'producto'" v-model="filterBehavior" class="form-select" style="max-width:200px">
         <option value="">Todos los tipos</option>
@@ -142,7 +142,7 @@
               <label>Categoría</label>
               <select v-model="form.category_id" class="form-select">
                 <option :value="null">— Sin categoría —</option>
-                <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
             <!-- Solo productos tienen control de inventario -->
@@ -291,7 +291,7 @@
               <div class="add-part-row">
                 <select v-model="newPart.profession_id" class="form-control form-sel">
                   <option :value="null">— Selecciona rol —</option>
-                  <option v-for="prof in professions" :key="prof.id" :value="prof.id">{{ prof.name }}</option>
+                  <option v-for="prof in $ordenAlfa(professions, 'name')" :key="prof.id" :value="prof.id">{{ prof.name }}</option>
                 </select>
                 <input v-model="newPart.rol_display" class="form-control" placeholder="Etiqueta (opcional)" style="max-width:170px" />
                 <div class="pct-wrap">

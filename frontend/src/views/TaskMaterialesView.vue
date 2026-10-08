@@ -79,7 +79,7 @@
             <label>Unidad</label>
             <select v-model="matForm.unit" class="form-select">
               <option value="">—</option>
-              <option v-for="u in units" :key="u" :value="u">{{ u }}</option>
+              <option v-for="u in $ordenAlfa(units)" :key="u" :value="u">{{ u }}</option>
             </select>
           </div>
           <div class="fg">

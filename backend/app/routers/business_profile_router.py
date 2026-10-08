@@ -15,7 +15,7 @@ router = APIRouter(prefix="/business-profiles", tags=["Business Profiles"])
 
 @router.get("/", response_model=BusinessProfileListResponse)
 async def get_business_profiles(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
-    result = await db.execute(select(BusinessProfile))
+    result = await db.execute(select(BusinessProfile).order_by(BusinessProfile.name))
     return {"data": result.scalars().all()}
 
 

@@ -67,7 +67,7 @@ async def get_online_companies(authorization: str = Header(None), db: AsyncSessi
     users_online = result.scalars().all()
     company_ids = list({u.company_id for u in users_online if u.company_id})
 
-    result = await db.execute(select(Company).where(Company.id_company.in_(company_ids), Company.state == 1))
+    result = await db.execute(select(Company).where(Company.id_company.in_(company_ids), Company.state == 1).order_by(Company.name))
     companies = result.scalars().all()
 
     return {"count": len(companies), "companies": [{"id": c.id_company, "name": c.name} for c in companies]}
@@ -119,7 +119,7 @@ async def get_online_users(authorization: str = Header(None), db: AsyncSession =
     if not user_ids:
         return {"count": 0, "users": []}
 
-    stmt = select(User, Role).join(Role, User.role_id == Role.id).where(User.id.in_(user_ids), User.is_active == True)
+    stmt = select(User, Role).join(Role, User.role_id == Role.id).where(User.id.in_(user_ids), User.is_active == True).order_by(User.nombre)
     if not is_sys:
         stmt = stmt.where(User.company_id == user.company_id)
 

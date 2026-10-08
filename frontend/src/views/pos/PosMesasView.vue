@@ -158,7 +158,7 @@
             <label class="form-label">Zona <span class="text-danger">*</span></label>
             <select v-model="modal.zone_id" class="form-select">
               <option value="" disabled>Selecciona una zona</option>
-              <option v-for="z in zonas" :key="z.id" :value="z.id">{{ z.name }}</option>
+              <option v-for="z in $ordenAlfa(zonas, 'name')" :key="z.id" :value="z.id">{{ z.name }}</option>
             </select>
           </div>
           <div class="mb-3">

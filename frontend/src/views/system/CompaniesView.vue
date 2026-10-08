@@ -65,7 +65,7 @@
           <select v-model="form.business_profile_id" class="form-select"
             :class="{ 'is-invalid': errors.business_profile_id }">
             <option value="">Perfil (Tipo Negocio)</option>
-            <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </div>
 
@@ -73,7 +73,7 @@
           <select v-model="form.language_id" class="form-select"
             :class="{ 'is-invalid': errors.language_id }">
             <option value="">Idioma *</option>
-            <option v-for="l in languages" :key="l.id" :value="l.id">{{ l.name }}</option>
+            <option v-for="l in $ordenAlfa(languages, 'name')" :key="l.id" :value="l.id">{{ l.name }}</option>
           </select>
         </div>
 
@@ -81,7 +81,7 @@
           <select v-model="form.country_id" class="form-select"
             :class="{ 'is-invalid': errors.country_id }">
             <option value="">País *</option>
-            <option v-for="c in countries" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in $ordenAlfa(countries, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
 
@@ -89,7 +89,7 @@
           <select v-model="form.department_id" class="form-select"
             :class="{ 'is-invalid': errors.department_id }">
             <option value="">Departamento *</option>
-            <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+            <option v-for="d in $ordenAlfa(departments, 'name')" :key="d.id" :value="d.id">{{ d.name }}</option>
           </select>
         </div>
 
@@ -97,7 +97,7 @@
           <select v-model="form.municipality_id" class="form-select"
             :class="{ 'is-invalid': errors.municipality_id }">
             <option value="">Municipio *</option>
-            <option v-for="m in municipalities" :key="m.id" :value="m.id">{{ m.name }}</option>
+            <option v-for="m in $ordenAlfa(municipalities, 'name')" :key="m.id" :value="m.id">{{ m.name }}</option>
           </select>
         </div>
 
@@ -105,7 +105,7 @@
           <select v-model="form.type_currency_id" class="form-select"
             :class="{ 'is-invalid': errors.type_currency_id }">
             <option value="">Moneda *</option>
-            <option v-for="t in currencies" :key="t.id" :value="t.id">{{ t.name }}</option>
+            <option v-for="t in $ordenAlfa(currencies, 'name')" :key="t.id" :value="t.id">{{ t.name }}</option>
           </select>
         </div>
 

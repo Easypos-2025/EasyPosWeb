@@ -10,13 +10,13 @@
         <div class="col-md-2 col-6">
           <select class="form-select" v-model="filterCategory">
             <option value="">Todas las categorías</option>
-            <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
         <div class="col-md-2 col-6">
           <select class="form-select" v-model="filterClient">
             <option value="">Todos los clientes</option>
-            <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in $ordenAlfa(clients, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
         <div class="col-md-2 col-6">
@@ -195,7 +195,7 @@
               <label>Categoría *</label>
               <select v-model="editForm.category_id" data-v="category" class="form-select" @change="clearError($event)">
                 <option value="">— Seleccionar —</option>
-                <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
             <!-- Propietario (solo propietario, arrendatario va en contrato de arriendo) -->
@@ -203,7 +203,7 @@
               <label>Propietario</label>
               <select v-model="editForm.owner_id" class="form-select">
                 <option :value="null">— Sin propietario —</option>
-                <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in $ordenAlfa(clients, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
 
@@ -226,7 +226,7 @@
                   <label>Sector</label>
                   <select v-model="editForm.sector_id" class="form-select">
                     <option :value="null">— Sin sector —</option>
-                    <option v-for="s in sectors" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    <option v-for="s in $ordenAlfa(sectors, 'name')" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
                   <small v-if="!sectors.length" class="text-muted">
                     <router-link to="/configuration/activos-sectores">Crea sectores aquí</router-link>

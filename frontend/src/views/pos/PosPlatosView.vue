@@ -169,7 +169,7 @@
                   <label>Categoría</label>
                   <select v-model="form.category_id" class="inp">
                     <option :value="null">— Sin categoría —</option>
-                    <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.name }}</option>
+                    <option v-for="c in $ordenAlfa(categorias, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div class="campo">
@@ -215,11 +215,11 @@
                 <div class="pres-add">
                   <select v-model="presForm.measure_id" class="inp-sm">
                     <option :value="null">— Presentación —</option>
-                    <option v-for="m in formasMedida" :key="m.id" :value="m.id">{{ m.name }}</option>
+                    <option v-for="m in $ordenAlfa(formasMedida, 'name')" :key="m.id" :value="m.id">{{ m.name }}</option>
                   </select>
                   <select v-model="presForm.supplier_id" class="inp-sm">
                     <option :value="0">— Proveedor —</option>
-                    <option v-for="p in proveedores" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    <option v-for="p in $ordenAlfa(proveedores, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
                   </select>
                   <input type="number" v-model.number="presForm.minimum_units" class="inp-sm" min="0.001" step="0.001" title="Unidades mínimas" placeholder="Und. mín." />
                   <CurrencyInput v-model="presForm.presentation_value" class="inp-sm text-right" title="Valor venta" />
@@ -276,7 +276,7 @@
             <div class="armar-add">
               <select v-model="armarCat" class="inp-sm">
                 <option :value="null">— Seleccione categoría de armado —</option>
-                <option v-for="c in categoriasArmado" :key="c.id" :value="c.id" :disabled="armado.some(g => g.category_code === c.id)">{{ c.name }}</option>
+                <option v-for="c in $ordenAlfa(categoriasArmado, 'name')" :key="c.id" :value="c.id" :disabled="armado.some(g => g.category_code === c.id)">{{ c.name }}</option>
               </select>
               <button class="btn-mini" :disabled="!armarCat" @click="agregarCategoriaArmado"><i class="bi bi-plus"></i> Agregar categoría</button>
             </div>

@@ -73,6 +73,17 @@ Este sistema es un ecosistema de software para restaurantes enfocado en la omnic
 
 ---
 
+## 5b. NORMA: ORDEN DE LISTAS — OBLIGATORIA
+
+- **Todo catálogo y todo selector va en orden alfabético A-Z** (desplegables, datalist, tablas de catálogos, listas de búsqueda, chips).
+  - Frontend: `$ordenAlfa(lista, 'campo')` en plantillas (global) o `ordenAlfa` de `@/utils/orden.js` (español: sin distinguir tildes/mayúsculas, números naturales "Caja 2" < "Caja 10").
+  - Backend: endpoints de catálogo con `ORDER BY nombre` / `.order_by(Modelo.name)`.
+- **Excepciones (orden natural)**: meses (Ene→Dic), años (reciente primero), días, estados de un flujo, menú del sidebar/topbar y artículos con campo "Orden" (`order_index`), planes por nivel, números de mesa/caja/documento (numérico). Primera opción fija ("Todos", "General", "— Seleccionar —", "Sin descuento", Consumidor Final) siempre arriba. Si una vista tiene botón para ordenar distinto, el default sigue siendo A-Z.
+- **Detalle de pedidos en pantalla (toma de pedido, cuenta, pago) y tirillas de comanda: ítem descendente** (último en ingresar, primero en mostrar) → `$ordenItemDesc(lista)` / `ordenItemDesc`.
+- **Recibos y facturas (impresos/consultados): en el orden en que se pidió** (ítem ascendente).
+
+---
+
 ## 6. REGLA: AISLAMIENTO POR EMPRESA (MULTI-TENANT) — OBLIGATORIA
 
 - **Empresa efectiva de toda petición = la seleccionada en el topbar**, validada: el frontend

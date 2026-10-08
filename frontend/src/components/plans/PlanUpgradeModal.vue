@@ -21,7 +21,7 @@
           <i class="bi bi-currency-exchange"></i>
           <label>Moneda:</label>
           <select v-model="currency" class="currency-select" @change="loadUpgrades">
-            <option v-for="code in SUPPORTED_CURRENCIES" :key="code" :value="code">
+            <option v-for="code in $ordenAlfa(SUPPORTED_CURRENCIES)" :key="code" :value="code">
               {{ code }} — {{ CURRENCY_NAMES[code] }}
             </option>
           </select>

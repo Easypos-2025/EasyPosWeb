@@ -144,14 +144,14 @@
               <div class="fg"><label>Jefe Responsable</label>
                 <select v-model="editForm.jefe_responsable_id" class="fc">
                   <option :value="null">— Sin asignar —</option>
-                  <option v-for="w in workers" :key="w.id" :value="w.id">
+                  <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                     {{ w.name }}{{ w.profession_nombre ? ' · ' + w.profession_nombre : '' }}
                   </option>
                 </select></div>
               <div class="fg"><label>Convenio</label>
                 <select v-model="editForm.convenio_id" class="fc">
                   <option :value="null">— Particular —</option>
-                  <option v-for="c in convenios" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
+                  <option v-for="c in $ordenAlfa(convenios, 'nombre_empresa')" :key="c.id" :value="c.id">{{ c.nombre_empresa }}</option>
                 </select></div>
               <div class="fg span2"><label>Diagnóstico / Descripción del servicio</label>
                 <textarea v-model="editForm.diagnostico" class="fc" rows="3"></textarea></div>
@@ -185,7 +185,7 @@
               <i class="bi bi-inbox"></i> Sin ítems. Agrega servicios o productos abajo.
             </div>
             <div v-else class="detalles-list">
-              <div v-for="d in detalles" :key="d.id" :class="['dr', d.tipo_item === 'repuesto' ? 'dr-producto' : 'dr-servicio']">
+              <div v-for="d in $ordenItemDesc(detalles, 'id')" :key="d.id" :class="['dr', d.tipo_item === 'repuesto' ? 'dr-producto' : 'dr-servicio']">
                 <span :class="['dr-tipo', d.tipo_item === 'repuesto' ? 'dt-repuesto' : 'dt-servicio']">
                   {{ d.tipo_item === 'repuesto' ? 'Producto' : 'Servicio' }}
                 </span>
@@ -271,7 +271,7 @@
                   <label>Operario responsable</label>
                   <select v-model="itemForm.worker_id" class="fc">
                     <option :value="null">— Sin asignar —</option>
-                    <option v-for="w in workers" :key="w.id" :value="w.id">
+                    <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                       {{ w.name }}{{ w.profession_nombre ? ' · ' + w.profession_nombre : '' }}
                     </option>
                   </select>

@@ -265,7 +265,7 @@
               <label>Banco origen (del asociado) <span class="req">*</span></label>
               <select v-model="approveForm.bank_origin">
                 <option value="" disabled>Selecciona banco...</option>
-                <option v-for="b in BANKS_CO" :key="b" :value="b">{{ b }}</option>
+                <option v-for="b in $ordenAlfa(BANKS_CO)" :key="b" :value="b">{{ b }}</option>
               </select>
               <span v-if="approveErr.bank_origin" class="field-error">{{ approveErr.bank_origin }}</span>
             </div>

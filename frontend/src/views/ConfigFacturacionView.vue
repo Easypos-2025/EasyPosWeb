@@ -37,7 +37,7 @@
           <label>Impresora de recibos / facturas</label>
           <select v-model="cfg.impresora_facturas" class="cf-inp">
             <option :value="null">— Sin impresora —</option>
-            <option v-for="p in printers" :key="p.id" :value="p.id">{{ p.name }}{{ p.connection_type ? ` · ${p.connection_type}` : '' }}</option>
+            <option v-for="p in $ordenAlfa(printers, 'name')" :key="p.id" :value="p.id">{{ p.name }}{{ p.connection_type ? ` · ${p.connection_type}` : '' }}</option>
           </select>
           <small>Se usa cuando la caja del turno no tiene impresora propia (vista Cajas).</small>
         </div>

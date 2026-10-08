@@ -371,10 +371,14 @@ const activeCategoryName = computed(() => {
   return cat?.category_name || 'Categorías'
 })
 
+// Orden de ingreso: ítems guardados por su número; los nuevos (id temporal negativo) después y en orden de creación
+const _rankItem = (it) => (Number(it.item) > 0 ? Number(it.item) : 1e9 - Number(it.item || 0))
+
 const groupedItems = computed(() => {
   const groups = []
   const map    = new Map()
   for (const item of items.value) {
+    const rank = _rankItem(item)
     if (item._deleted) continue
     const k = `${item.dish_id}|${item.variant_id || 0}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}|${item.custom_description || ''}`
     if (map.has(k)) {
@@ -382,6 +386,7 @@ const groupedItems = computed(() => {
       g.qty         += item.quantity
       g.totalAmount += item.amount
       g.allItems.push(item)
+      if (rank > g.ultimo) g.ultimo = rank
       if (!item.sent || item.isNew) g.hasUnsent = true
       if (item.isNew) g.hasNew = true
     } else {
@@ -392,7 +397,7 @@ const groupedItems = computed(() => {
         assembly: item.assembly, notes: item.notes, changes: item.changes,
         hasUnsent: !item.sent || item.isNew,
         hasNew: item.isNew,
-        allItems: [item],
+        allItems: [item], ultimo: rank,
       })
       groups.push(map.get(k))
     }
@@ -402,6 +407,8 @@ const groupedItems = computed(() => {
     g.unitPrice   = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
     g.hasDiscount = !!g.allItems[g.allItems.length - 1]?.typification_id
   }
+  // NORMA: detalle del pedido en ítem descendente (último en ingresar, primero en mostrar)
+  groups.sort((a, b) => b.ultimo - a.ultimo)
   return groups
 })
 

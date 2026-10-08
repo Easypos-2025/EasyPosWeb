@@ -49,7 +49,7 @@
           <div class="task-row-action">
             <select v-model="assignMap[t.id]" class="form-select form-select-sm" style="min-width:200px">
               <option :value="null">— Seleccionar responsable —</option>
-              <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+              <option v-for="u in $ordenAlfa(users, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
             </select>
             <button class="btn btn-primary btn-sm" :disabled="!assignMap[t.id] || saving === t.id"
               @click="assignTask(t)">
@@ -121,7 +121,7 @@
               <label>Ejecutor / Profesional</label>
               <select v-model="completeForm.worker_id" class="form-select">
                 <option :value="null">— Sin ejecutor —</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">
+                <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                   {{ w.name }}{{ w.profession_name ? ' — ' + w.profession_name : '' }}
                 </option>
               </select>
@@ -132,7 +132,7 @@
               <label>Responsable</label>
               <select v-model="completeForm.assigned_to" class="form-select">
                 <option :value="null">— Sin asignar —</option>
-                <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                <option v-for="u in $ordenAlfa(users, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
             </div>
           </div>
@@ -175,7 +175,7 @@
             <div class="ci-add-row">
               <select v-model="newCollabId" class="form-select form-select-sm">
                 <option :value="null">— Agregar colaborador —</option>
-                <option v-for="u in availableForCollab()" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                <option v-for="u in $ordenAlfa(availableForCollab(), 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
               <button class="btn btn-outline-primary btn-sm" :disabled="!newCollabId || addingCollab"
                 @click="addCollab">

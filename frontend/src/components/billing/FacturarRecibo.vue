@@ -40,7 +40,7 @@
                   <tr v-if="!items.length">
                     <td colspan="4" class="fr-empty">Sin ítems en la orden</td>
                   </tr>
-                  <tr v-for="it in items" :key="it.id">
+                  <tr v-for="it in $ordenItemDesc(items, 'id')" :key="it.id">
                     <td class="fr-td-name">{{ it.nombre }}</td>
                     <td class="ta-c">{{ it.cantidad }}</td>
                     <td class="ta-r">{{ fmt(it.precio) }}</td>
@@ -82,7 +82,7 @@
                 <div v-for="(pago, i) in pagos" :key="i" class="fr-payment-row">
                   <select v-model="pago.payment_method_id" class="fr-select">
                     <option value="">Seleccionar método...</option>
-                    <option v-for="pt in paymentTypes" :key="pt.id" :value="pt.id">
+                    <option v-for="pt in $ordenAlfa(paymentTypes, 'name')" :key="pt.id" :value="pt.id">
                       {{ pt.name }}
                     </option>
                   </select>

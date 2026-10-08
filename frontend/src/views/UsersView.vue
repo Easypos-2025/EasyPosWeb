@@ -94,7 +94,7 @@
             -- Seleccione un rol --
           </option>
 
-          <option v-for="role in roles" :key="role.id" :value="role.id">
+          <option v-for="role in $ordenAlfa(roles, 'name')" :key="role.id" :value="role.id">
             {{ role.name }}
           </option>
         </select>
@@ -131,7 +131,7 @@
             </div>
             <select v-else v-model="inviteRoleId" class="form-control">
               <option :value="null" disabled>-- Selecciona un rol --</option>
-              <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
+              <option v-for="r in $ordenAlfa(roles, 'name')" :key="r.id" :value="r.id">{{ r.name }}</option>
             </select>
             <p v-if="!loadingInviteRoles && roles.length === 0" style="font-size:12px;color:#ef4444;margin-top:6px">
               <i class="bi bi-exclamation-triangle"></i> No se encontraron roles. Verifica que la empresa tenga roles creados.
@@ -191,7 +191,7 @@
           <option value="all">Todas las empresas</option>
 
           <option 
-            v-for="c in companies" 
+            v-for="c in $ordenAlfa(companies, 'name')" 
             :key="c.id" 
             :value="c.id"
           >
@@ -261,7 +261,7 @@
         <div class="mb-2">
           <label>Rol</label>
           <select v-model="editForm.role_id" class="form-control">
-            <option v-for="role in roles" :key="role.id" :value="role.id">
+            <option v-for="role in $ordenAlfa(roles, 'name')" :key="role.id" :value="role.id">
               {{ role.name }}
             </option>
           </select>

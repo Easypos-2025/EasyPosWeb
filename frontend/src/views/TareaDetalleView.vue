@@ -86,7 +86,7 @@
             <label>Activo relacionado</label>
             <select v-if="!isWorkerRole" v-model="form.asset_id" class="form-select">
               <option :value="null">— Sin activo —</option>
-              <option v-for="a in assets" :key="a.id" :value="a.id">{{ a.name }}</option>
+              <option v-for="a in $ordenAlfa(assets, 'name')" :key="a.id" :value="a.id">{{ a.name }}</option>
             </select>
             <div v-else class="read-field">{{ assetName(task.asset_id) }}</div>
           </div>
@@ -109,7 +109,7 @@
             <label>Responsable (Task Leader)</label>
             <select v-if="!isWorkerRole" v-model="form.assigned_to" class="form-select">
               <option :value="null">— Sin asignar —</option>
-              <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+              <option v-for="u in $ordenAlfa(users, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
             </select>
             <div v-else class="read-field">{{ task.assigned_to_name || '—' }}</div>
           </div>
@@ -122,7 +122,7 @@
             </div>
             <select v-if="!isWorkerRole" v-model="form.worker_id" class="form-select">
               <option :value="null">— Sin ejecutor —</option>
-              <option v-for="w in workers" :key="w.id" :value="w.id">
+              <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">
                 {{ w.name }}{{ w.profession_name ? ' — ' + w.profession_name : '' }}
               </option>
             </select>
@@ -284,14 +284,14 @@
               <label>Material / Producto *</label>
               <select v-model="matForm.name" class="form-select">
                 <option value="">— Seleccionar producto —</option>
-                <option v-for="p in productos" :key="p.id" :value="p.name">{{ p.name }}</option>
+                <option v-for="p in $ordenAlfa(productos, 'name')" :key="p.id" :value="p.name">{{ p.name }}</option>
               </select>
             </div>
             <div class="fg">
               <label>Unidad</label>
               <select v-model="matForm.unit" class="form-select">
                 <option value="">—</option>
-                <option v-for="u in unidadesMedida" :key="u.id"
+                <option v-for="u in $ordenAlfa(unidadesMedida, 'name')" :key="u.id"
                   :value="u.abreviatura || u.name">
                   {{ u.name }}{{ u.abreviatura ? ' (' + u.abreviatura + ')' : '' }}
                 </option>
@@ -372,7 +372,7 @@
               <label>Concepto *</label>
               <select v-model="expForm.concept" class="form-select">
                 <option value="">— Seleccionar concepto —</option>
-                <option v-for="c in conceptosGastos" :key="c.id" :value="c.name">{{ c.name }}</option>
+                <option v-for="c in $ordenAlfa(conceptosGastos, 'name')" :key="c.id" :value="c.name">{{ c.name }}</option>
               </select>
             </div>
             <div class="fg">
@@ -445,7 +445,7 @@
               <label>Concepto *</label>
               <select v-model="purchForm.concept" class="form-select">
                 <option value="">— Seleccionar concepto —</option>
-                <option v-for="c in conceptosCompras" :key="c.id" :value="c.name">{{ c.name }}</option>
+                <option v-for="c in $ordenAlfa(conceptosCompras, 'name')" :key="c.id" :value="c.name">{{ c.name }}</option>
               </select>
             </div>
             <div class="fg">
@@ -589,7 +589,7 @@
           <div class="collab-add-row">
             <select v-model="newCollabUserId" class="form-select">
               <option :value="null">— Seleccionar usuario —</option>
-              <option v-for="u in availableForCollab" :key="u.id" :value="u.id">
+              <option v-for="u in $ordenAlfa(availableForCollab, 'nombre')" :key="u.id" :value="u.id">
                 {{ u.nombre }}
               </option>
             </select>

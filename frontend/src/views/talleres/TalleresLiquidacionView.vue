@@ -386,7 +386,7 @@
             <div class="mb-row">
               <label>Forma de Pago</label>
               <select v-model.number="formPago.payment_method_id" class="mb-sel">
-                <option v-for="fp in formasPago" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
+                <option v-for="fp in $ordenAlfa(formasPago, 'name')" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
               </select>
               <small class="mb-help">Sale de la caja como Otro Egreso (Pagos · Pago Operarios) en el Id_Caja abierto.</small>
             </div>

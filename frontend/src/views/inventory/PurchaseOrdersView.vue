@@ -80,7 +80,7 @@
               <label>Proveedor</label>
               <select v-model="createForm.supplier_id" class="form-select">
                 <option :value="null">— Sin proveedor —</option>
-                <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                <option v-for="s in $ordenAlfa(suppliers, 'name')" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
             </div>
             <div class="fg">
@@ -105,7 +105,7 @@
                 <label v-if="idx === 0">Insumo</label>
                 <select v-model="item.supply_item_id" class="form-select">
                   <option :value="null">— Seleccionar insumo —</option>
-                  <option v-for="si in supplyItems" :key="si.id" :value="si.id">
+                  <option v-for="si in $ordenAlfa(supplyItems, 'description')" :key="si.id" :value="si.id">
                     {{ si.description }}{{ si.code ? ' [' + si.code + ']' : '' }}
                   </option>
                 </select>

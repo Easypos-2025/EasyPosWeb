@@ -184,15 +184,15 @@ async def get_user_list(
 ):
     role = await db.get(Role, current_user.role_id)
     if role and not role.is_system:
-        result = await db.execute(select(User).where(User.company_id == current_user.company_id))
+        result = await db.execute(select(User).where(User.company_id == current_user.company_id).order_by(User.nombre))
         return result.scalars().all()
 
     if isinstance(company_id, str) and company_id.lower() == "all":
-        result = await db.execute(select(User))
+        result = await db.execute(select(User).order_by(User.nombre))
         return result.scalars().all()
 
     cid = int(company_id) if company_id is not None else current_user.company_id
-    result = await db.execute(select(User).where(User.company_id == cid))
+    result = await db.execute(select(User).where(User.company_id == cid).order_by(User.nombre))
     return result.scalars().all()
 
 

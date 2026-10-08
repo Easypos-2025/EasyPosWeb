@@ -16,6 +16,8 @@ Diferencias con el VB6 (decididas con el usuario, 2026-10-07):
     temp_meseros y, si el mesero no está allí, el pedido no se imprime y no avisa.
   · No se vuelve a encolar un ítem del pedido que ya está en la cola (si se agrega antes de que el
     temporizador imprima lo anterior, el VB6 lo imprimiría dos veces).
+  · NORMA: la comanda va en ítem descendente (último en ingresar, primero en la tirilla): se encola
+    en ese orden.
   · Enviar_Pedido_domicilio_caja (impresión directa de domicilios) queda pendiente: la toma de
     pedidos no crea domicilios.
 """
@@ -65,7 +67,7 @@ async def enviar_pedido_impresion(tmp, emp: AsyncSession, nro: str, nuevo: bool,
         WHERE d.Nro_pedido = :n AND d.Impreso = 0 AND d.Min = 0
           AND NOT EXISTS (SELECT 1 FROM temp_impresion_tirilla_comanda t
                           WHERE t.Nro_pedido = d.Nro_pedido AND t.Item = d.Item)
-        ORDER BY d.Item
+        ORDER BY d.Item DESC
     """), {"n": nro})).mappings().all()
     if filas:
         mesero = await _nombre_mesero(tmp, emp, int(filas[0]["Mesero"] or 0))

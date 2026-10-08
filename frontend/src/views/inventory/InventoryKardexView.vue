@@ -8,7 +8,7 @@
         <label class="kx-lbl">Categoría</label>
         <select v-model="selCat" @change="onCatChange" class="kx-inp">
           <option value="">Todas</option>
-          <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+          <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </div>
 
@@ -25,7 +25,7 @@
         <select v-model="selItem" @change="onItemSelect" class="kx-inp"
                 :disabled="!filteredItems.length">
           <option value="">— Seleccione —</option>
-          <option v-for="it in filteredItems" :key="it.id_item" :value="it.id_item">
+          <option v-for="it in $ordenAlfa(filteredItems, 'description')" :key="it.id_item" :value="it.id_item">
             {{ it.description }}{{ it.code ? ' [' + it.code + ']' : '' }}
           </option>
         </select>

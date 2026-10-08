@@ -86,7 +86,7 @@ async def get_sections(db: AsyncSession = Depends(get_db)):
 
 @router.get("/profiles")
 async def get_profiles(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BusinessProfile).where(BusinessProfile.is_active == True, BusinessProfile.show_in_landing == True))
+    result = await db.execute(select(BusinessProfile).where(BusinessProfile.is_active == True, BusinessProfile.show_in_landing == True).order_by(BusinessProfile.name))
     return JSONResponse(content=[_ser_profile(p) for p in result.scalars().all()], headers=_NO_CACHE)
 
 
@@ -214,7 +214,7 @@ async def admin_delete_section(section_key: str, authorization: str = Header(Non
 @router.get("/admin/profiles")
 async def admin_get_profiles(authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     await _get_sysadmin(authorization, db)
-    result = await db.execute(select(BusinessProfile))
+    result = await db.execute(select(BusinessProfile).order_by(BusinessProfile.name))
     return [_ser_profile(p) for p in result.scalars().all()]
 
 

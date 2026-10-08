@@ -124,28 +124,35 @@ function _assemblyKey(assembly) {
   )
 }
 
+// Orden de ingreso: ítems guardados por su número; los nuevos (id temporal negativo) después y en orden de creación
+const _rankItem = (it) => (Number(it.item) > 0 ? Number(it.item) : 1e9 - Number(it.item || 0))
+
 const groupedItems = computed(() => {
   const groups = []
   const map = new Map()
   for (const item of rawItems.value) {
+    const rank = _rankItem(item)
     const k = `${item.dish_id}|${_assemblyKey(item.assembly)}|${item.notes || ''}|${item.changes || ''}`
     if (map.has(k)) {
       const g = map.get(k)
       g.qty += item.quantity
       g.totalAmount += item.amount
       g.allItems.push(item)
+      if (rank > g.ultimo) g.ultimo = rank
       if (!item.sent) g.hasUnsent = true
     } else {
       const g = {
         key: k, dish_id: item.dish_id, dish_name: item.dish_name,
         qty: item.quantity, totalAmount: item.amount,
         assembly: item.assembly, notes: item.notes, changes: item.changes,
-        hasUnsent: !item.sent, allItems: [item],
+        hasUnsent: !item.sent, allItems: [item], ultimo: rank,
       }
       map.set(k, g)
       groups.push(g)
     }
   }
+  // NORMA: detalle del pedido en ítem descendente (último en ingresar, primero en mostrar)
+  groups.sort((a, b) => b.ultimo - a.ultimo)
   return groups
 })
 

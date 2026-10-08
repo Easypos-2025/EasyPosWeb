@@ -54,7 +54,7 @@
 
       <select v-model="catFilter" @change="load" class="f-sel">
         <option value="">Todas las categorías</option>
-        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+        <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
 
       <div class="toggle-grp">

@@ -238,13 +238,12 @@ loadArticles()
 
 <style scoped>
 .help-container {
-  padding: 24px;
-  max-width: 1280px;
-  margin: 0 auto;
+  padding: 16px 16px 12px 12px;
+  width: 100%;
 }
 
 /* ── Header ── */
-.help-header { margin-bottom: 18px; }
+.help-header { margin-bottom: 12px; }
 .help-title {
   font-size: 22px; font-weight: 700; color: #0f172a;
   margin-bottom: 4px; display: flex; align-items: center;
@@ -255,9 +254,9 @@ loadArticles()
 /* ── Layout dos paneles ── */
 .help-layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 18px;
-  height: calc(100vh - 210px);
+  grid-template-columns: 340px 1fr;
+  gap: 14px;
+  height: calc(100vh - 170px);
   min-height: 460px;
 }
 
@@ -365,7 +364,7 @@ loadArticles()
   border: 1px solid #e2e8f0; background: #f8fafc;
 }
 .help-gif {
-  display: block; width: 100%; max-height: 460px; object-fit: contain;
+  display: block; width: 100%; max-height: 62vh; object-fit: contain;
 }
 .help-gif-zoom-hint {
   position: absolute; bottom: 10px; right: 10px;

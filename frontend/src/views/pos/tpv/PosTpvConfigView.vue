@@ -187,7 +187,7 @@
             <label>Rol</label>
             <select v-model.number="form.role_id" class="tpv-input">
               <option :value="null">Sin rol</option>
-              <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
+              <option v-for="r in $ordenAlfa(roles, 'name')" :key="r.id" :value="r.id">{{ r.name }}</option>
             </select>
             <small class="tpv-help">Lo que puede hacer (eliminar productos impresos, cuentas, descuentos…) se activa en Roles → Control de Acceso.</small>
           </div>

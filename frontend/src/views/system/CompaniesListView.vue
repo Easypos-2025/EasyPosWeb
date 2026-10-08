@@ -11,7 +11,7 @@
       </select>
       <select class="form-select fc-select" v-model="filterProfile">
         <option value="">Todos los perfiles</option>
-        <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+        <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
       <select class="form-select fc-select" v-model="filterPlan">
         <option value="">Todos los planes</option>
@@ -126,7 +126,7 @@
               <label>Perfil de negocio *</label>
               <select v-model="editForm.business_profile_id" data-v="perfil" class="form-select" @change="clearError($event)">
                 <option value="">— Seleccionar —</option>
-                <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
             </div>
             <div class="fg">

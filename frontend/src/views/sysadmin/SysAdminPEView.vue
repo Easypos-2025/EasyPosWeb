@@ -15,7 +15,7 @@
       <div class="left-filters">
         <select v-model="profileFilter" class="pe-select">
           <option value="">Todos los perfiles</option>
-          <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <input
           v-model="companySearch"

@@ -83,7 +83,7 @@
               <label>Destinatario</label>
               <select v-model="form.receiver_id" class="fi">
                 <option value="" disabled>Selecciona un usuario</option>
-                <option v-for="u in recipients" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+                <option v-for="u in $ordenAlfa(recipients, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
               </select>
             </div>
             <div class="fg">

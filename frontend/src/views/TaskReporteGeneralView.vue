@@ -41,7 +41,7 @@
           <select v-model="filterUser" class="form-select">
             <option value="">Todos</option>
             <option :value="-1">Sin asignar</option>
-            <option v-for="u in users" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+            <option v-for="u in $ordenAlfa(users, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
           </select>
         </div>
         <div class="fg">

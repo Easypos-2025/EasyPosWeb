@@ -401,7 +401,7 @@ async def get_companies(db: AsyncSession = Depends(get_db), current_user: User =
     from app.models.plan_model import Plan
 
     _own, allowed = await tenant.allowed_companies(db, current_user)   # None = SYSADMIN (todas)
-    q = select(Company).order_by(Company.id_company)
+    q = select(Company).order_by(Company.name)
     if allowed is not None:
         if not allowed:
             return []

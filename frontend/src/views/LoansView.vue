@@ -148,7 +148,7 @@
             <label>Artículo de bodega *</label>
             <select v-model="createForm.bodega_item_id" class="form-select">
               <option :value="null">— Seleccionar artículo —</option>
-              <option v-for="i in bodegaItems" :key="i.id" :value="i.id"
+              <option v-for="i in $ordenAlfa(bodegaItems, 'nombre')" :key="i.id" :value="i.id"
                 :disabled="i.cantidad_disponible === 0">
                 {{ i.nombre }}{{ i.codigo ? ' [' + i.codigo + ']' : '' }} — Disp: {{ i.cantidad_disponible }}
               </option>
@@ -158,7 +158,7 @@
             <label>Líder de tarea * <span class="label-hint">(usuario responsable del artículo)</span></label>
             <select v-model="createForm.task_leader_id" class="form-select">
               <option :value="null">— Seleccionar líder de tarea —</option>
-              <option v-for="u in systemUsers" :key="u.id" :value="u.id">
+              <option v-for="u in $ordenAlfa(systemUsers, 'nombre')" :key="u.id" :value="u.id">
                 {{ u.nombre }}{{ u.email ? ' — ' + u.email : '' }}
               </option>
             </select>
@@ -167,7 +167,7 @@
             <label>Colaborador externo <span class="label-hint">(opcional — quien retira físicamente)</span></label>
             <select v-model="createForm.external_collaborator_id" class="form-select">
               <option :value="null">— Sin colaborador externo —</option>
-              <option v-for="c in collaborators" :key="c.id" :value="c.id">
+              <option v-for="c in $ordenAlfa(collaborators, 'nombre')" :key="c.id" :value="c.id">
                 {{ c.nombre }} — {{ c.dni }}{{ c.empresa ? ' · ' + c.empresa : '' }}
               </option>
             </select>

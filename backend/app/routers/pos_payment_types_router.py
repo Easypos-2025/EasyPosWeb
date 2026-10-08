@@ -168,7 +168,7 @@ async def list_payment_types(
                validate_amount, validate_number, ask_customer
         FROM pos_payment_types
         WHERE company_id = :cid
-        ORDER BY is_default DESC, id ASC
+        ORDER BY is_default DESC, name ASC
     """), {"cid": company_id})).mappings().all()
     return [dict(r) for r in rows]
 

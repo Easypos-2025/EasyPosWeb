@@ -26,7 +26,7 @@
         <div class="col-md-3 col-6">
           <select v-model="filterAsset" class="form-select">
             <option value="">Todos los activos</option>
-            <option v-for="a in assets" :key="a.id" :value="a.id">
+            <option v-for="a in $ordenAlfa(assets, 'list_code')" :key="a.id" :value="a.id">
               {{ a.list_code ? `#${a.list_code} — ` : '' }}{{ a.name }}
             </option>
           </select>

@@ -666,7 +666,7 @@
                   <label>Perfil de negocio objetivo</label>
                   <select v-model="pauteForm.target_profile_id" class="form-ctrl">
                     <option :value="null">Todos los perfiles</option>
-                    <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
                   </select>
                 </div>
               </div>

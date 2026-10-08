@@ -32,7 +32,7 @@
              placeholder="Buscar ref, título, endpoint o vista…" @keyup.enter="search" />
       <select v-model="f.tipo" class="em-input" @change="search">
         <option value="">Todos los tipos</option>
-        <option v-for="t in TIPOS" :key="t" :value="t">{{ tipoLabel(t) }}</option>
+        <option v-for="t in $ordenAlfa(TIPOS, tipoLabel)" :key="t" :value="t">{{ tipoLabel(t) }}</option>
       </select>
       <select v-model="f.nivel" class="em-input" @change="search">
         <option value="">Todos los niveles</option>

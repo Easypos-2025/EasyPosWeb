@@ -2,6 +2,7 @@ import { defineStore } from "pinia"
 import { ref } from "vue"
 import api from "@/services/apis"
 import { applyTheme } from "@/utils/theme"
+import { ordenAlfa } from "@/utils/orden"
 
 export const useCompanyStore = defineStore("company", () => {
   const selectedCompany = ref(null)   // { id, name, business_profile_id, business_profile_name }
@@ -71,9 +72,12 @@ export const useCompanyStore = defineStore("company", () => {
 
     if (isSystem.value) {
       // SYSADMIN: cargar todas las empresas
+      let porDefecto = null
       try {
         const res = await api.get("/companies/")
-        companies.value = res.data
+        companies.value = ordenAlfa(res.data, "name")
+        // Por defecto la de menor id (la empresa del sistema), no la primera alfabética
+        porDefecto = res.data.reduce((min, c) => (!min || c.id < min.id ? c : min), null)
       } catch {
         companies.value = []
       }
@@ -83,9 +87,9 @@ export const useCompanyStore = defineStore("company", () => {
       if (stored) {
         const parsed   = JSON.parse(stored)
         const stillOk  = companies.value.find(c => c.id === parsed.id)
-        selectedCompany.value = stillOk ? parsed : (companies.value[0] ?? null)
+        selectedCompany.value = stillOk ? parsed : porDefecto
       } else {
-        selectedCompany.value = companies.value[0] ?? null
+        selectedCompany.value = porDefecto
       }
 
     } else {
@@ -100,7 +104,7 @@ export const useCompanyStore = defineStore("company", () => {
         const nit = myNitCompany?.identification_number ?? null
 
         if (nit) {
-          companies.value = allRes.data.filter(c => c.identification_number === nit)
+          companies.value = ordenAlfa(allRes.data.filter(c => c.identification_number === nit), "name")
         } else {
           companies.value = myNitCompany ? [myNitCompany] : []
         }

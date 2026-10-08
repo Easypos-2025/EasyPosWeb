@@ -48,7 +48,7 @@
             <label class="vi-label">Categoría Producto</label>
             <select class="vi-select" v-model="filtro.catId" @change="buscar">
               <option :value="null">Todas</option>
-              <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.name }}</option>
+              <option v-for="c in $ordenAlfa(categorias, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
 

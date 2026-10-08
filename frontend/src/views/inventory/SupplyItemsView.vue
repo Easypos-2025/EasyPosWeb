@@ -28,7 +28,7 @@
       <input v-model="search" class="form-control f-search" :placeholder="`Buscar ${moduleName.toLowerCase()} por nombre o código...`" />
       <select v-model="filterCat" class="form-select f-sel">
         <option :value="null">Todas las categorías</option>
-        <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+        <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
       <select v-model="filterStock" class="form-select f-sel">
         <option value="">Todos</option>
@@ -168,7 +168,7 @@
                 <label>Unidad uso</label>
                 <select v-model="form.unit_uso_id" class="form-select">
                   <option :value="null">— Seleccione —</option>
-                  <option v-for="m in formasUnidadUso" :key="m.id" :value="m.id">{{ m.name }}</option>
+                  <option v-for="m in $ordenAlfa(formasUnidadUso, 'name')" :key="m.id" :value="m.id">{{ m.name }}</option>
                 </select>
               </div>
               <div class="fg">
@@ -191,7 +191,7 @@
               <div class="unit-row">
                 <select v-model="form.category_id" class="form-select">
                   <option :value="null">Sin categoría</option>
-                  <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+                  <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
                 </select>
                 <button type="button" class="btn-add-unit" title="Crear nueva categoría" @click="openQuick('cat')"><i class="bi bi-plus-lg"></i></button>
               </div>

@@ -43,7 +43,7 @@
     <div class="filter-bar">
       <select v-model="filterLeader" class="form-select form-select-sm" style="max-width:240px">
         <option :value="null">Todos los líderes de tarea</option>
-        <option v-for="l in leaders" :key="l.id" :value="l.id">{{ l.name }}</option>
+        <option v-for="l in $ordenAlfa(leaders, 'name')" :key="l.id" :value="l.id">{{ l.name }}</option>
       </select>
       <button
         v-if="filterLeader !== null || activeTab !== 'all'"

@@ -85,7 +85,7 @@
           <span>Empresa</span>
           <select v-model="nuevo.company_id" class="form-control" required>
             <option :value="null" disabled>Seleccione…</option>
-            <option v-for="e in empresasLibres" :key="e.id" :value="e.id">{{ e.name }}</option>
+            <option v-for="e in $ordenAlfa(empresasLibres, 'name')" :key="e.id" :value="e.id">{{ e.name }}</option>
           </select>
         </label>
         <label class="al-campo">

@@ -7,7 +7,7 @@
       <h5 class="smm-title">Seleccione Business Profile</h5>
       <select v-model="selectedProfileId" class="form-select mt-2">
         <option value="">-- Seleccione un perfil --</option>
-        <option v-for="profile in businessProfiles" :key="profile.id" :value="profile.id">
+        <option v-for="profile in $ordenAlfa(businessProfiles, 'name')" :key="profile.id" :value="profile.id">
           {{ profile.name }}
         </option>
       </select>
@@ -29,7 +29,7 @@
           </label>
           <select v-model="addForm.module_id" class="form-select smm-select" :disabled="!availableModules.length">
             <option :value="null">— Selecciona un módulo —</option>
-            <option v-for="m in availableModules" :key="m.id" :value="m.id">
+            <option v-for="m in $ordenAlfa(availableModules, 'name')" :key="m.id" :value="m.id">
               {{ m.name }}{{ m.route ? ` (${m.route})` : '' }}
             </option>
           </select>
@@ -44,7 +44,7 @@
           <label class="smm-label">Colgar bajo</label>
           <select v-model="addForm.parent_id" class="form-select smm-select">
             <option :value="null">— Raíz (nivel superior) —</option>
-            <option v-for="m in flatModules" :key="m.id" :value="m.id">
+            <option v-for="m in $ordenAlfa(flatModules, 'name')" :key="m.id" :value="m.id">
               {{ m.name }}
             </option>
           </select>
@@ -192,7 +192,7 @@
             <select v-model="editForm.parent_id" class="form-select smm-select">
               <option :value="null">— Raíz (nivel superior) —</option>
               <option
-                v-for="m in editableParents"
+                v-for="m in $ordenAlfa(editableParents, 'name')"
                 :key="m.id"
                 :value="m.id"
               >{{ m.name }}</option>

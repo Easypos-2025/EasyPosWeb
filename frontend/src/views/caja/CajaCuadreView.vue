@@ -15,7 +15,7 @@
       </div>
       <select v-if="f.modo === 'usuario'" v-model.number="f.user_id" class="cc-select" @change="cargar">
         <option :value="null" disabled>Seleccione el usuario</option>
-        <option v-for="u in opc.usuarios" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+        <option v-for="u in $ordenAlfa(opc.usuarios, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
       </select>
       <select v-if="f.modo === 'caja'" v-model.number="f.closing_id" class="cc-select" @change="cargar">
         <option :value="null" disabled>Seleccione el Id_Caja</option>

@@ -25,7 +25,7 @@
       <!-- Filtro por usuario (solo SYSADMIN / Admin) -->
       <select v-if="canManageAll" v-model="filterUserId" class="filter-select" @change="applyFilters">
         <option :value="null">Todos los usuarios</option>
-        <option v-for="u in usersList" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+        <option v-for="u in $ordenAlfa(usersList, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
       </select>
 
       <!-- Filtros de fecha (todos los roles) -->

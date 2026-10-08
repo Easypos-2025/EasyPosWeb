@@ -30,7 +30,7 @@
           <label>Servicio</label>
           <select v-model="filtros.servicio" class="pkm-select">
             <option value="">Todos los servicios</option>
-            <option v-for="s in serviciosDisponibles" :key="s" :value="s">{{ s }}</option>
+            <option v-for="s in $ordenAlfa(serviciosDisponibles)" :key="s" :value="s">{{ s }}</option>
           </select>
         </div>
         <div class="pkm-filtro-field">

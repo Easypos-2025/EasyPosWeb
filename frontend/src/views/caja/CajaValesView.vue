@@ -81,7 +81,7 @@
           <label class="mv-lbl">Empleado</label>
           <select v-model.number="form.employee_id" class="mv-inp" @change="esAbono && cargarPendientes()">
             <option :value="0" :disabled="!esAbono">{{ esAbono ? 'Todos los empleados' : 'Seleccione el empleado' }}</option>
-            <option v-for="e in opc.empleados" :key="e.id" :value="e.id">{{ e.nombre }}</option>
+            <option v-for="e in $ordenAlfa(opc.empleados, 'nombre')" :key="e.id" :value="e.id">{{ e.nombre }}</option>
           </select>
           <small v-if="!opc.empleados.length" class="mv-help">No hay empleados activos.</small>
 
@@ -119,7 +119,7 @@
             </div>
             <div v-for="(p, i) in form.pagos" :key="i" class="mv-fp">
               <select v-model.number="p.payment_method_id" class="mv-inp">
-                <option v-for="fp in opc.formas_pago" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
+                <option v-for="fp in $ordenAlfa(opc.formas_pago, 'name')" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
               </select>
               <CurrencyInput v-model="p.amount" class="mv-inp mv-inp--money" />
               <button v-if="form.pagos.length > 1" class="mv-x" type="button" @click="form.pagos.splice(i, 1)"><i class="bi bi-trash"></i></button>

@@ -31,7 +31,7 @@
           size="7"
         >
           <option
-            v-for="c in filteredCompanies"
+            v-for="c in $ordenAlfa(filteredCompanies, 'company_name')"
             :key="c.company_id"
             :value="c.company_id"
           >

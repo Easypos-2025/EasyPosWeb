@@ -32,7 +32,7 @@
       <select v-model="filterUser" class="form-select" style="max-width:180px">
         <option value="">Todos los líderes</option>
         <option :value="-1">Sin asignar</option>
-        <option v-for="u in taskLeaders" :key="u.id" :value="u.id">{{ u.nombre }}</option>
+        <option v-for="u in $ordenAlfa(taskLeaders, 'nombre')" :key="u.id" :value="u.id">{{ u.nombre }}</option>
       </select>
     </div>
 
@@ -212,7 +212,7 @@
             <label>Selecciona el Task Leader responsable</label>
             <select v-model="assignUserId" class="form-select">
               <option :value="null">— Sin asignar —</option>
-              <option v-for="u in taskLeaders" :key="u.id" :value="u.id">
+              <option v-for="u in $ordenAlfa(taskLeaders, 'nombre')" :key="u.id" :value="u.id">
                 {{ u.nombre }}
               </option>
             </select>

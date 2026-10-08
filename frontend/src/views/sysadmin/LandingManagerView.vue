@@ -353,7 +353,7 @@
               <label>Categoría</label>
               <input v-model="featureModal.data.category" class="form-ctrl-sm" list="cat-list" placeholder="Módulos Básicos" />
               <datalist id="cat-list">
-                <option v-for="c in allCategories" :key="c" :value="c" />
+                <option v-for="c in $ordenAlfa(allCategories)" :key="c" :value="c" />
               </datalist>
             </div>
             <div class="form-group">

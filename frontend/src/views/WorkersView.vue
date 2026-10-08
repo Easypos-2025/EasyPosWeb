@@ -11,7 +11,7 @@
         <div class="col-md-4 col-12">
           <select class="form-select" v-model="filterProfession">
             <option value="">Todas las profesiones</option>
-            <option v-for="p in professions" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-for="p in $ordenAlfa(professions, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </div>
         <div class="col-md-3 col-12 d-flex gap-2">
@@ -158,7 +158,7 @@
             <div class="d-flex gap-2">
               <select v-model="editForm.profession_id" class="form-select">
                 <option :value="null">— Sin profesión —</option>
-                <option v-for="p in professions" :key="p.id" :value="p.id">{{ p.name }}</option>
+                <option v-for="p in $ordenAlfa(professions, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
               <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0"
                 title="Agregar nueva profesión" @click="openProfModal">

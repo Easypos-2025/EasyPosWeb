@@ -13,7 +13,7 @@
       <div v-if="cargando && !pedido" class="cargando"><span class="giro"></span></div>
 
       <div v-if="pedido" class="tarjeta lista">
-        <div v-for="l in pedido.lineas" :key="l.depende" class="linea">
+        <div v-for="l in lineasDesc" :key="l.depende" class="linea">
           <div class="linea__info">
             <b>{{ cantidad(l.cantidad) }} × {{ l.nombre }}</b>
             <small v-if="l.novedad">{{ l.novedad }}</small>
@@ -41,7 +41,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
 import { api } from "../api"
@@ -53,6 +53,8 @@ const route = useRoute()
 const router = useRouter()
 const nro = String(route.query.nro || "")
 const pedido = ref(null)
+// Último ítem ingresado, primero en mostrar (Depende = primer ítem de la línea)
+const lineasDesc = computed(() => [...(pedido.value?.lineas || [])].sort((a, b) => b.depende - a.depende))
 const cargando = ref(false)
 let temporizador = null
 

@@ -10,7 +10,7 @@
 
       <div class="hoja__cuerpo">
         <p v-if="!lineas.length" class="vacio">{{ panel ? `Toque un ${t("producto")} para agregarlo al pedido.` : `No ha agregado ${t("productos")}.` }}</p>
-        <div v-for="l in lineas" :key="l.clave" class="linea">
+        <div v-for="l in lineasDesc" :key="l.clave" class="linea">
           <div class="linea__info">
             <b>{{ l.nombre }}</b>
             <small v-if="l.detalle">{{ l.detalle }}</small>
@@ -52,6 +52,9 @@ const props = defineProps({
   panel: { type: Boolean, default: false },
 })
 defineEmits(["cerrar", "quitar", "enviar"])
+
+// Último agregado, primero en mostrar
+const lineasDesc = computed(() => [...props.lineas].reverse())
 
 const total = computed(() => props.lineas.reduce((s, l) => s + valorLinea(l.unitario, l.cantidad), 0))
 

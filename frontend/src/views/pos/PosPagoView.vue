@@ -26,7 +26,7 @@
           <span class="pg-lbl">Vendedor</span>
           <select v-model.number="form.waiter_id" class="pg-select">
             <option :value="0">— Sin vendedor —</option>
-            <option v-for="w in datos.waiters" :key="w.id" :value="w.id">{{ w.name }}</option>
+            <option v-for="w in $ordenAlfa(datos.waiters, 'name')" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
         </label>
       </header>
@@ -43,7 +43,7 @@
             <div class="pg-box-ttl">Descuento</div>
             <select v-model.number="form.typification_id" class="pg-select" :disabled="!elegiblesDescuento.length">
               <option :value="0">{{ elegiblesDescuento.length ? '— Sin descuento —' : 'Ítems marcados ya tienen descuento' }}</option>
-              <option v-for="t in datos.typifications" :key="t.id" :value="t.id">
+              <option v-for="t in $ordenAlfa(datos.typifications, 'name')" :key="t.id" :value="t.id">
                 {{ t.name }}{{ t.percentage ? ` (${t.percentage}%)` : ' (en pesos)' }}
               </option>
             </select>
@@ -75,7 +75,7 @@
             <div class="pg-box-ttl">Formas de pago</div>
             <div v-for="(p, idx) in form.payments" :key="idx" class="pg-pago">
               <select v-model.number="p.payment_method_id" class="pg-select">
-                <option v-for="pt in datos.payment_types" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
+                <option v-for="pt in $ordenAlfa(datos.payment_types, 'name')" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
               </select>
               <CurrencyInput v-model="p.amount" class="pg-input text-end" />
               <button class="pg-ico pg-ico--del" :disabled="form.payments.length === 1" @click="form.payments.splice(idx, 1)"><i class="bi bi-trash"></i></button>
@@ -126,7 +126,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="it in datos.items" :key="it.item" :class="{ off: !seleccion.has(it.item) }" @click="toggleItem(it.item)">
+                <tr v-for="it in $ordenItemDesc(datos.items)" :key="it.item" :class="{ off: !seleccion.has(it.item) }" @click="toggleItem(it.item)">
                   <td class="w-chk"><input type="checkbox" :checked="seleccion.has(it.item)" @click.stop="toggleItem(it.item)" /></td>
                   <td class="w-cant">{{ it.item }}</td>
                   <td>

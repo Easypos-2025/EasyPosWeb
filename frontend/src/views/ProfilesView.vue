@@ -50,7 +50,7 @@
           <select v-model="company.country_id" class="fi"
                   @change="company.department_id = null; company.municipality_id = null">
             <option :value="null" disabled>Selecciona país</option>
-            <option v-for="c in countries" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in $ordenAlfa(countries, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
 
@@ -60,7 +60,7 @@
                   :disabled="!company.country_id"
                   @change="company.municipality_id = null">
             <option :value="null" disabled>Selecciona departamento</option>
-            <option v-for="d in departments" :key="d.id" :value="d.id">{{ d.name }}</option>
+            <option v-for="d in $ordenAlfa(departments, 'name')" :key="d.id" :value="d.id">{{ d.name }}</option>
           </select>
         </div>
 
@@ -68,7 +68,7 @@
           <label>Municipio <span class="req">*</span></label>
           <select v-model="company.municipality_id" class="fi" :disabled="!company.department_id">
             <option :value="null" disabled>Selecciona municipio</option>
-            <option v-for="m in municipalities" :key="m.id" :value="m.id">{{ m.name }}</option>
+            <option v-for="m in $ordenAlfa(municipalities, 'name')" :key="m.id" :value="m.id">{{ m.name }}</option>
           </select>
         </div>
 
@@ -76,7 +76,7 @@
           <label>Moneda <span class="req">*</span></label>
           <select v-model="company.type_currency_id" class="fi">
             <option :value="null" disabled>Selecciona moneda</option>
-            <option v-for="cur in currencies" :key="cur.id" :value="cur.id">
+            <option v-for="cur in $ordenAlfa(currencies, 'name')" :key="cur.id" :value="cur.id">
               {{ cur.name }} ({{ cur.symbol || cur.code }})
             </option>
           </select>
@@ -86,7 +86,7 @@
           <label>Idioma <span class="req">*</span></label>
           <select v-model="company.language_id" class="fi">
             <option :value="null" disabled>Selecciona idioma</option>
-            <option v-for="l in languages" :key="l.id" :value="l.id">{{ l.name }}</option>
+            <option v-for="l in $ordenAlfa(languages, 'name')" :key="l.id" :value="l.id">{{ l.name }}</option>
           </select>
         </div>
 

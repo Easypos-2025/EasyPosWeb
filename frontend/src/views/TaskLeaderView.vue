@@ -62,7 +62,7 @@
     <div v-if="!isWorker" class="filter-bar">
       <select v-model="filterWorker" class="form-select form-select-sm" style="max-width:220px">
         <option :value="null">Todos los ejecutores</option>
-        <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+        <option v-for="w in $ordenAlfa(workers, 'name')" :key="w.id" :value="w.id">{{ w.name }}</option>
       </select>
       <button
         v-if="filterWorker !== null || activeTab !== 'all'"

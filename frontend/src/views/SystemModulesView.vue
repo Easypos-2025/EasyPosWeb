@@ -25,7 +25,7 @@
       <div class="mb-2">
         <select v-model="form.parent_id" class="form-control">
           <option :value="null">Sin padre</option>
-          <option v-for="m in modules" :key="m.id" :value="m.id">
+          <option v-for="m in $ordenAlfa(modules, 'name')" :key="m.id" :value="m.id">
             {{ m.name }}
           </option>
         </select>
@@ -47,7 +47,7 @@
       <div class="repair-body">
         <select v-model="repairProfileId" class="form-control repair-select">
           <option value="">— Seleccionar perfil —</option>
-          <option v-for="p in profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <button
           class="btn btn-repair"
@@ -204,7 +204,7 @@
               <div v-if="moveOpenId === c.id" class="del-move">
                 <input v-model="moveSearch" class="form-control form-control-sm" placeholder="Buscar nuevo padre..." />
                 <select v-model="moveParentId" class="form-control form-control-sm" size="5">
-                  <option v-for="m in parentOptions(c.id)" :key="m.id" :value="m.id">
+                  <option v-for="m in $ordenAlfa(parentOptions(c.id), 'label')" :key="m.id" :value="m.id">
                     {{ m.label }}
                   </option>
                 </select>
@@ -269,7 +269,7 @@
         <div class="mb-2">
           <select v-model="editForm.parent_id" class="form-control">
             <option :value="null">Sin padre</option>
-            <option v-for="m in modules" :key="m.id" :value="m.id">
+            <option v-for="m in $ordenAlfa(modules, 'name')" :key="m.id" :value="m.id">
               {{ m.name }}
             </option>
           </select>

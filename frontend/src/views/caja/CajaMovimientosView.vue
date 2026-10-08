@@ -72,7 +72,7 @@
           <label class="mv-lbl">Concepto</label>
           <select v-model.number="form.concept_id" class="mv-inp" @change="form.sub_concept_id = 0">
             <option :value="0" disabled>Seleccione el concepto</option>
-            <option v-for="c in opc.conceptos" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+            <option v-for="c in $ordenAlfa(opc.conceptos, 'nombre')" :key="c.id" :value="c.id">{{ c.nombre }}</option>
           </select>
           <small v-if="!opc.conceptos.length" class="mv-help">No hay conceptos activos: créelos en Configuración → Conceptos de Caja.</small>
 
@@ -80,7 +80,7 @@
             <label class="mv-lbl">Subconcepto</label>
             <select v-model.number="form.sub_concept_id" class="mv-inp">
               <option :value="0">Ninguno</option>
-              <option v-for="s in subconceptos" :key="s.id" :value="s.id">{{ s.nombre }}</option>
+              <option v-for="s in $ordenAlfa(subconceptos, 'nombre')" :key="s.id" :value="s.id">{{ s.nombre }}</option>
             </select>
           </template>
 
@@ -96,7 +96,7 @@
           </div>
           <div v-for="(p, i) in form.pagos" :key="i" class="mv-fp">
             <select v-model.number="p.payment_method_id" class="mv-inp">
-              <option v-for="fp in opc.formas_pago" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
+              <option v-for="fp in $ordenAlfa(opc.formas_pago, 'name')" :key="fp.id" :value="fp.id">{{ fp.name }}</option>
             </select>
             <CurrencyInput v-model="p.amount" class="mv-inp mv-inp--money" />
             <button v-if="form.pagos.length > 1" class="mv-x" type="button" @click="form.pagos.splice(i, 1)"><i class="bi bi-trash"></i></button>
