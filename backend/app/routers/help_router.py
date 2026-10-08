@@ -15,8 +15,31 @@ from app.utils.storage import upload_file, delete_file
 
 router = APIRouter(prefix="/help", tags=["Help"])
 
-ALLOWED_GIF = {".gif", ".webp", ".png", ".jpg", ".jpeg"}
-MAX_GIF_MB  = 8
+ALLOWED_GIF = {".gif", ".webp", ".png", ".jpg", ".jpeg", ".mp4", ".webm"}
+MAX_GIF_MB  = 20   # nginx permite 25M (client_max_body_size)
+
+
+def _tipo_real(content: bytes) -> Optional[str]:
+    """Extensión según el contenido real del archivo (no según el nombre)."""
+    if content[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if content[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if content[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return ".webp"
+    if content[4:8] == b"ftyp":
+        return ".mp4"
+    if content[:4] == b"\x1a\x45\xdf\xa3":
+        return ".webm"
+    return None
+
+
+async def _borrar_archivo(url: Optional[str]) -> None:
+    """Borra el archivo del artículo esté en disco local o en DO Spaces."""
+    if url and (url.startswith("/uploads/") or "/help/help_" in url):
+        await delete_file(url)
 
 
 def _ser(a: HelpArticle) -> dict:
@@ -79,7 +102,7 @@ async def list_help(
 
 @router.get("/admin/list")
 async def admin_list(
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_sysadmin),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(HelpArticle).order_by(
@@ -109,7 +132,6 @@ async def create_article(
         category    = (data.get("category") or "General").strip(),
         title       = title,
         description = (data.get("description") or "").strip() or None,
-        gif_url     = (data.get("gif_url") or "").strip() or None,
         keywords    = (data.get("keywords") or "").strip() or None,
         order_index = int(data.get("order_index") or 0),
         is_active   = int(data.get("is_active") if data.get("is_active") is not None else 1),
@@ -145,7 +167,10 @@ async def update_article(
     if "description" in data:
         article.description = (data["description"] or "").strip() or None
     if "gif_url" in data:
-        article.gif_url = (data["gif_url"] or "").strip() or None
+        # Solo se permite quitarlo; la URL la asigna únicamente upload-gif
+        if not (data["gif_url"] or "").strip() and article.gif_url:
+            await _borrar_archivo(article.gif_url)
+            article.gif_url = None
     if "keywords" in data:
         article.keywords = (data["keywords"] or "").strip() or None
     if "order_index" in data:
@@ -167,8 +192,7 @@ async def delete_article(
     article = await db.get(HelpArticle, article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
-    if article.gif_url and article.gif_url.startswith("/uploads/"):
-        await delete_file(article.gif_url)
+    await _borrar_archivo(article.gif_url)
     await db.delete(article)
     await db.commit()
     return {"ok": True}
@@ -205,15 +229,21 @@ async def upload_gif(
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_GIF:
-        raise HTTPException(status_code=400, detail="Formato no permitido. Usa GIF, WEBP, PNG o JPG")
+        raise HTTPException(status_code=400, detail="Formato no permitido. Usa GIF, WEBP, PNG, JPG, MP4 o WEBM")
 
-    content = await file.read()
-    if len(content) > MAX_GIF_MB * 1024 * 1024:
+    # Leer con tope para no cargar en memoria archivos más grandes que el límite
+    limite = MAX_GIF_MB * 1024 * 1024
+    content = await file.read(limite + 1)
+    if len(content) > limite:
         raise HTTPException(status_code=413, detail=f"El archivo supera {MAX_GIF_MB} MB")
 
-    # Eliminar GIF anterior si existe
-    if article.gif_url and article.gif_url.startswith("/uploads/"):
-        await delete_file(article.gif_url)
+    real = _tipo_real(content)
+    if not real:
+        raise HTTPException(status_code=400, detail="El contenido del archivo no es una imagen o video válido")
+    ext = real
+
+    # Eliminar archivo anterior si existe
+    await _borrar_archivo(article.gif_url)
 
     safe_name = f"help_{article_id}_{uuid.uuid4().hex[:8]}{ext}"
     url = await upload_file(content, f"help/{safe_name}")
