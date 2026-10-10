@@ -13,6 +13,9 @@
             {{ textos.mesero }}: {{ meseroSel?.nombre || "escoger" }}
           </button>
           <span v-else-if="meseroPedido" class="mesero-btn">{{ textos.mesero }}: {{ meseroPedido }}</span>
+          <button v-if="!nro && config?.pedir_comensales && comensales" class="cliente-btn mesero-btn" @click="verComensales = true">
+            <Icono nombre="personas" :tam="13" /> {{ comensales }}
+          </button>
         </small>
       </div>
       <button class="cancelar" @click="cancelar">Cancelar</button>
@@ -91,7 +94,10 @@
                   @quitar="quitar" @enviar="enviar" @cerrar="verCarrito = false" />
     <ClienteSheet v-if="verCliente && config" :actual="cliente" :por-defecto="config.cliente_default"
                   @escoger="cambiarCliente" @cerrar="verCliente = false" />
-    <MeseroSheet v-if="verMesero && meseros.length" :meseros="meseros" :actual="meseroSel?.cod" :titulo="titulo"
+    <!-- Cuenta nueva: primero el número de comensales (si la empresa los pide) y luego el mesero -->
+    <TecladoComensales v-if="verComensales" :inicial="comensales" :titulo="titulo"
+                       @aceptar="escogerComensales" @cerrar="cerrarComensales" />
+    <MeseroSheet v-if="verMesero && meseros.length && !verComensales" :meseros="meseros" :actual="meseroSel?.cod" :titulo="titulo"
                  :cerrable="!!meseroSel" @escoger="escogerMesero" @cerrar="verMesero = false" @volver="cancelar" />
 
     <!-- Sin meseros del día no se monta el pedido: la caja debe registrarlos -->
@@ -141,6 +147,7 @@ import ClienteSheet from "../componentes/ClienteSheet.vue"
 import ListaCategorias from "../componentes/ListaCategorias.vue"
 import CarrilChips from "../componentes/CarrilChips.vue"
 import MeseroSheet from "../componentes/MeseroSheet.vue"
+import TecladoComensales from "../componentes/TecladoComensales.vue"
 import { api } from "../api"
 import { cantidad, colorAlterno, pesos, valorLinea } from "../formato"
 import { showConfirm, showToast } from "@/utils/toast"
@@ -194,6 +201,21 @@ async function cargarMeseros() {
   } finally {
     revisando.value = false
   }
+}
+
+// Comensales de la cuenta nueva (temp_comanda.Nro_Comenzales); sin Pedir_Cantidad_Comenzales el agente guarda 1
+const comensales = ref(0)
+const verComensales = ref(false)
+
+function escogerComensales(n) {
+  comensales.value = n
+  verComensales.value = false
+}
+
+// Cerrar el teclado sin número al abrir la cuenta = no abrirla
+function cerrarComensales() {
+  verComensales.value = false
+  if (!comensales.value) cancelar()
 }
 
 function escogerMesero(m) {
@@ -303,6 +325,11 @@ async function enviar() {
     verMesero.value = true
     return showToast(`Escoja el ${t("mesero")} del pedido.`, "warning", 2500)
   }
+  if (!nro && config.value?.pedir_comensales && !comensales.value) {
+    verCarrito.value = false
+    verComensales.value = true
+    return showToast("Escriba el número de comensales.", "warning", 2500)
+  }
   enviando.value = true
   const detalle = lineas.value.map(l => ({
     id_plato: l.id_plato, cantidad: l.cantidad, presentacion: l.presentacion, precio: l.precio,
@@ -314,7 +341,7 @@ async function enviar() {
     } else {
       await api.post("/pedidos", {
         ...(mesa ? { mesa } : { cuenta_nueva: cuentaNueva }),
-        id_cliente: cliente.value.id, mesero: meseroSel.value.cod, lineas: detalle,
+        id_cliente: cliente.value.id, mesero: meseroSel.value.cod, comensales: comensales.value || 1, lineas: detalle,
       })
       mesaBloqueo = null            // el agente libera la mesa al crear el pedido
     }
@@ -417,6 +444,7 @@ onMounted(async () => {
       mesaBloqueo = { id_mesa: p.id_mesa, mesa: p.mesa }
       await api.post("/mesas/bloquear", mesaBloqueo)
     }
+    if (!nro && config.value.pedir_comensales) verComensales.value = true
     if (!nro) await cargarMeseros()
     await cargarCarta()
     // Mantiene la mesa bloqueada mientras se toma el pedido (el bloqueo vence a los 10 min)

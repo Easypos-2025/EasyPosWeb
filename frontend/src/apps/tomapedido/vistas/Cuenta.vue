@@ -5,8 +5,17 @@
       <div class="barra__titulo">
         <h1>{{ pedido?.mesa || textos.cuenta }}</h1>
         <small v-if="pedido">{{ pedido.mesero ? `${textos.mesero}: ${pedido.mesero} · ` : "" }}{{ pedido.cliente.nombre }} · {{ pedido.hora }}</small>
+        <VersionAgente en-barra />
       </div>
-      <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
+      <!-- Número de comensales (solo si la empresa los pide: variables_del_sistema.Pedir_Cantidad_Comenzales) -->
+      <button v-if="pedido?.pedir_comensales" class="barra__btn comensales" title="Cambiar número de comensales"
+              @click="verComensales = true">
+        <Icono nombre="personas" :tam="18" /><b>{{ pedido.comensales }}</b>
+      </button>
+      <BotonActualizar />
+      <button class="barra__btn" title="Recargar la cuenta" @click="cargar"><Icono nombre="refrescar" /></button>
+      <!-- Igual que la flecha (más visible): vuelve a las cuentas abiertas -->
+      <button class="volver" @click="$router.replace('/cuentas')">Volver</button>
     </header>
 
     <main class="contenido">
@@ -37,6 +46,9 @@
         <Icono nombre="mas" /> Agregar {{ t("productos") }}
       </button>
     </div>
+
+    <TecladoComensales v-if="verComensales && pedido" :inicial="pedido.comensales" :titulo="pedido.mesa"
+                       :guardando="guardandoComensales" @aceptar="guardarComensales" @cerrar="verComensales = false" />
   </div>
 </template>
 
@@ -44,6 +56,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
+import VersionAgente from "../componentes/VersionAgente.vue"
+import BotonActualizar from "../componentes/BotonActualizar.vue"
+import TecladoComensales from "../componentes/TecladoComensales.vue"
 import { api } from "../api"
 import { cantidad, pesos } from "../formato"
 import { showToast } from "@/utils/toast"
@@ -57,6 +72,25 @@ const pedido = ref(null)
 const lineasDesc = computed(() => [...(pedido.value?.lineas || [])].sort((a, b) => b.depende - a.depende))
 const cargando = ref(false)
 let temporizador = null
+
+const verComensales = ref(false)
+const guardandoComensales = ref(false)
+
+async function guardarComensales(n) {
+  if (n === pedido.value.comensales) { verComensales.value = false; return }
+  guardandoComensales.value = true
+  try {
+    const r = await api.post("/pedido/comensales", { nro_pedido: nro, comensales: n })
+    pedido.value.comensales = r.comensales
+    verComensales.value = false
+    showToast(`Comensales: ${r.comensales}`, "success", 1500)
+  } catch (e) {
+    showToast(e.message, "error", 4000)
+    if (e.estado === 404) router.replace("/cuentas")
+  } finally {
+    guardandoComensales.value = false
+  }
+}
 
 async function cargar() {
   cargando.value = true
@@ -88,6 +122,10 @@ onBeforeUnmount(() => clearInterval(temporizador))
 .estado--pendiente { background: var(--ambar-claro); color: #92400e; }
 .total { display: flex; justify-content: space-between; align-items: center; padding: 14px 0 10px; font-size: 18px; }
 .total b { font-size: 22px; color: var(--azul); }
+.comensales { width: auto; min-width: 40px; padding: 0 10px; gap: 5px; }
+.comensales b { font-size: 16px; }
+.volver { flex-shrink: 0; min-height: 38px; padding: 0 12px; border: 1.5px solid rgba(255,255,255,.5); border-radius: 10px; background: transparent; color: #fff; font-weight: 600; font-size: 14px; }
+.volver:active { background: rgba(255,255,255,.15); }
 .nota { text-align: center; color: var(--texto-suave); font-size: 13px; }
 .accion-fija { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--fondo) 30%); }
 .accion-fija .btn { max-width: 520px; margin: 0 auto; display: flex; box-shadow: 0 6px 18px rgba(37, 99, 235, .35); }
@@ -99,6 +137,10 @@ onBeforeUnmount(() => clearInterval(temporizador))
   .total b { font-size: 20px; }
 }
 @media (max-width: 576px) {
+  .barra { gap: 6px; padding: 0 8px; }
+  .barra .barra__btn { width: 36px; height: 36px; }
+  .barra .comensales { width: auto; padding: 0 8px; }
+  .volver { padding: 0 9px; font-size: 13px; }
   .lista { padding: 2px 12px; }
   .total { font-size: 16px; }
 }

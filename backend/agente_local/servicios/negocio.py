@@ -80,4 +80,20 @@ async def opciones_toma(emp: AsyncSession) -> dict:
     fila = (await emp.execute(text("""
         SELECT Pedir_Cantidad_Mod_Mesas FROM variables_del_sistema LIMIT 1
     """))).mappings().first() or {}
-    return {"pedir_cantidad": int(fila.get("Pedir_Cantidad_Mod_Mesas") or 0)}
+    return {"pedir_cantidad": int(fila.get("Pedir_Cantidad_Mod_Mesas") or 0),
+            "pedir_comensales": await pedir_comensales(emp)}
+
+
+MAX_COMENSALES = 99
+
+
+async def pedir_comensales(emp: AsyncSession) -> bool:
+    """variables_del_sistema.Pedir_Cantidad_Comenzales = 1: al abrir la cuenta se pide el número de
+    comensales (temp_comanda.Nro_Comenzales) y se puede cambiar con la cuenta abierta; en 0 siempre es 1.
+    Escritorios con una versión sin la columna se toman como 0."""
+    try:
+        valor = (await emp.execute(text("SELECT Pedir_Cantidad_Comenzales FROM variables_del_sistema LIMIT 1"))).scalar()
+    except Exception:
+        await emp.rollback()
+        return False
+    return int(valor or 0) == 1

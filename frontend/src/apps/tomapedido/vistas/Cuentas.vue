@@ -4,7 +4,9 @@
       <div class="barra__titulo">
         <h1>{{ textos.cuentas }} abiertas</h1>
         <small>{{ sesion.mesero?.nombre }} · {{ sesion.nombre_dispositivo }}</small>
+        <VersionAgente en-barra />
       </div>
+      <BotonActualizar />
       <button v-if="puedeCompleta" class="barra__btn" :title="completa ? 'Salir de pantalla completa' : 'Pantalla completa'"
               @click="alternarCompleta"><Icono :nombre="completa ? 'contraer' : 'expandir'" /></button>
       <button class="barra__btn" title="Actualizar" @click="cargar"><Icono nombre="refrescar" /></button>
@@ -12,23 +14,6 @@
     </header>
 
     <main class="contenido">
-      <!-- Versión nueva del agente: los meseros la pueden instalar (usan más esta pantalla que el panel) -->
-      <div v-if="actualizacion.lista || actualizacion.aplicando" class="aviso-act tarjeta">
-        <span class="aviso-act__ico"><Icono nombre="refrescar" :tam="22" /></span>
-        <div class="aviso-act__txt">
-          <template v-if="actualizacion.aplicando">
-            <b>Actualizando la toma de pedidos…</b>
-            <small>Vuelve sola en menos de un minuto.</small>
-          </template>
-          <template v-else>
-            <b>Actualización disponible: versión {{ actualizacion.nueva }}</b>
-            <small v-if="actualizacion.notas">{{ actualizacion.notas }}</small>
-            <small>Si no la aplica ahora, se instala sola al abrir el próximo turno.</small>
-          </template>
-        </div>
-        <button v-if="!actualizacion.aplicando" class="btn btn--primario aviso-act__btn" :disabled="actualizando"
-                @click="actualizar">Actualizar ahora</button>
-      </div>
       <div v-if="cargando && !cuentas.length" class="cargando"><span class="giro"></span></div>
       <div v-else-if="!cuentas.length" class="vacio">
         <Icono nombre="lista" :tam="40" />
@@ -40,7 +25,6 @@
         <TarjetaCuenta v-for="c in cuentas" :key="c.nro_pedido" :cuenta="c" :estilo="preferencias.estilo"
                        :ahora="ahora" @abrir="abrir(c)" />
       </div>
-      <VersionAgente />
     </main>
 
     <div class="accion-fija">
@@ -56,8 +40,9 @@ import { onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import Icono from "../componentes/Icono.vue"
 import VersionAgente from "../componentes/VersionAgente.vue"
+import BotonActualizar from "../componentes/BotonActualizar.vue"
 import TarjetaCuenta from "../componentes/TarjetaCuenta.vue"
-import { actualizacion, api, preferencias } from "../api"
+import { api, preferencias } from "../api"
 import { cerrarSesion, sesion } from "../sesion"
 import { t, textos } from "../textos"
 import { showConfirm, showToast } from "@/utils/toast"
@@ -65,7 +50,6 @@ import { showConfirm, showToast } from "@/utils/toast"
 const router = useRouter()
 const cuentas = ref([])
 const cargando = ref(false)
-const actualizando = ref(false)
 const ahora = ref(Date.now())             // la alerta de "más de una hora abierta" se refresca con cada carga
 let temporizador = null
 
@@ -76,21 +60,6 @@ const alCambiarCompleta = () => { completa.value = !!document.fullscreenElement 
 function alternarCompleta() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
   else document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {})
-}
-
-async function actualizar() {
-  if (!(await showConfirm("Mientras se actualiza (menos de un minuto) ningún dispositivo podrá tomar pedidos. "
-    + "Los pedidos ya enviados no se pierden. ¿Actualizar ahora?", "Sí, actualizar"))) return
-  actualizando.value = true
-  try {
-    await api.post("/actualizar")
-    actualizacion.aplicando = true
-    showToast("Actualizando… la toma de pedidos vuelve en menos de un minuto.", "info", 5000)
-  } catch (e) {
-    showToast(e.message, "error", 4000)
-  } finally {
-    actualizando.value = false
-  }
 }
 
 async function cargar() {
@@ -129,13 +98,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .pantalla { min-height: 100vh; padding-bottom: 90px; }
 .cuentas { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 18px; padding: 6px 0 10px; }
-.aviso-act { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 12px; border: 2px solid var(--azul); }
-.aviso-act__ico { width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: var(--azul-claro); color: var(--azul);
-                  display: inline-flex; align-items: center; justify-content: center; }
-.aviso-act__txt { flex: 1; min-width: 0; }
-.aviso-act__txt b { display: block; }
-.aviso-act__txt small { display: block; color: var(--texto-suave); font-size: 13px; overflow-wrap: anywhere; }
-.aviso-act__btn { flex-shrink: 0; }
 .accion-fija {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
@@ -147,8 +109,7 @@ onBeforeUnmount(() => {
   .cuentas { gap: 24px; justify-content: flex-start; }
 }
 @media (max-width: 768px) {
-  .aviso-act { flex-wrap: wrap; }
-  .aviso-act__btn { width: 100%; }
+  .cuentas { gap: 14px; }
 }
 @media (max-width: 576px) {
   .cuentas { gap: 12px; }

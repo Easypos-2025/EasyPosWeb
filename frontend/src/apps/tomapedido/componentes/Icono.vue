@@ -41,6 +41,8 @@ const ICONOS = {
   pc:        ["M3 4h18v12H3z", "M8 20h8", "M12 16v4"],
   expandir:  ["M8 3H3v5", "M16 3h5v5", "M8 21H3v-5", "M16 21h5v-5"],
   contraer:  ["M3 8h5V3", "M21 8h-5V3", "M3 16h5v5", "M21 16h-5v5"],
+  personas:  ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.9", "M16 3.1a4 4 0 0 1 0 7.8"],
+  borrar:    ["M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z", "M18 9l-6 6", "M12 9l6 6"],
 }
 const trazos = computed(() => ICONOS[props.nombre] || [])
 </script>

@@ -23,7 +23,7 @@ from .. import auditoria
 from ..db import get_emp, get_tmp, motor_temp
 from ..seguridad import ip_cliente
 from ..servicios import bloqueos, impresion, meseros
-from ..servicios.negocio import exigir_caja_abierta
+from ..servicios.negocio import MAX_COMENSALES, exigir_caja_abierta, pedir_comensales
 from ..servicios.pedidos import (MAX_NOMBRE_CUENTA, LineaIn, insertar_lineas, limpiar_texto, numero_pedido,
                                  preparar_lineas, siguiente_item, valor_linea)
 from ..servicios.precios import CLIENTE_CONSUMIDOR_FINAL
@@ -47,12 +47,18 @@ class PedidoNuevoIn(BaseModel):
     cuenta_nueva: str | None = Field(default=None, max_length=MAX_NOMBRE_CUENTA)   # …o cuenta con nombre
     id_cliente: int = Field(default=CLIENTE_CONSUMIDOR_FINAL, ge=0)
     mesero: int = Field(gt=0)                              # mesero del día al que se asigna
+    comensales: int = Field(default=1, ge=1, le=MAX_COMENSALES)   # solo cuenta si la empresa los pide
     lineas: list[LineaIn] = Field(max_length=60)
 
 
 class AgregarIn(BaseModel):
     nro_pedido: str = Field(min_length=1, max_length=255)
     lineas: list[LineaIn] = Field(max_length=60)
+
+
+class ComensalesIn(BaseModel):
+    nro_pedido: str = Field(min_length=1, max_length=255)
+    comensales: int = Field(ge=1, le=MAX_COMENSALES)
 
 
 class QuitarIn(BaseModel):
@@ -85,7 +91,7 @@ VISIBLE = "Salio = 0 AND COALESCE(Domicilio, 0) <> 1"
 async def _pedido_abierto(db, nro: str):
     """Pedido abierto de cualquier origen (toma de pedidos o caja), que no sea domicilio."""
     fila = (await db.execute(text(f"""
-        SELECT Nro_Pedido, Mesa, Imprimio_Precuenta, Id_Cliente, Hora, Salio, Mesero
+        SELECT Nro_Pedido, Mesa, Imprimio_Precuenta, Id_Cliente, Hora, Salio, Mesero, Nro_Comenzales
         FROM temp_comanda WHERE Nro_Pedido = :n AND {VISIBLE}
     """), {"n": nro})).mappings().first()
     if not fila or int(fila["Salio"] or 0) != 0:
@@ -150,6 +156,7 @@ async def ver_pedido(nro: str = Query(min_length=1, max_length=255), _: Mesero =
     cod = int(pedido["Mesero"] or 0)
     return {"nro_pedido": pedido["Nro_Pedido"], "mesa": pedido["Mesa"],
             "id_mesa": int(pedido["Imprimio_Precuenta"] or 0), "hora": pedido["Hora"],
+            "comensales": max(1, int(pedido["Nro_Comenzales"] or 1)), "pedir_comensales": await pedir_comensales(emp),
             "mesero": (await meseros.nombres(emp, tmp, {cod})).get(cod) or "",
             "cliente": await cliente_valido(emp, int(pedido["Id_Cliente"] or CLIENTE_CONSUMIDOR_FINAL)),
             "lineas": lista, "total": sum(L["subtotal"] for L in lista)}
@@ -165,6 +172,8 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
     fecha = await exigir_caja_abierta(emp)           # con la caja cerrada no se comanda
     cliente = await cliente_valido(emp, data.id_cliente)
     lineas = await preparar_lineas(emp, tmp, data.lineas, cliente["id"])
+    # Sin Pedir_Cantidad_Comenzales la empresa no usa comensales: siempre 1 (no se toma lo que mande el navegador)
+    comensales = data.comensales if await pedir_comensales(emp) else 1
 
     if data.mesa and not await mesa_existe(emp, data.mesa.id, data.mesa.nombre):
         raise HTTPException(status_code=404, detail=f"'{data.mesa.nombre.strip()}' no existe.")
@@ -206,9 +215,9 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
             INSERT INTO temp_comanda
                 (Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora, Mesero, Cancelado, Valor, Salio, Cortesia,
                  Imprimio_Precuenta, Nro_Comenzales, Nro_Puestos, Domicilio, Id_Cliente, Movil)
-            VALUES (:n, :f, '0', :mesa, :hora, :mesero, 0, 0, 0, 0, :id_mesa, 1, 1, 0, :cli, 1)
+            VALUES (:n, :f, '0', :mesa, :hora, :mesero, 0, 0, 0, 0, :id_mesa, :comensales, 1, 0, :cli, 1)
         """), {"n": nro, "f": fecha.strftime("%Y/%m/%d"), "mesa": nombre_mesa, "hora": ahora.strftime("%I:%M:%S %p"),
-               "mesero": data.mesero, "id_mesa": id_mesa, "cli": cliente["id"]})
+               "mesero": data.mesero, "id_mesa": id_mesa, "comensales": comensales, "cli": cliente["id"]})
         await insertar_lineas(conn, nro, fecha, ahora, lineas, 1)
         # Enviar_Pedido_Impresion: a la cola que el escritorio manda a las impresoras
         await impresion.enviar_pedido_impresion(conn, emp, nro, True, fecha, ahora, mesero.nombre_dispositivo)
@@ -243,6 +252,29 @@ async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = 
     await auditoria.registrar("pedido_agregar", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
                               mesero.id_dispositivo, detalle=data.nro_pedido)
     return {"ok": True, "agregado": sum(valor_linea(L["valor"], L["cantidad"]) for L in lineas)}
+
+
+@router.post("/pedido/comensales")
+async def cambiar_comensales(data: ComensalesIn, request: Request, mesero: Mesero = Depends(mesero_actual),
+                             emp: AsyncSession = Depends(get_emp)):
+    """Cambia el número de comensales de una cuenta abierta (temp_comanda.Nro_Comenzales); al registrar
+    el recibo o la factura pasa a recibos_comanda / comanda."""
+    await exigir_caja_abierta(emp)
+    if not await pedir_comensales(emp):
+        raise HTTPException(status_code=409, detail="Esta empresa no maneja el número de comensales.")
+    async with _escritura() as conn:
+        pedido = await _pedido_abierto(conn, data.nro_pedido)
+        otro = await bloqueos.quien_bloquea(conn, int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"], mesero)
+        if otro:
+            raise HTTPException(status_code=409, detail=f"'{pedido['Mesa'].strip()}' está en uso en {otro}.")
+        await conn.execute(text("UPDATE temp_comanda SET Nro_Comenzales = :c WHERE Nro_Pedido = :n"),
+                           {"c": data.comensales, "n": data.nro_pedido})
+        await conn.commit()
+
+    anterior = int(pedido["Nro_Comenzales"] or 0)
+    await auditoria.registrar("pedido_comensales", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
+                              mesero.id_dispositivo, detalle=f"{data.nro_pedido} · {anterior} → {data.comensales}")
+    return {"ok": True, "comensales": data.comensales}
 
 
 @router.post("/pedido/quitar")
