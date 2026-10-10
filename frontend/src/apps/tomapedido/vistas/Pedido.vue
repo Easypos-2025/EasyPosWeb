@@ -64,7 +64,8 @@
     </main>
       <!-- PC: lo que se va montando, a la derecha, con el botón Enviar -->
       <aside v-if="esPC" class="panel-pedido">
-        <CarritoSheet panel :lineas="lineas" :titulo="titulo" :enviando="enviando" @quitar="quitar" @enviar="enviar" />
+        <CarritoSheet panel :lineas="lineas" :enviados="enviados" :titulo="titulo" :enviando="enviando"
+                      @quitar="quitar" @enviar="enviar" />
       </aside>
     </div>
 
@@ -80,17 +81,18 @@
       </aside>
     </div>
 
-    <div v-if="lineas.length && !esPC" class="carrito-barra">
-      <button class="btn btn--primario btn--bloque" @click="verCarrito = true">
+    <!-- Al agregar a una cuenta abierta también se abre sin productos nuevos, para revisar lo enviado -->
+    <div v-if="(lineas.length || enviados.length) && !esPC" class="carrito-barra">
+      <button class="btn btn--primario btn--bloque" :class="{ 'btn--suave': !lineas.length }" @click="verCarrito = true">
         <Icono nombre="carrito" />
-        <span>Ver pedido ({{ lineas.length }})</span>
-        <b class="carrito-barra__total">{{ pesos(total) }}</b>
+        <span>{{ lineas.length ? `Ver pedido (${lineas.length})` : "Ver lo enviado" }}</span>
+        <b class="carrito-barra__total">{{ pesos(lineas.length ? total : totalEnviado) }}</b>
       </button>
     </div>
 
     <ProductoSheet v-if="hojaProducto" :plato="hojaProducto" :novedades="novedadesDe(hojaProducto)"
                    @agregar="agregar" @cerrar="hojaProducto = null" />
-    <CarritoSheet v-if="verCarrito && !esPC" :lineas="lineas" :titulo="titulo" :enviando="enviando"
+    <CarritoSheet v-if="verCarrito && !esPC" :lineas="lineas" :enviados="enviados" :titulo="titulo" :enviando="enviando"
                   @quitar="quitar" @enviar="enviar" @cerrar="verCarrito = false" />
     <ClienteSheet v-if="verCliente && config" :actual="cliente" :por-defecto="config.cliente_default"
                   @escoger="cambiarCliente" @cerrar="verCliente = false" />
@@ -168,6 +170,8 @@ const titulo = ref(mesa?.nombre || cuentaNueva?.toUpperCase() || "")
 const categoriaId = ref(null)
 const texto = ref("")
 const lineas = ref([])
+const enviados = ref([])                 // al agregar: lo que la cuenta ya tiene (solo consulta)
+const totalEnviado = computed(() => enviados.value.reduce((s, l) => s + (l.subtotal || 0), 0))
 const cargando = ref(true)
 const enviando = ref(false)
 const hojaProducto = ref(null)
@@ -315,7 +319,7 @@ function agregar(linea) {
 
 function quitar(l) {
   lineas.value = lineas.value.filter(x => x.clave !== l.clave)
-  if (!lineas.value.length) verCarrito.value = false
+  if (!lineas.value.length && !enviados.value.length) verCarrito.value = false
 }
 
 async function enviar() {
@@ -338,6 +342,7 @@ async function enviar() {
   try {
     if (nro) {
       await api.post("/pedido/agregar", { nro_pedido: nro, lineas: detalle })
+      mesaBloqueo = null            // el agente libera la mesa al enviar (como el escritorio)
     } else {
       await api.post("/pedidos", {
         ...(mesa ? { mesa } : { cuenta_nueva: cuentaNueva }),
@@ -441,6 +446,7 @@ onMounted(async () => {
       cliente.value = p.cliente
       titulo.value = p.mesa
       meseroPedido.value = p.mesero
+      enviados.value = p.lineas
       mesaBloqueo = { id_mesa: p.id_mesa, mesa: p.mesa }
       await api.post("/mesas/bloquear", mesaBloqueo)
     }
@@ -551,6 +557,7 @@ onBeforeUnmount(() => {
 .carrito-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--fondo) 30%); }
 .carrito-barra .btn { max-width: 620px; margin: 0 auto; display: flex; justify-content: flex-start; box-shadow: 0 6px 18px rgba(37, 99, 235, .35); }
 .carrito-barra__total { margin-left: auto; }
+.carrito-barra .btn--suave { background: var(--navy); box-shadow: 0 6px 18px rgba(15, 23, 42, .3); }
 
 @media (min-width: 769px) {
   .productos { grid-template-columns: repeat(4, 1fr); }

@@ -8,8 +8,14 @@ envía cada fila a su impresora.
 
 Banderas (variables_del_sistema de la BD de la empresa):
   · Imprimir_Tirilla_Comanda o Imprimir_Comanda_Plazoleta → se encola.
-  · Imprimir_Comanda_Plazoleta o Actualizar_Tablas_Manualmente → la cola del pedido queda con
-    Enviada_MySql = 1.
+
+Después, "Enviar pedido" (enviar_pedido) hace lo mismo que el escritorio, en este orden y siempre:
+  1. Impreso = 1 en temp_detalle_comanda y temp_detalle_comanda_parcial (gemelas) del pedido.
+  2. Libera la mesa: temp_mesa_abierta por Id_Mesa y por Mesa (y el bloqueo propio del agente).
+  3. Borra temp_plato_armar / temp_plato_armar_detalle del pedido.
+  4. Enviada_MySql = 1 en la cola del pedido. Se inserta con 0 para que el escritorio no imprima un
+     pedido a medias; las tablas son MyISAM (cada sentencia se ve al terminar), así que este UPDATE
+     debe ir de último. Cada sentencia se espera (await) antes de la siguiente, como en el VB6.
 
 Diferencias con el VB6 (decididas con el usuario, 2026-10-07):
   · Nombre del mesero: temp_meseros → temp_meseros_dia → meseros. El VB6 hace INNER JOIN con
@@ -88,7 +94,20 @@ async def enviar_pedido_impresion(tmp, emp: AsyncSession, nro: str, nuevo: bool,
                    "camb": (f["Cambios"] or "")[:255], "mostrar": 1 if f["Mostrar"] else 0, "imp": f["Impresora"],
                    "nuevo": 1 if nuevo else 0, "desde": (enviado_desde or "")[:255],
                    "domi": 1 if f["Domicilio"] else 0})
-    if b["plazoleta"] or b["manual"]:
-        await tmp.execute(text("UPDATE temp_impresion_tirilla_comanda SET Enviada_MySql = 1 WHERE Nro_pedido = :n"),
-                          {"n": nro})
     return len(filas)
+
+
+async def enviar_pedido(tmp, emp: AsyncSession, nro: str, nuevo: bool, fecha: date, ahora: datetime,
+                        enviado_desde: str, id_mesa: int, mesa: str) -> int:
+    """"Enviar pedido" completo (pedido nuevo o productos agregados). Devuelve las filas encoladas."""
+    encoladas = await enviar_pedido_impresion(tmp, emp, nro, nuevo, fecha, ahora, enviado_desde)
+    for tabla in ("temp_detalle_comanda", "temp_detalle_comanda_parcial"):
+        await tmp.execute(text(f"UPDATE {tabla} SET Impreso = 1 WHERE Nro_pedido = :n"), {"n": nro})
+    await tmp.execute(text("DELETE FROM temp_mesa_abierta WHERE Id_Mesa = :i"), {"i": id_mesa})
+    await tmp.execute(text("DELETE FROM temp_mesa_abierta WHERE Mesa = :m"), {"m": mesa})
+    await tmp.execute(text("DELETE FROM ag_bloqueo_mesa WHERE id_mesa = :i OR mesa = :m"), {"i": id_mesa, "m": mesa})
+    for tabla in ("temp_plato_armar", "temp_plato_armar_detalle"):
+        await tmp.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n"), {"n": nro})
+    await tmp.execute(text("UPDATE temp_impresion_tirilla_comanda SET Enviada_MySql = 1 WHERE Nro_pedido = :n"),
+                      {"n": nro})
+    return encoladas

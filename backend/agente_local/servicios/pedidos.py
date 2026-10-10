@@ -4,7 +4,11 @@ Armado e inserción de pedidos en datatemppos, con la forma que espera el escrit
   temp_comanda                  1 fila por pedido (Movil = 1).
   temp_detalle_comanda          1 fila por UNIDAD y por IMPRESORA del plato. Cantidad decimal como el
                                 escritorio: 2.34 → filas de 0.34, 1 y 1; Valor = precio × cantidad de la fila.
-  temp_detalle_comanda_parcial  copia de la anterior.
+  temp_detalle_comanda_parcial  GEMELA de la anterior (regla del usuario, 2026-10-10): el escritorio usa
+                                una u otra según la pantalla, así que TODA escritura (insertar, modificar,
+                                borrar) se hace igual en las dos; nunca deben quedar distintas.
+      Impreso = 0 al insertar (el escritorio imprime lo que tenga 0; al enviar se pasa a 1).
+      Cortesia = 1 pedido nuevo / 0 productos agregados (el escritorio la usa para saberlo).
       Mostrar = 1 solo en la fila de la primera impresora de cada unidad;
       Depende = Item inicial de la línea (agrupa todas las unidades de esa línea).
   temp_plato_producto           inventario a descontar, por UNIDAD (como el VB6):
@@ -195,15 +199,16 @@ _COLS_DETALLE = """
      Impuesto, Impuesto_Original, Paga_Plato, Item_Original, Producto_Personalizado)
     VALUES
     (:nro, :fecha, '0', :plato, :item, :desc, :cant, :valor, :hora, 0,
-     :nov, 0, 0, :valor, 0, NULL, :mostrar,
+     :nov, :cortesia, 0, :valor, 0, NULL, :mostrar,
      :impresora, :depende, 0, 1, :cat, :hora, :paga,
      :imp, :imp, 1, :item, :pers)
 """
 
 
 async def insertar_lineas(tmp: AsyncSession, nro: str, fecha: date, ahora: datetime,
-                          lineas: list[dict], item: int) -> int:
-    """Inserta las líneas desde el Item indicado. Devuelve el siguiente Item libre."""
+                          lineas: list[dict], item: int, nuevo: bool) -> int:
+    """Inserta las líneas desde el Item indicado. Devuelve el siguiente Item libre.
+    nuevo: pedido nuevo (Cortesia = 1) o productos agregados a un pedido abierto (Cortesia = 0)."""
     hora = hora_corta(ahora)
     for L in lineas:
         plato = L["plato"]
@@ -216,7 +221,7 @@ async def insertar_lineas(tmp: AsyncSession, nro: str, fecha: date, ahora: datet
                      "desc": L["nombre"][:255], "cant": parte, "valor": valor, "hora": hora, "nov": L["novedad_txt"],
                      "mostrar": 1 if idx == 0 else 0, "impresora": impresora[:255], "depende": str(inicial),
                      "cat": plato["Cod_Categoria"], "paga": L["paga_impuesto"], "imp": plato["Impuesto"] or 0,
-                     "pers": L["personalizado"]}
+                     "pers": L["personalizado"], "cortesia": 1 if nuevo else 0}
                 await tmp.execute(text("INSERT INTO temp_detalle_comanda " + _COLS_DETALLE), p)
                 await tmp.execute(text("INSERT INTO temp_detalle_comanda_parcial " + _COLS_DETALLE), p)
                 item += 1

@@ -218,10 +218,9 @@ async def crear_pedido(data: PedidoNuevoIn, request: Request, mesero: Mesero = D
             VALUES (:n, :f, '0', :mesa, :hora, :mesero, 0, 0, 0, 0, :id_mesa, :comensales, 1, 0, :cli, 1)
         """), {"n": nro, "f": fecha.strftime("%Y/%m/%d"), "mesa": nombre_mesa, "hora": ahora.strftime("%I:%M:%S %p"),
                "mesero": data.mesero, "id_mesa": id_mesa, "comensales": comensales, "cli": cliente["id"]})
-        await insertar_lineas(conn, nro, fecha, ahora, lineas, 1)
-        # Enviar_Pedido_Impresion: a la cola que el escritorio manda a las impresoras
-        await impresion.enviar_pedido_impresion(conn, emp, nro, True, fecha, ahora, mesero.nombre_dispositivo)
-        await bloqueos.liberar(conn, id_mesa, nombre_mesa, mesero)
+        await insertar_lineas(conn, nro, fecha, ahora, lineas, 1, nuevo=True)
+        # "Enviar pedido" del escritorio: cola de impresión, Impreso = 1, libera la mesa y Enviada_MySql = 1
+        await impresion.enviar_pedido(conn, emp, nro, True, fecha, ahora, mesero.nombre_dispositivo, id_mesa, nombre_mesa)
         await conn.commit()
 
     await auditoria.registrar("pedido_nuevo", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,
@@ -245,8 +244,9 @@ async def agregar_productos(data: AgregarIn, request: Request, mesero: Mesero = 
             raise HTTPException(status_code=409, detail=f"'{pedido['Mesa'].strip()}' está en uso en {otro}.")
         item = await siguiente_item(conn, data.nro_pedido)
         ahora = datetime.now()
-        await insertar_lineas(conn, data.nro_pedido, fecha, ahora, lineas, item)
-        await impresion.enviar_pedido_impresion(conn, emp, data.nro_pedido, False, fecha, ahora, mesero.nombre_dispositivo)
+        await insertar_lineas(conn, data.nro_pedido, fecha, ahora, lineas, item, nuevo=False)
+        await impresion.enviar_pedido(conn, emp, data.nro_pedido, False, fecha, ahora, mesero.nombre_dispositivo,
+                                      int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"])
         await conn.commit()
 
     await auditoria.registrar("pedido_agregar", "ok", ip_cliente(request), mesero.usuario, mesero.cod_empleado,

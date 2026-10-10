@@ -194,7 +194,7 @@ def test_pedido_forma_escritorio(cliente, db, h):
     assert resumen == [(1, 10, 1, "COCINA", "1"), (2, 10, 0, "BARRA", "1"),
                        (3, 10, 1, "COCINA", "1"), (4, 10, 0, "BARRA", "1"),
                        (5, 11, 1, "BARRA", "5")]
-    assert all(d["Impreso"] == 0 for d in det)
+    assert all(d["Impreso"] == 1 for d in det)                         # se inserta en 0; "Enviar pedido" lo pasa a 1
     assert str(det[0]["Fecha"]) == ISO                                 # fecha de negocio
     assert nro.startswith(f"Cel Ana-{FECHA_TURNO}")                   # Nro_Pedido con la fecha de negocio
     assert det[0]["Novedad"] == "SIN CEBOLLA" and det[0]["Producto_Personalizado"] == "HAMBURGUESA"
@@ -233,28 +233,50 @@ def _cola(db, nro):
                       f"FROM {T}.temp_impresion_tirilla_comanda WHERE Nro_pedido=%s ORDER BY Item, Nuevo", nro)
 
 
+def _detalle(db, nro, tabla):
+    return _filas(db, f"SELECT Item, Id_Plato, Cantidad, Valor, Impreso, Cortesia, Mostrar, Impresora, Depende "
+                      f"FROM {T}.{tabla} WHERE Nro_pedido=%s ORDER BY Item", nro)
+
+
 def test_enviar_pedido_a_la_cola_de_impresion(cliente, db, h):
     """Enviar_Pedido_Impresion del VB6: al enviar, lo no impreso pasa a temp_impresion_tirilla_comanda."""
     _sql(db, f"UPDATE {E}.variables_del_sistema SET Imprimir_Tirilla_Comanda=1, Imprimir_Comanda_Plazoleta=0, Actualizar_Tablas_Manualmente=0")
     nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 2}, {"id_plato": 11, "cantidad": 1}]).json()["nro_pedido"]
     cola = _cola(db, nro)
     # Todas las filas (por unidad e impresora), como pedido nuevo; LAURA no está en temp_meseros → se toma de los del día
-    assert [(c["Item"], c["Impresora"], c["Depende"], c["Nuevo"]) for c in cola] == \
-           [(1, "COCINA", 1, 1), (2, "BARRA", 1, 1), (3, "COCINA", 1, 1), (4, "BARRA", 1, 1), (5, "BARRA", 5, 1)]
-    assert {(c["Mesero"], c["Nro_Mesa"], c["Enviado_Desde"], c["Enviada_MySql"], str(c["Fecha"])) for c in cola} == \
-           {("LAURA", "S-01", "Cel Ana", 0, ISO)}
-    # Agregar: solo lo nuevo (lo anterior aún sin imprimir no se repite) y con Nuevo = 0
+    assert [(c["Item"], c["Impresora"], c["Depende"], c["Nuevo"]) for c in cola] ==            [(1, "COCINA", 1, 1), (2, "BARRA", 1, 1), (3, "COCINA", 1, 1), (4, "BARRA", 1, 1), (5, "BARRA", 5, 1)]
+    # Enviada_MySql = 1 siempre al terminar "Enviar pedido" (con 0 el escritorio no imprime un pedido a medias)
+    assert {(c["Mesero"], c["Nro_Mesa"], c["Enviado_Desde"], c["Enviada_MySql"], str(c["Fecha"])) for c in cola} ==            {("LAURA", "S-01", "Cel Ana", 1, ISO)}
+    # El escritorio imprime y vacía la cola: al agregar solo sale lo nuevo (lo enviado quedó con Impreso = 1)
+    _sql(db, f"DELETE FROM {T}.temp_impresion_tirilla_comanda")
     cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
-    cola = _cola(db, nro)
-    assert len(cola) == 6 and [(c["Item"], c["Nuevo"]) for c in cola][-1] == (6, 0)
-    # Plazoleta o actualizar manualmente → la cola del pedido queda con Enviada_MySql = 1
-    _sql(db, f"UPDATE {E}.variables_del_sistema SET Imprimir_Comanda_Plazoleta=1")
+    assert [(c["Item"], c["Nuevo"], c["Enviada_MySql"]) for c in _cola(db, nro)] == [(6, 0, 1)]
+    # Lo que el escritorio regresa a Impreso = 0 (falló la impresora) se vuelve a enviar con lo nuevo
+    _sql(db, f"DELETE FROM {T}.temp_impresion_tirilla_comanda",
+         f"UPDATE {T}.temp_detalle_comanda SET Impreso=0 WHERE Item=1",
+         f"UPDATE {T}.temp_detalle_comanda_parcial SET Impreso=0 WHERE Item=1")
     cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
-    assert {c["Enviada_MySql"] for c in _cola(db, nro)} == {1} and len(_cola(db, nro)) == 7
-    # Lo ya impreso por el escritorio no se vuelve a encolar
-    _sql(db, f"DELETE FROM {T}.temp_impresion_tirilla_comanda", f"UPDATE {T}.temp_detalle_comanda SET Impreso=1")
+    assert [c["Item"] for c in _cola(db, nro)] == [1, 7]
+
+
+def test_enviar_pedido_tablas_gemelas_cortesia_y_mesa(cliente, db, h):
+    """temp_detalle_comanda y _parcial siempre iguales; Cortesia 1 = pedido nuevo, 0 = agregado;
+    al enviar: Impreso = 1, mesa libre y sin armado temporal (como "Enviar pedido" del escritorio)."""
+    nro = _crear(cliente, h, [{"id_plato": 10, "cantidad": 1}]).json()["nro_pedido"]
+    assert not _filas(db, f"SELECT * FROM {T}.temp_mesa_abierta")
+    # Al entrar a agregar, el dispositivo bloquea la mesa; al enviar queda libre
+    assert cliente.post("/api/ag/mesas/bloquear", json={"id_mesa": 1, "mesa": "S-01"}, headers=_hdr(h)).status_code == 200
+    assert _filas(db, f"SELECT * FROM {T}.temp_mesa_abierta WHERE Id_Mesa=1")
+    _sql(db, f"INSERT INTO {T}.temp_plato_armar (Id_Plato, Nro_Pedido) VALUES (10, '{nro}')",
+         f"INSERT INTO {T}.temp_plato_armar_detalle (Nro_Pedido) VALUES ('{nro}')")
     cliente.post("/api/ag/pedido/agregar", json={"nro_pedido": nro, "lineas": [{"id_plato": 11, "cantidad": 1}]}, headers=_hdr(h))
-    assert [c["Item"] for c in _cola(db, nro)] == [8]
+    det = _detalle(db, nro, "temp_detalle_comanda")
+    assert det == _detalle(db, nro, "temp_detalle_comanda_parcial")
+    assert [(d["Item"], d["Cortesia"], d["Impreso"]) for d in det] == [(1, 1, 1), (2, 1, 1), (3, 0, 1)]
+    assert not _filas(db, f"SELECT * FROM {T}.temp_mesa_abierta WHERE Id_Mesa=1 OR Mesa='S-01'")
+    assert not _filas(db, f"SELECT * FROM {T}.ag_bloqueo_mesa")
+    assert not _filas(db, f"SELECT * FROM {T}.temp_plato_armar WHERE Nro_Pedido=%s", nro)
+    assert not _filas(db, f"SELECT * FROM {T}.temp_plato_armar_detalle WHERE Nro_Pedido=%s", nro)
 
 
 def test_sin_banderas_de_impresion_no_se_encola(cliente, db, h):

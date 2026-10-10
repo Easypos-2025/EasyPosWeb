@@ -26,7 +26,8 @@ TABLAS_TMP = ["temp_registro_dispositivos", "temp_empleados", "temp_meseros", "t
               "temp_plato_producto", "temp_plato_producto_parcial", "temp_novedades_plato_pedido", "temp_mesa_abierta",
               "temp_plato_armar_menu", "temp_menu_diario", "temp_plato_armar_origen",
               "temp_plato_armar_detalle_origen", "temp_inventario_porciones", "temp_categoria_productos",
-              "temp_mesas", "temp_zonas_asientos", "temp_impresion_tirilla_comanda"]
+              "temp_mesas", "temp_zonas_asientos", "temp_impresion_tirilla_comanda", "temp_plato_armar",
+              "temp_plato_armar_detalle"]
 
 os.environ["AG_DB_EMPRESA_URL"] = f"mysql+aiomysql://root:123456@localhost/{BD_EMP}"
 os.environ["AG_DB_TEMP_URL"] = f"mysql+aiomysql://root:123456@localhost/{BD_TMP}"
