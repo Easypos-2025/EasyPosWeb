@@ -55,7 +55,9 @@
           <h3><Icono nombre="celular" :tam="18" /> Toma de pedidos en los dispositivos</h3>
           <p>Escanee el código con el celular (conectado al wifi del negocio) o escriba la dirección en el navegador:</p>
           <img v-if="qr" :src="qr" alt="Código QR de la toma de pedidos" />
-          <code>{{ r.direccion }}</code>
+          <code>{{ r.enlace_qr || r.direccion }}</code>
+          <small v-if="r.enlace_qr"><b>Código fijo:</b> no cambia aunque el router le cambie la IP a este PC (el celular
+            necesita internet al abrirlo). Dirección local actual: {{ r.direccion }}</small>
           <small>En el celular: menú del navegador → "Agregar a pantalla de inicio" para dejar el ícono.</small>
           <!-- PCs Windows: por el nombre del PC, no cambia aunque el router le cambie la IP -->
           <div v-if="r.direccion_pc" class="qr__pc">

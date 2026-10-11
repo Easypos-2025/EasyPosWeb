@@ -100,7 +100,7 @@ app.include_router(admin.router)
 @app.get("/api/ag/salud")
 async def salud():
     # pc: dirección por nombre; la mini-app la recuerda para guiar si un día cambia la IP de la caja
-    return {"ok": True, "version": VERSION, "pc": nube.url_pc()}
+    return {"ok": True, "version": VERSION, "pc": nube.url_pc(), "enlace": await nube.enlace_qr()}
 
 
 # Mini-app de toma de pedidos (frontend: npm run build:tomapedido). Va de último: no tapa la API.

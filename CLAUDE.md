@@ -160,9 +160,9 @@ Existen dos modalidades para asentar el pago de un pedido:
 - **Opción Plazoleta**: se monta el pedido y, en la misma pantalla, se hace el registro de Recibo/Factura. **Pendiente de desarrollo.**
 
 ### 8.1 Tabla `clientes`
-- Todo recibo debe tener SIEMPRE un cliente asignado por defecto.
-- Cliente por defecto: `id = 1`, `cedula_nit = 222222222222`, `Nombres = "Consumidor Final"`.
-- Si no existe en la tabla, se debe crear la primera vez que se necesite.
+- Todo recibo y todo pedido sin cliente asignado lleva SIEMPRE el cliente por defecto (Consumidor Final).
+- **Consumidor Final = el cliente con `id_cliente = 1`**, se llame como se llame. El nombre "Consumidor Final" y la `cedula_nit = 222222222222` solo importan para POS electrónico (si no hay id 1, se busca por esa cédula como respaldo).
+- **REGLA (2026-10-11) — se VERIFICA, no se crea**: si no existe, NO se puede trabajar: la web y el escritorio (agente) bloquean la toma de pedido y el pago con 409 `X-Error-Code: SIN_CONSUMIDOR_FINAL` hasta que se cree en Clientes (`app/services/clientes.consumidor_final_id`, agente `servicios/precios.consumidor_final`). Buscar y crear clientes no se bloquean. La migración 040 lo creó una vez en todas las empresas que no tenían cliente 1.
 - La misma regla aplica para la función **Registrar Factura**.
 
 ### 8.2 Tabla `consecutivo_factura_manual`

@@ -42,6 +42,8 @@ async function latir() {
     if (r?.datos?.caja) Object.assign(caja, r.datos.caja)
     // Dirección por nombre del PC de caja: guía al usuario si un día cambia la IP de la caja
     if (r?.datos?.pc) try { localStorage.setItem("ag_caja_pc", r.datos.pc) } catch { /* sin almacenamiento */ }
+    // QR fijo por la nube: si cambia la IP de la caja, desde aquí se vuelve a entrar sin escanear
+    if (r?.datos?.enlace) try { localStorage.setItem("ag_caja_enlace", r.datos.enlace) } catch { /* sin almacenamiento */ }
     if (r?.datos?.actualizacion) Object.assign(actualizacion, r.datos.actualizacion)
     if (r?.datos?.estilo && r.datos.estilo !== preferencias.estilo) {
       preferencias.estilo = r.datos.estilo

@@ -15,6 +15,10 @@ BD del escritorio, backend/agente_local).
      GET  maestros/pendientes · POST maestros/aplicados
                         S3: platos y datos de la sede que la web cambió (sede_maestros.py)
 
+  Público   /c/{enlace}                   QR fijo de la toma de pedidos: redirige a la IP local que el agente
+                                          reportó en su último latido (solo IP privada). Sin sesión, con límite
+                                          de peticiones; <enlace> es aleatorio (migración 041).
+
 La clave es por empresa (no la global de la sincronización del escritorio). En la BD solo queda
 su SHA-256 y se muestra una sola vez al crearla o regenerarla.
 """
@@ -66,6 +70,14 @@ def _hash(clave: str) -> str:
     return hashlib.sha256(clave.encode("utf-8")).hexdigest()
 
 
+def _nuevo_enlace() -> str:
+    return secrets.token_urlsafe(9)          # 12 caracteres [A-Za-z0-9_-]: no se puede adivinar
+
+
+def enlace_qr(enlace: Optional[str]) -> Optional[str]:
+    return (os.getenv("APP_PUBLIC_URL", "https://easyposweb.com").rstrip("/") + "/c/" + enlace) if enlace else None
+
+
 def _nueva_clave() -> str:
     return "ag_" + secrets.token_urlsafe(32)
 
@@ -109,9 +121,10 @@ async def crear(data: AgenteNuevoIn, db: AsyncSession = Depends(get_db), user=De
     clave = _nueva_clave()
     try:
         await db.execute(text("""
-            INSERT INTO company_local_agents (company_id, codigo, clave_hash, clave_prefijo, creado_por)
-            VALUES (:c, :cod, :h, :p, :u)
-        """), {"c": data.company_id, "cod": data.codigo, "h": _hash(clave), "p": clave[:8], "u": user.id})
+            INSERT INTO company_local_agents (company_id, codigo, clave_hash, clave_prefijo, creado_por, enlace)
+            VALUES (:c, :cod, :h, :p, :u, :e)
+        """), {"c": data.company_id, "cod": data.codigo, "h": _hash(clave), "p": clave[:8], "u": user.id,
+               "e": _nuevo_enlace()})
         await db.commit()
     except IntegrityError:
         await db.rollback()
@@ -260,7 +273,13 @@ async def latido(data: LatidoIn, request: Request, agente: dict = Depends(agente
     # Estilo de tarjetas de las cuentas abiertas que la empresa escogió en la web (también en la mini-app)
     estilo = (await db.execute(text("SELECT pos_card_style FROM company_configs WHERE company_id = :c"),
                                {"c": agente["company_id"]})).scalar()
+    enlace = (await db.execute(text("SELECT enlace FROM company_local_agents WHERE id = :id"), {"id": agente["id"]})).scalar()
+    if not enlace:
+        enlace = _nuevo_enlace()
+        await db.execute(text("UPDATE company_local_agents SET enlace = :e WHERE id = :id"), {"e": enlace, "id": agente["id"]})
+        await db.commit()
     return {"ok": True, "empresa": agente["empresa"], "codigo": agente["codigo"],
+            "enlace_qr": enlace_qr(enlace),
             "estilo_tarjetas": estilo if estilo in ESTILOS_TARJETAS else "oval-wood",
             "forzar_actualizacion": bool(forzar),
             "version_vigente": {k: vigente[k] for k in ("version", "sha256", "tamano", "notas")} if vigente else None}
@@ -533,7 +552,7 @@ router_empresa = APIRouter(prefix="/api/mi-agente-local", tags=["agente-local"],
 
 async def _agente_empresa(db: AsyncSession, company_id: int):
     return (await db.execute(text("""
-        SELECT url_local, url_pc, version, ultimo_contacto, activo FROM company_local_agents WHERE company_id = :c
+        SELECT url_local, url_pc, version, ultimo_contacto, activo, enlace FROM company_local_agents WHERE company_id = :c
     """), {"c": company_id})).mappings().first()
 
 
@@ -545,6 +564,7 @@ async def mi_agente(db: AsyncSession = Depends(get_db), user=Depends(get_current
         return {"existe": False}
     en_linea = bool(a["ultimo_contacto"] and (datetime.now() - a["ultimo_contacto"]).total_seconds() < MINUTOS_EN_LINEA * 60)
     return {"existe": True, "url_local": a["url_local"], "url_pc": a["url_pc"], "version": a["version"],
+            "enlace_qr": enlace_qr(a["enlace"]),
             "ultimo_contacto": a["ultimo_contacto"], "en_linea": en_linea}
 
 
@@ -558,5 +578,67 @@ async def mi_agente_qr(db: AsyncSession = Depends(get_db), user=Depends(get_curr
     import qrcode
     from fastapi.responses import Response
     buf = io.BytesIO()
-    qrcode.make(a["url_local"].rstrip("/") + "/", box_size=8, border=2).save(buf, format="PNG")
+    # QR fijo por la nube (no cambia con la IP); si aún no hay enlace, la dirección local
+    destino = enlace_qr(a["enlace"]) or (a["url_local"].rstrip("/") + "/")
+    qrcode.make(destino, box_size=8, border=2).save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+# ───────────────────────────── Público: QR fijo de la toma de pedidos ─────────────────────────────
+
+router_publico = APIRouter(tags=["agente-local"])
+MINUTOS_REDIRECCION = 10        # sin latido en este tiempo, la caja se considera desconectada
+_RE_ENLACE = re.compile(r"^[A-Za-z0-9_-]{8,24}$")
+_SIN_CACHE = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer"}
+
+
+def destino_local(url: Optional[str]) -> Optional[str]:
+    """http://IP:PUERTO/ solo si la IP es privada (red del negocio): nunca redirige a otro sitio."""
+    import ipaddress
+    from urllib.parse import urlsplit
+    if not url:
+        return None
+    try:
+        partes = urlsplit(url)
+        ip = ipaddress.ip_address(partes.hostname or "")
+        puerto = partes.port or 80
+    except ValueError:
+        return None
+    if partes.scheme != "http" or ip.version != 4 or not ip.is_private or ip.is_loopback or not (1 <= puerto <= 65535):
+        return None
+    return f"http://{ip}:{puerto}/"
+
+
+def _pagina(titulo: str, texto: str, codigo: int):
+    import html
+    from fastapi.responses import HTMLResponse
+    cuerpo = f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>{html.escape(titulo)}</title>
+<style>body{{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#f1f5f9;color:#1e293b;display:flex;
+min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}}
+.c{{background:#fff;border-radius:18px;padding:26px 22px;max-width:420px;width:100%;text-align:center;
+box-shadow:0 10px 30px rgba(15,23,42,.12)}}h1{{font-size:21px;margin:0 0 10px}}p{{color:#475569;line-height:1.5;margin:0 0 16px}}
+a{{display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:12px;font-weight:700}}
+</style></head><body><div class="c"><h1>{html.escape(titulo)}</h1><p>{texto}</p>
+<a href="">Reintentar</a></div></body></html>"""
+    return HTMLResponse(cuerpo, status_code=codigo, headers=_SIN_CACHE)
+
+
+@router_publico.get("/c/{enlace}", include_in_schema=False)
+async def qr_fijo(enlace: str, db: AsyncSession = Depends(get_db)):
+    from fastapi.responses import RedirectResponse
+    if not _RE_ENLACE.match(enlace):
+        return _pagina("Enlace no válido", "Revise el código QR de la toma de pedidos.", 404)
+    a = (await db.execute(text("""
+        SELECT url_local, ultimo_contacto FROM company_local_agents WHERE enlace = :e AND activo = 1
+    """), {"e": enlace})).mappings().first()
+    if not a:
+        return _pagina("Enlace no válido", "Revise el código QR de la toma de pedidos.", 404)
+    destino = destino_local(a["url_local"])
+    reciente = a["ultimo_contacto"] and (datetime.now() - a["ultimo_contacto"]).total_seconds() < MINUTOS_REDIRECCION * 60
+    if not destino or not reciente:
+        return _pagina("La caja no está conectada",
+                       "El computador de caja está apagado o sin internet. Enciéndalo (o revise su conexión) y "
+                       "vuelva a intentar en un minuto. El celular debe estar en el wifi del negocio.", 503)
+    return RedirectResponse(destino, status_code=302, headers=_SIN_CACHE)

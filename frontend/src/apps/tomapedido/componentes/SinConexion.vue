@@ -10,7 +10,9 @@
         <li>Verifique que este dispositivo esté conectado al <b>wifi del negocio</b> (no a datos móviles).</li>
         <li>Verifique que el <b>equipo de caja esté encendido</b>.</li>
         <!-- Si cambiaron el router o la IP de la caja, la dirección vieja ya no sirve -->
-        <li v-if="!esPC">Si cambiaron el router o la red del negocio, <b>escanee de nuevo el código QR</b>
+        <li v-if="!esPC && enlace">Si cambiaron el router o la IP de la caja, toque <b>Volver a entrar</b> (abajo) o
+          escanee de nuevo el código QR de caja: el código no cambia.</li>
+        <li v-else-if="!esPC">Si cambiaron el router o la red del negocio, <b>escanee de nuevo el código QR</b>
           (pídalo en caja: está en el dashboard de EasyPosWeb) e ingrese con su usuario y clave.</li>
         <li v-else-if="pcNuevo">Si cambiaron el router o la red del negocio, use el acceso directo
           <b>EasyPos Pedidos</b> o escriba en el navegador: <code class="sc__dir">{{ pcNuevo }}</code></li>
@@ -20,6 +22,7 @@
         <span v-if="probando" class="giro" style="width:20px;height:20px;border-width:2px"></span>
         <template v-else><Icono nombre="refrescar" /> Reintentar ahora</template>
       </button>
+      <a v-if="enlace" class="btn btn--bloque sc__enlace" :href="enlace"><Icono nombre="wifi" /> Volver a entrar</a>
       <p class="sc__auto">Se vuelve a intentar automáticamente cada pocos segundos.</p>
     </div>
   </div>
@@ -38,6 +41,13 @@ const desde = computed(() => conexion.desde
 
 // Computador (sin cámara para el QR): se le indica la dirección por nombre del PC de caja,
 // que no cambia con la IP. Si ya entró por ese nombre, no se repite.
+// Enlace fijo por la nube (necesita internet en el celular): lleva a la IP actual de la caja
+const enlace = (() => {
+  try {
+    const e = localStorage.getItem("ag_caja_enlace") || ""
+    return /^https:\/\/[A-Za-z0-9.-]+\/c\/[A-Za-z0-9_-]{8,24}$/.test(e) ? e : ""
+  } catch { return "" }
+})()
 const ua = navigator.userAgent
 const esPC = /Windows NT|Macintosh|CrOS|X11/.test(ua) && !/Android|iPhone|iPad|Mobile/.test(ua)
 const pcNuevo = (() => {
@@ -63,6 +73,7 @@ const pcNuevo = (() => {
 .sc__dir { display: block; margin-top: 4px; font-weight: 700; color: var(--navy); word-break: break-all; user-select: all; }
 .sc__btn { background: var(--rojo); color: #fff; }
 .sc__auto { margin: 10px 0 0; font-size: 12px; color: var(--texto-suave); }
+.sc__enlace { margin-top: 10px; background: var(--navy); color: #fff; text-decoration: none; }
 
 @media (max-width: 576px) {
   .sc__caja { padding: 22px 16px; }

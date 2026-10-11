@@ -89,6 +89,33 @@ async def latido() -> None:
     actualizador.estado["vigente"] = (r or {}).get("version_vigente")
     actualizador.estado["forzar"] = bool((r or {}).get("forzar_actualizacion"))
     await guardar_estilo((r or {}).get("estilo_tarjetas"))
+    await guardar_enlace((r or {}).get("enlace_qr"))
+
+
+# QR fijo de la toma de pedidos (https://easyposweb.com/c/<enlace>): la nube redirige a la IP actual de la
+# caja, así el QR de los celulares no cambia aunque el router le cambie la IP. Se guarda en ag_config.
+_RE_ENLACE_QR = re.compile(r"^https://[A-Za-z0-9.\-]+/c/[A-Za-z0-9_\-]{8,24}$")
+
+
+async def guardar_enlace(enlace: str | None) -> None:
+    if (not enlace or not _RE_ENLACE_QR.match(enlace) or not enlace.startswith(config.NUBE_URL + "/c/")
+            or enlace == estado.get("enlace_qr")):
+        return
+    async with SesionTemp() as s:
+        await s.execute(text("""
+            INSERT INTO ag_config (clave, valor) VALUES ('enlace_qr', :v) ON DUPLICATE KEY UPDATE valor = :v
+        """), {"v": enlace})
+        await s.commit()
+    estado["enlace_qr"] = enlace
+
+
+async def enlace_qr() -> str | None:
+    """El enlace del QR fijo (aunque ahora no haya internet: queda guardado)."""
+    if "enlace_qr" not in estado:
+        async with SesionTemp() as s:
+            guardado = (await s.execute(text("SELECT valor FROM ag_config WHERE clave = 'enlace_qr'"))).scalar()
+        estado["enlace_qr"] = guardado if guardado and _RE_ENLACE_QR.match(guardado) else None
+    return estado["enlace_qr"]
 
 
 # Estilo de tarjetas de las cuentas abiertas: lo escoge la empresa en la web (company_configs.pos_card_style).

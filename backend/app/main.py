@@ -120,7 +120,7 @@ from app.routers.caja_movimientos_router import router as caja_movimientos_route
 from app.routers.caja_vales_router import router as caja_vales_router
 from app.routers.metricas_router import router as metricas_router
 from app.routers.error_log_router import router as error_log_router
-from app.routers.agentes_locales_router import router_admin as agentes_locales_router, router_agente as agente_local_router, router_empresa as mi_agente_local_router
+from app.routers.agentes_locales_router import router_admin as agentes_locales_router, router_agente as agente_local_router, router_empresa as mi_agente_local_router, router_publico as qr_fijo_agente_router
 from app import models  # asegura que plan_model se registre en Base
 
 # ===============================
@@ -2320,6 +2320,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/qr/prestamo/": (15, 60),
     "/ads/": (30, 60),
     "/api/tv/": (120, 60),
+    "/c/": (30, 60),            # QR fijo de la toma de pedidos (público)
 }
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
     lambda: collections.defaultdict(collections.deque)
@@ -2533,6 +2534,7 @@ routers = [
     pos_pago_router,
     pos_recibo_impresion_router,
     config_facturacion_router,
+    qr_fijo_agente_router,
     config_sede_router,
     pos_categorias_productos_router,
     caja_cuadre_router,

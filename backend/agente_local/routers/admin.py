@@ -142,6 +142,7 @@ async def resumen(_=Depends(admin_actual), emp: AsyncSession = Depends(get_emp),
     return {
         "empresa": (empresa or "").strip() or None, "version": VERSION,
         "direccion": f"http://{nube.ip_local()}:{config.PUERTO}", "direccion_pc": nube.url_pc(),
+        "enlace_qr": await nube.enlace_qr(),
         "errores": {k: int(v) for k, v in dict(e).items()},
         "dispositivos": {k: int(v or 0) for k, v in dict(d).items()},
         "pedidos_abiertos": int(pedidos),
@@ -291,12 +292,13 @@ async def habilitar_dispositivo(id_disp: int, request: Request, _=Depends(admin_
 
 @router.get("/qr.png")
 async def qr_direccion(_=Depends(admin_actual)):
-    """QR con la dirección de la toma de pedidos (se escanea con el celular del mesero)."""
+    """QR de la toma de pedidos (se escanea con el celular del mesero). Con clave de la nube es el QR fijo
+    (https://easyposweb.com/c/<enlace>, no cambia con la IP); si no, la dirección local."""
     import io
 
     import qrcode
     from fastapi.responses import Response
-    img = qrcode.make(f"http://{nube.ip_local()}:{config.PUERTO}/", box_size=8, border=2)
+    img = qrcode.make(await nube.enlace_qr() or f"http://{nube.ip_local()}:{config.PUERTO}/", box_size=8, border=2)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")

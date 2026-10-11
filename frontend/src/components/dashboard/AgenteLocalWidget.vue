@@ -13,7 +13,9 @@
         <p v-if="agente.url_local">Escanee el código con el celular <b>conectado al wifi del negocio</b>, o escriba
           en el navegador:</p>
         <p v-else>El agente aún no ha reportado su dirección en la red local.</p>
-        <code v-if="agente.url_local">{{ agente.url_local }}</code>
+        <code v-if="agente.enlace_qr || agente.url_local">{{ agente.enlace_qr || agente.url_local }}</code>
+        <small v-if="agente.enlace_qr"><b>Código fijo:</b> no cambia aunque el router le cambie la IP al PC de caja (el
+          celular necesita internet al abrirlo y estar en el wifi del negocio). Dirección local actual: {{ agente.url_local }}</small>
         <small>Funciona solo dentro de la red del negocio. En el celular: menú del navegador → "Agregar a pantalla de
           inicio" para dejar el ícono.</small>
         <!-- PCs Windows: por el nombre del PC de caja, no cambia aunque el router le cambie la IP -->
