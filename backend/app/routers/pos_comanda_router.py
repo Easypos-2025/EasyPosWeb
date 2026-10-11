@@ -547,7 +547,7 @@ async def get_orden_mesa(
         customer_info = {"id_cliente": int(order["Id_Cliente"] or 0), "nombre": f"Cliente {order['Id_Cliente']}"}
 
     # Empresa con escritorio: ítems pendientes de aceptar en caja y rechazos recientes de la caja
-    con_caja = await sede_svc.tiene_sede(db, cid)
+    con_caja = await sede_svc.envia_a_escritorio(db, cid, on)
     pendientes = await sede_svc.items_pendientes(db_temp, cid, on) if con_caja else set()
     rechazos = await sede_svc.rechazos_recientes(db, cid, on) if con_caja else []
 
@@ -1099,7 +1099,7 @@ async def actualizar_item(
         raise HTTPException(status_code=409, detail="La cantidad de un producto ya enviado no se puede cambiar. "
                                                     "Agregue otro producto o elimínelo y móntelo de nuevo.")
     # Con escritorio, lo enviado (o pendiente de aceptar en caja) no se modifica desde la web
-    if enviado and await sede_svc.tiene_sede(db, cid):
+    if enviado and await sede_svc.envia_a_escritorio(db, cid, data.order_number):
         raise HTTPException(status_code=409, detail="Este producto ya se envió a caja: no se puede modificar desde aquí.")
 
     sets, params = [], {
@@ -1190,7 +1190,7 @@ async def aplicar_descuento_item(
     permisos.exigir(await permisos.permisos_comanda(db, payload), "realizar_descuentos",
                     "Su rol no tiene permiso para realizar descuentos")
     # Con escritorio el descuento se aplica en caja (el lote lleva el precio, no la tipificación)
-    if await sede_svc.tiene_sede(db, cid):
+    if await sede_svc.envia_a_escritorio(db, cid, data.order_number):
         raise HTTPException(status_code=409, detail="En esta empresa los descuentos se aplican en caja.")
     await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
@@ -1271,7 +1271,7 @@ async def eliminar_item(
         WHERE Nro_pedido=:on AND Nro_Factura='0' AND Id_Plato=:did AND Item=:item AND company_id=:cid
     """), {"on": data.order_number, "did": data.dish_id, "item": data.item, "cid": cid})).scalar()
     # Con escritorio: lo enviado (pendiente o aceptado en caja) se elimina desde la caja
-    if int(impreso or 0) and await sede_svc.tiene_sede(db, cid):
+    if int(impreso or 0) and await sede_svc.envia_a_escritorio(db, cid, data.order_number):
         if await sede_svc.item_pendiente(db_temp, cid, data.order_number, data.item):
             raise HTTPException(status_code=409, detail="Este producto está pendiente de aceptar en caja.")
         raise HTTPException(status_code=409, detail="Este producto ya se envió a caja: solicite la eliminación en caja.")
@@ -1326,7 +1326,7 @@ async def enviar_cocina(
     tipo = "nuevo" if is_nuevo else "agregado"
 
     # Empresa con escritorio (Agente Local): no se envía, queda un lote pendiente de aceptar en caja
-    if await sede_svc.tiene_sede(db, cid):
+    if await sede_svc.envia_a_escritorio(db, cid, data.order_number):
         enviado_por = payload.get("name") or payload.get("username") or (
             f"mesero {payload.get('waiter_id')}" if payload.get("waiter_id") else None)
         lote = await sede_svc.crear_lote(db, db_temp, cid, data.order_number, data.date,
@@ -1418,7 +1418,7 @@ async def cancelar_orden(
     """), {"on": on, "date": fecha, "cid": cid})).mappings().all()
 
     # Con escritorio: si algo ya se envió a caja (pendiente o aceptado), la cuenta se elimina en caja
-    if any(int(r["Salio"] or 0) == 1 for r in all_items) and await sede_svc.tiene_sede(db, cid):
+    if any(int(r["Salio"] or 0) == 1 for r in all_items) and await sede_svc.envia_a_escritorio(db, cid, on):
         raise HTTPException(status_code=409, detail="Esta cuenta ya tiene productos enviados a caja: elimínela desde la caja.")
 
     # ── Evento TV CANCELADO (solo si ya salió a cocina) ───────────────────────
@@ -1626,7 +1626,7 @@ async def reimprimir_orden(
           AND company_id=:cid AND Mostrar=1 AND Salio=1
     """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().all()
     # Con escritorio: lo pendiente de aceptar en caja no se imprime
-    if await sede_svc.tiene_sede(db, cid):
+    if await sede_svc.envia_a_escritorio(db, cid, data.order_number):
         pendientes = await sede_svc.items_pendientes(db_temp, cid, data.order_number)
         items_rows = [r for r in items_rows if int(r["Item"]) not in pendientes]
     if not items_rows:

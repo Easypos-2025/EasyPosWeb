@@ -671,6 +671,13 @@ const routes = [
         meta: { title: "Configuración Facturación" }
       },
       {
+        path: "/configuration/sede",
+        name: "ConfigSedeView",
+        component: () => import("@/views/ConfigSedeView.vue"),
+        requiresAuth: true,
+        meta: { title: "Configuración Sede" }
+      },
+      {
         path: "/payment-types",
         name: "PaymentTypesView",
         component: () => import("@/views/PaymentTypesView.vue"),

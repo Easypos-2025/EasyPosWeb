@@ -112,6 +112,7 @@ from app.routers.pos_discount_types_router import router as pos_discount_types_r
 from app.routers.pos_pago_router import router as pos_pago_router
 from app.routers.pos_recibo_impresion_router import router as pos_recibo_impresion_router
 from app.routers.config_facturacion_router import router as config_facturacion_router
+from app.routers.config_sede_router import router as config_sede_router
 from app.routers.pos_categorias_productos_router import router as pos_categorias_productos_router
 from app.routers.caja_cuadre_router import router as caja_cuadre_router
 from app.routers.caja_conceptos_router import router as caja_conceptos_router
@@ -2532,6 +2533,7 @@ routers = [
     pos_pago_router,
     pos_recibo_impresion_router,
     config_facturacion_router,
+    config_sede_router,
     pos_categorias_productos_router,
     caja_cuadre_router,
     caja_conceptos_router,

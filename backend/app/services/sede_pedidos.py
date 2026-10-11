@@ -28,6 +28,22 @@ ESTADOS_ABIERTOS = ("PENDIENTE", "RECIBIDO", "ACEPTADO", "ERROR")
 MAX_ITEMS_LOTE = 200
 
 
+async def envia_a_escritorio(db: AsyncSession, cid: int, order_number: Optional[str] = None) -> bool:
+    """¿Lo que se envíe de este pedido pasa por la caja del escritorio?
+    Sí cuando la empresa tiene Agente Local activo y su admin dejó "Enviar los pedidos web al
+    escritorio" (company_configs.pedidos_web_escritorio) o cuando el pedido ya tiene algo enviado a
+    la caja (un pedido no queda partido si el admin cambia la opción en pleno servicio)."""
+    if not await tiene_sede(db, cid):
+        return False
+    activa = (await db.execute(text(
+        "SELECT pedidos_web_escritorio FROM company_configs WHERE company_id = :c LIMIT 1"), {"c": cid})).scalar()
+    if activa is None or int(activa):
+        return True
+    return bool(order_number) and bool((await db.execute(text(
+        "SELECT 1 FROM pos_sede_lotes WHERE company_id = :c AND nro_pedido = :on LIMIT 1"),
+        {"c": cid, "on": order_number})).scalar())
+
+
 async def tiene_sede(db: AsyncSession, cid: int) -> bool:
     """La empresa tiene Agente Local activo: sus pedidos web pasan por la caja del escritorio."""
     return bool((await db.execute(text(
