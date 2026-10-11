@@ -132,7 +132,12 @@ async def sincronizar(quien: str = "panel") -> dict:
                 omitidas = len(p.get("impresoras") or []) - len(imps)
                 if omitidas:
                     resultado["avisos"].append(f"'{datos['Nombre'].strip()}': {omitidas} impresora(s) de la web no existen en el escritorio.")
-                await conn.execute(text("DELETE FROM plato_impresoras WHERE Id_Plato = :i"), {"i": id_real})
+                # Sin impresoras válidas en la web no se tocan las del escritorio (un plato sin impresora no
+                # imprime: lo más probable es que la web nunca las tuvo, no que se quieran quitar)
+                if imps:
+                    await conn.execute(text("DELETE FROM plato_impresoras WHERE Id_Plato = :i"), {"i": id_real})
+                elif not existe:
+                    resultado["avisos"].append(f"'{datos['Nombre'].strip()}': sin impresora asignada (no imprimirá comanda).")
                 for i in imps:
                     await conn.execute(text("""
                         INSERT INTO plato_impresoras (Id_Plato, Id_Impresora, Cant_Impresiones, Enviada_MySql)

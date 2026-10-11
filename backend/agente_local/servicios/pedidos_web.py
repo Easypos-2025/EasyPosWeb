@@ -1,9 +1,9 @@
 """
 Pedidos web → escritorio (sala de espera con aceptación en caja).
 
-  1. descargar()  cada 10 s: lotes pendientes de la nube → ag_pw_lote / ag_pw_item, y confirma que llegaron.
+  1. descargar()  cada 10 s: lotes pendientes de la nube → ag_pw_lote2 / ag_pw_item, y confirma que llegaron.
   2. El cajero acepta o rechaza (con motivo): form VB6 (frmPedidosWeb) o panel de la mini-app.
-     Solo cambian ag_pw_lote.estado PENDIENTE → ACEPTADO / RECHAZADO (con quién, desde dónde y cuándo).
+     Solo cambian ag_pw_lote2.estado PENDIENTE → ACEPTADO / RECHAZADO (con quién, desde dónde y cuándo).
   3. aplicar_aceptados()  cada 2 s: pasa los ACEPTADOS a los temporales del escritorio, igual que
      "Enviar pedido" de la toma de pedidos (tablas gemelas, cola de impresión, Enviada_MySql de último).
        · Precio: el de la nube (decisión del usuario 2026-10-10).
@@ -88,7 +88,7 @@ async def descargar() -> int:
             if not lote_id or not nro or not tipo or not items or len(items) > 200:
                 continue
             await s.execute(text("""
-                INSERT IGNORE INTO ag_pw_lote
+                INSERT IGNORE INTO ag_pw_lote2
                     (id, nro_pedido, tipo, canal, id_mesa, mesa, mesero, mesero_nombre, id_cliente, comensales,
                      total, items, enviado_por, motivo_solicitud, creado_en, recibido_en, estado)
                 VALUES (:id, :nro, :tipo, :canal, :idm, :mesa, :mes, :mesn, :cli, :com, :tot, :n, :por, :mot, :creado, NOW(), 'PENDIENTE')
@@ -131,7 +131,7 @@ async def marcar(ids: list[int], accion: str, por: str, desde: str, pc: str, mot
     async with SesionTemp() as s:
         for i in ids:
             n += (await s.execute(text("""
-                UPDATE ag_pw_lote SET estado = :e, procesado_por = :por, procesado_desde = :desde, pc = :pc,
+                UPDATE ag_pw_lote2 SET estado = :e, procesado_por = :por, procesado_desde = :desde, pc = :pc,
                        procesado_en = NOW(), motivo = :motivo, mensaje = NULL
                 WHERE id = :id AND estado IN ('PENDIENTE', 'ERROR')
             """), {"e": accion, "por": por[:150], "desde": desde, "pc": pc[:100],
@@ -200,7 +200,7 @@ async def _insertar_items(conn, emp: AsyncSession, lote: dict, items: list[dict]
             """), {"c": consecutivo, "nro": nro, "item": inicial, "cat": _entero(nov.get("cat")),
                    "idn": _entero(nov.get("id")), "nov": limpiar_texto(nov.get("txt"), MAX_TEXTO)})
         await conn.execute(text("""
-            INSERT INTO ag_pw_mapa (nro_pedido, item_web, depende, lote_id) VALUES (:n, :w, :d, :l)
+            INSERT INTO ag_pw_mapa2 (nro_pedido, item_web, depende, lote_id) VALUES (:n, :w, :d, :l)
         """), {"n": nro, "w": int(it["item"]), "d": inicial, "l": lote["id"]})
         await conn.commit()          # el mapa (InnoDB) queda a la par de lo escrito en MyISAM
 
@@ -219,7 +219,7 @@ async def _aplicar(conn, emp: AsyncSession, lote: dict) -> None:
         raise NoAplicable(str(e.detail))
     # Ya aplicado antes (el agente se cayó antes de marcarlo): no se repite; solo se completa el envío
     hechos = 0 if lote["tipo"] in ("ELIMINAR", "CANCELAR") else (await conn.execute(text(
-        "SELECT COUNT(*) FROM ag_pw_mapa WHERE lote_id = :l"), {"l": lote["id"]})).scalar()
+        "SELECT COUNT(*) FROM ag_pw_mapa2 WHERE lote_id = :l"), {"l": lote["id"]})).scalar()
     if hechos:
         if hechos < len(items):
             raise NoAplicable("El lote quedó aplicado a medias en el escritorio. Revise el pedido en caja.")
@@ -291,7 +291,7 @@ def hora_vb(momento: datetime) -> str:
 async def _depende_local(conn, nro: str, item_web: int) -> int | None:
     """Grupo de filas del escritorio que corresponde al ítem de la web. Pedido montado desde la web:
     el mapa; pedido del escritorio que la web agregó/vio: el Item es el mismo y su Depende el del escritorio."""
-    dep = (await conn.execute(text("SELECT depende FROM ag_pw_mapa WHERE nro_pedido = :n AND item_web = :w"),
+    dep = (await conn.execute(text("SELECT depende FROM ag_pw_mapa2 WHERE nro_pedido = :n AND item_web = :w"),
                               {"n": nro, "w": item_web})).scalar()
     if dep:
         return int(dep)
@@ -372,7 +372,7 @@ async def _eliminar_depende(conn, emp: AsyncSession, nro: str, mesa: str, depend
             await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n AND Item_comanda = :d"), {"n": nro, "d": depende})
     for tabla in ("temp_plato_producto", "temp_plato_producto_parcial"):
         await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n AND Item_Original = :d"), {"n": nro, "d": depende})
-    await conn.execute(text("UPDATE ag_pw_mapa SET eliminado_reportado = 1 WHERE nro_pedido = :n AND depende = :d"),
+    await conn.execute(text("UPDATE ag_pw_mapa2 SET eliminado_reportado = 1 WHERE nro_pedido = :n AND depende = :d"),
                        {"n": nro, "d": depende})
 
 
@@ -401,25 +401,86 @@ async def _aplicar_baja(conn, emp: AsyncSession, lote: dict, items: list[dict]) 
             await _eliminar_depende(conn, emp, nro, pedido["Mesa"], dep, motivo, usuario, ahora)
         await conn.commit()
         return
-    # CANCELAR: tirilla de anulación de todo lo impreso, cada producto al histórico y la cuenta al histórico
-    await _encolar_anulacion(conn, emp, nro, None, True, ahora)
-    todos = [int(d) for (d,) in (await conn.execute(text(
-        "SELECT DISTINCT Depende FROM temp_detalle_comanda WHERE Nro_pedido = :n"), {"n": nro})).all()
-        if str(d or "").strip().isdigit()]
-    for dep in todos:
-        await _eliminar_depende(conn, emp, nro, pedido["Mesa"], dep, motivo, usuario, ahora)
-    cab = dict(pedido)
-    cols = ["Nro_Pedido", "Fecha", "Nro_Factura", "Mesa", "Hora", "Mesero", "Cancelado", "Valor", "Salio", "Novedad",
-            "Cortesia", "Imprimio_Precuenta", "Nro_Comenzales", "Mostrar", "Nro_Puestos", "Enviada_MySql", "Domicilio",
-            "Id_Cliente", "Movil"]
-    datos = {c: cab.get(c) for c in cols}
-    datos.update({"Motivo_Eliminacion": motivo[:255], "Quien_Elimino": usuario[:255]})
+    # CANCELAR: igual que Eliminar_Cuenta del VB6
+    await _cancelar_cuenta_vb(conn, emp, nro, pedido, motivo, usuario, ahora)
+
+
+_COLS_CABECERA = ["Nro_Pedido", "Fecha", "Nro_Factura", "Mesa", "Hora", "Mesero", "Cancelado", "Valor", "Salio", "Novedad",
+                  "Cortesia", "Imprimio_Precuenta", "Nro_Comenzales", "Mostrar", "Nro_Puestos", "Domicilio", "Id_Cliente", "Movil"]
+
+
+async def _cancelar_cuenta_vb(conn, emp: AsyncSession, nro: str, pedido, motivo: str, usuario: str, ahora: datetime) -> None:
+    """Eliminar_Cuenta del VB6 (rutina del usuario, 2026-10-11), en el mismo orden:
+      1. Histórico: la cuenta a historico_comandas_eliminadas y el detalle (Mostrar = 1) a
+         historico_detalle_comanda_eliminadas, tal cual (Funcion_Pasar_De_Temporal_A_Real 2 y 3);
+         luego Quien_Elimino y Motivo_Eliminacion (motivo en mayúsculas, sin comas ni comillas).
+      2. Tirilla de pedido eliminado si configuracion_conexion.Imprimir_Pedidos_Eliminados (y las banderas
+         de impresión de Enviar_Pedido_Impresion); Enviada_MySql = 1 en la cola del pedido, siempre.
+      3. Copia en Temp_Precuenta_comanda / _detalle_comanda / _detalle_comanda_Parcial.
+      4. Borra el pedido de las tablas temporales y libera la mesa (Temp_Mesa_Abierta por Id_Mesa)."""
+    motivo_vb = motivo.replace(",", " ").replace("'", " ").upper()[:255]
+    # 1. histórico
     if await _existe(emp, "historico_comandas_eliminadas", "emp"):
-        await emp.execute(text(f"INSERT INTO historico_comandas_eliminadas ({', '.join(cols)}, Motivo_Eliminacion, Quien_Elimino) "
-                               f"VALUES ({', '.join(':' + c for c in cols)}, :Motivo_Eliminacion, :Quien_Elimino)"), datos)
+        cab = dict(pedido)
+        datos = {c: cab.get(c) for c in _COLS_CABECERA}
+        await emp.execute(text(f"INSERT INTO historico_comandas_eliminadas ({', '.join(_COLS_CABECERA)}) "
+                               f"VALUES ({', '.join(':' + c for c in _COLS_CABECERA)})"), datos)
+    if await _existe(emp, "historico_detalle_comanda_eliminadas", "emp"):
+        columnas = [c.strip() for c in _COLS_HISTORICO.split(",")]
+        for f in (await conn.execute(text(f"SELECT {_COLS_HISTORICO} FROM temp_detalle_comanda WHERE Nro_pedido = :n AND Mostrar = 1"),
+                                     {"n": nro})).mappings().all():
+            await emp.execute(text(f"INSERT INTO historico_detalle_comanda_eliminadas ({_COLS_HISTORICO}) "
+                                   f"VALUES ({', '.join(':' + c for c in columnas)})"), dict(f))
+    if await _existe(emp, "historico_comandas_eliminadas", "emp"):
+        await emp.execute(text("UPDATE historico_comandas_eliminadas SET Quien_Elimino = :q, Motivo_Eliminacion = :m WHERE Nro_Pedido = :n"),
+                          {"q": usuario[:255], "m": motivo_vb, "n": nro})
     await emp.commit()
-    await conn.execute(text("DELETE FROM temp_comanda WHERE Nro_Pedido = :n"), {"n": nro})
-    await conn.execute(text("DELETE FROM temp_mesa_abierta WHERE Mesa = :m"), {"m": pedido["Mesa"]})
+    # 2. tirilla de pedido eliminado
+    imprimir = False
+    if await _existe(emp, "configuracion_conexion", "emp"):
+        imprimir = bool((await emp.execute(text("SELECT Imprimir_Pedidos_Eliminados FROM configuracion_conexion LIMIT 1"))).scalar())
+    b = await impresion.banderas(emp)
+    if imprimir and (b["tirilla"] or b["plazoleta"]):
+        filas = (await conn.execute(text("""
+            SELECT d.Nro_pedido, d.Id_Plato, d.Item, d.Depende, d.Descripcion, d.Cantidad, d.Novedad, d.Cambios,
+                   d.Mostrar, d.Impresora, c.Mesa, c.Mesero, c.Domicilio
+            FROM temp_detalle_comanda d JOIN temp_comanda c ON c.Nro_Pedido = d.Nro_pedido
+            WHERE d.Nro_pedido = :n AND d.Impreso = 1 AND d.Min = 0
+            ORDER BY d.Item DESC
+        """), {"n": nro})).mappings().all()
+        if filas:
+            mesero = await impresion._nombre_mesero(conn, emp, int(filas[0]["Mesero"] or 0))
+            fecha = await exigir_caja_abierta(emp)
+            for f in filas:
+                dep = str(f["Depende"] or "").strip()
+                await conn.execute(text("""
+                    INSERT INTO temp_impresion_tirilla_comanda
+                        (Nro_pedido, Mesero, Fecha, Nro_Mesa, Id_Plato, Item, Depende, Descripcion, Cantidad, Hora,
+                         Novedad, Impreso, Cambios, Mostrar, Impresora, Enviada_MySql, Nro_Puesto, Nuevo, Cancelado,
+                         Enviado_Desde, Hora_Plato, Domicilio)
+                    VALUES (:nro, :mesero, :fecha, :mesa, :plato, :item, :dep, :desc, :cant, :hora,
+                            :nov, 0, :camb, :mostrar, :imp, 0, 0, 1, 1, :desde, :hora, :domi)
+                """), {"nro": nro, "mesero": mesero[:255], "fecha": fecha, "mesa": f["Mesa"], "plato": f["Id_Plato"],
+                       "item": f["Item"], "dep": int(dep) if dep.isdigit() else 0, "desc": f["Descripcion"],
+                       "cant": f["Cantidad"], "hora": ahora.strftime("%I:%M:%S %p"), "nov": (f["Novedad"] or "")[:255],
+                       "camb": (f["Cambios"] or "")[:255], "mostrar": 1 if f["Mostrar"] else 0, "imp": f["Impresora"],
+                       "desde": ENVIADO_DESDE, "domi": 1 if f["Domicilio"] else 0})
+    await conn.execute(text("UPDATE temp_impresion_tirilla_comanda SET Enviada_MySql = 1 WHERE Nro_pedido = :n"), {"n": nro})
+    # 3. copia en las tablas de precuenta
+    for destino, origen in (("temp_precuenta_comanda", "temp_comanda"),
+                            ("temp_precuenta_detalle_comanda", "temp_detalle_comanda"),
+                            ("temp_precuenta_detalle_comanda_parcial", "temp_detalle_comanda_parcial")):
+        if await _existe(conn, destino):
+            await conn.execute(text(f"DELETE FROM {destino} WHERE Nro_Pedido = :n"), {"n": nro})
+            await conn.execute(text(f"INSERT INTO {destino} SELECT * FROM {origen} WHERE Nro_Pedido = :n"), {"n": nro})
+    # 4. borrar de las temporales y liberar la mesa
+    for tabla in ("temp_descuentos", "temp_comanda", "temp_detalle_comanda", "temp_detalle_comanda_parcial",
+                  "temp_detalle_comanda_previo", "temp_plato_producto", "temp_plato_producto_parcial",
+                  "temp_novedades_plato_pedido"):
+        if await _existe(conn, tabla):
+            await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n"), {"n": nro})
+    await conn.execute(text("DELETE FROM temp_mesa_abierta WHERE Id_Mesa = :i"), {"i": int(pedido["Imprimio_Precuenta"] or 0)})
+    await conn.execute(text("UPDATE ag_pw_mapa2 SET eliminado_reportado = 1 WHERE nro_pedido = :n"), {"n": nro})
     await conn.commit()
 
 
@@ -428,7 +489,7 @@ async def reportar_eliminados_caja() -> int:
     salgan también de la web. Solo mientras la cuenta siga abierta en el escritorio."""
     async with SesionTemp() as s:
         filas = (await s.execute(text("""
-            SELECT m.nro_pedido, m.item_web, m.depende FROM ag_pw_mapa m
+            SELECT m.nro_pedido, m.item_web, m.depende FROM ag_pw_mapa2 m
             JOIN temp_comanda c ON c.Nro_Pedido = m.nro_pedido
             WHERE m.eliminado_reportado = 0 AND m.nro_pedido LIKE 'WEB-%'
               AND NOT EXISTS (SELECT 1 FROM temp_detalle_comanda d
@@ -444,7 +505,7 @@ async def reportar_eliminados_caja() -> int:
                      {"pedidos": [{"nro_pedido": n, "items": its} for n, its in list(por_pedido.items())[:50]]})
     async with SesionTemp() as s:
         for nro, item_web, _dep in filas:
-            await s.execute(text("UPDATE ag_pw_mapa SET eliminado_reportado = 1 WHERE nro_pedido = :n AND item_web = :w"),
+            await s.execute(text("UPDATE ag_pw_mapa2 SET eliminado_reportado = 1 WHERE nro_pedido = :n AND item_web = :w"),
                             {"n": nro, "w": item_web})
         await s.commit()
     return len(filas)
@@ -454,12 +515,12 @@ async def aplicar_aceptados() -> int:
     from ..routers.pedidos import _escritura
     async with SesionTemp() as s:
         lotes = [dict(r) for r in (await s.execute(text(
-            "SELECT * FROM ag_pw_lote WHERE estado = 'ACEPTADO' ORDER BY id LIMIT 20"))).mappings().all()]
+            "SELECT * FROM ag_pw_lote2 WHERE estado = 'ACEPTADO' ORDER BY id LIMIT 20"))).mappings().all()]
     hechos = 0
     for lote in lotes:
         async with SesionTemp() as s:
             previos = {r[0] for r in (await s.execute(text("""
-                SELECT CONCAT(tipo, ':', estado) FROM ag_pw_lote
+                SELECT CONCAT(tipo, ':', estado) FROM ag_pw_lote2
                 WHERE nro_pedido = :n AND id < :id AND estado <> 'APLICADO'
             """), {"n": lote["nro_pedido"], "id": lote["id"]})).all()}
         mensaje = None
@@ -472,7 +533,7 @@ async def aplicar_aceptados() -> int:
                 async with SesionEmpresa() as emp, _escritura() as conn:
                     await _aplicar(conn, emp, lote)
                     await conn.execute(text("""
-                        UPDATE ag_pw_lote SET estado = 'APLICADO', aplicado_en = NOW(), mensaje = NULL
+                        UPDATE ag_pw_lote2 SET estado = 'APLICADO', aplicado_en = NOW(), mensaje = NULL
                         WHERE id = :id AND estado = 'ACEPTADO'
                     """), {"id": lote["id"]})
                     await conn.commit()
@@ -486,7 +547,7 @@ async def aplicar_aceptados() -> int:
                 log.exception("Aplicar pedido web %s", lote["id"])
                 mensaje = f"Error al pasar el pedido al escritorio: {e}"[:500]
         async with SesionTemp() as s:
-            await s.execute(text("UPDATE ag_pw_lote SET estado = 'ERROR', mensaje = :m WHERE id = :id AND estado = 'ACEPTADO'"),
+            await s.execute(text("UPDATE ag_pw_lote2 SET estado = 'ERROR', mensaje = :m WHERE id = :id AND estado = 'ACEPTADO'"),
                             {"m": mensaje[:500], "id": lote["id"]})
             await s.commit()
     return hechos
@@ -497,7 +558,7 @@ async def aplicar_aceptados() -> int:
 async def reportar() -> int:
     async with SesionTemp() as s:
         filas = (await s.execute(text("""
-            SELECT id, estado, procesado_por, procesado_desde, pc, motivo, mensaje FROM ag_pw_lote
+            SELECT id, estado, procesado_por, procesado_desde, pc, motivo, mensaje FROM ag_pw_lote2
             WHERE estado <> 'PENDIENTE' AND estado <> COALESCE(nube_estado, '') ORDER BY id LIMIT 50
         """))).mappings().all()
     if not filas:
@@ -510,7 +571,7 @@ async def reportar() -> int:
     async with SesionTemp() as s:
         for f in filas:
             if int(f["id"]) in confirmados:
-                await s.execute(text("UPDATE ag_pw_lote SET nube_estado = :e WHERE id = :id AND estado = :e"),
+                await s.execute(text("UPDATE ag_pw_lote2 SET nube_estado = :e WHERE id = :id AND estado = :e"),
                                 {"e": f["estado"], "id": f["id"]})
         await s.commit()
     return len(confirmados)
@@ -518,7 +579,7 @@ async def reportar() -> int:
 
 async def pendientes() -> int:
     async with SesionTemp() as s:
-        return int((await s.execute(text("SELECT COUNT(*) FROM ag_pw_lote WHERE estado = 'PENDIENTE'"))).scalar() or 0)
+        return int((await s.execute(text("SELECT COUNT(*) FROM ag_pw_lote2 WHERE estado = 'PENDIENTE'"))).scalar() or 0)
 
 
 # ───────────────────────────── ciclo ─────────────────────────────

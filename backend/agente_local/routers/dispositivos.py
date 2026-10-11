@@ -297,6 +297,9 @@ async def _caja(emp: AsyncSession) -> dict:
 async def actualizar_desde_dispositivo(request: Request, mesero: Mesero = Depends(mesero_actual)):
     """Los meseros usan más la toma de pedidos que el panel: desde allí también se puede aplicar la
     actualización. Solo instala la versión vigente publicada (verificada por su huella)."""
+    if actualizador.ya_fallo():
+        raise HTTPException(status_code=409, detail="Esta versión ya falló en el equipo de caja; "
+                                                    "se reintenta solo desde el panel del agente.")
     try:
         nueva = await actualizador.aplicar_ahora(f"dispositivo {mesero.nombre_dispositivo}")
     except RuntimeError as e:

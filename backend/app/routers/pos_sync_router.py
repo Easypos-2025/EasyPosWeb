@@ -1870,10 +1870,17 @@ async def push_dish_printers(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # S3 (la web manda): las impresoras de un plato con cambios web pendientes (synced = 0) no se pisan
+    pendientes_web: set = set()
+    for cid_lote in {r.company_id for r in records}:
+        pendientes_web |= {(cid_lote, int(x[0])) for x in (await db.execute(text(
+            "SELECT id FROM pos_dishes WHERE company_id = :c AND synced = 0"), {"c": cid_lote})).all()}
     # Group by (company_id, item_id) and delete+insert per dish
     processed: set = set()
     for r in records:
         key = (r.company_id, r.item_id)
+        if key in pendientes_web:
+            continue
         if key not in processed:
             await db.execute(text(
                 "DELETE FROM pos_item_printers WHERE company_id = :cid AND item_id = :iid"

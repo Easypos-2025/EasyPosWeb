@@ -57,6 +57,15 @@ def disponible() -> bool:
     return bool(config.EMPAQUETADO and v and v.get("version") and v["version"] != VERSION)
 
 
+def ya_fallo() -> bool:
+    """La versión vigente ya se intentó en este PC y se revirtió (no arrancó). No se vuelve a aplicar
+    sola (forzada, horas sin uso, apertura de turno ni botón de los meseros): si no, el agente queda
+    deteniéndose en bucle y nadie puede tomar pedidos (2026-10-11). Solo el botón del panel del agente
+    la reintenta; una versión nueva publicada se intenta normalmente."""
+    ultimo, v = estado["ultimo"] or {}, estado["vigente"] or {}
+    return bool(ultimo and ultimo.get("estado") != "OK" and ultimo.get("hacia") == v.get("version"))
+
+
 def _zip(version: str):
     return DIR / f"agente-{version}.zip"
 
@@ -211,7 +220,8 @@ async def aplicar_ahora(motivo: str) -> str:
 def para_dispositivos() -> dict:
     """Lo que ve la mini-app: solo si hay una versión nueva lista para instalar."""
     v = estado["vigente"] or {}
-    lista = bool(disponible() and estado["descargada"] and estado["descargada"] == v.get("version"))
+    lista = bool(disponible() and estado["descargada"] and estado["descargada"] == v.get("version")
+                 and not ya_fallo())
     return {"lista": lista, "aplicando": bool(estado["aplicando"]),
             "nueva": v.get("version") if lista else None, "notas": v.get("notas") if lista else None}
 
@@ -254,7 +264,7 @@ def lista() -> bool:
     """Hay una versión nueva descargada y verificada, y no se está aplicando."""
     v = estado["vigente"] or {}
     return bool(disponible() and estado["descargada"] and estado["descargada"] == v.get("version")
-                and not estado["aplicando"])
+                and not estado["aplicando"] and not ya_fallo())
 
 
 def forzada() -> bool:
@@ -290,7 +300,7 @@ async def sin_uso() -> bool:
 def al_abrir_turno(pedidos_abiertos: int) -> bool:
     """Opción B: se abrió turno en el escritorio. Se actualiza si hay versión lista y ningún
     pedido de los dispositivos está abierto (si los hay, espera al próximo turno)."""
-    if not (estado["descargada"] and disponible()) or estado["aplicando"]:
+    if not (estado["descargada"] and disponible()) or estado["aplicando"] or ya_fallo():
         return False
     if pedidos_abiertos:
         log.info("Turno abierto con %s pedidos de dispositivos: la actualización espera", pedidos_abiertos)

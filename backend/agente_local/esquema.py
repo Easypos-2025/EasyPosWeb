@@ -1,6 +1,12 @@
 """
 Tablas propias del agente en datatemppos (el programa de escritorio las ignora).
 Se crean al arrancar si no existen; nunca se alteran tablas del escritorio.
+
+REGLA: el usuario de BD que crea el instalador NO tiene permiso ALTER (solo SELECT, INSERT, UPDATE,
+DELETE, CREATE, INDEX en datatemppos). Nunca usar ALTER TABLE: un agente que lo intenta no arranca y
+la actualización se revierte en todas las sedes (2026-10-11). Para cambiar una tabla ya creada en las
+sedes se crea su versión siguiente (ag_x → ag_x2) con el esquema completo y se agrega a MIGRAR: al
+arrancar se copian los datos de la anterior (solo CREATE + INSERT … SELECT). La anterior queda sin uso.
 """
 from sqlalchemy import text
 
@@ -86,7 +92,7 @@ TABLAS = [
     # nube. Nunca se borran: son el histórico para reclamos. El form VB6 y el panel solo cambian
     # estado PENDIENTE → ACEPTADO / RECHAZADO; el agente aplica y reporta a la nube (nube_estado).
     """
-    CREATE TABLE IF NOT EXISTS ag_pw_lote (
+    CREATE TABLE IF NOT EXISTS ag_pw_lote2 (
         id              INT           NOT NULL PRIMARY KEY,
         nro_pedido      VARCHAR(255)  NOT NULL,
         tipo            VARCHAR(10)   NOT NULL,
@@ -135,7 +141,7 @@ TABLAS = [
     """,
     # Ítem de la web → grupo de filas del escritorio (Depende). Evita aplicar dos veces un lote.
     """
-    CREATE TABLE IF NOT EXISTS ag_pw_mapa (
+    CREATE TABLE IF NOT EXISTS ag_pw_mapa2 (
         nro_pedido  VARCHAR(255)  NOT NULL,
         item_web    INT           NOT NULL,
         depende     INT           NOT NULL,
@@ -163,21 +169,27 @@ TABLAS = [
 ]
 
 
-# Columnas agregadas después de crear la tabla (CREATE TABLE IF NOT EXISTS no las agrega en las sedes)
-COLUMNAS_NUEVAS = [
-    ("ag_pw_lote", "motivo_solicitud", "VARCHAR(255) NULL AFTER enviado_por"),
-    ("ag_pw_mapa", "eliminado_reportado", "TINYINT NOT NULL DEFAULT 0"),
+# Versión anterior → versión nueva (con columnas nuevas). Se copia una sola vez, cuando la nueva está vacía.
+MIGRAR = [
+    ("ag_pw_lote", "ag_pw_lote2"),      # + motivo_solicitud (S2)
+    ("ag_pw_mapa", "ag_pw_mapa2"),      # + eliminado_reportado (S2)
 ]
+
+
+async def _columnas(conn, tabla: str) -> list[str]:
+    return [c for (c,) in (await conn.execute(text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = :t ORDER BY ordinal_position
+    """), {"t": tabla})).all()]
 
 
 async def crear_esquema() -> None:
     async with motor_temp.begin() as conn:
         for ddl in TABLAS:
             await conn.execute(text(ddl))
-        for tabla, columna, definicion in COLUMNAS_NUEVAS:
-            existe = (await conn.execute(text("""
-                SELECT COUNT(*) FROM information_schema.columns
-                WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c
-            """), {"t": tabla, "c": columna})).scalar()
-            if not existe:
-                await conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}"))
+        for viejo, nuevo in MIGRAR:
+            anteriores = await _columnas(conn, viejo)
+            if not anteriores or (await conn.execute(text(f"SELECT COUNT(*) FROM {nuevo}"))).scalar():
+                continue
+            comunes = ", ".join(c for c in await _columnas(conn, nuevo) if c in anteriores)
+            await conn.execute(text(f"INSERT IGNORE INTO {nuevo} ({comunes}) SELECT {comunes} FROM {viejo}"))

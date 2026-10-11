@@ -137,7 +137,7 @@ async def resumen(_=Depends(admin_actual), emp: AsyncSession = Depends(get_emp),
     pedidos = (await tmp.execute(text(
         "SELECT COUNT(*) FROM temp_comanda WHERE Movil = 1 AND Salio = 0"))).scalar() or 0
     pedidos_web = (await tmp.execute(text(
-        "SELECT COUNT(*) FROM ag_pw_lote WHERE estado IN ('PENDIENTE', 'ERROR')"))).scalar() or 0
+        "SELECT COUNT(*) FROM ag_pw_lote2 WHERE estado IN ('PENDIENTE', 'ERROR')"))).scalar() or 0
     n = nube.estado
     return {
         "empresa": (empresa or "").strip() or None, "version": VERSION,
@@ -357,12 +357,12 @@ async def pedidos_web(vista: str = Query("pendientes", pattern="^(pendientes|pro
                       _=Depends(admin_actual), tmp: AsyncSession = Depends(get_tmp)):
     if vista == "pendientes":
         filas = (await tmp.execute(text("""
-            SELECT * FROM ag_pw_lote WHERE estado IN ('PENDIENTE', 'ACEPTADO', 'ERROR') ORDER BY id
+            SELECT * FROM ag_pw_lote2 WHERE estado IN ('PENDIENTE', 'ACEPTADO', 'ERROR') ORDER BY id
         """))).mappings().all()
     else:
         dia = fecha or datetime.now().strftime("%Y-%m-%d")
         filas = (await tmp.execute(text("""
-            SELECT * FROM ag_pw_lote WHERE estado IN ('APLICADO', 'RECHAZADO')
+            SELECT * FROM ag_pw_lote2 WHERE estado IN ('APLICADO', 'RECHAZADO')
               AND procesado_en >= :d AND procesado_en < :d + INTERVAL 1 DAY
             ORDER BY procesado_en DESC
         """), {"d": dia})).mappings().all()
@@ -371,7 +371,7 @@ async def pedidos_web(vista: str = Query("pendientes", pattern="^(pendientes|pro
 
 @router.get("/pedidos-web/{id_lote}")
 async def pedido_web(id_lote: int, _=Depends(admin_actual), tmp: AsyncSession = Depends(get_tmp)):
-    f = (await tmp.execute(text("SELECT * FROM ag_pw_lote WHERE id = :i"), {"i": id_lote})).mappings().first()
+    f = (await tmp.execute(text("SELECT * FROM ag_pw_lote2 WHERE id = :i"), {"i": id_lote})).mappings().first()
     if not f:
         raise HTTPException(status_code=404, detail="Pedido no encontrado.")
     items = (await tmp.execute(text("""

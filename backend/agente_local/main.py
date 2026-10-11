@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import VERSION, actualizador, config, errores, nube
+from . import VERSION, actualizador, config, errores, nube, permisos
 from .db import motor_empresa, motor_temp
 from .esquema import crear_esquema
 from .seguridad import ip_cliente
@@ -32,6 +32,7 @@ if not log.handlers:
 @asynccontextmanager
 async def _ciclo(app: FastAPI):
     await crear_esquema()
+    await permisos.revisar()                            # avisa si el instalador no dio todos los permisos
     log.info("Agente Local %s iniciado en el puerto %s", VERSION, config.PUERTO)
     await actualizador.revisar_resultado()
     actualizador.leer_resultado()                        # último resultado ya reportado (para el panel)

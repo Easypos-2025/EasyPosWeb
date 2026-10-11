@@ -120,9 +120,23 @@ def _bd_grant(nombre: str) -> str:
     return "`" + nombre.replace("`", "").replace("_", r"\_").replace("%", r"\%") + "`"
 
 
+# Escritura en la BD de la empresa (igual que backend/agente_local/permisos.py). Volver a ejecutar el
+# instalador en una sede ya instalada actualiza estos permisos. El agente NO usa ALTER TABLE.
+PERMISOS_EMPRESA = {
+    "registro_dispositivos": ("DELETE",),                    # eliminar dispositivos (cupo)
+    "historico_comandas_eliminadas": ("INSERT", "UPDATE"),   # S2 cancelar cuenta
+    "historico_detalle_comanda_eliminadas": ("INSERT",),     # S2 eliminar producto / cancelar
+    "platos": ("INSERT", "UPDATE"),                          # S3 catálogo de la web (y fotos)
+    "plato_impresoras": ("INSERT", "DELETE"),                # S3
+    "configuracion_sede": ("INSERT", "UPDATE"),              # S3
+}
+
+
 def crear_usuario_bd(d: dict, bd_empresa: str, bd_temp: str) -> str:
     clave = secrets.token_urlsafe(24)
     with conectar(d) as con, con.cursor() as c:
+        c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = %s", (bd_empresa,))
+        existentes = {t for (t,) in c.fetchall()}
         for host in ("localhost", "127.0.0.1"):
             usuario = f"'{USUARIO_BD}'@'{host}'"
             c.execute(f"CREATE USER IF NOT EXISTS {usuario} IDENTIFIED BY %s", (clave,))
@@ -130,8 +144,10 @@ def crear_usuario_bd(d: dict, bd_empresa: str, bd_temp: str) -> str:
             # Empresa: solo lectura, salvo asignar las fotos de la web a los platos…
             c.execute(f"GRANT SELECT ON {_bd_grant(bd_empresa)}.* TO {usuario}")
             c.execute(f"GRANT UPDATE (Ruta_Foto) ON `{bd_empresa}`.`platos` TO {usuario}")
-            # …y eliminar dispositivos desde el panel (libera el cupo de Dispositivos_Autorizados)
-            c.execute(f"GRANT DELETE ON `{bd_empresa}`.`registro_dispositivos` TO {usuario}")
+            # …y escribir solo en estas tablas (misma lista que backend/agente_local/permisos.py)
+            for tabla, privilegios in PERMISOS_EMPRESA.items():
+                if tabla in existentes:
+                    c.execute(f"GRANT {', '.join(privilegios)} ON `{bd_empresa}`.`{tabla}` TO {usuario}")
             # Temporales: pedidos y tablas propias del agente (ag_*)
             c.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, INDEX ON {_bd_grant(bd_temp)}.* TO {usuario}")
         c.execute("FLUSH PRIVILEGES")
