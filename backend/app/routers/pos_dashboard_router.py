@@ -252,6 +252,9 @@ async def get_mesas(
         ), {"cid": cid})).mappings().all()
         waiter_names = {int(r["id"]): r["name"] for r in wrows}
 
+    from app.services import sede_pedidos
+    pend_caja = await sede_pedidos.pedidos_pendientes_caja(db, cid)   # enviados desde la web sin aceptar en caja
+
     result = []
     matched_order_numbers: set = set()
     for t in layout:
@@ -274,6 +277,7 @@ async def get_mesas(
             "daily_seq":    order_info["daily_seq"] if order_info else None,
             "is_web":       bool(order_info and int(order_info["Movil"] or 0) == 1),
             "editing_by":   locks_dash.get(tid),
+            "pendiente_caja": bool(order_info and order_info["order_number"] in pend_caja),
             "tipo_cuenta":  "fija",
             "es_dinamica":  False,
         }
@@ -306,6 +310,7 @@ async def get_mesas(
             "daily_seq":     i,
             "is_web":        bool(int(o["Movil"] or 0) == 1),
             "editing_by":    None,
+            "pendiente_caja": o["order_number"] in pend_caja,
             "tipo_cuenta":   tipo_cuenta,
             "es_dinamica":   True,
         })

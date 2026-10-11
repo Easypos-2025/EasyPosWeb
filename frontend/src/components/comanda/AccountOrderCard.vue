@@ -2,6 +2,9 @@
 
   <!-- ═══ ESTILO: oval-wood (mesa elíptica de madera) ══════════════════════ -->
   <div v-if="cardStyle === 'oval-wood'" class="aoc-oval" @click="onClick">
+    <div v-if="order.pendiente_caja" class="aoc-pend-badge aoc-pend-badge--oval" title="Enviado desde la web: esperando que la caja lo acepte">
+      <i class="bi bi-hourglass-split"></i> Pendiente de caja
+    </div>
     <div v-if="editingBy" class="aoc-lock-badge aoc-lock-badge--oval">
       <i class="bi bi-pencil-fill"></i> {{ editingBy }}
     </div>
@@ -37,6 +40,9 @@
     :class="[`aoc--${cardStyle}`, { 'aoc--bill': d.billRequested }]"
     @click="onClick"
   >
+    <div v-if="order.pendiente_caja" class="aoc-pend-badge" title="Enviado desde la web: esperando que la caja lo acepte">
+      <i class="bi bi-hourglass-split"></i> Pendiente de caja
+    </div>
     <div v-if="editingBy" class="aoc-lock-badge">
       <i class="bi bi-pencil-fill"></i> {{ editingBy }}
     </div>
@@ -566,6 +572,32 @@ function fmt(v) {
   z-index: 10;
   box-shadow: 0 2px 6px rgba(124,58,237,.4);
 }
+/* Empresa con escritorio: algo enviado desde la web espera la aceptación en caja (arriba, el de edición va abajo) */
+.aoc-pend-badge {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #d97706;
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  max-width: 92%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  z-index: 11;
+  box-shadow: 0 2px 6px rgba(217,119,6,.45);
+  animation: aoc-pend-pulso 1.6s ease-in-out infinite;
+}
+.aoc-pend-badge--oval { top: 2px; }
+@keyframes aoc-pend-pulso { 50% { opacity: .65; } }
+@media (max-width: 576px) { .aoc-pend-badge { font-size: .56rem; padding: 2px 6px; } }
 .aoc-lock-badge--oval {
   bottom: 4px;
 }

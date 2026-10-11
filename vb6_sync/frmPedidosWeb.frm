@@ -331,7 +331,7 @@ Private Sub Configurar_Grillas()
 With grdLotes
     .Redraw = False
     .Cols = TOTAL_COLS
-    .Rows = 1
+    .Rows = 2
     .FixedRows = 1
     .FixedCols = 0
     .SelectionMode = flexSelectionByRow
@@ -366,7 +366,7 @@ End With
 With grdDetalle
     .Redraw = False
     .Cols = 4
-    .Rows = 1
+    .Rows = 2
     .FixedRows = 1
     .FixedCols = 0
     .SelectionMode = flexSelectionByRow
@@ -401,8 +401,17 @@ Call Limpiar_Detalle
 Call Cargar_Lotes
 End Sub
 
+' MSFlexGrid exige al menos una fila de datos bajo la fija: se deja una en blanco
+Private Sub Vaciar_Grilla(Grilla As MSFlexGridLib.MSFlexGrid)
+Dim C As Integer
+Grilla.Rows = 2
+For C = 0 To Grilla.Cols - 1
+    Grilla.TextMatrix(1, C) = ""
+Next C
+End Sub
+
 Private Sub Limpiar_Detalle()
-grdDetalle.Rows = 1
+Call Vaciar_Grilla(grdDetalle)
 lblDetalle.Caption = "Detalle: haga clic en un pedido para ver sus productos"
 End Sub
 
@@ -444,10 +453,12 @@ Rs.Open Sql, Base_Reportes_MySql, adOpenStatic, adLockReadOnly
 Nuevos_Marcados = ","
 With grdLotes
     .Redraw = False
-    .Rows = 1
+    Call Vaciar_Grilla(grdLotes)
+    Call Pintar_Fila(1, COLOR_BLANCO)
+    Fila = 0
     Do While Not Rs.EOF
-       .Rows = .Rows + 1
-       Fila = .Rows - 1
+       Fila = Fila + 1
+       If Fila > 1 Then .Rows = Fila + 1
        .RowHeight(Fila) = 360
        Estado = Texto(Rs!Estado)
        .TextMatrix(Fila, COL_ID) = Texto(Rs!id)
@@ -541,10 +552,11 @@ Rs.Open "SELECT cantidad, COALESCE(NULLIF(producto_personalizado,''), descripcio
         " novedad, valor FROM ag_pw_item WHERE lote_id = " & Id_Lote & " ORDER BY item", Base_Reportes_MySql, adOpenStatic, adLockReadOnly
 With grdDetalle
     .Redraw = False
-    .Rows = 1
+    Call Vaciar_Grilla(grdDetalle)
+    Fila = 0
     Do While Not Rs.EOF
-       .Rows = .Rows + 1
-       Fila = .Rows - 1
+       Fila = Fila + 1
+       If Fila > 1 Then .Rows = Fila + 1
        .RowHeight(Fila) = 340
        .TextMatrix(Fila, 0) = Format(CDbl(Rs!Cantidad), "0.###")
        .TextMatrix(Fila, 1) = Texto(Rs!nombre)
@@ -661,6 +673,7 @@ Private Sub grdLotes_Click()
 Dim Fila As Long
 Fila = grdLotes.MouseRow
 If Fila < 1 Or Fila >= grdLotes.Rows Then Exit Sub
+If grdLotes.TextMatrix(Fila, COL_ID) = "" Then Exit Sub
 If Var_Vista = "P" And grdLotes.MouseCol = COL_MARCA Then Call Alternar_Marca(Fila)
 Call Cargar_Detalle(CLng(Val(grdLotes.TextMatrix(Fila, COL_ID))))
 End Sub
@@ -669,6 +682,7 @@ Private Sub grdLotes_DblClick()
 Dim Fila As Long
 Fila = grdLotes.MouseRow
 If Fila < 1 Or Fila >= grdLotes.Rows Then Exit Sub
+If grdLotes.TextMatrix(Fila, COL_ID) = "" Then Exit Sub
 If Var_Vista = "P" And grdLotes.MouseCol <> COL_MARCA Then Call Alternar_Marca(Fila)
 End Sub
 

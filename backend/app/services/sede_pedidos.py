@@ -139,6 +139,16 @@ async def items_pendientes(db_temp: AsyncSession, cid: int, order_number: str) -
     return {int(f[0]) for f in filas}
 
 
+async def pedidos_pendientes_caja(db: AsyncSession, cid: int) -> set:
+    """Pedidos con algo enviado desde la web que la caja aún no ha aceptado (para las tarjetas de mesa).
+    Lee solo pos_sede_lotes (easyposweb): no depende de la columna Sede_Pendiente."""
+    filas = (await db.execute(text("""
+        SELECT DISTINCT nro_pedido FROM pos_sede_lotes
+        WHERE company_id = :c AND estado IN ('PENDIENTE','RECIBIDO','ACEPTADO','ERROR')
+    """), {"c": cid})).all()
+    return {f[0] for f in filas}
+
+
 async def rechazos_recientes(db: AsyncSession, cid: int, order_number: str) -> list:
     filas = (await db.execute(text("""
         SELECT id, tipo, items, total, motivo, procesado_por, procesado_en FROM pos_sede_lotes

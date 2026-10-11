@@ -339,6 +339,7 @@ async def get_mesas(
     locks: dict = {int(r["Id_Mesa"]): {"name": _quien(r), "token": r["editing_token"]} for r in lock_rows}
 
     # Construir respuesta por zonas
+    pend_caja = await sede_svc.pedidos_pendientes_caja(db, cid)   # enviados desde la web sin aceptar en caja
     zones: dict = {}
     for r in layout_rows:
         zid = r["zone_id"] or 0
@@ -369,6 +370,7 @@ async def get_mesas(
             "waiter_name":  waiter_names.get(order_info["waiter_id"]) if order_info else None,
             "daily_seq":    order_info["daily_seq"] if order_info else None,
             "editing_by":   lk["name"] if lk else None,
+            "pendiente_caja": bool(order_info and order_info["order_number"] in pend_caja),
         })
 
     return sorted(zones.values(), key=lambda z: z["order_index"])

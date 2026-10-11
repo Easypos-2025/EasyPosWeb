@@ -46,6 +46,7 @@
           </div>
           <div class="mesa-card__status">
             <span v-if="t.status === 'free'">Disponible</span>
+            <span v-else-if="t.pendiente_caja" class="mesa-card__pend"><i class="bi bi-hourglass-split"></i> Pendiente de caja</span>
             <span v-else-if="t.status === 'bill_requested'">Solicitó cuenta</span>
             <span v-else>Ocupada</span>
           </div>
@@ -295,6 +296,7 @@ async function openTable() {
 .mesa-card--occupied .mesa-card__icon { color: #dc2626; }
 .mesa-card--occupied .mesa-card__status { color: #dc2626; }
 
+.mesa-card__pend { color: #b45309; font-weight: 700; }
 .mesa-card--bill_requested {
   border-color: #fde68a;
   background: #fffbeb;
