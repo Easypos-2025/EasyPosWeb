@@ -9,11 +9,15 @@ BD del escritorio, backend/agente_local).
      POST latido        URL/IP local y versión (cada minuto; reemplaza el directorio easypos_api)
      POST errores       errores del agente y de sus dispositivos → Monitor de Errores (AGENTE_LOCAL)
      GET  fotos-platos  fotos subidas en la web para copiarlas al PC (pos_dishes.id = Id_Plato)
+     GET  pedidos/pendientes · POST pedidos/recibidos · POST pedidos/resultado
+                        pedidos web que esperan la aceptación en caja (sede_pedidos.py)
 
 La clave es por empresa (no la global de la sincronización del escritorio). En la BD solo queda
 su SHA-256 y se muestra una sola vez al crearla o regenerarla.
 """
 import hashlib
+import io
+import json
 import logging
 import os
 import re
@@ -30,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_sysadmin
 from app.auth.tenant import tenant_guard
-from app.database import get_db
+from app.database import get_datatemppos_db, get_db
 from app.services import error_log
 
 log = logging.getLogger(__name__)
@@ -306,6 +310,127 @@ async def recibir_errores(data: ErroresIn, request: Request, agente: dict = Depe
             stack=ev.detalle, info=info, codigo_error=f"AGENTE_{ev.tipo}", componente=ev.origen,
         ))
     return {"ok": True, "refs": [r for r in refs if r]}
+
+
+# ───────────────────────────── Pedidos web → escritorio ─────────────────────────────
+# Lotes pendientes de aceptar en caja (app/services/sede_pedidos.py). El agente los baja cada 10 s,
+# confirma que los recibió y reporta lo que hizo el cajero. La empresa es SIEMPRE la de la clave.
+
+MAX_LOTES_ENVIO = 20
+
+
+@router_agente.get("/pedidos/pendientes")
+async def pedidos_pendientes(agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    cid = agente["company_id"]
+    lotes = (await db.execute(text("""
+        SELECT id, nro_pedido, tipo, canal, id_mesa, mesa, mesero, mesero_nombre, id_cliente, comensales,
+               total, items, enviado_por, creado_en
+        FROM pos_sede_lotes WHERE company_id = :c AND estado = 'PENDIENTE'
+        ORDER BY id LIMIT :n
+    """), {"c": cid, "n": MAX_LOTES_ENVIO})).mappings().all()
+    if not lotes:
+        return {"lotes": []}
+    ids = [int(l["id"]) for l in lotes]
+    ph = ", ".join(f":l{n}" for n in range(len(ids)))
+    por_lote: dict = {}
+    for r in (await db.execute(text(f"""
+        SELECT lote_id, item, id_plato, descripcion, cantidad, valor, novedad, cambios,
+               producto_personalizado, insumos, novedades
+        FROM pos_sede_lote_items WHERE company_id = :c AND lote_id IN ({ph}) ORDER BY lote_id, item
+    """), {"c": cid, **{f"l{n}": v for n, v in enumerate(ids)}})).mappings().all():
+        por_lote.setdefault(int(r["lote_id"]), []).append({
+            "item": int(r["item"]), "id_plato": int(r["id_plato"]), "descripcion": r["descripcion"],
+            "cantidad": float(r["cantidad"]), "valor": int(r["valor"]), "novedad": r["novedad"],
+            "cambios": r["cambios"], "producto_personalizado": r["producto_personalizado"],
+            "insumos": json.loads(r["insumos"] or "[]"), "novedades": json.loads(r["novedades"] or "[]")})
+    return {"lotes": [{
+        "id": int(l["id"]), "nro_pedido": l["nro_pedido"], "tipo": l["tipo"], "canal": l["canal"],
+        "id_mesa": int(l["id_mesa"]), "mesa": l["mesa"], "mesero": int(l["mesero"]),
+        "mesero_nombre": l["mesero_nombre"], "id_cliente": int(l["id_cliente"]), "comensales": int(l["comensales"]),
+        "total": int(l["total"]), "enviado_por": l["enviado_por"],
+        "creado_en": l["creado_en"].isoformat(timespec="seconds") if l["creado_en"] else None,
+        "items": por_lote.get(int(l["id"]), [])} for l in lotes]}
+
+
+class RecibidosIn(BaseModel):
+    ids: list[int] = Field(max_length=MAX_LOTES_ENVIO)
+
+
+@router_agente.post("/pedidos/recibidos")
+async def pedidos_recibidos(data: RecibidosIn, agente: dict = Depends(agente_actual),
+                            db: AsyncSession = Depends(get_db)):
+    if data.ids:
+        ph = ", ".join(f":l{n}" for n in range(len(data.ids)))
+        await db.execute(text(f"""
+            UPDATE pos_sede_lotes SET estado = 'RECIBIDO', recibido_en = NOW()
+            WHERE company_id = :c AND estado = 'PENDIENTE' AND id IN ({ph})
+        """), {"c": agente["company_id"], **{f"l{n}": int(v) for n, v in enumerate(data.ids)}})
+        await db.commit()
+    return {"ok": True}
+
+
+class ResultadoLoteIn(BaseModel):
+    id: int = Field(gt=0)
+    estado: Literal["ACEPTADO", "APLICADO", "RECHAZADO", "ERROR"]
+    por: Optional[str] = Field(default=None, max_length=150)
+    desde: Optional[Literal["VB", "MINIAPP"]] = None
+    pc: Optional[str] = Field(default=None, max_length=100)
+    motivo: Optional[str] = Field(default=None, max_length=255)
+    mensaje: Optional[str] = Field(default=None, max_length=500)
+
+
+class ResultadosIn(BaseModel):
+    resultados: list[ResultadoLoteIn] = Field(max_length=50)
+
+
+# Desde qué estados se puede llegar a cada uno (lo repetido se ignora: el agente reintenta sin daño)
+_TRANSICIONES = {
+    "ACEPTADO":  ("PENDIENTE", "RECIBIDO", "ERROR"),
+    "APLICADO":  ("PENDIENTE", "RECIBIDO", "ACEPTADO", "ERROR"),
+    "RECHAZADO": ("PENDIENTE", "RECIBIDO", "ACEPTADO", "ERROR"),
+    "ERROR":     ("PENDIENTE", "RECIBIDO", "ACEPTADO", "ERROR"),
+}
+
+
+@router_agente.post("/pedidos/resultado")
+async def pedidos_resultado(data: ResultadosIn, agente: dict = Depends(agente_actual),
+                            db: AsyncSession = Depends(get_db), db_temp: AsyncSession = Depends(get_datatemppos_db)):
+    from app.services import sede_pedidos
+    cid = agente["company_id"]
+    aplicados = []
+    for r in data.resultados:
+        lote = (await db.execute(text("""
+            SELECT id, company_id, nro_pedido, tipo, estado FROM pos_sede_lotes
+            WHERE id = :id AND company_id = :c FOR UPDATE
+        """), {"id": r.id, "c": cid})).mappings().first()
+        if not lote:
+            continue
+        if lote["estado"] not in _TRANSICIONES[r.estado]:
+            aplicados.append(r.id)          # ya estaba: se confirma para que el agente no reintente
+            continue
+        motivo = (r.motivo or "").strip() or None
+        if r.estado == "RECHAZADO" and not motivo:
+            continue                         # el rechazo siempre lleva motivo
+        if r.estado == "APLICADO":
+            await sede_pedidos.aplicar_en_nube(db, db_temp, dict(lote))
+        elif r.estado == "RECHAZADO":
+            await sede_pedidos.rechazar_en_nube(db, db_temp, dict(lote))
+        await db.execute(text("""
+            UPDATE pos_sede_lotes SET estado = :e,
+                procesado_en    = IF(:e IN ('ACEPTADO','RECHAZADO','APLICADO') AND procesado_en IS NULL, NOW(), procesado_en),
+                aplicado_en     = IF(:e = 'APLICADO', NOW(), aplicado_en),
+                procesado_por   = COALESCE(:por, procesado_por),
+                procesado_desde = COALESCE(:desde, procesado_desde),
+                pc              = COALESCE(:pc, pc),
+                motivo          = COALESCE(:motivo, motivo),
+                mensaje         = IF(:e = 'ERROR', :msg, NULL)
+            WHERE id = :id AND company_id = :c
+        """), {"e": r.estado, "por": r.por, "desde": r.desde, "pc": r.pc, "motivo": motivo,
+               "msg": r.mensaje, "id": r.id, "c": cid})
+        await db_temp.commit()
+        await db.commit()
+        aplicados.append(r.id)
+    return {"ok": True, "confirmados": aplicados}
 
 
 @router_agente.get("/fotos-platos")

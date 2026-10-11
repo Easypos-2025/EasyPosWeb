@@ -41,6 +41,7 @@ import { api, guardarAdmin } from "../../api"
 // Menú del panel (agregar aquí las nuevas utilidades)
 const MENU = [
   { ruta: "/admin",              nombre: "Dashboard",    icono: "tablero" },
+  { ruta: "/admin/pedidos-web",  nombre: "Pedidos web",  icono: "nube", contador: "pedidosWeb" },
   { ruta: "/admin/errores",      nombre: "Errores",      icono: "alerta", contador: "errores" },
   { ruta: "/admin/dispositivos", nombre: "Dispositivos", icono: "celular", contador: "sinConexion" },
   { ruta: "/admin/fotos",        nombre: "Fotos de la web", icono: "foto" },
@@ -55,6 +56,7 @@ const empresa = computed(() => resumen.value?.empresa || "")
 const contadores = computed(() => {
   const d = resumen.value?.dispositivos || {}
   return { errores: resumen.value?.errores?.sin_resolver || 0,
+           pedidosWeb: resumen.value?.pedidos_web_pendientes || 0,
            sinConexion: Math.max(0, (d.total || 0) - (d.conectados || 0) - (d.bloqueados || 0)) }
 })
 let temporizador = null

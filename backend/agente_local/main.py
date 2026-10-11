@@ -17,6 +17,7 @@ from .db import motor_empresa, motor_temp
 from .esquema import crear_esquema
 from .seguridad import ip_cliente
 from .routers import admin, catalogo, dispositivos, mesas, pedidos
+from .servicios import pedidos_web
 
 _dir_logs = config.BASE / "logs"
 _dir_logs.mkdir(exist_ok=True)
@@ -35,8 +36,10 @@ async def _ciclo(app: FastAPI):
     await actualizador.revisar_resultado()
     actualizador.leer_resultado()                        # último resultado ya reportado (para el panel)
     tarea_nube = asyncio.create_task(nube.ciclo())      # latido, errores, fotos y actualizaciones
+    tarea_pedidos = asyncio.create_task(pedidos_web.ciclo())   # pedidos web: aceptación en caja
     yield
     tarea_nube.cancel()
+    tarea_pedidos.cancel()
     await motor_empresa.dispose()
     await motor_temp.dispose()
 

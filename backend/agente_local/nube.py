@@ -4,7 +4,9 @@ Comunicación del agente con la nube (EasyPosWeb), con la clave propia de la emp
 
   · latido cada minuto: URL/IP local y versión (la nube sabe dónde está el agente)
   · errores pendientes de ag_errores → Monitor de Errores de la nube (tipo AGENTE_LOCAL)
-  · fotos de los platos subidas en la web → carpeta de fotos del escritorio (una vez al día)
+  · fotos de los platos subidas en la web → carpeta de fotos del escritorio: SOLO con el botón del
+    panel (decisión 2026-10-10: las tablas maestras se bajan con intervención humana)
+  · pedidos web: ciclo aparte en servicios/pedidos_web.py (cada 10 s)
   · versión vigente del agente → descarga y, al abrir turno, actualización (actualizador.py)
 
 Todo es de salida (el PC de caja no abre puertos a internet). Sin internet el agente sigue
@@ -17,7 +19,7 @@ import re
 import socket
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from sqlalchemy import text
 
@@ -150,8 +152,6 @@ async def ciclo() -> None:
         estado["mensaje"] = "Sin clave de la nube (AG_NUBE_CLAVE): el agente no reporta a la nube."
         return
     from . import actualizador
-    from .servicios import fotos_web           # evita importación circular al arrancar
-    proximas_fotos = datetime.now() + timedelta(minutes=2)
     fecha_turno = None
     while True:
         try:
@@ -168,9 +168,6 @@ async def ciclo() -> None:
             # Opción C (forzada desde la nube) y D (horas sin uso)
             if not actualizador.forzada():
                 await actualizador.sin_uso()
-            if datetime.now() >= proximas_fotos:
-                estado["fotos"] = await fotos_web.sincronizar()
-                proximas_fotos = datetime.now() + timedelta(hours=24)
             estado.update(ultimo_ok=datetime.now(), mensaje="Conectado con la nube.")
         except ErrorNube as e:
             estado.update(ultimo_error=datetime.now(), mensaje=str(e))

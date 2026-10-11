@@ -82,6 +82,66 @@ TABLAS = [
         KEY ix_ag_err_estado (estado, ultima)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # Pedidos web que esperan la aceptación en caja (servicios/pedidos_web.py). id = id del lote en la
+    # nube. Nunca se borran: son el histórico para reclamos. El form VB6 y el panel solo cambian
+    # estado PENDIENTE → ACEPTADO / RECHAZADO; el agente aplica y reporta a la nube (nube_estado).
+    """
+    CREATE TABLE IF NOT EXISTS ag_pw_lote (
+        id              INT           NOT NULL PRIMARY KEY,
+        nro_pedido      VARCHAR(255)  NOT NULL,
+        tipo            VARCHAR(10)   NOT NULL,
+        canal           VARCHAR(20)   NOT NULL DEFAULT 'MESA',
+        id_mesa         INT           NOT NULL DEFAULT 0,
+        mesa            VARCHAR(200)  NULL,
+        mesero          INT           NOT NULL DEFAULT 0,
+        mesero_nombre   VARCHAR(150)  NULL,
+        id_cliente      INT           NOT NULL DEFAULT 1,
+        comensales      INT           NOT NULL DEFAULT 1,
+        total           INT           NOT NULL DEFAULT 0,
+        items           INT           NOT NULL DEFAULT 0,
+        enviado_por     VARCHAR(150)  NULL,
+        creado_en       DATETIME      NULL,
+        recibido_en     DATETIME      NOT NULL,
+        estado          VARCHAR(12)   NOT NULL DEFAULT 'PENDIENTE',
+        procesado_por   VARCHAR(150)  NULL,
+        procesado_desde VARCHAR(20)   NULL,
+        pc              VARCHAR(100)  NULL,
+        procesado_en    DATETIME      NULL,
+        aplicado_en     DATETIME      NULL,
+        motivo          VARCHAR(255)  NULL,
+        mensaje         VARCHAR(500)  NULL,
+        nube_estado     VARCHAR(12)   NULL,
+        KEY ix_ag_pw_estado (estado, id),
+        KEY ix_ag_pw_procesado (procesado_en),
+        KEY ix_ag_pw_pedido (nro_pedido)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ag_pw_item (
+        lote_id                INT            NOT NULL,
+        item                   INT            NOT NULL,
+        id_plato               INT            NOT NULL,
+        descripcion            VARCHAR(255)   NULL,
+        cantidad               DECIMAL(12,3)  NOT NULL DEFAULT 1,
+        valor                  INT            NOT NULL DEFAULT 0,
+        novedad                VARCHAR(255)   NULL,
+        cambios                VARCHAR(255)   NULL,
+        producto_personalizado VARCHAR(1000)  NULL,
+        insumos                TEXT           NULL,
+        novedades              TEXT           NULL,
+        PRIMARY KEY (lote_id, item)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    # Ítem de la web → grupo de filas del escritorio (Depende). Evita aplicar dos veces un lote.
+    """
+    CREATE TABLE IF NOT EXISTS ag_pw_mapa (
+        nro_pedido  VARCHAR(255)  NOT NULL,
+        item_web    INT           NOT NULL,
+        depende     INT           NOT NULL,
+        lote_id     INT           NOT NULL,
+        PRIMARY KEY (nro_pedido, item_web)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
     """
     CREATE TABLE IF NOT EXISTS ag_config (

@@ -18,6 +18,7 @@ from typing import Optional, List
 from app.database import get_db, get_datatemppos_db
 from app.services import comanda_armado as armado_svc
 from app.services import permisos
+from app.services import sede_pedidos as sede_svc
 from app.auth import tenant
 from app.services import clientes as clientes_svc
 from app.auth.jwt_handler import create_access_token, decode_access_token
@@ -543,6 +544,11 @@ async def get_orden_mesa(
     except HTTPException:
         customer_info = {"id_cliente": int(order["Id_Cliente"] or 0), "nombre": f"Cliente {order['Id_Cliente']}"}
 
+    # Empresa con escritorio: ítems pendientes de aceptar en caja y rechazos recientes de la caja
+    con_caja = await sede_svc.tiene_sede(db, cid)
+    pendientes = await sede_svc.items_pendientes(db_temp, cid, on) if con_caja else set()
+    rechazos = await sede_svc.rechazos_recientes(db, cid, on) if con_caja else []
+
     items = []
     for r in items_rows:
         assembly = assembly_map.get(int(r["Item"]), [])
@@ -567,7 +573,8 @@ async def get_orden_mesa(
             "changes":   r["Cambios"],
             "assembly":  assembly,
             "dish_time": hora_plato,
-            "sent":      sent,
+            "sent":      sent or int(r["Item"]) in pendientes,
+            "pending_caja": int(r["Item"]) in pendientes,
             "typification_id": int(r["Id_Tipificacion"] or 0),
             # Nombre de lo que se vende (nombre + descripción personalizada); pedidos antiguos traían JSON
             "custom_product": None if str(r["Producto_Personalizado"] or "").startswith("{")
@@ -586,6 +593,8 @@ async def get_orden_mesa(
             "table_name":   order["Mesa"],
             "daily_seq":    seq_map.get(on, 1),
             "customer":     customer_info,
+            "con_caja":     con_caja,
+            "rechazos_caja": rechazos,
         },
         "items": items,
     }
@@ -1072,7 +1081,7 @@ async def actualizar_item(
     await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     current = (await db_temp.execute(text("""
-        SELECT Cantidad, Valor FROM temp_detalle_comanda_parcial
+        SELECT Cantidad, Valor, Salio FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND Nro_Factura='0'
           AND Id_Plato=:did AND Item=:item AND company_id=:cid AND Mostrar=1
     """), {
@@ -1081,6 +1090,15 @@ async def actualizar_item(
     })).mappings().first()
     if not current:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
+
+    enviado = int(current["Salio"] or 0) == 1
+    # Como en el escritorio: la cantidad de un producto ya enviado no cambia (se agrega otro o se elimina)
+    if enviado and data.quantity is not None and float(data.quantity) != float(current["Cantidad"] or 0):
+        raise HTTPException(status_code=409, detail="La cantidad de un producto ya enviado no se puede cambiar. "
+                                                    "Agregue otro producto o elimínelo y móntelo de nuevo.")
+    # Con escritorio, lo enviado (o pendiente de aceptar en caja) no se modifica desde la web
+    if enviado and await sede_svc.tiene_sede(db, cid):
+        raise HTTPException(status_code=409, detail="Este producto ya se envió a caja: no se puede modificar desde aquí.")
 
     sets, params = [], {
         "on": data.order_number,
@@ -1169,6 +1187,9 @@ async def aplicar_descuento_item(
     cid = payload["company_id"]
     permisos.exigir(await permisos.permisos_comanda(db, payload), "realizar_descuentos",
                     "Su rol no tiene permiso para realizar descuentos")
+    # Con escritorio el descuento se aplica en caja (el lote lleva el precio, no la tipificación)
+    if await sede_svc.tiene_sede(db, cid):
+        raise HTTPException(status_code=409, detail="En esta empresa los descuentos se aplican en caja.")
     await _exigir_mesa(db_temp, cid, x_edit_token, order_number=data.order_number)
 
     current = (await db_temp.execute(text("""
@@ -1247,6 +1268,11 @@ async def eliminar_item(
         FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND Nro_Factura='0' AND Id_Plato=:did AND Item=:item AND company_id=:cid
     """), {"on": data.order_number, "did": data.dish_id, "item": data.item, "cid": cid})).scalar()
+    # Con escritorio: lo enviado (pendiente o aceptado en caja) se elimina desde la caja
+    if int(impreso or 0) and await sede_svc.tiene_sede(db, cid):
+        if await sede_svc.item_pendiente(db_temp, cid, data.order_number, data.item):
+            raise HTTPException(status_code=409, detail="Este producto está pendiente de aceptar en caja.")
+        raise HTTPException(status_code=409, detail="Este producto ya se envió a caja: solicite la eliminación en caja.")
     if int(impreso or 0):
         permisos.exigir(await permisos.permisos_comanda(db, payload), "eliminar_productos",
                         "El producto ya se imprimió: solo un usuario con permiso puede eliminarlo")
@@ -1296,6 +1322,16 @@ async def enviar_cocina(
 
     is_nuevo = int(order["Salio"] or 0) == 0
     tipo = "nuevo" if is_nuevo else "agregado"
+
+    # Empresa con escritorio (Agente Local): no se envía, queda un lote pendiente de aceptar en caja
+    if await sede_svc.tiene_sede(db, cid):
+        enviado_por = payload.get("name") or payload.get("username") or (
+            f"mesero {payload.get('waiter_id')}" if payload.get("waiter_id") else None)
+        lote = await sede_svc.crear_lote(db, db_temp, cid, data.order_number, data.date,
+                                         is_nuevo and data.order_number.startswith("WEB-"), enviado_por)
+        await db.commit()
+        await db_temp.commit()
+        return {"tipo": tipo, "sent": lote["items"], "pendiente_caja": True}
 
     # Si es NUEVO: activar visibilidad del pedido completo en tc
     if is_nuevo:
@@ -1378,6 +1414,10 @@ async def cancelar_orden(
         FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND Fecha=:date AND company_id=:cid
     """), {"on": on, "date": fecha, "cid": cid})).mappings().all()
+
+    # Con escritorio: si algo ya se envió a caja (pendiente o aceptado), la cuenta se elimina en caja
+    if any(int(r["Salio"] or 0) == 1 for r in all_items) and await sede_svc.tiene_sede(db, cid):
+        raise HTTPException(status_code=409, detail="Esta cuenta ya tiene productos enviados a caja: elimínela desde la caja.")
 
     # ── Evento TV CANCELADO (solo si ya salió a cocina) ───────────────────────
     tv_notified = 0
@@ -1578,11 +1618,15 @@ async def reimprimir_orden(
         raise HTTPException(status_code=400, detail="El pedido aún no ha sido enviado a cocina")
 
     items_rows = (await db_temp.execute(text("""
-        SELECT Id_Plato, Cantidad, Novedad, Hora AS hora_tomado
+        SELECT Id_Plato, Item, Cantidad, Novedad, Hora AS hora_tomado
         FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND Fecha=:date AND Nro_Factura='0'
           AND company_id=:cid AND Mostrar=1 AND Salio=1
     """), {"on": data.order_number, "date": data.date, "cid": cid})).mappings().all()
+    # Con escritorio: lo pendiente de aceptar en caja no se imprime
+    if await sede_svc.tiene_sede(db, cid):
+        pendientes = await sede_svc.items_pendientes(db_temp, cid, data.order_number)
+        items_rows = [r for r in items_rows if int(r["Item"]) not in pendientes]
     if not items_rows:
         raise HTTPException(status_code=400, detail="Sin ítems enviados para reimprimir")
 

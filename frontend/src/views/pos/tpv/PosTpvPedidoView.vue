@@ -168,7 +168,8 @@
               <span v-if="group.notes"   class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
               <span v-if="group.hasDiscount" class="ci-tag ci-descuento"><i class="bi bi-percent"></i> Descuento</span>
-              <span v-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
+              <span v-if="group.hasPending" class="ci-pend">⏳ pendiente de caja</span>
+              <span v-else-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
             </div>
           </div>
         </div>
@@ -404,6 +405,7 @@ const groupedItems = computed(() => {
   }
   for (const g of groups) {
     g.lastSent    = g.allItems.every(i => i.sent && !i.isNew)
+    g.hasPending  = g.allItems.some(i => i.pending_caja)
     g.unitPrice   = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
     g.hasDiscount = !!g.allItems[g.allItems.length - 1]?.typification_id
   }
@@ -451,6 +453,15 @@ onUnmounted(() => {
   mesaLock.liberar()
 })
 
+// Empresa con escritorio: avisa una sola vez los envíos que la caja rechazó (con su motivo)
+function avisarRechazos(o) {
+  for (const r of o?.rechazos_caja || []) {
+    const k = `rechazo_caja_${r.lote}`
+    try { if (sessionStorage.getItem(k)) continue; sessionStorage.setItem(k, '1') } catch { /* sin almacenamiento */ }
+    showToast(`La caja rechazó ${r.items} producto(s): ${r.motivo || 'sin motivo'}`, 'warning', 6000)
+  }
+}
+
 async function loadOrder() {
   try {
     const params = {}
@@ -458,6 +469,7 @@ async function loadOrder() {
     const res = await apiComanda.get(`/api/pos/comanda/mesa/${tableId.value}/orden`, { params })
     if (res.data.order) {
       order.value = res.data.order
+      avisarRechazos(res.data.order)
       items.value = res.data.items.map(i => ({
         ...i, custom_description: _customFrom(i), isNew: false, _deleted: false, _dirty: false,
         _origQty: i.quantity, _origNotes: i.notes, _origChanges: i.changes,
@@ -708,9 +720,10 @@ async function submitOrder() {
       })
     }
     if (newItems.length) {
-      await apiComanda.post('/api/pos/comanda/orden/cocina', {
+      const rc = await apiComanda.post('/api/pos/comanda/orden/cocina', {
         order_number: order.value.order_number, date: order.value.date,
       })
+      if (rc.data?.pendiente_caja) showToast('Enviado a caja: queda pendiente de aceptar', 'info', 2500)
     }
     await mesaLock.liberar()
     router.push('/pos/tpv/mesas?tab=abiertas')
@@ -1194,6 +1207,7 @@ async function cancelOrder() {
 .ci-change    { background: #fff7ed; color: #c2410c; border-color: #fed7aa; text-transform: none; }
 .ci-descuento { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 700; text-transform: none; }
 .ci-sent   { color: #16a34a; font-size: .65rem; font-weight: 700; align-self: center; }
+.ci-pend   { color: #b45309; font-size: .65rem; font-weight: 700; align-self: center; }
 
 .tpv-cart__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 

@@ -6,7 +6,7 @@
         carpeta de fotos de productos configurada en el escritorio (convertidas a JPG).</p>
       <p><b>La web manda:</b> si un producto tiene foto en EasyPosWeb, esa reemplaza la del escritorio. Si prefiere
         conservar las fotos del escritorio, no suba fotos de esos productos en la web.</p>
-      <p class="sub">Se hace automáticamente una vez al día; con este botón se hace ahora.</p>
+      <p class="sub">Solo se hace con este botón (no es automático).</p>
       <button class="btn btn--primario" :disabled="trabajando || !r?.nube?.configurada" @click="sincronizar">
         <span v-if="trabajando" class="giro" style="width:20px;height:20px;border-width:2px"></span>
         <template v-else><Icono nombre="foto" /> Traer fotos ahora</template>

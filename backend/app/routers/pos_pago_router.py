@@ -56,7 +56,8 @@ async def _siguiente_id_registro(db: AsyncSession, tabla: str, cid: int) -> int:
     return int(row["next"])
 
 
-async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str, token: Optional[str] = None):
+async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str, token: Optional[str] = None,
+                        db: Optional[AsyncSession] = None):
     orden = (await db_temp.execute(text("""
         SELECT Nro_Pedido, Fecha, Mesa, Hora, Mesero, Valor, Nro_Comenzales, Domicilio, Id_Cliente
         FROM temp_comanda
@@ -75,6 +76,12 @@ async def _cargar_cuenta(db_temp: AsyncSession, cid: int, order_number: str, tok
     """), {"cid": cid, "on": order_number})).mappings().all()
     if not items:
         raise HTTPException(status_code=400, detail="La cuenta no tiene ítems por pagar")
+    # Empresa con escritorio: lo enviado desde la web debe estar aceptado en caja antes de cobrarse
+    if db is not None and (await db.execute(text("""
+        SELECT 1 FROM pos_sede_lotes WHERE company_id = :cid AND nro_pedido = :on
+          AND estado IN ('PENDIENTE','RECIBIDO','ACEPTADO','ERROR') LIMIT 1
+    """), {"cid": cid, "on": order_number})).scalar():
+        raise HTTPException(status_code=409, detail="La cuenta tiene productos pendientes de aceptar en caja.")
     await _exigir_mesa_libre(db_temp, cid, orden["Mesa"], token)
     return orden, items
 
@@ -182,7 +189,7 @@ async def datos_pago(
     turno: dict = Depends(require_open_shift),
 ):
     cid = current_user.company_id
-    orden, items = await _cargar_cuenta(db_temp, cid, order_number, x_edit_token)
+    orden, items = await _cargar_cuenta(db_temp, cid, order_number, x_edit_token, db)
 
     dish_ids = list({int(i["Id_Plato"]) for i in items})
     ids = ",".join(str(d) for d in dish_ids)
@@ -258,7 +265,7 @@ async def _calcular(db: AsyncSession, db_temp: AsyncSession, cid: int, order_num
                     token: Optional[str] = None) -> dict:
     """Venta, descuento, propina, domicilio y total de los ítems marcados. Lo usan el
     registro del recibo y la cuenta previa: el navegador nunca envía valores."""
-    orden, items = await _cargar_cuenta(db_temp, cid, order_number, token)
+    orden, items = await _cargar_cuenta(db_temp, cid, order_number, token, db)
 
     # ── Ítems marcados (deben seguir abiertos en esta cuenta) ────────────────
     por_item = {int(i["Item"]): i for i in items}

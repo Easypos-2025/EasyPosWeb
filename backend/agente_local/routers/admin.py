@@ -12,6 +12,9 @@ Aquí irán llegando utilidades que hoy están en el programa de escritorio.
   POST /api/ag/admin/dispositivos/{id}/bloquear | habilitar | eliminar
   POST /api/ag/admin/fotos/sincronizar copiar las fotos de la web al escritorio
   POST /api/ag/admin/actualizar        aplicar ya la versión nueva (opción A; la B es al abrir turno)
+  GET  /api/ag/admin/pedidos-web       pedidos web pendientes de aceptar / procesados de una fecha
+  GET  /api/ag/admin/pedidos-web/{id}  detalle del lote
+  POST /api/ag/admin/pedidos-web/aceptar | rechazar   (rechazar exige motivo)
 """
 from datetime import datetime, timedelta, timezone
 
@@ -131,6 +134,8 @@ async def resumen(_=Depends(admin_actual), emp: AsyncSession = Depends(get_emp),
     """), {"l": limite})).mappings().first()
     pedidos = (await tmp.execute(text(
         "SELECT COUNT(*) FROM temp_comanda WHERE Movil = 1 AND Salio = 0"))).scalar() or 0
+    pedidos_web = (await tmp.execute(text(
+        "SELECT COUNT(*) FROM ag_pw_lote WHERE estado IN ('PENDIENTE', 'ERROR')"))).scalar() or 0
     n = nube.estado
     return {
         "empresa": (empresa or "").strip() or None, "version": VERSION,
@@ -138,6 +143,7 @@ async def resumen(_=Depends(admin_actual), emp: AsyncSession = Depends(get_emp),
         "errores": {k: int(v) for k, v in dict(e).items()},
         "dispositivos": {k: int(v or 0) for k, v in dict(d).items()},
         "pedidos_abiertos": int(pedidos),
+        "pedidos_web_pendientes": int(pedidos_web),
         "nube": {"configurada": n["configurada"], "mensaje": n["mensaje"], "empresa": n["empresa"],
                  "ultimo_ok": n["ultimo_ok"], "ultimo_error": n["ultimo_error"], "fotos": n["fotos"]},
         "actualizacion": estado_actualizacion(),
@@ -319,3 +325,80 @@ async def sincronizar_fotos(_=Depends(admin_actual)):
         raise HTTPException(status_code=502, detail=str(e))
     nube.estado["fotos"] = r
     return r
+
+
+# ───────────────────────────── pedidos web (aceptación en caja) ─────────────────────────────
+# Lo mismo que el form VB6 frmPedidosWeb: solo se marca ACEPTADO / RECHAZADO; el agente pasa lo
+# aceptado al escritorio (servicios/pedidos_web.py). Quién procesa: el nombre que escribe el usuario
+# (el panel tiene una sola clave de administrador) + el PC (IP) desde donde lo hizo.
+
+class ProcesarIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=50)
+    por: str = Field(min_length=2, max_length=60)
+    motivo: str | None = Field(default=None, max_length=255)
+
+
+def _lote(f) -> dict:
+    return {"id": int(f["id"]), "nro_pedido": f["nro_pedido"], "tipo": f["tipo"], "canal": f["canal"],
+            "mesa": f["mesa"], "mesero": f["mesero_nombre"] or (str(f["mesero"]) if f["mesero"] else ""),
+            "total": int(f["total"]), "items": int(f["items"]), "estado": f["estado"],
+            "enviado_por": f["enviado_por"], "creado_en": f["creado_en"], "recibido_en": f["recibido_en"],
+            "procesado_por": f["procesado_por"], "procesado_desde": f["procesado_desde"], "pc": f["pc"],
+            "procesado_en": f["procesado_en"], "aplicado_en": f["aplicado_en"], "motivo": f["motivo"],
+            "mensaje": f["mensaje"]}
+
+
+@router.get("/pedidos-web")
+async def pedidos_web(vista: str = Query("pendientes", pattern="^(pendientes|procesados)$"),
+                      fecha: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                      _=Depends(admin_actual), tmp: AsyncSession = Depends(get_tmp)):
+    if vista == "pendientes":
+        filas = (await tmp.execute(text("""
+            SELECT * FROM ag_pw_lote WHERE estado IN ('PENDIENTE', 'ACEPTADO', 'ERROR') ORDER BY id
+        """))).mappings().all()
+    else:
+        dia = fecha or datetime.now().strftime("%Y-%m-%d")
+        filas = (await tmp.execute(text("""
+            SELECT * FROM ag_pw_lote WHERE estado IN ('APLICADO', 'RECHAZADO')
+              AND procesado_en >= :d AND procesado_en < :d + INTERVAL 1 DAY
+            ORDER BY procesado_en DESC
+        """), {"d": dia})).mappings().all()
+    return {"lotes": [_lote(f) for f in filas]}
+
+
+@router.get("/pedidos-web/{id_lote}")
+async def pedido_web(id_lote: int, _=Depends(admin_actual), tmp: AsyncSession = Depends(get_tmp)):
+    f = (await tmp.execute(text("SELECT * FROM ag_pw_lote WHERE id = :i"), {"i": id_lote})).mappings().first()
+    if not f:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+    items = (await tmp.execute(text("""
+        SELECT item, id_plato, COALESCE(NULLIF(producto_personalizado, ''), descripcion) AS nombre,
+               cantidad, valor, novedad
+        FROM ag_pw_item WHERE lote_id = :i ORDER BY item
+    """), {"i": id_lote})).mappings().all()
+    return {**_lote(f), "detalle": [{"item": int(i["item"]), "id_plato": int(i["id_plato"]), "nombre": i["nombre"] or "",
+                                     "cantidad": float(i["cantidad"]), "valor": int(i["valor"]),
+                                     "novedad": i["novedad"] or ""} for i in items]}
+
+
+async def _procesar(data: ProcesarIn, request: Request, accion: str) -> dict:
+    from ..servicios import pedidos_web
+    motivo = " ".join((data.motivo or "").split())
+    if accion == "RECHAZADO" and len(motivo) < 3:
+        raise HTTPException(status_code=422, detail="Escriba el motivo del rechazo.")
+    ip = ip_cliente(request)
+    n = await pedidos_web.marcar(sorted(set(data.ids)), accion, " ".join(data.por.split()), "MINIAPP",
+                                 f"Panel {ip}", motivo or None)
+    await auditoria.registrar("pedido_web_" + ("aceptar" if accion == "ACEPTADO" else "rechazar"), "ok", ip,
+                              detalle=f"{n} de {len(data.ids)} · {data.por[:40]}" + (f" · {motivo[:120]}" if motivo else ""))
+    return {"ok": True, "procesados": n}
+
+
+@router.post("/pedidos-web/aceptar")
+async def aceptar_pedidos_web(data: ProcesarIn, request: Request, _=Depends(admin_actual)):
+    return await _procesar(data, request, "ACEPTADO")
+
+
+@router.post("/pedidos-web/rechazar")
+async def rechazar_pedidos_web(data: ProcesarIn, request: Request, _=Depends(admin_actual)):
+    return await _procesar(data, request, "RECHAZADO")
