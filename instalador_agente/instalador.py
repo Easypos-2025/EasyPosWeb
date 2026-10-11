@@ -129,6 +129,21 @@ PERMISOS_EMPRESA = {
     "platos": ("INSERT", "UPDATE"),                          # S3 catálogo de la web (y fotos)
     "plato_impresoras": ("INSERT", "DELETE"),                # S3
     "configuracion_sede": ("INSERT", "UPDATE"),              # S3
+    # S3b: catálogo completo de la web (insumos, categorías, clientes, armado, listas de precios…)
+    "forma_medida": ("INSERT", "UPDATE"),
+    "categoria_productos": ("INSERT", "UPDATE"),
+    "categoria_platos": ("INSERT", "UPDATE"),
+    "proveedores": ("INSERT", "UPDATE"),
+    "inventario_porciones": ("INSERT", "UPDATE"),
+    "insumos_forma_medida": ("INSERT", "DELETE"),
+    "insumos_proveedor": ("INSERT", "DELETE"),
+    "clientes": ("INSERT", "UPDATE"),
+    "inventario_porciones_plato": ("INSERT", "DELETE"),
+    "plato_armar": ("INSERT", "DELETE"),
+    "plato_armar_detalle": ("INSERT", "DELETE"),
+    "plato_producto": ("INSERT", "DELETE"),
+    "lista_precios_cliente": ("INSERT", "UPDATE"),
+    "lista_precios_cliente_cabecera": ("INSERT", "UPDATE"),
 }
 
 

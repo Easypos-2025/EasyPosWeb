@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_emp, get_tmp
 from ..servicios import catalogo, fotos
 from ..servicios.negocio import facturacion, fecha_negocio, opciones_toma
-from ..servicios.precios import CLIENTE_CONSUMIDOR_FINAL, con_impuesto, lista_cliente, precio_plato
+from ..servicios.precios import (CLIENTE_CONSUMIDOR_FINAL, MENSAJE_SIN_CONSUMIDOR_FINAL, con_impuesto, consumidor_final,
+                                 lista_cliente, precio_plato)
 from ..sesion import Mesero, mesero_actual
 from ..textos import textos
 
@@ -20,14 +21,19 @@ router = APIRouter(prefix="/api/ag", tags=["catalogo"])
 
 
 async def cliente_valido(emp: AsyncSession, id_cliente: int) -> dict:
+    # Sin cliente asignado (0 o 1) = Consumidor Final, verificado en la BD; si no existe no se toman pedidos
+    if id_cliente in (0, CLIENTE_CONSUMIDOR_FINAL):
+        cf = await consumidor_final(emp)
+        if not cf:
+            raise HTTPException(status_code=409, detail=MENSAJE_SIN_CONSUMIDOR_FINAL,
+                                headers={"X-Error-Code": "SIN_CONSUMIDOR_FINAL"})
+        id_cliente = cf
     fila = (await emp.execute(text("""
         SELECT Id_Cliente, cedula, nombres, Apellidos FROM clientes WHERE Id_Cliente = :c
     """), {"c": id_cliente})).mappings().first()
     if fila:
         nombre = " ".join(x for x in ((fila["nombres"] or "").strip(), (fila["Apellidos"] or "").strip()) if x)
         return {"id": int(fila["Id_Cliente"]), "nombre": nombre, "cedula": (fila["cedula"] or "").strip()}
-    if id_cliente == CLIENTE_CONSUMIDOR_FINAL:
-        return {"id": CLIENTE_CONSUMIDOR_FINAL, "nombre": "Consumidor Final", "cedula": "222222222222"}
     raise HTTPException(status_code=422, detail="El cliente no existe.")
 
 

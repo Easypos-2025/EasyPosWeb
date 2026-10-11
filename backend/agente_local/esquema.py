@@ -159,6 +159,18 @@ TABLAS = [
         confirmado  DATETIME  NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # S3b: número provisional de la web → número real del escritorio, por catálogo (plato, insumo, cliente…).
+    # Reemplaza a ag_maestros_mapa (solo platos); se copia una vez (MIGRAR) con entidad = 'plato'.
+    """
+    CREATE TABLE IF NOT EXISTS ag_maestros_mapa2 (
+        entidad     VARCHAR(30) NOT NULL DEFAULT 'plato',
+        id_web      INT         NOT NULL,
+        id_real     INT         NOT NULL,
+        creado      DATETIME    NOT NULL,
+        confirmado  DATETIME    NULL,
+        PRIMARY KEY (entidad, id_web)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
     """
     CREATE TABLE IF NOT EXISTS ag_config (
@@ -173,6 +185,7 @@ TABLAS = [
 MIGRAR = [
     ("ag_pw_lote", "ag_pw_lote2"),      # + motivo_solicitud (S2)
     ("ag_pw_mapa", "ag_pw_mapa2"),      # + eliminado_reportado (S2)
+    ("ag_maestros_mapa", "ag_maestros_mapa2"),   # + entidad (S3b)
 ]
 
 

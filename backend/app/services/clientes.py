@@ -30,7 +30,12 @@ async def ensure_consumidor_final(db: AsyncSession, cid: int) -> None:
 
 
 async def next_id_cliente(db: AsyncSession, cid: int) -> int:
-    # Punto único de numeración de clientes creados en la web (ver nota en el informe de la Fase 5)
+    # Punto único de numeración de clientes creados en la web (ver nota en el informe de la Fase 5).
+    # Con escritorio (S3): Id_Cliente provisional; el escritorio le asigna el real al sincronizar y,
+    # mientras tanto, sus pedidos bajan con Consumidor Final.
+    from app.services import sede_maestros, sede_pedidos
+    if await sede_pedidos.tiene_sede(db, cid):
+        return await sede_maestros.siguiente_id(db, "clientes", "id_cliente", cid, True)
     mx = (await db.execute(text(
         "SELECT COALESCE(MAX(id_cliente), 1) FROM clientes WHERE company_id = :cid FOR UPDATE"
     ), {"cid": cid})).scalar() or 1

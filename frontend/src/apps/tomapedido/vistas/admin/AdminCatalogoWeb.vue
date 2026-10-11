@@ -4,8 +4,8 @@
       <h2>Catálogo de la web</h2>
       <button class="btn btn--chico" :disabled="cargando || trabajando" @click="cargar"><Icono nombre="refrescar" :tam="16" /> Revisar</button>
     </div>
-    <p class="sub">Baja al programa de escritorio los platos creados o modificados en EasyPosWeb, sus impresoras, los datos de
-      la sede y las fotos. <b>La web manda</b>: lo que cambió allá reemplaza lo del escritorio. No es automático: se hace
+    <p class="sub">Baja al programa de escritorio lo creado o modificado en EasyPosWeb: formas de medida, categorías, proveedores,
+      insumos, clientes, platos (con impresoras, receta, armado y presentaciones), listas de precios, datos de la sede y fotos. <b>La web manda</b>: lo que cambió allá reemplaza lo del escritorio. No es automático: se hace
       con este botón (o desde el escritorio).</p>
 
     <div v-if="cargando && !datos" class="cargando"><span class="giro"></span></div>
@@ -16,11 +16,14 @@
         <h3>Pendiente de bajar</h3>
         <p v-if="!pend.total" class="vacio-chico">Todo está al día: la web no tiene cambios pendientes.</p>
         <ul v-else class="lista">
+          <li v-for="c in pend.catalogos || []" :key="c.entidad"><b>{{ c.nuevos + c.modificados }}</b> {{ c.nombre }}
+            <small v-if="c.nuevos">{{ c.nuevos }} nuevo(s): se crean en el escritorio con su número y la web lo actualiza.</small></li>
           <li v-if="pend.nuevos.length"><b>{{ pend.nuevos.length }}</b> plato(s) nuevo(s):
             <span class="nombres">{{ nombres(pend.nuevos) }}</span>
             <small>Se crean en el escritorio con su Id_Plato y quedan activos (en la web estaban inactivos esperando esto).</small></li>
           <li v-if="pend.modificados.length"><b>{{ pend.modificados.length }}</b> plato(s) modificado(s):
             <span class="nombres">{{ nombres(pend.modificados) }}</span></li>
+          <li v-if="pend.listas"><b>{{ pend.listas }}</b> precio(s) de listas de precios</li>
           <li v-if="pend.sede">Datos de la sede (nombre del almacén, razón social, NIT, dirección, correos, logo).</li>
           <li class="nota">Siempre se revisan también las fotos de los platos.</li>
         </ul>
@@ -35,6 +38,8 @@
         <p class="sub">Por {{ ultimo.quien }}</p>
         <ul class="lista">
           <li><b>{{ ultimo.nuevos }}</b> plato(s) nuevo(s) · <b>{{ ultimo.actualizados }}</b> actualizado(s)</li>
+          <li v-for="(c, n) in ultimo.catalogos || {}" :key="n">{{ n }}: <b>{{ c.nuevos }}</b> nuevo(s) · <b>{{ c.actualizados }}</b> actualizado(s)</li>
+          <li v-if="ultimo.listas"><b>{{ ultimo.listas }}</b> precio(s) de listas</li>
           <li v-if="ultimo.sede">Datos de la sede actualizados</li>
           <li v-if="ultimo.fotos && !ultimo.fotos.error">Fotos: {{ ultimo.fotos.descargadas || 0 }} descargadas, {{ ultimo.fotos.asignadas || 0 }} asignadas</li>
         </ul>
@@ -75,7 +80,7 @@ const trabajando = ref(false)
 const error = ref("")
 const dialogo = ref(null)
 
-const pend = computed(() => datos.value?.pendientes || { nuevos: [], modificados: [], sede: false, total: 0 })
+const pend = computed(() => datos.value?.pendientes || { catalogos: [], nuevos: [], modificados: [], listas: 0, sede: false, total: 0 })
 const ultimo = computed(() => ultimoLocal.value || datos.value?.ultimo || null)
 const fecha = (v) => (v ? new Date(v).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "—")
 const nombres = (l) => l.slice(0, 8).map(x => x.nombre || `#${x.id}`).join(", ") + (l.length > 8 ? ` y ${l.length - 8} más` : "")

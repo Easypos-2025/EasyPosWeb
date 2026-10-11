@@ -49,14 +49,19 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
 @router.post("", status_code=201)
 async def crear(data: CategoryIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
+    # Antes el id quedaba en 0 (la columna no es autoincremental). Con escritorio (S3): provisional,
+    # el escritorio le asigna su Cod_Categoria al sincronizar.
+    from app.services import sede_maestros, sede_pedidos
+    nuevo_id = await sede_maestros.siguiente_id(db, "pos_dish_categories", "id", user.company_id,
+                                                await sede_pedidos.tiene_sede(db, user.company_id))
     await db.execute(text("""
-        INSERT INTO pos_dish_categories (company_id, name, is_active)
-        VALUES (:cid, :name, :active)
-    """), {"cid": user.company_id, "name": data.name, "active": data.is_active})
+        INSERT INTO pos_dish_categories (id, company_id, name, is_active, synced)
+        VALUES (:id, :cid, :name, :active, 0)
+    """), {"id": nuevo_id, "cid": user.company_id, "name": data.name, "active": data.is_active})
     await db.commit()
     row = (await db.execute(text(
-        "SELECT id, company_id, name, is_active FROM pos_dish_categories WHERE company_id=:cid ORDER BY id DESC LIMIT 1"
-    ), {"cid": user.company_id})).mappings().one()
+        "SELECT id, company_id, name, is_active FROM pos_dish_categories WHERE company_id=:cid AND id=:id"
+    ), {"cid": user.company_id, "id": nuevo_id})).mappings().one()
     return dict(row)
 
 
@@ -64,7 +69,7 @@ async def crear(data: CategoryIn, authorization: str = Header(None), db: AsyncSe
 async def actualizar(cat_id: int, data: CategoryIn, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     await db.execute(text("""
-        UPDATE pos_dish_categories SET name=:name, is_active=:active
+        UPDATE pos_dish_categories SET name=:name, is_active=:active, synced=0
         WHERE id=:id AND company_id=:cid
     """), {"id": cat_id, "cid": user.company_id, "name": data.name, "active": data.is_active})
     await db.commit()
@@ -75,7 +80,7 @@ async def actualizar(cat_id: int, data: CategoryIn, authorization: str = Header(
 async def eliminar(cat_id: int, authorization: str = Header(None), db: AsyncSession = Depends(get_db)):
     user = await _get_user(authorization, db)
     await db.execute(text(
-        "UPDATE pos_dish_categories SET is_active=0 WHERE id=:id AND company_id=:cid"
+        "UPDATE pos_dish_categories SET is_active=0, synced=0 WHERE id=:id AND company_id=:cid"
     ), {"id": cat_id, "cid": user.company_id})
     await db.commit()
     return {"ok": True}

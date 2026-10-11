@@ -40,12 +40,13 @@ async def create_supplier(data: dict = Body(...), current_user: User = Depends(g
     if not (data.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="El nombre es requerido")
     # Consecutivo por empresa (= Id_Proveedor del escritorio); FOR UPDATE evita repetidos en concurrencia
-    max_prov = (await db.execute(text(
-        "SELECT COALESCE(MAX(id_proveedor), 0) FROM suppliers WHERE company_id = :cid FOR UPDATE"
-    ), {"cid": current_user.company_id})).scalar() or 0
+    # Con escritorio (S3): Id_Proveedor provisional; el escritorio le asigna el real al sincronizar
+    from app.services import sede_maestros, sede_pedidos
+    id_proveedor = await sede_maestros.siguiente_id(db, "suppliers", "id_proveedor", current_user.company_id,
+                                                    await sede_pedidos.tiene_sede(db, current_user.company_id))
     s = Supplier(
         company_id=current_user.company_id,
-        id_proveedor=int(max_prov) + 1,
+        id_proveedor=id_proveedor,
         telefono_celular=(data.get("telefono_celular") or "").strip() or None,
         synced=0,
         name=data["name"].strip(),

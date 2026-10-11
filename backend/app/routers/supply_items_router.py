@@ -164,9 +164,8 @@ async def create_forma_medida(data: CatalogoIn, current_user: User = Depends(get
     ), {"cid": cid, "n": data.name})).scalar()
     if dup:
         raise HTTPException(status_code=409, detail="Ya existe una forma de medida con ese nombre")
-    nid = int((await db.execute(text(
-        "SELECT COALESCE(MAX(id), 0) + 1 FROM pos_measure_forms WHERE company_id = :cid FOR UPDATE"
-    ), {"cid": cid})).scalar())
+    from app.services import sede_maestros, sede_pedidos
+    nid = await sede_maestros.siguiente_id(db, "pos_measure_forms", "id", cid, await sede_pedidos.tiene_sede(db, cid))
     await db.execute(text(
         "INSERT INTO pos_measure_forms (id, company_id, name, is_active, synced) VALUES (:id, :cid, :n, 1, 0)"   # forma_medida.Activa: 1 = activa
     ), {"id": nid, "cid": cid, "n": data.name})
@@ -190,9 +189,8 @@ async def create_categoria(data: CatalogoIn, current_user: User = Depends(get_cu
     ), {"cid": cid, "n": data.name})).scalar()
     if dup:
         raise HTTPException(status_code=409, detail="Ya existe una categoría con ese nombre")
-    nid = int((await db.execute(text(
-        "SELECT COALESCE(MAX(id), 0) + 1 FROM pos_product_categories WHERE company_id = :cid FOR UPDATE"
-    ), {"cid": cid})).scalar())
+    from app.services import sede_maestros, sede_pedidos
+    nid = await sede_maestros.siguiente_id(db, "pos_product_categories", "id", cid, await sede_pedidos.tiene_sede(db, cid))
     await db.execute(text(
         "INSERT INTO pos_product_categories (id, company_id, name, is_active, synced) VALUES (:id, :cid, :n, 1, 0)"
     ), {"id": nid, "cid": cid, "n": data.name})
@@ -220,7 +218,12 @@ async def create_supply_item(data: SupplyIn, current_user: User = Depends(get_cu
     unit_uso = await _valid_measure(db, cid, data.unit_uso_id)
     unit_id  = await _valid_measure(db, cid, data.unit_id) or unit_uso
     agrupar  = await _valid_category(db, cid, data.category_id)
-    id_item  = await next_id_item(db, cid)
+    # Con escritorio (S3): Id_Item provisional; el escritorio le asigna el real al sincronizar
+    from app.services import sede_maestros, sede_pedidos
+    if await sede_pedidos.tiene_sede(db, cid):
+        id_item = await sede_maestros.siguiente_id(db, "supply_items", "id_item", cid, True)
+    else:
+        id_item = await next_id_item(db, cid)
 
     item = SupplyItem(company_id=cid, code=data.code or None, description=data.description,
                       id_grupo=DEFAULT_ID_GRUPO, id_item=id_item, posicion=id_item, agrupar=agrupar,
@@ -341,6 +344,7 @@ async def set_proveedores_insumo(iid: int, data: ProveedoresIn, current_user: Us
                  precio_pactado, id_forma_medida, nombre_forma_medida, observacion, enviada_mysql)
             VALUES (:cid, :pid, :ins, CURDATE(), CURDATE(), 0, :mid, :mname, :obs, 0)
         """), {"cid": cid, "pid": pid, "ins": item.id_item, "mid": mid, "mname": mname[:50], "obs": obs})
+    item.synced = 0                    # S3: viaja con el insumo al escritorio
     await db.commit()
     return {"ok": True}
 
@@ -391,6 +395,7 @@ async def set_formas_insumo(iid: int, data: FormasMedidaIn, current_user: User =
             ON DUPLICATE KEY UPDATE cant_unidades_minimas = VALUES(cant_unidades_minimas),
                                     enviada_mysql = 0, updated_at = NOW()
         """), {"cid": cid, "ins": item.id_item, "mid": mid, "cant": cant})
+    item.synced = 0                    # S3: viaja con el insumo al escritorio
     await db.commit()
     return {"ok": True}
 

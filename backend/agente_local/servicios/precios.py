@@ -13,7 +13,21 @@ El dispositivo solo muestra estos precios; al guardar, el agente los vuelve a ca
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-CLIENTE_CONSUMIDOR_FINAL = 1
+CLIENTE_CONSUMIDOR_FINAL = 1          # lo que manda el dispositivo cuando no se asignó cliente
+CEDULA_CONSUMIDOR_FINAL = "222222222222"
+MENSAJE_SIN_CONSUMIDOR_FINAL = ("No existe el cliente Consumidor Final (cédula 222222222222) en el escritorio: "
+                                "créelo para poder tomar pedidos.")
+
+
+async def consumidor_final(emp: AsyncSession) -> int | None:
+    """Id_Cliente real del Consumidor Final (regla del usuario 2026-10-11: normalmente es el 1, pero se
+    verifica). Primero por su cédula; si no, el id 1. None = no existe → se bloquea la toma de pedido."""
+    por_cedula = (await emp.execute(text(
+        "SELECT MIN(Id_Cliente) FROM clientes WHERE TRIM(cedula) = :c"), {"c": CEDULA_CONSUMIDOR_FINAL})).scalar()
+    if por_cedula:
+        return int(por_cedula)
+    uno = (await emp.execute(text("SELECT Id_Cliente FROM clientes WHERE Id_Cliente = 1"))).scalar()
+    return int(uno) if uno else None
 
 
 async def lista_cliente(emp: AsyncSession, id_cliente: int,

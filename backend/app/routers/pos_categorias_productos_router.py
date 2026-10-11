@@ -111,9 +111,9 @@ async def crear(data: CategoriaIn, db: AsyncSession = Depends(get_db),
     cid = current_user.company_id
     nombre = _limpio(data.name)
     await _nombre_libre(db, cid, nombre)
-    nuevo_id = int((await db.execute(text(
-        "SELECT COALESCE(MAX(id), 0) + 1 FROM pos_product_categories WHERE company_id=:cid"
-    ), {"cid": cid})).scalar())
+    from app.services import sede_maestros, sede_pedidos
+    nuevo_id = await sede_maestros.siguiente_id(db, "pos_product_categories", "id", cid,
+                                                await sede_pedidos.tiene_sede(db, cid))
     await db.execute(text("""
         INSERT INTO pos_product_categories
             (id, company_id, name, percentage, is_active, require_selection, print_assembly_changes_only, synced)

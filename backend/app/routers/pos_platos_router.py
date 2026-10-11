@@ -211,6 +211,11 @@ async def _check_category(db: AsyncSession, cid: int, category_id: Optional[int]
         raise HTTPException(status_code=400, detail="Categoría no válida para esta empresa")
 
 
+async def _pendiente_escritorio(db: AsyncSession, cid: int, dish_id: int) -> None:
+    """S3: receta, presentaciones, armado e impresoras viajan con el plato al escritorio."""
+    await db.execute(text("UPDATE pos_dishes SET synced=0 WHERE id=:id AND company_id=:cid"), {"id": dish_id, "cid": cid})
+
+
 async def _upsert_general_price(db: AsyncSession, cid: int, dish_id: int, price: int,
                                 id_presentacion: int = 0) -> None:
     """El precio del plato (o de la variante) es el de la lista Default activa: se actualiza allí."""
@@ -761,6 +766,7 @@ async def add_insumo_fijo(
             posicion=VALUES(posicion), enviada_mysql=0, updated_at=NOW()
     """), {"cid": cid, "did": item_id, "gid": sup["id_grupo"], "iid": sup["id_item"],
            "p": data.porciones, "pos": sup["posicion"] or sup["id_item"]})
+    await _pendiente_escritorio(db, cid, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -778,6 +784,7 @@ async def upd_insumo_fijo(
     """), {"p": data.porciones, "did": item_id, "iid": id_item, "cid": user.company_id})
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="Insumo no asignado a este artículo")
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -791,6 +798,7 @@ async def del_insumo_fijo(
     await db.execute(text(
         "DELETE FROM inventario_porciones_plato WHERE id_plato=:did AND id_item=:iid AND company_id=:cid"
     ), {"did": item_id, "iid": id_item, "cid": user.company_id})
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -844,6 +852,7 @@ async def add_presentacion(
             description=VALUES(description), active=0, synced=0, updated_at=NOW()
     """), {"cid": cid, "did": item_id, "sup": data.supplier_id, "mid": data.measure_id,
            "mu": data.minimum_units, "pv": data.presentation_value, "desc": measure_name[:50]})
+    await _pendiente_escritorio(db, cid, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -862,6 +871,7 @@ async def upd_presentacion(
            "mid": measure_id, "sup": supplier_id, "cid": user.company_id})
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="Presentación no encontrada")
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -876,6 +886,7 @@ async def del_presentacion(
         DELETE FROM pos_dish_products
         WHERE dish_id=:did AND measure_id=:mid AND supplier_id=:sup AND company_id=:cid
     """), {"did": item_id, "mid": measure_id, "sup": supplier_id, "cid": user.company_id})
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -1137,6 +1148,7 @@ async def add_armado_categoria(
             print_on_change_only=VALUES(print_on_change_only), is_active=1, synced=0
     """), {"did": item_id, "cid": cid, "cc": data.category_code,
            "mc": data.max_choices, "req": data.is_required, "poc": data.print_on_change_only})
+    await _pendiente_escritorio(db, cid, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -1155,6 +1167,7 @@ async def upd_armado_categoria(
            "did": item_id, "cid": user.company_id, "cc": category_code})
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="Categoría de armado no encontrada")
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -1172,6 +1185,7 @@ async def del_armado_categoria(
     await db.execute(text(
         "DELETE FROM pos_dish_assembly WHERE dish_id=:did AND company_id=:cid AND category_code=:cc"
     ), {"did": item_id, "cid": cid, "cc": category_code})
+    await _pendiente_escritorio(db, cid, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -1214,6 +1228,7 @@ async def add_armado_opcion(
     """), {"did": item_id, "cid": cid, "cc": category_code, "itm": int(max_item) + 1,
            "pos": sup["id_item"], "sp": data.supply_price, "dq": data.discount_qty,
            "def": data.is_default})
+    await _pendiente_escritorio(db, cid, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -1232,6 +1247,7 @@ async def update_armado_opcion(
            "dq": data.discount_qty, "sp": data.supply_price, "def": data.is_default})
     if res.rowcount == 0:
         raise HTTPException(status_code=404, detail="Opción de armado no encontrada")
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}
 
@@ -1246,5 +1262,6 @@ async def del_armado_opcion(
         "DELETE FROM pos_dish_assembly_detail "
         "WHERE dish_id=:did AND company_id=:cid AND category_code=:cc AND position=:pos"
     ), {"did": item_id, "cid": user.company_id, "cc": category_code, "pos": position})
+    await _pendiente_escritorio(db, user.company_id, item_id)   # S3: viaja con el plato
     await db.commit()
     return {"ok": True}

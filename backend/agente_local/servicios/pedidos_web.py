@@ -244,9 +244,15 @@ async def _aplicar(conn, emp: AsyncSession, lote: dict) -> None:
             raise NoAplicable("El pedido ya existe en el escritorio.")
         if (await conn.execute(text("SELECT COUNT(*) FROM temp_comanda WHERE Mesa = :m"), {"m": lote["mesa"]})).scalar():
             raise NoAplicable(f"'{mesa}' ya tiene un pedido abierto o en uso en caja.")
-        id_cliente = int(lote["id_cliente"] or 1)
-        if not (await emp.execute(text("SELECT COUNT(*) FROM clientes WHERE Id_Cliente = :c"), {"c": id_cliente})).scalar():
-            id_cliente = 1
+        # Cliente: el de la web si existe en el escritorio con ese mismo id (y no es provisional); si no,
+        # Consumidor Final verificado. Sin Consumidor Final no se pasa el pedido.
+        from .precios import MENSAJE_SIN_CONSUMIDOR_FINAL, consumidor_final
+        id_cliente = int(lote["id_cliente"] or 0)
+        if id_cliente <= 1 or id_cliente >= 900_000_000 or not (await emp.execute(text(
+                "SELECT COUNT(*) FROM clientes WHERE Id_Cliente = :c"), {"c": id_cliente})).scalar():
+            id_cliente = await consumidor_final(emp)
+            if not id_cliente:
+                raise NoAplicable(MENSAJE_SIN_CONSUMIDOR_FINAL)
         await conn.execute(text("""
             INSERT INTO temp_comanda
                 (Nro_Pedido, Fecha, Nro_Factura, Mesa, Hora, Mesero, Cancelado, Valor, Salio, Cortesia,

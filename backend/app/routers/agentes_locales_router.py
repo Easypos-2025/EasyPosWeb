@@ -474,17 +474,34 @@ class PlatoAplicadoIn(BaseModel):
     actualizado: Optional[str] = Field(default=None, max_length=30)
 
 
+class FilaAplicadaIn(BaseModel):
+    id: int = Field(gt=0)
+    actualizado: Optional[str] = Field(default=None, max_length=30)
+
+
 class MaestrosAplicadosIn(BaseModel):
     platos: list[PlatoAplicadoIn] = Field(default_factory=list, max_length=500)
     sede_actualizado: Optional[str] = Field(default=None, max_length=30)
+    # S3b: catálogos con número propio, listas de precios
+    entidades: dict[Literal["forma_medida", "categoria_productos", "categoria_platos", "proveedor", "insumo", "cliente"],
+                    list[PlatoAplicadoIn]] = Field(default_factory=dict)
+    listas: list[FilaAplicadaIn] = Field(default_factory=list, max_length=2000)
+    listas_cabecera: list[FilaAplicadaIn] = Field(default_factory=list, max_length=200)
 
 
 @router_agente.post("/maestros/aplicados")
 async def maestros_aplicados(data: MaestrosAplicadosIn, agente: dict = Depends(agente_actual),
-                             db: AsyncSession = Depends(get_db)):
+                             db: AsyncSession = Depends(get_db), db_temp: AsyncSession = Depends(get_datatemppos_db)):
     from app.services import sede_maestros
-    r = await sede_maestros.confirmar(db, agente["company_id"], [p.model_dump() for p in data.platos], data.sede_actualizado)
+    if any(len(v) > 500 for v in data.entidades.values()):
+        raise HTTPException(status_code=422, detail="Demasiados registros en un envío.")
+    r = await sede_maestros.confirmar(
+        db, agente["company_id"], [p.model_dump() for p in data.platos], data.sede_actualizado,
+        entidades={k: [x.model_dump() for x in v] for k, v in data.entidades.items()},
+        listas=[x.model_dump() for x in data.listas], listas_cabecera=[x.model_dump() for x in data.listas_cabecera],
+        db_temp=db_temp)
     await db.commit()
+    await db_temp.commit()
     return r
 
 
