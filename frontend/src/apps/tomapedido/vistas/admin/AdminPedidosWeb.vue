@@ -34,12 +34,13 @@
     <p v-else-if="!lista.length" class="vacio">
       {{ vista === "pendientes" ? "No hay pedidos web pendientes." : "No hay pedidos procesados en esta fecha." }}</p>
 
-    <div v-for="l in lista" :key="l.id" class="lote tarjeta" :class="'lote--' + l.estado.toLowerCase()">
+    <div v-for="l in lista" :key="l.id" class="lote tarjeta"
+         :class="['lote--' + l.estado.toLowerCase(), { 'lote--baja': l.tipo === 'ELIMINAR' || l.tipo === 'CANCELAR' }]">
       <div class="lote__cab">
         <input v-if="vista === 'pendientes' && l.estado !== 'ACEPTADO'" type="checkbox" class="marca"
                :checked="marcados.includes(l.id)" @change="alternar(l.id)" />
         <div class="lote__tit" @click="verDetalle(l)">
-          <b>{{ l.mesa || "Sin mesa" }} · {{ l.tipo === "NUEVO" ? "Pedido nuevo" : "Productos agregados" }}</b>
+          <b>{{ l.mesa || "Sin mesa" }} · {{ TIPO[l.tipo] || l.tipo }}</b>
           <small>{{ l.mesero || "—" }} · {{ l.items }} {{ l.items === 1 ? "producto" : "productos" }} · {{ hora(l.creado_en) }}</small>
         </div>
         <div class="lote__der">
@@ -47,6 +48,7 @@
           <span class="estado">{{ ESTADO[l.estado] || l.estado }}</span>
         </div>
       </div>
+      <p v-if="l.motivo_solicitud" class="solicitud"><b>Motivo del mesero:</b> {{ l.motivo_solicitud }}</p>
       <p v-if="l.estado === 'ERROR'" class="aviso">{{ l.mensaje }}</p>
       <p v-if="l.estado === 'ACEPTADO'" class="info">Aceptado: pasando al escritorio…</p>
       <p v-if="l.estado === 'RECHAZADO'" class="info">Motivo: {{ l.motivo }}</p>
@@ -70,7 +72,8 @@
           {{ marcados.length === 1 ? "pedido" : "pedidos" }}</h2>
           <button type="button" class="cerrar" @click="dialogo = null"><Icono nombre="cerrar" /></button></div>
         <div class="hoja__cuerpo">
-          <p v-if="dialogo.accion === 'ACEPTADO'" class="sub">Pasan al escritorio y se envían a impresión.</p>
+          <p v-if="dialogo.accion === 'ACEPTADO'" class="sub">Pasan al escritorio y se envían a impresión. Las
+            eliminaciones y cancelaciones se aplican en el escritorio (con tirilla de anulación) y pasan al histórico.</p>
           <p v-else class="sub">Los productos salen del pedido en la web; solo quedan en el histórico. Deben montarse de nuevo si se desean.</p>
           <label class="campo"><span>Su nombre</span>
             <input v-model.trim="dialogo.por" class="entrada" maxlength="60" required autocomplete="off" /></label>
@@ -96,6 +99,7 @@ import { showToast } from "@/utils/toast"
 
 const ESTADO = { PENDIENTE: "Pendiente", ACEPTADO: "Aceptado", APLICADO: "Aceptado", RECHAZADO: "Rechazado", ERROR: "No se pudo pasar" }
 const CLAVE_NOMBRE = "ag_pw_nombre"
+const TIPO = { NUEVO: "Pedido nuevo", AGREGAR: "Productos agregados", ELIMINAR: "Eliminar productos", CANCELAR: "Cancelar cuenta" }
 
 const recargarResumen = inject("recargarResumen", () => {})
 const vista = ref("pendientes")
@@ -191,6 +195,8 @@ onBeforeUnmount(() => clearInterval(temporizador))
 .estado { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--fondo); }
 .aviso { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--ambar-claro); color: #92400e; font-size: 14px; }
 .info { margin: 8px 0 0; color: var(--texto-suave); font-size: 13px; }
+.solicitud { margin: 8px 0 0; padding: 6px 10px; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: 13px; }
+.lote--pendiente.lote--baja { border-left-color: var(--rojo); }
 .det { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--borde); }
 .det__fila { display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; }
 .det__cant { min-width: 36px; font-weight: 700; }

@@ -11,6 +11,9 @@ BD del escritorio, backend/agente_local).
      GET  fotos-platos  fotos subidas en la web para copiarlas al PC (pos_dishes.id = Id_Plato)
      GET  pedidos/pendientes · POST pedidos/recibidos · POST pedidos/resultado
                         pedidos web que esperan la aceptación en caja (sede_pedidos.py)
+     POST pedidos/eliminados-caja  productos de pedidos web que el cajero eliminó en el escritorio
+     GET  maestros/pendientes · POST maestros/aplicados
+                        S3: platos y datos de la sede que la web cambió (sede_maestros.py)
 
 La clave es por empresa (no la global de la sincronización del escritorio). En la BD solo queda
 su SHA-256 y se muestra una sola vez al crearla o regenerarla.
@@ -324,7 +327,7 @@ async def pedidos_pendientes(agente: dict = Depends(agente_actual), db: AsyncSes
     cid = agente["company_id"]
     lotes = (await db.execute(text("""
         SELECT id, nro_pedido, tipo, canal, id_mesa, mesa, mesero, mesero_nombre, id_cliente, comensales,
-               total, items, enviado_por, creado_en
+               total, items, enviado_por, motivo_solicitud, creado_en
         FROM pos_sede_lotes WHERE company_id = :c AND estado = 'PENDIENTE'
         ORDER BY id LIMIT :n
     """), {"c": cid, "n": MAX_LOTES_ENVIO})).mappings().all()
@@ -347,7 +350,7 @@ async def pedidos_pendientes(agente: dict = Depends(agente_actual), db: AsyncSes
         "id": int(l["id"]), "nro_pedido": l["nro_pedido"], "tipo": l["tipo"], "canal": l["canal"],
         "id_mesa": int(l["id_mesa"]), "mesa": l["mesa"], "mesero": int(l["mesero"]),
         "mesero_nombre": l["mesero_nombre"], "id_cliente": int(l["id_cliente"]), "comensales": int(l["comensales"]),
-        "total": int(l["total"]), "enviado_por": l["enviado_por"],
+        "total": int(l["total"]), "enviado_por": l["enviado_por"], "motivo_solicitud": l["motivo_solicitud"],
         "creado_en": l["creado_en"].isoformat(timespec="seconds") if l["creado_en"] else None,
         "items": por_lote.get(int(l["id"]), [])} for l in lotes]}
 
@@ -431,6 +434,58 @@ async def pedidos_resultado(data: ResultadosIn, agente: dict = Depends(agente_ac
         await db.commit()
         aplicados.append(r.id)
     return {"ok": True, "confirmados": aplicados}
+
+
+class EliminadoCajaIn(BaseModel):
+    nro_pedido: str = Field(min_length=1, max_length=255)
+    items: list[int] = Field(min_length=1, max_length=200)
+
+
+class EliminadosCajaIn(BaseModel):
+    pedidos: list[EliminadoCajaIn] = Field(max_length=50)
+
+
+@router_agente.post("/pedidos/eliminados-caja")
+async def pedidos_eliminados_caja(data: EliminadosCajaIn, agente: dict = Depends(agente_actual),
+                                  db_temp: AsyncSession = Depends(get_datatemppos_db)):
+    """S2: el cajero eliminó en el escritorio productos de un pedido web: salen también de la web.
+    Solo pedidos WEB- de la empresa de la clave; lo que tenga una solicitud pendiente no se toca."""
+    from app.services import sede_pedidos
+    hechos = 0
+    for p in data.pedidos:
+        if not p.nro_pedido.startswith("WEB-"):
+            continue
+        hechos += await sede_pedidos.eliminar_desde_caja(db_temp, agente["company_id"], p.nro_pedido, p.items)
+    await db_temp.commit()
+    return {"ok": True, "eliminados": hechos}
+
+
+# ───────────────────────────── S3: tablas maestras ─────────────────────────────
+
+@router_agente.get("/maestros/pendientes")
+async def maestros_pendientes(agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    from app.services import sede_maestros
+    return await sede_maestros.pendientes(db, agente["company_id"])
+
+
+class PlatoAplicadoIn(BaseModel):
+    id_web: int = Field(gt=0)
+    id_real: int = Field(gt=0)
+    actualizado: Optional[str] = Field(default=None, max_length=30)
+
+
+class MaestrosAplicadosIn(BaseModel):
+    platos: list[PlatoAplicadoIn] = Field(default_factory=list, max_length=500)
+    sede_actualizado: Optional[str] = Field(default=None, max_length=30)
+
+
+@router_agente.post("/maestros/aplicados")
+async def maestros_aplicados(data: MaestrosAplicadosIn, agente: dict = Depends(agente_actual),
+                             db: AsyncSession = Depends(get_db)):
+    from app.services import sede_maestros
+    r = await sede_maestros.confirmar(db, agente["company_id"], [p.model_dump() for p in data.platos], data.sede_actualizado)
+    await db.commit()
+    return r
 
 
 @router_agente.get("/fotos-platos")

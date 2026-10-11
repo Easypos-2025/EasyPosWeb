@@ -319,7 +319,7 @@ async function cancelarPedido(mesa) {
   try {
     const cid = companyStore.selectedCompany?.id
     await api.delete('/api/pos/comanda/mesa/cancelar', {
-      data: { table_id: mesa.id },
+      data: { table_id: mesa.id, motivo },   // con escritorio, la caja debe aceptar la cancelación
       headers: cid ? { 'X-Company-Id': cid } : {},
     })
     mesa.status = 'free'

@@ -28,6 +28,7 @@ const router = createRouter({
         { path: "errores",      component: () => import("./vistas/admin/AdminErrores.vue") },
         { path: "dispositivos", component: () => import("./vistas/admin/AdminDispositivos.vue") },
         { path: "pedidos-web",  component: () => import("./vistas/admin/AdminPedidosWeb.vue") },
+        { path: "catalogo-web", component: () => import("./vistas/admin/AdminCatalogoWeb.vue") },
         { path: "fotos",        component: () => import("./vistas/admin/AdminFotos.vue") },
         { path: "clave",        component: () => import("./vistas/admin/AdminClave.vue") },
       ],

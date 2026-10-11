@@ -44,6 +44,7 @@ const MENU = [
   { ruta: "/admin/pedidos-web",  nombre: "Pedidos web",  icono: "nube", contador: "pedidosWeb" },
   { ruta: "/admin/errores",      nombre: "Errores",      icono: "alerta", contador: "errores" },
   { ruta: "/admin/dispositivos", nombre: "Dispositivos", icono: "celular", contador: "sinConexion" },
+  { ruta: "/admin/catalogo-web", nombre: "Catálogo de la web", icono: "descargar" },
   { ruta: "/admin/fotos",        nombre: "Fotos de la web", icono: "foto" },
   { ruta: "/admin/clave",        nombre: "Clave",        icono: "candado" },
 ]

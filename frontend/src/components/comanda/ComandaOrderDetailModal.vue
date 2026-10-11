@@ -96,6 +96,7 @@ import { useRouter } from 'vue-router'
 import apiComanda from '@/services/apiComanda'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
+import { conMotivo, esCancelado } from '@/utils/motivo'
 import { usePermisosComanda } from '@/composables/usePermisosComanda'
 const perm = usePermisosComanda()
 
@@ -245,11 +246,13 @@ async function eliminarPedido() {
   if (!result.isConfirmed) return
   cancelando.value = true
   try {
-    await apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
-      data: { table_id: props.table.id },
-    })
+    const r = await conMotivo((motivo) => apiComanda.delete('/api/pos/comanda/mesa/cancelar', {
+      data: { table_id: props.table.id, motivo },
+    }), `Cancelar cuenta ${props.table.name}`)
+    if (r?.data?.pendiente_caja) showToast('Solicitud enviada a caja: queda pendiente de aceptar', 'info', 2500)
     emit('cancelled', props.table.id)
   } catch (e) {
+    if (esCancelado(e)) return
     showToast(e.response?.data?.detail || 'Error al eliminar el pedido', 'error', 3000)
   } finally {
     cancelando.value = false

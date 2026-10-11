@@ -242,7 +242,9 @@ async def listar(authorization: str = Header(None), db: AsyncSession = Depends(g
             (SELECT COUNT(*) FROM pos_dish_assembly da
              WHERE da.dish_id=d.id AND da.company_id=d.company_id)                   AS assembly_count,
             (SELECT COUNT(*) FROM pos_dish_variants v
-             WHERE v.dish_id=d.id AND v.company_id=d.company_id AND v.is_active=1)   AS variant_count
+             WHERE v.dish_id=d.id AND v.company_id=d.company_id AND v.is_active=1)   AS variant_count,
+            (d.id >= 900000000)                                                       AS provisional,
+            COALESCE(d.synced, 1)                                                     AS synced
         FROM pos_dishes d
         LEFT JOIN pos_dish_categories c
                ON c.id=d.category_id AND c.company_id=d.company_id
@@ -258,10 +260,11 @@ async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSessio
     cid  = user.company_id
     await _check_category(db, cid, data.category_id)
 
-    max_id = (await db.execute(text(
-        "SELECT COALESCE(MAX(id), 0) FROM pos_dishes WHERE company_id=:cid FOR UPDATE"
-    ), {"cid": cid})).scalar() or 0
-    new_id = int(max_id) + 1
+    # Con escritorio (Agente Local, S3): id provisional e inactivo hasta que se sincronice con el escritorio,
+    # que le asigna el Id_Plato real; sin escritorio, el siguiente id de la web.
+    from app.services import sede_maestros, sede_pedidos
+    con_sede = await sede_pedidos.tiene_sede(db, cid)
+    new_id = await sede_maestros.siguiente_id_plato(db, cid, con_sede)
 
     values = _dish_params({k: getattr(data, k) for k in _DISH_COLUMNS})
     for k in ("tax", "wholesale_price", "product_cost", "minimum_stock",
@@ -273,6 +276,8 @@ async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSessio
         values["extra_print"] = "0"
     if not values["product_code"]:
         values["product_code"] = f"WEB-{new_id}"
+    if con_sede:
+        values["active"] = 1     # inactivo (convención VB6) hasta sincronizar: no se vende sin Id_Plato real
 
     cols = ", ".join(f"`{c}`" for c in _DISH_COLUMNS)
     phs  = ", ".join(f":{c}" for c in _DISH_COLUMNS)
@@ -283,7 +288,7 @@ async def crear(data: ItemIn, authorization: str = Header(None), db: AsyncSessio
 
     await _upsert_general_price(db, cid, new_id, data.price)
     await db.commit()
-    return {"ok": True, "id": new_id}
+    return {"ok": True, "id": new_id, "pendiente_escritorio": con_sede}
 
 
 @router.put("/orden")
@@ -913,6 +918,8 @@ async def set_impresoras(
         await db.execute(text(
             "INSERT IGNORE INTO pos_item_printers (company_id, item_id, printer_id, print_copies) VALUES (:cid,:iid,:pid,:copies)"
         ), {"cid": cid, "iid": item_id, "pid": p.printer_id, "copies": p.print_copies})
+    # S3: las impresoras viajan con el plato al escritorio
+    await db.execute(text("UPDATE pos_dishes SET synced=0 WHERE id=:id AND company_id=:cid"), {"id": item_id, "cid": cid})
     await db.commit()
     return {"ok": True}
 

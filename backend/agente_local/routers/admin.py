@@ -15,6 +15,8 @@ Aquí irán llegando utilidades que hoy están en el programa de escritorio.
   GET  /api/ag/admin/pedidos-web       pedidos web pendientes de aceptar / procesados de una fecha
   GET  /api/ag/admin/pedidos-web/{id}  detalle del lote
   POST /api/ag/admin/pedidos-web/aceptar | rechazar   (rechazar exige motivo)
+  GET  /api/ag/admin/maestros          lo que la web tiene pendiente de bajar (platos, sede) + último resultado
+  POST /api/ag/admin/maestros/sincronizar   bajar ya el catálogo de la web (S3, no es automático)
 """
 from datetime import datetime, timedelta, timezone
 
@@ -342,7 +344,8 @@ def _lote(f) -> dict:
     return {"id": int(f["id"]), "nro_pedido": f["nro_pedido"], "tipo": f["tipo"], "canal": f["canal"],
             "mesa": f["mesa"], "mesero": f["mesero_nombre"] or (str(f["mesero"]) if f["mesero"] else ""),
             "total": int(f["total"]), "items": int(f["items"]), "estado": f["estado"],
-            "enviado_por": f["enviado_por"], "creado_en": f["creado_en"], "recibido_en": f["recibido_en"],
+            "enviado_por": f["enviado_por"], "motivo_solicitud": f.get("motivo_solicitud"),
+            "creado_en": f["creado_en"], "recibido_en": f["recibido_en"],
             "procesado_por": f["procesado_por"], "procesado_desde": f["procesado_desde"], "pc": f["pc"],
             "procesado_en": f["procesado_en"], "aplicado_en": f["aplicado_en"], "motivo": f["motivo"],
             "mensaje": f["mensaje"]}
@@ -402,3 +405,40 @@ async def aceptar_pedidos_web(data: ProcesarIn, request: Request, _=Depends(admi
 @router.post("/pedidos-web/rechazar")
 async def rechazar_pedidos_web(data: ProcesarIn, request: Request, _=Depends(admin_actual)):
     return await _procesar(data, request, "RECHAZADO")
+
+
+# ───────────────────────────── S3: catálogo de la web ─────────────────────────────
+
+class SincronizarIn(BaseModel):
+    por: str = Field(min_length=2, max_length=60)
+
+
+@router.get("/maestros")
+async def maestros_pendientes(_=Depends(admin_actual), tmp: AsyncSession = Depends(get_tmp)):
+    if not config.NUBE_CLAVE:
+        raise HTTPException(status_code=409, detail="El agente no tiene clave de la nube (AG_NUBE_CLAVE).")
+    from ..servicios import maestros_web
+    try:
+        pend = await maestros_web.resumen()
+    except nube.ErrorNube as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    ultimo = maestros_web.estado["ultimo"]
+    return {"pendientes": pend, "ultimo": ultimo,
+            "ultimo_texto": None if ultimo else await leer_config(tmp, "maestros_resultado")}
+
+
+@router.post("/maestros/sincronizar")
+async def maestros_sincronizar(data: SincronizarIn, request: Request, _=Depends(admin_actual)):
+    if not config.NUBE_CLAVE:
+        raise HTTPException(status_code=409, detail="El agente no tiene clave de la nube (AG_NUBE_CLAVE).")
+    from ..servicios import maestros_web
+    quien = " ".join(data.por.split())
+    try:
+        r = await maestros_web.sincronizar(f"panel: {quien}")
+    except nube.ErrorNube as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    await auditoria.registrar("maestros_sincronizar", "ok", ip_cliente(request),
+                              detalle=f"{quien[:40]} · {r['nuevos']} nuevos · {r['actualizados']} actualizados")
+    return r

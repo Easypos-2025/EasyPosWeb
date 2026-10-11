@@ -167,6 +167,7 @@ class EliminarItemIn(BaseModel):
     dish_id: int
     item: int
     depends_on: Optional[int] = 0
+    motivo: Optional[str] = None       # obligatorio para pedir a la caja eliminar lo ya enviado (S2)
 
 
 class SolicitarCuentaIn(BaseModel):
@@ -175,6 +176,25 @@ class SolicitarCuentaIn(BaseModel):
 
 class CancelarOrdenIn(BaseModel):
     table_id: int
+    motivo: Optional[str] = None       # obligatorio si la cuenta ya tiene algo enviado a la caja (S2)
+
+
+MIN_MOTIVO = 3
+
+
+def _motivo(texto: Optional[str]) -> Optional[str]:
+    """Motivo de eliminación (S2): sin caracteres de control ni espacios repetidos, máx. 255."""
+    limpio = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", texto or "").split())[:255]
+    return limpio if len(limpio) >= MIN_MOTIVO else None
+
+
+def _quien_envia(payload: dict) -> Optional[str]:
+    return payload.get("name") or payload.get("username") or (
+        f"mesero {payload.get('waiter_id')}" if payload.get("waiter_id") else None)
+
+
+# 428 = falta el motivo: la pantalla lo pide y reintenta (utils/motivo.js)
+MOTIVO_REQUERIDO = HTTPException(status_code=428, detail="Escriba el motivo de la eliminación: la caja debe aceptarla.")
 
 
 class EnviarCocinaIn(BaseModel):
@@ -548,7 +568,9 @@ async def get_orden_mesa(
 
     # Empresa con escritorio: ítems pendientes de aceptar en caja y rechazos recientes de la caja
     con_caja = await sede_svc.envia_a_escritorio(db, cid, on)
-    pendientes = await sede_svc.items_pendientes(db_temp, cid, on) if con_caja else set()
+    estados_caja = await sede_svc.estado_items(db_temp, cid, on) if con_caja else {}
+    pendientes = {i for i, e in estados_caja.items() if e == 1}
+    por_eliminar = {i for i, e in estados_caja.items() if e == 2}
     rechazos = await sede_svc.rechazos_recientes(db, cid, on) if con_caja else []
 
     items = []
@@ -577,6 +599,7 @@ async def get_orden_mesa(
             "dish_time": hora_plato,
             "sent":      sent or int(r["Item"]) in pendientes,
             "pending_caja": int(r["Item"]) in pendientes,
+            "pending_eliminar": int(r["Item"]) in por_eliminar,
             "typification_id": int(r["Id_Tipificacion"] or 0),
             # Nombre de lo que se vende (nombre + descripción personalizada); pedidos antiguos traían JSON
             "custom_product": None if str(r["Producto_Personalizado"] or "").startswith("{")
@@ -1270,14 +1293,25 @@ async def eliminar_item(
         FROM temp_detalle_comanda_parcial
         WHERE Nro_pedido=:on AND Nro_Factura='0' AND Id_Plato=:did AND Item=:item AND company_id=:cid
     """), {"on": data.order_number, "did": data.dish_id, "item": data.item, "cid": cid})).scalar()
-    # Con escritorio: lo enviado (pendiente o aceptado en caja) se elimina desde la caja
-    if int(impreso or 0) and await sede_svc.envia_a_escritorio(db, cid, data.order_number):
-        if await sede_svc.item_pendiente(db_temp, cid, data.order_number, data.item):
-            raise HTTPException(status_code=409, detail="Este producto está pendiente de aceptar en caja.")
-        raise HTTPException(status_code=409, detail="Este producto ya se envió a caja: solicite la eliminación en caja.")
     if int(impreso or 0):
         permisos.exigir(await permisos.permisos_comanda(db, payload), "eliminar_productos",
                         "El producto ya se imprimió: solo un usuario con permiso puede eliminarlo")
+    # Con escritorio (S2): lo enviado no se borra aquí; se pide a la caja, con motivo obligatorio
+    if int(impreso or 0) and await sede_svc.envia_a_escritorio(db, cid, data.order_number):
+        estado = (await sede_svc.estado_items(db_temp, cid, data.order_number)).get(data.item, 0)
+        if estado == 1:
+            raise HTTPException(status_code=409, detail="Este producto está pendiente de aceptar en caja: "
+                                                        "espere o pida a la caja que lo rechace.")
+        if estado == 2:
+            raise HTTPException(status_code=409, detail="Ya se pidió a la caja eliminar este producto.")
+        motivo = _motivo(data.motivo)
+        if not motivo:
+            raise MOTIVO_REQUERIDO
+        lote = await sede_svc.crear_lote_baja(db, db_temp, cid, data.order_number, "ELIMINAR", [data.item],
+                                              motivo, _quien_envia(payload))
+        await db.commit()
+        await db_temp.commit()
+        return {"ok": True, "pendiente_caja": True, "lote": lote["lote_id"]}
 
     # Borrar insumos (armado + fijos) y novedades del ítem
     await armado_svc.delete_item_temp(db_temp, cid, data.order_number, data.dish_id, data.item)
@@ -1417,9 +1451,36 @@ async def cancelar_orden(
         WHERE Nro_pedido=:on AND Fecha=:date AND company_id=:cid
     """), {"on": on, "date": fecha, "cid": cid})).mappings().all()
 
-    # Con escritorio: si algo ya se envió a caja (pendiente o aceptado), la cuenta se elimina en caja
+    # Con escritorio (S2): si algo ya se envió a la caja, la cancelación se pide a la caja (motivo obligatorio).
+    # Lo que aún no se envió (carrito) se quita de una vez.
     if any(int(r["Salio"] or 0) == 1 for r in all_items) and await sede_svc.envia_a_escritorio(db, cid, on):
-        raise HTTPException(status_code=409, detail="Esta cuenta ya tiene productos enviados a caja: elimínela desde la caja.")
+        estados = await sede_svc.estado_items(db_temp, cid, on)
+        if 1 in estados.values():
+            raise HTTPException(status_code=409, detail="La cuenta tiene productos pendientes de aceptar en caja: "
+                                                        "espere o pida a la caja que los rechace.")
+        if 2 in estados.values():
+            raise HTTPException(status_code=409, detail="Ya hay una solicitud de eliminación pendiente en caja para esta cuenta.")
+        motivo = _motivo(data.motivo)
+        if not motivo:
+            raise MOTIVO_REQUERIDO
+        sin_enviar = [int(r["Item"]) for r in all_items if int(r["Salio"] or 0) == 0]
+        for it in sin_enviar:
+            await db_temp.execute(text("""
+                DELETE FROM temp_plato_producto_parcial WHERE Nro_Pedido = :on AND company_id = :cid AND Item = :it
+            """), {"on": on, "cid": cid, "it": it})
+            await db_temp.execute(text("""
+                DELETE FROM temp_novedades_plato_pedido WHERE Nro_Pedido = :on AND company_id = :cid AND Item = :it
+            """), {"on": on, "cid": cid, "it": it})
+            await db_temp.execute(text("""
+                DELETE FROM temp_detalle_comanda_parcial
+                WHERE Nro_pedido = :on AND company_id = :cid AND Item = :it AND Salio = 0
+            """), {"on": on, "cid": cid, "it": it})
+        enviados = sorted({int(r["Item"]) for r in all_items if int(r["Salio"] or 0) == 1 and int(r["Mostrar"] or 0) == 1})
+        lote = await sede_svc.crear_lote_baja(db, db_temp, cid, on, "CANCELAR", enviados, motivo, _quien_envia(payload))
+        await _recalc_total(db_temp, on, cid)
+        await db.commit()
+        await db_temp.commit()
+        return {"ok": True, "pendiente_caja": True, "lote": lote["lote_id"]}
 
     # ── Evento TV CANCELADO (solo si ya salió a cocina) ───────────────────────
     tv_notified = 0

@@ -563,7 +563,15 @@ async def push_dishes(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # S3 (la web manda): un plato con cambios de la web aún no bajados al escritorio (synced = 0) no se pisa
+    pendientes_web: set = set()
+    for cid_lote in {d.company_id for d in dishes}:
+        pendientes_web |= {(cid_lote, int(r[0])) for r in (await db.execute(text(
+            "SELECT id FROM pos_dishes WHERE company_id = :c AND synced = 0"), {"c": cid_lote})).all()}
     for d in dishes:
+        if (d.company_id, int(d.id)) in pendientes_web:
+            saved.append(d.id)
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_dishes (

@@ -140,6 +140,71 @@ async def crear_lote(db: AsyncSession, db_temp: AsyncSession, cid: int, order_nu
     return {"lote_id": lote_id, "items": len(filas)}
 
 
+async def crear_lote_baja(db: AsyncSession, db_temp: AsyncSession, cid: int, order_number: str, tipo: str,
+                          items: list, motivo: str, enviado_por: Optional[str]) -> dict:
+    """S2: pide a la caja eliminar productos ya aceptados (ELIMINAR) o la cuenta completa (CANCELAR).
+    Los productos quedan con Sede_Pendiente = 2 ("Pendiente x Eliminar") hasta que la caja decida.
+    No hace commit."""
+    assert tipo in ("ELIMINAR", "CANCELAR")
+    orden = (await db_temp.execute(text("""
+        SELECT Nro_Pedido, Mesa, Mesero, Id_Cliente, Nro_Comenzales FROM temp_comanda
+        WHERE Nro_Pedido = :on AND company_id = :cid AND Nro_Factura = '0' AND Cancelado = 0 LIMIT 1
+    """), {"on": order_number, "cid": cid})).mappings().first()
+    if not orden:
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+    items = sorted({int(v) for v in items})
+    if not items:
+        return {"lote_id": None, "items": 0}
+    ph = ", ".join(f":i{n}" for n in range(len(items)))
+    pi = {f"i{n}": v for n, v in enumerate(items)}
+    filas = (await db_temp.execute(text(f"""
+        SELECT Item, Id_Plato, Descripcion, Cantidad, Valor, Novedad, Cambios, Producto_Personalizado
+        FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido = :on AND company_id = :cid AND Nro_Factura = '0' AND Mostrar = 1
+          AND Salio = 1 AND Sede_Pendiente = 0 AND Item IN ({ph})
+        ORDER BY Item
+    """), {"on": order_number, "cid": cid, **pi})).mappings().all()
+    if len(filas) != len(items):
+        raise HTTPException(status_code=409, detail="Uno de los productos ya tiene una solicitud pendiente en caja.")
+    mesero = int(orden["Mesero"] or 0)
+    nombre_mesero = (await db.execute(text(
+        "SELECT name FROM pos_waiters WHERE id = :w AND company_id = :c"), {"w": mesero, "c": cid})).scalar()
+    lote_id = (await db.execute(text("""
+        INSERT INTO pos_sede_lotes
+            (company_id, nro_pedido, tipo, canal, mesa, mesero, mesero_nombre, id_cliente, comensales,
+             total, items, estado, enviado_por, motivo_solicitud)
+        VALUES (:c, :on, :tipo, 'MESA', :mesa, :mes, :mesn, :cli, :com, :tot, :n, 'PENDIENTE', :por, :mot)
+    """), {"c": cid, "on": order_number, "tipo": tipo, "mesa": (orden["Mesa"] or "")[:200], "mes": mesero,
+           "mesn": (nombre_mesero or "")[:150] or None, "cli": int(orden["Id_Cliente"] or 1) or 1,
+           "com": max(1, int(orden["Nro_Comenzales"] or 1)), "tot": sum(int(f["Valor"] or 0) for f in filas),
+           "n": len(filas), "por": (enviado_por or "")[:150] or None, "mot": motivo[:255]})).lastrowid
+    for f in filas:
+        await db.execute(text("""
+            INSERT INTO pos_sede_lote_items
+                (lote_id, company_id, item, id_plato, descripcion, cantidad, valor, novedad, cambios,
+                 producto_personalizado, insumos, novedades)
+            VALUES (:l, :c, :it, :p, :d, :q, :v, :nov, :cam, :pp, '[]', '[]')
+        """), {"l": lote_id, "c": cid, "it": int(f["Item"]), "p": int(f["Id_Plato"]),
+               "d": (f["Descripcion"] or "")[:255] or None, "q": float(f["Cantidad"] or 1), "v": int(f["Valor"] or 0),
+               "nov": (f["Novedad"] or "")[:255] or None, "cam": (f["Cambios"] or "")[:255] or None,
+               "pp": (f["Producto_Personalizado"] or "")[:1000] or None})
+    await db_temp.execute(text(f"""
+        UPDATE temp_detalle_comanda_parcial SET Sede_Pendiente = 2
+        WHERE Nro_pedido = :on AND company_id = :cid AND Nro_Factura = '0' AND Item IN ({ph})
+    """), {"on": order_number, "cid": cid, **pi})
+    return {"lote_id": lote_id, "items": len(filas)}
+
+
+async def estado_items(db_temp: AsyncSession, cid: int, order_number: str) -> dict:
+    """{Item: Sede_Pendiente} de los productos con solicitud pendiente (1 = por aceptar, 2 = por eliminar)."""
+    filas = (await db_temp.execute(text("""
+        SELECT Item, MAX(Sede_Pendiente) FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido = :on AND company_id = :cid AND Nro_Factura = '0' AND Sede_Pendiente > 0
+        GROUP BY Item
+    """), {"on": order_number, "cid": cid})).all()
+    return {int(f[0]): int(f[1]) for f in filas}
+
+
 async def item_pendiente(db_temp: AsyncSession, cid: int, order_number: str, item: int) -> bool:
     return bool((await db_temp.execute(text("""
         SELECT MAX(Sede_Pendiente) FROM temp_detalle_comanda_parcial
@@ -155,6 +220,26 @@ async def items_pendientes(db_temp: AsyncSession, cid: int, order_number: str) -
     return {int(f[0]) for f in filas}
 
 
+async def _borrar_items_nube(db_temp: AsyncSession, cid: int, on: str, items: list) -> None:
+    if not items:
+        return
+    ph = ", ".join(f":i{n}" for n in range(len(items)))
+    p = {"on": on, "cid": cid, **{f"i{n}": v for n, v in enumerate(items)}}
+    for tabla, col in (("temp_plato_producto_parcial", "Nro_Pedido"), ("temp_novedades_plato_pedido", "Nro_Pedido"),
+                       ("temp_detalle_comanda_parcial", "Nro_pedido")):
+        await db_temp.execute(text(f"DELETE FROM {tabla} WHERE {col} = :on AND company_id = :cid AND Item IN ({ph})"), p)
+
+
+async def _recalcular_total(db_temp: AsyncSession, cid: int, on: str) -> None:
+    await db_temp.execute(text("""
+        UPDATE temp_comanda tc SET tc.Valor = (
+            SELECT COALESCE(SUM(d.Valor), 0) FROM temp_detalle_comanda_parcial d
+            WHERE d.Nro_pedido = tc.Nro_Pedido AND d.company_id = tc.company_id
+              AND d.Nro_Factura = '0' AND d.Mostrar = 1)
+        WHERE tc.Nro_Pedido = :on AND tc.company_id = :cid
+    """), {"on": on, "cid": cid})
+
+
 async def pedidos_pendientes_caja(db: AsyncSession, cid: int) -> set:
     """Pedidos con algo enviado desde la web que la caja aún no ha aceptado (para las tarjetas de mesa).
     Lee solo pos_sede_lotes (easyposweb): no depende de la columna Sede_Pendiente."""
@@ -163,6 +248,24 @@ async def pedidos_pendientes_caja(db: AsyncSession, cid: int) -> set:
         WHERE company_id = :c AND estado IN ('PENDIENTE','RECIBIDO','ACEPTADO','ERROR')
     """), {"c": cid})).all()
     return {f[0] for f in filas}
+
+
+async def eliminar_desde_caja(db_temp: AsyncSession, cid: int, on: str, items: list) -> int:
+    """S2: el cajero eliminó en el escritorio productos de un pedido web: salen también de la web.
+    Solo los que no tienen una solicitud pendiente."""
+    items = [int(i) for i in items if int(i) > 0]
+    if not items:
+        return 0
+    ph = ", ".join(f":i{n}" for n in range(len(items)))
+    p = {"on": on, "cid": cid, **{f"i{n}": v for n, v in enumerate(items)}}
+    libres = [int(r[0]) for r in (await db_temp.execute(text(f"""
+        SELECT DISTINCT Item FROM temp_detalle_comanda_parcial
+        WHERE Nro_pedido = :on AND company_id = :cid AND Nro_Factura = '0' AND Sede_Pendiente = 0 AND Item IN ({ph})
+    """), p)).all()]
+    await _borrar_items_nube(db_temp, cid, on, libres)
+    if libres:
+        await _recalcular_total(db_temp, cid, on)
+    return len(libres)
 
 
 async def rechazos_recientes(db: AsyncSession, cid: int, order_number: str) -> list:
@@ -185,8 +288,22 @@ async def _items_lote(db: AsyncSession, lote_id: int) -> list:
 
 
 async def aplicar_en_nube(db: AsyncSession, db_temp: AsyncSession, lote: dict) -> None:
-    """La sede ya lo pasó a sus temporales: en la web queda enviado normal."""
+    """La sede ya lo pasó a sus temporales: en la web queda enviado normal (S2: o eliminado)."""
     items = await _items_lote(db, lote["id"])
+    cid, on = lote["company_id"], lote["nro_pedido"]
+    if lote["tipo"] in ("ELIMINAR", "CANCELAR"):
+        await _borrar_items_nube(db_temp, cid, on, items)
+        quedan = (await db_temp.execute(text("""
+            SELECT COUNT(*) FROM temp_detalle_comanda_parcial
+            WHERE Nro_pedido = :on AND company_id = :cid AND Nro_Factura = '0'
+        """), {"on": on, "cid": cid})).scalar() or 0
+        if lote["tipo"] == "CANCELAR" and not quedan:
+            await db_temp.execute(text(
+                "DELETE FROM temp_comanda WHERE Nro_Pedido = :on AND company_id = :cid AND Nro_Factura = '0'"),
+                {"on": on, "cid": cid})
+        else:
+            await _recalcular_total(db_temp, cid, on)
+        return
     if not items:
         return
     ph = ", ".join(f":i{n}" for n in range(len(items)))
@@ -199,9 +316,19 @@ async def aplicar_en_nube(db: AsyncSession, db_temp: AsyncSession, lote: dict) -
 
 
 async def rechazar_en_nube(db: AsyncSession, db_temp: AsyncSession, lote: dict) -> None:
-    """Los ítems salen del pedido en la nube (quedan solo en el histórico del lote)."""
+    """Los ítems salen del pedido en la nube (quedan solo en el histórico del lote).
+    S2: si la caja rechaza una eliminación o cancelación, los productos vuelven a la normalidad."""
     cid, on = lote["company_id"], lote["nro_pedido"]
     items = await _items_lote(db, lote["id"])
+    if lote["tipo"] in ("ELIMINAR", "CANCELAR"):
+        if items:
+            ph = ", ".join(f":i{n}" for n in range(len(items)))
+            await db_temp.execute(text(f"""
+                UPDATE temp_detalle_comanda_parcial SET Sede_Pendiente = 0
+                WHERE Nro_pedido = :on AND company_id = :cid AND Nro_Factura = '0'
+                  AND Sede_Pendiente = 2 AND Item IN ({ph})
+            """), {"on": on, "cid": cid, **{f"i{n}": v for n, v in enumerate(items)}})
+        return
     if items:
         ph = ", ".join(f":i{n}" for n in range(len(items)))
         p = {"on": on, "cid": cid, **{f"i{n}": v for n, v in enumerate(items)}}

@@ -168,7 +168,8 @@
               <span v-if="group.notes"   class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
               <span v-if="group.hasDiscount" class="ci-tag ci-descuento"><i class="bi bi-percent"></i> Descuento</span>
-              <span v-if="group.hasPending" class="ci-pend">⏳ Pendiente x Aceptar</span>
+              <span v-if="group.hasPendingDelete" class="ci-pend ci-pend--del">⏳ Pendiente x Eliminar</span>
+              <span v-else-if="group.hasPending" class="ci-pend">⏳ Pendiente x Aceptar</span>
               <span v-else-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
             </div>
           </div>
@@ -270,6 +271,7 @@ import ComandaDescuentoModal from '@/components/comanda/ComandaDescuentoModal.vu
 import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
+import { conMotivo, esCancelado } from '@/utils/motivo'
 import { useMesaLock } from '@/composables/useMesaLock'
 import { usePermisosComanda } from '@/composables/usePermisosComanda'
 
@@ -406,6 +408,7 @@ const groupedItems = computed(() => {
   for (const g of groups) {
     g.lastSent    = g.allItems.every(i => i.sent && !i.isNew)
     g.hasPending  = g.allItems.some(i => i.pending_caja)
+    g.hasPendingDelete = g.allItems.some(i => i.pending_eliminar)
     g.unitPrice   = g.qty > 0 ? Math.round(g.totalAmount / g.qty) : 0
     g.hasDiscount = !!g.allItems[g.allItems.length - 1]?.typification_id
   }
@@ -458,7 +461,8 @@ function avisarRechazos(o) {
   for (const r of o?.rechazos_caja || []) {
     const k = `rechazo_caja_${r.lote}`
     try { if (sessionStorage.getItem(k)) continue; sessionStorage.setItem(k, '1') } catch { /* sin almacenamiento */ }
-    showToast(`La caja rechazó ${r.items} producto(s): ${r.motivo || 'sin motivo'}`, 'warning', 6000)
+    const que = r.tipo === 'ELIMINAR' ? 'eliminar' : r.tipo === 'CANCELAR' ? 'cancelar la cuenta de' : ''
+    showToast(`La caja rechazó ${que} ${r.items} producto(s): ${r.motivo || 'sin motivo'}`.replace(/\s+/g, ' '), 'warning', 6000)
   }
 }
 
@@ -715,9 +719,12 @@ async function submitOrder() {
     }
     const deletedItems = items.value.filter(i => !i.isNew && i._deleted)
     for (const del of deletedItems) {
-      await apiComanda.delete('/api/pos/comanda/orden/item', {
-        data: { order_number: order.value.order_number, date: order.value.date, dish_id: del.dish_id, item: del.item }
-      })
+      // Con escritorio, lo ya enviado se pide a la caja con motivo (428 → se pide y se reintenta)
+      try {
+        await conMotivo((motivo) => apiComanda.delete('/api/pos/comanda/orden/item', {
+          data: { order_number: order.value.order_number, date: order.value.date, dish_id: del.dish_id, item: del.item, motivo }
+        }), `Eliminar ${del.dish_name || 'producto'}`)
+      } catch (e) { if (!esCancelado(e)) throw e }
     }
     if (newItems.length) {
       const rc = await apiComanda.post('/api/pos/comanda/orden/cocina', {
@@ -1207,6 +1214,7 @@ async function cancelOrder() {
 .ci-change    { background: #fff7ed; color: #c2410c; border-color: #fed7aa; text-transform: none; }
 .ci-descuento { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 700; text-transform: none; }
 .ci-sent   { color: #16a34a; font-size: .65rem; font-weight: 700; align-self: center; }
+.ci-pend--del { color: #b91c1c !important; }
 .ci-pend   { color: #0f766e; font-size: .65rem; font-weight: 700; align-self: center; }
 
 .tpv-cart__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }

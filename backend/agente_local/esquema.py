@@ -100,6 +100,7 @@ TABLAS = [
         total           INT           NOT NULL DEFAULT 0,
         items           INT           NOT NULL DEFAULT 0,
         enviado_por     VARCHAR(150)  NULL,
+        motivo_solicitud VARCHAR(255) NULL,
         creado_en       DATETIME      NULL,
         recibido_en     DATETIME      NOT NULL,
         estado          VARCHAR(12)   NOT NULL DEFAULT 'PENDIENTE',
@@ -139,7 +140,17 @@ TABLAS = [
         item_web    INT           NOT NULL,
         depende     INT           NOT NULL,
         lote_id     INT           NOT NULL,
+        eliminado_reportado TINYINT NOT NULL DEFAULT 0,
         PRIMARY KEY (nro_pedido, item_web)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    # S3: plato creado en la web (id provisional) → Id_Plato real que le dio el escritorio
+    """
+    CREATE TABLE IF NOT EXISTS ag_maestros_mapa (
+        id_web      INT       NOT NULL PRIMARY KEY,
+        id_real     INT       NOT NULL,
+        creado      DATETIME  NOT NULL,
+        confirmado  DATETIME  NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
@@ -152,7 +163,21 @@ TABLAS = [
 ]
 
 
+# Columnas agregadas después de crear la tabla (CREATE TABLE IF NOT EXISTS no las agrega en las sedes)
+COLUMNAS_NUEVAS = [
+    ("ag_pw_lote", "motivo_solicitud", "VARCHAR(255) NULL AFTER enviado_por"),
+    ("ag_pw_mapa", "eliminado_reportado", "TINYINT NOT NULL DEFAULT 0"),
+]
+
+
 async def crear_esquema() -> None:
     async with motor_temp.begin() as conn:
         for ddl in TABLAS:
             await conn.execute(text(ddl))
+        for tabla, columna, definicion in COLUMNAS_NUEVAS:
+            existe = (await conn.execute(text("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c
+            """), {"t": tabla, "c": columna})).scalar()
+            if not existe:
+                await conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}"))

@@ -33,6 +33,12 @@ from .pedidos import hora_corta, limpiar_texto, partes_cantidad, siguiente_item
 log = logging.getLogger("agente_local")
 
 ENVIADO_DESDE = "WEB"
+TIPOS = ("NUEVO", "AGREGAR", "ELIMINAR", "CANCELAR")
+# Columnas de historico_detalle_comanda_eliminadas (BD de la empresa), las mismas que copia el VB6
+_COLS_HISTORICO = ("Nro_pedido, Fecha, Nro_Factura, Id_Plato, Item, Descripcion, Cantidad, Valor, Min, Min_S, Hora, "
+                   "Salio, Novedad, Cortesia, Porc_Descuento_Plato, Porc_Descuento_General, Impreso, Cambios, Mostrar, "
+                   "Impresora, Depende, Enviada_MySql, Nro_Puesto, Cod_Categoria_Plato, Hora_Plato, Paga_Impuesto, "
+                   "Impuesto, Impuesto_Original, Paga_Plato, Item_Original, Producto_Personalizado")
 MAX_TEXTO = 250
 ESTADOS_PROCESADOS = ("APLICADO", "RECHAZADO")
 estado = {"ultimo_ok": None, "ultimo_error": None, "mensaje": None}
@@ -77,21 +83,22 @@ async def descargar() -> int:
         for L in lotes[:50]:
             lote_id = _entero(L.get("id"), 0, 1)
             nro = limpiar_texto(L.get("nro_pedido"), 255)
-            tipo = L.get("tipo") if L.get("tipo") in ("NUEVO", "AGREGAR") else None
+            tipo = L.get("tipo") if L.get("tipo") in TIPOS else None
             items = L.get("items") or []
             if not lote_id or not nro or not tipo or not items or len(items) > 200:
                 continue
             await s.execute(text("""
                 INSERT IGNORE INTO ag_pw_lote
                     (id, nro_pedido, tipo, canal, id_mesa, mesa, mesero, mesero_nombre, id_cliente, comensales,
-                     total, items, enviado_por, creado_en, recibido_en, estado)
-                VALUES (:id, :nro, :tipo, :canal, :idm, :mesa, :mes, :mesn, :cli, :com, :tot, :n, :por, :creado, NOW(), 'PENDIENTE')
+                     total, items, enviado_por, motivo_solicitud, creado_en, recibido_en, estado)
+                VALUES (:id, :nro, :tipo, :canal, :idm, :mesa, :mes, :mesn, :cli, :com, :tot, :n, :por, :mot, :creado, NOW(), 'PENDIENTE')
             """), {"id": lote_id, "nro": nro, "tipo": tipo, "canal": limpiar_texto(L.get("canal"), 20) or "MESA",
                    "idm": _entero(L.get("id_mesa")), "mesa": limpiar_texto(L.get("mesa"), 200),
                    "mes": _entero(L.get("mesero")), "mesn": limpiar_texto(L.get("mesero_nombre"), 150) or None,
                    "cli": _entero(L.get("id_cliente"), 1, 1), "com": _entero(L.get("comensales"), 1, 1, 999),
                    "tot": _entero(L.get("total")), "n": len(items),
-                   "por": limpiar_texto(L.get("enviado_por"), 150) or None, "creado": _fecha(L.get("creado_en"))})
+                   "por": limpiar_texto(L.get("enviado_por"), 150) or None,
+                   "mot": limpiar_texto(L.get("motivo_solicitud"), 255) or None, "creado": _fecha(L.get("creado_en"))})
             for it in items:
                 await s.execute(text("""
                     INSERT IGNORE INTO ag_pw_item
@@ -211,7 +218,8 @@ async def _aplicar(conn, emp: AsyncSession, lote: dict) -> None:
     except HTTPException as e:
         raise NoAplicable(str(e.detail))
     # Ya aplicado antes (el agente se cayó antes de marcarlo): no se repite; solo se completa el envío
-    hechos = (await conn.execute(text("SELECT COUNT(*) FROM ag_pw_mapa WHERE lote_id = :l"), {"l": lote["id"]})).scalar()
+    hechos = 0 if lote["tipo"] in ("ELIMINAR", "CANCELAR") else (await conn.execute(text(
+        "SELECT COUNT(*) FROM ag_pw_mapa WHERE lote_id = :l"), {"l": lote["id"]})).scalar()
     if hechos:
         if hechos < len(items):
             raise NoAplicable("El lote quedó aplicado a medias en el escritorio. Revise el pedido en caja.")
@@ -220,6 +228,9 @@ async def _aplicar(conn, emp: AsyncSession, lote: dict) -> None:
         if pedido:
             await impresion.enviar_pedido(conn, emp, nro, lote["tipo"] == "NUEVO", fecha, datetime.now(), ENVIADO_DESDE,
                                           int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"])
+        return
+    if lote["tipo"] in ("ELIMINAR", "CANCELAR"):
+        await _aplicar_baja(conn, emp, lote, items)
         return
     for it in items:
         await _plato(emp, int(it["id_plato"]))         # todos deben existir antes de escribir nada
@@ -256,6 +267,187 @@ async def _aplicar(conn, emp: AsyncSession, lote: dict) -> None:
         await _insertar_items(conn, emp, lote, items, fecha, ahora, item, nuevo=False)
         await impresion.enviar_pedido(conn, emp, nro, False, fecha, ahora, ENVIADO_DESDE,
                                       int(pedido["Imprimio_Precuenta"] or 0), pedido["Mesa"])
+
+
+# ───────────────────────────── S2: eliminar productos / cancelar cuenta ─────────────────────────────
+
+_TABLAS: dict[str, set] = {}
+
+
+async def _existe(conn, tabla: str, base: str = "tmp") -> bool:
+    """Las sedes viejas pueden no tener alguna tabla temporal o histórica: se omite en vez de fallar."""
+    if base not in _TABLAS:
+        _TABLAS[base] = {t.lower() for (t,) in (await conn.execute(text(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()"))).all()}
+    return tabla.lower() in _TABLAS[base]
+
+
+def hora_vb(momento: datetime) -> str:
+    """Como el VB6 guarda Now en un texto: '5/10/2026 12:39:33 a. m.'"""
+    h = momento.hour % 12 or 12
+    return f"{momento.day}/{momento.month}/{momento.year} {h}:{momento:%M:%S} {'a. m.' if momento.hour < 12 else 'p. m.'}"
+
+
+async def _depende_local(conn, nro: str, item_web: int) -> int | None:
+    """Grupo de filas del escritorio que corresponde al ítem de la web. Pedido montado desde la web:
+    el mapa; pedido del escritorio que la web agregó/vio: el Item es el mismo y su Depende el del escritorio."""
+    dep = (await conn.execute(text("SELECT depende FROM ag_pw_mapa WHERE nro_pedido = :n AND item_web = :w"),
+                              {"n": nro, "w": item_web})).scalar()
+    if dep:
+        return int(dep)
+    dep = (await conn.execute(text("SELECT Depende FROM temp_detalle_comanda WHERE Nro_pedido = :n AND Item = :i LIMIT 1"),
+                              {"n": nro, "i": item_web})).scalar()
+    return int(dep) if str(dep or "").strip().isdigit() else None
+
+
+async def _encolar_anulacion(conn, emp: AsyncSession, nro: str, depende: int | None, nuevo: bool, ahora: datetime) -> None:
+    """Enviar_Pedido_Impresion del VB6 con Var_Cancelado = True: tirilla de anulación de lo ya impreso
+    (un producto: su Depende; la cuenta: todo el pedido). Solo con Imprimir_Comanda_Plazoleta, como el VB6."""
+    b = await impresion.banderas(emp)
+    if not b["plazoleta"]:
+        return
+    filtro = " AND d.Depende = :dep" if depende else ""
+    filas = (await conn.execute(text(f"""
+        SELECT d.Nro_pedido, d.Id_Plato, d.Item, d.Depende, d.Descripcion, d.Cantidad, d.Novedad, d.Cambios,
+               d.Mostrar, d.Impresora, c.Mesa, c.Mesero, c.Domicilio
+        FROM temp_detalle_comanda d JOIN temp_comanda c ON c.Nro_Pedido = d.Nro_pedido
+        WHERE d.Nro_pedido = :n AND d.Impreso = 1 AND d.Min = 0{filtro}
+        ORDER BY d.Item DESC
+    """), {"n": nro, "dep": str(depende or "")})).mappings().all()
+    if not filas:
+        return
+    mesero = await impresion._nombre_mesero(conn, emp, int(filas[0]["Mesero"] or 0))
+    fecha = (await exigir_caja_abierta(emp))
+    for f in filas:
+        dep = str(f["Depende"] or "").strip()
+        await conn.execute(text("""
+            INSERT INTO temp_impresion_tirilla_comanda
+                (Nro_pedido, Mesero, Fecha, Nro_Mesa, Id_Plato, Item, Depende, Descripcion, Cantidad, Hora,
+                 Novedad, Impreso, Cambios, Mostrar, Impresora, Enviada_MySql, Nro_Puesto, Nuevo, Cancelado,
+                 Enviado_Desde, Hora_Plato, Domicilio)
+            VALUES (:nro, :mesero, :fecha, :mesa, :plato, :item, :dep, :desc, :cant, :hora,
+                    :nov, 0, :camb, :mostrar, :imp, 0, 0, :nuevo, 1, :desde, :hora_plato, :domi)
+        """), {"nro": nro, "mesero": mesero[:255], "fecha": fecha, "mesa": f["Mesa"], "plato": f["Id_Plato"],
+               "item": f["Item"], "dep": int(dep) if dep.isdigit() else 0, "desc": f["Descripcion"],
+               "cant": f["Cantidad"], "hora": ahora.strftime("%I:%M:%S %p"), "nov": (f["Novedad"] or "")[:255],
+               "camb": (f["Cambios"] or "")[:255], "mostrar": 1 if f["Mostrar"] else 0, "imp": f["Impresora"],
+               "nuevo": 1 if nuevo else 0, "desde": ENVIADO_DESDE, "hora_plato": ahora.strftime("%I:%M:%S %p"),
+               "domi": 1 if f["Domicilio"] else 0})
+    if b["plazoleta"] or b["manual"]:
+        await conn.execute(text("UPDATE temp_impresion_tirilla_comanda SET Enviada_MySql = 1 WHERE Nro_pedido = :n"),
+                           {"n": nro})
+
+
+async def _eliminar_depende(conn, emp: AsyncSession, nro: str, mesa: str, depende: int, motivo: str,
+                            usuario: str, ahora: datetime) -> None:
+    """Eliminar_Producto del VB6 para un grupo (Depende): lo impreso pasa a historico_detalle_comanda_eliminadas
+    con Nro_Factura = mesa, Descripcion = motivo, Hora = fecha y hora, Novedad = usuario; se borra en las
+    tablas temporales."""
+    filas = (await conn.execute(text(f"SELECT {_COLS_HISTORICO} FROM temp_detalle_comanda WHERE Nro_pedido = :n AND Depende = :d"),
+                                {"n": nro, "d": str(depende)})).mappings().all()
+    historico = await _existe(emp, "historico_detalle_comanda_eliminadas", "emp")
+    for f in filas:
+        item = int(f["Item"])
+        if await _existe(conn, "temp_descuentos"):
+            await conn.execute(text("DELETE FROM temp_descuentos WHERE Nro_Pedido = :n AND Item = :i"), {"n": nro, "i": item})
+        for tabla in ("temp_plato_producto", "temp_plato_producto_parcial"):
+            await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n AND Item_Original = :i"), {"n": nro, "i": item})
+        if int(f["Impreso"] or 0) and historico:
+            datos = dict(f)
+            datos.update({"Nro_Factura": (mesa or "")[:255], "Descripcion": motivo[:255], "Hora": hora_vb(ahora),
+                          "Novedad": usuario[:255]})
+            columnas = [c.strip() for c in _COLS_HISTORICO.split(",")]
+            await emp.execute(text(f"INSERT INTO historico_detalle_comanda_eliminadas ({_COLS_HISTORICO}) "
+                                   f"VALUES ({', '.join(':' + c for c in columnas)})"), datos)
+    await emp.commit()
+    if await _existe(conn, "temp_descuentos"):
+        await conn.execute(text("DELETE FROM temp_descuentos WHERE Nro_Pedido = :n AND Item = :d"), {"n": nro, "d": depende})
+    await conn.execute(text("DELETE FROM temp_novedades_plato_pedido WHERE Nro_Pedido = :n AND Item = :d"), {"n": nro, "d": depende})
+    for tabla in ("temp_detalle_comanda", "temp_detalle_comanda_parcial", "temp_detalle_comanda_previo",
+                  "temp_detalle_comanda_historico"):
+        if await _existe(conn, tabla):
+            await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_pedido = :n AND Depende = :d"), {"n": nro, "d": str(depende)})
+    for tabla in ("temp_plato_armar", "temp_plato_armar_detalle"):
+        if await _existe(conn, tabla):
+            await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n AND Item_comanda = :d"), {"n": nro, "d": depende})
+    for tabla in ("temp_plato_producto", "temp_plato_producto_parcial"):
+        await conn.execute(text(f"DELETE FROM {tabla} WHERE Nro_Pedido = :n AND Item_Original = :d"), {"n": nro, "d": depende})
+    await conn.execute(text("UPDATE ag_pw_mapa SET eliminado_reportado = 1 WHERE nro_pedido = :n AND depende = :d"),
+                       {"n": nro, "d": depende})
+
+
+async def _aplicar_baja(conn, emp: AsyncSession, lote: dict, items: list[dict]) -> None:
+    from ..routers.pedidos import VISIBLE
+    nro = lote["nro_pedido"]
+    pedido = (await conn.execute(text(f"SELECT * FROM temp_comanda WHERE Nro_Pedido = :n AND {VISIBLE}"),
+                                 {"n": nro})).mappings().first()
+    if not pedido:
+        raise NoAplicable("El pedido ya no está abierto en caja (facturado, eliminado o en edición).")
+    try:
+        await exigir_caja_abierta(emp)
+    except HTTPException as e:
+        raise NoAplicable(str(e.detail))
+    ahora = datetime.now()
+    motivo = (lote.get("motivo_solicitud") or "SOLICITADO DESDE LA WEB").strip()
+    usuario = (lote.get("procesado_por") or "WEB").strip()
+    grupos = []
+    for it in items:
+        dep = await _depende_local(conn, nro, int(it["item"]))
+        if dep and dep not in grupos:
+            grupos.append(dep)
+    if lote["tipo"] == "ELIMINAR":
+        for dep in grupos:                          # si ya no está (lo eliminaron en caja), no hay nada que hacer
+            await _encolar_anulacion(conn, emp, nro, dep, False, ahora)
+            await _eliminar_depende(conn, emp, nro, pedido["Mesa"], dep, motivo, usuario, ahora)
+        await conn.commit()
+        return
+    # CANCELAR: tirilla de anulación de todo lo impreso, cada producto al histórico y la cuenta al histórico
+    await _encolar_anulacion(conn, emp, nro, None, True, ahora)
+    todos = [int(d) for (d,) in (await conn.execute(text(
+        "SELECT DISTINCT Depende FROM temp_detalle_comanda WHERE Nro_pedido = :n"), {"n": nro})).all()
+        if str(d or "").strip().isdigit()]
+    for dep in todos:
+        await _eliminar_depende(conn, emp, nro, pedido["Mesa"], dep, motivo, usuario, ahora)
+    cab = dict(pedido)
+    cols = ["Nro_Pedido", "Fecha", "Nro_Factura", "Mesa", "Hora", "Mesero", "Cancelado", "Valor", "Salio", "Novedad",
+            "Cortesia", "Imprimio_Precuenta", "Nro_Comenzales", "Mostrar", "Nro_Puestos", "Enviada_MySql", "Domicilio",
+            "Id_Cliente", "Movil"]
+    datos = {c: cab.get(c) for c in cols}
+    datos.update({"Motivo_Eliminacion": motivo[:255], "Quien_Elimino": usuario[:255]})
+    if await _existe(emp, "historico_comandas_eliminadas", "emp"):
+        await emp.execute(text(f"INSERT INTO historico_comandas_eliminadas ({', '.join(cols)}, Motivo_Eliminacion, Quien_Elimino) "
+                               f"VALUES ({', '.join(':' + c for c in cols)}, :Motivo_Eliminacion, :Quien_Elimino)"), datos)
+    await emp.commit()
+    await conn.execute(text("DELETE FROM temp_comanda WHERE Nro_Pedido = :n"), {"n": nro})
+    await conn.execute(text("DELETE FROM temp_mesa_abierta WHERE Mesa = :m"), {"m": pedido["Mesa"]})
+    await conn.commit()
+
+
+async def reportar_eliminados_caja() -> int:
+    """S2: productos de pedidos web (WEB-) que el cajero eliminó en el escritorio: se reportan para que
+    salgan también de la web. Solo mientras la cuenta siga abierta en el escritorio."""
+    async with SesionTemp() as s:
+        filas = (await s.execute(text("""
+            SELECT m.nro_pedido, m.item_web, m.depende FROM ag_pw_mapa m
+            JOIN temp_comanda c ON c.Nro_Pedido = m.nro_pedido
+            WHERE m.eliminado_reportado = 0 AND m.nro_pedido LIKE 'WEB-%'
+              AND NOT EXISTS (SELECT 1 FROM temp_detalle_comanda d
+                              WHERE d.Nro_pedido = m.nro_pedido AND d.Depende = CAST(m.depende AS CHAR))
+            LIMIT 200
+        """))).all()
+    if not filas:
+        return 0
+    por_pedido: dict[str, list[int]] = {}
+    for nro, item_web, _dep in filas:
+        por_pedido.setdefault(nro, []).append(int(item_web))
+    await nube.pedir("POST", "/api/agente/pedidos/eliminados-caja",
+                     {"pedidos": [{"nro_pedido": n, "items": its} for n, its in list(por_pedido.items())[:50]]})
+    async with SesionTemp() as s:
+        for nro, item_web, _dep in filas:
+            await s.execute(text("UPDATE ag_pw_mapa SET eliminado_reportado = 1 WHERE nro_pedido = :n AND item_web = :w"),
+                            {"n": nro, "w": item_web})
+        await s.commit()
+    return len(filas)
 
 
 async def aplicar_aceptados() -> int:
@@ -349,6 +541,9 @@ async def ciclo() -> None:
             if vueltas % (CADA_DESCARGA_SEG // CADA_APLICAR_SEG) == 0:
                 await descargar()
                 await reportar()
+                await reportar_eliminados_caja()
+                from . import maestros_web          # S3 pedido desde el escritorio (form VB6)
+                await maestros_web.atender_solicitud_escritorio()
             elif aplicados:
                 await reportar()
             estado.update(ultimo_ok=datetime.now(), mensaje=None)

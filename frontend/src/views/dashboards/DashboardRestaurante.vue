@@ -351,6 +351,7 @@ import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 import AccountOrderCard from '@/components/comanda/AccountOrderCard.vue'
 import { showToast } from '@/utils/toast'
+import { conMotivo, esCancelado } from '@/utils/motivo'
 import { useCardStyle } from '@/composables/useCardStyle'
 
 const { cardStyle, load: loadCardStyle } = useCardStyle()
@@ -761,9 +762,12 @@ async function eliminarOrden(mesa) {
   if (!isConfirmed) return
   try {
     localStorage.setItem('waiter_company_id', String(selectedCid.value))
-    await apiComanda.delete('/api/pos/comanda/mesa/cancelar', { data: { table_id: mesa.id } })
+    const r = await conMotivo((motivo) => apiComanda.delete('/api/pos/comanda/mesa/cancelar', { data: { table_id: mesa.id, motivo } }),
+                              `Cancelar cuenta ${mesa.name}`)
+    if (r?.data?.pendiente_caja) showToast('Solicitud enviada a caja: queda pendiente de aceptar', 'info', 2500)
     await cargarMesas()
   } catch (e) {
+    if (esCancelado(e)) return
     window.Swal.fire('Error', e?.response?.data?.detail || 'No se pudo eliminar el pedido', 'error')
   }
 }

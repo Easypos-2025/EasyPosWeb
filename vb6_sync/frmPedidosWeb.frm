@@ -246,6 +246,8 @@ Option Explicit
 ' Los pedidos (y productos agregados) que se envian desde EasyPosWeb llegan por el Agente Local
 ' a datatemppos.ag_pw_lote / ag_pw_item. Nada pasa al escritorio ni se imprime hasta aceptarlo
 ' aqui (o en el panel de la mini-app del agente).
+'   * Tipos: pedido nuevo, productos agregados, ELIMINAR productos y CANCELAR cuenta (estos dos
+'     traen el motivo del mesero; al aceptarlos el agente imprime la anulacion y pasa al historico).
 '   * Este form SOLO marca el estado: PENDIENTE o ERROR -> ACEPTADO o RECHAZADO (con motivo).
 '     El Agente Local pasa lo aceptado a Temp_comanda / Temp_detalle_comanda (y _parcial) y lo
 '     envia a impresion (Temp_Impresion_Tirilla_comanda) en unos segundos, igual que
@@ -426,6 +428,16 @@ With grdLotes
 End With
 End Sub
 
+Private Function Nombre_Tipo(ByVal Tipo As String) As String
+Select Case Tipo
+   Case "NUEVO": Nombre_Tipo = "Pedido nuevo"
+   Case "AGREGAR": Nombre_Tipo = "Prod. agregados"
+   Case "ELIMINAR": Nombre_Tipo = "ELIMINAR prod."
+   Case "CANCELAR": Nombre_Tipo = "CANCELAR cuenta"
+   Case Else: Nombre_Tipo = Tipo
+End Select
+End Function
+
 Private Function Es_Marcable(ByVal Estado As String) As Boolean
 Es_Marcable = (Estado = "PENDIENTE" Or Estado = "ERROR")
 End Function
@@ -437,7 +449,7 @@ Dim Sql As String, Fila As Long, Estado As String, Obs As String, Desde As Strin
 Dim Nuevos_Marcados As String, Cantidad As Long, Fila_Detalle As Long
 If Var_Cargando Then Exit Sub
 Var_Cargando = True
-Sql = "SELECT id, nro_pedido, DATE_FORMAT(recibido_en,'%d/%m %h:%i %p') AS hora, tipo, mesa," & _
+Sql = "SELECT id, nro_pedido, DATE_FORMAT(recibido_en,'%d/%m %h:%i %p') AS hora, tipo, mesa, motivo_solicitud," & _
       " COALESCE(NULLIF(mesero_nombre,''), mesero) AS mesero, items, total, estado, mensaje, motivo," & _
       " procesado_por, procesado_desde, pc, DATE_FORMAT(procesado_en,'%h:%i %p') AS hora_proc," & _
       " TIMESTAMPDIFF(SECOND, procesado_en, NOW()) AS espera FROM ag_pw_lote"
@@ -464,7 +476,7 @@ With grdLotes
        .TextMatrix(Fila, COL_ID) = Texto(Rs!id)
        .TextMatrix(Fila, COL_ESTADO_BD) = Estado
        .TextMatrix(Fila, COL_HORA) = Texto(Rs!hora)
-       .TextMatrix(Fila, COL_TIPO) = IIf(Texto(Rs!tipo) = "NUEVO", "Pedido nuevo", "Prod. agregados")
+       .TextMatrix(Fila, COL_TIPO) = Nombre_Tipo(Texto(Rs!tipo))
        .TextMatrix(Fila, COL_MESA) = Texto(Rs!mesa)
        .TextMatrix(Fila, COL_MESERO) = Texto(Rs!mesero)
        .TextMatrix(Fila, COL_ITEMS) = Texto(Rs!items)
@@ -473,6 +485,7 @@ With grdLotes
           Case "PENDIENTE"
              .TextMatrix(Fila, COL_ESTADO) = "Pendiente"
              Obs = ""
+             If Texto(Rs!motivo_solicitud) <> "" Then Obs = "Motivo del mesero: " & Texto(Rs!motivo_solicitud)
              Call Pintar_Fila(Fila, COLOR_PENDIENTE)
           Case "ACEPTADO"
              .TextMatrix(Fila, COL_ESTADO) = "Aceptado"

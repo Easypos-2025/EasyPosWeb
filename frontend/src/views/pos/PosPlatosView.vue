@@ -94,7 +94,10 @@
                 <span class="item-cat" :style="{ background: (item.category_color||'#1d4ed8')+'22', color: item.category_color||'#1d4ed8' }">
                   {{ item.category_name || 'Sin categoría' }}
                 </span>
-                <span :class="isActivo(item) ? 'badge-activo' : 'badge-inactivo'">
+                <span v-if="Number(item.provisional)" class="badge-sede" title="Se activa cuando se sincronice el catálogo con el programa de escritorio (panel del agente)">
+                  <i class="bi bi-hourglass-split"></i> Pendiente escritorio
+                </span>
+                <span v-else :class="isActivo(item) ? 'badge-activo' : 'badge-inactivo'">
                   {{ isActivo(item) ? 'Activo' : 'Inactivo' }}
                 </span>
               </div>
@@ -692,7 +695,10 @@ async function guardarGeneral() {
     payload.compare_price = f.compare_price || null
     const nuevo = !f.id
     let id = f.id
-    if (nuevo) { const { data } = await api.post(BASE, payload); id = data.id; form.value.id = id }
+    if (nuevo) {
+      const { data } = await api.post(BASE, payload); id = data.id; form.value.id = id
+      if (data.pendiente_escritorio) showToast('Creado inactivo: se activa al sincronizar el catálogo con el escritorio', 'info', 4000)
+    }
     else       { await api.put(`${BASE}/${id}`, payload) }
 
     await api.put(`${BASE}/${id}/impresoras`, {
@@ -1073,6 +1079,7 @@ async function eliminar(item) {
 .item-cat    { font-size:10px;font-weight:700;border-radius:10px;padding:2px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .badge-activo  { font-size:10px;background:#dcfce7;color:#16a34a;border-radius:10px;padding:2px 8px;font-weight:700;white-space:nowrap; }
 .badge-inactivo{ font-size:10px;background:#f1f5f9;color:#94a3b8;border-radius:10px;padding:2px 8px;white-space:nowrap; }
+.badge-sede    { font-size:10px;background:#ccfbf1;color:#0f766e;border-radius:10px;padding:2px 8px;font-weight:700;white-space:nowrap; }
 .item-nombre { font-weight:700;font-size:14px;color:#1e3a5f;line-height:1.3; }
 .item-precios { display:flex;align-items:baseline;gap:6px; }
 .precio-tachado { font-size:12px;color:#94a3b8;text-decoration:line-through; }
