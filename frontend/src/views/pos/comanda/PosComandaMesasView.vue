@@ -23,7 +23,7 @@
           v-for="t in currentZone.tables"
           :key="t.id"
           class="mesa-card"
-          :class="`mesa-card--${t.status}`"
+          :class="[`mesa-card--${t.status}`, { 'mesa-card--pendiente': t.pendiente_caja }]"
           @click="onTableClick(t)"
         >
           <div class="mesa-card__header">
@@ -46,7 +46,7 @@
           </div>
           <div class="mesa-card__status">
             <span v-if="t.status === 'free'">Disponible</span>
-            <span v-else-if="t.pendiente_caja" class="mesa-card__pend"><i class="bi bi-hourglass-split"></i> Pendiente de caja</span>
+            <span v-else-if="t.pendiente_caja" class="mesa-card__pend"><i class="bi bi-hourglass-split"></i> Pendiente x Aceptar</span>
             <span v-else-if="t.status === 'bill_requested'">Solicitó cuenta</span>
             <span v-else>Ocupada</span>
           </div>
@@ -296,7 +296,9 @@ async function openTable() {
 .mesa-card--occupied .mesa-card__icon { color: #dc2626; }
 .mesa-card--occupied .mesa-card__status { color: #dc2626; }
 
-.mesa-card__pend { color: #b45309; font-weight: 700; }
+.mesa-card__pend { color: #fff; background: #0f766e; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+.mesa-card--pendiente { border-color: #0d9488 !important; background: linear-gradient(160deg, #ccfbf1 0%, #5eead4 100%) !important; }
+.mesa-card--pendiente .mesa-card__icon { color: #0f766e !important; }
 .mesa-card--bill_requested {
   border-color: #fde68a;
   background: #fffbeb;

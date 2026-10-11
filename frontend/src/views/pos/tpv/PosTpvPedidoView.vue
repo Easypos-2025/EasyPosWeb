@@ -168,7 +168,7 @@
               <span v-if="group.notes"   class="ci-tag ci-note">{{ group.notes }}</span>
               <span v-if="group.changes" class="ci-tag ci-change">{{ group.changes }}</span>
               <span v-if="group.hasDiscount" class="ci-tag ci-descuento"><i class="bi bi-percent"></i> Descuento</span>
-              <span v-if="group.hasPending" class="ci-pend">⏳ pendiente de caja</span>
+              <span v-if="group.hasPending" class="ci-pend">⏳ Pendiente x Aceptar</span>
               <span v-else-if="!group.hasUnsent" class="ci-sent">✓ enviado</span>
             </div>
           </div>
@@ -1207,7 +1207,7 @@ async function cancelOrder() {
 .ci-change    { background: #fff7ed; color: #c2410c; border-color: #fed7aa; text-transform: none; }
 .ci-descuento { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 700; text-transform: none; }
 .ci-sent   { color: #16a34a; font-size: .65rem; font-weight: 700; align-self: center; }
-.ci-pend   { color: #b45309; font-size: .65rem; font-weight: 700; align-self: center; }
+.ci-pend   { color: #0f766e; font-size: .65rem; font-weight: 700; align-self: center; }
 
 .tpv-cart__empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 
