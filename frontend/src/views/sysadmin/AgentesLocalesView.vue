@@ -38,39 +38,73 @@
       </div>
     </div>
 
+    <!-- Filtros: por nombre o código y por estado -->
+    <div v-if="agentes.length" class="al-filtros">
+      <div class="al-buscar">
+        <i class="bi bi-search"></i>
+        <input v-model="busqueda" class="form-control" placeholder="Buscar por empresa o código" />
+        <button v-if="busqueda" class="al-buscar-x" title="Limpiar" @click="busqueda = ''"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="al-chips">
+        <button v-for="f in FILTROS" :key="f.id" class="al-chip" :class="{ 'al-chip--activo': filtro === f.id }"
+                @click="filtro = f.id">{{ f.texto }} <b>{{ conteo[f.id] }}</b></button>
+      </div>
+    </div>
+
     <div v-if="cargando && !agentes.length" class="al-vacio">Cargando…</div>
     <div v-else-if="!agentes.length" class="al-vacio">No hay agentes asignados.</div>
+    <div v-else-if="!filtrados.length" class="al-vacio">Ningún agente coincide con la búsqueda.</div>
 
+    <!-- Tarjetas compactas: al tocar una se abre el detalle con sus acciones -->
     <div class="al-lista">
-      <div v-for="a in agentes" :key="a.id" class="al-card">
+      <button v-for="a in filtrados" :key="a.id" type="button" class="al-card" @click="selId = a.id">
         <div class="al-card-top">
-          <div class="al-emp">
-            <b>{{ a.empresa }}</b>
-            <small>Código {{ a.codigo }} · clave {{ a.clave_prefijo }}…</small>
-          </div>
+          <b class="al-card-emp">{{ a.empresa }}</b>
           <span class="al-estado" :class="estado(a).clase">{{ estado(a).texto }}</span>
         </div>
-        <div class="al-datos">
-          <div><span>URL local</span><b>{{ a.url_local || "—" }}</b></div>
-          <div><span>IP pública</span><b>{{ a.ip_publica || "—" }}</b></div>
-          <div><span>Versión</span><b>{{ a.version || "—" }}
+        <small class="al-card-cod">Código {{ a.codigo }}</small>
+        <div class="al-card-pie">
+          <span><i class="bi bi-box-seam"></i> {{ a.version || "—" }}
             <i v-if="a.version && vigente" :class="a.al_dia ? 'bi bi-check-circle-fill al-ok' : 'bi bi-arrow-up-circle-fill al-warn'"
-               :title="a.al_dia ? 'Al día' : 'Por actualizar'"></i></b></div>
-          <div><span>Último contacto</span><b>{{ fechaHora(a.ultimo_contacto) }}</b></div>
-          <div v-if="a.actualizacion" class="al-full"><span>Última actualización ({{ fechaHora(a.actualizacion_en) }})</span>
-            <b :class="a.actualizacion.startsWith('OK') ? 'al-ok' : 'al-warn'">{{ a.actualizacion }}</b></div>
+               :title="a.al_dia ? 'Al día' : 'Por actualizar'"></i></span>
+          <span><i class="bi bi-clock"></i> {{ fechaHora(a.ultimo_contacto) }}</span>
+        </div>
+        <span v-if="a.forzar_actualizacion && !a.al_dia" class="al-card-forzada"><i class="bi bi-hourglass-split"></i> Actualización forzada</span>
+      </button>
+    </div>
+
+    <!-- Detalle del agente con sus acciones -->
+    <div v-if="sel" class="al-velo" @click.self="selId = null">
+      <div class="al-modal al-detalle">
+        <div class="al-card-top">
+          <div class="al-emp">
+            <b>{{ sel.empresa }}</b>
+            <small>Código {{ sel.codigo }} · clave {{ sel.clave_prefijo }}…</small>
+          </div>
+          <span class="al-estado" :class="estado(sel).clase">{{ estado(sel).texto }}</span>
+          <button class="al-cerrar" title="Cerrar" @click="selId = null"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="al-datos">
+          <div><span>URL local</span><b>{{ sel.url_local || "—" }}</b></div>
+          <div><span>IP pública</span><b>{{ sel.ip_publica || "—" }}</b></div>
+          <div><span>Versión</span><b>{{ sel.version || "—" }}
+            <i v-if="sel.version && vigente" :class="sel.al_dia ? 'bi bi-check-circle-fill al-ok' : 'bi bi-arrow-up-circle-fill al-warn'"
+               :title="sel.al_dia ? 'Al día' : 'Por actualizar'"></i></b></div>
+          <div><span>Último contacto</span><b>{{ fechaHora(sel.ultimo_contacto) }}</b></div>
+          <div v-if="sel.actualizacion" class="al-full"><span>Última actualización ({{ fechaHora(sel.actualizacion_en) }})</span>
+            <b :class="sel.actualizacion.startsWith('OK') ? 'al-ok' : 'al-warn'">{{ sel.actualizacion }}</b></div>
         </div>
         <div class="al-acc">
-          <button class="al-btn al-btn--ghost" @click="regenerar(a)"><i class="bi bi-key"></i> Nueva clave</button>
+          <button class="al-btn al-btn--ghost" @click="regenerar(sel)"><i class="bi bi-key"></i> Nueva clave</button>
           <!-- Sede atrasada: se actualiza apenas tenga la versión descargada (máx. 1 min tras su próximo latido) -->
-          <span v-if="a.forzar_actualizacion && !a.al_dia" class="al-forzada"><i class="bi bi-hourglass-split"></i> Actualización forzada pendiente</span>
-          <button v-else-if="a.activo && a.version && vigente && !a.al_dia" class="al-btn al-btn--ghost" @click="forzar(a)">
+          <span v-if="sel.forzar_actualizacion && !sel.al_dia" class="al-forzada"><i class="bi bi-hourglass-split"></i> Actualización forzada pendiente</span>
+          <button v-else-if="sel.activo && sel.version && vigente && !sel.al_dia" class="al-btn al-btn--ghost" @click="forzar(sel)">
             <i class="bi bi-arrow-up-circle"></i> Forzar actualización
           </button>
-          <button class="al-btn" :class="a.activo ? 'al-btn--peligro' : 'al-btn--ok'" @click="alternar(a)">
-            <i :class="a.activo ? 'bi bi-pause-circle' : 'bi bi-play-circle'"></i> {{ a.activo ? "Desactivar" : "Activar" }}
+          <button class="al-btn" :class="sel.activo ? 'al-btn--peligro' : 'al-btn--ok'" @click="alternar(sel)">
+            <i :class="sel.activo ? 'bi bi-pause-circle' : 'bi bi-play-circle'"></i> {{ sel.activo ? "Desactivar" : "Activar" }}
           </button>
-          <button class="al-btn al-btn--peligro" @click="porEliminar = { ...a, confirmacion: '' }">
+          <button class="al-btn al-btn--peligro" @click="pedirEliminar(sel)">
             <i class="bi bi-trash"></i> Eliminar
           </button>
         </div>
@@ -157,6 +191,35 @@ const vigente = computed(() => versiones.value.find(v => v.vigente) || null)
 const activos = computed(() => agentes.value.filter(a => a.activo && a.version))
 const alDia = computed(() => activos.value.filter(a => a.al_dia).length)
 const atrasadas = computed(() => activos.value.length - alDia.value)
+
+// Filtros de la lista (nombre o código, sin tildes ni mayúsculas) y por estado
+const FILTROS = [
+  { id: "todos", texto: "Todos" }, { id: "linea", texto: "En línea" }, { id: "sin", texto: "Sin contacto" },
+  { id: "atrasado", texto: "Por actualizar" }, { id: "inactivo", texto: "Inactivos" },
+]
+const CUMPLE = {
+  todos: () => true,
+  linea: a => a.activo && a.en_linea,
+  sin: a => a.activo && !a.en_linea,
+  atrasado: a => a.activo && a.version && !a.al_dia,
+  inactivo: a => !a.activo,
+}
+const busqueda = ref("")
+const filtro = ref("todos")
+const selId = ref(null)
+const sel = computed(() => agentes.value.find(a => a.id === selId.value) || null)
+const normal = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+const conteo = computed(() => Object.fromEntries(FILTROS.map(f => [f.id, agentes.value.filter(CUMPLE[f.id]).length])))
+const filtrados = computed(() => {
+  const q = normal(busqueda.value.trim())
+  return agentes.value.filter(a => CUMPLE[filtro.value](a)
+    && (!q || normal(a.empresa).includes(q) || normal(a.codigo).includes(q)))
+})
+
+function pedirEliminar(a) {
+  porEliminar.value = { ...a, confirmacion: "" }
+  selId.value = null
+}
 
 const empresasLibres = computed(() => {
   const usadas = new Set(agentes.value.map(a => a.company_id))
@@ -303,9 +366,28 @@ onMounted(cargar)
 .al-warn { color: #d97706; }
 .al-full { grid-column: 1 / -1; }
 .al-vacio { text-align: center; color: #64748b; padding: 30px; }
-.al-lista { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.al-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 3px rgba(15,23,42,.08), 0 4px 12px rgba(15,23,42,.06); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-.al-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.al-filtros { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.al-buscar { position: relative; max-width: 420px; }
+.al-buscar > i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
+.al-buscar .form-control { padding-left: 36px; padding-right: 36px; min-height: 40px; border-radius: 10px; }
+.al-buscar-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: #64748b; padding: 6px; }
+.al-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.al-chip { border: 1px solid #e2e8f0; background: #fff; color: #334155; border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.al-chip b { margin-left: 4px; color: #64748b; }
+.al-chip--activo { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }
+.al-chip--activo b { color: #cbd5e1; }
+.al-lista { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.al-card { text-align: left; border: 1px solid transparent; background: #fff; border-radius: 14px; box-shadow: 0 1px 3px rgba(15,23,42,.08), 0 4px 12px rgba(15,23,42,.06);
+           padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; color: inherit; transition: border-color .15s, transform .15s; }
+.al-card:hover { border-color: #93c5fd; transform: translateY(-1px); }
+.al-card-emp { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-card-cod { color: #64748b; font-size: 13px; }
+.al-card-pie { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #475569; margin-top: 4px; }
+.al-card-forzada { align-self: flex-start; font-size: 11px; font-weight: 600; color: #b45309; background: #fef3c7; border-radius: 6px; padding: 2px 8px; margin-top: 2px; }
+.al-detalle { max-width: 620px; display: flex; flex-direction: column; gap: 14px; max-height: 90vh; overflow-y: auto; }
+.al-detalle .al-emp { flex: 1; min-width: 0; }
+.al-cerrar { border: 0; background: #f1f5f9; color: #475569; border-radius: 8px; width: 34px; height: 34px; flex-shrink: 0; }
+.al-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; min-width: 0; }
 .al-emp b { display: block; font-size: 16px; }
 .al-emp small { color: #64748b; }
 .al-estado { flex-shrink: 0; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
@@ -332,12 +414,19 @@ onMounted(cargar)
 .al-aviso { font-size: 14px; color: #92400e; background: #fef3c7; border-radius: 10px; padding: 10px 12px; }
 .al-clave { font-family: Consolas, monospace; font-size: 14px; background: #f1f5f9; border-radius: 10px; padding: 12px; word-break: break-all; user-select: all; }
 
+@media (max-width: 1024px) {
+  .al-lista { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 768px) {
-  .al-lista { grid-template-columns: 1fr; }
+  .al-lista { gap: 10px; }
+  .al-buscar { max-width: none; }
 }
 @media (max-width: 576px) {
   .al-wrap { padding: 10px; }
+  .al-lista { grid-template-columns: 1fr; }
   .al-datos { grid-template-columns: 1fr; }
+  .al-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .al-chip { flex-shrink: 0; }
   .hide-xs { display: none; }
   .al-acc .al-btn { flex: 1; justify-content: center; }
 }
