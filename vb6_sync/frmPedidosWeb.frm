@@ -244,7 +244,7 @@ Option Explicit
 ' frmPedidosWeb - Pedidos web pendientes de aceptar en caja
 ' ------------------------------------------------------------
 ' Los pedidos (y productos agregados) que se envian desde EasyPosWeb llegan por el Agente Local
-' a datatemppos.ag_pw_lote / ag_pw_item. Nada pasa al escritorio ni se imprime hasta aceptarlo
+' a datatemppos.ag_pw_lote2 / ag_pw_item. Nada pasa al escritorio ni se imprime hasta aceptarlo
 ' aqui (o en el panel de la mini-app del agente).
 '   * Tipos: pedido nuevo, productos agregados, ELIMINAR productos y CANCELAR cuenta (estos dos
 '     traen el motivo del mesero; al aceptarlos el agente imprime la anulacion y pasa al historico).
@@ -260,7 +260,7 @@ Option Explicit
 ' Requiere: Base_Reportes_MySql (conexion ADO a datatemppos), Var_Nombre_Usuario,
 '           MSFLXGRD.OCX, mscomct2.ocx (DTPicker) y la referencia a ADO.
 ' Consulta para la alerta del dashboard (pedidos web por atender):
-'   SELECT COUNT(*) FROM ag_pw_lote WHERE estado IN ('PENDIENTE','ERROR')
+'   SELECT COUNT(*) FROM ag_pw_lote2 WHERE estado IN ('PENDIENTE','ERROR')
 ' ============================================================
 
 Private Const COL_MARCA As Integer = 0
@@ -452,7 +452,7 @@ Var_Cargando = True
 Sql = "SELECT id, nro_pedido, DATE_FORMAT(recibido_en,'%d/%m %h:%i %p') AS hora, tipo, mesa, motivo_solicitud," & _
       " COALESCE(NULLIF(mesero_nombre,''), mesero) AS mesero, items, total, estado, mensaje, motivo," & _
       " procesado_por, procesado_desde, pc, DATE_FORMAT(procesado_en,'%h:%i %p') AS hora_proc," & _
-      " TIMESTAMPDIFF(SECOND, procesado_en, NOW()) AS espera FROM ag_pw_lote"
+      " TIMESTAMPDIFF(SECOND, procesado_en, NOW()) AS espera FROM ag_pw_lote2"
 If Var_Vista = "P" Then
    Sql = Sql & " WHERE estado IN ('PENDIENTE','ACEPTADO','ERROR') ORDER BY id"
 Else
@@ -553,7 +553,7 @@ On Error GoTo Linea
 Dim Rs As ADODB.Recordset, Fila As Long
 Var_Id_Detalle = Id_Lote
 Set Rs = New ADODB.Recordset
-Rs.Open "SELECT nro_pedido, enviado_por FROM ag_pw_lote WHERE id = " & Id_Lote, Base_Reportes_MySql, adOpenStatic, adLockReadOnly
+Rs.Open "SELECT nro_pedido, enviado_por FROM ag_pw_lote2 WHERE id = " & Id_Lote, Base_Reportes_MySql, adOpenStatic, adLockReadOnly
 If Rs.EOF Then
    Rs.Close
    Call Limpiar_Detalle
@@ -620,7 +620,7 @@ For i = 0 To UBound(Partes)
        Set Cmd = New ADODB.Command
        Set Cmd.ActiveConnection = Base_Reportes_MySql
        Cmd.CommandType = adCmdText
-       Cmd.CommandText = "UPDATE ag_pw_lote SET estado = ?, procesado_por = ?, procesado_desde = 'VB', pc = ?," & _
+       Cmd.CommandText = "UPDATE ag_pw_lote2 SET estado = ?, procesado_por = ?, procesado_desde = 'VB', pc = ?," & _
                          " procesado_en = NOW(), motivo = ?, mensaje = NULL" & _
                          " WHERE id = ? AND estado IN ('PENDIENTE','ERROR')"
        Cmd.Parameters.Append Cmd.CreateParameter("estado", adVarChar, adParamInput, 12, Estado)
