@@ -539,6 +539,9 @@ async def abrir_mesa(
 
     ts = int(datetime.now(_BOG).timestamp() * 1000)
     order_number = f"WEB-{cid}-{data.table_id}-{ts}"
+    # Sin cliente asignado = Consumidor Final verificado (antes quedaba en 0); si no existe no se monta
+    from app.services import clientes as clientes_svc
+    id_cliente = await clientes_svc.consumidor_final_id(db, cid)
 
     # Insertar en temp_comanda (Movil=1 = origen web)
     await db_temp.execute(text("""
@@ -547,9 +550,10 @@ async def abrir_mesa(
              Mesero, Cancelado, Valor, Nro_Comenzales, Domicilio, Id_Cliente, Movil, updated_at)
         VALUES
             (:cid, :on, :date, '0', :mesa, :hora,
-             :wid, 0, 0, :guests, :delivery, 0, 1, NOW())
+             :wid, 0, 0, :guests, :delivery, :cli, 1, NOW())
     """), {
         "cid":      cid,
+        "cli":      id_cliente,
         "on":       order_number,
         "date":     today,
         "mesa":     data.table_name,

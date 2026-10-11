@@ -2,8 +2,10 @@
 Clientes (espejo de `clientes` del escritorio) — lógica compartida por la comanda,
 las listas de precios por cliente y, más adelante, el Registro de Recibo.
 
-  id_cliente = 1 → Consumidor Final (cédula 222222222222), se crea bajo demanda.
-  Todo pedido nace con id_cliente = 1.
+  Consumidor Final = el cliente con id_cliente = 1 (se llame como se llame; nombre y cédula 222222222222 solo
+  importan para POS electrónico; si no hay id 1 se busca por esa cédula). Todo pedido sin
+  cliente asignado lleva el Consumidor Final. Regla del usuario 2026-10-11 (reemplaza "se crea bajo
+  demanda"): se VERIFICA; si no existe no se puede trabajar (409 SIN_CONSUMIDOR_FINAL) hasta crearlo.
 """
 from typing import Optional
 
@@ -14,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 CONSUMIDOR_FINAL_ID = 1
 CONSUMIDOR_FINAL_CEDULA = "222222222222"
 CONSUMIDOR_FINAL_NOMBRE = "Consumidor Final"
+MENSAJE_SIN_CONSUMIDOR_FINAL = ("No existe el cliente Consumidor Final (cliente con Id 1): créelo en Clientes "
+                                "para poder tomar pedidos y cobrar.")
 
 
 def _clean(v: Optional[str], n: int) -> Optional[str]:
@@ -21,12 +25,24 @@ def _clean(v: Optional[str], n: int) -> Optional[str]:
     return v[:n] or None
 
 
+async def consumidor_final_id(db: AsyncSession, cid: int) -> int:
+    """Id del Consumidor Final de la empresa: el cliente 1; si no existe, el de la cédula 222222222222.
+    Si no hay ninguno → 409 (no se puede trabajar sin él)."""
+    if (await db.execute(text("SELECT 1 FROM clientes WHERE company_id = :cid AND id_cliente = :id"),
+                         {"cid": cid, "id": CONSUMIDOR_FINAL_ID})).scalar():
+        return CONSUMIDOR_FINAL_ID
+    por_cedula = (await db.execute(text(
+        "SELECT MIN(id_cliente) FROM clientes WHERE company_id = :cid AND TRIM(cedula) = :ced"
+    ), {"cid": cid, "ced": CONSUMIDOR_FINAL_CEDULA})).scalar()
+    if por_cedula:
+        return int(por_cedula)
+    raise HTTPException(status_code=409, detail=MENSAJE_SIN_CONSUMIDOR_FINAL,
+                        headers={"X-Error-Code": "SIN_CONSUMIDOR_FINAL"})
+
+
 async def ensure_consumidor_final(db: AsyncSession, cid: int) -> None:
-    """Crea el cliente 1 (Consumidor Final) si la empresa aún no lo tiene."""
-    await db.execute(text("""
-        INSERT IGNORE INTO clientes (company_id, id_cliente, cedula, nombres, enviada_mysql)
-        VALUES (:cid, :id, :ced, :nom, 0)
-    """), {"cid": cid, "id": CONSUMIDOR_FINAL_ID, "ced": CONSUMIDOR_FINAL_CEDULA, "nom": CONSUMIDOR_FINAL_NOMBRE})
+    """Antes lo creaba; ahora solo verifica que exista (409 si no)."""
+    await consumidor_final_id(db, cid)
 
 
 async def next_id_cliente(db: AsyncSession, cid: int) -> int:
@@ -49,8 +65,8 @@ def serialize(r) -> dict:
 
 
 async def get_cliente(db: AsyncSession, cid: int, id_cliente: int) -> dict:
-    if int(id_cliente) == CONSUMIDOR_FINAL_ID:
-        await ensure_consumidor_final(db, cid)
+    if int(id_cliente or 0) in (0, CONSUMIDOR_FINAL_ID):        # sin cliente asignado = Consumidor Final
+        id_cliente = await consumidor_final_id(db, cid)
     r = (await db.execute(text("""
         SELECT id_cliente, cedula, nombres, apellidos, telefono, direccion, mail
         FROM clientes WHERE company_id = :cid AND id_cliente = :id
@@ -61,7 +77,6 @@ async def get_cliente(db: AsyncSession, cid: int, id_cliente: int) -> dict:
 
 
 async def buscar(db: AsyncSession, cid: int, q: Optional[str], limit: int = 30) -> list:
-    await ensure_consumidor_final(db, cid)
     sql = """
         SELECT id_cliente, cedula, nombres, apellidos, telefono, direccion, mail
         FROM clientes WHERE company_id = :cid
@@ -88,7 +103,6 @@ async def crear(db: AsyncSession, cid: int, nombres: str, cedula: Optional[str],
         ), {"cid": cid, "ced": cedula})).scalar()
         if dup:
             raise HTTPException(status_code=409, detail=f"Ya existe un cliente con la cédula/NIT {cedula}")
-    await ensure_consumidor_final(db, cid)
     nid = await next_id_cliente(db, cid)
     await db.execute(text("""
         INSERT INTO clientes (company_id, id_cliente, cedula, nombres, telefono, direccion, mail, enviada_mysql)

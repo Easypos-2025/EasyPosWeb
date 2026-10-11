@@ -433,9 +433,8 @@ async def abrir_mesa(
 
     order_number = _order_number(cid, data.table_id)
 
-    # Cliente del pedido: por defecto 1 = Consumidor Final; si viene otro, debe ser de la empresa
+    # Cliente del pedido: sin cliente = Consumidor Final verificado (409 si no existe); otro debe ser de la empresa
     customer = await clientes_svc.get_cliente(db, cid, data.customer_id or clientes_svc.CONSUMIDOR_FINAL_ID)
-    await db.commit()   # por si se creó el Consumidor Final
 
     # Insertar en temp_comanda (Movil=1 = origen web)
     await db_temp.execute(text("""
