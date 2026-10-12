@@ -5,6 +5,8 @@ Aquí irán llegando utilidades que hoy están en el programa de escritorio.
 
   POST /api/ag/admin/ingresar          clave → token de administrador
   POST /api/ag/admin/clave             cambiar la clave (invalida las sesiones abiertas)
+  POST /api/ag/admin/codigo-local      código de un solo uso para entrar desde el escritorio (solo localhost)
+  POST /api/ag/admin/ingresar-codigo   código → sesión del panel (30 s, un solo uso)
   GET  /api/ag/admin/resumen           indicadores del dashboard
   GET  /api/ag/admin/errores           errores del agente y de los dispositivos
   POST /api/ag/admin/errores/{id}/resolver | reabrir
@@ -96,6 +98,52 @@ async def ingresar(data: ClaveIn, request: Request, tmp: AsyncSession = Depends(
         await auditoria.registrar("admin", "fallo", ip)
         raise HTTPException(status_code=401, detail="Clave incorrecta.")
     await auditoria.registrar("admin", "ok", ip)
+    return {"token": _token(int(await leer_config(tmp, "admin_version") or 0))}
+
+
+# ───────────────────────────── ingreso desde el escritorio (código de un solo uso) ─────────────────────────────
+# El botón del programa de escritorio (modCatalogoWeb.Abrir_Panel_Agente) abre el panel sin escribir la clave:
+# pide un código al agente desde el MISMO PC (solo localhost lo recibe; un celular o PC de la red no) y abre
+# http://localhost:PUERTO/#/admin/ingresar?codigo=…; el panel lo cambia por la sesión. Vence en 30 s y sirve
+# una sola vez. La clave nunca viaja en el enlace (quedaría en el historial del navegador).
+_CODIGOS_LOCALES: dict[str, datetime] = {}
+SEGUNDOS_CODIGO = 30
+_LOCALES = {"127.0.0.1", "::1"}
+
+
+class CodigoIn(BaseModel):
+    codigo: str = Field(min_length=20, max_length=64)
+
+
+@router.post("/codigo-local")
+async def codigo_local(request: Request, tmp: AsyncSession = Depends(get_tmp)):
+    ip = ip_cliente(request)
+    if ip not in _LOCALES:
+        await auditoria.registrar("admin_codigo", "rechazado", ip)
+        raise HTTPException(status_code=403, detail="Solo se puede pedir desde el computador de caja.")
+    if not await leer_config(tmp, "clave_admin"):
+        raise HTTPException(status_code=409, detail="El administrador aún no tiene clave. Se crea con el instalador del agente.")
+    import secrets
+    ahora = datetime.now()
+    for c, vence in list(_CODIGOS_LOCALES.items()):           # limpia los vencidos
+        if vence < ahora:
+            _CODIGOS_LOCALES.pop(c, None)
+    codigo = secrets.token_urlsafe(24)
+    _CODIGOS_LOCALES[codigo] = ahora + timedelta(seconds=SEGUNDOS_CODIGO)
+    await auditoria.registrar("admin_codigo", "ok", ip)
+    return {"codigo": codigo, "url": f"http://localhost:{config.PUERTO}/#/admin/ingresar?codigo={codigo}"}
+
+
+@router.post("/ingresar-codigo")
+async def ingresar_codigo(data: CodigoIn, request: Request, tmp: AsyncSession = Depends(get_tmp)):
+    ip = ip_cliente(request)
+    if await auditoria.contar("admin", "fallo", config.LOGIN_VENTANA_MIN, ip=ip) >= config.LOGIN_MAX_FALLOS:
+        raise HTTPException(status_code=429, detail=f"Demasiados intentos. Intente en {config.LOGIN_VENTANA_MIN} minutos.")
+    vence = _CODIGOS_LOCALES.pop(data.codigo, None)           # un solo uso
+    if not vence or vence < datetime.now():
+        await auditoria.registrar("admin", "fallo", ip, detalle="código de un solo uso inválido o vencido")
+        raise HTTPException(status_code=401, detail="El acceso venció. Vuelva a abrir el panel desde el escritorio.")
+    await auditoria.registrar("admin", "ok", ip, detalle="ingreso desde el escritorio (código de un solo uso)")
     return {"token": _token(int(await leer_config(tmp, "admin_version") or 0))}
 
 

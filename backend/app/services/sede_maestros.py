@@ -379,3 +379,30 @@ async def confirmar(db: AsyncSession, cid: int, platos: list, sede_actualizado: 
         else:
             renumerados.append({"entidad": "plato", "id_web": id_web, "id_real": id_real})
     return {"renumerados": renumerados, "confirmados": confirmados, "errores": errores, "sede": sede_ok}
+
+
+# Nombre a mostrar por catálogo (resumen liviano para el aviso del escritorio)
+NOMBRE_COLUMNA = {"forma_medida": "name", "categoria_productos": "name", "categoria_platos": "name",
+                  "proveedor": "name", "insumo": "description", "cliente": "nombres"}
+
+
+async def resumen(db: AsyncSession, cid: int) -> dict:
+    """Qué tiene la web pendiente de bajar, solo número y nombre (el agente lo copia cada minuto a
+    ag_maestros_pendientes para que el escritorio avise o bloquee la edición antes de sincronizar).
+    El número es el del escritorio (Id_Plato, Id_Item, Id_Cliente…) salvo los provisionales (nuevos)."""
+    out = {}
+    for nombre in ORDEN:
+        e = ENTIDADES[nombre]
+        filas = (await db.execute(text(f"""
+            SELECT {e['llave']} AS id, {NOMBRE_COLUMNA[nombre]} AS nombre FROM {e['tabla']}
+            WHERE company_id = :c AND {e['pendiente']} AND {e['llave']} IS NOT NULL AND {e['llave']} > 0
+            LIMIT 2000
+        """), {"c": cid})).all()
+        out[nombre] = [{"id": int(i), "provisional": es_provisional(i), "nombre": (n or "")[:250]} for i, n in filas]
+    out["plato"] = [{"id": int(i), "provisional": es_provisional(i), "nombre": (n or "")[:250]} for i, n in (await db.execute(text(
+        "SELECT id, name FROM pos_dishes WHERE company_id = :c AND synced = 0 LIMIT 2000"), {"c": cid})).all()]
+    out["lista_precios"] = [{"id": int(i), "provisional": es_provisional(i), "nombre": ""} for (i,) in (await db.execute(text(
+        "SELECT DISTINCT id_producto FROM pos_customer_price_list WHERE company_id = :c AND synced = 0 LIMIT 2000"), {"c": cid})).all()]
+    sede = (await db.execute(text("SELECT 1 FROM configuracion_sede WHERE company_id = :c AND synced = 0"), {"c": cid})).scalar()
+    out["sede"] = [{"id": 0, "provisional": False, "nombre": "Datos de la sede"}] if sede else []
+    return out

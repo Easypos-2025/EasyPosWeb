@@ -19,15 +19,35 @@
 </template>
 
 <script setup>
-import { ref } from "vue"
-import { useRouter } from "vue-router"
+import { onMounted, ref } from "vue"
+import { useRoute, useRouter } from "vue-router"
 import Icono from "../../componentes/Icono.vue"
 import { api, guardarAdmin } from "../../api"
 
 const router = useRouter()
+const route = useRoute()
 const clave = ref("")
 const error = ref("")
 const enviando = ref(false)
+
+// Botón del programa de escritorio: llega con un código de un solo uso (vence en 30 s) y entra sin clave.
+// El código se quita de la dirección de inmediato (no queda en el historial).
+onMounted(async () => {
+  const codigo = String(route.query.codigo || "")
+  if (!codigo) return
+  router.replace({ path: "/admin/ingresar" })
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(codigo)) return
+  enviando.value = true
+  try {
+    const r = await api.admin.post("/ingresar-codigo", { codigo })
+    guardarAdmin(r.token)
+    router.replace("/admin")
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    enviando.value = false
+  }
+})
 
 async function ingresar() {
   error.value = ""

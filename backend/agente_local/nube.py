@@ -185,6 +185,11 @@ async def ciclo() -> None:
             await actualizador.revisar_resultado()       # resultado de una actualización recién aplicada
             await latido()
             await enviar_errores()
+            try:                                         # aviso del escritorio: lo pendiente de bajar de la web
+                from .servicios import maestros_web
+                await maestros_web.refrescar_pendientes()
+            except Exception as e:                       # no corta el ciclo: se reintenta al minuto siguiente
+                log.warning("No se pudo refrescar lo pendiente de la web: %s", e)
             await actualizador.descargar_si_hace_falta()
             await actualizador.publicar_aviso()          # para el dashboard del escritorio (ag_config)
             # Opción B: al abrir turno (cambia la fecha de negocio) y sin pedidos abiertos de dispositivos

@@ -40,6 +40,17 @@ async def _daily_remaining(company_id: int, limit_field: str, table: str, db) ->
     return max(0, max_val - row)
 
 
+async def _pendientes_web(db, tabla: str, columna: str, condicion: str, empresas) -> set:
+    """(empresa, llave) de los registros con cambios de la web aún no bajados al escritorio. La subida del
+    escritorio no los pisa: la web manda hasta que se sincronice el catálogo (decisión del usuario 2026-10-11)."""
+    out: set = set()
+    for cid in {int(c) for c in empresas if c is not None}:
+        out |= {(cid, int(r[0])) for r in (await db.execute(text(
+            f"SELECT {columna} FROM {tabla} WHERE company_id = :c AND {condicion} AND {columna} IS NOT NULL"
+        ), {"c": cid})).all()}
+    return out
+
+
 async def _exists_in_table(table: str, pk_col: str, pk_val: str, company_id: int, db) -> bool:
     row = (await db.execute(
         text(f"SELECT 1 FROM {table} WHERE {pk_col}=:pk AND company_id=:cid LIMIT 1"),
@@ -1811,7 +1822,11 @@ async def push_dish_products(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_dishes", "id", "synced = 0", {getattr(x, 'company_id', None) for x in records})
     for r in records:
+        if (getattr(r, 'company_id', None), int(r.dish_id)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_dish_products
@@ -1932,7 +1947,11 @@ async def push_dish_assembly(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_dishes", "id", "synced = 0", {getattr(x, 'company_id', None) for x in records})
     for r in records:
+        if (getattr(r, 'company_id', None), int(r.dish_id)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_dish_assembly
@@ -2056,7 +2075,11 @@ async def push_dish_categories(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_dish_categories", "id", "synced = 0", {getattr(x, 'company_id', None) for x in categories})
     for c in categories:
+        if (getattr(c, 'company_id', None), int(c.id)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_dish_categories
@@ -2124,7 +2147,11 @@ async def push_product_categories(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_product_categories", "id", "synced = 0", {getattr(x, 'company_id', None) for x in categories})
     for c in categories:
+        if (getattr(c, 'company_id', None), int(c.id)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_product_categories
@@ -2366,7 +2393,11 @@ async def push_dish_assembly_detail(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_dishes", "id", "synced = 0", {getattr(x, 'company_id', None) for x in records})
     for r in records:
+        if (getattr(r, 'company_id', None), int(r.dish_id)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_dish_assembly_detail
@@ -2986,7 +3017,11 @@ async def push_measure_forms(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_measure_forms", "id", "synced = 0", {getattr(x, 'company_id', None) for x in items})
     for item in items:
+        if (getattr(item, 'company_id', None), int(item.id)) in _pend_web:
+            continue
         key = f"{item.id}|{item.company_id}"
         try:
             await db.execute(text("""
@@ -3030,7 +3065,16 @@ async def push_customer_price_list(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: un precio con cambios de la web sin bajar al escritorio no se pisa
+    _pend_web: set = set()
+    for _cid in {x.company_id for x in items}:
+        _pend_web |= {(_cid, int(r[0]), int(r[1]), int(r[2]), int(r[3])) for r in (await db.execute(text(
+            "SELECT id_lista, id_cliente, id_producto, id_presentacion FROM pos_customer_price_list "
+            "WHERE company_id = :c AND synced = 0"), {"c": _cid})).all()}
     for item in items:
+        if (item.company_id, int(item.id_lista), int(item.id_cliente), int(item.id_producto),
+                int(item.id_presentacion or 0)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO pos_customer_price_list
@@ -3080,7 +3124,11 @@ async def push_dish_portions(
     _: str = Depends(verify_api_key),
 ):
     ok_platos, bad_platos, failed = set(), set(), []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "pos_dishes", "id", "synced = 0", {getattr(x, 'company_id', None) for x in items})
     for it in items:
+        if (getattr(it, 'company_id', None), int(it.id_plato)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO inventario_porciones_plato
@@ -3133,7 +3181,11 @@ async def push_suppliers(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "suppliers", "id_proveedor", "synced = 0", {getattr(x, 'company_id', None) for x in items})
     for it in items:
+        if (getattr(it, 'company_id', None), int(it.id_proveedor)) in _pend_web:
+            continue
         try:
             await db.execute(text("""
                 INSERT INTO suppliers
@@ -3186,7 +3238,11 @@ async def push_supply_suppliers(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "supply_items", "id_item", "synced = 0", {getattr(x, 'company_id', None) for x in items})
     for it in items:
+        if (getattr(it, 'company_id', None), int(it.id_insumo or 0)) in _pend_web:
+            continue
         key = f"{it.id_proveedor}|{it.id_insumo}"
         try:
             await db.execute(text("""
@@ -3232,7 +3288,11 @@ async def push_supply_measures(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "supply_items", "id_item", "synced = 0", {getattr(x, 'company_id', None) for x in items})
     for it in items:
+        if (getattr(it, 'company_id', None), int(it.id_insumo or 0)) in _pend_web:
+            continue
         key = f"{it.id_forma_medida}|{it.id_insumo}"
         try:
             await db.execute(text("""
@@ -3298,7 +3358,11 @@ async def push_clientes(
     cols = ", ".join(_CLIENTE_COLS)
     vals = ", ".join(f":{c}" for c in _CLIENTE_COLS)
     upd = ", ".join(f"{c} = VALUES({c})" for c in _CLIENTE_COLS)
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "clientes", "id_cliente", "enviada_mysql = 0", {getattr(x, 'company_id', None) for x in items})
     for it in items:
+        if (getattr(it, 'company_id', None), int(it.id_cliente)) in _pend_web:
+            continue
         try:
             params = it.dict()
             for f in ("fecha_aniversario", "fecha_grado"):
@@ -3469,7 +3533,11 @@ async def push_supply_items(
     _: str = Depends(verify_api_key),
 ):
     saved, failed = [], []
+    # La web manda: lo que tiene cambios de la web sin bajar al escritorio no se pisa
+    _pend_web = await _pendientes_web(db, "supply_items", "id_item", "synced = 0", {getattr(x, 'company_id', None) for x in items})
     for item in items:
+        if (getattr(item, 'company_id', None), int(item.id_item or 0)) in _pend_web:
+            continue
         key = f"{item.id_grupo}|{item.id_item}|{item.company_id}"
         try:
             await db.execute(text("""

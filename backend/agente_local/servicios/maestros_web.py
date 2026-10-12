@@ -342,6 +342,10 @@ async def sincronizar(quien: str = "panel") -> dict:
                                       {"e": x.get("entidad") or "plato", "w": x["id_web"]})
                 await tmp.commit()
 
+    try:
+        await refrescar_pendientes()             # el aviso del escritorio queda al día de inmediato
+    except Exception:
+        log.exception("Refrescar pendientes de la web")
     # Fotos de la web (mismo botón)
     try:
         from . import fotos_web
@@ -380,3 +384,34 @@ async def atender_solicitud_escritorio() -> None:
     async with SesionTemp() as tmp:
         await tmp.execute(text("UPDATE ag_config SET valor = :v WHERE clave = 'maestros_solicitud'"), {"v": final})
         await tmp.commit()
+
+
+ENTIDADES_AVISO = ("plato", "insumo", "cliente", "categoria_platos", "categoria_productos", "forma_medida",
+                   "proveedor", "lista_precios", "sede")
+
+
+async def refrescar_pendientes() -> int:
+    """Copia de la nube lo que está pendiente de bajar a ag_maestros_pendientes (cada minuto y después de
+    sincronizar). ag_config: maestros_revisado (cuándo) y maestros_pendientes (cuántos)."""
+    r = await nube.pedir("GET", "/api/agente/maestros/resumen", timeout=30) or {}
+    filas = []
+    for ent in ENTIDADES_AVISO:
+        for x in (r.get(ent) or [])[:5000]:
+            try:
+                filas.append({"e": ent, "i": int(x["id"]), "p": 1 if x.get("provisional") else 0,
+                              "n": str(x.get("nombre") or "")[:250]})
+            except (TypeError, ValueError, KeyError):
+                continue
+    async with SesionTemp() as tmp:
+        await tmp.execute(text("DELETE FROM ag_maestros_pendientes"))
+        for f in filas:
+            await tmp.execute(text("""
+                INSERT IGNORE INTO ag_maestros_pendientes (entidad, id, provisional, nombre) VALUES (:e, :i, :p, :n)
+            """), f)
+        for clave, valor in (("maestros_revisado", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                             ("maestros_pendientes", str(len(filas)))):
+            await tmp.execute(text("""
+                INSERT INTO ag_config (clave, valor) VALUES (:c, :v) ON DUPLICATE KEY UPDATE valor = :v
+            """), {"c": clave, "v": valor})
+        await tmp.commit()
+    return len(filas)

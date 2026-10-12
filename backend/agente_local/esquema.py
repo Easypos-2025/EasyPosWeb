@@ -171,6 +171,20 @@ TABLAS = [
         PRIMARY KEY (entidad, id_web)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # Lo que la web tiene pendiente de bajar (copia de la nube cada minuto): el escritorio lo consulta para
+    # avisar o no dejar editar un registro antes de sincronizar el catálogo (modCatalogoWeb.bas).
+    #   entidad: plato, insumo, cliente, categoria_platos, categoria_productos, forma_medida, proveedor,
+    #            lista_precios (id = Id_Producto), sede (id = 0). id: número del escritorio; provisional = 1 si es
+    #            nuevo de la web (aún no existe en el escritorio).
+    """
+    CREATE TABLE IF NOT EXISTS ag_maestros_pendientes (
+        entidad     VARCHAR(30)  NOT NULL,
+        id          INT          NOT NULL,
+        provisional TINYINT      NOT NULL DEFAULT 0,
+        nombre      VARCHAR(250) NULL,
+        PRIMARY KEY (entidad, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
     """
     CREATE TABLE IF NOT EXISTS ag_config (

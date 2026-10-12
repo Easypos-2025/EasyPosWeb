@@ -487,6 +487,13 @@ async def maestros_pendientes(agente: dict = Depends(agente_actual), db: AsyncSe
     return await sede_maestros.pendientes(db, agente["company_id"])
 
 
+@router_agente.get("/maestros/resumen")
+async def maestros_resumen(agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    """Liviano (número y nombre): el agente lo consulta cada minuto para el aviso del escritorio."""
+    from app.services import sede_maestros
+    return await sede_maestros.resumen(db, agente["company_id"])
+
+
 class PlatoAplicadoIn(BaseModel):
     id_web: int = Field(gt=0)
     id_real: int = Field(gt=0)
