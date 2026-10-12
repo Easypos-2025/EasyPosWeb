@@ -145,6 +145,22 @@ async def get_estado_efectivo(
     return await estado_efectivo(db, current_user.company_id)
 
 
+async def _exigir_permiso(db: AsyncSession, user, cid: int, accion: str) -> None:
+    """Crear/editar/borrar formas de pago: un Admin (o SYSADMIN) o un rol con ese permiso en la pantalla
+    Formas de Pago. Con Bodega Central, en las sedes solo se cambian desde la bodega."""
+    from app.auth.bodega_guard import es_admin_rol, exigir_no_administrada
+    from app.models.role_model import Role
+    rol = await db.get(Role, user.role_id) if user.role_id else None
+    if not es_admin_rol(rol):
+        ok = (await db.execute(text(f"""
+            SELECT 1 FROM role_modules rm JOIN system_modules sm ON sm.id = rm.module_id AND sm.route = '/payment-types'
+            WHERE rm.role_id = :r AND rm.can_{accion} = 1 LIMIT 1
+        """), {"r": user.role_id or 0})).scalar()
+        if not ok:
+            raise HTTPException(status_code=403, detail="Su rol no tiene permiso para modificar las formas de pago")
+    await exigir_no_administrada(db, int(cid), "Las formas de pago")
+
+
 _MSG_DEFAULT = ("Siempre debe quedar UNA forma de pago Default y Activa (EFECTIVO): es la que el sistema "
                 "usa para el efectivo. Para cambiarla, marque otra forma de pago como Default.")
 
@@ -184,6 +200,7 @@ async def create_payment_type(
     name       = (body.get("name") or "").strip()
     if not company_id or not name:
         raise HTTPException(status_code=422, detail="company_id y name son requeridos")
+    await _exigir_permiso(db, current_user, company_id, "create")
 
     # Siguiente id para esta empresa
     row = (await db.execute(text(
@@ -238,6 +255,7 @@ async def update_payment_type(
     name       = (body.get("name") or "").strip()
     if not company_id or not name:
         raise HTTPException(status_code=422, detail="company_id y name son requeridos")
+    await _exigir_permiso(db, current_user, company_id, "edit")
 
     exists = (await db.execute(text(
         "SELECT id FROM pos_payment_types WHERE id = :pid AND company_id = :cid"
@@ -291,6 +309,7 @@ async def delete_payment_type(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _exigir_permiso(db, current_user, company_id, "delete")
     if await _es_default(db, company_id, payment_id):
         raise HTTPException(status_code=422, detail=_MSG_DEFAULT)
 
@@ -324,6 +343,7 @@ async def toggle_active(
     company_id = body.get("company_id")
     if not company_id:
         raise HTTPException(status_code=422, detail="company_id requerido")
+    await _exigir_permiso(db, current_user, company_id, "edit")
 
     row = (await db.execute(text(
         "SELECT is_active FROM pos_payment_types WHERE id = :pid AND company_id = :cid"

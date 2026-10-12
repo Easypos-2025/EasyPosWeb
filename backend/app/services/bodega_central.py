@@ -790,6 +790,90 @@ async def enviar_roles(db: AsyncSession, bodega: Bodega, ids: list[int], sedes: 
     return {"ok": True, "repetida": False, "resultado": resultado}
 
 
+# ─── Enviar formas de pago ───────────────────────────────────────────────────
+# Se empatan por nombre. Regla de EFECTIVO (forma de pago Default + Activa, la que usan cuadres y escritorio): el
+# envío NUNCA cambia cuál es la Default de una sede. Lo nuevo entra sin Default; si lo enviado es la Default de la
+# sede, sigue Default y Activa aunque en la bodega esté inactiva (se avisa). CREDITO solo viaja si pide cliente.
+# Sedes con escritorio: quedan en la web de la sede (la bajada de formas de pago al escritorio está pendiente).
+
+_COLS_FP = ("name", "is_active", "select_card", "ask_notes", "validate_amount", "validate_number", "ask_customer")
+
+
+async def catalogo_formas_pago(db: AsyncSession, bodega: Bodega) -> list[dict]:
+    from app.services.formas_pago import es_credito
+    filas = (await db.execute(text(
+        f"SELECT id, {', '.join(_COLS_FP)}, COALESCE(is_default, 0) AS is_default FROM pos_payment_types "
+        "WHERE company_id = :b ORDER BY is_default DESC, name"), {"b": bodega.id})).mappings().all()
+    out = []
+    for f in filas:
+        r = dict(f)
+        r["is_active"] = int(r["is_active"] or 0)
+        notas = []
+        if r["is_default"]:
+            notas.append("Default (EFECTIVO)")
+        if es_credito(r["name"]) and not int(r["ask_customer"] or 0):
+            notas.append("CRÉDITO sin pedir cliente: no se puede enviar")
+            r["bloqueado"] = True
+        r["nit"] = " · ".join(notas)
+        out.append(r)
+    return out
+
+
+async def enviar_formas_pago(db: AsyncSession, bodega: Bodega, ids: list[int], sedes: list[dict],
+                             clave: Optional[str]) -> dict:
+    from app.services import sede_pedidos
+    from app.services.formas_pago import es_credito, estado_efectivo
+    if await clave_usada(db, bodega, clave):
+        return {"ok": True, "repetida": True, "resultado": []}
+    pi = ", ".join(f":i{n}" for n in range(len(ids)))
+    filas = (await db.execute(text(
+        f"SELECT id, {', '.join(_COLS_FP)} FROM pos_payment_types WHERE company_id = :b AND id IN ({pi}) ORDER BY name"),
+        {"b": bodega.id, **{f"i{n}": int(v) for n, v in enumerate(ids)}})).mappings().all()
+    if len(filas) != len(set(int(i) for i in ids)):
+        raise HTTPException(status_code=404, detail="Hay formas de pago que no son de la bodega")
+    for f in filas:
+        if es_credito(f["name"]) and not int(f["ask_customer"] or 0):
+            raise HTTPException(status_code=422, detail="CREDITO debe tener «Pedir cliente» activo para poder enviarse",
+                                headers={"X-Error-Code": "CREDITO_NO_CONFIGURADO"})
+
+    resultado = []
+    for sede in sedes:
+        cuenta = {"sede_id": sede["id"], "sede": sede["nombre"], "creados": 0, "actualizados": 0, "errores": []}
+        con_escritorio = await sede_pedidos.tiene_sede(db, sede["id"])
+        for f in filas:
+            datos = {c: (f[c] if c == "name" else int(f[c] or 0)) for c in _COLS_FP}
+            datos["name"] = (datos["name"] or "").strip()
+            destino = (await db.execute(text(
+                "SELECT id, COALESCE(is_default, 0) AS def FROM pos_payment_types WHERE company_id = :s "
+                "AND UPPER(TRIM(name)) = :n ORDER BY id LIMIT 1"), {"s": sede["id"], "n": datos["name"].upper()})).first()
+            if destino:
+                if destino[1] and not datos["is_active"]:
+                    datos["is_active"] = 1
+                    cuenta["errores"].append(f"{datos['name']}: es el EFECTIVO de la sede, sigue activo")
+                sets = ", ".join(f"{c} = :{c}" for c in _COLS_FP)
+                await db.execute(text(
+                    f"UPDATE pos_payment_types SET {sets}, synced = 0 WHERE company_id = :s AND id = :id"),
+                    {**datos, "s": sede["id"], "id": destino[0]})
+                cuenta["actualizados"] += 1
+            else:
+                nuevo = await sede_maestros.siguiente_id(db, "pos_payment_types", "id", sede["id"], con_escritorio)
+                await db.execute(text(
+                    f"INSERT INTO pos_payment_types (id, company_id, {', '.join(_COLS_FP)}, is_default, synced) "
+                    f"VALUES (:id, :s, {', '.join(':' + c for c in _COLS_FP)}, 0, 0)"),
+                    {**datos, "id": nuevo, "s": sede["id"]})
+                cuenta["creados"] += 1
+        est = await estado_efectivo(db, sede["id"])
+        if not est["ok"]:
+            cuenta["errores"].append("La sede no tiene su EFECTIVO bien configurado (Default y Activa): revíselo")
+        if con_escritorio:
+            cuenta["errores"].append("Sede con escritorio: quedan en la web; la bajada al escritorio está pendiente")
+        resultado.append(cuenta)
+        await movimiento(db, bodega, "ENVIO", None, 0,
+                         f"Formas de pago → {sede['nombre']}: {cuenta['creados']} nuevas, "
+                         f"{cuenta['actualizados']} actualizadas", sede_id=sede["id"], clave=clave)
+    return {"ok": True, "repetida": False, "resultado": resultado}
+
+
 # ─── Usuarios del grupo (bodega + sedes) ─────────────────────────────────────
 # Una persona = un correo. Tiene una fila en users por cada empresa donde trabaja, con su rol en esa empresa y
 # UNA sola contraseña para todas. Desde la bodega: invitar (link) a varias empresas con rol por empresa, agregar

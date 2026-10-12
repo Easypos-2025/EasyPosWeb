@@ -9,10 +9,11 @@
         </h1>
         <p class="page-subtitle">Métodos de pago disponibles para recibos y facturas</p>
       </div>
-      <button class="btn btn-primary" @click="openCreate">
+      <button v-if="!administradoPor" class="btn btn-primary" @click="openCreate">
         <i class="bi bi-plus-lg"></i> Nueva forma de pago
       </button>
     </div>
+    <AvisoBodega :bodega="administradoPor" que="las formas de pago" />
 
     <!-- ── Forma de pago EFECTIVO = la Default y Activa (bloquea todo si falta) ── -->
     <div v-if="avisoEfectivo.estado && !avisoEfectivo.estado.ok" class="efx-banner">
@@ -74,7 +75,7 @@
     <div v-else-if="filtered.length === 0" class="empty-state">
       <i class="bi bi-credit-card-2-front"></i>
       <p>{{ search ? `Sin resultados para "${search}"` : 'No hay formas de pago registradas' }}</p>
-      <button v-if="!search" class="btn btn-primary btn-sm" @click="openCreate">
+      <button v-if="!search && !administradoPor" class="btn btn-primary btn-sm" @click="openCreate">
         Agregar la primera forma de pago
       </button>
     </div>
@@ -121,7 +122,7 @@
               <button
                 :class="['toggle-btn', item.is_active ? 'toggle-on' : 'toggle-off']"
                 @click="toggleActive(item)"
-                :disabled="togglingId === item.id"
+                :disabled="togglingId === item.id || !!administradoPor"
                 :title="item.is_active ? 'Desactivar' : 'Activar'"
               >
                 <i v-if="togglingId === item.id" class="bi bi-arrow-repeat spin"></i>
@@ -129,7 +130,7 @@
               </button>
             </td>
             <td class="text-center">
-              <div class="action-btns">
+              <div v-if="!administradoPor" class="action-btns">
                 <button class="btn btn-sm btn-outline-primary" @click="openEdit(item)" title="Editar">
                   <i class="bi bi-pencil"></i>
                 </button>
@@ -262,12 +263,16 @@ import ImageUploaderPro from "@/components/common/ImageUploaderPro.vue"
 import { ref, computed, onMounted } from "vue"
 import { useCompanyStore } from "@/stores/companyStore"
 import { useModuleName } from "@/composables/useModuleName"
+import AvisoBodega from "@/components/AvisoBodega.vue"
+import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
 import api from "@/services/apis"
 import { showToast, showConfirm } from "@/utils/toast"
 import { avisoEfectivo, revisarEfectivo } from "@/utils/efectivoAviso"
 
 const companyStore = useCompanyStore()
 const companyId    = computed(() => companyStore.selectedCompany?.id)
+// Sede administrada por una Bodega Central → formas de pago de solo consulta (se envían desde la bodega)
+const { administradoPor } = useAdministradoBodega(companyId)
 const { moduleName } = useModuleName()
 
 const items      = ref([])

@@ -227,6 +227,8 @@ async def administrado(company_id: Optional[int] = Query(None, ge=1), db: AsyncS
 async def catalogo_envio(tipo: str, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
     if tipo == "roles":
         return await svc.catalogo_roles(db, bodega)
+    if tipo == "formas_pago":
+        return await svc.catalogo_formas_pago(db, bodega)
     if tipo not in svc.CATALOGOS_ENVIO:
         raise HTTPException(status_code=404, detail="Dato no válido")
     return await svc.catalogo_bodega(db, bodega, tipo)
@@ -246,6 +248,8 @@ async def enviar(body: EnviarIn, db: AsyncSession = Depends(get_db), bodega: Bod
     async with _escritura(db):
         if body.tipo == "roles":
             res = await svc.enviar_roles(db, bodega, body.ids, sedes, body.clave)
+        elif body.tipo == "formas_pago":
+            res = await svc.enviar_formas_pago(db, bodega, body.ids, sedes, body.clave)
         else:
             res = await svc.enviar_a_sedes(db, bodega, body.tipo, body.ids, sedes, body.clave)
         await db.commit()

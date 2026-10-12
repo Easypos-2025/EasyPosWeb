@@ -129,9 +129,11 @@
       <!-- ── Enviar a sedes (administración central) ── -->
       <section v-if="tab === 'enviar'" class="bc-card">
         <p class="bc-help">
-          Proveedores, categorías y roles se crean y modifican solo aquí, en la bodega, y se envían a las sedes: en cada
-          sede se crea lo que falta y se <b>sobrescribe</b> lo que ya existe (proveedor por NIT o nombre; categoría y rol
-          por nombre, el rol con sus pantallas y permisos). En las sedes quedan de solo consulta.
+          Proveedores, categorías, roles y formas de pago se crean y modifican solo aquí, en la bodega, y se envían a las
+          sedes: en cada sede se crea lo que falta y se <b>sobrescribe</b> lo que ya existe (proveedor por NIT o nombre; lo
+          demás por nombre, el rol con sus pantallas y permisos). En las sedes quedan de solo consulta.
+          <template v-if="envio.tipo === 'formas_pago'"><br>El envío nunca cambia cuál es el EFECTIVO (forma de pago Default) de
+          cada sede, y CRÉDITO solo se envía si pide cliente.</template>
         </p>
         <div class="bc-chips">
           <button v-for="t in tiposEnvio" :key="t.clave" class="bc-tab" :class="{ 'bc-tab--on': envio.tipo === t.clave }" @click="cambiarTipoEnvio(t.clave)">
@@ -153,8 +155,8 @@
                 <input type="checkbox" :checked="registrosTodos" @change="marcarRegistros($event.target.checked)" />
                 <span>Seleccionar todo ({{ envioFiltrados.length }})</span>
               </label>
-              <label v-for="r in envioFiltrados" :key="r.id" class="bc-dato" :class="{ 'bc-dato--vacio': !r.is_active || r.es_admin }">
-                <input v-model="envio.ids" type="checkbox" :value="r.id" :disabled="r.es_admin" />
+              <label v-for="r in envioFiltrados" :key="r.id" class="bc-dato" :class="{ 'bc-dato--vacio': !r.is_active || r.es_admin || r.bloqueado }">
+                <input v-model="envio.ids" type="checkbox" :value="r.id" :disabled="r.es_admin || r.bloqueado" />
                 <span class="bc-dato-nom">{{ r.name }}</span>
                 <span class="bc-dato-n">{{ r.nit || (r.is_active ? '' : 'Inactivo') }}</span>
                 <small v-if="r.es_admin" class="bc-dato-nota">El rol administrador no se envía: cada sede conserva el suyo</small>
@@ -471,6 +473,7 @@ const tiposEnvio = [
   { clave: 'categorias', nombre: 'Categorías de productos', icon: 'bi bi-tags', ruta: '/pos/categorias' },
   { clave: 'categorias_insumos', nombre: 'Categorías de insumos', icon: 'bi bi-diagram-3', ruta: '/pos/categorias-productos' },
   { clave: 'roles', nombre: 'Roles y permisos', icon: 'bi bi-shield-lock', ruta: '/configuration/roles' },
+  { clave: 'formas_pago', nombre: 'Formas de pago', icon: 'bi bi-credit-card-2-front', ruta: '/payment-types' },
 ]
 const envio = ref({ tipo: 'proveedores', registros: [], ids: [], sedes: [], buscar: '', cargando: false, enviando: false, resultado: null })
 
@@ -518,7 +521,7 @@ const envioFiltrados = computed(() => {
   return q ? envio.value.registros.filter(r => [r.name, r.nit].some(v => (v || '').toLowerCase().includes(q))) : envio.value.registros
 })
 const registrosTodos = computed(() => {
-  const marcables = envioFiltrados.value.filter(r => !r.es_admin)
+  const marcables = envioFiltrados.value.filter(r => !r.es_admin && !r.bloqueado)
   return marcables.length > 0 && marcables.every(r => envio.value.ids.includes(r.id))
 })
 const sedesTodas = computed(() => info.value?.sedes.length > 0 && info.value.sedes.every(s => envio.value.sedes.includes(s.id)))
@@ -652,7 +655,7 @@ function cambiarTipoEnvio(clave) {
 }
 
 function marcarRegistros(marcar) {
-  const visibles = envioFiltrados.value.filter(r => !r.es_admin).map(r => r.id)
+  const visibles = envioFiltrados.value.filter(r => !r.es_admin && !r.bloqueado).map(r => r.id)
   envio.value.ids = marcar ? [...new Set([...envio.value.ids, ...visibles])] : envio.value.ids.filter(id => !visibles.includes(id))
 }
 
