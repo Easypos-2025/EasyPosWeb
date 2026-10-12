@@ -215,6 +215,11 @@ async def reset_password(data: ResetPasswordRequest, db: AsyncSession = Depends(
         raise HTTPException(status_code=400, detail="Contraseña insegura")
 
     user.password_hash = hash_password(data.new_password)
+    # Una sola contraseña por persona: la misma en todas las empresas donde está ese correo (el login la valida
+    # contra la primera empresa y luego deja escoger). El enlace solo llega al dueño del correo.
+    from sqlalchemy import text as _text
+    await db.execute(_text("UPDATE users SET password_hash = :h WHERE LOWER(TRIM(email)) = LOWER(TRIM(:e))"),
+                     {"h": user.password_hash, "e": user.email})
     await db.delete(reset_token)
     await db.commit()
     return {"message": "Contraseña actualizada correctamente"}

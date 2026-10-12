@@ -571,6 +571,400 @@ async def _categoria_general(db: AsyncSession, cid: int) -> int:
     return nuevo
 
 
+# ─── Enviar a sedes (administración central) ─────────────────────────────────
+# Con bodega activa, proveedores y categorías se crean y cambian SOLO en la bodega (bloqueo_bodega en las sedes)
+# y se envían a las sedes marcadas. En la sede: si ya existe (proveedor por NIT, o por nombre si no tiene NIT;
+# categoría por nombre) se SOBRESCRIBE con lo de la bodega; si no, se crea. Lo enviado queda synced = 0 para que
+# la sincronización del catálogo lo baje al escritorio (en sedes con escritorio nace con número provisional).
+
+MAX_ENVIO = 2000
+CATALOGOS_ENVIO = {
+    "proveedores": {
+        "nombre": "Proveedores", "tabla": "suppliers", "llave": "id_proveedor", "nombre_col": "name",
+        "columnas": ("name", "nit", "contact_name", "email", "phone", "telefono_celular", "address", "notes",
+                     "is_active"),
+    },
+    "categorias": {
+        "nombre": "Categorías de productos", "tabla": "pos_dish_categories", "llave": "id", "nombre_col": "name",
+        "columnas": ("name", "percentage", "is_active"),
+    },
+    "categorias_insumos": {
+        "nombre": "Categorías de insumos", "tabla": "pos_product_categories", "llave": "id", "nombre_col": "name",
+        "columnas": ("name", "percentage", "is_active", "require_selection", "print_assembly_changes_only"),
+    },
+}
+
+
+async def catalogo_bodega(db: AsyncSession, bodega: Bodega, tipo: str) -> list[dict]:
+    """Registros de la bodega que se pueden enviar, A-Z, con en cuántas sedes existe ya cada uno."""
+    cfg = CATALOGOS_ENVIO[tipo]
+    cols = ", ".join(cfg["columnas"])
+    filas = (await db.execute(text(
+        f"SELECT {cfg['llave']} AS id, {cols} FROM {cfg['tabla']} WHERE company_id = :b AND {cfg['llave']} IS NOT NULL "
+        f"ORDER BY {cfg['nombre_col']}"), {"b": bodega.id})).mappings().all()
+    out = []
+    for f in filas:
+        r = {k: (float(v) if k == "percentage" and v is not None else v) for k, v in dict(f).items()}
+        r["is_active"] = int(r.get("is_active") or 0)
+        out.append(r)
+    return out
+
+
+async def _registro_sede(db: AsyncSession, cfg: dict, sede_id: int, fila: dict):
+    """Llave del mismo registro en la sede, o None."""
+    if cfg["tabla"] == "suppliers" and (fila.get("nit") or "").strip():
+        llave = (await db.execute(text(
+            "SELECT id_proveedor FROM suppliers WHERE company_id = :s AND TRIM(nit) = :nit "
+            "AND id_proveedor IS NOT NULL ORDER BY id_proveedor LIMIT 1"),
+            {"s": sede_id, "nit": fila["nit"].strip()})).scalar()
+        if llave is not None:
+            return llave
+    return (await db.execute(text(
+        f"SELECT {cfg['llave']} FROM {cfg['tabla']} WHERE company_id = :s AND {cfg['llave']} IS NOT NULL "
+        f"AND UPPER(TRIM({cfg['nombre_col']})) = :n ORDER BY {cfg['llave']} LIMIT 1"),
+        {"s": sede_id, "n": (fila[cfg["nombre_col"]] or "").strip().upper()})).scalar()
+
+
+async def enviar_a_sedes(db: AsyncSession, bodega: Bodega, tipo: str, ids: list[int], sedes: list[dict],
+                         clave: Optional[str]) -> dict:
+    from app.services import sede_pedidos
+    if tipo not in CATALOGOS_ENVIO:
+        raise HTTPException(status_code=422, detail="Dato a enviar no válido")
+    if not ids or not sedes:
+        raise HTTPException(status_code=422, detail="Escoja los registros y las sedes a las que se envían")
+    if len(ids) > MAX_ENVIO:
+        raise HTTPException(status_code=422, detail=f"Máximo {MAX_ENVIO} registros por envío")
+    if await clave_usada(db, bodega, clave):
+        return {"ok": True, "repetida": True, "resultado": []}
+    cfg = CATALOGOS_ENVIO[tipo]
+    cols = cfg["columnas"]
+    pi = ", ".join(f":i{n}" for n in range(len(ids)))
+    filas = (await db.execute(text(
+        f"SELECT {cfg['llave']} AS _id, {', '.join(cols)} FROM {cfg['tabla']} "
+        f"WHERE company_id = :b AND {cfg['llave']} IN ({pi}) ORDER BY {cfg['nombre_col']}"),
+        {"b": bodega.id, **{f"i{n}": int(v) for n, v in enumerate(ids)}})).mappings().all()
+    if len(filas) != len(set(int(i) for i in ids)):
+        raise HTTPException(status_code=404, detail="Hay registros que no son de la bodega")
+
+    resultado = []
+    for sede in sedes:
+        con_escritorio = await sede_pedidos.tiene_sede(db, sede["id"])
+        cuenta = {"sede_id": sede["id"], "sede": sede["nombre"], "creados": 0, "actualizados": 0}
+        for f in filas:
+            datos = {c: f[c] for c in cols}
+            datos[cfg["nombre_col"]] = (datos[cfg["nombre_col"]] or "").strip()
+            llave = await _registro_sede(db, cfg, sede["id"], datos)
+            if llave is not None:
+                sets = ", ".join(f"{c} = :{c}" for c in cols)
+                await db.execute(text(
+                    f"UPDATE {cfg['tabla']} SET {sets}, synced = 0 WHERE company_id = :s AND {cfg['llave']} = :k"),
+                    {**datos, "s": sede["id"], "k": llave})
+                cuenta["actualizados"] += 1
+            else:
+                nuevo = await sede_maestros.siguiente_id(db, cfg["tabla"], cfg["llave"], sede["id"], con_escritorio)
+                extra = ", created_at" if cfg["tabla"] == "suppliers" else ""
+                await db.execute(text(
+                    f"INSERT INTO {cfg['tabla']} (company_id, {cfg['llave']}, {', '.join(cols)}, synced{extra}) "
+                    f"VALUES (:s, :k, {', '.join(':' + c for c in cols)}, 0{', NOW()' if extra else ''})"),
+                    {**datos, "s": sede["id"], "k": nuevo})
+                cuenta["creados"] += 1
+        resultado.append(cuenta)
+        await movimiento(db, bodega, "ENVIO", None, 0,
+                         f"{cfg['nombre']} → {sede['nombre']}: {cuenta['creados']} nuevos, "
+                         f"{cuenta['actualizados']} actualizados", sede_id=sede["id"], clave=clave)
+    return {"ok": True, "repetida": False, "resultado": resultado}
+
+
+# ─── Enviar roles con sus permisos ───────────────────────────────────────────
+# El rol se arma en la bodega (pantallas visibles + Control de Acceso) y se copia a las sedes por NOMBRE: si la sede
+# ya tiene un rol con ese nombre queda con los permisos de la bodega; si no, se crea. El rol ADMIN (nombre con
+# "ADMIN") nunca se envía ni se toca en la sede. Las pantallas exclusivas de SYSADMIN nunca viajan.
+# Un usuario que no es Admin (ayudante de la bodega) no puede enviar un rol con más permisos que el suyo.
+
+def _es_rol_admin(nombre: str) -> bool:
+    return "ADMIN" in (nombre or "").upper()
+
+
+async def _permisos_rol(db: AsyncSession, role_id: int) -> tuple[dict, set]:
+    """({module_id: (ver, ver_todo, crear, editar, borrar)}, {perm_key})"""
+    modulos = {int(f[0]): tuple(int(bool(x)) for x in f[1:]) for f in (await db.execute(text("""
+        SELECT rm.module_id, rm.can_view, rm.can_view_all, rm.can_create, rm.can_edit, rm.can_delete
+        FROM role_modules rm JOIN system_modules sm ON sm.id = rm.module_id AND sm.is_sysadmin = 0
+        WHERE rm.role_id = :r
+    """), {"r": role_id})).all()}
+    claves = set((await db.execute(text(
+        "SELECT perm_key FROM role_access_permissions WHERE role_id = :r"), {"r": role_id})).scalars().all())
+    return modulos, claves
+
+
+async def catalogo_roles(db: AsyncSession, bodega: Bodega) -> list[dict]:
+    filas = (await db.execute(text("""
+        SELECT r.id, r.name, r.description, r.access_type,
+               (SELECT COUNT(*) FROM role_modules rm WHERE rm.role_id = r.id AND rm.can_view = 1) AS pantallas,
+               (SELECT COUNT(*) FROM role_access_permissions ra WHERE ra.role_id = r.id) AS permisos
+        FROM roles r WHERE r.company_id = :b AND COALESCE(r.is_system, 0) = 0
+        ORDER BY r.name
+    """), {"b": bodega.id})).mappings().all()
+    return [{**dict(f), "is_active": 1, "es_admin": _es_rol_admin(f["name"]),
+             "nit": f"{f['pantallas']} pantallas · {f['permisos']} permisos"} for f in filas]
+
+
+async def _exigir_no_escalar(db: AsyncSession, bodega: Bodega, modulos: dict, claves: set, nombre: str) -> None:
+    from app.models.role_model import Role
+    rol_propio = await db.get(Role, bodega.user.role_id) if bodega.user.role_id else None
+    if rol_propio and (rol_propio.is_system or _es_rol_admin(rol_propio.name)):
+        return
+    mis_mod, mis_claves = await _permisos_rol(db, rol_propio.id) if rol_propio else ({}, set())
+    for mid, flags in modulos.items():
+        propios = mis_mod.get(mid, (0, 0, 0, 0, 0))
+        if any(f and not p for f, p in zip(flags, propios)):
+            raise HTTPException(status_code=403, detail=f"El rol «{nombre}» tiene permisos que su propio rol no tiene")
+    if claves - mis_claves:
+        raise HTTPException(status_code=403, detail=f"El rol «{nombre}» tiene permisos que su propio rol no tiene")
+
+
+async def enviar_roles(db: AsyncSession, bodega: Bodega, ids: list[int], sedes: list[dict],
+                       clave: Optional[str]) -> dict:
+    from app.services.plan_limits_service import check_limit
+    from app.models.role_model import Role
+    if await clave_usada(db, bodega, clave):
+        return {"ok": True, "repetida": True, "resultado": []}
+    pi = ", ".join(f":i{n}" for n in range(len(ids)))
+    roles = (await db.execute(text(
+        f"SELECT id, name, description, access_type, home_route FROM roles "
+        f"WHERE company_id = :b AND COALESCE(is_system, 0) = 0 AND id IN ({pi}) ORDER BY name"),
+        {"b": bodega.id, **{f"i{n}": int(v) for n, v in enumerate(ids)}})).mappings().all()
+    if len(roles) != len(set(int(i) for i in ids)):
+        raise HTTPException(status_code=404, detail="Hay roles que no son de la bodega")
+    admins = [r["name"] for r in roles if _es_rol_admin(r["name"])]
+    if admins:
+        raise HTTPException(status_code=422, detail="El rol ADMIN no se envía: cada sede conserva el suyo")
+    paquetes = []
+    for r in roles:
+        modulos, claves = await _permisos_rol(db, r["id"])
+        await _exigir_no_escalar(db, bodega, modulos, claves, r["name"])
+        paquetes.append((r, modulos, claves))
+
+    resultado = []
+    for sede in sedes:
+        cuenta = {"sede_id": sede["id"], "sede": sede["nombre"], "creados": 0, "actualizados": 0, "errores": []}
+        for r, modulos, claves in paquetes:
+            nombre = (r["name"] or "").strip()
+            destino = (await db.execute(text(
+                "SELECT id FROM roles WHERE company_id = :s AND UPPER(TRIM(name)) = :n AND COALESCE(is_system, 0) = 0 "
+                "ORDER BY id LIMIT 1"), {"s": sede["id"], "n": nombre.upper()})).scalar()
+            if destino is None:
+                try:
+                    await check_limit(sede["id"], "max_roles", Role, db)
+                except HTTPException as e:
+                    cuenta["errores"].append(f"{nombre}: {e.detail}")
+                    continue
+                res = await db.execute(text("""
+                    INSERT INTO roles (name, description, company_id, is_system, home_route, access_type)
+                    VALUES (:n, :d, :s, 0, :h, :t)
+                """), {"n": nombre, "d": r["description"] or "", "s": sede["id"], "h": r["home_route"],
+                       "t": r["access_type"] or "interno"})
+                destino = res.lastrowid
+                cuenta["creados"] += 1
+            else:
+                await db.execute(text(
+                    "UPDATE roles SET description = :d, home_route = :h, access_type = :t WHERE id = :id"),
+                    {"d": r["description"] or "", "h": r["home_route"], "t": r["access_type"] or "interno",
+                     "id": destino})
+                cuenta["actualizados"] += 1
+            await db.execute(text("DELETE FROM role_modules WHERE role_id = :r"), {"r": destino})
+            for mid, (v, va, c, e, b) in modulos.items():
+                await db.execute(text("""
+                    INSERT INTO role_modules (role_id, module_id, can_view, can_view_all, can_create, can_edit, can_delete)
+                    VALUES (:r, :m, :v, :va, :c, :e, :b)
+                """), {"r": destino, "m": mid, "v": v, "va": va, "c": c, "e": e, "b": b})
+            await db.execute(text("DELETE FROM role_access_permissions WHERE role_id = :r"), {"r": destino})
+            for k in sorted(claves):
+                await db.execute(text("INSERT INTO role_access_permissions (role_id, perm_key) VALUES (:r, :k)"),
+                                 {"r": destino, "k": k})
+        resultado.append(cuenta)
+        await movimiento(db, bodega, "ENVIO", None, 0,
+                         f"Roles → {sede['nombre']}: {cuenta['creados']} nuevos, {cuenta['actualizados']} actualizados"
+                         + (f", {len(cuenta['errores'])} sin enviar" if cuenta["errores"] else ""),
+                         sede_id=sede["id"], clave=clave)
+    return {"ok": True, "repetida": False, "resultado": resultado}
+
+
+# ─── Usuarios del grupo (bodega + sedes) ─────────────────────────────────────
+# Una persona = un correo. Tiene una fila en users por cada empresa donde trabaja, con su rol en esa empresa y
+# UNA sola contraseña para todas. Desde la bodega: invitar (link) a varias empresas con rol por empresa, agregar
+# a otra empresa a quien ya existe, cambiarle el rol y activar/desactivar por empresa. Un ayudante (no Admin) no
+# asigna roles con más permisos que el suyo ni toca usuarios administradores.
+
+async def empresas_grupo(db: AsyncSession, bodega: Bodega) -> dict:
+    """{company_id: nombre} de la bodega y sus sedes (la bodega primero)."""
+    nombre = (await db.execute(text("SELECT name FROM companies WHERE id_company = :b"), {"b": bodega.id})).scalar()
+    out = {bodega.id: nombre or "Bodega"}
+    for s in await sedes_del_nit(db, bodega):
+        out[s["id"]] = s["nombre"]
+    return out
+
+
+async def roles_empresas(db: AsyncSession, bodega: Bodega) -> list[dict]:
+    grupo = await empresas_grupo(db, bodega)
+    pe = ", ".join(f":e{n}" for n in range(len(grupo)))
+    filas = (await db.execute(text(
+        f"SELECT id, name, company_id FROM roles WHERE company_id IN ({pe}) AND COALESCE(is_system, 0) = 0 ORDER BY name"),
+        {f"e{n}": c for n, c in enumerate(grupo)})).mappings().all()
+    out = []
+    for cid, nombre in grupo.items():
+        out.append({"company_id": cid, "nombre": nombre, "es_bodega": cid == bodega.id,
+                    "roles": [{"id": f["id"], "name": f["name"], "es_admin": _es_rol_admin(f["name"])}
+                              for f in filas if f["company_id"] == cid]})
+    return out
+
+
+async def usuarios_grupo(db: AsyncSession, bodega: Bodega) -> list[dict]:
+    grupo = await empresas_grupo(db, bodega)
+    pe = ", ".join(f":e{n}" for n in range(len(grupo)))
+    filas = (await db.execute(text(f"""
+        SELECT u.id, u.nombre, LOWER(TRIM(u.email)) AS email, u.company_id, u.is_active, u.role_id, r.name AS rol
+        FROM users u LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.company_id IN ({pe}) AND COALESCE(r.is_system, 0) = 0
+        ORDER BY u.nombre
+    """), {f"e{n}": c for n, c in enumerate(grupo)})).mappings().all()
+    personas: dict = {}
+    for f in filas:
+        p = personas.setdefault(f["email"], {"email": f["email"], "nombre": f["nombre"], "empresas": []})
+        p["empresas"].append({"user_id": f["id"], "company_id": f["company_id"], "empresa": grupo[f["company_id"]],
+                              "role_id": f["role_id"], "rol": f["rol"], "activo": bool(f["is_active"]),
+                              "es_bodega": f["company_id"] == bodega.id, "yo": f["id"] == bodega.user.id})
+    for p in personas.values():
+        p["empresas"].sort(key=lambda e: (not e["es_bodega"], e["empresa"]))
+    return sorted(personas.values(), key=lambda p: (p["nombre"] or p["email"]).upper())
+
+
+async def _rol_asignable(db: AsyncSession, bodega: Bodega, company_id: int, role_id: int):
+    """El rol existe en esa empresa del grupo y el que asigna no escala permisos. Devuelve el rol."""
+    from app.models.role_model import Role
+    if company_id not in await empresas_grupo(db, bodega):
+        from app.services.error_log import record_security
+        record_security("Bodega central: empresa fuera de su NIT", {"bodega": bodega.id, "empresa": company_id})
+        raise HTTPException(status_code=403, detail="La empresa no pertenece a la bodega central")
+    rol = await db.get(Role, int(role_id))
+    if not rol or rol.company_id != company_id or rol.is_system:
+        raise HTTPException(status_code=400, detail="Rol no válido para esa empresa")
+    propio = await db.get(Role, bodega.user.role_id) if bodega.user.role_id else None
+    if not (propio and (propio.is_system or _es_rol_admin(propio.name))):
+        if _es_rol_admin(rol.name):
+            raise HTTPException(status_code=403, detail="Solo un administrador puede asignar el rol administrador")
+        modulos, claves = await _permisos_rol(db, rol.id)
+        await _exigir_no_escalar(db, bodega, modulos, claves, rol.name)
+    return rol
+
+
+async def invitar(db: AsyncSession, bodega: Bodega, asignaciones: list[dict]) -> dict:
+    """Crea UNA invitación (link de 48 h) para la bodega y/o varias sedes, con un rol por empresa."""
+    import uuid
+    from datetime import datetime, timedelta
+    from app.models.invitation_model import InvitationToken
+    from app.models.user_model import User
+    from app.services.plan_limits_service import check_limit
+    vistas = set()
+    roles = []
+    for a in asignaciones:
+        cid = int(a["company_id"])
+        if cid in vistas:
+            raise HTTPException(status_code=422, detail="Hay empresas repetidas en la invitación")
+        vistas.add(cid)
+        rol = await _rol_asignable(db, bodega, cid, int(a["role_id"]))
+        await _limite_usuarios(db, bodega, cid)
+        roles.append((cid, rol))
+    primero = roles[0]
+    inv = InvitationToken(token=uuid.uuid4().hex, company_id=primero[0], role_id=primero[1].id,
+                          created_by=bodega.user.id, expires_at=datetime.utcnow() + timedelta(hours=48))
+    db.add(inv)
+    await db.flush()
+    for cid, rol in roles:
+        await db.execute(text(
+            "INSERT INTO invitation_token_sedes (invitation_id, company_id, role_id) VALUES (:i, :c, :r)"),
+            {"i": inv.id, "c": cid, "r": rol.id})
+    grupo = await empresas_grupo(db, bodega)
+    await movimiento(db, bodega, "USUARIOS", None, 0,
+                     "Invitación: " + ", ".join(f"{grupo[c]} ({r.name})" for c, r in roles))
+    return {"ok": True, "token": inv.token, "expires_at": inv.expires_at.isoformat()}
+
+
+async def _filas_correo(db: AsyncSession, email: str) -> list:
+    return (await db.execute(text(
+        "SELECT id, company_id, nombre, password_hash FROM users WHERE LOWER(TRIM(email)) = :e ORDER BY id"),
+        {"e": email.strip().lower()})).mappings().all()
+
+
+async def asignar_empresa(db: AsyncSession, bodega: Bodega, email: str, company_id: int, role_id: int) -> dict:
+    """Agrega a otra empresa del grupo a una persona que ya existe (misma contraseña), o le cambia el rol allí."""
+    from app.models.user_model import User
+    from app.services.plan_limits_service import check_limit
+    grupo = await empresas_grupo(db, bodega)
+    filas = await _filas_correo(db, email)
+    if not filas or any(f["company_id"] not in grupo for f in filas):
+        # nunca se toca a una persona que también trabaja en empresas ajenas al grupo
+        raise HTTPException(status_code=404, detail="Usuario no encontrado en las empresas de la bodega")
+    rol = await _rol_asignable(db, bodega, int(company_id), int(role_id))
+    existente = next((f for f in filas if f["company_id"] == int(company_id)), None)
+    if existente:
+        await _exigir_puede_tocar(db, bodega, existente["id"])
+        await db.execute(text("UPDATE users SET role_id = :r, is_active = 1 WHERE id = :id"),
+                         {"r": rol.id, "id": existente["id"]})
+        accion = "rol actualizado"
+    else:
+        await _limite_usuarios(db, bodega, int(company_id))
+        base = filas[0]
+        await db.execute(text("""
+            INSERT INTO users (nombre, email, password_hash, role_id, company_id, is_active)
+            VALUES (:n, :e, :h, :r, :c, 1)
+        """), {"n": base["nombre"], "e": email.strip().lower(), "h": base["password_hash"], "r": rol.id,
+               "c": int(company_id)})
+        accion = "agregado"
+    await movimiento(db, bodega, "USUARIOS", None, 0, f"{email} → {grupo[int(company_id)]} ({rol.name}): {accion}")
+    return {"ok": True, "accion": accion}
+
+
+async def _limite_usuarios(db: AsyncSession, bodega: Bodega, cid: int) -> None:
+    """Límite de usuarios del plan de ESA empresa; el mensaje dice cuál, porque se invita a varias a la vez."""
+    from app.models.user_model import User
+    from app.services.plan_limits_service import check_limit
+    try:
+        await check_limit(cid, "max_users", User, db)
+    except HTTPException as e:
+        nombre = (await empresas_grupo(db, bodega)).get(cid, "La empresa")
+        raise HTTPException(status_code=e.status_code, detail=f"{nombre}: {e.detail}")
+
+
+async def _exigir_puede_tocar(db: AsyncSession, bodega: Bodega, user_id: int) -> None:
+    from app.models.role_model import Role
+    if int(user_id) == bodega.user.id:
+        raise HTTPException(status_code=400, detail="No puede cambiar su propio acceso")
+    propio = await db.get(Role, bodega.user.role_id) if bodega.user.role_id else None
+    if propio and (propio.is_system or _es_rol_admin(propio.name)):
+        return
+    rol_destino = (await db.execute(text(
+        "SELECT r.name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = :u"), {"u": user_id})).scalar()
+    if _es_rol_admin(rol_destino or ""):
+        raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar a otro administrador")
+
+
+async def cambiar_estado(db: AsyncSession, bodega: Bodega, user_id: int, activo: bool) -> dict:
+    grupo = await empresas_grupo(db, bodega)
+    fila = (await db.execute(text(
+        "SELECT u.id, u.email, u.company_id, COALESCE(r.is_system, 0) AS sis FROM users u "
+        "LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = :u"), {"u": int(user_id)})).mappings().first()
+    if not fila or fila["company_id"] not in grupo or fila["sis"]:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado en las empresas de la bodega")
+    await _exigir_puede_tocar(db, bodega, fila["id"])
+    await db.execute(text("UPDATE users SET is_active = :a WHERE id = :u"), {"a": 1 if activo else 0, "u": fila["id"]})
+    if not activo:      # se cierran sus sesiones abiertas en esa empresa
+        await db.execute(text("UPDATE user_sessions SET is_active = 0 WHERE user_id = :u"), {"u": fila["id"]})
+    await movimiento(db, bodega, "USUARIOS", None, 0,
+                     f"{fila['email']} en {grupo[fila['company_id']]}: {'activado' if activo else 'desactivado'}")
+    return {"ok": True}
+
+
 # ─── Consultas ───────────────────────────────────────────────────────────────
 
 async def listar_productos(db: AsyncSession, bodega: Bodega) -> list[dict]:

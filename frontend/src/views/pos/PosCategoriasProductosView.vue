@@ -5,8 +5,9 @@
         <h2 class="cp-title"><i class="bi bi-diagram-3 me-2"></i>{{ moduleName || 'Categorías de Productos' }}</h2>
         <p class="cp-sub">Agrupan los insumos. Las de <b>armado</b> son las opciones que el cliente escoge en los platos de armado y en el menú del día.</p>
       </div>
-      <button class="cp-btn-new" @click="abrir()"><i class="bi bi-plus-lg me-1"></i>Nueva categoría</button>
+      <button v-if="!administradoPor" class="cp-btn-new" @click="abrir()"><i class="bi bi-plus-lg me-1"></i>Nueva categoría</button>
     </div>
+    <AvisoBodega :bodega="administradoPor" que="las categorías de insumos" />
 
     <div class="cp-toolbar">
       <div class="cp-tabs">
@@ -42,8 +43,8 @@
           <span v-if="c.print_assembly_changes_only">Imprime solo cambios</span>
         </div>
         <div class="cp-actions">
-          <button class="cp-ico" title="Editar" @click.stop="abrir(c)"><i class="bi bi-pencil"></i></button>
-          <button v-if="c.is_active" class="cp-ico cp-ico--danger" title="Desactivar" @click.stop="desactivar(c)"><i class="bi bi-slash-circle"></i></button>
+          <button v-if="!administradoPor" class="cp-ico" title="Editar" @click.stop="abrir(c)"><i class="bi bi-pencil"></i></button>
+          <button v-if="c.is_active && !administradoPor" class="cp-ico cp-ico--danger" title="Desactivar" @click.stop="desactivar(c)"><i class="bi bi-slash-circle"></i></button>
         </div>
       </div>
     </div>
@@ -126,6 +127,10 @@ import api from '@/services/apis'
 import Swal from 'sweetalert2'
 import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
+import AvisoBodega from "@/components/AvisoBodega.vue"
+import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
+
+const { administradoPor } = useAdministradoBodega()
 
 const BASE = '/api/pos-catalogo/categorias-productos'
 const TIPOS = [{ v: 'todas', l: 'Todas' }, { v: 'armado', l: 'De armado' }, { v: 'normal', l: 'Normales' }]

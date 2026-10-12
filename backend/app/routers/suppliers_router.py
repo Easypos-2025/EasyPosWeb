@@ -5,8 +5,10 @@ from app.database import get_db
 from app.models.supplier_model import Supplier
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
+from app.auth.bodega_guard import bloqueo_bodega
 
-router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
+router = APIRouter(prefix="/suppliers", tags=["Suppliers"],
+                   dependencies=[Depends(bloqueo_bodega("Los proveedores"))])
 
 
 def _ser(s: Supplier) -> dict:

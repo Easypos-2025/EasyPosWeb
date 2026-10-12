@@ -26,6 +26,7 @@ from app.models.user_notification_model import UserNotification
 from app.models.invitation_model import InvitationToken
 from app.models.password_reset_token import PasswordResetToken
 from passlib.context import CryptContext
+from app.auth.bodega_guard import exigir_no_administrada
 from app.auth.dependencies import get_current_user
 from app.auth import tenant
 from app.services.plan_limits_service import check_limit
@@ -159,12 +160,25 @@ async def crear_user(usuario: UserCreate, db: AsyncSession = Depends(get_db), cu
         raise HTTPException(status_code=403, detail="Solo un administrador puede crear usuarios")
 
     company_id = tenant.check_company(current_user.company_id, allowed, usuario.company_id)
+    await exigir_no_administrada(db, company_id, "Los usuarios")
     await _check_role_assignable(db, usuario.role_id, company_id, is_sys, allowed)
     if not is_sys:
         await check_limit(company_id, "max_users", User, db)
 
+    # Una sola contraseña por correo. Si la persona ya existe: solo se le da acceso a esta empresa con SU
+    # contraseña actual, y únicamente si todas sus empresas son del alcance de quien la crea (si no, cualquiera
+    # podría cambiarle la contraseña a un usuario de otra empresa creando uno con su correo).
+    password_hash = pwd_context.hash(usuario.password)
+    previas = (await db.execute(select(User).where(func.lower(func.trim(User.email)) == usuario.email.strip().lower()))).scalars().all()
+    if previas:
+        if any(p.company_id == company_id for p in previas):
+            raise HTTPException(status_code=409, detail="Ese correo ya tiene usuario en esta empresa")
+        if not is_sys and any(allowed is not None and p.company_id not in allowed for p in previas):
+            raise HTTPException(status_code=409, detail="Ese correo ya pertenece a un usuario de otra empresa")
+        password_hash = previas[0].password_hash
+
     nuevo_usuario = User(nombre=usuario.nombre, email=usuario.email,
-                         password_hash=pwd_context.hash(usuario.password),
+                         password_hash=password_hash,
                          role_id=usuario.role_id, company_id=company_id)
     try:
         db.add(nuevo_usuario)
@@ -213,6 +227,15 @@ async def update_user(user_id: int, data: UserUpdate, db: AsyncSession = Depends
 
     usuario = await _target_user(db, user_id, allowed)
     changes = data.dict(exclude_unset=True)
+    cambia = {k for k, v in changes.items() if getattr(usuario, k, None) != v}
+    # Sede administrada por una Bodega Central: el acceso se maneja desde la bodega (cada quien su nombre)
+    if cambia - {"nombre"}:
+        await exigir_no_administrada(db, usuario.company_id, "Los usuarios")
+    if "email" in cambia and changes.get("email"):
+        otro = (await db.execute(select(User.id).where(
+            func.lower(func.trim(User.email)) == str(changes["email"]).strip().lower(), User.id != usuario.id))).first()
+        if otro:
+            raise HTTPException(status_code=409, detail="Ese correo ya está en uso")
 
     if not is_sys:
         if await _is_system_user(db, usuario):
@@ -281,6 +304,7 @@ async def delete_user(id: int, current_user: User = Depends(get_current_user), d
     user = await _target_user(db, id, allowed)
     if not is_sysadmin and await _is_system_user(db, user):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    await exigir_no_administrada(db, user.company_id, "Los usuarios")
 
     if is_sysadmin:
         # SYSADMIN: cascada completa para limpieza de datos de prueba

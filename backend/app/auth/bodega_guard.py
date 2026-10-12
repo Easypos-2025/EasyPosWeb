@@ -5,8 +5,10 @@ La bodega es una empresa marcada por SYSADMIN con company_configs.has_bodega_cen
 empresas ACTIVAS con su mismo NIT. Es la única excepción en la que una empresa lee o escribe datos de otra,
 así que todo pasa por aquí:
 
-  · requiere_bodega  → la empresa efectiva de la petición (topbar validada por tenant) debe ser una bodega
-                       y el usuario ADMIN o SYSADMIN. Si no: 403 con X-Error-Code BODEGA_NO_HABILITADA.
+  · requiere_bodega  → la empresa efectiva de la petición (topbar validada por tenant) debe ser una bodega.
+                       ADMIN/SYSADMIN entran siempre; los demás roles (ayudantes de la bodega) según su permiso en
+                       la pantalla Bodega Central: ver para consultar, crear o editar para guardar.
+                       Si no: 403 con X-Error-Code BODEGA_NO_HABILITADA.
   · sedes_del_nit    → única lista válida de sedes destino/origen; se calcula siempre en el servidor.
   · exigir_sede      → un id de sede enviado por el navegador solo se acepta si está en esa lista.
 """
@@ -20,6 +22,14 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models.role_model import Role
 from app.models.user_model import User
+
+
+RUTA_BODEGA = "/bodega-central"
+_ESCRITURA = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def es_admin_rol(role) -> bool:
+    return bool(role) and (bool(role.is_system) or "ADMIN" in (role.name or "").upper())
 
 
 @dataclass
@@ -47,8 +57,18 @@ async def es_bodega(db: AsyncSession, cid: int) -> bool:
 async def requiere_bodega(request: Request, db: AsyncSession = Depends(get_db),
                           current_user: User = Depends(get_current_user)) -> Bodega:
     role = await db.get(Role, current_user.role_id) if current_user.role_id else None
-    if not (role and (role.is_system or "ADMIN" in (role.name or "").upper())):
-        raise _no_habilitada("Solo el administrador puede operar la bodega central")
+    if not role:
+        raise _no_habilitada("Usuario sin rol")
+    if not es_admin_rol(role):
+        permiso = (await db.execute(text("""
+            SELECT rm.can_view, rm.can_create, rm.can_edit FROM role_modules rm
+            JOIN system_modules sm ON sm.id = rm.module_id AND sm.route = :ruta
+            WHERE rm.role_id = :r LIMIT 1
+        """), {"r": role.id, "ruta": RUTA_BODEGA})).first()
+        if not permiso or not permiso[0]:
+            raise _no_habilitada("Su rol no tiene acceso a la bodega central")
+        if request.method in _ESCRITURA and not (permiso[1] or permiso[2]):
+            raise _no_habilitada("Su rol solo puede consultar la bodega central")
     cid = int(current_user.company_id or 0)
     if not cid or not await es_bodega(db, cid):
         raise _no_habilitada("La empresa seleccionada no está habilitada como bodega central")
@@ -82,3 +102,45 @@ async def exigir_sede(db: AsyncSession, bodega: Bodega, sede_id: int) -> dict:
     from app.services.error_log import record_security
     record_security("Bodega central: sede fuera de su NIT", {"bodega": bodega.id, "sede_solicitada": sede_id})
     raise HTTPException(status_code=403, detail="La sede no pertenece a la bodega central")
+
+
+# ─── Sedes administradas por la bodega ───────────────────────────────────────
+# Con una bodega activa en el NIT (aunque sea de una sola sede), los catálogos compartidos se crean y cambian
+# SOLO en la bodega y se envían a las sedes. En la sede quedan de solo consulta, para todos los roles.
+
+async def bodega_de_sede(db: AsyncSession, cid: int):
+    """Bodega activa que administra a la empresa cid ({id, nombre}), o None (sin bodega o es la bodega)."""
+    fila = (await db.execute(text("""
+        SELECT b.id_company AS id, b.name AS nombre
+        FROM companies s
+        JOIN companies b ON b.identification_number = s.identification_number AND b.id_company <> s.id_company
+                         AND b.state = 1
+        JOIN company_configs cc ON cc.company_id = b.id_company AND COALESCE(cc.has_bodega_central, 0) = 1
+        WHERE s.id_company = :c AND COALESCE(s.identification_number, '') <> ''
+          AND NOT EXISTS (SELECT 1 FROM company_configs sc WHERE sc.company_id = s.id_company
+                          AND COALESCE(sc.has_bodega_central, 0) = 1)
+        ORDER BY b.id_company LIMIT 1
+    """), {"c": int(cid or 0)})).mappings().first()
+    return dict(fila) if fila else None
+
+
+async def exigir_no_administrada(db: AsyncSession, cid: int, que: str) -> None:
+    """403 ADMINISTRADO_POR_BODEGA si la empresa cid es una sede administrada por una bodega."""
+    bodega = await bodega_de_sede(db, cid) if cid else None
+    if bodega:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{que} los administra la bodega central «{bodega['nombre']}». Créelos o modifíquelos "
+                   f"allá y envíelos a esta sede.",
+            headers={"X-Error-Code": "ADMINISTRADO_POR_BODEGA"})
+
+
+def bloqueo_bodega(que: str):
+    """Dependencia de ROUTER: en una sede administrada por la bodega rechaza crear/editar/borrar (403
+    ADMINISTRADO_POR_BODEGA). Las consultas siguen. La empresa se resuelve igual que la ruta."""
+    async def _guard(request: Request, db: AsyncSession = Depends(get_db)) -> None:
+        if request.method not in _ESCRITURA:
+            return
+        from app.auth.efectivo_guard import _empresa
+        await exigir_no_administrada(db, await _empresa(request, db), que)
+    return _guard

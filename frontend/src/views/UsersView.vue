@@ -26,8 +26,10 @@
       </div>
     </div>
 
+    <AvisoBodega :bodega="administradoPor" que="los usuarios" />
+
     <!-- FORM -->
-    <form @submit.prevent="createUser" autocomplete="off">
+    <form v-if="!administradoPor" @submit.prevent="createUser" autocomplete="off">
 
       <!-- anti autofill -->
       <input type="text" name="fakeuser" style="display:none">
@@ -166,7 +168,7 @@
     <div class="users-list-header">
       <h4 class="mb-0">Usuarios</h4>
       <button
-        v-if="isSysAdmin || isAdmin"
+        v-if="(isSysAdmin || isAdmin) && !administradoPor"
         class="btn btn-outline-primary btn-sm"
         @click="openInviteModal"
         title="Generar link de invitación (válido 48 h)"
@@ -221,10 +223,10 @@
             <td class="d-none d-md-table-cell">{{ user.email }}</td>
             <td>{{ getRoleName(user.role_id) }}</td>
             <td v-if="can('Users', 'can_edit') || can('Users', 'can_delete')" class="d-flex gap-2">
-              <button v-if="can('Users', 'can_edit')" class="btn btn-sm btn-warning" @click="openEdit(user)">
+              <button v-if="can('Users', 'can_edit') && !administradoPor" class="btn btn-sm btn-warning" @click="openEdit(user)">
                 Editar
               </button>
-              <button v-if="can('Users', 'can_delete')" class="btn btn-sm btn-danger" @click="askDeleteUser(user.id)">
+              <button v-if="can('Users', 'can_delete') && !administradoPor" class="btn btn-sm btn-danger" @click="askDeleteUser(user.id)">
                 Eliminar
               </button>
             </td>
@@ -308,6 +310,8 @@ import { ref, onMounted, computed, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
+import AvisoBodega from "@/components/AvisoBodega.vue"
+import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
 
 
 const search = ref("")
@@ -328,6 +332,8 @@ const usersRaw = ref([])
 const empresaTopbar = () => companyStore.selectedCompany?.id ?? currentUser.company_id ?? null
 // SYSADMIN empieza sin filtro de empresa; no-SYSADMIN siempre la empresa del topbar
 const selectedCompany = ref(isSysAdmin ? null : empresaTopbar())
+// Sede administrada por una Bodega Central → usuarios de solo consulta (se invitan desde la bodega)
+const { administradoPor } = useAdministradoBodega(selectedCompany)
 watch(() => companyStore.selectedCompany?.id, (id, antes) => {
   if (isSysAdmin || !id || id === antes) return
   selectedCompany.value = id

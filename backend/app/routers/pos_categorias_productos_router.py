@@ -25,9 +25,10 @@ from app.database import get_db
 from app.auth.dependencies import get_current_user
 from app.auth.tenant import tenant_guard
 from app.models.user_model import User
+from app.auth.bodega_guard import bloqueo_bodega
 
 router = APIRouter(prefix="/api/pos-catalogo/categorias-productos", tags=["Categorías de Productos"],
-                   dependencies=[Depends(tenant_guard)])
+                   dependencies=[Depends(tenant_guard), Depends(bloqueo_bodega("Las categorías de insumos"))])
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f<>]")
 Nombre = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]

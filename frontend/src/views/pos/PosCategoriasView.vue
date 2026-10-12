@@ -5,10 +5,11 @@
         <h5 class="crud-titulo">Categorías de Artículos</h5>
         <p class="crud-sub">Organiza tu catálogo por categorías (Entradas, Principios, Bebidas, Servicios…)</p>
       </div>
-      <button class="btn-nuevo" @click="abrirModal()">
+      <button v-if="!administradoPor" class="btn-nuevo" @click="abrirModal()">
         <i class="bi bi-plus-lg me-1"></i>Nueva Categoría
       </button>
     </div>
+    <AvisoBodega :bodega="administradoPor" que="las categorías de productos" />
 
     <div v-if="loading" class="estado-carga">
       <div class="spinner-border spinner-border-sm text-primary"></div>
@@ -28,8 +29,10 @@
           <span v-if="!cat.is_active" class="badge-inactiva">Inactiva</span>
         </div>
         <div class="cat-acciones">
-          <button class="btn-icono" @click="abrirModal(cat)"><i class="bi bi-pencil"></i></button>
-          <button class="btn-icono btn-icono--danger" @click="eliminar(cat.id)"><i class="bi bi-trash"></i></button>
+          <template v-if="!administradoPor">
+            <button class="btn-icono" @click="abrirModal(cat)"><i class="bi bi-pencil"></i></button>
+            <button class="btn-icono btn-icono--danger" @click="eliminar(cat.id)"><i class="bi bi-trash"></i></button>
+          </template>
         </div>
       </div>
     </div>
@@ -78,6 +81,10 @@
 import { ref, onMounted } from 'vue'
 import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
+import AvisoBodega from "@/components/AvisoBodega.vue"
+import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
+
+const { administradoPor } = useAdministradoBodega()
 
 const BASE = '/api/pos-catalogo/categorias'
 const items    = ref([])

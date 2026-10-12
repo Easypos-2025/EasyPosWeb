@@ -126,6 +126,105 @@
         </div>
       </section>
 
+      <!-- ── Enviar a sedes (administración central) ── -->
+      <section v-if="tab === 'enviar'" class="bc-card">
+        <p class="bc-help">
+          Proveedores, categorías y roles se crean y modifican solo aquí, en la bodega, y se envían a las sedes: en cada
+          sede se crea lo que falta y se <b>sobrescribe</b> lo que ya existe (proveedor por NIT o nombre; categoría y rol
+          por nombre, el rol con sus pantallas y permisos). En las sedes quedan de solo consulta.
+        </p>
+        <div class="bc-chips">
+          <button v-for="t in tiposEnvio" :key="t.clave" class="bc-tab" :class="{ 'bc-tab--on': envio.tipo === t.clave }" @click="cambiarTipoEnvio(t.clave)">
+            <i :class="t.icon"></i><span>{{ t.nombre }}</span>
+          </button>
+          <router-link class="bc-link" :to="tipoEnvio.ruta"><i class="bi bi-pencil-square"></i> Crear o editar {{ tipoEnvio.nombre.toLowerCase() }}</router-link>
+        </div>
+
+        <div class="bc-envio">
+          <div class="bc-envio-col">
+            <div class="bc-search">
+              <i class="bi bi-search"></i>
+              <input v-model.trim="envio.buscar" class="bc-inp" :placeholder="`Buscar en ${tipoEnvio.nombre.toLowerCase()}...`" />
+            </div>
+            <div v-if="envio.cargando" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+            <div v-else-if="!envio.registros.length" class="bc-vacio"><i class="bi bi-inbox"></i><p>La bodega no tiene {{ tipoEnvio.nombre.toLowerCase() }}. Créelos o impórtelos de una sede.</p></div>
+            <div v-else class="bc-datos bc-datos--scroll">
+              <label class="bc-dato bc-dato--todo">
+                <input type="checkbox" :checked="registrosTodos" @change="marcarRegistros($event.target.checked)" />
+                <span>Seleccionar todo ({{ envioFiltrados.length }})</span>
+              </label>
+              <label v-for="r in envioFiltrados" :key="r.id" class="bc-dato" :class="{ 'bc-dato--vacio': !r.is_active || r.es_admin }">
+                <input v-model="envio.ids" type="checkbox" :value="r.id" :disabled="r.es_admin" />
+                <span class="bc-dato-nom">{{ r.name }}</span>
+                <span class="bc-dato-n">{{ r.nit || (r.is_active ? '' : 'Inactivo') }}</span>
+                <small v-if="r.es_admin" class="bc-dato-nota">El rol administrador no se envía: cada sede conserva el suyo</small>
+              </label>
+            </div>
+          </div>
+          <div class="bc-envio-col bc-envio-col--sedes">
+            <div class="bc-datos">
+              <label class="bc-dato bc-dato--todo">
+                <input type="checkbox" :checked="sedesTodas" @change="envio.sedes = $event.target.checked ? info.sedes.map(s => s.id) : []" />
+                <span>Todas las sedes</span>
+              </label>
+              <label v-for="s in $ordenAlfa(info.sedes, 'nombre')" :key="s.id" class="bc-dato">
+                <input v-model="envio.sedes" type="checkbox" :value="s.id" />
+                <span class="bc-dato-nom">{{ s.nombre }}</span>
+                <i class="bi" :class="s.con_escritorio ? 'bi-pc-display' : 'bi-globe'"></i>
+              </label>
+            </div>
+            <button class="bc-btn bc-btn--full" :disabled="!envio.ids.length || !envio.sedes.length || envio.enviando" @click="enviarSedes">
+              <span v-if="envio.enviando" class="spinner-border spinner-border-sm me-1"></span>
+              <i v-else class="bi bi-send me-1"></i>Enviar {{ envio.ids.length }} a {{ envio.sedes.length }} sede(s)
+            </button>
+            <div v-if="envio.resultado" class="bc-res">
+              <div class="bc-res-fila bc-res-fila--3 bc-res-fila--head"><span>Sede</span><span>Nuevos</span><span>Actualizados</span></div>
+              <template v-for="r in envio.resultado" :key="r.sede_id">
+                <div class="bc-res-fila bc-res-fila--3">
+                  <span>{{ r.sede }}</span><b>{{ fmtCant(r.creados) }}</b><span>{{ fmtCant(r.actualizados) }}</span>
+                </div>
+                <div v-for="(er, i) in (r.errores || [])" :key="i" class="bc-res-error"><i class="bi bi-exclamation-triangle"></i> {{ er }}</div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Usuarios del grupo ── -->
+      <section v-if="tab === 'usuarios'" class="bc-card">
+        <p class="bc-help">
+          Cada persona entra con su correo y <b>una sola contraseña</b> a las empresas donde tenga acceso, con un rol en cada
+          una. Los usuarios se invitan y administran solo aquí; en las sedes quedan de solo consulta.
+        </p>
+        <div class="bc-toolbar">
+          <div class="bc-search">
+            <i class="bi bi-search"></i>
+            <input v-model.trim="usr.buscar" class="bc-inp" placeholder="Buscar por nombre o correo..." />
+          </div>
+          <button class="bc-btn" @click="abrirInvitar"><i class="bi bi-person-plus me-1"></i>Invitar usuario</button>
+        </div>
+        <div v-if="usr.cargando" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+        <div v-else-if="!usuariosFiltrados.length" class="bc-vacio"><i class="bi bi-people"></i><p>Sin usuarios.</p></div>
+        <div v-else class="bc-lista">
+          <article v-for="p in usuariosFiltrados" :key="p.email" class="bc-persona">
+            <div class="bc-persona-head">
+              <div class="bc-persona-id"><b>{{ p.nombre }}</b><small>{{ p.email }}</small></div>
+              <button class="bc-btn-sm" @click="abrirAsignar(p)"><i class="bi bi-plus-lg"></i> Empresa</button>
+            </div>
+            <div class="bc-accesos">
+              <div v-for="e in p.empresas" :key="e.user_id" class="bc-acceso" :class="{ 'bc-acceso--off': !e.activo }">
+                <i class="bi" :class="e.es_bodega ? 'bi-boxes' : 'bi-shop'"></i>
+                <div class="bc-acceso-txt"><span>{{ e.empresa }}</span><small>{{ e.rol || 'Sin rol' }}{{ e.activo ? '' : ' · inactivo' }}</small></div>
+                <button v-if="!e.yo" class="bc-mini" :title="e.activo ? 'Desactivar en esta empresa' : 'Activar en esta empresa'"
+                        :disabled="usr.guardando" @click="cambiarEstado(p, e)">
+                  <i class="bi" :class="e.activo ? 'bi-toggle-on' : 'bi-toggle-off'"></i>
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <!-- ── Movimientos ── -->
       <section v-if="tab === 'movimientos'" class="bc-card">
         <div v-if="cargandoMov" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
@@ -229,6 +328,72 @@
       </div>
     </div>
 
+    <!-- ── Modal: invitar usuario ── -->
+    <div v-if="modal === 'invitar'" class="bc-overlay" @click.self="cerrar">
+      <div class="bc-modal">
+        <div class="bc-modal-head"><b>Invitar usuario</b><button class="bc-x" @click="cerrar"><i class="bi bi-x-lg"></i></button></div>
+        <div class="bc-modal-body">
+          <template v-if="!inv.link">
+            <p class="bc-help">Marque las empresas a las que tendrá acceso y su rol en cada una. Se genera un link (válido 48 horas) para que la persona ponga su nombre, correo y contraseña.</p>
+            <div class="bc-datos">
+              <div v-for="e in rolesEmpresas" :key="e.company_id" class="bc-inv-fila">
+                <label class="bc-inv-emp">
+                  <input v-model="inv.marcadas" type="checkbox" :value="e.company_id" />
+                  <span><i class="bi" :class="e.es_bodega ? 'bi-boxes' : 'bi-shop'"></i> {{ e.nombre }}</span>
+                </label>
+                <select v-model.number="inv.roles[e.company_id]" class="bc-inp bc-inp--sm" :disabled="!inv.marcadas.includes(e.company_id)">
+                  <option :value="0">— Rol —</option>
+                  <option v-for="r in $ordenAlfa(e.roles, 'name')" :key="r.id" :value="r.id">{{ r.name }}</option>
+                </select>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <p class="bc-help"><i class="bi bi-check-circle-fill text-success"></i> Link generado, válido por 48 horas. Compártalo por WhatsApp o correo.</p>
+            <div class="bc-link-box"><span>{{ inv.link }}</span>
+              <button class="bc-mini" @click="copiarLink"><i class="bi" :class="inv.copiado ? 'bi-check-lg' : 'bi-clipboard'"></i></button>
+            </div>
+          </template>
+        </div>
+        <div class="bc-modal-foot">
+          <button class="bc-btn bc-btn--sec" @click="cerrar">{{ inv.link ? 'Cerrar' : 'Cancelar' }}</button>
+          <button v-if="!inv.link" class="bc-btn" :disabled="enviando || !inv.marcadas.length" @click="generarInvitacion">
+            <span v-if="enviando" class="spinner-border spinner-border-sm me-1"></span>Generar link
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: dar acceso a otra empresa ── -->
+    <div v-if="modal === 'asignar'" class="bc-overlay" @click.self="cerrar">
+      <div class="bc-modal bc-modal--sm">
+        <div class="bc-modal-head"><b>Acceso a empresa</b><button class="bc-x" @click="cerrar"><i class="bi bi-x-lg"></i></button></div>
+        <div class="bc-modal-body">
+          <div class="bc-prod-ref">{{ asig.persona.nombre }}<small>{{ asig.persona.email }} · entra con su misma contraseña</small></div>
+          <div class="bc-field">
+            <label>Empresa</label>
+            <select v-model.number="asig.empresa" class="bc-inp" @change="asig.rol = 0">
+              <option :value="0">— Seleccionar —</option>
+              <option v-for="e in rolesEmpresas" :key="e.company_id" :value="e.company_id">{{ e.nombre }}{{ tieneAcceso(asig.persona, e.company_id) ? ' (cambiar rol)' : '' }}</option>
+            </select>
+          </div>
+          <div class="bc-field">
+            <label>Rol en esa empresa</label>
+            <select v-model.number="asig.rol" class="bc-inp" :disabled="!asig.empresa">
+              <option :value="0">— Rol —</option>
+              <option v-for="r in $ordenAlfa(rolesDe(asig.empresa), 'name')" :key="r.id" :value="r.id">{{ r.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="bc-modal-foot">
+          <button class="bc-btn bc-btn--sec" @click="cerrar">Cancelar</button>
+          <button class="bc-btn" :disabled="enviando || !asig.empresa || !asig.rol" @click="guardarAsignacion">
+            <span v-if="enviando" class="spinner-border spinner-border-sm me-1"></span>Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Modal: replicar por IMEI ── -->
     <div v-if="modal === 'replicar'" class="bc-overlay" @click.self="cerrar">
       <div class="bc-modal">
@@ -283,6 +448,8 @@ const tab = ref('productos')
 const tabs = [
   { key: 'productos', label: 'Productos', icon: 'bi bi-box-seam' },
   { key: 'importar', label: 'Importar catálogo', icon: 'bi bi-cloud-download' },
+  { key: 'enviar', label: 'Enviar a sedes', icon: 'bi bi-send' },
+  { key: 'usuarios', label: 'Usuarios', icon: 'bi bi-people' },
   { key: 'movimientos', label: 'Movimientos', icon: 'bi bi-journal-text' },
 ]
 
@@ -297,6 +464,21 @@ const resultadoImportar = ref(null)
 const resumenSede = ref([])
 const cargandoResumen = ref(false)
 const datosMarcados = ref([])
+
+// ── Enviar a sedes ──
+const tiposEnvio = [
+  { clave: 'proveedores', nombre: 'Proveedores', icon: 'bi bi-truck', ruta: '/inventory/suppliers' },
+  { clave: 'categorias', nombre: 'Categorías de productos', icon: 'bi bi-tags', ruta: '/pos/categorias' },
+  { clave: 'categorias_insumos', nombre: 'Categorías de insumos', icon: 'bi bi-diagram-3', ruta: '/pos/categorias-productos' },
+  { clave: 'roles', nombre: 'Roles y permisos', icon: 'bi bi-shield-lock', ruta: '/configuration/roles' },
+]
+const envio = ref({ tipo: 'proveedores', registros: [], ids: [], sedes: [], buscar: '', cargando: false, enviando: false, resultado: null })
+
+// ── Usuarios del grupo ──
+const usr = ref({ lista: [], buscar: '', cargando: false, guardando: false })
+const rolesEmpresas = ref([])
+const inv = ref({ marcadas: [], roles: {}, link: '', copiado: false })
+const asig = ref({ persona: null, empresa: 0, rol: 0 })
 
 const modal = ref('')
 const enviando = ref(false)
@@ -329,6 +511,20 @@ const totalUnidades = computed(() => filtrados.value.reduce((s, p) => s + (p.sto
 const todosMarcados = computed(() => {
   const con = resumenSede.value.filter(d => d.registros)
   return con.length > 0 && con.every(d => datosMarcados.value.includes(d.clave))
+})
+const tipoEnvio = computed(() => tiposEnvio.find(t => t.clave === envio.value.tipo))
+const envioFiltrados = computed(() => {
+  const q = envio.value.buscar.toLowerCase()
+  return q ? envio.value.registros.filter(r => [r.name, r.nit].some(v => (v || '').toLowerCase().includes(q))) : envio.value.registros
+})
+const registrosTodos = computed(() => {
+  const marcables = envioFiltrados.value.filter(r => !r.es_admin)
+  return marcables.length > 0 && marcables.every(r => envio.value.ids.includes(r.id))
+})
+const sedesTodas = computed(() => info.value?.sedes.length > 0 && info.value.sedes.every(s => envio.value.sedes.includes(s.id)))
+const usuariosFiltrados = computed(() => {
+  const q = usr.value.buscar.toLowerCase()
+  return q ? usr.value.lista.filter(p => [p.nombre, p.email].some(v => (v || '').toLowerCase().includes(q))) : usr.value.lista
 })
 const codigosListos = computed(() => rep.value.codigos.filter(c => c.trim()).length)
 const duplicados = computed(() => {
@@ -367,6 +563,116 @@ async function cargarMovimientos() {
 function cambiarTab(k) {
   tab.value = k
   if (k === 'movimientos') cargarMovimientos()
+  if (k === 'enviar') cargarEnvio()
+  if (k === 'usuarios') cargarUsuarios()
+}
+
+// ── Usuarios del grupo ──
+async function cargarUsuarios() {
+  usr.value.cargando = true
+  try {
+    const [u, r] = await Promise.all([api.get(`${BASE}/usuarios`), api.get(`${BASE}/roles-empresas`)])
+    usr.value.lista = u.data
+    rolesEmpresas.value = r.data
+  } catch (e) { showToast(errorDe(e, 'Error cargando los usuarios'), 'error') }
+  usr.value.cargando = false
+}
+
+const rolesDe = (cid) => rolesEmpresas.value.find(e => e.company_id === cid)?.roles || []
+const tieneAcceso = (p, cid) => !!p?.empresas.some(e => e.company_id === cid)
+
+function abrirInvitar() {
+  inv.value = { marcadas: [], roles: Object.fromEntries(rolesEmpresas.value.map(e => [e.company_id, 0])), link: '', copiado: false }
+  modal.value = 'invitar'
+}
+
+async function generarInvitacion() {
+  const asignaciones = inv.value.marcadas.map(c => ({ empresa_id: c, role_id: inv.value.roles[c] || 0 }))
+  if (asignaciones.some(a => !a.role_id)) return showToast('Escoja el rol en cada empresa marcada', 'warning')
+  enviando.value = true
+  try {
+    const { data } = await api.post(`${BASE}/invitar`, { asignaciones })
+    inv.value.link = `${window.location.origin}/invite/${data.token}`
+  } catch (e) { showToast(errorDe(e, 'Error generando la invitación'), 'error') }
+  enviando.value = false
+}
+
+async function copiarLink() {
+  try { await navigator.clipboard.writeText(inv.value.link); inv.value.copiado = true; setTimeout(() => { inv.value.copiado = false }, 2000) }
+  catch { showToast('No se pudo copiar, cópielo manualmente', 'warning') }
+}
+
+function abrirAsignar(p) {
+  asig.value = { persona: p, empresa: 0, rol: 0 }
+  modal.value = 'asignar'
+}
+
+async function guardarAsignacion() {
+  enviando.value = true
+  try {
+    const { data } = await api.post(`${BASE}/usuarios/asignar`, { email: asig.value.persona.email, empresa_id: asig.value.empresa, role_id: asig.value.rol })
+    showToast(data.accion === 'agregado' ? 'Acceso agregado' : 'Rol actualizado', 'success')
+    enviando.value = false
+    modal.value = ''
+    await cargarUsuarios()
+  } catch (e) { showToast(errorDe(e, 'Error al guardar el acceso'), 'error') }
+  enviando.value = false
+}
+
+async function cambiarEstado(p, e) {
+  if (e.activo) {
+    const { isConfirmed } = await window.Swal.fire({
+      title: '¿Desactivar el acceso?', text: `${p.nombre} no podrá entrar a ${e.empresa}. En las demás empresas sigue igual.`,
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'Desactivar', cancelButtonText: 'Cancelar',
+    })
+    if (!isConfirmed) return
+  }
+  usr.value.guardando = true
+  try {
+    await api.post(`${BASE}/usuarios/estado`, { user_id: e.user_id, activo: !e.activo })
+    e.activo = !e.activo
+  } catch (err) { showToast(errorDe(err, 'Error al cambiar el acceso'), 'error') }
+  usr.value.guardando = false
+}
+
+// ── Enviar a sedes ──
+async function cargarEnvio() {
+  envio.value.cargando = true
+  envio.value.resultado = null
+  try { envio.value.registros = (await api.get(`${BASE}/enviar/${envio.value.tipo}`)).data }
+  catch (e) { envio.value.registros = []; showToast(errorDe(e, 'Error cargando los datos de la bodega'), 'error') }
+  envio.value.cargando = false
+}
+
+function cambiarTipoEnvio(clave) {
+  envio.value.tipo = clave
+  envio.value.ids = []
+  envio.value.buscar = ''
+  cargarEnvio()
+}
+
+function marcarRegistros(marcar) {
+  const visibles = envioFiltrados.value.filter(r => !r.es_admin).map(r => r.id)
+  envio.value.ids = marcar ? [...new Set([...envio.value.ids, ...visibles])] : envio.value.ids.filter(id => !visibles.includes(id))
+}
+
+async function enviarSedes() {
+  const e = envio.value
+  const nombresSedes = info.value.sedes.filter(s => e.sedes.includes(s.id)).map(s => s.nombre).join(', ')
+  const { isConfirmed } = await window.Swal.fire({
+    title: '¿Enviar a las sedes?',
+    text: `${e.ids.length} ${tipoEnvio.value.nombre.toLowerCase()} a: ${nombresSedes}. Lo que ya exista en la sede se sobrescribe.`,
+    icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  e.enviando = true
+  e.resultado = null
+  try {
+    const { data } = await api.post(`${BASE}/enviar`, { tipo: e.tipo, ids: e.ids, sedes: e.sedes, clave: nuevaClave() })
+    e.resultado = data.resultado
+    showToast(data.repetida ? 'Este envío ya se había hecho' : 'Envío terminado', 'success')
+  } catch (err) { showToast(errorDe(err, 'Error al enviar a las sedes'), 'error') }
+  e.enviando = false
 }
 
 function cerrar() { if (!enviando.value) modal.value = '' }
@@ -580,6 +886,34 @@ onMounted(cargar)
 .bc-dato-n { font-weight: 800; color: #1e3a5f; }
 .bc-dato--vacio .bc-dato-n { color: #cbd5e1; }
 .bc-dato-nota { grid-column: 2 / -1; font-size: 11.5px; color: #94a3b8; }
+.bc-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bc-link { margin-left: auto; font-size: 13px; font-weight: 700; color: #1d4ed8; text-decoration: none; display: inline-flex; gap: 5px; align-items: center; }
+.bc-envio { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.bc-envio-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.bc-datos--scroll { max-height: 420px; overflow-y: auto; }
+.bc-persona { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.bc-persona-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.bc-persona-id { display: flex; flex-direction: column; min-width: 0; }
+.bc-persona-id b { color: #1e293b; font-size: 14px; }
+.bc-persona-id small { color: #64748b; font-size: 12px; word-break: break-all; }
+.bc-accesos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.bc-acceso { display: flex; align-items: center; gap: 8px; background: #f8fafc; border-radius: 10px; padding: 6px 8px; }
+.bc-acceso > i { color: #1e3a5f; }
+.bc-acceso--off { opacity: .55; }
+.bc-acceso-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.bc-acceso-txt span { font-size: 12.5px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-acceso-txt small { font-size: 11.5px; color: #64748b; }
+.bc-mini { border: none; background: none; font-size: 20px; color: #1d4ed8; cursor: pointer; padding: 0 2px; line-height: 1; }
+.bc-acceso--off .bc-mini { color: #94a3b8; }
+.bc-inv-fila { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid #f1f5f9; }
+.bc-inv-fila:first-child { border-top: none; }
+.bc-inv-emp { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; cursor: pointer; min-width: 0; }
+.bc-inv-emp input { width: 18px; height: 18px; accent-color: #1d4ed8; flex-shrink: 0; }
+.bc-inp--sm { padding: 6px 8px; font-size: 13px; }
+.bc-link-box { display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; }
+.bc-link-box span { flex: 1; font-size: 12.5px; word-break: break-all; color: #1e293b; }
+.bc-res-error { padding: 4px 12px 8px; font-size: 12px; color: #b45309; }
+.bc-res-fila--3 { grid-template-columns: minmax(0, 1fr) repeat(2, 90px); }
 .bc-res { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; font-size: 13.5px; }
 .bc-res-fila { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 80px); gap: 8px; padding: 8px 12px;
   border-top: 1px solid #f1f5f9; text-align: right; }
@@ -623,6 +957,9 @@ onMounted(cargar)
 }
 @media (max-width: 768px) {
   .bc-page { padding: 14px 12px 80px; }
+  .bc-envio { grid-template-columns: 1fr; }
+  .bc-link { margin-left: 0; }
+  .bc-datos--scroll { max-height: 320px; }
   .bc-toolbar { flex-direction: column; align-items: stretch; }
   .bc-card--angosta { max-width: none; }
   .bc-imeis { grid-template-columns: 1fr; }
@@ -631,6 +968,8 @@ onMounted(cargar)
 }
 @media (max-width: 576px) {
   .bc-title { font-size: 18px; }
+  .bc-inv-fila { grid-template-columns: 1fr; }
+  .bc-accesos { grid-template-columns: 1fr; }
   .bc-row { flex-direction: column; gap: 10px; }
   .bc-row--end { align-items: stretch; }
   .bc-prod { grid-template-columns: 1fr; }

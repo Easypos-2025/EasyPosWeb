@@ -11,6 +11,7 @@ from app.models.user_model import User
 from app.auth.dependencies import get_current_user
 from app.services.plan_limits_service import check_limit
 from app.services.permisos import permisos_usuario
+from app.auth.bodega_guard import es_admin_rol, exigir_no_administrada
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
@@ -34,6 +35,14 @@ def _ser(r: Role) -> dict:
 async def _is_system(user: User, db: AsyncSession) -> bool:
     role = await db.get(Role, user.role_id)
     return role.is_system if role else False
+
+
+async def _exigir_admin(db: AsyncSession, user: User, cid: int) -> None:
+    """Crear, editar, borrar roles y asignarles pantallas: solo un Admin (o SYSADMIN). Con Bodega Central,
+    los roles de las sedes solo se cambian desde la bodega."""
+    if not es_admin_rol(await db.get(Role, user.role_id) if user.role_id else None):
+        raise HTTPException(status_code=403, detail="Solo un administrador puede modificar los roles")
+    await exigir_no_administrada(db, cid, "Los roles")
 
 
 @router.get("/")
@@ -68,6 +77,7 @@ async def create_role(
     else:
         cid = current_user.company_id
         await check_limit(cid, "max_roles", Role, db)
+    await _exigir_admin(db, current_user, int(cid))
 
     name = (data.get("name") or "").strip()
     if not name:
@@ -105,6 +115,7 @@ async def update_role(
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
+    await _exigir_admin(db, current_user, role.company_id)
 
     name = (data.get("name") or "").strip()
     if not name:
@@ -133,6 +144,7 @@ async def delete_role(
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
+    await _exigir_admin(db, current_user, role.company_id)
     await db.delete(role)
     await db.commit()
     return {"message": "Rol eliminado"}
@@ -182,6 +194,18 @@ async def assign_modules_to_role(
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     if not await _is_system(current_user, db) and role.company_id != current_user.company_id:
         raise HTTPException(status_code=403, detail="Sin permisos")
+    await _exigir_admin(db, current_user, role.company_id)
+    if len(modules) > 500:
+        raise HTTPException(status_code=422, detail="Demasiadas pantallas")
+    # Solo pantallas que existen; las exclusivas de SYSADMIN no se asignan desde una empresa
+    q = select(SystemModule.id)
+    if not await _is_system(current_user, db):
+        q = q.where(SystemModule.is_sysadmin == False)
+    validos = set((await db.execute(q)).scalars().all())
+    try:
+        modules = [m for m in modules if int(m.get("module_id") or 0) in validos]
+    except (TypeError, ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Pantallas no válidas")
 
     await db.execute(delete(RoleModule).where(RoleModule.role_id == role_id))
 
@@ -250,9 +274,10 @@ async def save_role_access(
 ):
     """Reemplaza los permisos especiales del rol. Solo un Admin (o SYSADMIN) puede cambiarlos."""
     from app.routers.pos_shift_router import _es_admin
-    await _rol_de_mi_empresa(db, current_user, role_id)
+    role = await _rol_de_mi_empresa(db, current_user, role_id)
     if not await _es_admin(db, current_user):
         raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar el Control de Acceso")
+    await exigir_no_administrada(db, role.company_id, "Los roles")
     claves = data.get("keys")
     if not isinstance(claves, list) or len(claves) > 200:
         raise HTTPException(status_code=422, detail="Lista de permisos no válida")

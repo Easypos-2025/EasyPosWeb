@@ -36,7 +36,14 @@
       <template v-else-if="info">
         <div class="invite-header">
           <h2>Te invitaron a unirte</h2>
-          <div class="invite-meta">
+          <ul v-if="info.empresas && info.empresas.length > 1" class="invite-empresas">
+            <li v-for="e in info.empresas" :key="e.company_name">
+              <span class="invite-company"><i class="bi bi-building"></i> {{ e.company_name }}</span>
+              <span class="invite-role"><i class="bi bi-shield-check"></i> {{ e.role_name }}</span>
+            </li>
+            <li class="invite-una-clave"><i class="bi bi-key"></i> Una sola contraseña para todas</li>
+          </ul>
+          <div v-else class="invite-meta">
             <span class="invite-company"><i class="bi bi-building"></i> {{ info.company_name }}</span>
             <span class="invite-role"><i class="bi bi-shield-check"></i> {{ info.role_name }}</span>
           </div>
@@ -205,6 +212,10 @@ function fmtDate(iso) {
 </script>
 
 <style scoped>
+.invite-empresas { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.invite-empresas li { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.invite-una-clave { font-size: 12px; color: #64748b; }
+
 .invite-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);

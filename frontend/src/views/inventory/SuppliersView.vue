@@ -5,8 +5,9 @@
         <h1 class="page-title"><i class="bi bi-truck me-2"></i>Proveedores</h1>
         <p class="page-subtitle">Empresas o personas que suministran insumos y productos</p>
       </div>
-      <button class="btn btn-primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Nuevo proveedor</button>
+      <button v-if="!administradoPor" class="btn btn-primary" @click="openCreate"><i class="bi bi-plus-lg"></i> Nuevo proveedor</button>
     </div>
+    <AvisoBodega :bodega="administradoPor" que="los proveedores" />
 
     <div class="filters-row">
       <input v-model="search" class="form-control" placeholder="Buscar por nombre o NIT..." style="max-width:280px" />
@@ -41,7 +42,7 @@
               </span>
             </td>
             <td class="text-center">
-              <div class="action-row">
+              <div v-if="!administradoPor" class="action-row">
                 <button class="btn btn-sm btn-outline-primary" @click="openEdit(s)" title="Editar"><i class="bi bi-pencil"></i></button>
                 <button class="btn btn-sm btn-outline-danger" @click="toggleActive(s)" :title="s.is_active ? 'Desactivar' : 'Activar'">
                   <i :class="s.is_active ? 'bi bi-toggle-on' : 'bi bi-toggle-off'"></i>
@@ -117,6 +118,10 @@
 import { ref, computed, onMounted } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
+import AvisoBodega from "@/components/AvisoBodega.vue"
+import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
+
+const { administradoPor } = useAdministradoBodega()
 
 const suppliers = ref([])
 const loading   = ref(true)

@@ -32,6 +32,7 @@
 
         <div class="col-md-3 col-12 text-end">
           <button
+            v-if="!administradoPor"
             class="btn btn-primary btn-sm"
             :disabled="!activeCompanyId"
             @click="openCreateRole"
@@ -42,6 +43,8 @@
 
       </div>
     </div>
+
+    <AvisoBodega class="mt-3" :bodega="administradoPor" que="los roles y permisos" />
 
     <!-- CONTENIDO PRINCIPAL -->
     <div class="row g-3 mt-1">
@@ -75,7 +78,7 @@
                   <div class="text-muted" style="font-size:12px">{{ r.description || '—' }}</div>
                   <span v-if="r.access_type && r.access_type !== 'interno'" class="rol-tipo">{{ TIPOS_ACCESO.find(t => t.v === r.access_type)?.l }}</span>
                 </div>
-                <div class="d-flex gap-1">
+                <div v-if="!administradoPor" class="d-flex gap-1">
                   <button
                     class="btn btn-warning btn-sm py-0 px-1"
                     title="Editar rol"
@@ -112,7 +115,8 @@
                 <h6 class="fw-bold mb-0">{{ selectedRole.name }}</h6>
                 <small class="text-muted">{{ selectedRole.description }}</small>
               </div>
-              <button v-if="tabRol === 'modulos'" class="btn btn-success btn-sm" @click="savePermissions" :disabled="saving">
+              <template v-if="administradoPor"></template>
+              <button v-else-if="tabRol === 'modulos'" class="btn btn-success btn-sm" @click="savePermissions" :disabled="saving">
                 <i class="bi bi-check-lg"></i> {{ saving ? 'Guardando...' : 'Guardar permisos' }}
               </button>
               <button v-else class="btn btn-success btn-sm" @click="saveAccess" :disabled="savingAccess">
@@ -245,6 +249,8 @@ import { ref, computed, onMounted, watch } from "vue"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useCompanyStore } from "@/stores/companyStore"
+import AvisoBodega from "@/components/AvisoBodega.vue"
+import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
 
 const companyStore = useCompanyStore()
 
@@ -273,6 +279,9 @@ const activeCompanyId = computed(() =>
     ? (selectedCompanyId.value || null)
     : (companyStore.selectedCompany?.id || null)
 )
+
+// Sede administrada por una Bodega Central → roles de solo consulta
+const { administradoPor } = useAdministradoBodega(activeCompanyId)
 
 // ─── Cargar roles de la empresa activa ───────────────────────
 async function loadRoles() {

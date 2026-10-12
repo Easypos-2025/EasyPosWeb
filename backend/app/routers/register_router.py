@@ -162,6 +162,13 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     user.is_active = True
+    # Invitación de la Bodega Central: el usuario quedó creado en varias empresas → se activan todas
+    from sqlalchemy import text as _text
+    await db.execute(_text("""
+        UPDATE users u JOIN invitation_token_sedes s ON s.user_id = u.id
+        SET u.is_active = 1
+        WHERE s.invitation_id = (SELECT x.invitation_id FROM invitation_token_sedes x WHERE x.user_id = :u LIMIT 1)
+    """), {"u": user.id})
     await db.delete(db_token)
     await db.commit()
     return {"message": "Cuenta activada exitosamente. Ya puedes iniciar sesión.", "email": user.email}

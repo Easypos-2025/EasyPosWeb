@@ -8,8 +8,10 @@ from app.database import get_db
 from app.auth.jwt_handler import decode_access_token
 from app.models.user_session_model import UserSession
 from app.models.user_model import User
+from app.auth.bodega_guard import bloqueo_bodega
 
-router = APIRouter(prefix="/api/pos-catalogo/categorias", tags=["POS Item Categories"])
+router = APIRouter(prefix="/api/pos-catalogo/categorias", tags=["POS Item Categories"],
+                   dependencies=[Depends(bloqueo_bodega("Las categorías de productos"))])
 
 
 async def _get_user(authorization: str, db: AsyncSession) -> User:

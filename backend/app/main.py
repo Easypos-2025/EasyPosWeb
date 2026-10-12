@@ -2324,6 +2324,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/c/": (30, 60),            # QR fijo de la toma de pedidos (público)
     "/api/bodega-central/importar": (5, 600),     # copia un catálogo completo
     "/api/bodega-central/replicar/": (30, 60),
+    "/api/bodega-central/enviar": (60, 60),
 }
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
     lambda: collections.defaultdict(collections.deque)

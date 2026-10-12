@@ -10,6 +10,14 @@ usuarios ADMIN/SYSADMIN (bodega_guard.requiere_bodega). Las sedes salen siempre 
   GET  /api/bodega-central/resumen-sede/{id} cuántos registros tiene la sede de cada dato importable
   POST /api/bodega-central/importar         copiar de una sede los datos escogidos (productos con cantidad 0)
   GET  /api/bodega-central/movimientos      kardex/auditoría de la bodega
+  GET  /api/bodega-central/enviar/{tipo}    proveedores / categorías / roles de la bodega que se pueden enviar a las sedes
+  POST /api/bodega-central/enviar           enviar los escogidos a las sedes marcadas (crea o sobrescribe)
+  GET  /api/bodega-central/administrado     (cualquier usuario) ¿una bodega administra la empresa actual?
+  GET  /api/bodega-central/usuarios         personas (por correo) de la bodega y sus sedes, con rol y estado por empresa
+  GET  /api/bodega-central/roles-empresas   roles de cada empresa del grupo (para invitar / asignar)
+  POST /api/bodega-central/invitar          link de invitación a varias empresas, con un rol por empresa
+  POST /api/bodega-central/usuarios/asignar agregar a otra empresa (misma contraseña) o cambiar el rol allí
+  POST /api/bodega-central/usuarios/estado  activar / desactivar a la persona en una empresa
 
 Las operaciones de escritura reciben `clave` (idempotencia): repetirla no duplica nada.
 Si la base de datos está ocupada (otra empresa sincronizando), se responde 409 con un mensaje para reintentar
@@ -18,14 +26,16 @@ en lugar de un error 500.
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
-from app.auth.bodega_guard import Bodega, exigir_sede, requiere_bodega, sedes_del_nit
+from app.auth.bodega_guard import Bodega, bodega_de_sede, exigir_sede, requiere_bodega, sedes_del_nit
+from app.auth.dependencies import get_current_user
+from app.models.user_model import User
 from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.services import bodega_central as svc
@@ -198,3 +208,106 @@ async def movimientos(db: AsyncSession = Depends(get_db), bodega: Bodega = Depen
     """), {"b": bodega.id})).mappings().all()
     return [{**dict(f), "cantidad": float(f["cantidad"] or 0),
              "created_at": f["created_at"].isoformat(timespec="minutes") if f["created_at"] else None} for f in filas]
+
+
+# ─── Enviar a sedes (administración central) ─────────────────────────────────
+
+@router.get("/administrado")
+async def administrado(company_id: Optional[int] = Query(None, ge=1), db: AsyncSession = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    """Las pantallas de catálogos compartidos lo consultan para quedar de solo consulta en una sede.
+    company_id: la empresa escogida en la pantalla (roles de SYSADMIN); se valida con tenant (403 si es ajena)."""
+    from app.auth import tenant
+    cid = await tenant.resolve_company(db, current_user, company_id) if company_id else current_user.company_id
+    bodega = await bodega_de_sede(db, cid)
+    return {"administrado_por": bodega}
+
+
+@router.get("/enviar/{tipo}")
+async def catalogo_envio(tipo: str, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    if tipo == "roles":
+        return await svc.catalogo_roles(db, bodega)
+    if tipo not in svc.CATALOGOS_ENVIO:
+        raise HTTPException(status_code=404, detail="Dato no válido")
+    return await svc.catalogo_bodega(db, bodega, tipo)
+
+
+class EnviarIn(BaseModel):
+    tipo: Annotated[str, StringConstraints(max_length=30)]
+    ids: Annotated[List[Annotated[int, Field(ge=0)]], Field(min_length=1, max_length=svc.MAX_ENVIO)]
+    sedes: Annotated[List[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=50)]
+    clave: Clave = None
+    company_id: Optional[int] = None
+
+
+@router.post("/enviar")
+async def enviar(body: EnviarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    sedes = [await exigir_sede(db, bodega, s) for s in sorted(set(body.sedes))]     # 403 si alguna es ajena
+    async with _escritura(db):
+        if body.tipo == "roles":
+            res = await svc.enviar_roles(db, bodega, body.ids, sedes, body.clave)
+        else:
+            res = await svc.enviar_a_sedes(db, bodega, body.tipo, body.ids, sedes, body.clave)
+        await db.commit()
+    return res
+
+
+# ─── Usuarios del grupo ──────────────────────────────────────────────────────
+
+@router.get("/usuarios")
+async def usuarios(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    return await svc.usuarios_grupo(db, bodega)
+
+
+@router.get("/roles-empresas")
+async def roles_empresas(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    return await svc.roles_empresas(db, bodega)
+
+
+class AsignacionIn(BaseModel):
+    empresa_id: Annotated[int, Field(ge=1)]
+    role_id: Annotated[int, Field(ge=1)]
+
+
+class InvitarIn(BaseModel):
+    asignaciones: Annotated[List[AsignacionIn], Field(min_length=1, max_length=50)]
+    company_id: Optional[int] = None
+
+
+@router.post("/invitar", status_code=201)
+async def invitar(body: InvitarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    async with _escritura(db):
+        res = await svc.invitar(db, bodega, [{"company_id": a.empresa_id, "role_id": a.role_id}
+                                             for a in body.asignaciones])
+        await db.commit()
+    return res
+
+
+class AsignarIn(BaseModel):
+    # "empresa_id" (no company_id): lo valida la bodega contra su grupo, no el tenant del usuario (un ayudante
+    # de la bodega solo tiene acceso a la bodega, pero sí puede dar acceso a sus sedes)
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=100,
+                                            pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    empresa_id: Annotated[int, Field(ge=1)]
+    role_id: Annotated[int, Field(ge=1)]
+
+
+@router.post("/usuarios/asignar")
+async def asignar(body: AsignarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    async with _escritura(db):
+        res = await svc.asignar_empresa(db, bodega, body.email, body.empresa_id, body.role_id)
+        await db.commit()
+    return res
+
+
+class EstadoIn(BaseModel):
+    user_id: Annotated[int, Field(ge=1)]
+    activo: bool
+
+
+@router.post("/usuarios/estado")
+async def estado(body: EstadoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    async with _escritura(db):
+        res = await svc.cambiar_estado(db, bodega, body.user_id, body.activo)
+        await db.commit()
+    return res

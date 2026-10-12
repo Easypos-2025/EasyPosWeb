@@ -17,6 +17,8 @@ from app.models.user_session_model import UserSession
 from app.auth.jwt_handler import decode_access_token
 from app.utils.email_service import send_verification_email
 from app.services.plan_limits_service import check_limit
+from sqlalchemy import text
+from app.auth.bodega_guard import exigir_no_administrada
 
 router = APIRouter(prefix="/invitations", tags=["Invitations"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -67,6 +69,7 @@ async def create_invitation(data: dict, authorization: str = Header(None), db: A
     role = result.scalar_one_or_none()
     if not role:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
+    await exigir_no_administrada(db, target_company_id, "Los usuarios")
 
     token = uuid.uuid4().hex
     expires_at = datetime.utcnow() + timedelta(hours=TOKEN_TTL_HOURS)
@@ -92,8 +95,14 @@ async def get_invitation(token: str, db: AsyncSession = Depends(get_db)):
     company = result.scalar_one_or_none()
     result = await db.execute(select(Role).where(Role.id == inv.role_id))
     role = result.scalar_one_or_none()
+    empresas = [dict(f) for f in (await db.execute(text("""
+        SELECT c.name AS company_name, r.name AS role_name FROM invitation_token_sedes s
+        JOIN companies c ON c.id_company = s.company_id JOIN roles r ON r.id = s.role_id
+        WHERE s.invitation_id = :i ORDER BY c.name
+    """), {"i": inv.id})).mappings().all()]
     return {"company_name": company.name if company else "Empresa",
-            "role_name": role.name if role else "Usuario", "expires_at": inv.expires_at.isoformat()}
+            "role_name": role.name if role else "Usuario", "expires_at": inv.expires_at.isoformat(),
+            "empresas": empresas}
 
 
 @router.post("/{token}/register")
@@ -116,13 +125,25 @@ async def register_via_invitation(token: str, data: dict, background_tasks: Back
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
     result = await db.execute(select(User).where(User.email == email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
-    await check_limit(inv.company_id, "max_users", User, db)
-
-    new_user = User(nombre=nombre, email=email, password_hash=pwd_context.hash(password),
-                    role_id=inv.role_id, company_id=inv.company_id, is_active=False)
-    db.add(new_user)
+    if result.scalars().first():
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email. Pídale al administrador "
+                                                    "que le dé acceso a las empresas desde su cuenta actual.")
+    # Invitación de la Bodega Central: varias empresas, un rol en cada una, la MISMA contraseña en todas
+    destinos = [(int(f[0]), int(f[1])) for f in (await db.execute(text(
+        "SELECT company_id, role_id FROM invitation_token_sedes WHERE invitation_id = :i ORDER BY company_id"),
+        {"i": inv.id})).all()] or [(inv.company_id, inv.role_id)]
+    hash_unico = pwd_context.hash(password)
+    creados = []
+    for cid, rid in destinos:
+        await check_limit(cid, "max_users", User, db)
+        u = User(nombre=nombre, email=email, password_hash=hash_unico, role_id=rid, company_id=cid, is_active=False)
+        db.add(u)
+        await db.flush()
+        creados.append(u)
+        await db.execute(text(
+            "UPDATE invitation_token_sedes SET user_id = :u WHERE invitation_id = :i AND company_id = :c"),
+            {"u": u.id, "i": inv.id, "c": cid})
+    new_user = creados[0]
     inv.used_at = datetime.utcnow()
     await db.flush()
 
