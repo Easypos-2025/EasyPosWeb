@@ -113,6 +113,7 @@ from app.routers.pos_pago_router import router as pos_pago_router
 from app.routers.pos_recibo_impresion_router import router as pos_recibo_impresion_router
 from app.routers.config_facturacion_router import router as config_facturacion_router
 from app.routers.config_sede_router import router as config_sede_router
+from app.routers.bodega_central_router import router as bodega_central_router
 from app.routers.pos_categorias_productos_router import router as pos_categorias_productos_router
 from app.routers.caja_cuadre_router import router as caja_cuadre_router
 from app.routers.caja_conceptos_router import router as caja_conceptos_router
@@ -2321,6 +2322,8 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     "/ads/": (30, 60),
     "/api/tv/": (120, 60),
     "/c/": (30, 60),            # QR fijo de la toma de pedidos (público)
+    "/api/bodega-central/importar": (5, 600),     # copia un catálogo completo
+    "/api/bodega-central/replicar/": (30, 60),
 }
 _rate_store: dict[str, dict[str, collections.deque]] = collections.defaultdict(
     lambda: collections.defaultdict(collections.deque)
@@ -2536,6 +2539,7 @@ routers = [
     config_facturacion_router,
     qr_fijo_agente_router,
     config_sede_router,
+    bodega_central_router,
     pos_categorias_productos_router,
     caja_cuadre_router,
     caja_conceptos_router,

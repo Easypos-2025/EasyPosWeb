@@ -120,6 +120,25 @@
           </button>
         </template>
       </section>
+
+      <!-- ── Inventario: cargue unitario (un producto por código / IMEI) ── -->
+      <section class="cs-card">
+        <h3 class="cs-card-ttl"><i class="bi bi-upc-scan"></i> Inventario</h3>
+        <label class="cs-switch">
+          <input type="checkbox" v-model="unitario" :disabled="!puedeEditar" />
+          <span>Cargue unitario: un producto por cada código o IMEI</span>
+        </label>
+        <p class="cs-help">
+          Para artículos que se venden por unidad identificada (por ejemplo celulares con IMEI): cada unidad se registra
+          como un producto propio que entra al inventario con cantidad 1, exige proveedor, se puede replicar digitando
+          un código por unidad y se desactiva al venderse para no volver a venderla.
+        </p>
+        <button v-if="puedeEditar" class="cs-save" :disabled="guardando === 'unitario' || unitario === unitarioOriginal"
+                @click="guardarUnitario">
+          <span v-if="guardando === 'unitario'" class="spinner-border spinner-border-sm me-1"></span>
+          <i v-else class="bi bi-check-lg me-1"></i>Guardar inventario
+        </button>
+      </section>
     </div>
   </div>
 </template>
@@ -138,6 +157,8 @@ const empresa     = ref({})
 const sede        = ref({})
 const esc         = ref(null)
 const escOriginal = ref(null)
+const unitario    = ref(false)
+const unitarioOriginal = ref(false)
 
 const fechaHora = (v) => (v ? new Date(v).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '')
 const errorDe = (e, porDefecto) => {
@@ -153,6 +174,7 @@ async function cargar() {
     sede.value = data.sede
     esc.value = data.escritorio
     escOriginal.value = data.escritorio?.pedidos_web_escritorio ?? null
+    unitario.value = unitarioOriginal.value = !!data.sede?.cargar_1_inventario_automatico
     puedeEditar.value = !!data.puede_editar
   } catch (e) {
     showToast(errorDe(e, 'Error cargando la configuración de la sede'), 'error')
@@ -175,7 +197,7 @@ async function guardarEmpresa() {
 async function guardarSede() {
   guardando.value = 'sede'
   try {
-    const { actualizado_por, actualizado_en, Id_Sede, ...campos } = sede.value
+    const { actualizado_por, actualizado_en, Id_Sede, cargar_1_inventario_automatico, ...campos } = sede.value
     const { data } = await api.put('/api/config-sede/sede', campos)
     sede.value = data.sede
     showToast('Datos de la sede guardados', 'success')
@@ -190,6 +212,17 @@ async function guardarEscritorio() {
     esc.value = data.escritorio
     escOriginal.value = data.escritorio.pedidos_web_escritorio
     showToast('Configuración del escritorio guardada', 'success')
+  } catch (e) { showToast(errorDe(e, 'Error al guardar'), 'error') }
+  guardando.value = ''
+}
+
+async function guardarUnitario() {
+  guardando.value = 'unitario'
+  try {
+    const { data } = await api.put('/api/config-sede/cargue-unitario', { cargar_1_inventario_automatico: unitario.value })
+    sede.value = data.sede
+    unitario.value = unitarioOriginal.value = !!data.sede.cargar_1_inventario_automatico
+    showToast('Configuración de inventario guardada', 'success')
   } catch (e) { showToast(errorDe(e, 'Error al guardar'), 'error') }
   guardando.value = ''
 }

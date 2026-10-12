@@ -50,6 +50,7 @@ def _config_dict(cfg: Optional[CompanyConfig]) -> dict:
             "tip_label": "Propina",
             "has_parking": 0,
             "has_tv_cocina": 0,
+            "has_bodega_central": 0,
         }
     return {
         "has_pos_electronico": cfg.has_pos_electronico or 0,
@@ -59,6 +60,7 @@ def _config_dict(cfg: Optional[CompanyConfig]) -> dict:
         "tip_label": cfg.tip_label or "Propina",
         "has_parking": cfg.has_parking or 0,
         "has_tv_cocina": cfg.has_tv_cocina or 0,
+        "has_bodega_central": cfg.has_bodega_central or 0,
     }
 
 
@@ -230,6 +232,10 @@ async def upsert_company_config(
     # TV Cocina
     if "has_tv_cocina" in body:
         cfg.has_tv_cocina = int(bool(body["has_tv_cocina"]))
+
+    # Bodega Central (bodega de las empresas con su mismo NIT)
+    if "has_bodega_central" in body:
+        cfg.has_bodega_central = int(bool(body["has_bodega_central"]))
 
     # La propina vive en configuracion_facturacion (espejo del escritorio): mantenerla igual
     if "has_tip" in body or "tip_percentage" in body:

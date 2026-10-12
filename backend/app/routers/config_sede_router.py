@@ -5,6 +5,7 @@ Configuración Sede (vista /configuration/sede): datos generales de la empresa. 
   PUT /api/config-sede/empresa      dirección, teléfono y correo de la empresa (ADMIN / SYSADMIN)
   PUT /api/config-sede/sede         datos de la sede: espejo de configuracion_sede del escritorio
   PUT /api/config-sede/escritorio   enviar los pedidos web al escritorio (empresas con Agente Local)
+  PUT /api/config-sede/cargue-unitario  cargue unitario (un producto por código/IMEI, cantidad 1 al crearlo)
 
 Nombre, NIT, perfil y estado de la empresa son solo lectura aquí: los cambia SYSADMIN en Empresas
 (el NIT define a qué empresas accede un ADMIN). La empresa sale de la sesión (topbar validada por
@@ -68,7 +69,7 @@ async def _empresa(db: AsyncSession, cid: int) -> dict:
 async def _sede(db: AsyncSession, cid: int, empresa: dict) -> dict:
     """Datos de la sede; la primera vez se crea con los datos de la empresa."""
     fila = (await db.execute(text(
-        f"SELECT Id_Sede, {', '.join(CAMPOS_SEDE)}, actualizado_por, updated_at FROM configuracion_sede WHERE company_id = :cid"
+        f"SELECT Id_Sede, {', '.join(CAMPOS_SEDE)}, actualizado_por, updated_at, cargar_1_inventario_automatico FROM configuracion_sede WHERE company_id = :cid"
     ), {"cid": cid})).mappings().first()
     if not fila:
         await db.execute(text("""
@@ -78,10 +79,11 @@ async def _sede(db: AsyncSession, cid: int, empresa: dict) -> dict:
                "dir": empresa["direccion"][:255], "mail": empresa["correo"][:100]})
         await db.commit()
         fila = (await db.execute(text(
-            f"SELECT Id_Sede, {', '.join(CAMPOS_SEDE)}, actualizado_por, updated_at FROM configuracion_sede WHERE company_id = :cid"
+            f"SELECT Id_Sede, {', '.join(CAMPOS_SEDE)}, actualizado_por, updated_at, cargar_1_inventario_automatico FROM configuracion_sede WHERE company_id = :cid"
         ), {"cid": cid})).mappings().first()
     datos = {k: fila[k] or "" for k in CAMPOS_SEDE}
     datos.update({"Id_Sede": fila["Id_Sede"], "actualizado_por": fila["actualizado_por"],
+                  "cargar_1_inventario_automatico": bool(fila["cargar_1_inventario_automatico"]),
                   "actualizado_en": fila["updated_at"].isoformat(timespec="minutes") if fila["updated_at"] else None})
     return datos
 
@@ -200,3 +202,26 @@ async def guardar_escritorio(body: EscritorioIn, db: AsyncSession = Depends(get_
     """), {"v": int(body.pedidos_web_escritorio), "por": _quien(current_user), "cid": cid})
     await db.commit()
     return {"ok": True, "escritorio": await _escritorio(db, cid)}
+
+
+class CargueUnitarioIn(BaseModel):
+    cargar_1_inventario_automatico: bool
+    company_id: Optional[int] = None     # lo valida tenant_guard; no se usa
+
+
+@router.put("/cargue-unitario")
+async def guardar_cargue_unitario(body: CargueUnitarioIn, db: AsyncSession = Depends(get_db),
+                                  current_user: User = Depends(get_current_user)):
+    """Cliente especial (celulares con IMEI): cada unidad es un producto propio que entra con cantidad 1,
+    exige proveedor, se puede replicar y se desactiva al venderse. En el escritorio es
+    Var_Cargar_1_Inventario_Automatico (registro_observacion_cierre.Turno)."""
+    await _exigir_admin(db, current_user)
+    cid = current_user.company_id
+    empresa = await _empresa(db, cid)
+    await _sede(db, cid, empresa)                    # garantiza la fila
+    await db.execute(text("""
+        UPDATE configuracion_sede SET cargar_1_inventario_automatico = :v, synced = 0, actualizado_por = :por
+        WHERE company_id = :cid
+    """), {"v": int(body.cargar_1_inventario_automatico), "por": _quien(current_user), "cid": cid})
+    await db.commit()
+    return {"ok": True, "sede": await _sede(db, cid, empresa)}

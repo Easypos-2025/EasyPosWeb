@@ -258,6 +258,26 @@
           </div>
           <!-- /TV COCINA -->
 
+          <!-- BODEGA CENTRAL -->
+          <div class="section-title mt-3">
+            <i class="bi bi-boxes" style="color:#0f766e"></i> Bodega Central
+          </div>
+          <div class="pe-edit-wrap">
+            <button type="button"
+              class="sidebar-toggle-btn"
+              :class="bodegaEditForm.has_bodega_central ? 'stb--on' : 'stb--off'"
+              :disabled="peEditLoading"
+              @click="bodegaEditForm.has_bodega_central = bodegaEditForm.has_bodega_central ? 0 : 1"
+            >
+              <span class="stb-track"><span class="stb-thumb"></span></span>
+              <span class="stb-label">
+                <i class="bi bi-boxes"></i>
+                {{ bodegaEditForm.has_bodega_central ? 'Es la bodega central de las empresas con su mismo NIT' : 'No es bodega central' }}
+              </span>
+            </button>
+          </div>
+          <!-- /BODEGA CENTRAL -->
+
         </div>
 
         <div class="modal-footer-bar">
@@ -375,6 +395,7 @@ const peEditForm       = ref({ has_pos_electronico: 0, pos_electronico_token: ""
 const peEditLoading    = ref(false)
 const parkingEditForm  = ref({ has_parking: 0 })
 const tvCocinaEditForm = ref({ has_tv_cocina: 0 })
+const bodegaEditForm   = ref({ has_bodega_central: 0 })
 
 const planOptions = computed(() => {
   const seen = new Set()
@@ -461,6 +482,7 @@ function openEdit(c) {
   peEditForm.value       = { has_pos_electronico: 0, pos_electronico_token: "" }
   parkingEditForm.value  = { has_parking: 0 }
   tvCocinaEditForm.value = { has_tv_cocina: 0 }
+  bodegaEditForm.value   = { has_bodega_central: 0 }
   showEdit.value         = true
   // Cargar config PE + Parking + TV Cocina en background
   peEditLoading.value = true
@@ -471,6 +493,7 @@ function openEdit(c) {
     }
     parkingEditForm.value  = { has_parking:   r.data.has_parking   ?? 0 }
     tvCocinaEditForm.value = { has_tv_cocina: r.data.has_tv_cocina ?? 0 }
+    bodegaEditForm.value   = { has_bodega_central: r.data.has_bodega_central ?? 0 }
   }).catch(() => {}).finally(() => { peEditLoading.value = false })
 }
 
@@ -560,6 +583,7 @@ async function saveEdit() {
         pos_electronico_token: peEditForm.value.pos_electronico_token || null,
         has_parking:           parkingEditForm.value.has_parking,
         has_tv_cocina:         tvCocinaEditForm.value.has_tv_cocina,
+        has_bodega_central:    bodegaEditForm.value.has_bodega_central,
       })
     } catch {}
 

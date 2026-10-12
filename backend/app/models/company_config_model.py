@@ -35,6 +35,9 @@ class CompanyConfig(Base):
     # ── TV Cocina (Pedidos TV) ───────────────────────────────────────────────
     has_tv_cocina: Mapped[int] = mapped_column(Integer, default=0)
 
+    # ── Bodega Central: bodega de las empresas con su mismo NIT (migración 042) ─
+    has_bodega_central: Mapped[int] = mapped_column(Integer, default=0)
+
     # ── (Futuros módulos se agregan aquí agrupados por sección) ─────────────
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
