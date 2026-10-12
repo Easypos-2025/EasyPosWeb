@@ -7,6 +7,7 @@ Monitor de Errores.
 - /api/error-log/summary|groups…   → consulta y gestión, SOLO SYSADMIN.
 """
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -130,6 +131,30 @@ async def report_client_errors(request: Request, db: AsyncSession = Depends(get_
 _ABIERTO = "estado IN ('NUEVO','EN_REVISION')"
 
 
+# Las fechas se guardan en la hora del servidor (UTC en producción). Se entregan con su zona horaria para que
+# la pantalla las muestre en hora de Colombia, y los filtros Desde/Hasta se toman como días de Colombia.
+_BOG = timezone(timedelta(hours=-5))
+
+
+def _con_zona(valor):
+    """datetime sin zona (hora del servidor) → texto ISO con su desfase; recorre dicts y listas."""
+    if isinstance(valor, datetime):
+        return (valor if valor.tzinfo else valor.astimezone()).isoformat()
+    if isinstance(valor, dict):
+        return {k: _con_zona(v) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [_con_zona(v) for v in valor]
+    return valor
+
+
+def _dia_bogota(fecha: str, fin: bool) -> datetime:
+    """Inicio o fin de un día de Colombia expresado en la hora del servidor (sin zona, como se guarda)."""
+    d = datetime.strptime(fecha, "%Y-%m-%d").replace(tzinfo=_BOG)
+    if fin:
+        d += timedelta(days=1, microseconds=-1)
+    return d.astimezone().replace(tzinfo=None)
+
+
 @router.get("/summary")
 async def summary(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin)):
     row = (await db.execute(text(f"""
@@ -155,7 +180,7 @@ async def summary(db: AsyncSession = Depends(get_db), _=Depends(require_sysadmin
     """))).mappings().first()
     return {**{k: int(v or 0) for k, v in dict(row).items()},
             "por_tipo": [dict(r) for r in por_tipo],
-            "ultimo": dict(ultimo) if ultimo else None}
+            "ultimo": _con_zona(dict(ultimo)) if ultimo else None}
 
 
 # ─── SYSADMIN: listado de grupos ─────────────────────────────────────────────
@@ -201,9 +226,9 @@ async def list_groups(
         conds.append("EXISTS (SELECT 1 FROM system_error_companies c WHERE c.group_id = g.id AND c.company_id = :company)")
         params["company"] = company
     if desde:
-        conds.append("g.last_seen >= :desde"); params["desde"] = f"{desde} 00:00:00"
+        conds.append("g.last_seen >= :desde"); params["desde"] = _dia_bogota(desde, fin=False)
     if hasta:
-        conds.append("g.last_seen <= :hasta"); params["hasta"] = f"{hasta} 23:59:59"
+        conds.append("g.last_seen <= :hasta"); params["hasta"] = _dia_bogota(hasta, fin=True)
     w = " AND ".join(conds)
     total = (await db.execute(text(f"SELECT COUNT(*) FROM system_error_groups g WHERE {w}"), params)).scalar()
     rows = (await db.execute(text(f"""
@@ -225,7 +250,7 @@ async def list_groups(
     """))).mappings().first()
     return {"total": int(total or 0), "page": page, "page_size": page_size,
             "counts": {k: int(v or 0) for k, v in dict(counts).items()},
-            "items": [dict(r) for r in rows]}
+            "items": [_con_zona(dict(r)) for r in rows]}
 
 
 # ─── SYSADMIN: detalle de un grupo ───────────────────────────────────────────
@@ -254,7 +279,7 @@ async def get_group(group_id: int, db: AsyncSession = Depends(get_db), _=Depends
           LEFT JOIN companies c ON c.id_company = sc.company_id
          WHERE sc.group_id = :id ORDER BY sc.last_seen DESC LIMIT 300
     """), {"id": group_id})).mappings().all()
-    return {"group": dict(g), "details": [dict(d) for d in details], "companies": [dict(c) for c in companies]}
+    return _con_zona({"group": dict(g), "details": [dict(d) for d in details], "companies": [dict(c) for c in companies]})
 
 
 # ─── SYSADMIN: cambiar estado ────────────────────────────────────────────────

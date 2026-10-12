@@ -81,30 +81,48 @@
         </div>
       </section>
 
-      <!-- ── Importar catálogo ── -->
+      <!-- ── Importar datos de una sede ── -->
       <section v-if="tab === 'importar'" class="bc-card bc-card--angosta">
-        <h3 class="bc-card-ttl"><i class="bi bi-cloud-download"></i> Importar el catálogo de una sede</h3>
+        <h3 class="bc-card-ttl"><i class="bi bi-cloud-download"></i> Importar datos de una sede</h3>
         <p class="bc-help">
-          Copia a la bodega las categorías, proveedores y productos visibles de la sede escogida, con <b>cantidad 0</b>.
-          Los productos que ya existen en la bodega (mismo código) solo se vinculan con la sede. Los productos sin código
-          no se importan: el código es el que une el producto de la bodega con el de cada sede.
+          Escoja la sede y los datos que quiere traer a la bodega. Lo que ya existe en la bodega no se duplica
+          (categorías y unidades por nombre, proveedores por NIT y nombre, productos por código, clientes por cédula),
+          así que puede importar de una sede y luego de otra. Los productos entran con <b>cantidad 0</b> y traen
+          con ellos la categoría y el proveedor que usan.
         </p>
         <div class="bc-field">
           <label>Sede</label>
-          <select v-model.number="importarSede" class="bc-inp">
+          <select v-model.number="importarSede" class="bc-inp" @change="cargarResumenSede">
             <option :value="0">— Seleccionar —</option>
             <option v-for="s in $ordenAlfa(info.sedes, 'nombre')" :key="s.id" :value="s.id">{{ s.nombre }}</option>
           </select>
         </div>
-        <button class="bc-btn bc-btn--full" :disabled="!importarSede || importando" @click="importar">
+
+        <div v-if="cargandoResumen" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+        <div v-else-if="importarSede && resumenSede.length" class="bc-datos">
+          <label class="bc-dato bc-dato--todo">
+            <input type="checkbox" :checked="todosMarcados" @change="marcarTodos($event.target.checked)" />
+            <span>Seleccionar todo</span>
+          </label>
+          <label v-for="d in resumenSede" :key="d.clave" class="bc-dato" :class="{ 'bc-dato--vacio': !d.registros }">
+            <input v-model="datosMarcados" type="checkbox" :value="d.clave" :disabled="!d.registros" />
+            <span class="bc-dato-nom">{{ d.nombre }}</span>
+            <span class="bc-dato-n">{{ fmtCant(d.registros) }}</span>
+            <small v-if="d.clave === 'productos' && d.sin_codigo" class="bc-dato-nota">{{ fmtCant(d.sin_codigo) }} sin código no se importan</small>
+            <small v-else-if="!d.registros" class="bc-dato-nota">La sede no tiene registros en la web</small>
+          </label>
+        </div>
+
+        <button class="bc-btn bc-btn--full" :disabled="!importarSede || !datosMarcados.length || importando" @click="importar">
           <span v-if="importando" class="spinner-border spinner-border-sm me-1"></span>
-          <i v-else class="bi bi-cloud-download me-1"></i>Importar catálogo
+          <i v-else class="bi bi-cloud-download me-1"></i>Importar {{ datosMarcados.length ? `(${datosMarcados.length})` : '' }}
         </button>
-        <div v-if="resultadoImportar" class="bc-resultado">
-          <div><b>{{ resultadoImportar.creados }}</b><small>creados</small></div>
-          <div><b>{{ resultadoImportar.vinculados }}</b><small>vinculados</small></div>
-          <div><b>{{ resultadoImportar.sin_codigo }}</b><small>sin código</small></div>
-          <div><b>{{ resultadoImportar.omitidos }}</b><small>nombre repetido</small></div>
+
+        <div v-if="resultadoImportar" class="bc-res">
+          <div class="bc-res-fila bc-res-fila--head"><span>Dato</span><span>Nuevos</span><span>Ya estaban</span><span>Omitidos</span></div>
+          <div v-for="r in resultadoImportar" :key="r.clave" class="bc-res-fila">
+            <span>{{ r.nombre }}</span><b>{{ fmtCant(r.creados) }}</b><span>{{ fmtCant(r.existentes) }}</span><span>{{ fmtCant(r.omitidos) }}</span>
+          </div>
         </div>
       </section>
 
@@ -276,6 +294,9 @@ const cargandoMov = ref(false)
 const importarSede = ref(0)
 const importando = ref(false)
 const resultadoImportar = ref(null)
+const resumenSede = ref([])
+const cargandoResumen = ref(false)
+const datosMarcados = ref([])
 
 const modal = ref('')
 const enviando = ref(false)
@@ -305,6 +326,10 @@ const filtrados = computed(() => {
   return productos.value.filter(p => [p.name, p.product_code, p.categoria].some(v => (v || '').toLowerCase().includes(q)))
 })
 const totalUnidades = computed(() => filtrados.value.reduce((s, p) => s + (p.stock > 0 ? p.stock : 0), 0))
+const todosMarcados = computed(() => {
+  const con = resumenSede.value.filter(d => d.registros)
+  return con.length > 0 && con.every(d => datosMarcados.value.includes(d.clave))
+})
 const codigosListos = computed(() => rep.value.codigos.filter(c => c.trim()).length)
 const duplicados = computed(() => {
   const vistos = new Set(), dup = new Set()
@@ -431,25 +456,41 @@ async function guardarReplica() {
   enviando.value = false
 }
 
-// ── Importar ──
+// ── Importar datos de una sede ──
+async function cargarResumenSede() {
+  resumenSede.value = []
+  datosMarcados.value = []
+  resultadoImportar.value = null
+  if (!importarSede.value) return
+  cargandoResumen.value = true
+  try { resumenSede.value = (await api.get(`${BASE}/resumen-sede/${importarSede.value}`)).data }
+  catch (e) { showToast(errorDe(e, 'Error consultando los datos de la sede'), 'error') }
+  cargandoResumen.value = false
+}
+
+function marcarTodos(marcar) {
+  datosMarcados.value = marcar ? resumenSede.value.filter(d => d.registros).map(d => d.clave) : []
+}
+
 async function importar() {
   const sede = info.value.sedes.find(s => s.id === importarSede.value)
-  if (!sede) return
+  if (!sede || !datosMarcados.value.length) return
+  const nombres = resumenSede.value.filter(d => datosMarcados.value.includes(d.clave)).map(d => d.nombre).join(', ')
   const { isConfirmed } = await window.Swal.fire({
-    title: '¿Importar catálogo?',
-    text: `Se copiarán a la bodega los productos de ${sede.nombre} con cantidad 0.`,
+    title: '¿Importar a la bodega?',
+    text: `De ${sede.nombre}: ${nombres}.`,
     icon: 'question', showCancelButton: true, confirmButtonText: 'Importar', cancelButtonText: 'Cancelar',
   })
   if (!isConfirmed) return
   importando.value = true
   resultadoImportar.value = null
   try {
-    const { data } = await api.post(`${BASE}/importar`, { sede_id: sede.id, clave: nuevaClave() })
-    resultadoImportar.value = data
-    showToast('Catálogo importado', 'success')
+    const { data } = await api.post(`${BASE}/importar`, { sede_id: sede.id, datos: datosMarcados.value, clave: nuevaClave() })
+    resultadoImportar.value = data.resultado
+    showToast(data.repetida ? 'Esta importación ya se había hecho' : 'Importación terminada', 'success')
     info.value = (await api.get(BASE)).data
     await cargarProductos()
-  } catch (e) { showToast(errorDe(e, 'Error al importar el catálogo'), 'error') }
+  } catch (e) { showToast(errorDe(e, 'Error al importar'), 'error') }
   importando.value = false
 }
 
@@ -529,6 +570,22 @@ onMounted(cargar)
 .bc-prod-ref { font-weight: 800; color: #1e293b; display: flex; flex-direction: column; background: #f8fafc; border-radius: 10px; padding: 8px 10px; }
 .bc-prod-ref small { font-weight: 500; color: #64748b; }
 
+.bc-datos { display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.bc-dato { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  padding: 10px 12px; border-top: 1px solid #f1f5f9; cursor: pointer; font-size: 14px; color: #1e293b; margin: 0; }
+.bc-dato:first-child { border-top: none; }
+.bc-dato input { width: 18px; height: 18px; accent-color: #1d4ed8; }
+.bc-dato--todo { background: #f8fafc; font-weight: 800; grid-template-columns: 20px 1fr; }
+.bc-dato--vacio { color: #94a3b8; cursor: default; }
+.bc-dato-n { font-weight: 800; color: #1e3a5f; }
+.bc-dato--vacio .bc-dato-n { color: #cbd5e1; }
+.bc-dato-nota { grid-column: 2 / -1; font-size: 11.5px; color: #94a3b8; }
+.bc-res { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; font-size: 13.5px; }
+.bc-res-fila { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 80px); gap: 8px; padding: 8px 12px;
+  border-top: 1px solid #f1f5f9; text-align: right; }
+.bc-res-fila span:first-child { text-align: left; }
+.bc-res-fila--head { background: #f8fafc; font-size: 11.5px; font-weight: 800; color: #64748b; border-top: none; }
+.bc-res-fila b { color: #15803d; }
 .bc-resultado { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .bc-resultado div { background: #f8fafc; border-radius: 10px; padding: 10px; text-align: center; display: flex; flex-direction: column; }
 .bc-resultado b { font-size: 20px; color: #1e3a5f; }
@@ -581,6 +638,7 @@ onMounted(cargar)
   .bc-prod-acc .bc-btn-sm { flex: 1; justify-content: center; }
   .bc-prod-nums { grid-template-columns: repeat(2, 1fr); }
   .bc-resultado { grid-template-columns: repeat(2, 1fr); }
+  .bc-res-fila { grid-template-columns: minmax(0, 1fr) repeat(3, 58px); font-size: 12.5px; padding: 8px 10px; }
   .bc-tab span { font-size: 12.5px; }
   .bc-card { padding: 12px; }
 }

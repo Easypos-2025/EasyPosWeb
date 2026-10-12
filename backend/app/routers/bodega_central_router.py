@@ -7,16 +7,21 @@ usuarios ADMIN/SYSADMIN (bodega_guard.requiere_bodega). Las sedes salen siempre 
   POST /api/bodega-central/productos        crear producto (+ cantidad inicial)
   POST /api/bodega-central/entradas         entrada manual de inventario a la bodega
   POST /api/bodega-central/replicar/{id}    réplica por IMEI (cargue unitario): un producto por código, cantidad 1
-  POST /api/bodega-central/importar         copiar el catálogo de una sede con cantidad 0
+  GET  /api/bodega-central/resumen-sede/{id} cuántos registros tiene la sede de cada dato importable
+  POST /api/bodega-central/importar         copiar de una sede los datos escogidos (productos con cantidad 0)
   GET  /api/bodega-central/movimientos      kardex/auditoría de la bodega
 
 Las operaciones de escritura reciben `clave` (idempotencia): repetirla no duplica nada.
+Si la base de datos está ocupada (otra empresa sincronizando), se responde 409 con un mensaje para reintentar
+en lugar de un error 500.
 """
+from contextlib import asynccontextmanager
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
@@ -30,6 +35,21 @@ router = APIRouter(prefix="/api/bodega-central", tags=["Bodega Central"], depend
 Clave = Optional[Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9\-]{8,64}$")]]
 Money = Annotated[float, Field(ge=0, le=2_000_000_000)]
 Cant = Annotated[int, Field(ge=1, le=1_000_000)]
+_BLOQUEO = (1205, 1213)          # lock wait timeout, deadlock
+
+
+@asynccontextmanager
+async def _escritura(db: AsyncSession):
+    """Bloqueo momentáneo de la base de datos → 409 amable (deshace todo lo de la operación)."""
+    try:
+        yield
+    except OperationalError as e:
+        if getattr(e.orig, "args", [None])[0] not in _BLOQUEO:
+            raise
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="La base de datos está ocupada en este momento (una sede está "
+                                                    "sincronizando). No se guardó nada: intente de nuevo en un minuto.",
+                            headers={"X-Error-Code": "BD_OCUPADA"})
 
 
 @router.get("")
@@ -85,13 +105,14 @@ async def crear(body: ProductoIn, db: AsyncSession = Depends(get_db), bodega: Bo
     if unitario:
         datos["extra_print"] = True      # cada unidad es única: se desactiva al venderse
         cantidad = 1                     # Crear_Plato_Nuevo: entra con cantidad 1 al registrarlo
-    dish_id = await svc.crear_producto(db, bodega.id, datos)
-    if cantidad:
-        proveedor = (await svc._producto(db, bodega.id, dish_id))["id_proveedor"] or 0
-        await svc.registrar_entrada(db, bodega, dish_id, cantidad, proveedor,
-                                    "Entrada manual al registrar producto")
-    await svc.movimiento(db, bodega, "CREACION", dish_id, cantidad, body.name, clave=body.clave)
-    await db.commit()
+    async with _escritura(db):
+        dish_id = await svc.crear_producto(db, bodega.id, datos)
+        if cantidad:
+            proveedor = (await svc._producto(db, bodega.id, dish_id))["id_proveedor"] or 0
+            await svc.registrar_entrada(db, bodega, dish_id, cantidad, proveedor,
+                                        "Entrada manual al registrar producto")
+        await svc.movimiento(db, bodega, "CREACION", dish_id, cantidad, body.name, clave=body.clave)
+        await db.commit()
     return {"ok": True, "id": dish_id}
 
 
@@ -111,11 +132,12 @@ async def entrada(body: EntradaIn, db: AsyncSession = Depends(get_db), bodega: B
     if str(prod["extra_print"] or "0") == "1" and await svc.cargue_unitario(db, bodega.id):
         raise HTTPException(status_code=409, detail="Un producto de cargue unitario (IMEI) no recibe más "
                                                     "cantidades: use Replicar para registrar más unidades")
-    eid = await svc.registrar_entrada(db, bodega, body.dish_id, body.cantidad, prod["id_proveedor"] or 0,
-                                      body.observacion or "Entrada manual bodega")
-    await svc.movimiento(db, bodega, "ENTRADA", body.dish_id, body.cantidad, body.observacion or "",
-                         referencia=str(eid), clave=body.clave)
-    await db.commit()
+    async with _escritura(db):
+        eid = await svc.registrar_entrada(db, bodega, body.dish_id, body.cantidad, prod["id_proveedor"] or 0,
+                                          body.observacion or "Entrada manual bodega")
+        await svc.movimiento(db, bodega, "ENTRADA", body.dish_id, body.cantidad, body.observacion or "",
+                             referencia=str(eid), clave=body.clave)
+        await db.commit()
     return {"ok": True, "id": eid}
 
 
@@ -130,22 +152,35 @@ class ReplicarIn(BaseModel):
 @router.post("/replicar/{dish_id}", status_code=201)
 async def replicar(dish_id: int, body: ReplicarIn, db: AsyncSession = Depends(get_db),
                    bodega: Bodega = Depends(requiere_bodega)):
-    res = await svc.replicar(db, bodega, dish_id, body.nombre_base or "", body.codigos, body.clave)
-    await db.commit()
+    async with _escritura(db):
+        res = await svc.replicar(db, bodega, dish_id, body.nombre_base or "", body.codigos, body.clave)
+        await db.commit()
     return res
+
+
+@router.get("/resumen-sede/{sede_id}")
+async def resumen_importar(sede_id: int, db: AsyncSession = Depends(get_db),
+                           bodega: Bodega = Depends(requiere_bodega)):
+    await exigir_sede(db, bodega, sede_id)
+    return await svc.resumen_sede(db, sede_id)
 
 
 class ImportarIn(BaseModel):
     sede_id: Annotated[int, Field(ge=1)]
+    datos: Annotated[List[Annotated[str, StringConstraints(max_length=30)]], Field(min_length=1, max_length=10)]
     clave: Clave = None
     company_id: Optional[int] = None
 
 
 @router.post("/importar")
 async def importar(body: ImportarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    invalidos = [d for d in body.datos if d not in svc.DATOS_IMPORTAR]
+    if invalidos:
+        raise HTTPException(status_code=422, detail="Dato a importar no válido")
     sede = await exigir_sede(db, bodega, body.sede_id)
-    res = await svc.importar_catalogo(db, bodega, sede, body.clave)
-    await db.commit()
+    async with _escritura(db):
+        res = await svc.importar_catalogo(db, bodega, sede, body.datos, body.clave)
+        await db.commit()
     return res
 
 

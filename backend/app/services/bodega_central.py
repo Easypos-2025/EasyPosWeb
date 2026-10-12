@@ -127,29 +127,34 @@ async def _nuevo_id(db: AsyncSession, cid: int) -> int:
     return max(await sede_maestros.siguiente_id_plato(db, cid, False), await next_id_item(db, cid))
 
 
-async def crear_producto(db: AsyncSession, cid: int, d: dict) -> int:
+async def crear_producto(db: AsyncSession, cid: int, d: dict, nuevo_id: Optional[int] = None,
+                         unidad: Optional[int] = None, validado: bool = False) -> int:
     """d: name, product_code, price, wholesale_price (precio mínimo), product_cost, tax, minimum_stock,
     category_id, id_proveedor, extra_print (desactivar al vender), ask_product_description.
-    Valida categoría y proveedor; no hace commit."""
-    unitario = await cargue_unitario(db, cid)
-    categoria = await categoria_valida(db, cid, d.get("category_id"))
-    proveedor = await proveedor_valido(db, cid, d.get("id_proveedor"), obligatorio=unitario)
+    Valida categoría, proveedor, código y nombre; no hace commit.
+    La importación ya validó todo y numera en bloque: pasa nuevo_id, unidad y validado=True."""
     codigo = limpiar_codigo(d.get("product_code"))
     nombre = (d.get("name") or "").strip()[:250]
-    if not nombre:
-        raise HTTPException(status_code=422, detail="El nombre del producto es obligatorio")
-    if codigo and await codigos_usados(db, [cid], [codigo]):
-        raise HTTPException(status_code=409, detail=f"El código {codigo} ya existe en otro producto de la bodega")
-    if (await db.execute(text(
-        "SELECT 1 FROM pos_dishes WHERE company_id = :c AND name = :n LIMIT 1"), {"c": cid, "n": nombre})).scalar():
-        raise HTTPException(status_code=409, detail="Este nombre de producto ya se encuentra registrado")
+    if validado:
+        categoria, proveedor = int(d["category_id"]), int(d["id_proveedor"])
+    else:
+        unitario = await cargue_unitario(db, cid)
+        categoria = await categoria_valida(db, cid, d.get("category_id"))
+        proveedor = await proveedor_valido(db, cid, d.get("id_proveedor"), obligatorio=unitario)
+        if not nombre:
+            raise HTTPException(status_code=422, detail="El nombre del producto es obligatorio")
+        if codigo and await codigos_usados(db, [cid], [codigo]):
+            raise HTTPException(status_code=409, detail=f"El código {codigo} ya existe en otro producto de la bodega")
+        if (await db.execute(text(
+            "SELECT 1 FROM pos_dishes WHERE company_id = :c AND name = :n LIMIT 1"), {"c": cid, "n": nombre})).scalar():
+            raise HTTPException(status_code=409, detail="Este nombre de producto ya se encuentra registrado")
 
     precio = int(d.get("price") or 0)
     costo = float(d.get("product_cost") or 0)
     stock_min = float(d.get("minimum_stock") or 0)
-    nuevo = await _nuevo_id(db, cid)
+    nuevo = nuevo_id or await _nuevo_id(db, cid)
     codigo = codigo or f"BC-{nuevo}"
-    unidad = await asegurar_unidad(db, cid)
+    unidad = unidad or await asegurar_unidad(db, cid)
 
     await db.execute(text("""
         INSERT INTO pos_dishes
@@ -273,10 +278,12 @@ async def replicar(db: AsyncSession, bodega: Bodega, dish_id: int, nombre_base: 
     base = await _producto(db, bodega.id, dish_id)
     nombre_base = ((nombre_base or "").strip() or base["name"])[:200]
     creados = []
+    siguiente = await _nuevo_id(db, bodega.id)                  # una sola vez; luego se numera en bloque
     for codigo in limpios:
         nuevo = await crear_producto(db, bodega.id, {
             **base, "name": f"{nombre_base} {codigo}"[:250], "product_code": codigo, "extra_print": 1,
-        })
+        }, nuevo_id=siguiente)
+        siguiente += 1
         await registrar_entrada(db, bodega, nuevo, 1, base["id_proveedor"] or 0,
                                 f"Réplica de {base['product_code'] or base['id']}")
         await movimiento(db, bodega, "REPLICA", nuevo, 1, f"Réplica de {base['name']}"[:255],
@@ -285,116 +292,269 @@ async def replicar(db: AsyncSession, bodega: Bodega, dish_id: int, nombre_base: 
     return {"ok": True, "repetida": False, "creados": creados}
 
 
-# ─── Importar el catálogo de una sede (cantidad 0) ───────────────────────────
+# ─── Importar datos de una sede (productos con cantidad 0) ───────────────────
+# El admin escoge qué datos traer. Lo que ya existe en la bodega no se duplica: categorías y unidades se buscan
+# por nombre, proveedores por NIT + nombre, productos por código y clientes por cédula (sin cédula, por nombre).
+# Productos arrastra las categorías y el proveedor que usa, aunque no estén marcados.
 
-async def _mapa_categorias(db: AsyncSession, bodega_id: int, sede_id: int) -> dict:
+DATOS_IMPORTAR = {
+    "categorias": "Categorías de productos",
+    "categorias_insumos": "Categorías de insumos",
+    "medidas": "Unidades de medida",
+    "proveedores": "Proveedores",
+    "productos": "Productos",
+    "clientes": "Clientes",
+}
+_COLS_CLIENTE = ("cedula", "nombres", "apellidos", "direccion", "telefono", "barrio", "mail", "dia_cumple",
+                 "mes_cumple", "edad", "ocupacion", "porc_descuento", "observaciones", "fecha_aniversario",
+                 "fecha_grado", "empresa", "tarjeta_fiel", "cod_barrio", "referencia")
+
+
+def _cuenta() -> dict:
+    return {"creados": 0, "existentes": 0, "omitidos": 0}
+
+
+async def resumen_sede(db: AsyncSession, sede_id: int) -> list[dict]:
+    """Cuántos registros tiene la sede de cada dato importable."""
+    p = {"s": sede_id, "prov": sede_maestros.ID_PROVISIONAL}
+
+    async def n(sql: str) -> int:
+        return int((await db.execute(text(sql), p)).scalar() or 0)
+
+    prod = (await db.execute(text("""
+        SELECT COUNT(*), COALESCE(SUM(COALESCE(TRIM(product_code), '') <> ''), 0)
+        FROM pos_dishes WHERE company_id = :s AND COALESCE(active, 0) = 0 AND id < :prov
+    """), p)).first()
+    conteos = {
+        "categorias": await n("SELECT COUNT(*) FROM pos_dish_categories WHERE company_id = :s"),
+        "categorias_insumos": await n("SELECT COUNT(*) FROM pos_product_categories WHERE company_id = :s"),
+        "medidas": await n("SELECT COUNT(*) FROM pos_measure_forms WHERE company_id = :s"),
+        "proveedores": await n("SELECT COUNT(*) FROM suppliers WHERE company_id = :s AND id_proveedor IS NOT NULL"),
+        "productos": int(prod[1] or 0),
+        "clientes": await n("SELECT COUNT(*) FROM clientes WHERE company_id = :s"),
+    }
+    out = []
+    for k, v in DATOS_IMPORTAR.items():
+        fila = {"clave": k, "nombre": v, "registros": conteos[k]}
+        if k == "productos":
+            fila["sin_codigo"] = int(prod[0] or 0) - int(prod[1] or 0)
+        out.append(fila)
+    return out
+
+
+async def _por_nombre(db: AsyncSession, tabla: str, bodega_id: int, sede_id: int, columnas: tuple,
+                      solo_ids: Optional[set], cuenta: dict) -> dict:
+    """Catálogo con llave (id, company_id) que se empata por nombre: {id en la sede: id en la bodega}.
+    solo_ids = traer solo esos (los que usan los productos); None = todos."""
     propias = {(f[1] or "").strip().upper(): int(f[0]) for f in (await db.execute(text(
-        "SELECT id, name FROM pos_dish_categories WHERE company_id = :c"), {"c": bodega_id})).all()}
+        f"SELECT id, name FROM {tabla} WHERE company_id = :c"), {"c": bodega_id})).all()}
+    extra = "".join(f", {c}" for c in columnas)
+    filas = (await db.execute(text(
+        f"SELECT id, name{extra} FROM {tabla} WHERE company_id = :s ORDER BY id"), {"s": sede_id})).mappings().all()
+    siguiente = None
     mapa = {}
-    for f in (await db.execute(text(
-            "SELECT id, name, percentage FROM pos_dish_categories WHERE company_id = :s"), {"s": sede_id})).all():
-        nombre = (f[1] or "").strip()[:100] or f"CATEGORIA {f[0]}"
+    for f in filas:
+        if solo_ids is not None and int(f["id"]) not in solo_ids:
+            continue
+        nombre = (f["name"] or "").strip()[:100]
+        if not nombre:
+            cuenta["omitidos"] += 1
+            continue
         llave = nombre.upper()
-        if llave not in propias:
-            nuevo = await sede_maestros.siguiente_id(db, "pos_dish_categories", "id", bodega_id, False)
-            await db.execute(text("""
-                INSERT INTO pos_dish_categories (id, company_id, parent_category_id, name, percentage, is_active, synced)
-                VALUES (:id, :c, 0, :n, :p, 1, 0)
-            """), {"id": nuevo, "c": bodega_id, "n": nombre, "p": f[2] or 0})
-            propias[llave] = nuevo
-        mapa[int(f[0])] = propias[llave]
+        if llave in propias:
+            cuenta["existentes"] += 1
+        else:
+            if siguiente is None:
+                siguiente = await sede_maestros.siguiente_id(db, tabla, "id", bodega_id, False)
+            cols = ", ".join(("id", "company_id", "name", "synced") + columnas)
+            vals = ", ".join((":id", ":c", ":n", "0") + tuple(f":{c}" for c in columnas))
+            await db.execute(text(f"INSERT INTO {tabla} ({cols}) VALUES ({vals})"),
+                             {"id": siguiente, "c": bodega_id, "n": nombre, **{c: f[c] for c in columnas}})
+            propias[llave] = siguiente
+            siguiente += 1
+            cuenta["creados"] += 1
+        mapa[int(f["id"])] = propias[llave]
     return mapa
 
 
-async def _mapa_proveedores(db: AsyncSession, bodega_id: int, sede_id: int) -> dict:
-    propios = {}
-    for f in (await db.execute(text(
-            "SELECT id_proveedor, name, nit FROM suppliers WHERE company_id = :c AND id_proveedor IS NOT NULL"),
-            {"c": bodega_id})).all():
-        propios[((f[2] or "").strip(), (f[1] or "").strip().upper())] = int(f[0])
+async def _proveedores(db: AsyncSession, bodega_id: int, sede_id: int, solo_ids: Optional[set], cuenta: dict) -> dict:
+    propios = {((f[2] or "").strip(), (f[1] or "").strip().upper()): int(f[0]) for f in (await db.execute(text(
+        "SELECT id_proveedor, name, nit FROM suppliers WHERE company_id = :c AND id_proveedor IS NOT NULL"),
+        {"c": bodega_id})).all()}
+    filas = (await db.execute(text("""
+        SELECT id_proveedor, name, nit, contact_name, email, phone, telefono_celular, address, notes
+        FROM suppliers WHERE company_id = :s AND id_proveedor IS NOT NULL ORDER BY id_proveedor"""),
+        {"s": sede_id})).mappings().all()
+    siguiente = None
     mapa = {}
-    for f in (await db.execute(text("""
-            SELECT id_proveedor, name, nit, contact_name, email, phone, telefono_celular, address
-            FROM suppliers WHERE company_id = :s AND id_proveedor IS NOT NULL"""), {"s": sede_id})).mappings().all():
-        llave = ((f["nit"] or "").strip(), (f["name"] or "").strip().upper())
-        if llave not in propios:
-            nuevo = await sede_maestros.siguiente_id(db, "suppliers", "id_proveedor", bodega_id, False)
+    for f in filas:
+        if solo_ids is not None and int(f["id_proveedor"]) not in solo_ids:
+            continue
+        nombre = (f["name"] or "").strip()[:150]
+        if not nombre:
+            cuenta["omitidos"] += 1
+            continue
+        llave = ((f["nit"] or "").strip(), nombre.upper())
+        if llave in propios:
+            cuenta["existentes"] += 1
+        else:
+            if siguiente is None:
+                siguiente = await sede_maestros.siguiente_id(db, "suppliers", "id_proveedor", bodega_id, False)
             await db.execute(text("""
                 INSERT INTO suppliers (company_id, id_proveedor, name, nit, contact_name, email, phone,
-                                       telefono_celular, address, is_active, synced, created_at)
-                VALUES (:c, :p, :n, :nit, :cn, :e, :ph, :cel, :a, 1, 0, NOW())
-            """), {"c": bodega_id, "p": nuevo, "n": (f["name"] or "SIN NOMBRE")[:150], "nit": f["nit"],
-                   "cn": f["contact_name"], "e": f["email"], "ph": f["phone"], "cel": f["telefono_celular"],
-                   "a": f["address"]})
-            propios[llave] = nuevo
+                                       telefono_celular, address, notes, is_active, synced, created_at)
+                VALUES (:c, :p, :n, :nit, :cn, :e, :ph, :cel, :a, :notes, 1, 0, NOW())
+            """), {"c": bodega_id, "p": siguiente, "n": nombre, "nit": f["nit"], "cn": f["contact_name"],
+                   "e": f["email"], "ph": f["phone"], "cel": f["telefono_celular"], "a": f["address"],
+                   "notes": f["notes"]})
+            propios[llave] = siguiente
+            siguiente += 1
+            cuenta["creados"] += 1
         mapa[int(f["id_proveedor"])] = propios[llave]
     return mapa
 
 
-async def importar_catalogo(db: AsyncSession, bodega: Bodega, sede: dict, clave: Optional[str]) -> dict:
-    """Copia a la bodega los productos VISIBLES de la sede (active = 0) con cantidad 0. Los que ya existen
-    en la bodega por código se vinculan; los que no tienen código se omiten (el código es la llave con la sede)."""
-    if await clave_usada(db, bodega, clave):
-        return {"ok": True, "repetida": True}
-    sede_id = sede["id"]
-    productos = (await db.execute(text("""
-        SELECT d.id, d.name, d.product_code, d.price, d.category_id, d.tax, d.wholesale_price, d.product_cost,
-               d.minimum_stock, d.extra_print, d.ask_product_description,
-               (SELECT dp.supplier_id FROM pos_dish_products dp
-                WHERE dp.company_id = d.company_id AND dp.dish_id = d.id ORDER BY dp.supplier_id DESC LIMIT 1) AS proveedor
-        FROM pos_dishes d
-        WHERE d.company_id = :s AND COALESCE(d.active, 0) = 0 AND d.id < :prov
-        ORDER BY d.name
-        LIMIT :lim
-    """), {"s": sede_id, "prov": sede_maestros.ID_PROVISIONAL, "lim": MAX_IMPORTAR + 1})).mappings().all()
-    if len(productos) > MAX_IMPORTAR:
-        raise HTTPException(status_code=422, detail=f"La sede tiene más de {MAX_IMPORTAR} productos; contacte soporte")
-
-    categorias = await _mapa_categorias(db, bodega.id, sede_id)
-    proveedores = await _mapa_proveedores(db, bodega.id, sede_id)
-    varios = await asegurar_varios(db, bodega.id)
-    existentes = {(f[0] or "").strip(): int(f[1]) for f in (await db.execute(text(
-        "SELECT product_code, id FROM pos_dishes WHERE company_id = :c AND COALESCE(product_code, '') <> ''"),
-        {"c": bodega.id})).all()}
-    nombres = {(f[0] or "").strip().upper() for f in (await db.execute(text(
-        "SELECT name FROM pos_dishes WHERE company_id = :c"), {"c": bodega.id})).all()}
-
-    creados = vinculados = sin_codigo = omitidos = 0
-    for p in productos:
-        codigo = (p["product_code"] or "").strip().replace("'", "-").replace(",", "-")
-        if not codigo or not RE_CODIGO.match(codigo):
-            sin_codigo += 1
+async def _clientes(db: AsyncSession, bodega_id: int, sede_id: int, cuenta: dict) -> None:
+    """Conserva el Id_Cliente de la sede si está libre en la bodega (el Consumidor Final sigue siendo el 1)."""
+    propios = (await db.execute(text(
+        "SELECT id_cliente, TRIM(COALESCE(cedula, '')) AS ced, "
+        "UPPER(TRIM(CONCAT_WS(' ', nombres, apellidos))) AS nom FROM clientes WHERE company_id = :c"
+    ), {"c": bodega_id})).mappings().all()
+    ids = {int(f["id_cliente"]) for f in propios}
+    cedulas = {f["ced"] for f in propios if f["ced"]}
+    nombres = {f["nom"] for f in propios if not f["ced"] and f["nom"]}
+    siguiente = max(ids | {1}) + 1
+    filas = (await db.execute(text(
+        f"SELECT id_cliente, {', '.join(_COLS_CLIENTE)} FROM clientes WHERE company_id = :s ORDER BY id_cliente"),
+        {"s": sede_id})).mappings().all()
+    for f in filas:
+        ced = (f["cedula"] or "").strip()
+        nom = " ".join(x for x in ((f["nombres"] or "").strip(), (f["apellidos"] or "").strip()) if x).upper()
+        if not ced and not nom:
+            cuenta["omitidos"] += 1
             continue
-        if codigo in existentes:
-            dish_id = existentes[codigo]
-            vinculados += 1
+        if (ced and ced in cedulas) or (not ced and nom in nombres):
+            cuenta["existentes"] += 1
+            continue
+        id_cli = int(f["id_cliente"])
+        if id_cli in ids or id_cli < 1:
+            id_cli, siguiente = siguiente, siguiente + 1
+        await db.execute(text(f"""
+            INSERT INTO clientes (company_id, id_cliente, {', '.join(_COLS_CLIENTE)}, enviada_mysql)
+            VALUES (:c, :id, {', '.join(':' + k for k in _COLS_CLIENTE)}, 0)
+        """), {"c": bodega_id, "id": id_cli, **{k: f[k] for k in _COLS_CLIENTE}})
+        ids.add(id_cli)
+        siguiente = max(siguiente, id_cli + 1)
+        if ced:
+            cedulas.add(ced)
         else:
-            nombre = (p["name"] or "").strip()
-            if not nombre or nombre.upper() in nombres:
-                omitidos += 1
-                continue
-            dish_id = await crear_producto(db, bodega.id, {
-                "name": nombre, "product_code": codigo, "price": p["price"], "tax": p["tax"],
-                "wholesale_price": p["wholesale_price"], "product_cost": p["product_cost"],
-                "minimum_stock": p["minimum_stock"], "extra_print": str(p["extra_print"] or "0") == "1",
-                "ask_product_description": p["ask_product_description"],
-                "category_id": categorias.get(int(p["category_id"] or 0)) or await _categoria_general(db, bodega.id),
-                "id_proveedor": proveedores.get(int(p["proveedor"] or 0)) or varios,
-            })
-            existentes[codigo] = dish_id
-            nombres.add(nombre.upper())
-            creados += 1
-        await db.execute(text("""
-            INSERT INTO bc_producto_sede (bodega_id, dish_id, sede_id, sede_dish_id, estado)
-            VALUES (:b, :d, :s, :sd, 'VINCULADO')
-            ON DUPLICATE KEY UPDATE sede_dish_id = VALUES(sede_dish_id), estado = 'VINCULADO', error = NULL
-        """), {"b": bodega.id, "d": dish_id, "s": sede_id, "sd": int(p["id"])})
+            nombres.add(nom)
+        cuenta["creados"] += 1
 
-    resumen = {"creados": creados, "vinculados": vinculados, "sin_codigo": sin_codigo, "omitidos": omitidos}
-    await movimiento(db, bodega, "IMPORTACION", None, 0,
-                     f"Catálogo de {sede['nombre']}: {creados} creados, {vinculados} vinculados, "
-                     f"{sin_codigo} sin código, {omitidos} omitidos", sede_id=sede_id, clave=clave)
-    return {"ok": True, "repetida": False, **resumen}
+
+async def importar_catalogo(db: AsyncSession, bodega: Bodega, sede: dict, datos: list,
+                            clave: Optional[str]) -> dict:
+    """Importa los datos escogidos de la sede. Productos entran con cantidad 0 y quedan vinculados a la sede;
+    los que no tienen código se omiten (el código es la llave con la sede)."""
+    escogidos = set(datos or [])
+    datos = [d for d in DATOS_IMPORTAR if d in escogidos]
+    if not datos:
+        raise HTTPException(status_code=422, detail="Escoja al menos un dato para importar")
+    if await clave_usada(db, bodega, clave):
+        return {"ok": True, "repetida": True, "resultado": []}
+    sede_id = sede["id"]
+    res = {d: _cuenta() for d in datos}
+    con_productos = "productos" in datos
+
+    productos = []
+    if con_productos:
+        productos = (await db.execute(text("""
+            SELECT d.id, d.name, d.product_code, d.price, d.category_id, d.tax, d.wholesale_price, d.product_cost,
+                   d.minimum_stock, d.extra_print, d.ask_product_description,
+                   (SELECT dp.supplier_id FROM pos_dish_products dp
+                    WHERE dp.company_id = d.company_id AND dp.dish_id = d.id ORDER BY dp.supplier_id DESC LIMIT 1) AS proveedor
+            FROM pos_dishes d
+            WHERE d.company_id = :s AND COALESCE(d.active, 0) = 0 AND d.id < :prov
+            ORDER BY d.name
+            LIMIT :lim
+        """), {"s": sede_id, "prov": sede_maestros.ID_PROVISIONAL, "lim": MAX_IMPORTAR + 1})).mappings().all()
+        if len(productos) > MAX_IMPORTAR:
+            raise HTTPException(status_code=422, detail=f"La sede tiene más de {MAX_IMPORTAR} productos; contacte soporte")
+
+    # Catálogos completos si se marcaron; si no, solo lo que usan los productos (arrastre, no se reporta).
+    arrastre = _cuenta()
+    categorias = {}
+    if "categorias" in datos or con_productos:
+        completo = "categorias" in datos
+        categorias = await _por_nombre(db, "pos_dish_categories", bodega.id, sede_id, ("percentage", "is_active"),
+                                       None if completo else {int(p["category_id"] or 0) for p in productos},
+                                       res["categorias"] if completo else arrastre)
+    if "categorias_insumos" in datos:
+        await _por_nombre(db, "pos_product_categories", bodega.id, sede_id,
+                          ("percentage", "is_active", "require_selection", "print_assembly_changes_only"),
+                          None, res["categorias_insumos"])
+    if "medidas" in datos:
+        await _por_nombre(db, "pos_measure_forms", bodega.id, sede_id, ("is_active",), None, res["medidas"])
+    proveedores = {}
+    if "proveedores" in datos or con_productos:
+        completo = "proveedores" in datos
+        proveedores = await _proveedores(db, bodega.id, sede_id,
+                                         None if completo else {int(p["proveedor"] or 0) for p in productos},
+                                         res["proveedores"] if completo else arrastre)
+    if "clientes" in datos:
+        await _clientes(db, bodega.id, sede_id, res["clientes"])
+
+    if con_productos:
+        cuenta = res["productos"]
+        varios = await asegurar_varios(db, bodega.id)
+        unidad = await asegurar_unidad(db, bodega.id)
+        general = None
+        existentes = {(f[0] or "").strip(): int(f[1]) for f in (await db.execute(text(
+            "SELECT product_code, id FROM pos_dishes WHERE company_id = :c AND COALESCE(product_code, '') <> ''"),
+            {"c": bodega.id})).all()}
+        nombres = {(f[0] or "").strip().upper() for f in (await db.execute(text(
+            "SELECT name FROM pos_dishes WHERE company_id = :c"), {"c": bodega.id})).all()}
+        siguiente = None
+        for p in productos:
+            codigo = (p["product_code"] or "").strip().replace("'", "-").replace(",", "-")
+            if not codigo or not RE_CODIGO.match(codigo):
+                cuenta["omitidos"] += 1
+                continue
+            if codigo in existentes:
+                dish_id = existentes[codigo]
+                cuenta["existentes"] += 1
+            else:
+                nombre = (p["name"] or "").strip()[:250]
+                if not nombre or nombre.upper() in nombres:
+                    cuenta["omitidos"] += 1
+                    continue
+                categoria = categorias.get(int(p["category_id"] or 0))
+                if not categoria:
+                    general = general or await _categoria_general(db, bodega.id)
+                    categoria = general
+                if siguiente is None:
+                    siguiente = await _nuevo_id(db, bodega.id)        # una sola vez; luego se numera en bloque
+                dish_id = await crear_producto(db, bodega.id, {
+                    "name": nombre, "product_code": codigo, "price": p["price"], "tax": p["tax"],
+                    "wholesale_price": p["wholesale_price"], "product_cost": p["product_cost"],
+                    "minimum_stock": p["minimum_stock"], "extra_print": str(p["extra_print"] or "0") == "1",
+                    "ask_product_description": p["ask_product_description"], "category_id": categoria,
+                    "id_proveedor": proveedores.get(int(p["proveedor"] or 0)) or varios,
+                }, nuevo_id=siguiente, unidad=unidad, validado=True)
+                siguiente += 1
+                existentes[codigo] = dish_id
+                nombres.add(nombre.upper())
+                cuenta["creados"] += 1
+            await db.execute(text("""
+                INSERT INTO bc_producto_sede (bodega_id, dish_id, sede_id, sede_dish_id, estado)
+                VALUES (:b, :d, :s, :sd, 'VINCULADO')
+                ON DUPLICATE KEY UPDATE sede_dish_id = VALUES(sede_dish_id), estado = 'VINCULADO', error = NULL
+            """), {"b": bodega.id, "d": dish_id, "s": sede_id, "sd": int(p["id"])})
+
+    resultado = [{"clave": d, "nombre": DATOS_IMPORTAR[d], **res[d]} for d in datos]
+    texto = "; ".join(f"{r['nombre']}: {r['creados']} nuevos, {r['existentes']} ya estaban" for r in resultado)
+    await movimiento(db, bodega, "IMPORTACION", None, 0, f"{sede['nombre']} — {texto}", sede_id=sede_id, clave=clave)
+    return {"ok": True, "repetida": False, "resultado": resultado}
 
 
 async def _categoria_general(db: AsyncSession, cid: int) -> int:

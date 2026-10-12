@@ -239,11 +239,13 @@ const det = computed(() => sel.value?.details?.[detIdx.value] || null)
 const act = reactive({ nota: "", version: "" })
 
 const fmtNum = n => new Intl.NumberFormat("es-CO").format(Number(n || 0))
+// Las fechas llegan con su zona horaria (hora del servidor): se muestran siempre en hora de Colombia.
 function fmtDT(v) {
   if (!v) return "—"
   const d = new Date(String(v).replace(" ", "T"))
   if (isNaN(d)) return String(v)
-  return d.toLocaleString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+  return d.toLocaleString("es-CO", { timeZone: "America/Bogota", day: "2-digit", month: "2-digit", year: "numeric",
+                                     hour: "2-digit", minute: "2-digit" })
 }
 function pretty(v) {
   try { return JSON.stringify(typeof v === "string" ? JSON.parse(v) : v, null, 2) } catch { return String(v) }
@@ -332,8 +334,8 @@ function buildReport() {
     `**Endpoint:** ${g.endpoint || "—"}`,
     `**Vista:** ${d.vista_real || g.vista || "—"}${d.componente ? `  ·  Componente: ${d.componente}` : ""}`,
     `**Ocurrencias:** ${g.total_ocurrencias} en ${g.total_empresas} empresas`,
-    `**Primera vez:** ${g.first_seen} · Empresa ${d.company_id || "—"} (${d.company_name || g.first_company || "—"}) · Perfil ${d.perfil || "—"} · Usuario ${d.username || "—"} (${d.rol || "—"}) · Id_Caja ${d.id_caja || "—"}`,
-    `**Última vez:** ${g.last_seen} · Empresa ${g.last_company_id || "—"}`,
+    `**Primera vez:** ${fmtDT(g.first_seen)} · Empresa ${d.company_id || "—"} (${d.company_name || g.first_company || "—"}) · Perfil ${d.perfil || "—"} · Usuario ${d.username || "—"} (${d.rol || "—"}) · Id_Caja ${d.id_caja || "—"}`,
+    `**Última vez:** ${fmtDT(g.last_seen)} · Empresa ${g.last_company_id || "—"}`,
     `**Estado:** ${g.estado}${g.regresiones ? ` · ${g.regresiones} regresión(es)` : ""}`,
     `**Versión cliente / servidor:** ${d.version_cliente || "—"} / ${d.version_servidor || "—"}`,
     `**Petición:** ${d.http_method || ""} ${d.path_real || "—"} ${d.http_status ? `(${d.http_status})` : ""}`,
