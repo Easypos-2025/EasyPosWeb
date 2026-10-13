@@ -23,6 +23,11 @@ usuarios ADMIN/SYSADMIN (bodega_guard.requiere_bodega). Las sedes salen siempre 
   POST /api/bodega-central/valores/enviar          aplica venta, mínimo, costo, IVA y stock mínimo en las sedes
   GET  /api/bodega-central/valores/listas          listas de precios por cliente de la bodega
   POST /api/bodega-central/valores/listas/enviar   envía esas listas (cliente por cédula; se crea si no existe)
+  GET  /api/bodega-central/traslados/productos?origen_id=  productos del origen con su stock
+  POST /api/bodega-central/traslados                crear traslados (uno por destino); automático en empresas web
+  GET  /api/bodega-central/traslados                listado (estado, empresa, desde, hasta)
+  GET  /api/bodega-central/traslados/{id}           detalle con la novedad de cada artículo
+  POST /api/bodega-central/traslados/{id}/anular    anular lo que aún no se cargó (motivo obligatorio)
 
 Las operaciones de escritura reciben `clave` (idempotencia): repetirla no duplica nada.
 Si la base de datos está ocupada (otra empresa sincronizando), se responde 409 con un mensaje para reintentar
@@ -39,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
 from app.auth.bodega_guard import (Bodega, SEC_ENVIAR, SEC_IMPORTAR, SEC_MOVIMIENTOS, SEC_PRODUCTOS, SEC_USUARIOS,
-                                   SEC_VALORES,
+                                   SEC_TRASLADOS, SEC_VALORES,
                                    bodega_de_sede, exigir_sede, requiere_bodega, sedes_del_nit)
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
@@ -366,5 +371,78 @@ async def valores_listas_enviar(body: ValoresIn, db: AsyncSession = Depends(get_
     sedes = [await exigir_sede(db, bodega, s) for s in sorted(set(body.sedes))]
     async with _escritura(db):
         res = await svc.enviar_listas(db, bodega, body.ids, sedes, body.clave)
+        await db.commit()
+    return res
+
+
+# ─── Traslados ───────────────────────────────────────────────────────────────
+from app.services import bodega_traslados as tras_svc
+
+
+async def _empresa_grupo(db: AsyncSession, bodega: Bodega, cid: int) -> int:
+    if int(cid) not in await svc.empresas_grupo(db, bodega):
+        from app.services.error_log import record_security
+        record_security("Bodega central: empresa fuera de su NIT", {"bodega": bodega.id, "empresa": cid})
+        raise HTTPException(status_code=403, detail="La empresa no pertenece a la bodega central")
+    return int(cid)
+
+
+@router.get("/traslados/productos")
+async def traslados_productos(origen_id: int = Query(..., ge=1), db: AsyncSession = Depends(get_db),
+                              bodega: Bodega = Depends(SEC_TRASLADOS)):
+    return await tras_svc.productos_origen(db, await _empresa_grupo(db, bodega, origen_id))
+
+
+class DestinoIn(BaseModel):
+    empresa_id: Annotated[int, Field(ge=1)]
+    cantidad: Annotated[float, Field(ge=0, le=1_000_000)]
+
+
+class LineaIn(BaseModel):
+    dish_id: Annotated[int, Field(ge=1)]
+    destinos: Annotated[List[DestinoIn], Field(min_length=1, max_length=50)]
+
+
+class TrasladoIn(BaseModel):
+    origen_id: Annotated[int, Field(ge=1)]
+    lineas: Annotated[List[LineaIn], Field(min_length=1, max_length=tras_svc.MAX_LINEAS)]
+    observacion: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)]] = ""
+    clave: Clave = None
+
+
+@router.post("/traslados", status_code=201)
+async def traslados_crear(body: TrasladoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_TRASLADOS)):
+    async with _escritura(db):
+        res = await tras_svc.crear_traslados(db, bodega, body.origen_id, [l.model_dump() for l in body.lineas],
+                                             body.observacion or "", body.clave)
+        await db.commit()
+    return res
+
+
+@router.get("/traslados")
+async def traslados_listar(estado: Optional[str] = Query(None, pattern=r"^[A-Z_]{4,20}$"),
+                           empresa: Optional[int] = Query(None, ge=1),
+                           desde: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                           hasta: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                           db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_TRASLADOS)):
+    if empresa:
+        await _empresa_grupo(db, bodega, empresa)
+    return await tras_svc.listar(db, bodega, estado, empresa, desde, hasta)
+
+
+@router.get("/traslados/{tid}")
+async def traslados_detalle(tid: int, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_TRASLADOS)):
+    return await tras_svc.detalle(db, bodega, tid)
+
+
+class AnularIn(BaseModel):
+    motivo: Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=255)]
+
+
+@router.post("/traslados/{tid}/anular")
+async def traslados_anular(tid: int, body: AnularIn, db: AsyncSession = Depends(get_db),
+                           bodega: Bodega = Depends(SEC_TRASLADOS)):
+    async with _escritura(db):
+        res = await tras_svc.anular(db, bodega, tid, body.motivo)
         await db.commit()
     return res

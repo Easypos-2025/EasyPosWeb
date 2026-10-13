@@ -304,6 +304,41 @@
         </div>
       </section>
 
+      <!-- ── Traslados ── -->
+      <section v-if="tab === 'traslados'" class="bc-card">
+        <p class="bc-help">
+          Mueva inventario entre la bodega y las sedes (o entre sedes). El origen descuenta y el destino suma la cantidad;
+          si el producto no existe en el destino se crea. Es automático: en las empresas solo web al instante y en las que
+          tienen escritorio lo carga su agente.
+        </p>
+        <div class="bc-filtros">
+          <select v-model="tr.f.estado" class="bc-inp" @change="cargarTraslados">
+            <option value="">Todos los estados</option>
+            <option v-for="(n, k) in ESTADOS_TR" :key="k" :value="k">{{ n }}</option>
+          </select>
+          <select v-model.number="tr.f.empresa" class="bc-inp" @change="cargarTraslados">
+            <option :value="0">Todas las empresas</option>
+            <option v-for="e in empresasGrupo" :key="e.id" :value="e.id">{{ e.nombre }}</option>
+          </select>
+          <div class="bc-fecha"><CustomDatePicker v-model="tr.f.desde" placeholder="Desde" @update:modelValue="cargarTraslados" /></div>
+          <div class="bc-fecha"><CustomDatePicker v-model="tr.f.hasta" placeholder="Hasta" @update:modelValue="cargarTraslados" /></div>
+          <button class="bc-btn" @click="abrirNuevoTraslado"><i class="bi bi-plus-lg me-1"></i>Nuevo traslado</button>
+        </div>
+        <div v-if="tr.cargando" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+        <div v-else-if="!tr.lista.length" class="bc-vacio"><i class="bi bi-truck"></i><p>Sin traslados.</p></div>
+        <div v-else class="bc-lista">
+          <article v-for="t in tr.lista" :key="t.id" class="bc-tras" @click="verTraslado(t)">
+            <div class="bc-tras-num">#{{ t.numero }}</div>
+            <div class="bc-tras-main">
+              <b>{{ t.origen }} <i class="bi bi-arrow-right"></i> {{ t.destino }}</b>
+              <small>{{ fechaHora(t.enviado_en) }} · {{ t.enviado_por }} · {{ t.productos }} producto(s), {{ fmtCant(t.unidades) }} und.</small>
+              <small v-if="t.anulado_motivo" class="bc-tras-motivo">Anulado: {{ t.anulado_motivo }}</small>
+            </div>
+            <span class="bc-chip" :class="`bc-chip--tr-${t.estado.toLowerCase()}`">{{ ESTADOS_TR[t.estado] || t.estado }}</span>
+          </article>
+        </div>
+      </section>
+
       <!-- ── Usuarios del grupo ── -->
       <section v-if="tab === 'usuarios'" class="bc-card">
         <p class="bc-help">
@@ -508,6 +543,111 @@
       </div>
     </div>
 
+    <!-- ── Modal: nuevo traslado ── -->
+    <div v-if="modal === 'traslado'" class="bc-overlay" @click.self="cerrar">
+      <div class="bc-modal bc-modal--lg">
+        <div class="bc-modal-head"><b>Nuevo traslado</b><button class="bc-x" @click="cerrar"><i class="bi bi-x-lg"></i></button></div>
+        <div class="bc-modal-body">
+          <div class="bc-row">
+            <div class="bc-field">
+              <label>Origen (de dónde sale)</label>
+              <select v-model.number="nt.origen" class="bc-inp" @change="cambiarOrigen">
+                <option v-for="e in empresasGrupo" :key="e.id" :value="e.id">{{ e.nombre }}</option>
+              </select>
+            </div>
+            <div class="bc-field">
+              <label>Observación</label>
+              <input v-model.trim="nt.observacion" class="bc-inp" maxlength="255" placeholder="Opcional" />
+            </div>
+          </div>
+          <div class="bc-search">
+            <i class="bi bi-search"></i>
+            <input v-model.trim="nt.buscar" class="bc-inp" placeholder="Buscar producto o código para agregar..." />
+          </div>
+          <div v-if="nt.cargando" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+          <div v-else-if="nt.buscar" class="bc-datos bc-datos--scroll bc-datos--busca">
+            <button v-for="p in ntSugeridos" :key="p.id" class="bc-dato bc-dato--btn" :disabled="p.stock <= 0" @click="agregarLinea(p)">
+              <i class="bi bi-plus-circle"></i>
+              <span class="bc-dato-nom">{{ p.name }} <small class="bc-cod">{{ p.product_code }}</small></span>
+              <span class="bc-dato-n">{{ fmtCant(p.stock) }} und.</span>
+            </button>
+            <div v-if="!ntSugeridos.length" class="bc-nota">Sin resultados con stock en el origen.</div>
+          </div>
+
+          <div v-if="nt.lineas.length" class="bc-grilla">
+            <div class="bc-grilla-row bc-grilla-head" :style="gridCols">
+              <span>Producto</span>
+              <span v-for="d in destinosNt" :key="d.id" class="bc-grilla-dest">{{ d.nombre }}</span>
+              <span></span>
+            </div>
+            <div v-for="l in nt.lineas" :key="l.p.id" class="bc-grilla-row" :style="gridCols">
+              <span class="bc-grilla-prod">{{ l.p.name }}<small>{{ l.p.product_code }} · disp. {{ fmtCant(l.p.stock) }}<template v-if="l.p.unitario"> · IMEI</template></small>
+                <small v-if="totalLinea(l) > l.p.stock" class="bc-error">Pide {{ fmtCant(totalLinea(l)) }}, hay {{ fmtCant(l.p.stock) }}</small></span>
+              <template v-if="!l.p.unitario">
+                <input v-for="d in destinosNt" :key="d.id" v-model.number="l.cant[d.id]" type="number" min="0" step="1" class="bc-inp bc-num bc-cant"
+                       :aria-label="`Cantidad para ${d.nombre}`" />
+              </template>
+              <template v-else>
+                <label v-for="d in destinosNt" :key="d.id" class="bc-radio"><input v-model.number="l.unico" type="radio" :value="d.id" :aria-label="d.nombre" /></label>
+              </template>
+              <button class="bc-mini bc-mini--del" title="Quitar" @click="nt.lineas = nt.lineas.filter(x => x !== l)"><i class="bi bi-x-circle"></i></button>
+            </div>
+          </div>
+          <p v-else class="bc-nota">Busque y agregue los productos; luego escriba la cantidad para cada destino.</p>
+        </div>
+        <div class="bc-modal-foot">
+          <span class="bc-nota me-auto">{{ resumenNt }}</span>
+          <button class="bc-btn bc-btn--sec" @click="cerrar">Cancelar</button>
+          <button class="bc-btn" :disabled="enviando || !lineasValidas" @click="enviarTraslado">
+            <span v-if="enviando" class="spinner-border spinner-border-sm me-1"></span>Trasladar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: detalle de traslado ── -->
+    <div v-if="modal === 'detalleTraslado' && trDet" class="bc-overlay" @click.self="cerrar">
+      <div class="bc-modal bc-modal--lg">
+        <div class="bc-modal-head"><b>Traslado #{{ trDet.traslado.numero }}</b><button class="bc-x" @click="cerrar"><i class="bi bi-x-lg"></i></button></div>
+        <div class="bc-modal-body">
+          <div class="bc-tras-cab">
+            <div><small>Ruta</small><b>{{ trDet.traslado.origen }} → {{ trDet.traslado.destino }}</b></div>
+            <div><small>Estado</small><span class="bc-chip" :class="`bc-chip--tr-${trDet.traslado.estado.toLowerCase()}`">{{ ESTADOS_TR[trDet.traslado.estado] }}</span></div>
+            <div><small>Enviado</small><b>{{ fechaHora(trDet.traslado.enviado_en) }} · {{ trDet.traslado.enviado_por }}</b></div>
+            <div v-if="trDet.traslado.salida_en"><small>Salida del origen</small><b>{{ fechaHora(trDet.traslado.salida_en) }} · {{ trDet.traslado.salida_por }}</b></div>
+            <div v-if="trDet.traslado.cargado_en"><small>Cargado en destino</small><b>{{ fechaHora(trDet.traslado.cargado_en) }} · {{ trDet.traslado.cargado_por }}</b></div>
+            <div v-if="trDet.traslado.anulado_en" class="bc-tras-anul"><small>Anulado</small><b>{{ fechaHora(trDet.traslado.anulado_en) }} · {{ trDet.traslado.anulado_por }}</b>
+              <span>Motivo: {{ trDet.traslado.anulado_motivo }}</span>
+              <span v-if="trDet.traslado.reversa_pendiente">El agente del origen debe devolver el stock.</span></div>
+            <div v-if="trDet.traslado.observacion"><small>Observación</small><b>{{ trDet.traslado.observacion }}</b></div>
+            <div v-if="trDet.traslado.error" class="bc-tras-anul"><small>Error</small><b>{{ trDet.traslado.error }}</b></div>
+          </div>
+          <div class="bc-tras-items">
+            <div v-for="it in trDet.items" :key="it.id" class="bc-tras-item">
+              <div class="bc-tras-item-head">
+                <b>{{ it.nombre }}</b><small class="bc-cod">{{ it.codigo }}</small>
+                <span v-if="it.resultado" class="bc-chip" :class="it.resultado === 'CREADO' ? 'bc-chip--imei' : 'bc-chip--vinculado'">{{ it.resultado === 'CREADO' ? 'Creado en destino' : 'Ya existía · actualizado' }}</span>
+              </div>
+              <div class="bc-tras-item-nums">
+                <span>Cantidad <b>{{ fmtCant(it.cantidad) }}</b></span>
+                <span v-if="it.stock_origen_antes !== null">Origen {{ fmtCant(it.stock_origen_antes) }} → <b>{{ fmtCant(it.stock_origen_despues) }}</b></span>
+                <span v-if="it.stock_destino_antes !== null">Destino {{ fmtCant(it.stock_destino_antes) }} → <b>{{ fmtCant(it.stock_destino_despues) }}</b></span>
+              </div>
+              <small class="bc-tras-foto">{{ it.categoria || 'Sin categoría' }} · {{ it.proveedor || 'Sin proveedor' }} · Venta {{ fmt(it.precio) }} · Mín. {{ fmt(it.precio_minimo) }} · Costo {{ fmt(it.costo) }} · IVA {{ fmtCant(it.iva) }}%</small>
+              <small v-if="it.error" class="bc-error">{{ it.error }}</small>
+            </div>
+          </div>
+        </div>
+        <div class="bc-modal-foot">
+          <button v-if="['PENDIENTE_SALIDA', 'PENDIENTE_CARGUE'].includes(trDet.traslado.estado)" class="bc-btn bc-btn--danger me-auto"
+                  :disabled="enviando" @click="anularTraslado">
+            <i class="bi bi-x-octagon me-1"></i>Anular
+          </button>
+          <button class="bc-btn bc-btn--sec" @click="cerrar">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Modal: replicar por IMEI ── -->
     <div v-if="modal === 'replicar'" class="bc-overlay" @click.self="cerrar">
       <div class="bc-modal">
@@ -550,7 +690,9 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
+import { ordenAlfa } from '@/utils/orden'
 import CurrencyInput from '@/components/CurrencyInput.vue'
+import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
 
 const { moduleName } = useModuleName()
 const BASE = '/api/bodega-central'
@@ -562,7 +704,7 @@ const info = ref(null)
 // Cada opción del menú "Bodega Central" es una ruta hija (/bodega-central/<sección>), con su propio permiso
 const route = useRoute()
 const router = useRouter()
-const SECCIONES = ['productos', 'importar', 'enviar', 'valores', 'usuarios', 'movimientos']
+const SECCIONES = ['productos', 'importar', 'enviar', 'valores', 'traslados', 'usuarios', 'movimientos']
 const tab = computed(() => (SECCIONES.includes(route.params.seccion) ? route.params.seccion : ''))
 
 function primeraSeccionPermitida() {
@@ -600,6 +742,13 @@ const envio = ref({ tipo: 'proveedores', registros: [], ids: [], sedes: [], busc
 // ── Actualizar valores ──
 const val = ref({ modo: 'productos', productos: [], listas: [], ids: [], idsListas: [], sedes: [], buscar: '', categoria: '',
                   cargando: false, trabajando: '', previa: null, resultado: null })
+
+// ── Traslados ──
+const ESTADOS_TR = { PENDIENTE_SALIDA: 'Pendiente de salida', PENDIENTE_CARGUE: 'Pendiente de cargue', CARGADO: 'Cargado',
+                     ANULADO: 'Anulado', ERROR: 'Con error' }
+const tr = ref({ lista: [], cargando: false, f: { estado: '', empresa: 0, desde: '', hasta: '' } })
+const nt = ref({ origen: 0, observacion: '', buscar: '', productos: [], lineas: [], cargando: false, clave: '' })
+const trDet = ref(null)
 
 // ── Usuarios del grupo ──
 const usr = ref({ lista: [], buscar: '', cargando: false, guardando: false })
@@ -657,6 +806,23 @@ const valFiltrados = computed(() => {
 const valTodos = computed(() => valFiltrados.value.length > 0 && valFiltrados.value.every(p => val.value.ids.includes(p.id)))
 const valSedesTodas = computed(() => info.value?.sedes.length > 0 && info.value.sedes.every(s => val.value.sedes.includes(s.id)))
 const totalCambian = computed(() => (val.value.previa || []).reduce((t, s) => t + s.cambian, 0))
+const empresasGrupo = computed(() => info.value
+  ? [{ id: info.value.bodega.id, nombre: info.value.bodega.nombre }, ...ordenAlfa(info.value.sedes, 'nombre')] : [])
+const destinosNt = computed(() => empresasGrupo.value.filter(e => e.id !== nt.value.origen))
+const gridCols = computed(() => ({ gridTemplateColumns: `minmax(180px, 2fr) repeat(${destinosNt.value.length}, minmax(70px, 1fr)) 32px` }))
+const ntSugeridos = computed(() => {
+  const q = nt.value.buscar.toLowerCase()
+  const ya = new Set(nt.value.lineas.map(l => l.p.id))
+  return nt.value.productos.filter(p => !ya.has(p.id) && [p.name, p.product_code].some(v => (v || '').toLowerCase().includes(q))).slice(0, 40)
+})
+const totalLinea = (l) => (l.p.unitario ? (l.unico ? 1 : 0) : Object.values(l.cant).reduce((t, v) => t + (Number(v) || 0), 0))
+const lineasValidas = computed(() => nt.value.lineas.length > 0
+  && nt.value.lineas.every(l => totalLinea(l) <= l.p.stock && Object.values(l.cant).every(v => !v || Number.isInteger(Number(v))))
+  && nt.value.lineas.some(l => totalLinea(l) > 0))
+const resumenNt = computed(() => {
+  const und = nt.value.lineas.reduce((t, l) => t + totalLinea(l), 0)
+  return nt.value.lineas.length ? `${nt.value.lineas.length} producto(s) · ${fmtCant(und)} und.` : ''
+})
 const usuariosFiltrados = computed(() => {
   const q = usr.value.buscar.toLowerCase()
   return q ? usr.value.lista.filter(p => [p.nombre, p.email].some(v => (v || '').toLowerCase().includes(q))) : usr.value.lista
@@ -703,6 +869,93 @@ function cargarSeccion() {
   if (k === 'enviar') cargarEnvio()
   if (k === 'usuarios') cargarUsuarios()
   if (k === 'valores') cargarValores()
+  if (k === 'traslados') cargarTraslados()
+}
+
+// ── Traslados ──
+async function cargarTraslados() {
+  tr.value.cargando = true
+  const f = tr.value.f
+  const params = {}
+  if (f.estado) params.estado = f.estado
+  if (f.empresa) params.empresa = f.empresa
+  if (f.desde) params.desde = f.desde
+  if (f.hasta) params.hasta = f.hasta
+  try { tr.value.lista = (await api.get(`${BASE}/traslados`, { params })).data }
+  catch (e) { showToast(errorDe(e, 'Error cargando los traslados'), 'error') }
+  tr.value.cargando = false
+}
+
+async function cargarProductosOrigen() {
+  nt.value.cargando = true
+  try { nt.value.productos = (await api.get(`${BASE}/traslados/productos`, { params: { origen_id: nt.value.origen } })).data }
+  catch (e) { nt.value.productos = []; showToast(errorDe(e, 'Error cargando los productos del origen'), 'error') }
+  nt.value.cargando = false
+}
+
+function abrirNuevoTraslado() {
+  nt.value = { origen: info.value.bodega.id, observacion: '', buscar: '', productos: [], lineas: [], cargando: false, clave: nuevaClave() }
+  modal.value = 'traslado'
+  cargarProductosOrigen()
+}
+
+function cambiarOrigen() {
+  nt.value.lineas = []
+  nt.value.buscar = ''
+  cargarProductosOrigen()
+}
+
+function agregarLinea(p) {
+  nt.value.lineas.push({ p, cant: Object.fromEntries(destinosNt.value.map(d => [d.id, 0])), unico: 0 })
+  nt.value.buscar = ''
+}
+
+async function enviarTraslado() {
+  const lineas = nt.value.lineas
+    .map(l => ({ dish_id: l.p.id, destinos: l.p.unitario
+      ? (l.unico ? [{ empresa_id: l.unico, cantidad: 1 }] : [])
+      : destinosNt.value.map(d => ({ empresa_id: d.id, cantidad: Number(l.cant[d.id]) || 0 })).filter(d => d.cantidad > 0) }))
+    .filter(l => l.destinos.length)
+  const { isConfirmed } = await window.Swal.fire({
+    title: '¿Trasladar?', text: `${resumenNt.value}. El origen descuenta ahora y cada destino suma su cantidad.`,
+    icon: 'question', showCancelButton: true, confirmButtonText: 'Trasladar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  enviando.value = true
+  try {
+    const { data } = await api.post(`${BASE}/traslados`, { origen_id: nt.value.origen, lineas, observacion: nt.value.observacion, clave: nt.value.clave })
+    const txt = data.traslados.map(t => `#${t.numero} → ${t.destino}: ${ESTADOS_TR[t.estado] || t.estado}`).join(' · ')
+    showToast(data.repetida ? 'Este traslado ya se había registrado' : `Traslado registrado. ${txt}`, 'success')
+    enviando.value = false
+    modal.value = ''
+    await cargarTraslados()
+  } catch (e) { showToast(errorDe(e, 'Error al trasladar'), 'error') }
+  enviando.value = false
+}
+
+async function verTraslado(t) {
+  try {
+    trDet.value = (await api.get(`${BASE}/traslados/${t.id}`)).data
+    modal.value = 'detalleTraslado'
+  } catch (e) { showToast(errorDe(e, 'Error cargando el traslado'), 'error') }
+}
+
+async function anularTraslado() {
+  const { value: motivo, isConfirmed } = await window.Swal.fire({
+    title: `Anular traslado #${trDet.value.traslado.numero}`, input: 'textarea', inputLabel: 'Motivo de la anulación',
+    inputAttributes: { maxlength: 255 }, showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar',
+    inputValidator: (v) => (!v || v.trim().length < 5 ? 'Escriba el motivo (mínimo 5 caracteres)' : undefined),
+  })
+  if (!isConfirmed) return
+  enviando.value = true
+  try {
+    const { data } = await api.post(`${BASE}/traslados/${trDet.value.traslado.id}/anular`, { motivo: motivo.trim() })
+    showToast(data.reversa_pendiente ? 'Anulado. El agente del origen devolverá el stock.' : 'Traslado anulado; el origen recuperó su stock', 'success')
+    enviando.value = false
+    trDet.value = (await api.get(`${BASE}/traslados/${trDet.value.traslado.id}`)).data
+    await cargarTraslados()
+  } catch (e) { showToast(errorDe(e, 'Error al anular'), 'error') }
+  enviando.value = false
 }
 watch(tab, cargarSeccion)
 
@@ -1128,6 +1381,48 @@ onMounted(() => {
 .bc-cambio { color: #475569; white-space: nowrap; }
 .bc-cambio s { color: #94a3b8; }
 .bc-cambio b { color: #15803d; }
+.bc-filtros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; align-items: center; }
+.bc-fecha { min-width: 0; }
+.bc-tras { display: flex; gap: 10px; align-items: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+.bc-tras:hover { border-color: #93c5fd; }
+.bc-tras-num { font-weight: 800; color: #1e3a5f; font-size: 15px; min-width: 44px; }
+.bc-tras-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.bc-tras-main b { color: #1e293b; font-size: 13.5px; word-break: break-word; }
+.bc-tras-main small { color: #64748b; font-size: 12px; }
+.bc-tras-motivo { color: #b45309 !important; }
+.bc-chip--tr-cargado { background: #dcfce7; color: #166534; }
+.bc-chip--tr-pendiente_cargue, .bc-chip--tr-pendiente_salida { background: #fef9c3; color: #854d0e; }
+.bc-chip--tr-anulado { background: #e2e8f0; color: #475569; }
+.bc-chip--tr-error { background: #fee2e2; color: #991b1b; }
+.bc-modal--lg { max-width: 880px; }
+.bc-datos--busca { max-height: 220px; }
+.bc-dato--btn { width: 100%; border: none; background: none; text-align: left; }
+.bc-dato--btn:disabled { opacity: .45; }
+.bc-dato--btn i { color: #1d4ed8; }
+.bc-grilla { border: 1px solid #e2e8f0; border-radius: 12px; overflow-x: auto; }
+.bc-grilla-row { display: grid; gap: 6px; align-items: center; padding: 8px 10px; border-top: 1px solid #f1f5f9; min-width: max-content; }
+.bc-grilla-head { background: #f8fafc; border-top: none; font-size: 11.5px; font-weight: 800; color: #64748b; }
+.bc-grilla-dest { text-align: center; word-break: break-word; }
+.bc-grilla-prod { display: flex; flex-direction: column; font-size: 13px; font-weight: 700; color: #1e293b; min-width: 0; }
+.bc-grilla-prod small { font-weight: 500; color: #64748b; font-size: 11.5px; }
+.bc-cant { padding: 6px; }
+.bc-radio { display: flex; justify-content: center; margin: 0; }
+.bc-radio input { width: 18px; height: 18px; accent-color: #1d4ed8; }
+.bc-mini--del { color: #dc2626; font-size: 18px; }
+.bc-error { color: #b91c1c; font-size: 11.5px; }
+.bc-btn--danger { background: #dc2626; }
+.bc-tras-cab { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+.bc-tras-cab > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bc-tras-cab small { font-size: 11px; color: #94a3b8; font-weight: 700; text-transform: uppercase; }
+.bc-tras-cab b { font-size: 13.5px; color: #1e293b; word-break: break-word; }
+.bc-tras-anul { grid-column: 1 / -1; background: #fff7ed; border-radius: 8px; padding: 8px; }
+.bc-tras-anul span { font-size: 12.5px; color: #9a3412; }
+.bc-tras-items { display: flex; flex-direction: column; gap: 8px; }
+.bc-tras-item { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.bc-tras-item-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bc-tras-item-head b { color: #1e293b; font-size: 13.5px; }
+.bc-tras-item-nums { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: #475569; }
+.bc-tras-foto { color: #64748b; font-size: 11.5px; }
 .bc-res-error { padding: 4px 12px 8px; font-size: 12px; color: #b45309; }
 .bc-res-fila--3 { grid-template-columns: minmax(0, 1fr) repeat(2, 90px); }
 .bc-res { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; font-size: 13.5px; }
@@ -1177,6 +1472,10 @@ onMounted(() => {
   .bc-link { margin-left: 0; }
   .bc-datos--scroll { max-height: 320px; }
   .bc-previa-fila { grid-template-columns: 1fr; }
+  .bc-filtros { grid-template-columns: 1fr 1fr; }
+  .bc-filtros .bc-btn { grid-column: 1 / -1; }
+  .bc-tras-cab { grid-template-columns: 1fr; }
+  .bc-modal-foot { flex-wrap: wrap; }
   .bc-inp--cat { max-width: none; }
   .bc-toolbar { flex-direction: column; align-items: stretch; }
   .bc-card--angosta { max-width: none; }
