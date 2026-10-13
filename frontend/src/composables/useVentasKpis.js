@@ -32,6 +32,14 @@ export function useVentasKpis() {
       const { data } = await api.get("/api/pos-dashboard/kpis", {
         params: { fecha: fechaKpi.value, ...(cid ? { company_id: cid } : {}) },
       })
+      // Bodega Central: Facturas, Recibos y Total son la suma de todas las sedes del grupo
+      if (companyStore.billingConfig?.has_bodega_central == 1) {
+        try {
+          const t = (await api.get("/api/bodega-central/tablero", { params: { fecha: fechaKpi.value } })).data.totales
+          data.ventas_facturas = { count: t.facturas.cantidad, total: t.facturas.total }
+          data.ventas_recibos  = { count: t.recibos.cantidad,  total: t.recibos.total }
+        } catch { /* sin acceso a la bodega: se dejan las de la empresa */ }
+      }
       const totalFactRec = (data.ventas_facturas?.total || 0) + (data.ventas_recibos?.total || 0)
       const countFactRec = (data.ventas_facturas?.count || 0) + (data.ventas_recibos?.count || 0)
       kpis.value = [
@@ -49,6 +57,7 @@ export function useVentasKpis() {
   }
 
   watch(fechaKpi, cargar)
+  watch(() => companyStore.billingConfig?.has_bodega_central, (v, antes) => { if (v != antes) cargar() })
   onMounted(cargar)
 
   return { kpis, loading, fechaKpi, cargar }

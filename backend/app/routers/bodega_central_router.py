@@ -28,6 +28,8 @@ usuarios ADMIN/SYSADMIN (bodega_guard.requiere_bodega). Las sedes salen siempre 
   GET  /api/bodega-central/traslados                listado (estado, empresa, desde, hasta)
   GET  /api/bodega-central/traslados/{id}           detalle con la novedad de cada artículo
   POST /api/bodega-central/traslados/{id}/anular    anular lo que aún no se cargó (motivo obligatorio)
+  GET  /api/bodega-central/tablero?fecha=           tarjetas del dashboard: ventas, turnos, escritorio y traslados por sede
+  GET  /api/bodega-central/tablero/sede/{id}?fecha= resumen completo de una sede
 
 Las operaciones de escritura reciben `clave` (idempotencia): repetirla no duplica nada.
 Si la base de datos está ocupada (otra empresa sincronizando), se responde 409 con un mensaje para reintentar
@@ -446,3 +448,25 @@ async def traslados_anular(tid: int, body: AnularIn, db: AsyncSession = Depends(
         res = await tras_svc.anular(db, bodega, tid, body.motivo)
         await db.commit()
     return res
+
+
+# ─── Tablero (dashboard de la bodega) ────────────────────────────────────────
+from app.services import bodega_dashboard as tablero_svc
+
+
+def _fecha_o_hoy(fecha: Optional[str]) -> str:
+    from datetime import datetime, timedelta, timezone
+    return fecha or datetime.now(timezone(timedelta(hours=-5))).date().isoformat()
+
+
+@router.get("/tablero")
+async def tablero(fecha: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                  db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    return await tablero_svc.resumen_grupo(db, bodega, _fecha_o_hoy(fecha))
+
+
+@router.get("/tablero/sede/{sede_id}")
+async def tablero_sede(sede_id: int, fecha: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                       db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+    sede = await exigir_sede(db, bodega, sede_id)
+    return await tablero_svc.resumen_sede(db, bodega, sede, _fecha_o_hoy(fecha))

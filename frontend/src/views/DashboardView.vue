@@ -6,6 +6,8 @@
     <ParkingWidget v-if="hasParking" />
     <!-- Agente local: QR de la toma de pedidos en la red del negocio (solo si la empresa tiene agente) -->
     <AgenteLocalWidget v-if="companyStore.selectedCompany?.id" :key="'agente-' + companyStore.selectedCompany.id" />
+    <!-- Bodega Central: una tarjeta por sede (ventas, turnos, escritorio, traslados) -->
+    <TableroBodega v-if="companyStore.billingConfig?.has_bodega_central == 1" :key="'bodega-' + companyStore.selectedCompany?.id" />
 
     <component :is="activeDashboard" v-if="activeDashboard" :key="companyStore.selectedCompany?.id" />
     <div v-else class="dash-empty">
@@ -22,6 +24,7 @@ import { useCompanyStore } from "@/stores/companyStore"
 import PEWidget      from "@/components/pos/PEWidget.vue"
 import AgenteLocalWidget from "@/components/dashboard/AgenteLocalWidget.vue"
 import ParkingWidget from "@/components/parking/ParkingWidget.vue"
+import TableroBodega from "@/components/bodega/TableroBodega.vue"
 
 import DashboardRestaurante   from "@/views/dashboards/DashboardRestaurante.vue"
 import DashboardAdmonTareas   from "@/views/dashboards/DashboardAdmonTareas.vue"
