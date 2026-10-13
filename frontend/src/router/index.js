@@ -678,7 +678,7 @@ const routes = [
         meta: { title: "Configuración Sede" }
       },
       {
-        path: "/bodega-central",
+        path: "/bodega-central/:seccion?",
         name: "BodegaCentralView",
         component: () => import("@/views/BodegaCentralView.vue"),
         requiresAuth: true,

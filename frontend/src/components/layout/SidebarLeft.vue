@@ -133,6 +133,7 @@ function filterByFeatureFlags(items) {
     { prefix: '/parking',                        flag: 'has_parking' },
     { prefix: '/pos/facturas-electronicas',      flag: 'has_pos_electronico' },
     { prefix: '/pos/utilitarios/pantallas-tv',   flag: 'has_tv_cocina' },
+    { prefix: '/bodega-central',                 flag: 'has_bodega_central' },
   ]
 
   const routeBlocked = (route) => {

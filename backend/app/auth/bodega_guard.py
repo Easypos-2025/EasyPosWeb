@@ -5,10 +5,11 @@ La bodega es una empresa marcada por SYSADMIN con company_configs.has_bodega_cen
 empresas ACTIVAS con su mismo NIT. Es la única excepción en la que una empresa lee o escribe datos de otra,
 así que todo pasa por aquí:
 
-  · requiere_bodega  → la empresa efectiva de la petición (topbar validada por tenant) debe ser una bodega.
+  · seccion_bodega(ruta) → la empresa efectiva de la petición (topbar validada por tenant) debe ser una bodega.
                        ADMIN/SYSADMIN entran siempre; los demás roles (ayudantes de la bodega) según su permiso en
-                       la pantalla Bodega Central: ver para consultar, crear o editar para guardar.
-                       Si no: 403 con X-Error-Code BODEGA_NO_HABILITADA.
+                       ESA pantalla del menú Bodega Central (Productos, Importar, Enviar a sedes, Usuarios…):
+                       ver para consultar, crear o editar para guardar. requiere_bodega = cualquier pantalla de la
+                       bodega con permiso de ver (datos generales). Si no: 403 con X-Error-Code BODEGA_NO_HABILITADA.
   · sedes_del_nit    → única lista válida de sedes destino/origen; se calcula siempre en el servidor.
   · exigir_sede      → un id de sede enviado por el navegador solo se acepta si está en esa lista.
 """
@@ -54,21 +55,24 @@ async def es_bodega(db: AsyncSession, cid: int) -> bool:
     ), {"c": cid})).scalar())
 
 
-async def requiere_bodega(request: Request, db: AsyncSession = Depends(get_db),
-                          current_user: User = Depends(get_current_user)) -> Bodega:
+async def _resolver(request: Request, db: AsyncSession, current_user: User, ruta) -> Bodega:
     role = await db.get(Role, current_user.role_id) if current_user.role_id else None
     if not role:
         raise _no_habilitada("Usuario sin rol")
     if not es_admin_rol(role):
-        permiso = (await db.execute(text("""
-            SELECT rm.can_view, rm.can_create, rm.can_edit FROM role_modules rm
-            JOIN system_modules sm ON sm.id = rm.module_id AND sm.route = :ruta
-            WHERE rm.role_id = :r LIMIT 1
-        """), {"r": role.id, "ruta": RUTA_BODEGA})).first()
+        if ruta:
+            filtro, params = "sm.route = :ruta", {"ruta": ruta}
+        else:      # datos generales: basta ver alguna pantalla de la bodega
+            filtro, params = "(sm.route = :base OR sm.route LIKE :pref)", {"base": RUTA_BODEGA, "pref": RUTA_BODEGA + "/%"}
+        permiso = (await db.execute(text(f"""
+            SELECT MAX(rm.can_view), MAX(rm.can_create), MAX(rm.can_edit) FROM role_modules rm
+            JOIN system_modules sm ON sm.id = rm.module_id AND {filtro}
+            WHERE rm.role_id = :r
+        """), {"r": role.id, **params})).first()
         if not permiso or not permiso[0]:
-            raise _no_habilitada("Su rol no tiene acceso a la bodega central")
+            raise _no_habilitada("Su rol no tiene acceso a esta opción de la bodega central")
         if request.method in _ESCRITURA and not (permiso[1] or permiso[2]):
-            raise _no_habilitada("Su rol solo puede consultar la bodega central")
+            raise _no_habilitada("Su rol solo puede consultar esta opción de la bodega central")
     cid = int(current_user.company_id or 0)
     if not cid or not await es_bodega(db, cid):
         raise _no_habilitada("La empresa seleccionada no está habilitada como bodega central")
@@ -79,6 +83,24 @@ async def requiere_bodega(request: Request, db: AsyncSession = Depends(get_db),
         raise _no_habilitada("La bodega central no tiene NIT o está inactiva")
     ip = (request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "") or "")
     return Bodega(id=cid, nit=str(nit).strip(), user=current_user, ip=ip.split(",")[0].strip()[:45])
+
+
+def seccion_bodega(ruta=None):
+    """Dependencia por pantalla del menú Bodega Central (ruta = '/bodega-central/productos', …)."""
+    async def _dep(request: Request, db: AsyncSession = Depends(get_db),
+                   current_user: User = Depends(get_current_user)) -> Bodega:
+        return await _resolver(request, db, current_user, ruta)
+    _dep.ruta = ruta
+    return _dep
+
+
+# Pantallas (hijos del menú Bodega Central, migración 045)
+SEC_PRODUCTOS = seccion_bodega(RUTA_BODEGA + "/productos")
+SEC_IMPORTAR = seccion_bodega(RUTA_BODEGA + "/importar")
+SEC_ENVIAR = seccion_bodega(RUTA_BODEGA + "/enviar")
+SEC_USUARIOS = seccion_bodega(RUTA_BODEGA + "/usuarios")
+SEC_MOVIMIENTOS = seccion_bodega(RUTA_BODEGA + "/movimientos")
+requiere_bodega = seccion_bodega(None)
 
 
 async def sedes_del_nit(db: AsyncSession, bodega: Bodega) -> list[dict]:

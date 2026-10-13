@@ -26,11 +26,6 @@
     </div>
 
     <template v-else>
-      <div class="bc-tabs">
-        <button v-for="t in tabs" :key="t.key" class="bc-tab" :class="{ 'bc-tab--on': tab === t.key }" @click="cambiarTab(t.key)">
-          <i :class="t.icon"></i><span>{{ t.label }}</span>
-        </button>
-      </div>
 
       <!-- ── Productos ── -->
       <section v-if="tab === 'productos'" class="bc-card">
@@ -433,7 +428,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import { useModuleName } from '@/composables/useModuleName'
@@ -446,14 +442,21 @@ const MAX_REPLICAS = 200
 const loading = ref(true)
 const bloqueo = ref('')
 const info = ref(null)
-const tab = ref('productos')
-const tabs = [
-  { key: 'productos', label: 'Productos', icon: 'bi bi-box-seam' },
-  { key: 'importar', label: 'Importar catálogo', icon: 'bi bi-cloud-download' },
-  { key: 'enviar', label: 'Enviar a sedes', icon: 'bi bi-send' },
-  { key: 'usuarios', label: 'Usuarios', icon: 'bi bi-people' },
-  { key: 'movimientos', label: 'Movimientos', icon: 'bi bi-journal-text' },
-]
+// Cada opción del menú "Bodega Central" es una ruta hija (/bodega-central/<sección>), con su propio permiso
+const route = useRoute()
+const router = useRouter()
+const SECCIONES = ['productos', 'importar', 'enviar', 'usuarios', 'movimientos']
+const tab = computed(() => (SECCIONES.includes(route.params.seccion) ? route.params.seccion : ''))
+
+function primeraSeccionPermitida() {
+  try {
+    const menu = JSON.parse(localStorage.getItem('menu') || '[]')
+    const rutas = []
+    const recorrer = (items) => (items || []).forEach(i => { if (i.route) rutas.push(i.route); recorrer(i.children) })
+    recorrer(menu)
+    return SECCIONES.find(s => rutas.includes(`/bodega-central/${s}`)) || 'productos'
+  } catch { return 'productos' }
+}
 
 const productos = ref([])
 const cargandoProductos = ref(false)
@@ -541,7 +544,7 @@ async function cargar() {
   try {
     info.value = (await api.get(BASE)).data
     bloqueo.value = ''
-    await cargarProductos()
+    cargarSeccion()
   } catch (e) {
     if (e?.response?.status === 403) bloqueo.value = errorDe(e, 'La empresa no está habilitada como bodega central')
     else showToast(errorDe(e, 'Error cargando la bodega'), 'error')
@@ -563,12 +566,15 @@ async function cargarMovimientos() {
   cargandoMov.value = false
 }
 
-function cambiarTab(k) {
-  tab.value = k
+function cargarSeccion() {
+  const k = tab.value
+  if (!k || !info.value) return
+  if (k === 'productos') cargarProductos()
   if (k === 'movimientos') cargarMovimientos()
   if (k === 'enviar') cargarEnvio()
   if (k === 'usuarios') cargarUsuarios()
 }
+watch(tab, cargarSeccion)
 
 // ── Usuarios del grupo ──
 async function cargarUsuarios() {
@@ -798,12 +804,14 @@ async function importar() {
     resultadoImportar.value = data.resultado
     showToast(data.repetida ? 'Esta importación ya se había hecho' : 'Importación terminada', 'success')
     info.value = (await api.get(BASE)).data
-    await cargarProductos()
   } catch (e) { showToast(errorDe(e, 'Error al importar'), 'error') }
   importando.value = false
 }
 
-onMounted(cargar)
+onMounted(() => {
+  if (!tab.value) { router.replace(`/bodega-central/${primeraSeccionPermitida()}`); }
+  cargar()
+})
 </script>
 
 <style scoped>
@@ -826,7 +834,6 @@ onMounted(cargar)
 .bc-bloqueo i { font-size: 22px; }
 .bc-bloqueo p { margin: 4px 0 0; font-size: 13px; }
 
-.bc-tabs { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; }
 .bc-tab { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid #cbd5e1; background: #fff; color: #475569;
   border-radius: 10px; padding: 8px 14px; font-weight: 700; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
 .bc-tab--on { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }

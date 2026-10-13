@@ -1759,13 +1759,15 @@ async def get_billing_config(
                COALESCE(tip_percentage, 0)    AS tip_percentage,
                COALESCE(tip_label, 'Propina') AS tip_label,
                COALESCE(has_parking, 0)       AS has_parking,
-               COALESCE(has_tv_cocina, 0)     AS has_tv_cocina
+               COALESCE(has_tv_cocina, 0)     AS has_tv_cocina,
+               COALESCE(has_bodega_central, 0) AS has_bodega_central
         FROM company_configs
         WHERE company_id = :cid
     """), {"cid": company_id})).mappings().first()
 
     if not row:
-        return {"has_pos_electronico": 0, "has_tip": 0, "tip_percentage": 0.0, "tip_label": "Propina", "has_parking": 0, "has_tv_cocina": 0}
+        return {"has_pos_electronico": 0, "has_tip": 0, "tip_percentage": 0.0, "tip_label": "Propina", "has_parking": 0, "has_tv_cocina": 0,
+                "has_bodega_central": 0}
     return dict(row)
 
 

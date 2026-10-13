@@ -33,7 +33,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
-from app.auth.bodega_guard import Bodega, bodega_de_sede, exigir_sede, requiere_bodega, sedes_del_nit
+from app.auth.bodega_guard import (Bodega, SEC_ENVIAR, SEC_IMPORTAR, SEC_MOVIMIENTOS, SEC_PRODUCTOS, SEC_USUARIOS,
+                                   bodega_de_sede, exigir_sede, requiere_bodega, sedes_del_nit)
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
 from app.auth.tenant import tenant_guard
@@ -82,7 +83,7 @@ async def resumen(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(r
 
 
 @router.get("/productos")
-async def productos(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def productos(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_PRODUCTOS)):
     return await svc.listar_productos(db, bodega)
 
 
@@ -104,7 +105,7 @@ class ProductoIn(BaseModel):
 
 
 @router.post("/productos", status_code=201)
-async def crear(body: ProductoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def crear(body: ProductoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_PRODUCTOS)):
     if await svc.clave_usada(db, bodega, body.clave):
         return {"ok": True, "repetida": True}
     if body.wholesale_price and body.price and body.wholesale_price > body.price:
@@ -135,7 +136,7 @@ class EntradaIn(BaseModel):
 
 
 @router.post("/entradas", status_code=201)
-async def entrada(body: EntradaIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def entrada(body: EntradaIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_PRODUCTOS)):
     if await svc.clave_usada(db, bodega, body.clave):
         return {"ok": True, "repetida": True}
     prod = await svc._producto(db, bodega.id, body.dish_id)          # 404 si no es de la bodega
@@ -161,7 +162,7 @@ class ReplicarIn(BaseModel):
 
 @router.post("/replicar/{dish_id}", status_code=201)
 async def replicar(dish_id: int, body: ReplicarIn, db: AsyncSession = Depends(get_db),
-                   bodega: Bodega = Depends(requiere_bodega)):
+                   bodega: Bodega = Depends(SEC_PRODUCTOS)):
     async with _escritura(db):
         res = await svc.replicar(db, bodega, dish_id, body.nombre_base or "", body.codigos, body.clave)
         await db.commit()
@@ -170,7 +171,7 @@ async def replicar(dish_id: int, body: ReplicarIn, db: AsyncSession = Depends(ge
 
 @router.get("/resumen-sede/{sede_id}")
 async def resumen_importar(sede_id: int, db: AsyncSession = Depends(get_db),
-                           bodega: Bodega = Depends(requiere_bodega)):
+                           bodega: Bodega = Depends(SEC_IMPORTAR)):
     await exigir_sede(db, bodega, sede_id)
     return await svc.resumen_sede(db, sede_id)
 
@@ -183,7 +184,7 @@ class ImportarIn(BaseModel):
 
 
 @router.post("/importar")
-async def importar(body: ImportarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def importar(body: ImportarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_IMPORTAR)):
     invalidos = [d for d in body.datos if d not in svc.DATOS_IMPORTAR]
     if invalidos:
         raise HTTPException(status_code=422, detail="Dato a importar no válido")
@@ -195,7 +196,7 @@ async def importar(body: ImportarIn, db: AsyncSession = Depends(get_db), bodega:
 
 
 @router.get("/movimientos")
-async def movimientos(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def movimientos(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_MOVIMIENTOS)):
     filas = (await db.execute(text("""
         SELECT m.id, m.tipo, m.dish_id, d.name AS producto, d.product_code AS codigo, m.cantidad,
                m.sede_id, c.name AS sede, m.detalle, m.usuario, m.created_at
@@ -224,7 +225,7 @@ async def administrado(company_id: Optional[int] = Query(None, ge=1), db: AsyncS
 
 
 @router.get("/enviar/{tipo}")
-async def catalogo_envio(tipo: str, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def catalogo_envio(tipo: str, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_ENVIAR)):
     if tipo == "roles":
         return await svc.catalogo_roles(db, bodega)
     if tipo == "formas_pago":
@@ -243,7 +244,7 @@ class EnviarIn(BaseModel):
 
 
 @router.post("/enviar")
-async def enviar(body: EnviarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def enviar(body: EnviarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_ENVIAR)):
     sedes = [await exigir_sede(db, bodega, s) for s in sorted(set(body.sedes))]     # 403 si alguna es ajena
     async with _escritura(db):
         if body.tipo == "roles":
@@ -259,12 +260,12 @@ async def enviar(body: EnviarIn, db: AsyncSession = Depends(get_db), bodega: Bod
 # ─── Usuarios del grupo ──────────────────────────────────────────────────────
 
 @router.get("/usuarios")
-async def usuarios(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def usuarios(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_USUARIOS)):
     return await svc.usuarios_grupo(db, bodega)
 
 
 @router.get("/roles-empresas")
-async def roles_empresas(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def roles_empresas(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_USUARIOS)):
     return await svc.roles_empresas(db, bodega)
 
 
@@ -279,7 +280,7 @@ class InvitarIn(BaseModel):
 
 
 @router.post("/invitar", status_code=201)
-async def invitar(body: InvitarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def invitar(body: InvitarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_USUARIOS)):
     async with _escritura(db):
         res = await svc.invitar(db, bodega, [{"company_id": a.empresa_id, "role_id": a.role_id}
                                              for a in body.asignaciones])
@@ -297,7 +298,7 @@ class AsignarIn(BaseModel):
 
 
 @router.post("/usuarios/asignar")
-async def asignar(body: AsignarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def asignar(body: AsignarIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_USUARIOS)):
     async with _escritura(db):
         res = await svc.asignar_empresa(db, bodega, body.email, body.empresa_id, body.role_id)
         await db.commit()
@@ -310,7 +311,7 @@ class EstadoIn(BaseModel):
 
 
 @router.post("/usuarios/estado")
-async def estado(body: EstadoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(requiere_bodega)):
+async def estado(body: EstadoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_USUARIOS)):
     async with _escritura(db):
         res = await svc.cambiar_estado(db, bodega, body.user_id, body.activo)
         await db.commit()
