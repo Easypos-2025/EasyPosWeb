@@ -183,16 +183,19 @@
               <div class="campo-row">
                 <div class="campo campo-money">
                   <label>Precio venta</label>
-                  <CurrencyInput v-model="form.price" class="inp text-right" />
+                  <CurrencyInput v-model="form.price" class="inp text-right" :disabled="valoresCentral" />
                 </div>
                 <div class="campo campo-money">
                   <label>Precio mínimo</label>
-                  <CurrencyInput v-model="form.wholesale_price" class="inp text-right" />
+                  <CurrencyInput v-model="form.wholesale_price" class="inp text-right" :disabled="valoresCentral" />
                 </div>
                 <div class="campo campo-money">
                   <label>Costo producto</label>
-                  <CurrencyInput v-model="form.product_cost" class="inp text-right" />
+                  <CurrencyInput v-model="form.product_cost" class="inp text-right" :disabled="valoresCentral" />
                 </div>
+              </div>
+              <div v-if="valoresCentral" class="warn-line">
+                <i class="bi bi-boxes"></i> Venta, mínimo, costo, IVA y stock mínimo los define la bodega central «{{ administradoPor.nombre }}» (Actualizar valores).
               </div>
               <div v-if="form.wholesale_price > form.price" class="warn-line">
                 <i class="bi bi-exclamation-triangle"></i> El precio mínimo es mayor que el precio de venta.
@@ -200,11 +203,11 @@
               <div class="campo-row">
                 <div class="campo">
                   <label>Impuesto %</label>
-                  <input type="number" v-model.number="form.tax" class="inp" min="0" max="100" />
+                  <input type="number" v-model.number="form.tax" class="inp" min="0" max="100" :disabled="valoresCentral" />
                 </div>
                 <div class="campo">
                   <label>Stock mínimo</label>
-                  <input type="number" v-model.number="form.minimum_stock" class="inp" min="0" step="0.001" />
+                  <input type="number" v-model.number="form.minimum_stock" class="inp" min="0" step="0.001" :disabled="valoresCentral" />
                 </div>
                 <div class="campo">
                   <label>Precio tachado <span class="label-hint">(web)</span></label>
@@ -494,8 +497,12 @@ import { showToast } from '@/utils/toast.js'
 import ImageUploader from '@/components/ImageUploader.vue'
 import InsumoPicker from '@/components/pos/InsumoPicker.vue'
 import { useModuleName } from '@/composables/useModuleName'
+import { useAdministradoBodega } from '@/composables/useAdministradoBodega'
 
 const BASE = '/api/pos-catalogo/platos'
+// Sede administrada por una Bodega Central: los valores de un producto existente los define la central
+const { administradoPor } = useAdministradoBodega()
+const valoresCentral = computed(() => !!administradoPor.value && !!form.value?.id)
 const API_BASE = import.meta.env.VITE_API_URL || ''
 const { moduleName } = useModuleName()
 

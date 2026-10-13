@@ -320,6 +320,17 @@ async def actualizar(
     values = _dish_params(data.model_dump(exclude_unset=True))
     if "name" in values and not values["name"]:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    # Con Bodega Central la central define venta, mínimo, costo, IVA y stock mínimo (se envían desde la bodega)
+    valores_central = {"price", "wholesale_price", "product_cost", "tax", "minimum_stock"} & set(values)
+    if valores_central:
+        actual = (await db.execute(text(
+            "SELECT price, wholesale_price, product_cost, tax, minimum_stock FROM pos_dishes WHERE id=:id AND company_id=:cid"
+        ), {"id": item_id, "cid": cid})).mappings().first()
+        cambia = [k for k in valores_central if actual is not None and values[k] is not None
+                  and round(float(values[k] or 0), 2) != round(float(actual[k] or 0), 2)]
+        if cambia:
+            from app.auth.bodega_guard import exigir_no_administrada
+            await exigir_no_administrada(db, cid, "El precio de venta, el mínimo, el costo, el IVA y el stock mínimo")
     if "category_id" in values:
         await _check_category(db, cid, values["category_id"])
     values = {k: v for k, v in values.items() if k in _DISH_COLUMNS}

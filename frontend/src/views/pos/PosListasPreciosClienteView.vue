@@ -5,8 +5,9 @@
         <h5 class="lp-title">{{ moduleName || 'Listas de Precios' }}</h5>
         <p class="lp-sub">La <b>Lista Default</b> (Consumidor Final) es el precio de los platos y se cobra a todo cliente sin lista propia. Cada cliente tiene máximo una lista activa.</p>
       </div>
-      <button class="btn-primary-sm" @click="abrirNueva"><i class="bi bi-plus-lg"></i> Nueva lista</button>
+      <button v-if="!administradoPor" class="btn-primary-sm" @click="abrirNueva"><i class="bi bi-plus-lg"></i> Nueva lista</button>
     </div>
+    <AvisoBodega :bodega="administradoPor" que="las listas de precios" />
 
     <div class="lp-grid">
       <!-- ══ Encabezados ══ -->
@@ -72,11 +73,13 @@
               <i class="bi bi-search"></i>
               <input v-model="qItems" placeholder="Filtrar productos..." maxlength="60" />
             </div>
-            <button v-if="!lista.activa && lista.predeterminada" class="btn-soft-ok" @click="activar"><i class="bi bi-check-circle"></i> Activar como Default</button>
-            <button v-else-if="!lista.predeterminada" class="btn-soft-danger" @click="desactivar"><i class="bi bi-slash-circle"></i> Anular</button>
+            <template v-if="!administradoPor">
+              <button v-if="!lista.activa && lista.predeterminada" class="btn-soft-ok" @click="activar"><i class="bi bi-check-circle"></i> Activar como Default</button>
+              <button v-else-if="!lista.predeterminada" class="btn-soft-danger" @click="desactivar"><i class="bi bi-slash-circle"></i> Anular</button>
+            </template>
             <button class="btn-soft" @click="imprimir"><i class="bi bi-printer"></i> Imprimir</button>
-            <button v-if="!(lista.predeterminada && lista.activa)" class="btn-soft-danger" @click="eliminar"><i class="bi bi-trash"></i> Eliminar lista</button>
-            <button class="btn-primary-sm" :disabled="!cambios || guardando" @click="guardarPrecios">
+            <button v-if="!(lista.predeterminada && lista.activa) && !administradoPor" class="btn-soft-danger" @click="eliminar"><i class="bi bi-trash"></i> Eliminar lista</button>
+            <button v-if="!administradoPor" class="btn-primary-sm" :disabled="!cambios || guardando" @click="guardarPrecios">
               <span v-if="guardando" class="spinner-border spinner-border-sm"></span>
               <i v-else class="bi bi-floppy"></i> Guardar cambios<span v-if="cambios"> ({{ cambios }})</span>
             </button>
@@ -173,6 +176,8 @@ import api from '@/services/apis.js'
 import { showToast } from '@/utils/toast.js'
 import { useModuleName } from '@/composables/useModuleName'
 import { useCompanyStore } from '@/stores/companyStore'
+import AvisoBodega from '@/components/AvisoBodega.vue'
+import { useAdministradoBodega } from '@/composables/useAdministradoBodega'
 import ComandaClienteModal from '@/components/comanda/ComandaClienteModal.vue'
 import ImprimirRecibo from '@/components/billing/ImprimirRecibo.vue'
 
@@ -180,6 +185,8 @@ const BASE = '/api/pos-catalogo/listas-cliente'
 const { moduleName } = useModuleName()
 const companyStore = useCompanyStore()
 const companyId = computed(() => companyStore.selectedCompany?.id || 0)
+// Sede administrada por una Bodega Central → listas de solo consulta (se envían desde la bodega)
+const { administradoPor } = useAdministradoBodega(companyId)
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
 const fmt = v => fmtCOP.format(Number(v) || 0)
 

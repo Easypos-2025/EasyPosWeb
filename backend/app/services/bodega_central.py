@@ -874,6 +874,273 @@ async def enviar_formas_pago(db: AsyncSession, bodega: Bodega, ids: list[int], s
     return {"ok": True, "repetida": False, "resultado": resultado}
 
 
+# ─── Actualizar valores en sede ──────────────────────────────────────────────
+# La central define precio de venta, precio mínimo, costo, IVA y stock mínimo. El producto se reconoce en la sede
+# por su vínculo (bc_producto_sede) o por código. Regla del cero: un valor 0 de la bodega NO cambia el de la sede
+# (lo que trae el escritorio o la web se respeta mientras la bodega no mande un valor distinto de 0).
+# Producto que no existe en la sede: se informa ("se crea con un traslado").
+# Costo y stock mínimo pasan también al insumo del producto solo si tiene UN insumo (almacén: Id_Item = Id_Plato);
+# en restaurantes el costo sale de la receta y no se toca.
+
+CAMPOS_VALORES = {
+    "price": "Precio venta", "wholesale_price": "Precio mínimo", "product_cost": "Costo",
+    "tax": "IVA %", "minimum_stock": "Stock mínimo",
+}
+
+
+def _num(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _vincular_sede(db: AsyncSession, bodega: Bodega, sede_id: int, productos: list) -> dict:
+    """{dish_id bodega: dish_id sede} por vínculo o por código (deja el vínculo guardado)."""
+    if not productos:
+        return {}
+    ids = [int(p["id"]) for p in productos]
+    pi = ", ".join(f":i{n}" for n in range(len(ids)))
+    vinc = {int(f[0]): int(f[1]) for f in (await db.execute(text(
+        f"SELECT dish_id, sede_dish_id FROM bc_producto_sede WHERE bodega_id = :b AND sede_id = :s "
+        f"AND estado = 'VINCULADO' AND sede_dish_id IS NOT NULL AND dish_id IN ({pi})"),
+        {"b": bodega.id, "s": sede_id, **{f"i{n}": v for n, v in enumerate(ids)}})).all()}
+    # el vínculo solo vale si el producto sigue existiendo en la sede
+    if vinc:
+        pv = ", ".join(f":v{n}" for n in range(len(vinc)))
+        vivos = {int(f[0]) for f in (await db.execute(text(
+            f"SELECT id FROM pos_dishes WHERE company_id = :s AND id IN ({pv})"),
+            {"s": sede_id, **{f"v{n}": v for n, v in enumerate(vinc.values())}})).all()}
+        vinc = {k: v for k, v in vinc.items() if v in vivos}
+    faltan = [p for p in productos if int(p["id"]) not in vinc and (p.get("product_code") or "").strip()]
+    if faltan:
+        codigos = list({p["product_code"].strip() for p in faltan})
+        pc = ", ".join(f":c{n}" for n in range(len(codigos)))
+        por_codigo = {}
+        for f in (await db.execute(text(
+                f"SELECT TRIM(product_code), MIN(id) FROM pos_dishes WHERE company_id = :s "
+                f"AND TRIM(product_code) IN ({pc}) GROUP BY TRIM(product_code)"),
+                {"s": sede_id, **{f"c{n}": v for n, v in enumerate(codigos)}})).all():
+            por_codigo[f[0]] = int(f[1])
+        for p in faltan:
+            sd = por_codigo.get(p["product_code"].strip())
+            if sd:
+                vinc[int(p["id"])] = sd
+                await db.execute(text("""
+                    INSERT INTO bc_producto_sede (bodega_id, dish_id, sede_id, sede_dish_id, estado)
+                    VALUES (:b, :d, :s, :sd, 'VINCULADO')
+                    ON DUPLICATE KEY UPDATE sede_dish_id = VALUES(sede_dish_id), estado = 'VINCULADO', error = NULL
+                """), {"b": bodega.id, "d": int(p["id"]), "s": sede_id, "sd": sd})
+    return vinc
+
+
+async def _productos_bodega(db: AsyncSession, bodega: Bodega, ids: list[int]) -> list:
+    pi = ", ".join(f":i{n}" for n in range(len(ids)))
+    filas = (await db.execute(text(
+        f"SELECT id, name, product_code, {', '.join(CAMPOS_VALORES)} FROM pos_dishes "
+        f"WHERE company_id = :b AND id IN ({pi}) ORDER BY name"),
+        {"b": bodega.id, **{f"i{n}": int(v) for n, v in enumerate(ids)}})).mappings().all()
+    if len(filas) != len(set(int(i) for i in ids)):
+        raise HTTPException(status_code=404, detail="Hay productos que no son de la bodega")
+    return [dict(f) for f in filas]
+
+
+async def _comparar(db: AsyncSession, bodega: Bodega, productos: list, sede: dict) -> dict:
+    vinc = await _vincular_sede(db, bodega, sede["id"], productos)
+    actuales = {}
+    if vinc:
+        pv = ", ".join(f":v{n}" for n in range(len(vinc)))
+        actuales = {int(f["id"]): dict(f) for f in (await db.execute(text(
+            f"SELECT id, {', '.join(CAMPOS_VALORES)} FROM pos_dishes WHERE company_id = :s AND id IN ({pv})"),
+            {"s": sede["id"], **{f"v{n}": v for n, v in enumerate(vinc.values())}})).mappings().all()}
+    filas = []
+    for p in productos:
+        sd = vinc.get(int(p["id"]))
+        fila = {"dish_id": p["id"], "sede_dish_id": sd, "producto": p["name"], "codigo": p["product_code"],
+                "cambios": []}
+        if not sd or sd not in actuales:
+            fila["estado"] = "no_existe"
+        else:
+            for campo, nombre in CAMPOS_VALORES.items():
+                nuevo, actual = _num(p[campo]), _num(actuales[sd][campo])
+                if nuevo != 0 and round(nuevo, 2) != round(actual, 2):          # regla del cero
+                    fila["cambios"].append({"campo": campo, "nombre": nombre, "actual": actual, "nuevo": nuevo})
+            fila["estado"] = "cambia" if fila["cambios"] else "sin_cambios"
+        filas.append(fila)
+    return {"sede_id": sede["id"], "sede": sede["nombre"], "filas": filas,
+            "cambian": sum(1 for f in filas if f["estado"] == "cambia"),
+            "sin_cambios": sum(1 for f in filas if f["estado"] == "sin_cambios"),
+            "no_existen": sum(1 for f in filas if f["estado"] == "no_existe")}
+
+
+async def vista_previa_valores(db: AsyncSession, bodega: Bodega, ids: list[int], sedes: list[dict]) -> list:
+    productos = await _productos_bodega(db, bodega, ids)
+    return [await _comparar(db, bodega, productos, s) for s in sedes]
+
+
+async def _aplicar_valores(db: AsyncSession, sede_id: int, sede_dish: int, cambios: list) -> None:
+    valores = {c["campo"]: c["nuevo"] for c in cambios}
+    sets = ", ".join(f"`{k}` = :{k}" for k in valores)
+    params = {k: (int(round(v)) if k == "price" else v) for k, v in valores.items()}
+    await db.execute(text(
+        f"UPDATE pos_dishes SET {sets}, synced = 0, updated_at = NOW() WHERE company_id = :s AND id = :d"),
+        {**params, "s": sede_id, "d": sede_dish})
+    if "price" in valores:
+        precio = int(round(valores["price"]))
+        await listas_precios.plato_a_default(db, sede_id, sede_dish, 0, precio)
+        await db.execute(text(
+            "UPDATE pos_dish_products SET presentation_value = :p, synced = 0 WHERE company_id = :s AND dish_id = :d"),
+            {"p": precio, "s": sede_id, "d": sede_dish})
+        await db.execute(text(
+            "UPDATE pos_dish_variants SET price = :p WHERE company_id = :s AND dish_id = :d AND is_active = 1 AND is_default = 1"),
+            {"p": precio, "s": sede_id, "d": sede_dish})
+    if "product_cost" in valores or "minimum_stock" in valores:
+        insumos = (await db.execute(text(
+            "SELECT id_item FROM inventario_porciones_plato WHERE company_id = :s AND id_plato = :d"),
+            {"s": sede_id, "d": sede_dish})).scalars().all()
+        if len(insumos) == 1:            # almacén: el producto es su propio insumo
+            item = int(insumos[0])
+            if "product_cost" in valores:
+                await db.execute(text("UPDATE supply_items SET cost_price = :c, synced = 0 WHERE company_id = :s AND id_item = :i"),
+                                 {"c": valores["product_cost"], "s": sede_id, "i": item})
+                await db.execute(text("UPDATE inventario_actual_porciones SET costo = :c, enviada_mysql = 0 WHERE company_id = :s AND id_item = :i"),
+                                 {"c": valores["product_cost"], "s": sede_id, "i": item})
+            if "minimum_stock" in valores:
+                await db.execute(text("UPDATE supply_items SET min_stock = :m, synced = 0 WHERE company_id = :s AND id_item = :i"),
+                                 {"m": valores["minimum_stock"], "s": sede_id, "i": item})
+                await db.execute(text("UPDATE inventario_actual_porciones SET stock_minimo = :m, enviada_mysql = 0 WHERE company_id = :s AND id_item = :i"),
+                                 {"m": valores["minimum_stock"], "s": sede_id, "i": item})
+
+
+async def enviar_valores(db: AsyncSession, bodega: Bodega, ids: list[int], sedes: list[dict],
+                         clave: Optional[str]) -> dict:
+    if await clave_usada(db, bodega, clave):
+        return {"ok": True, "repetida": True, "resultado": []}
+    productos = await _productos_bodega(db, bodega, ids)
+    resultado = []
+    for sede in sedes:
+        comp = await _comparar(db, bodega, productos, sede)
+        for f in comp["filas"]:
+            if f["estado"] == "cambia":
+                await _aplicar_valores(db, sede["id"], f["sede_dish_id"], f["cambios"])
+        resultado.append({k: v for k, v in comp.items() if k != "filas"}
+                         | {"no_existen_lista": [f"{f['producto']} ({f['codigo'] or 's/c'})"
+                                                 for f in comp["filas"] if f["estado"] == "no_existe"][:50]})
+        await movimiento(db, bodega, "VALORES", None, 0,
+                         f"Valores → {sede['nombre']}: {comp['cambian']} actualizados, {comp['sin_cambios']} sin cambios, "
+                         f"{comp['no_existen']} no existen en la sede", sede_id=sede["id"], clave=clave)
+    return {"ok": True, "repetida": False, "resultado": resultado}
+
+
+# ─── Listas de precios por cliente ───────────────────────────────────────────
+
+async def listas_bodega(db: AsyncSession, bodega: Bodega) -> list:
+    filas = (await db.execute(text("""
+        SELECT h.id_lista, h.nombre, h.activa, h.id_cliente,
+               TRIM(CONCAT_WS(' ', c.nombres, c.apellidos)) AS cliente, c.cedula,
+               (SELECT COUNT(*) FROM pos_customer_price_list d WHERE d.company_id = h.company_id
+                AND d.id_lista = h.id_lista AND d.id_presentacion = 0) AS productos
+        FROM pos_customer_price_list_header h
+        LEFT JOIN clientes c ON c.company_id = h.company_id AND c.id_cliente = h.id_cliente
+        WHERE h.company_id = :b AND h.id_cliente <> :def
+        ORDER BY h.activa DESC, cliente, h.nombre
+    """), {"b": bodega.id, "def": listas_precios.CLIENTE_DEFAULT})).mappings().all()
+    return [dict(f) for f in filas]
+
+
+async def _cliente_en_sede(db: AsyncSession, bodega: Bodega, id_cliente: int, sede_id: int) -> tuple[int, bool]:
+    """(Id_Cliente en la sede, creado). Se busca por cédula (sin cédula, por nombre); si no está, se copia."""
+    from app.services.clientes import next_id_cliente
+    cli = (await db.execute(text(
+        f"SELECT {', '.join(_COLS_CLIENTE)} FROM clientes WHERE company_id = :b AND id_cliente = :c"),
+        {"b": bodega.id, "c": id_cliente})).mappings().first()
+    if not cli:
+        raise HTTPException(status_code=404, detail="El cliente de la lista no existe en la bodega")
+    ced = (cli["cedula"] or "").strip()
+    if ced:
+        existe = (await db.execute(text(
+            "SELECT MIN(id_cliente) FROM clientes WHERE company_id = :s AND TRIM(cedula) = :c"),
+            {"s": sede_id, "c": ced})).scalar()
+    else:
+        existe = (await db.execute(text(
+            "SELECT MIN(id_cliente) FROM clientes WHERE company_id = :s "
+            "AND UPPER(TRIM(CONCAT_WS(' ', nombres, apellidos))) = :n"),
+            {"s": sede_id, "n": " ".join(x for x in ((cli["nombres"] or "").strip(), (cli["apellidos"] or "").strip()) if x).upper()})).scalar()
+    if existe:
+        return int(existe), False
+    nuevo = await next_id_cliente(db, sede_id)
+    await db.execute(text(f"""
+        INSERT INTO clientes (company_id, id_cliente, {', '.join(_COLS_CLIENTE)}, enviada_mysql)
+        VALUES (:s, :id, {', '.join(':' + k for k in _COLS_CLIENTE)}, 0)
+    """), {"s": sede_id, "id": nuevo, **{k: cli[k] for k in _COLS_CLIENTE}})
+    return int(nuevo), True
+
+
+async def enviar_listas(db: AsyncSession, bodega: Bodega, ids_lista: list[int], sedes: list[dict],
+                        clave: Optional[str]) -> dict:
+    from app.services import sede_pedidos
+    if await clave_usada(db, bodega, clave):
+        return {"ok": True, "repetida": True, "resultado": []}
+    pi = ", ".join(f":i{n}" for n in range(len(ids_lista)))
+    cabeceras = (await db.execute(text(
+        f"SELECT id_lista, id_cliente, nombre, observacion FROM pos_customer_price_list_header "
+        f"WHERE company_id = :b AND id_cliente <> :def AND id_lista IN ({pi})"),
+        {"b": bodega.id, "def": listas_precios.CLIENTE_DEFAULT,
+         **{f"i{n}": int(v) for n, v in enumerate(ids_lista)}})).mappings().all()
+    if len(cabeceras) != len(set(int(i) for i in ids_lista)):
+        raise HTTPException(status_code=404, detail="Hay listas que no son de la bodega (la lista Default viaja con los precios)")
+    resultado = []
+    for sede in sedes:
+        con_escritorio = await sede_pedidos.tiene_sede(db, sede["id"])
+        cuenta = {"sede_id": sede["id"], "sede": sede["nombre"], "listas": 0, "precios": 0, "clientes_creados": 0,
+                  "sin_producto": 0}
+        for h in cabeceras:
+            id_cli, creado = await _cliente_en_sede(db, bodega, int(h["id_cliente"]), sede["id"])
+            cuenta["clientes_creados"] += int(creado)
+            id_lista = await listas_precios.lista_activa(db, sede["id"], id_cli)
+            if not id_lista:
+                id_lista = await sede_maestros.siguiente_id(db, "pos_customer_price_list_header", "id_lista",
+                                                           sede["id"], con_escritorio)
+                await db.execute(text("""
+                    INSERT INTO pos_customer_price_list_header
+                        (company_id, id_lista, id_cliente, nombre, fecha, activa, usuario, observacion, synced)
+                    VALUES (:s, :l, :c, :n, CURDATE(), 1, :u, :o, 0)
+                """), {"s": sede["id"], "l": id_lista, "c": id_cli, "n": (h["nombre"] or "Lista")[:100],
+                       "u": bodega.usuario[:50], "o": (h["observacion"] or "Enviada desde la bodega central")[:255]})
+            else:
+                await db.execute(text(
+                    "UPDATE pos_customer_price_list_header SET nombre = :n, synced = 0 WHERE company_id = :s AND id_lista = :l"),
+                    {"n": (h["nombre"] or "Lista")[:100], "s": sede["id"], "l": id_lista})
+            filas = (await db.execute(text("""
+                SELECT d.id_producto, p.name, p.product_code, d.precio_producto FROM pos_customer_price_list d
+                JOIN pos_dishes p ON p.company_id = d.company_id AND p.id = d.id_producto
+                WHERE d.company_id = :b AND d.id_lista = :l AND d.id_presentacion = 0
+            """), {"b": bodega.id, "l": h["id_lista"]})).mappings().all()
+            productos = [{"id": f["id_producto"], "product_code": f["product_code"]} for f in filas]
+            vinc = await _vincular_sede(db, bodega, sede["id"], productos)
+            for f in filas:
+                sd = vinc.get(int(f["id_producto"]))
+                if not sd:
+                    cuenta["sin_producto"] += 1
+                    continue
+                if _num(f["precio_producto"]) == 0:          # regla del cero
+                    continue
+                await db.execute(text("""
+                    INSERT INTO pos_customer_price_list
+                        (id_lista, id_cliente, id_producto, id_presentacion, precio_producto, fecha, activa, company_id, synced)
+                    VALUES (:l, :c, :d, 0, :p, CURDATE(), 1, :s, 0)
+                    ON DUPLICATE KEY UPDATE precio_producto = VALUES(precio_producto), fecha = VALUES(fecha), synced = 0
+                """), {"l": id_lista, "c": id_cli, "d": sd, "p": _num(f["precio_producto"]), "s": sede["id"]})
+                cuenta["precios"] += 1
+            await listas_precios.completar_lista(db, sede["id"], id_lista, id_cli)
+            cuenta["listas"] += 1
+        resultado.append(cuenta)
+        await movimiento(db, bodega, "VALORES", None, 0,
+                         f"Listas de precios → {sede['nombre']}: {cuenta['listas']} listas, {cuenta['precios']} precios, "
+                         f"{cuenta['clientes_creados']} clientes creados", sede_id=sede["id"], clave=clave)
+    return {"ok": True, "repetida": False, "resultado": resultado}
+
+
 # ─── Usuarios del grupo (bodega + sedes) ─────────────────────────────────────
 # Una persona = un correo. Tiene una fila en users por cada empresa donde trabaja, con su rol en esa empresa y
 # UNA sola contraseña para todas. Desde la bodega: invitar (link) a varias empresas con rol por empresa, agregar

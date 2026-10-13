@@ -187,6 +187,123 @@
         </div>
       </section>
 
+      <!-- ── Actualizar valores en sede ── -->
+      <section v-if="tab === 'valores'" class="bc-card">
+        <p class="bc-help">
+          La bodega define el <b>precio de venta, precio mínimo, costo, IVA y stock mínimo</b>. Un valor en <b>0 no cambia</b>
+          el que tenga la sede (el del escritorio o la web). Revise la vista previa antes de enviar.
+        </p>
+        <div class="bc-chips">
+          <button class="bc-tab" :class="{ 'bc-tab--on': val.modo === 'productos' }" @click="val.modo = 'productos'; val.previa = null; val.resultado = null">
+            <i class="bi bi-box-seam"></i><span>Precios de productos</span>
+          </button>
+          <button class="bc-tab" :class="{ 'bc-tab--on': val.modo === 'listas' }" @click="val.modo = 'listas'; val.resultado = null; cargarListasValores()">
+            <i class="bi bi-person-lines-fill"></i><span>Listas por cliente</span>
+          </button>
+          <router-link v-if="val.modo === 'listas'" class="bc-link" to="/pos/listas-precios-cliente"><i class="bi bi-pencil-square"></i> Crear o editar listas</router-link>
+        </div>
+
+        <div class="bc-envio">
+          <div class="bc-envio-col">
+            <template v-if="val.modo === 'productos'">
+              <div class="bc-row">
+                <div class="bc-search">
+                  <i class="bi bi-search"></i>
+                  <input v-model.trim="val.buscar" class="bc-inp" placeholder="Buscar producto o código..." />
+                </div>
+                <select v-model="val.categoria" class="bc-inp bc-inp--cat">
+                  <option value="">Todas las categorías</option>
+                  <option v-for="c in $ordenAlfa(info.categorias, 'name')" :key="c.id" :value="c.name">{{ c.name }}</option>
+                </select>
+              </div>
+              <div v-if="val.cargando" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+              <div v-else class="bc-datos bc-datos--scroll">
+                <label class="bc-dato bc-dato--todo">
+                  <input type="checkbox" :checked="valTodos" @change="marcarValores($event.target.checked)" />
+                  <span>Seleccionar todo ({{ valFiltrados.length }})</span>
+                </label>
+                <label v-for="p in valFiltrados" :key="p.id" class="bc-dato">
+                  <input v-model="val.ids" type="checkbox" :value="p.id" @change="val.previa = null" />
+                  <span class="bc-dato-nom">{{ p.name }} <small class="bc-cod">{{ p.product_code }}</small></span>
+                  <span class="bc-dato-n">{{ fmt(p.price) }}</span>
+                </label>
+              </div>
+            </template>
+            <template v-else>
+              <div v-if="val.cargando" class="bc-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+              <div v-else-if="!val.listas.length" class="bc-vacio"><i class="bi bi-person-lines-fill"></i><p>La bodega no tiene listas por cliente. Créelas en Listas de precios.</p></div>
+              <div v-else class="bc-datos bc-datos--scroll">
+                <label v-for="l in val.listas" :key="l.id_lista" class="bc-dato" :class="{ 'bc-dato--vacio': !l.activa }">
+                  <input v-model="val.idsListas" type="checkbox" :value="l.id_lista" />
+                  <span class="bc-dato-nom">{{ l.nombre }} <small class="bc-cod">{{ l.cliente || 'Cliente ' + l.id_cliente }}{{ l.activa ? '' : ' · inactiva' }}</small></span>
+                  <span class="bc-dato-n">{{ l.productos }} prod.</span>
+                </label>
+              </div>
+            </template>
+          </div>
+
+          <div class="bc-envio-col bc-envio-col--sedes">
+            <div class="bc-datos">
+              <label class="bc-dato bc-dato--todo">
+                <input type="checkbox" :checked="valSedesTodas" @change="val.sedes = $event.target.checked ? info.sedes.map(s => s.id) : []; val.previa = null" />
+                <span>Todas las sedes</span>
+              </label>
+              <label v-for="s in $ordenAlfa(info.sedes, 'nombre')" :key="s.id" class="bc-dato">
+                <input v-model="val.sedes" type="checkbox" :value="s.id" @change="val.previa = null" />
+                <span class="bc-dato-nom">{{ s.nombre }}</span>
+                <i class="bi" :class="s.con_escritorio ? 'bi-pc-display' : 'bi-globe'"></i>
+              </label>
+            </div>
+            <template v-if="val.modo === 'productos'">
+              <button class="bc-btn bc-btn--full bc-btn--sec" :disabled="!val.ids.length || !val.sedes.length || val.trabajando" @click="vistaPrevia">
+                <span v-if="val.trabajando === 'previa'" class="spinner-border spinner-border-sm me-1"></span>
+                <i v-else class="bi bi-eye me-1"></i>Vista previa
+              </button>
+              <button class="bc-btn bc-btn--full" :disabled="!val.previa || !totalCambian || val.trabajando" @click="enviarValores">
+                <span v-if="val.trabajando === 'enviar'" class="spinner-border spinner-border-sm me-1"></span>
+                <i v-else class="bi bi-send me-1"></i>Enviar {{ totalCambian }} cambio(s)
+              </button>
+            </template>
+            <button v-else class="bc-btn bc-btn--full" :disabled="!val.idsListas.length || !val.sedes.length || val.trabajando" @click="enviarListasValores">
+              <span v-if="val.trabajando === 'listas'" class="spinner-border spinner-border-sm me-1"></span>
+              <i v-else class="bi bi-send me-1"></i>Enviar {{ val.idsListas.length }} lista(s)
+            </button>
+          </div>
+        </div>
+
+        <!-- Vista previa: por sede, lo que cambia -->
+        <div v-if="val.modo === 'productos' && val.previa" class="bc-previa">
+          <div v-for="s in val.previa" :key="s.sede_id" class="bc-previa-sede">
+            <div class="bc-previa-head">
+              <b>{{ s.sede }}</b>
+              <span class="bc-chip bc-chip--vinculado">{{ s.cambian }} cambian</span>
+              <span class="bc-chip">{{ s.sin_cambios }} sin cambios</span>
+              <span v-if="s.no_existen" class="bc-chip bc-chip--error">{{ s.no_existen }} no existen</span>
+            </div>
+            <div v-for="f in s.filas.filter(x => x.estado !== 'sin_cambios')" :key="f.dish_id" class="bc-previa-fila">
+              <span class="bc-previa-prod">{{ f.producto }} <small class="bc-cod">{{ f.codigo }}</small></span>
+              <span v-if="f.estado === 'no_existe'" class="bc-previa-no">No existe en la sede · se crea con un traslado</span>
+              <span v-else class="bc-previa-cambios">
+                <span v-for="c in f.cambios" :key="c.campo" class="bc-cambio">
+                  {{ c.nombre }}: <s>{{ fmtValor(c.campo, c.actual) }}</s> → <b>{{ fmtValor(c.campo, c.nuevo) }}</b>
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="val.resultado" class="bc-res">
+          <div class="bc-res-fila bc-res-fila--head" :class="val.modo === 'listas' ? '' : 'bc-res-fila--3'">
+            <template v-if="val.modo === 'productos'"><span>Sede</span><span>Actualizados</span><span>No existen</span></template>
+            <template v-else><span>Sede</span><span>Listas</span><span>Precios</span><span>Clientes nuevos</span></template>
+          </div>
+          <div v-for="r in val.resultado" :key="r.sede_id" class="bc-res-fila" :class="val.modo === 'listas' ? '' : 'bc-res-fila--3'">
+            <template v-if="val.modo === 'productos'"><span>{{ r.sede }}</span><b>{{ fmtCant(r.cambian) }}</b><span>{{ fmtCant(r.no_existen) }}</span></template>
+            <template v-else><span>{{ r.sede }}</span><b>{{ fmtCant(r.listas) }}</b><span>{{ fmtCant(r.precios) }}</span><span>{{ fmtCant(r.clientes_creados) }}</span></template>
+          </div>
+        </div>
+      </section>
+
       <!-- ── Usuarios del grupo ── -->
       <section v-if="tab === 'usuarios'" class="bc-card">
         <p class="bc-help">
@@ -445,7 +562,7 @@ const info = ref(null)
 // Cada opción del menú "Bodega Central" es una ruta hija (/bodega-central/<sección>), con su propio permiso
 const route = useRoute()
 const router = useRouter()
-const SECCIONES = ['productos', 'importar', 'enviar', 'usuarios', 'movimientos']
+const SECCIONES = ['productos', 'importar', 'enviar', 'valores', 'usuarios', 'movimientos']
 const tab = computed(() => (SECCIONES.includes(route.params.seccion) ? route.params.seccion : ''))
 
 function primeraSeccionPermitida() {
@@ -479,6 +596,10 @@ const tiposEnvio = [
   { clave: 'formas_pago', nombre: 'Formas de pago', icon: 'bi bi-credit-card-2-front', ruta: '/payment-types' },
 ]
 const envio = ref({ tipo: 'proveedores', registros: [], ids: [], sedes: [], buscar: '', cargando: false, enviando: false, resultado: null })
+
+// ── Actualizar valores ──
+const val = ref({ modo: 'productos', productos: [], listas: [], ids: [], idsListas: [], sedes: [], buscar: '', categoria: '',
+                  cargando: false, trabajando: '', previa: null, resultado: null })
 
 // ── Usuarios del grupo ──
 const usr = ref({ lista: [], buscar: '', cargando: false, guardando: false })
@@ -528,6 +649,14 @@ const registrosTodos = computed(() => {
   return marcables.length > 0 && marcables.every(r => envio.value.ids.includes(r.id))
 })
 const sedesTodas = computed(() => info.value?.sedes.length > 0 && info.value.sedes.every(s => envio.value.sedes.includes(s.id)))
+const valFiltrados = computed(() => {
+  const q = val.value.buscar.toLowerCase()
+  return val.value.productos.filter(p => (!val.value.categoria || p.categoria === val.value.categoria)
+    && (!q || [p.name, p.product_code].some(v => (v || '').toLowerCase().includes(q))))
+})
+const valTodos = computed(() => valFiltrados.value.length > 0 && valFiltrados.value.every(p => val.value.ids.includes(p.id)))
+const valSedesTodas = computed(() => info.value?.sedes.length > 0 && info.value.sedes.every(s => val.value.sedes.includes(s.id)))
+const totalCambian = computed(() => (val.value.previa || []).reduce((t, s) => t + s.cambian, 0))
 const usuariosFiltrados = computed(() => {
   const q = usr.value.buscar.toLowerCase()
   return q ? usr.value.lista.filter(p => [p.nombre, p.email].some(v => (v || '').toLowerCase().includes(q))) : usr.value.lista
@@ -573,8 +702,71 @@ function cargarSeccion() {
   if (k === 'movimientos') cargarMovimientos()
   if (k === 'enviar') cargarEnvio()
   if (k === 'usuarios') cargarUsuarios()
+  if (k === 'valores') cargarValores()
 }
 watch(tab, cargarSeccion)
+
+// ── Actualizar valores ──
+async function cargarValores() {
+  val.value.cargando = true
+  try { val.value.productos = (await api.get(`${BASE}/valores/productos`)).data }
+  catch (e) { showToast(errorDe(e, 'Error cargando los productos'), 'error') }
+  val.value.cargando = false
+}
+
+async function cargarListasValores() {
+  val.value.cargando = true
+  try { val.value.listas = (await api.get(`${BASE}/valores/listas`)).data }
+  catch (e) { showToast(errorDe(e, 'Error cargando las listas'), 'error') }
+  val.value.cargando = false
+}
+
+function marcarValores(marcar) {
+  const visibles = valFiltrados.value.map(p => p.id)
+  val.value.ids = marcar ? [...new Set([...val.value.ids, ...visibles])] : val.value.ids.filter(id => !visibles.includes(id))
+  val.value.previa = null
+}
+
+const fmtValor = (campo, v) => (campo === 'tax' ? `${fmtCant(v)}%` : campo === 'minimum_stock' ? fmtCant(v) : fmt(v))
+
+async function vistaPrevia() {
+  val.value.trabajando = 'previa'
+  val.value.resultado = null
+  try { val.value.previa = (await api.post(`${BASE}/valores/vista-previa`, { ids: val.value.ids, sedes: val.value.sedes })).data }
+  catch (e) { showToast(errorDe(e, 'Error en la vista previa'), 'error') }
+  val.value.trabajando = ''
+}
+
+async function enviarValores() {
+  const { isConfirmed } = await window.Swal.fire({
+    title: '¿Actualizar valores en las sedes?', text: `Se aplicarán ${totalCambian.value} cambio(s) de la vista previa.`,
+    icon: 'question', showCancelButton: true, confirmButtonText: 'Actualizar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  val.value.trabajando = 'enviar'
+  try {
+    const { data } = await api.post(`${BASE}/valores/enviar`, { ids: val.value.ids, sedes: val.value.sedes, clave: nuevaClave() })
+    val.value.resultado = data.resultado
+    val.value.previa = null
+    showToast(data.repetida ? 'Este envío ya se había hecho' : 'Valores actualizados en las sedes', 'success')
+  } catch (e) { showToast(errorDe(e, 'Error al actualizar los valores'), 'error') }
+  val.value.trabajando = ''
+}
+
+async function enviarListasValores() {
+  const { isConfirmed } = await window.Swal.fire({
+    title: '¿Enviar listas de precios?', text: 'En cada sede la lista activa de ese cliente queda con los precios de la bodega (el cliente se crea si no existe).',
+    icon: 'question', showCancelButton: true, confirmButtonText: 'Enviar', cancelButtonText: 'Cancelar',
+  })
+  if (!isConfirmed) return
+  val.value.trabajando = 'listas'
+  try {
+    const { data } = await api.post(`${BASE}/valores/listas/enviar`, { ids: val.value.idsListas, sedes: val.value.sedes, clave: nuevaClave() })
+    val.value.resultado = data.resultado
+    showToast(data.repetida ? 'Este envío ya se había hecho' : 'Listas enviadas a las sedes', 'success')
+  } catch (e) { showToast(errorDe(e, 'Error al enviar las listas'), 'error') }
+  val.value.trabajando = ''
+}
 
 // ── Usuarios del grupo ──
 async function cargarUsuarios() {
@@ -922,6 +1114,20 @@ onMounted(() => {
 .bc-inp--sm { padding: 6px 8px; font-size: 13px; }
 .bc-link-box { display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; }
 .bc-link-box span { flex: 1; font-size: 12.5px; word-break: break-all; color: #1e293b; }
+.bc-inp--cat { max-width: 220px; }
+.bc-cod { color: #94a3b8; font-weight: 600; font-size: 11.5px; }
+.bc-btn--sec:not(:disabled) { color: #1e3a5f; }
+.bc-previa { display: flex; flex-direction: column; gap: 10px; }
+.bc-previa-sede { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.bc-previa-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: #f8fafc; padding: 8px 12px; }
+.bc-previa-head b { color: #1e3a5f; margin-right: auto; }
+.bc-previa-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px; padding: 8px 12px; border-top: 1px solid #f1f5f9; font-size: 13px; }
+.bc-previa-prod { font-weight: 700; color: #1e293b; word-break: break-word; }
+.bc-previa-no { color: #b45309; font-size: 12.5px; }
+.bc-previa-cambios { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.bc-cambio { color: #475569; white-space: nowrap; }
+.bc-cambio s { color: #94a3b8; }
+.bc-cambio b { color: #15803d; }
 .bc-res-error { padding: 4px 12px 8px; font-size: 12px; color: #b45309; }
 .bc-res-fila--3 { grid-template-columns: minmax(0, 1fr) repeat(2, 90px); }
 .bc-res { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; font-size: 13.5px; }
@@ -970,6 +1176,8 @@ onMounted(() => {
   .bc-envio { grid-template-columns: 1fr; }
   .bc-link { margin-left: 0; }
   .bc-datos--scroll { max-height: 320px; }
+  .bc-previa-fila { grid-template-columns: 1fr; }
+  .bc-inp--cat { max-width: none; }
   .bc-toolbar { flex-direction: column; align-items: stretch; }
   .bc-card--angosta { max-width: none; }
   .bc-imeis { grid-template-columns: 1fr; }

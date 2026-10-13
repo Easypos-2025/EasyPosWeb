@@ -79,6 +79,14 @@ async def _ctx(db: AsyncSession, user: User, company_id: Optional[int]) -> int:
     return await tenant.resolve_company(db, user, company_id)
 
 
+async def _ctx_escritura(db: AsyncSession, user: User, company_id: Optional[int]) -> int:
+    """Crear/editar listas: con Bodega Central, en las sedes solo se cambian desde la bodega."""
+    from app.auth.bodega_guard import exigir_no_administrada
+    cid = await _ctx(db, user, company_id)
+    await exigir_no_administrada(db, cid, "Las listas de precios")
+    return cid
+
+
 async def _header(db: AsyncSession, cid: int, id_lista: int):
     h = (await db.execute(text("""
         SELECT h.id_lista, h.id_cliente, h.nombre, h.fecha, h.activa, h.usuario, h.observacion,
@@ -219,7 +227,7 @@ async def crear_lista(data: ListaIn, company_id: Optional[int] = Query(None),
     """Nueva lista para un cliente con todos los productos activos (precios de la Default
     activa o de la lista anterior del cliente). La lista activa anterior del cliente queda
     anulada. Para el cliente 1 es una nueva Default (la anterior queda como histórico)."""
-    cid = await _ctx(db, user, company_id)
+    cid = await _ctx_escritura(db, user, company_id)
     await clientes_svc.get_cliente(db, cid, data.id_cliente)
     default = await lp.asegurar_default(db, cid, getattr(user, "email", "") or "")
     anterior = (await db.execute(text("""
@@ -259,7 +267,7 @@ async def crear_lista(data: ListaIn, company_id: Optional[int] = Query(None),
 @router.put("/lista/{id_lista}")
 async def editar_lista(id_lista: int, data: ListaUpdate, company_id: Optional[int] = Query(None),
                        user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    cid = await _ctx(db, user, company_id)
+    cid = await _ctx_escritura(db, user, company_id)
     await _header(db, cid, id_lista)
     await db.execute(text("""
         UPDATE pos_customer_price_list_header SET nombre = :n, observacion = :o, synced = 0
@@ -274,7 +282,7 @@ async def guardar_precios(id_lista: int, data: PreciosIn, company_id: Optional[i
                           user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Guarda los precios editados (botón Guardar cambios). Si es la Default activa, el precio
     de los platos y variantes queda igual al de la lista."""
-    cid = await _ctx(db, user, company_id)
+    cid = await _ctx_escritura(db, user, company_id)
     h = await _header(db, cid, id_lista)
     actualizados = 0
     for ln in data.items:
@@ -314,7 +322,7 @@ async def activar_lista(id_lista: int, company_id: Optional[int] = Query(None),
                         user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Solo las listas Default (cliente 1) del histórico se pueden volver a activar (p. ej.
     terminar un evento y regresar a los precios normales). Sus precios pasan a los platos."""
-    cid = await _ctx(db, user, company_id)
+    cid = await _ctx_escritura(db, user, company_id)
     h = await _header(db, cid, id_lista)
     if not h["predeterminada"]:
         raise HTTPException(status_code=400,
@@ -329,7 +337,7 @@ async def activar_lista(id_lista: int, company_id: Optional[int] = Query(None),
 @router.post("/lista/{id_lista}/desactivar")
 async def desactivar_lista(id_lista: int, company_id: Optional[int] = Query(None),
                            user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    cid = await _ctx(db, user, company_id)
+    cid = await _ctx_escritura(db, user, company_id)
     h = await _header(db, cid, id_lista)
     if h["predeterminada"]:
         raise HTTPException(status_code=400,
@@ -392,7 +400,7 @@ async def eliminar_lista(id_lista: int, company_id: Optional[int] = Query(None),
                          user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Elimina la lista (cabecera y detalle). No se puede eliminar la Default activa: siempre
     debe existir una. Si era la lista activa de un cliente, el cliente pasa a la Default."""
-    cid = await _ctx(db, user, company_id)
+    cid = await _ctx_escritura(db, user, company_id)
     h = await _header(db, cid, id_lista)
     if h["predeterminada"] and h["activa"]:
         raise HTTPException(status_code=400,

@@ -18,6 +18,11 @@ usuarios ADMIN/SYSADMIN (bodega_guard.requiere_bodega). Las sedes salen siempre 
   POST /api/bodega-central/invitar          link de invitación a varias empresas, con un rol por empresa
   POST /api/bodega-central/usuarios/asignar agregar a otra empresa (misma contraseña) o cambiar el rol allí
   POST /api/bodega-central/usuarios/estado  activar / desactivar a la persona en una empresa
+  GET  /api/bodega-central/valores/productos       productos de la bodega para actualizar valores
+  POST /api/bodega-central/valores/vista-previa    por sede: valor actual → nuevo (regla del cero), sin guardar
+  POST /api/bodega-central/valores/enviar          aplica venta, mínimo, costo, IVA y stock mínimo en las sedes
+  GET  /api/bodega-central/valores/listas          listas de precios por cliente de la bodega
+  POST /api/bodega-central/valores/listas/enviar   envía esas listas (cliente por cédula; se crea si no existe)
 
 Las operaciones de escritura reciben `clave` (idempotencia): repetirla no duplica nada.
 Si la base de datos está ocupada (otra empresa sincronizando), se responde 409 con un mensaje para reintentar
@@ -34,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
 from app.auth.bodega_guard import (Bodega, SEC_ENVIAR, SEC_IMPORTAR, SEC_MOVIMIENTOS, SEC_PRODUCTOS, SEC_USUARIOS,
+                                   SEC_VALORES,
                                    bodega_de_sede, exigir_sede, requiere_bodega, sedes_del_nit)
 from app.auth.dependencies import get_current_user
 from app.models.user_model import User
@@ -314,5 +320,51 @@ class EstadoIn(BaseModel):
 async def estado(body: EstadoIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_USUARIOS)):
     async with _escritura(db):
         res = await svc.cambiar_estado(db, bodega, body.user_id, body.activo)
+        await db.commit()
+    return res
+
+
+# ─── Actualizar valores en sede ──────────────────────────────────────────────
+
+class ValoresIn(BaseModel):
+    ids: Annotated[List[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=svc.MAX_ENVIO)]
+    sedes: Annotated[List[Annotated[int, Field(ge=1)]], Field(min_length=1, max_length=50)]
+    clave: Clave = None
+    company_id: Optional[int] = None
+
+
+@router.get("/valores/productos")
+async def valores_productos(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_VALORES)):
+    return await svc.listar_productos(db, bodega)
+
+
+@router.post("/valores/vista-previa")
+async def valores_vista_previa(body: ValoresIn, db: AsyncSession = Depends(get_db),
+                               bodega: Bodega = Depends(SEC_VALORES)):
+    sedes = [await exigir_sede(db, bodega, s) for s in sorted(set(body.sedes))]
+    # Sin commit: la sesión se cierra y descarta todo (la vista previa no guarda nada, ni vínculos nuevos)
+    return await svc.vista_previa_valores(db, bodega, body.ids, sedes)
+
+
+@router.post("/valores/enviar")
+async def valores_enviar(body: ValoresIn, db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_VALORES)):
+    sedes = [await exigir_sede(db, bodega, s) for s in sorted(set(body.sedes))]
+    async with _escritura(db):
+        res = await svc.enviar_valores(db, bodega, body.ids, sedes, body.clave)
+        await db.commit()
+    return res
+
+
+@router.get("/valores/listas")
+async def valores_listas(db: AsyncSession = Depends(get_db), bodega: Bodega = Depends(SEC_VALORES)):
+    return await svc.listas_bodega(db, bodega)
+
+
+@router.post("/valores/listas/enviar")
+async def valores_listas_enviar(body: ValoresIn, db: AsyncSession = Depends(get_db),
+                                bodega: Bodega = Depends(SEC_VALORES)):
+    sedes = [await exigir_sede(db, bodega, s) for s in sorted(set(body.sedes))]
+    async with _escritura(db):
+        res = await svc.enviar_listas(db, bodega, body.ids, sedes, body.clave)
         await db.commit()
     return res

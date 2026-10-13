@@ -100,6 +100,7 @@ SEC_IMPORTAR = seccion_bodega(RUTA_BODEGA + "/importar")
 SEC_ENVIAR = seccion_bodega(RUTA_BODEGA + "/enviar")
 SEC_USUARIOS = seccion_bodega(RUTA_BODEGA + "/usuarios")
 SEC_MOVIMIENTOS = seccion_bodega(RUTA_BODEGA + "/movimientos")
+SEC_VALORES = seccion_bodega(RUTA_BODEGA + "/valores")
 requiere_bodega = seccion_bodega(None)
 
 
