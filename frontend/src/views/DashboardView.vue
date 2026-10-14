@@ -6,10 +6,10 @@
     <ParkingWidget v-if="hasParking" />
     <!-- Agente local: QR de la toma de pedidos en la red del negocio (solo si la empresa tiene agente) -->
     <AgenteLocalWidget v-if="companyStore.selectedCompany?.id" :key="'agente-' + companyStore.selectedCompany.id" />
-    <!-- Bodega Central: una tarjeta por sede (ventas, turnos, escritorio, traslados) -->
-    <TableroBodega v-if="companyStore.billingConfig?.has_bodega_central == 1" :key="'bodega-' + companyStore.selectedCompany?.id" />
 
     <component :is="activeDashboard" v-if="activeDashboard" :key="companyStore.selectedCompany?.id" />
+    <!-- Bodega Central: una tarjeta por sede (ventas, turnos, escritorio, traslados), con la fecha de la franja -->
+    <TableroBodega v-if="companyStore.billingConfig?.has_bodega_central == 1" :key="'bodega-' + companyStore.selectedCompany?.id" />
     <div v-else class="dash-empty">
       <i class="bi bi-grid-3x3-gap"></i>
       <p>Sin dashboard configurado para este perfil.</p>

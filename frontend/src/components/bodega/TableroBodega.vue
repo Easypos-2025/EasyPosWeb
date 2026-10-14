@@ -2,7 +2,7 @@
   <section v-if="!oculto" class="tb">
     <div class="tb-head">
       <h3 class="tb-title"><i class="bi bi-boxes"></i> Sedes del grupo</h3>
-      <div class="tb-fecha"><CustomDatePicker v-model="fecha" placeholder="Fecha" /></div>
+      <span v-if="datos" class="tb-nota"><i class="bi bi-hourglass-split"></i> Bodega: {{ datos.traslados_bodega.pendientes }} traslado(s) pendiente(s)</span>
     </div>
 
     <div v-if="cargando && !datos" class="tb-state"><div class="spinner-border spinner-border-sm text-primary"></div></div>
@@ -29,18 +29,6 @@
         <div class="tb-tras">
           <span :class="{ 'tb-alerta': s.traslados.pendientes }"><i class="bi bi-hourglass-split"></i> {{ s.traslados.pendientes }} pendiente(s)</span>
           <span><i class="bi bi-check2-circle"></i> {{ s.traslados.aceptados }} aceptado(s)</span>
-        </div>
-      </article>
-
-      <article class="tb-card tb-card--total">
-        <div class="tb-card-head"><b>Total del grupo</b></div>
-        <div class="tb-ventas">
-          <div><small>Recibos ({{ datos.totales.recibos.cantidad }})</small><b>{{ fmt(datos.totales.recibos.total) }}</b></div>
-          <div><small>Facturas ({{ datos.totales.facturas.cantidad }})</small><b>{{ fmt(datos.totales.facturas.total) }}</b></div>
-          <div class="tb-total"><small>Total</small><b>{{ fmt(datos.totales.total) }}</b></div>
-        </div>
-        <div class="tb-tras">
-          <span><i class="bi bi-boxes"></i> Bodega: {{ datos.traslados_bodega.pendientes }} pendiente(s)</span>
         </div>
       </article>
     </div>
@@ -101,10 +89,8 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import { fechaDashboard as fecha } from '@/composables/useVentasKpis'
 
-const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
-const fecha = ref(hoy())
 const datos = ref(null)
 const cargando = ref(false)
 const oculto = ref(false)
@@ -136,19 +122,14 @@ onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <style scoped>
-.tb { margin: 0 0 16px; }
+.tb { margin: 16px 0; }
 .tb-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
 .tb-title { font-size: 16px; font-weight: 800; color: #1e3a5f; margin: 0; display: flex; gap: 8px; align-items: center; }
-.tb-fecha { width: 180px; }
 .tb-state { display: flex; justify-content: center; padding: 20px; }
 .tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .tb-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); padding: 12px 14px; display: flex;
   flex-direction: column; gap: 10px; cursor: pointer; border: 1.5px solid transparent; }
 .tb-card:hover, .tb-card:focus { border-color: #93c5fd; outline: none; }
-.tb-card--total { cursor: default; background: linear-gradient(135deg, #1e3a5f, #1d4ed8); color: #fff; }
-.tb-card--total:hover { border-color: transparent; }
-.tb-card--total small, .tb-card--total .tb-tras { color: #dbeafe; }
-.tb-card--total b { color: #fff !important; }
 .tb-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .tb-card-head b { font-size: 14px; color: #1e293b; word-break: break-word; }
 .tb-estado { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px; white-space: nowrap; display: inline-flex; gap: 4px; }
@@ -192,7 +173,6 @@ onBeforeUnmount(() => clearInterval(timer))
 }
 @media (max-width: 576px) {
   .tb-grid { grid-template-columns: 1fr; }
-  .tb-head { flex-direction: column; align-items: stretch; }
-  .tb-fecha { width: 100%; }
+  .tb-head { flex-direction: column; align-items: flex-start; gap: 4px; }
 }
 </style>

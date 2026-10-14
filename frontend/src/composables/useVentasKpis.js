@@ -19,10 +19,13 @@ const EMPTY = [
   { icon: "bi-globe",          label: "Plataforma",        value: "—" },
 ]
 
+// Fecha del dashboard, compartida: la franja de KPIs y el tablero de la Bodega Central usan la misma
+export const fechaDashboard = ref(hoy())
+
 export function useVentasKpis() {
   const companyStore = useCompanyStore()
   const loading  = ref(true)
-  const fechaKpi = ref(hoy())
+  const fechaKpi = fechaDashboard
   const kpis     = ref([...EMPTY])
 
   async function cargar() {
