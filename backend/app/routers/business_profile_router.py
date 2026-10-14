@@ -62,7 +62,7 @@ async def delete_business_profile(profile_id: int, db: AsyncSession = Depends(ge
 
 
 @router.get("/{profile_id}/modules/")
-async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     result = await db.execute(text("""
         SELECT sm.id, sm.name FROM system_modules sm
         JOIN business_profile_modules bpm ON bpm.module_id = sm.id
@@ -74,36 +74,66 @@ async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get
 @router.post("/{profile_id}/modules/")
 async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
     """Asigna módulos al perfil de forma no-destructiva: solo agrega los nuevos y elimina los quitados,
-    preservando parent_id, sort_order y display_name de los módulos que permanecen."""
+    preservando parent_id, sort_order y display_name de los módulos que permanecen.
+    Los módulos nuevos se ubican en el menú del perfil bajo su padre del catálogo (system_modules.parent_id)
+    cuando ese padre también queda en el perfil; si no, quedan en la raíz."""
+    if not await db.get(BusinessProfile, profile_id):
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+
+    new_ids = set(module_ids)
+    # Catálogo completo: valida los ids recibidos y da la jerarquía global
+    cat_rows = (await db.execute(text("SELECT id, parent_id, order_index FROM system_modules"))).fetchall()
+    catalog = {r.id: r for r in cat_rows}
+    if new_ids - catalog.keys():
+        raise HTTPException(status_code=400, detail="Uno o más módulos no existen")
+
     try:
-        # Módulos actualmente asignados al perfil
         current_result = await db.execute(
-            text("SELECT module_id FROM business_profile_modules WHERE business_profile_id = :pid"),
+            text("SELECT id, module_id, parent_id FROM business_profile_modules WHERE business_profile_id = :pid"),
             {"pid": profile_id}
         )
-        current_ids = {row[0] for row in current_result.fetchall()}
-        new_ids = set(module_ids)
+        current = {row.module_id: row for row in current_result.fetchall()}
+        current_ids = set(current)
 
-        # Eliminar solo los que se quitaron (preserva bpm.id y jerarquía del resto)
+        # Eliminar solo los que se quitaron; sus hijos en el menú suben al padre del eliminado
         to_remove = current_ids - new_ids
-        if to_remove:
-            for mid in to_remove:
-                await db.execute(
-                    text("DELETE FROM business_profile_modules WHERE business_profile_id = :pid AND module_id = :mid"),
-                    {"pid": profile_id, "mid": mid}
-                )
+        for mid in to_remove:
+            bpm = current[mid]
+            await db.execute(
+                text("UPDATE business_profile_modules SET parent_id = :np WHERE parent_id = :bid"),
+                {"np": bpm.parent_id, "bid": bpm.id}
+            )
+            await db.execute(
+                text("DELETE FROM business_profile_modules WHERE id = :bid"),
+                {"bid": bpm.id}
+            )
 
-        # Agregar solo los módulos nuevos (flat, el usuario los organiza en SidebarMenuManager)
         to_add = new_ids - current_ids
         if to_add:
-            for mid in to_add:
-                await db.execute(
-                    text("""
-                        INSERT INTO business_profile_modules (business_profile_id, module_id, parent_id, sort_order)
-                        VALUES (:pid, :mid, NULL, 0)
-                    """),
-                    {"pid": profile_id, "mid": mid}
-                )
+            # module_id → bpm.id de lo que queda en el perfil (para colgar los nuevos de su padre)
+            bpm_of = {mid: current[mid].id for mid in current_ids - to_remove}
+
+            def depth(mid):
+                d, seen = 0, set()
+                while catalog[mid].parent_id in catalog and mid not in seen:
+                    seen.add(mid)
+                    mid = catalog[mid].parent_id
+                    d += 1
+                return d
+
+            # Padres antes que hijos, y dentro de cada nivel en el orden del catálogo
+            for mid in sorted(to_add, key=lambda m: (depth(m), catalog[m].order_index or 0, m)):
+                parent_bpm = bpm_of.get(catalog[mid].parent_id)
+                so = await db.execute(text("""
+                    SELECT COALESCE(MAX(sort_order), -1) + 1 FROM business_profile_modules
+                    WHERE business_profile_id = :pid AND parent_id <=> :par
+                """), {"pid": profile_id, "par": parent_bpm})
+                ins = await db.execute(text("""
+                    INSERT INTO business_profile_modules (business_profile_id, module_id, parent_id, sort_order)
+                    VALUES (:pid, :mid, :par, :so)
+                """), {"pid": profile_id, "mid": mid, "par": parent_bpm, "so": so.scalar()})
+                bpm_of[mid] = ins.lastrowid
+
             # Auto-permisos can_view para roles del perfil solo en los módulos nuevos
             for mid in to_add:
                 await db.execute(text("""
@@ -120,6 +150,6 @@ async def assign_modules_to_profile(profile_id: int, module_ids: list[int], db: 
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=400, detail="Ya existen módulos duplicados para este perfil")
-    except Exception as e:
+    except Exception:
         await db.rollback()
         raise HTTPException(status_code=500, detail="No se pudieron asignar los módulos. Intente de nuevo.")
