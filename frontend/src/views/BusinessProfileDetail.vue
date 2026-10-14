@@ -84,32 +84,40 @@
                 >
                   <!-- Fila del padre -->
                   <div class="bpd-grupo-head" @click="toggleGrupo(g.key)">
-                    <i class="bi bpd-chevron" :class="estaAbierto(g.key) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
-                    <i v-if="g.icon" class="bi" :class="g.icon"></i>
-                    <span class="bpd-grupo-nombre">{{ g.nombre }}</span>
-                    <span
-                      class="badge bpd-contador"
-                      :class="g.incompleto ? 'bg-warning text-dark' : 'bg-light text-secondary'"
-                      :title="g.incompleto ? 'Incompleto: faltan hijos por agregar' : ''"
-                    >
-                      {{ g.sel }}/{{ g.total }}
-                    </span>
-                    <button
-                      v-if="panel.key === 'disp'"
-                      class="btn btn-sm btn-outline-success bpd-accion"
-                      @click.stop="agregarGrupo(g)"
-                      :title="g.independiente ? 'Agregar todos los módulos independientes' : 'Agregar el padre con todos sus hijos'"
-                    >
-                      <i class="bi bi-plus-lg"></i><span class="bpd-accion-txt"> Agregar todo</span>
-                    </button>
-                    <button
-                      v-else
-                      class="btn btn-sm btn-outline-danger bpd-accion"
-                      @click.stop="quitarGrupo(g)"
-                      :title="g.independiente ? 'Quitar todos los módulos independientes' : 'Quitar el padre con todos sus hijos'"
-                    >
-                      <i class="bi bi-dash-lg"></i><span class="bpd-accion-txt"> Quitar todo</span>
-                    </button>
+                    <div class="bpd-grupo-titulo">
+                      <i class="bi bpd-chevron" :class="estaAbierto(g.key) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+                      <i v-if="g.icon" class="bi" :class="g.icon"></i>
+                      <span class="bpd-grupo-nombre">{{ g.nombre }}</span>
+                    </div>
+                    <div class="bpd-grupo-pie">
+                      <span
+                        class="badge bpd-contador"
+                        :class="g.incompleto ? 'bg-warning text-dark' : 'bg-light text-secondary'"
+                        :title="g.incompleto ? 'Incompleto' : ''"
+                      >
+                        {{ g.selHijos }}/{{ g.totalHijos }} {{ g.independiente ? 'módulos' : (g.totalHijos === 1 ? 'hijo' : 'hijos') }}
+                      </span>
+                      <span v-if="g.faltaPadre" class="bpd-falta-padre">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        {{ panel.key === 'sel' ? 'Padre no agregado' : 'Falta agregar el padre' }}
+                      </span>
+                      <button
+                        v-if="panel.key === 'disp'"
+                        class="btn btn-sm btn-outline-success bpd-accion"
+                        @click.stop="agregarGrupo(g)"
+                        :title="g.independiente ? 'Agregar todos los módulos independientes' : 'Agregar el padre con todos sus hijos'"
+                      >
+                        <i class="bi bi-plus-lg"></i><span class="bpd-accion-txt"> Agregar todo</span>
+                      </button>
+                      <button
+                        v-else
+                        class="btn btn-sm btn-outline-danger bpd-accion"
+                        @click.stop="quitarGrupo(g)"
+                        :title="g.independiente ? 'Quitar todos los módulos independientes' : 'Quitar el padre con todos sus hijos'"
+                      >
+                        <i class="bi bi-dash-lg"></i><span class="bpd-accion-txt"> Quitar todo</span>
+                      </button>
+                    </div>
                   </div>
 
                   <!-- Hijos -->
@@ -130,7 +138,7 @@
                           </span>
                           <span v-if="r.m.is_sysadmin" class="badge bg-dark ms-1">SYSADMIN</span>
                           <span v-if="!r.m.is_active" class="badge bg-secondary ms-1">Inactivo</span>
-                          <span v-if="r.incompleto" class="badge bg-warning text-dark ms-1">{{ r.sel }}/{{ r.total }}</span>
+                          <span v-if="r.incompleto" class="badge bg-warning text-dark ms-1">{{ r.selHijos }}/{{ r.total - 1 }}</span>
                         </div>
                         <div v-if="r.m.route" class="bpd-ruta">{{ r.m.route }}</div>
                       </div>
@@ -317,6 +325,7 @@ const construirFilas = (nodo, panel, nivel, filas) => {
     contexto: !propio,
     tieneHijos,
     sel,
+    selHijos: sel - (selSet.value.has(nodo.id) ? 1 : 0),
     total: ids.length,
     incompleto: tieneHijos && sel > 0 && sel < ids.length,
   });
@@ -341,6 +350,10 @@ const gruposDe = (panel) => {
       icon: r.icon,
       sel,
       total: ids.length,
+      // El contador muestra solo los hijos; si falta el padre se avisa aparte
+      selHijos: sel - (selSet.value.has(r.id) ? 1 : 0),
+      totalHijos: ids.length - 1,
+      faltaPadre: sel > 0 && !selSet.value.has(r.id),
       incompleto: sel > 0 && sel < ids.length,
       independiente: false,
       filas,
@@ -358,6 +371,9 @@ const gruposDe = (panel) => {
       icon: "bi-grid",
       sel: sueltos.filter(m => selSet.value.has(m.id)).length,
       total: sueltos.length,
+      selHijos: sueltos.filter(m => selSet.value.has(m.id)).length,
+      totalHijos: sueltos.length,
+      faltaPadre: false,
       incompleto: false,
       independiente: true,
       ids: filasSueltas.map(f => f.m.id),
@@ -563,25 +579,40 @@ onMounted(async () => {
   background: #fff8e1;
 }
 .bpd-grupo-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 0.6rem;
+  padding: 0.45rem 0.6rem;
   cursor: pointer;
   user-select: none;
 }
+.bpd-grupo-titulo {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+.bpd-grupo-titulo .bi { line-height: 1.35; }
+.bpd-grupo-pie {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  padding-left: 1.2rem;
+}
+.bpd-grupo-pie .bpd-accion { margin-left: auto; }
+.bpd-falta-padre { font-size: 0.72rem; color: #9a6700; font-weight: 600; }
 .bpd-grupo-head:hover { background: rgba(0, 0, 0, 0.04); }
 .bpd-chevron { font-size: 0.8rem; color: #6c757d; }
-.bpd-grupo-nombre { font-weight: 600; flex: 1; min-width: 0; }
-.bpd-contador { font-size: 0.75rem; }
-.bpd-accion { white-space: nowrap; }
+.bpd-grupo-nombre { font-weight: 600; flex: 1; min-width: 0; line-height: 1.35; overflow-wrap: break-word; }
+.bpd-contador { font-size: 0.7rem; }
+.bpd-accion { white-space: nowrap; font-size: 0.78rem; padding: 0.15rem 0.5rem; }
 
 .bpd-hijos { border-top: 1px solid rgba(0, 0, 0, 0.08); background: #fff; }
 .bpd-fila {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 .bpd-fila:last-child { border-bottom: 0; }
@@ -592,13 +623,14 @@ onMounted(async () => {
 .bpd-fila-nombre { line-height: 1.25; }
 .bpd-nota { font-size: 0.75rem; font-style: italic; }
 .bpd-ruta {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: #8a9199;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bpd-btn-fila { padding: 0.1rem 0.45rem; }
+.bpd-btn-fila { padding: 0.05rem 0.4rem; font-size: 0.8rem; }
+.bpd-fila .badge { font-size: 0.62rem; }
 
 .bpd-modal-fondo {
   position: fixed;
