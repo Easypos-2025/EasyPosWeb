@@ -44,7 +44,8 @@ If Estado = "SOLICITADO" Or Estado = "EN CURSO" Then
    MsgBox "Ya hay una sincronizacion del catalogo en curso. Espere unos segundos.", vbInformation
    Exit Sub
 End If
-If MsgBox("Se bajaran al escritorio los platos y datos de la sede modificados en la web." & vbCrLf & _
+If MsgBox("Se bajaran al escritorio los cambios del catalogo hechos en la web (platos, precios, insumos," & vbCrLf & _
+          "clientes, listas de precios y datos de la sede)." & vbCrLf & _
           "Lo que cambio en la web reemplaza lo del escritorio. ¿Continuar?", vbQuestion + vbYesNo) = vbNo Then Exit Sub
 Usuario = Trim(Var_Nombre_Usuario & "")
 If Usuario = "" Then Usuario = "escritorio"
@@ -55,7 +56,7 @@ Cmd.CommandText = "INSERT INTO ag_config (clave, valor) VALUES ('maestros_solici
 Cmd.Parameters.Append Cmd.CreateParameter("valor", adVarChar, adParamInput, 255, Left("SOLICITADO|" & Usuario, 255))
 Cmd.Execute , , adExecuteNoRecords
 Set Cmd = Nothing
-MsgBox "Solicitud enviada. El Agente Local la atiende en unos segundos.", vbInformation
+Call Esperar_Resultado_Catalogo_Web
 Exit Sub
 Linea:
 MsgBox "No se pudo solicitar la sincronizacion del catalogo: " & Err.Description, vbCritical
@@ -188,4 +189,35 @@ Exit Sub
 Linea:
 ' El agente no esta abierto o no responde: se abre la pantalla de ingreso normal
 ShellExecute 0, "open", "http://127.0.0.1:" & Puerto & "/#/admin/ingresar", vbNullString, vbNullString, 1
+End Sub
+
+
+Public Sub Esperar_Resultado_Catalogo_Web(Optional ByVal Segundos_Maximo As Long = 120)
+' Espera a que el Agente Local termine (revisa cada segundo, sin congelar el programa) y muestra el resultado.
+' El agente revisa la solicitud cada 10 segundos; una sincronizacion normal tarda pocos segundos mas.
+Dim Inicio As Single, Estado As String, Ultimo As Single
+Inicio = Timer
+Do
+   Ultimo = Timer
+   Do While Timer - Ultimo < 1 And Timer >= Ultimo          ' pausa de 1 s sin congelar
+      DoEvents
+   Loop
+   Estado = Estado_Sincronizacion_Catalogo_Web()
+   If Estado = "LISTO" Then
+      MsgBox "Catalogo de la web sincronizado." & vbCrLf & vbCrLf & Resultado_Sincronizacion_Catalogo_Web(), _
+             vbInformation, "Catalogo de la web"
+      Exit Sub
+   ElseIf Left(Estado, 5) = "ERROR" Then
+      MsgBox "No se pudo sincronizar el catalogo de la web:" & vbCrLf & Mid(Estado, 7), vbCritical, "Catalogo de la web"
+      Exit Sub
+   End If
+   If Timer < Inicio Then Inicio = Timer                      ' paso de medianoche
+Loop While Timer - Inicio < Segundos_Maximo
+If Estado = "SOLICITADO" Then
+   MsgBox "El Agente Local no ha tomado la solicitud. Verifique que este abierto y conectado a internet;" & vbCrLf & _
+          "la sincronizacion se hara sola apenas lo este.", vbExclamation, "Catalogo de la web"
+Else
+   MsgBox "La sincronizacion sigue en curso. Revise el resultado en unos minutos" & vbCrLf & _
+          "(panel del agente: Catalogo de la web).", vbInformation, "Catalogo de la web"
+End If
 End Sub

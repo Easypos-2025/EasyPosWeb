@@ -58,11 +58,12 @@
     <!-- Tarjetas compactas: al tocar una se abre el detalle con sus acciones -->
     <div class="al-lista">
       <button v-for="a in filtrados" :key="a.id" type="button" class="al-card" @click="selId = a.id">
-        <div class="al-card-top">
-          <b class="al-card-emp">{{ a.empresa }}</b>
+        <!-- Estado en su propia fila: el nombre de la empresa queda completo (hasta dos líneas) -->
+        <div class="al-card-estado">
           <span class="al-estado" :class="estado(a).clase">{{ estado(a).texto }}</span>
+          <small class="al-card-cod">Código {{ a.codigo }}</small>
         </div>
-        <small class="al-card-cod">Código {{ a.codigo }}</small>
+        <b class="al-card-emp" :title="a.empresa">{{ a.empresa }}</b>
         <div class="al-card-pie">
           <span><i class="bi bi-box-seam"></i> {{ a.version || "—" }}
             <i v-if="a.version && vigente" :class="a.al_dia ? 'bi bi-check-circle-fill al-ok' : 'bi bi-arrow-up-circle-fill al-warn'"
@@ -380,7 +381,10 @@ onMounted(cargar)
 .al-card { text-align: left; border: 1px solid transparent; background: #fff; border-radius: 14px; box-shadow: 0 1px 3px rgba(15,23,42,.08), 0 4px 12px rgba(15,23,42,.06);
            padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; color: inherit; transition: border-color .15s, transform .15s; }
 .al-card:hover { border-color: #93c5fd; transform: translateY(-1px); }
-.al-card-emp { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-card-emp { font-size: 15px; min-width: 0; line-height: 1.25; overflow: hidden; word-break: break-word;
+               display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+.al-card-estado { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
+.al-card-estado .al-card-cod { white-space: nowrap; }
 .al-card-cod { color: #64748b; font-size: 13px; }
 .al-card-pie { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #475569; margin-top: 4px; }
 .al-card-forzada { align-self: flex-start; font-size: 11px; font-weight: 600; color: #b45309; background: #fef3c7; border-radius: 6px; padding: 2px 8px; margin-top: 2px; }
