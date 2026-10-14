@@ -2,6 +2,8 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.services import lotes
+
 """
 Único punto de escritura de stock de insumos.
 Fuente de verdad: inventario_actual_porciones (cantidad_actual, stock_minimo).
@@ -22,7 +24,10 @@ async def apply_stock_move(
     mdate: Optional[str],
     notes: Optional[str] = None,
     user_id: Optional[int] = None,
-) -> None:
+    lote: Optional[dict] = None,
+) -> list:
+    """lote: datos del lote PEPS de una entrada (costo, fecha_vence, id_proveedor, nro_factura, origen,
+    copiar_de) o de una salida (clave, solo_lote). Devuelve lo consumido de los lotes en una salida."""
     row = (await db.execute(text("""
         SELECT si.id AS supply_item_id, si.control_stock,
                COALESCE(iap.cantidad_actual, 0) AS cantidad_actual
@@ -34,10 +39,18 @@ async def apply_stock_move(
     """), {"cid": company_id, "item": id_item})).mappings().first()
 
     if not row or not row["control_stock"]:
-        return
+        return []
 
     old_qty = float(row["cantidad_actual"] or 0)
     new_qty = qty if mtype in ("physical", "physical_snapshot") else old_qty + qty
+
+    # Lotes PEPS (antes de cambiar la cantidad: el saldo previo entra como lote inicial)
+    consumido = []
+    if mtype == "physical":
+        await lotes.ajustar_fisico(db, company_id, id_item, new_qty, old_qty, ref_id, mdate)
+    elif mtype != "physical_snapshot":
+        consumido = await lotes.registrar(db, company_id, id_item, qty, ref_type, ref_id, mdate,
+                                          cantidad_antes=old_qty, **(lote or {}))
 
     await db.execute(text("""
         INSERT INTO stock_movements
@@ -65,6 +78,7 @@ async def apply_stock_move(
             SET cantidad_actual = cantidad_actual + :q, enviada_mysql = 0, updated_at = NOW()
             WHERE company_id = :cid AND id_item = :item
         """), {"q": qty, "cid": company_id, "item": id_item})
+    return consumido
 
 
 async def set_min_stock(db: AsyncSession, company_id: int, id_item: int, min_stock: float) -> bool:

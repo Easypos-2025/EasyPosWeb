@@ -595,6 +595,39 @@ async def traslados_resultado(data: TrasladosResultadoIn, agente: dict = Depends
         await db.commit()                       # uno por uno: un error no deshace los anteriores
     return {"ok": True, "resultados": out}
 
+
+# ───────────────────────────── Facturas de proveedor ─────────────────────────────
+# Lo registrado en la web (Factura de Proveedor) baja al escritorio: inventario_porciones_precios, entrada manual
+# tipificación 7 "REGISTRO PRECIOS", existencia y costo. Ver app/services/factura_proveedor.py.
+
+@router_agente.get("/facturas-proveedor/pendientes")
+async def facturas_proveedor_pendientes(agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    from app.services import factura_proveedor
+    return {"tareas": await factura_proveedor.tareas_agente(db, int(agente["company_id"]))}
+
+
+class FacturaProveedorResultadoIn(BaseModel):
+    id: int = Field(gt=0)
+    tarea: Literal["APLICAR", "REVERSA"]
+    ok: bool
+    registro: Optional[int] = Field(default=None, ge=0)
+    error: Optional[str] = Field(default=None, max_length=255)
+
+
+class FacturasProveedorResultadoIn(BaseModel):
+    resultados: list[FacturaProveedorResultadoIn] = Field(max_length=20)
+
+
+@router_agente.post("/facturas-proveedor/resultado")
+async def facturas_proveedor_resultado(data: FacturasProveedorResultadoIn, agente: dict = Depends(agente_actual),
+                                       db: AsyncSession = Depends(get_db)):
+    from app.services import factura_proveedor
+    out = []
+    for r in data.resultados:
+        out.append(await factura_proveedor.resultado_agente(db, int(agente["company_id"]), r.model_dump()))
+        await db.commit()
+    return {"ok": True, "resultados": out}
+
 router_empresa = APIRouter(prefix="/api/mi-agente-local", tags=["agente-local"], dependencies=[Depends(tenant_guard)])
 
 

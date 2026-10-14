@@ -114,6 +114,8 @@ from app.routers.pos_recibo_impresion_router import router as pos_recibo_impresi
 from app.routers.config_facturacion_router import router as config_facturacion_router
 from app.routers.config_sede_router import router as config_sede_router
 from app.routers.bodega_central_router import router as bodega_central_router
+from app.routers.productos_router import router as productos_router
+from app.routers.factura_proveedor_router import router as factura_proveedor_router
 from app.routers.pos_categorias_productos_router import router as pos_categorias_productos_router
 from app.routers.caja_cuadre_router import router as caja_cuadre_router
 from app.routers.caja_conceptos_router import router as caja_conceptos_router
@@ -1746,7 +1748,7 @@ async def _init_db_data():
         for route, name, icon, is_sysadmin in [
             ("/sysadmin/payment-review",  "Revisión de Pagos",  "bi-credit-card-2-back", True),
             ("/sysadmin/payment-history", "Historial de Pagos", "bi-clock-history",      True),
-            ("/payment-history",          "Historial de Pagos", "bi-clock-history",      False),
+            # "/payment-history" (historial del asociado) se quitó en la limpieza del menú (migración 050)
         ]:
             result = await db.execute(select(SystemModule).where(SystemModule.route == route))
             if not result.scalars().first():
@@ -1963,11 +1965,9 @@ async def _init_db_data():
 
         fact_root     = await _get_or_create_module("Facturación",   "/facturacion",                  "bi-receipt-cutoff")
         fact_ventas   = await _get_or_create_module("Ventas",        "/facturacion/ventas",            "bi-bag",                  fact_root.id)
-        fact_reportes = await _get_or_create_module("Reportes",      "/facturacion/reportes",          "bi-bar-chart-line",       fact_root.id)
         await _get_or_create_module("Factura",  "/facturacion/ventas/factura",          "bi-file-earmark-text",    fact_ventas.id)
         await _get_or_create_module("Recibo",   "/facturacion/ventas/recibo",           "bi-receipt",              fact_ventas.id)
-        await _get_or_create_module("Facturas", "/facturacion/reportes/facturas",       "bi-file-earmark-spreadsheet", fact_reportes.id)
-        await _get_or_create_module("Recibos",  "/facturacion/reportes/recibos",        "bi-receipt-cutoff",       fact_reportes.id)
+        # "Reportes" (Facturas / Recibos) eran pantallas vacías: se quitaron en la limpieza del menú (migración 050)
         await db.commit()
 
         # ── pos_printers: rediseño tipo conexión ──────────────────────────────────
@@ -2543,6 +2543,8 @@ routers = [
     qr_fijo_agente_router,
     config_sede_router,
     bodega_central_router,
+    productos_router,
+    factura_proveedor_router,
     pos_categorias_productos_router,
     caja_cuadre_router,
     caja_conceptos_router,

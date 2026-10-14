@@ -5,7 +5,9 @@ solicitud en ag_config y el ciclo del agente la atiende). La web manda (decisió
 
   Qué baja (lo que la web tiene pendiente), en este orden:
     1. Catálogos con número propio: formas de medida → categorías de productos → categorías de platos
-       → proveedores → insumos (con sus formas de medida y proveedores) → clientes.
+       → proveedores → laboratorios (droguerías; uno con el mismo nombre en el escritorio se reutiliza) → insumos
+       (con sus formas de medida, proveedores y laboratorio; el insumo nuevo crea su existencia en 0 y su fila del
+       histórico, como Crear_Plato_Nuevo) → clientes.
     2. Platos, con lo que viaja con ellos: impresoras, receta (insumos fijos), armado y presentaciones.
     3. Listas de precios (y su cabecera, si la sede tiene esa tabla).
     4. Datos de la sede (configuracion_sede) y las fotos.
@@ -31,10 +33,10 @@ from ..db import SesionTemp, motor_empresa
 log = logging.getLogger("agente_local")
 
 ID_PROVISIONAL = 900_000_000
-ORDEN = ("forma_medida", "categoria_productos", "categoria_platos", "proveedor", "insumo", "cliente")
+ORDEN = ("forma_medida", "categoria_productos", "categoria_platos", "proveedor", "laboratorio", "insumo", "cliente")
 NOMBRES = {"forma_medida": "formas de medida", "categoria_productos": "categorías de productos",
            "categoria_platos": "categorías de platos", "proveedor": "proveedores", "insumo": "insumos",
-           "cliente": "clientes", "plato": "platos"}
+           "cliente": "clientes", "plato": "platos", "laboratorio": "laboratorios"}
 
 # Tabla del escritorio y su número, por catálogo (las columnas y referencias las manda la web)
 ESCRITORIO = {
@@ -42,6 +44,7 @@ ESCRITORIO = {
     "categoria_productos": ("categoria_productos", "Cod_Categoria", "Nombre"),
     "categoria_platos": ("categoria_platos", "Cod_Categoria", "Nombre"),
     "proveedor": ("proveedores", "Id_Proveedor", "Empresa"),
+    "laboratorio": ("laboratorios", "Id_Laboratorio", "Nombre_Laboratorio"),
     "insumo": ("inventario_porciones", "Id_Item", "Descripcion"),
     "cliente": ("clientes", "Id_Cliente", "nombres"),
 }
@@ -52,7 +55,14 @@ REFS = {
 HIJOS_INSUMO = {
     "insumos_forma_medida": ("insumos_forma_medida", "Id_Insumo", {"Id_Forma_Medida": "forma_medida"}),
     "insumos_proveedor": ("insumos_proveedor", "Id_Insumo", {"Id_Proveedor": "proveedor", "Id_Forma_Medida": "forma_medida"}),
+    "laboratorio_insumo": ("laboratorio_insumo", "Posicion_Insumo", {"Id_Laboratorio": "laboratorio", "Posicion_Insumo": "insumo"}),
 }
+
+# Columnas que el insumo nuevo copia a inventario_actual_porciones e historico_inventario_actual_porciones
+# (Crear_Plato_Nuevo las llena junto con inventario_porciones)
+COLS_EXISTENCIA = ("Id_Grupo", "Id_Item", "Descripcion", "Posicion", "Costo", "Und_Min_Utilizadas", "Agrupar",
+                   "Controlar", "Und_Uso", "Bodega", "Und_Compra", "Valor_Und_Compra", "Codigo_Insumo", "Fecha_Vence",
+                   "Stock_Minimo", "Stock_MInimo")
 HIJOS_PLATO = {
     "receta": ("inventario_porciones_plato", "Id_Plato", {"Id_Item": "insumo", "Id_Grupo": "categoria_productos", "Posicion": "insumo"}),
     "armado": ("plato_armar", "Id_Plato", {"Cod_Categoria": "categoria_productos"}),
@@ -176,21 +186,68 @@ class Escritorio:
                                          f"VALUES ({', '.join(f':p{i}' for i in range(len(datos)))})"),
                                     {f"p{i}": v for i, v in enumerate(datos.values())})
 
-    async def numero_real(self, entidad: str, tabla: str, llave: str, id_web: int, max_web: int) -> int:
-        """Provisional → real: el del mapa (reintento) o el siguiente número; queda en el mapa antes de escribir."""
+    async def numero_real(self, entidad: str, tabla: str, llave: str, id_web: int, max_web: int,
+                          por_nombre: tuple = None) -> int:
+        """Provisional → real: el del mapa (reintento) o el siguiente número; queda en el mapa antes de escribir.
+        por_nombre = (columna, nombre): si el escritorio ya tiene uno con ese nombre se usa ese (laboratorios)."""
         ya = self.mapa.get(entidad, {}).get(id_web)
         if ya:
             return ya
+        if por_nombre and str(por_nombre[1] or "").strip():
+            igual = (await self.conn.execute(text(
+                f"SELECT {llave} FROM {tabla} WHERE UPPER(TRIM({por_nombre[0]})) = :n AND {llave} < :p ORDER BY {llave} LIMIT 1"),
+                {"n": str(por_nombre[1]).strip().upper(), "p": ID_PROVISIONAL})).scalar()
+            if igual:
+                await self._mapear(entidad, id_web, int(igual))
+                return int(igual)
         maximo = (await self.conn.execute(text(f"SELECT COALESCE(MAX({llave}), 0) FROM {tabla} WHERE {llave} < :p"),
                                           {"p": ID_PROVISIONAL})).scalar() or 0
         usados = [v for v in self.mapa.get(entidad, {}).values()]
         real = max([int(maximo), int(max_web)] + usados) + 1
+        await self._mapear(entidad, id_web, real)
+        return real
+
+    async def _mapear(self, entidad: str, id_web: int, real: int) -> None:
         async with SesionTemp() as tmp:
             await tmp.execute(text("INSERT INTO ag_maestros_mapa2 (entidad, id_web, id_real, creado) VALUES (:e, :w, :r, NOW())"),
                               {"e": entidad, "w": id_web, "r": real})
             await tmp.commit()
         self.mapa.setdefault(entidad, {})[id_web] = real
-        return real
+
+    async def completar_insumo(self, id_item: int) -> None:
+        """Insumo nuevo: su fila de existencia (cantidad 0) y del histórico, como Crear_Plato_Nuevo."""
+        base = (await self.conn.execute(text("SELECT * FROM inventario_porciones WHERE Id_Item = :i LIMIT 1"),
+                                        {"i": id_item})).mappings().first()
+        if not base:
+            return
+        base = dict(base)
+        grupo = base.get("Id_Grupo")
+        if await self.columnas("inventario_actual_porciones") and not (await self.conn.execute(text(
+                "SELECT COUNT(*) FROM inventario_actual_porciones WHERE Id_Grupo = :g AND Id_Item = :i"),
+                {"g": grupo, "i": id_item})).scalar():
+            await self._insertar_copia("inventario_actual_porciones", base, {"Cantidad_Actual": 0})
+        if await self.columnas("historico_inventario_actual_porciones"):
+            fecha = (await self.conn.execute(text("SELECT MAX(Fecha) FROM historico_inventario_actual_porciones"))).scalar() \
+                or datetime.now().date()
+            if not (await self.conn.execute(text(
+                    "SELECT COUNT(*) FROM historico_inventario_actual_porciones WHERE Fecha = :f AND Id_Grupo = :g AND Id_Item = :i"),
+                    {"f": fecha, "g": grupo, "i": id_item})).scalar():
+                await self._insertar_copia("historico_inventario_actual_porciones", base, {"Fecha": fecha, "Cantidad_Actual": 0})
+
+    async def _insertar_copia(self, tabla: str, base: dict, extra: dict) -> None:
+        cols = await self.columnas(tabla)
+        datos = {}
+        for k in COLS_EXISTENCIA:
+            if k in base and k.lower() in cols:
+                datos[cols[k.lower()][0]] = base[k]
+        for k, v in extra.items():
+            if k.lower() in cols:
+                datos[cols[k.lower()][0]] = v
+        if "enviada_mysql" in cols:
+            datos[cols["enviada_mysql"][0]] = 0
+        await self.conn.execute(text(f"INSERT INTO {tabla} ({', '.join(f'`{c}`' for c in datos)}) "
+                                     f"VALUES ({', '.join(f':p{i}' for i in range(len(datos)))})"),
+                                {f"p{i}": v for i, v in enumerate(datos.values())})
 
 
 async def resumen() -> dict:
@@ -246,7 +303,9 @@ async def sincronizar(quien: str = "panel") -> dict:
                 for f in filas:
                     id_web = int(f["id"])
                     nombre = str((f.get("datos") or {}).get(campo_nombre) or f"#{id_web}").strip()
-                    id_real = await esc.numero_real(ent, tabla, llave, id_web, max_ids.get(ent, 0)) if f.get("provisional") else id_web
+                    id_real = await esc.numero_real(ent, tabla, llave, id_web, max_ids.get(ent, 0),
+                                                    por_nombre=(campo_nombre, nombre) if ent == "laboratorio" else None) \
+                        if f.get("provisional") else id_web
                     datos = await esc.preparar(tabla, f.get("datos") or {}, REFS.get(ent, {}), nombre)
                     if ent == "insumo":
                         # Id_Insumo y Posicion del insumo nuevo eran el mismo número provisional
@@ -257,6 +316,8 @@ async def sincronizar(quien: str = "panel") -> dict:
                     cuenta["nuevos" if nuevo else "actualizados"] += 1
                     for h, (tabla_h, llave_h, refs_h) in (HIJOS_INSUMO.items() if ent == "insumo" else []):
                         await esc.reemplazar_hijos(tabla_h, llave_h, id_real, (f.get("hijos") or {}).get(h) or [], refs_h, nombre)
+                    if ent == "insumo" and nuevo:
+                        await esc.completar_insumo(id_real)
                     await conn.commit()
                     confirmar["entidades"].setdefault(ent, []).append(
                         {"id_web": id_web, "id_real": id_real, "actualizado": f.get("actualizado")})
@@ -286,7 +347,16 @@ async def sincronizar(quien: str = "panel") -> dict:
                             VALUES (:p, :i, :c, 0)
                         """), {"p": id_real, "i": int(i["id"]), "c": max(1, min(int(i.get("copias") or 1), 5))})
                 elif nuevo:
-                    resultado["avisos"].append(f"'{nombre}': sin impresora asignada (no imprimirá comanda).")
+                    caja = (await conn.execute(text(
+                        "SELECT Id_Impresora FROM impresoras WHERE UPPER(TRIM(Nombre)) LIKE '%CAJA%' "
+                        "ORDER BY (UPPER(TRIM(Nombre)) = 'CAJA') DESC, Id_Impresora LIMIT 1"))).scalar()
+                    if caja is not None:          # como Crear_Plato_Nuevo: la impresora de caja
+                        await conn.execute(text("""
+                            INSERT INTO plato_impresoras (Id_Plato, Id_Impresora, Cant_Impresiones, Enviada_MySql)
+                            VALUES (:p, :i, 1, 0)
+                        """), {"p": id_real, "i": int(caja)})
+                    else:
+                        resultado["avisos"].append(f"'{nombre}': sin impresora asignada (no imprimirá comanda).")
                 for h, (tabla_h, llave_h, refs_h) in HIJOS_PLATO.items():
                     await esc.reemplazar_hijos(tabla_h, llave_h, id_real, (p.get("hijos") or {}).get(h) or [], refs_h, f"'{nombre}'")
                 await conn.commit()

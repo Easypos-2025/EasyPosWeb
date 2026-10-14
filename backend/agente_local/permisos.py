@@ -39,6 +39,14 @@ PERMISOS_EMPRESA = {
     "plato_producto": ("INSERT", "DELETE"),
     "lista_precios_cliente": ("INSERT", "UPDATE"),
     "lista_precios_cliente_cabecera": ("INSERT", "UPDATE"),
+    "laboratorios": ("INSERT", "UPDATE"),                    # S3 droguerías
+    "laboratorio_insumo": ("INSERT", "DELETE"),
+    "historico_inventario_actual_porciones": ("INSERT",),    # S3 insumo nuevo (como Crear_Plato_Nuevo)
+    # Traslados de la Bodega Central y Factura de Proveedor: existencia, entradas/salidas manuales y precios
+    "inventario_actual_porciones": ("INSERT", "UPDATE"),
+    "inventarios_entradas_manuales": ("INSERT", "DELETE"),
+    "inventarios_salidas_manuales": ("INSERT",),
+    "inventario_porciones_precios": ("INSERT", "DELETE"),
 }
 
 

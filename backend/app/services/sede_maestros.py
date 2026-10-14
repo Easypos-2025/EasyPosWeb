@@ -64,6 +64,12 @@ ENTIDADES = {
                      "is_active": "Activo"},
         "referencias": [("insumos_proveedor", "id_proveedor"), ("pos_dish_products", "supplier_id")],
     },
+    "laboratorio": {
+        "tabla": "laboratorios", "llave": "id_laboratorio", "pendiente": "synced = 0", "al_dia": "synced = 1",
+        "escritorio": "laboratorios", "llave_escritorio": "Id_Laboratorio",
+        "columnas": {"nombre_laboratorio": "Nombre_Laboratorio", "porcentaje": "Porcentaje", "activo": "Activo"},
+        "referencias": [("laboratorio_insumo", "id_laboratorio")],
+    },
     "insumo": {
         "tabla": "supply_items", "llave": "id_item", "pendiente": "synced = 0", "al_dia": "synced = 1",
         "escritorio": "inventario_porciones", "llave_escritorio": "Id_Item",
@@ -84,7 +90,11 @@ ENTIDADES = {
                         ("inventario_actual_porciones", "id_item"), ("supply_items", "posicion"),
                         ("supply_items", "id_insumo"),
                         # Posicion del insumo (en uno nuevo es el mismo número): armado y receta la usan
-                        ("pos_dish_assembly_detail", "position"), ("inventario_porciones_plato", "posicion")],
+                        ("pos_dish_assembly_detail", "position"), ("inventario_porciones_plato", "posicion"),
+                        # historia, laboratorio, lotes y compras del insumo creado en la web
+                        ("historico_inventario_actual_porciones", "id_item"), ("laboratorio_insumo", "posicion_insumo"),
+                        ("inv_lotes", "id_item"), ("inv_lote_consumos", "id_item"), ("inventory_entries", "id_item"),
+                        ("facturas_proveedor_detalle", "id_item")],
         "hijos": {
             "insumos_forma_medida": {"tabla": "insumos_forma_medida", "por": "id_insumo", "escritorio": "insumos_forma_medida",
                                      "llave_hijo": "Id_Insumo",
@@ -99,6 +109,10 @@ ENTIDADES = {
                                                "precio_pactado": "Precio_Pactado", "id_forma_medida": "Id_Forma_Medida",
                                                "nombre_forma_medida": "Nombre_Forma_Medida", "observacion": "Observacion"},
                                   "refs": {"Id_Insumo": "insumo", "Id_Proveedor": "proveedor", "Id_Forma_Medida": "forma_medida"}},
+            "laboratorio_insumo": {"tabla": "laboratorio_insumo", "por": "posicion_insumo", "escritorio": "laboratorio_insumo",
+                                   "llave_hijo": "Posicion_Insumo",
+                                   "columnas": {"posicion_insumo": "Posicion_Insumo", "id_laboratorio": "Id_Laboratorio"},
+                                   "refs": {"Posicion_Insumo": "insumo", "Id_Laboratorio": "laboratorio"}},
         },
     },
     "cliente": {
@@ -115,7 +129,7 @@ ENTIDADES = {
         "referencias_temp": [("temp_comanda", "Id_Cliente")],      # datatemppos de la web (pedidos abiertos)
     },
 }
-ORDEN = ("forma_medida", "categoria_productos", "categoria_platos", "proveedor", "insumo", "cliente")
+ORDEN = ("forma_medida", "categoria_productos", "categoria_platos", "proveedor", "laboratorio", "insumo", "cliente")
 
 # pos_dishes → platos (escritorio)
 COLUMNAS_PLATO = {
@@ -164,6 +178,7 @@ REFERENCIAS_PLATO = (
     ("pos_dish_assembly_detail", "dish_id"),
     ("pos_item_modifiers", "item_id"),
     ("pos_item_printers", "item_id"),
+    ("facturas_proveedor_detalle", "dish_id"),
 )
 
 COLUMNAS_LISTA = {"id_lista": "id_lista", "id_cliente": "Id_Cliente", "id_producto": "Id_Producto",
@@ -383,7 +398,7 @@ async def confirmar(db: AsyncSession, cid: int, platos: list, sede_actualizado: 
 
 # Nombre a mostrar por catálogo (resumen liviano para el aviso del escritorio)
 NOMBRE_COLUMNA = {"forma_medida": "name", "categoria_productos": "name", "categoria_platos": "name",
-                  "proveedor": "name", "insumo": "description", "cliente": "nombres"}
+                  "proveedor": "name", "laboratorio": "nombre_laboratorio", "insumo": "description", "cliente": "nombres"}
 
 
 async def resumen(db: AsyncSession, cid: int) -> dict:

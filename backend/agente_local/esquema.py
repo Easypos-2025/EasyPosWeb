@@ -196,6 +196,23 @@ TABLAS = [
         PRIMARY KEY (traslado_id, tarea, item_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # Facturas de proveedor de la web: cada línea ya aplicada en el escritorio y el Id_Registro de cada factura
+    """
+    CREATE TABLE IF NOT EXISTS ag_fp_item (
+        factura_id   BIGINT       NOT NULL,
+        item         INT          NOT NULL,
+        resultado    TEXT         NULL,
+        aplicado     DATETIME     NOT NULL,
+        PRIMARY KEY (factura_id, item)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ag_fp_registro (
+        factura_id   BIGINT       NOT NULL PRIMARY KEY,
+        registro     INT          NOT NULL,
+        creado       DATETIME     NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
     """
     CREATE TABLE IF NOT EXISTS ag_config (

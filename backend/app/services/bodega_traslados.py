@@ -59,8 +59,10 @@ async def _stock(db: AsyncSession, cid: int, id_item: int, bloquear: bool = Fals
                                    {"c": cid, "i": id_item})).scalar() or 0)
 
 
-async def _mover(db: AsyncSession, cid: int, id_item: int, cantidad: float, observacion: str, user) -> None:
-    """Entrada (cantidad > 0) o salida (< 0) en el kardex web de la empresa, como las pantallas de inventario."""
+async def _mover(db: AsyncSession, cid: int, id_item: int, cantidad: float, observacion: str, user,
+                 lote: Optional[dict] = None) -> None:
+    """Entrada (cantidad > 0) o salida (< 0) en el kardex web de la empresa, como las pantallas de inventario.
+    lote: la salida marca sus lotes con una clave y la entrada copia el costo de lo que salió (PEPS)."""
     from datetime import date
     hoy = date.today().isoformat()
     await db.execute(text(
@@ -76,7 +78,11 @@ async def _mover(db: AsyncSession, cid: int, id_item: int, cantidad: float, obse
            "obs": observacion[:255]})
     await db.flush()
     await apply_stock_move(db, cid, id_item, cantidad, "entry" if cantidad > 0 else "exit", "traslado_bodega",
-                           res.lastrowid, hoy, observacion, getattr(user, "id", None))
+                           res.lastrowid, hoy, observacion, getattr(user, "id", None), lote=lote)
+
+
+def _clave_lote(tid: int, item_id: int) -> str:
+    return f"TR{tid}-{item_id}"
 
 
 async def es_escritorio(db: AsyncSession, cid: int) -> bool:
@@ -222,7 +228,8 @@ async def _salida_web(db: AsyncSession, user, tid: int, origen_id: int, observac
     for it in items:
         id_item = await _insumo(db, origen_id, int(it["origen_dish_id"]))
         antes = await _stock(db, origen_id, id_item, bloquear=True)
-        await _mover(db, origen_id, id_item, -float(it["cantidad"]), observacion, user)
+        await _mover(db, origen_id, id_item, -float(it["cantidad"]), observacion, user,
+                     lote={"clave": _clave_lote(tid, int(it["id"]))})
         await db.execute(text(
             "UPDATE bc_traslado_items SET stock_origen_antes = :a, stock_origen_despues = :d WHERE id = :id"),
             {"a": antes, "d": await _stock(db, origen_id, id_item), "id": it["id"]})
@@ -356,7 +363,9 @@ async def cargar_en_web(db: AsyncSession, bodega: Bodega, tid: int) -> None:
         id_item = await _insumo(db, destino, dd) or dd
         antes = await _stock(db, destino, id_item, bloquear=True)
         await _mover(db, destino, id_item, float(it["cantidad"]),
-                     f"Traslado #{tras['numero']} desde {grupo.get(int(tras['origen_id']), 'origen')}", bodega.user)
+                     f"Traslado #{tras['numero']} desde {grupo.get(int(tras['origen_id']), 'origen')}", bodega.user,
+                     lote={"copiar_de": (int(tras["origen_id"]), _clave_lote(tid, int(it["id"]))),
+                           "costo": float(it["costo"] or 0) or None})
         await db.execute(text("""
             UPDATE bc_traslado_items SET destino_dish_id = :dd, resultado = :r, estado = 'CARGADO',
                    stock_destino_antes = :a, stock_destino_despues = :d WHERE id = :id
@@ -388,12 +397,13 @@ async def anular(db: AsyncSession, bodega: Bodega, tid: int, motivo: str) -> dic
             reversa = 1                 # descontó el agente del escritorio: él debe devolverlo
         else:
             items = (await db.execute(text(
-                "SELECT origen_dish_id, cantidad FROM bc_traslado_items WHERE traslado_id = :t"), {"t": tid})).mappings().all()
+                "SELECT id, origen_dish_id, cantidad FROM bc_traslado_items WHERE traslado_id = :t"), {"t": tid})).mappings().all()
             for it in items:
                 id_item = await _insumo(db, origen, int(it["origen_dish_id"]))
                 if id_item:
                     await _mover(db, origen, id_item, float(it["cantidad"]),
-                                 f"Anulación traslado #{tras['numero']}", bodega.user)
+                                 f"Anulación traslado #{tras['numero']}", bodega.user,
+                                 lote={"copiar_de": (origen, _clave_lote(tid, int(it["id"]))), "origen": "DEVOLUCION"})
     await db.execute(text("""
         UPDATE bc_traslados SET estado = 'ANULADO', anulado_en = NOW(), anulado_por = :p, anulado_motivo = :m,
                reversa_pendiente = :r WHERE id = :t

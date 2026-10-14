@@ -121,16 +121,24 @@ async def codigos_usados(db: AsyncSession, empresas: list[int], codigos: list[st
 
 # ─── Producto ────────────────────────────────────────────────────────────────
 
-async def _nuevo_id(db: AsyncSession, cid: int) -> int:
-    """Id del plato = Id_Item de su insumo (como el escritorio): el mayor de los dos consecutivos."""
+async def _nuevo_id(db: AsyncSession, cid: int, con_escritorio: bool = False) -> int:
+    """Id del plato = Id_Item de su insumo (como el escritorio): el mayor de los dos consecutivos.
+    Empresa con escritorio: número PROVISIONAL (la sincronización del catálogo le asigna el real)."""
+    if con_escritorio:
+        return max(await sede_maestros.siguiente_id_plato(db, cid, True),
+                   await sede_maestros.siguiente_id(db, "supply_items", "id_item", cid, True))
     from app.services.supply_keys import next_id_item
     return max(await sede_maestros.siguiente_id_plato(db, cid, False), await next_id_item(db, cid))
 
 
 async def crear_producto(db: AsyncSession, cid: int, d: dict, nuevo_id: Optional[int] = None,
-                         unidad: Optional[int] = None, validado: bool = False) -> int:
+                         unidad: Optional[int] = None, validado: bool = False, con_escritorio: bool = False) -> int:
     """d: name, product_code, price, wholesale_price (precio mínimo), product_cost, tax, minimum_stock,
-    category_id, id_proveedor, extra_print (desactivar al vender), ask_product_description.
+    category_id, id_proveedor, extra_print (desactivar al vender), ask_product_description,
+    fecha_vence y id_laboratorio (droguerías).
+    Como Crear_Plato_Nuevo del escritorio (perfiles que no son restaurante): platos, plato_producto,
+    inventario_porciones (supply_items), inventario_actual_porciones, historico_inventario_actual_porciones,
+    plato_impresoras (la de caja), inventario_porciones_plato y laboratorio_insumo (droguería).
     Valida categoría, proveedor, código y nombre; no hace commit.
     La importación ya validó todo y numera en bloque: pasa nuevo_id, unidad y validado=True."""
     codigo = limpiar_codigo(d.get("product_code"))
@@ -152,9 +160,11 @@ async def crear_producto(db: AsyncSession, cid: int, d: dict, nuevo_id: Optional
     precio = int(d.get("price") or 0)
     costo = float(d.get("product_cost") or 0)
     stock_min = float(d.get("minimum_stock") or 0)
-    nuevo = nuevo_id or await _nuevo_id(db, cid)
-    codigo = codigo or f"BC-{nuevo}"
+    nuevo = nuevo_id or await _nuevo_id(db, cid, con_escritorio)
+    codigo = codigo or f"{'BC' if not con_escritorio else 'WEB'}-{nuevo}"
     unidad = unidad or await asegurar_unidad(db, cid)
+    porcion = nombre_porcion(nombre)
+    fecha_vence = str(d.get("fecha_vence") or date.today().isoformat())[:10]
 
     await db.execute(text("""
         INSERT INTO pos_dishes
@@ -167,6 +177,8 @@ async def crear_producto(db: AsyncSession, cid: int, d: dict, nuevo_id: Optional
            "ep": "1" if d.get("extra_print") else "0", "tax": float(d.get("tax") or 0),
            "minimo": float(d.get("wholesale_price") or 0), "costo": costo, "smin": stock_min,
            "apd": 1 if d.get("ask_product_description") else 0})
+    if con_escritorio:      # inactivo hasta que el escritorio le asigne su número real (no se vende antes)
+        await db.execute(text("UPDATE pos_dishes SET active = 1 WHERE company_id = :c AND id = :id"), {"c": cid, "id": nuevo})
     await listas_precios.plato_a_default(db, cid, nuevo, 0, precio)
     await db.execute(text("""
         INSERT INTO pos_dish_products (company_id, dish_id, supplier_id, measure_id, minimum_units,
@@ -176,31 +188,90 @@ async def crear_producto(db: AsyncSession, cid: int, d: dict, nuevo_id: Optional
     await db.execute(text("""
         INSERT INTO supply_items
             (company_id, code, description, unit_id, cost_price, stock_qty, min_stock, waste_pct, control_stock,
-             is_active, id_grupo, id_item, posicion, agrupar, unit_uso_id, und_min_utilizadas, synced)
-        VALUES (:c, :cod, :n, :u, :costo, 0, :smin, 0, 1, 1, :g, :id, :id, :cat, :u, 1, 0)
-    """), {"c": cid, "cod": codigo, "n": nombre, "u": unidad, "costo": costo, "smin": stock_min,
-           "g": ID_GRUPO, "id": nuevo, "cat": categoria})
+             is_active, id_grupo, id_item, posicion, agrupar, unit_uso_id, und_min_utilizadas, tipo_und_minima,
+             cant_und_minimas, bodega, valor_und_compra, fecha_vence, synced)
+        VALUES (:c, :cod, :n, :u, :costo, 0, :smin, 0, 1, 1, :g, :id, :id, :cat, :u, 1, LEAST(:u, 127), 1, 1, 0, :fv, 0)
+    """), {"c": cid, "cod": codigo, "n": porcion, "u": unidad, "costo": costo, "smin": stock_min,
+           "g": ID_GRUPO, "id": nuevo, "cat": categoria, "fv": fecha_vence})
     await db.execute(text("""
         INSERT INTO inventario_actual_porciones
             (company_id, id_grupo, id_item, codigo_insumo, descripcion, costo, und_compra, und_min_utilizadas,
-             agrupar, controlar, und_uso, cantidad_actual, stock_minimo, enviada_mysql)
-        VALUES (:c, :g, :id, :cod, :n, :costo, :u, 1, :cat, 1, :u, 0, :smin, 0)
+             agrupar, controlar, und_uso, cantidad_actual, stock_minimo, bodega, valor_und_compra, fecha_vence,
+             enviada_mysql)
+        VALUES (:c, :g, :id, :cod, :n, :costo, :u, 1, :cat, 1, :u, 0, :smin, 1, 0, :fv, 0)
         ON DUPLICATE KEY UPDATE codigo_insumo = VALUES(codigo_insumo), descripcion = VALUES(descripcion)
-    """), {"c": cid, "g": ID_GRUPO, "id": nuevo, "cod": codigo, "n": nombre, "costo": costo, "u": unidad,
-           "cat": categoria, "smin": stock_min})
+    """), {"c": cid, "g": ID_GRUPO, "id": nuevo, "cod": codigo, "n": porcion, "costo": costo, "u": unidad,
+           "cat": categoria, "smin": stock_min, "fv": fecha_vence})
+    # Histórico: el producto entra al último corte de inventario con cantidad 0 (como el escritorio)
+    corte = (await db.execute(text(
+        "SELECT id_historico, fecha FROM historico_inventario_actual_porciones WHERE company_id = :c "
+        "ORDER BY id_historico DESC LIMIT 1"), {"c": cid})).first()
+    await db.execute(text("""
+        INSERT IGNORE INTO historico_inventario_actual_porciones
+            (company_id, id_historico, fecha, id_grupo, id_item, codigo_insumo, descripcion, costo, und_compra,
+             valor_und_compra, und_min_utilizadas, posicion, agrupar, controlar, und_uso, cantidad_actual,
+             fecha_vence, stock_minimo, synced)
+        VALUES (:c, :h, :f, :g, :id, :cod, :n, :costo, :u, 0, 1, :id, :cat, 1, :u, 0, :fv, :smin, 0)
+    """), {"c": cid, "h": int(corte[0]) if corte else 0, "f": corte[1] if corte else date.today().isoformat(),
+           "g": ID_GRUPO, "id": nuevo, "cod": codigo, "n": porcion, "costo": costo, "u": unidad, "cat": categoria,
+           "fv": fecha_vence, "smin": stock_min})
     await db.execute(text("""
         INSERT IGNORE INTO inventario_porciones_plato
             (company_id, id_plato, id_grupo, id_item, cantidad, unidad_minima, porciones_a_desccontar, posicion,
              opcion_cambiar, enviada_mysql)
         VALUES (:c, :id, :g, :id, 1, 1, 1, :id, 0, 0)
     """), {"c": cid, "id": nuevo, "g": ID_GRUPO})
+    # Impresora: la de caja (el escritorio exige escoger una y trae marcada la de facturación)
+    caja = (await db.execute(text(
+        "SELECT id FROM pos_printers WHERE company_id = :c AND is_active = 1 AND UPPER(name) LIKE '%CAJA%' "
+        "ORDER BY (UPPER(TRIM(name)) = 'CAJA') DESC, id LIMIT 1"), {"c": cid})).scalar()
+    if caja is not None:
+        await db.execute(text(
+            "INSERT IGNORE INTO pos_item_printers (company_id, item_id, printer_id, print_copies) VALUES (:c, :id, :p, 1)"),
+            {"c": cid, "id": nuevo, "p": int(caja)})
+    lab = int(d.get("id_laboratorio") or 0) if validado else await laboratorio_valido(db, cid, d.get("id_laboratorio"))
+    if lab:
+        await asignar_laboratorio(db, cid, nuevo, lab)
     return nuevo
+
+
+def nombre_porcion(nombre: str) -> str:
+    """Descripción del insumo como la arma el escritorio (Nombre_Porcion): espacios → _ y sin ' @ ! ç ` ´."""
+    s = (nombre or "").strip().replace(" ", "_")
+    for ch in ("'", "@", "!", "ç", "`", "´"):
+        s = s.replace(ch, "")
+    return s[:250]
+
+
+async def laboratorio_valido(db: AsyncSession, cid: int, id_laboratorio: Optional[int]) -> Optional[int]:
+    if not id_laboratorio:
+        return None
+    if not (await db.execute(text(
+            "SELECT 1 FROM laboratorios WHERE company_id = :c AND id_laboratorio = :l AND activo = 1"),
+            {"c": cid, "l": int(id_laboratorio)})).scalar():
+        raise HTTPException(status_code=400, detail="Laboratorio no válido para esta empresa")
+    return int(id_laboratorio)
+
+
+async def asignar_laboratorio(db: AsyncSession, cid: int, posicion: int, id_laboratorio: Optional[int]) -> None:
+    """laboratorio_insumo: un laboratorio por producto (Posicion_Insumo = Id_Item). El insumo queda pendiente de
+    bajar al escritorio con su laboratorio."""
+    await db.execute(text("DELETE FROM laboratorio_insumo WHERE company_id = :c AND posicion_insumo = :p"),
+                     {"c": cid, "p": posicion})
+    if id_laboratorio:
+        await db.execute(text(
+            "INSERT INTO laboratorio_insumo (company_id, id_laboratorio, posicion_insumo) VALUES (:c, :l, :p)"),
+            {"c": cid, "l": id_laboratorio, "p": posicion})
+    await db.execute(text("UPDATE supply_items SET synced = 0 WHERE company_id = :c AND id_item = :p"),
+                     {"c": cid, "p": posicion})
 
 
 async def _producto(db: AsyncSession, cid: int, dish_id: int) -> dict:
     fila = (await db.execute(text("""
         SELECT d.id, d.name, d.product_code, d.price, d.category_id, d.tax, d.wholesale_price, d.product_cost,
                d.minimum_stock, d.extra_print, d.ask_product_description,
+               (SELECT li.id_laboratorio FROM laboratorio_insumo li
+                WHERE li.company_id = d.company_id AND li.posicion_insumo = d.id LIMIT 1) AS id_laboratorio,
                (SELECT dp.supplier_id FROM pos_dish_products dp
                 WHERE dp.company_id = d.company_id AND dp.dish_id = d.id ORDER BY dp.supplier_id DESC LIMIT 1) AS id_proveedor
         FROM pos_dishes d WHERE d.company_id = :c AND d.id = :id
@@ -232,9 +303,13 @@ async def movimiento(db: AsyncSession, bodega: Bodega, tipo: str, dish_id: Optio
 
 
 async def registrar_entrada(db: AsyncSession, bodega: Bodega, dish_id: int, cantidad: float,
-                            id_proveedor: int, observacion: str) -> int:
-    """Entrada al inventario de la bodega (inventory_entries + stock). Devuelve el id de la entrada."""
-    hoy = date.today().isoformat()
+                            id_proveedor: int, observacion: str, lote: Optional[dict] = None,
+                            ref_tipo: str = "bodega_central", fecha: Optional[str] = None,
+                            item: Optional[int] = None) -> int:
+    """Entrada al inventario (inventory_entries + stock + lote PEPS). Devuelve el id de la entrada.
+    lote: costo / fecha_vence / id_proveedor / nro_factura / origen del lote (por defecto, el costo del producto)."""
+    hoy = (fecha or date.today().isoformat())[:10]
+    dish_id = item or dish_id
     res = await db.execute(text("""
         INSERT INTO inventory_entries
             (id_entrada, id_item, id_proveedor, company_id, fecha, cantidad, cod_empleado, observacion,
@@ -245,19 +320,20 @@ async def registrar_entrada(db: AsyncSession, bodega: Bodega, dish_id: int, cant
            "emp": (bodega.user.email or "")[:50], "obs": (observacion or "")[:255]})
     eid = res.lastrowid
     await db.flush()
-    await apply_stock_move(db, bodega.id, dish_id, cantidad, "entry", "bodega_central", eid, hoy,
-                           f"Bodega central — {observacion or 'entrada'}", bodega.user.id)
+    await apply_stock_move(db, bodega.id, dish_id, cantidad, "entry", ref_tipo, eid, hoy,
+                           observacion if ref_tipo != "bodega_central" else f"Bodega central — {observacion or 'entrada'}",
+                           bodega.user.id, lote=lote)
     return eid
 
 
 # ─── Réplica por IMEI (Modificar_Plato_Nuevo → "Replicar Producto") ──────────
 
 async def replicar(db: AsyncSession, bodega: Bodega, dish_id: int, nombre_base: str, codigos: list[str],
-                   clave: Optional[str]) -> dict:
+                   clave: Optional[str], es_bodega: bool = True, con_escritorio: bool = False) -> dict:
     if not await cargue_unitario(db, bodega.id):
         raise HTTPException(status_code=409, detail="Replicar solo está disponible con el cargue unitario activo "
                                                     "(Configuración Sede)")
-    if await clave_usada(db, bodega, clave):
+    if es_bodega and await clave_usada(db, bodega, clave):
         return {"ok": True, "repetida": True, "creados": []}
     if not codigos:
         raise HTTPException(status_code=422, detail="Digite al menos un código")
@@ -278,16 +354,17 @@ async def replicar(db: AsyncSession, bodega: Bodega, dish_id: int, nombre_base: 
     base = await _producto(db, bodega.id, dish_id)
     nombre_base = ((nombre_base or "").strip() or base["name"])[:200]
     creados = []
-    siguiente = await _nuevo_id(db, bodega.id)                  # una sola vez; luego se numera en bloque
+    siguiente = await _nuevo_id(db, bodega.id, con_escritorio)  # una sola vez; luego se numera en bloque
     for codigo in limpios:
         nuevo = await crear_producto(db, bodega.id, {
             **base, "name": f"{nombre_base} {codigo}"[:250], "product_code": codigo, "extra_print": 1,
-        }, nuevo_id=siguiente)
+        }, nuevo_id=siguiente, con_escritorio=con_escritorio)
         siguiente += 1
         await registrar_entrada(db, bodega, nuevo, 1, base["id_proveedor"] or 0,
                                 f"Réplica de {base['product_code'] or base['id']}")
-        await movimiento(db, bodega, "REPLICA", nuevo, 1, f"Réplica de {base['name']}"[:255],
-                         referencia=str(dish_id), clave=clave)
+        if es_bodega:
+            await movimiento(db, bodega, "REPLICA", nuevo, 1, f"Réplica de {base['name']}"[:255],
+                             referencia=str(dish_id), clave=clave)
         creados.append({"id": nuevo, "codigo": codigo})
     return {"ok": True, "repetida": False, "creados": creados}
 
@@ -1323,6 +1400,7 @@ async def listar_productos(db: AsyncSession, bodega: Bodega) -> list[dict]:
         SELECT d.id, d.name, d.product_code, d.price, d.wholesale_price, d.product_cost, d.tax, d.minimum_stock,
                d.category_id, c.name AS categoria, COALESCE(d.active, 0) AS active,
                IF(COALESCE(d.extra_print, '0') = '1', 1, 0) AS extra_print,
+               COALESCE(d.ask_product_description, 0) AS ask_product_description, d.photo_path,
                COALESCE(iap.cantidad_actual, 0) AS stock,
                (SELECT dp.supplier_id FROM pos_dish_products dp
                 WHERE dp.company_id = d.company_id AND dp.dish_id = d.id ORDER BY dp.supplier_id DESC LIMIT 1) AS id_proveedor

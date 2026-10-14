@@ -36,6 +36,7 @@ from app.routers.pos_comanda_router import _recalc_total
 from app.services import consecutivo_service as cs
 from app.services.formas_pago import es_efectivo_sql, validar_credito
 from app.services import clientes as clientes_svc
+from app.services import lotes
 from app.services import comanda_armado as armado_svc
 from app.services import config_facturacion as cfg_facturacion
 from app.services import permisos
@@ -545,8 +546,11 @@ async def registrar_recibo(
     # ── Confirmar primero lo permanente ──────────────────────────────────────
     await db.commit()
 
-    # ── Inventario: insumo por unidad × cantidad del ítem ────────────────────
+    # ── Inventario: insumo por unidad × cantidad del ítem (y sus lotes PEPS: costo real de lo vendido) ──
     for ins in insumos:
+        await lotes.registrar(db, cid, int(ins["Id_Item"]),
+                              -float(ins["Cantidad"] or 0) * qty_item.get(int(ins["Item"]), 1), "sale",
+                              fecha=fecha, clave=f"R{receipt_number}"[:60])
         await db.execute(text("""
             UPDATE inventario_actual_porciones
             SET cantidad_actual = cantidad_actual - :qty, enviada_mysql = 0, updated_at = NOW()

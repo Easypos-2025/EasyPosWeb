@@ -93,13 +93,6 @@ const routes = [
     component: () => import("@/views/PaymentPendingView.vue"),
     meta: { title: "Activa tu plan — EasyPosWeb" }
   },
-  {
-    path: "/payment-history",
-    name: "PaymentHistoryAssociate",
-    component: () => import("@/views/PaymentHistoryAssociateView.vue"),
-    requiresAuth: true,
-    meta: { title: "Historial de Pagos" }
-  },
 
   {
     path: "/reset-password",
@@ -573,20 +566,6 @@ const routes = [
         requiresAuth: true,
         meta: { title: "Recibo" }
       },
-      {
-        path: "/facturacion/reportes/facturas",
-        name: "FacturacionReporteFacturasView",
-        component: () => import("@/views/FacturacionReporteFacturasView.vue"),
-        requiresAuth: true,
-        meta: { title: "Reporte de Facturas" }
-      },
-      {
-        path: "/facturacion/reportes/recibos",
-        name: "FacturacionReporteRecibosView",
-        component: () => import("@/views/FacturacionReporteRecibosView.vue"),
-        requiresAuth: true,
-        meta: { title: "Reporte de Recibos" }
-      },
 
       // ── Métricas - Estadísticas ────────────────────────────────
       {
@@ -676,6 +655,20 @@ const routes = [
         component: () => import("@/views/ConfigSedeView.vue"),
         requiresAuth: true,
         meta: { title: "Configuración Sede" }
+      },
+      {
+        path: "/productos",
+        name: "ProductosView",
+        component: () => import("@/views/ProductosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Productos" }
+      },
+      {
+        path: "/compras/factura-proveedor",
+        name: "FacturaProveedorView",
+        component: () => import("@/views/FacturaProveedorView.vue"),
+        requiresAuth: true,
+        meta: { title: "Factura de Proveedor" }
       },
       {
         path: "/bodega-central/:seccion?",
