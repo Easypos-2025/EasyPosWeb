@@ -26,6 +26,7 @@ Private Declare Function ShellExecute Lib "shell32.dll" Alias "ShellExecuteA" _
 '               'proveedor' (Id_Proveedor), 'lista_precios' (Id_Producto), 'sede' (0)
 '     provisional = 1: es nuevo de la web (aun no existe en el escritorio)
 '   Al abrir el escritorio o el dashboard:   Call Avisar_Cambios_Web_Pendientes
+'   Antes de entrar a modificar el catalogo: If Avisar_Cambios_Web_Pendientes(10) Then Exit Sub
 '   Antes de dejar modificar un plato:       If Tiene_Cambios_Web("plato", Id_Plato) Then ... (no dejar editar)
 '   Cuando se reviso por ultima vez:         Revision_Cambios_Web()  (si es vieja, el agente no esta conectado)
 ' ABRIR EL PANEL DEL AGENTE SIN DIGITAR LA CLAVE (boton del escritorio):
@@ -136,16 +137,40 @@ Linea:
 Revision_Cambios_Web = ""
 End Function
 
-Public Sub Avisar_Cambios_Web_Pendientes()
-Dim N As Long
+Public Function Avisar_Cambios_Web_Pendientes(Optional ByVal Minutos_Revision As Long = 0) As Boolean
+' Devuelve True si hay cambios del catalogo hechos en la web que aun no se han bajado al escritorio
+' (y muestra el mensaje). False = todo al dia: se puede entrar a modificar.
+' Minutos_Revision (opcional): si el Agente Local no ha revisado en ese tiempo (cerrado o sin internet),
+' no se puede saber si hay cambios: tambien devuelve True. 0 = no se revisa. Si la sede no tiene Agente Local
+' (nunca ha revisado) no se bloquea: no hay catalogo de la web que bajar.
+' Uso:  If Avisar_Cambios_Web_Pendientes(10) Then Exit Sub    ' no deja entrar hasta sincronizar
+Dim N As Long, Revisado As String
 N = Cambios_Web_Pendientes()
 If N > 0 Then
    MsgBox "Hay " & N & " cambio(s) del catalogo hechos en EasyPosWeb que aun no se han bajado al escritorio" & vbCrLf & _
           "(platos, insumos, clientes, categorias, listas de precios...)." & vbCrLf & vbCrLf & _
-          "Sincronice el catalogo de la web antes de modificar esos registros aqui:" & vbCrLf & _
+          "Pulse ""Sincronizar Web"" antes de modificar el catalogo aqui:" & vbCrLf & _
           "lo cambiado en la web reemplaza lo del escritorio al sincronizar.", vbExclamation, "Catalogo de la web"
+   Avisar_Cambios_Web_Pendientes = True
+   Exit Function
 End If
-End Sub
+If Minutos_Revision > 0 Then
+   Revisado = Revision_Cambios_Web()
+   If Revisado = "" Then
+      Exit Function                     ' sin Agente Local en esta sede
+   ElseIf Not IsDate(Revisado) Then
+      Avisar_Cambios_Web_Pendientes = True
+   ElseIf DateDiff("n", CDate(Revisado), Now) > Minutos_Revision Then
+      Avisar_Cambios_Web_Pendientes = True
+   End If
+   If Avisar_Cambios_Web_Pendientes Then
+      MsgBox "No se pudo confirmar si hay cambios del catalogo pendientes en EasyPosWeb:" & vbCrLf & _
+             "el Agente Local no ha revisado" & IIf(IsDate(Revisado), " desde " & Revisado, "") & "." & vbCrLf & vbCrLf & _
+             "Verifique que el Agente Local este abierto y con internet, y pulse ""Sincronizar Web"".", _
+             vbExclamation, "Catalogo de la web"
+   End If
+End If
+End Function
 
 Public Function Puede_Editar_Plato(ByVal Id_Plato As Long) As Boolean
 ' Ejemplo de bloqueo: llamar antes de abrir la edicion de un plato

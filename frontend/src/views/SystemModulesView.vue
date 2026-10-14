@@ -36,32 +36,19 @@
     </form>
 
     <!-- =============================== -->
-    <!-- REPARAR PERFIL -->
+    <!-- PERFIL: ver el árbol de un perfil (el menú se organiza en la vista previa del menú del cliente) -->
     <!-- =============================== -->
     <div class="repair-panel mt-4">
       <div class="repair-header">
-        <i class="bi bi-wrench-adjustable"></i>
-        <span>Reparar Perfil</span>
-        <span class="repair-hint">Limpia módulos inactivos, re-sincroniza jerarquía y añade permisos faltantes</span>
+        <i class="bi bi-diagram-3"></i>
+        <span>Ver por perfil</span>
+        <span class="repair-hint">Para organizar el menú de un perfil use «{{ nombreVistaPrevia }}»</span>
       </div>
       <div class="repair-body">
         <select v-model="repairProfileId" class="form-control repair-select">
           <option value="">— Seleccionar perfil —</option>
           <option v-for="p in $ordenAlfa(profiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
-        <button
-          class="btn btn-repair"
-          :disabled="!repairProfileId || repairing"
-          @click="repairProfile"
-        >
-          <i v-if="repairing" class="bi bi-arrow-repeat spin"></i>
-          <i v-else class="bi bi-wrench-adjustable-circle-fill"></i>
-          {{ repairing ? 'Reparando...' : 'Reparar' }}
-        </button>
-      </div>
-      <div v-if="repairResult" class="repair-result">
-        <i class="bi bi-check-circle-fill"></i>
-        {{ repairResult }}
       </div>
     </div>
 
@@ -292,6 +279,8 @@
 
 
 <script setup>
+import { useModuleName } from "@/composables/useModuleName"
+const { moduleName: nombreVistaPrevia } = useModuleName("/companies/sysadmin")
 
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
@@ -318,11 +307,9 @@ const filterStatus = ref("active")
 
 const editForm = ref({ name: "", route: "", icon: "", parent_id: null })
 
-// ── Reparar perfil ──────────────────────────────────────────────────────────
+// ── Ver por perfil ──────────────────────────────────────────────────────────
 const profiles        = ref([])
 const repairProfileId = ref("")
-const repairing       = ref(false)
-const repairResult    = ref("")
 const profileTree     = ref([])      // árbol del perfil (modo preview)
 const profileLoading  = ref(false)
 
@@ -335,7 +322,6 @@ const loadProfiles = async () => {
 
 // Cuando cambia el perfil seleccionado: carga árbol real del sidebar
 watch(repairProfileId, async (id) => {
-  repairResult.value = ""
   if (!id) { profileTree.value = []; return }
   profileLoading.value = true
   try {
@@ -348,39 +334,6 @@ watch(repairProfileId, async (id) => {
   }
 })
 
-const repairProfile = async () => {
-  const name = profiles.value.find(p => p.id === repairProfileId.value)?.name || "este perfil"
-  const { isConfirmed } = await window.Swal.fire({
-    title: `¿Reparar "${name}"?`,
-    html: `<div style="text-align:left;font-size:14px;color:#475569">
-      <b>1.</b> Elimina módulos inactivos del perfil<br>
-      <b>2.</b> Re-sincroniza jerarquía padre-hijo<br>
-      <b>3.</b> Añade permisos <code>can_view</code> faltantes a roles
-    </div>`,
-    icon: "warning",
-    showCancelButton: true,
-    confirmButtonText: "Sí, reparar",
-    cancelButtonText: "Cancelar",
-    confirmButtonColor: "#1e3a5f"
-  })
-  if (!isConfirmed) return
-
-  repairing.value = true
-  repairResult.value = ""
-  try {
-    const res = await api.post(`/menu/repair-profile/${repairProfileId.value}`)
-    const { deleted_inactive, permissions_added } = res.data
-    const parts = []
-    if (deleted_inactive > 0) parts.push(`${deleted_inactive} módulo(s) inactivo(s) eliminado(s)`)
-    if (permissions_added > 0) parts.push(`${permissions_added} permiso(s) añadido(s)`)
-    repairResult.value = parts.length ? parts.join(' · ') : 'Perfil ya estaba sincronizado'
-    showToast(repairResult.value, parts.length ? "success" : "info")
-  } catch (e) {
-    showToast(e.response?.data?.detail || "Error reparando perfil", "error")
-  } finally {
-    repairing.value = false
-  }
-}
 
 watch(filterStatus, () => {
   loadModules()
