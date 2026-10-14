@@ -177,6 +177,35 @@ def crear_usuario_bd(d: dict, bd_empresa: str, bd_temp: str) -> str:
     return clave
 
 
+GESTIONADAS = ("AG_DB_EMPRESA_URL", "AG_DB_TEMP_URL", "AG_PUERTO", "AG_NUBE_CLAVE")
+
+
+def leer_env() -> dict:
+    """Configuración de un agente ya instalado ({} si no hay): para actualizar sin volver a pedir las claves."""
+    env = DESTINO / ".env"
+    if not (DESTINO / EXE).exists() or not env.exists():
+        return {}
+    datos = {}
+    try:
+        for linea in env.read_text(encoding="utf-8").splitlines():
+            linea = linea.strip()
+            if linea and not linea.startswith("#") and "=" in linea:
+                k, v = linea.split("=", 1)
+                datos[k.strip()] = v.strip()
+    except OSError:
+        return {}
+    return datos
+
+
+def datos_bd(url: str) -> dict:
+    """mysql+aiomysql://usuario:clave@host:puerto/base → host, puerto y base."""
+    try:
+        u = urllib.parse.urlsplit(url.replace("mysql+aiomysql://", "mysql://", 1))
+        return {"host": u.hostname or "", "puerto": str(u.port or 3306), "base": urllib.parse.unquote(u.path.lstrip("/"))}
+    except ValueError:
+        return {}
+
+
 def escribir_env(d: dict, clave_bd: str, bd_empresa: str, bd_temp: str, puerto: int, clave_nube: str) -> None:
     usuario = urllib.parse.quote(USUARIO_BD, safe="")
     clave = urllib.parse.quote(clave_bd, safe="")
@@ -189,6 +218,8 @@ def escribir_env(d: dict, clave_bd: str, bd_empresa: str, bd_temp: str, puerto: 
     ]
     if clave_nube:
         lineas.append(f"AG_NUBE_CLAVE={clave_nube}")
+    # En una actualización se conservan las demás variables que ya tenía (las que no maneja el instalador)
+    lineas += [f"{k}={v}" for k, v in leer_env().items() if k not in GESTIONADAS]
     env = DESTINO / ".env"
     env.write_text("\n".join(lineas) + "\n", encoding="utf-8")
     # Solo SYSTEM (el agente) y Administradores pueden leerlo: tiene la clave de la BD
@@ -312,6 +343,21 @@ class Asistente(tk.Tk):
         self.clave_admin = tk.StringVar()
         self.clave_admin2 = tk.StringVar()
         self.empresas: list[tuple[str, str]] = []
+        # Actualización: se parte de la configuración que ya tiene el agente instalado
+        self.actual = leer_env()
+        self.actualizando = bool(self.actual)
+        if self.actualizando:
+            emp = datos_bd(self.actual.get("AG_DB_EMPRESA_URL", ""))
+            tmp = datos_bd(self.actual.get("AG_DB_TEMP_URL", ""))
+            if emp.get("host"):
+                self.datos["host"].set("localhost" if emp["host"] == "127.0.0.1" else emp["host"])
+                self.datos["puerto"].set(emp["puerto"])
+            if emp.get("base"):
+                self.bd_empresa.set(emp["base"])
+            if tmp.get("base"):
+                self.bd_temp.set(tmp["base"])
+            if (self.actual.get("AG_PUERTO") or "").isdigit():
+                self.puerto_agente.set(self.actual["AG_PUERTO"])
         self.marco = ttk.Frame(self, padding=22)
         self.marco.pack(fill="both", expand=True)
         self.paso_bienvenida()
@@ -353,8 +399,10 @@ class Asistente(tk.Tk):
         ttk.Label(self.marco, text=texto, justify="left").pack(anchor="w")
         barra = self.botones(self.paso_mysql, "Comenzar")
         if (DESTINO / EXE).exists():
-            ttk.Label(self.marco, text="\nYa hay un agente instalado: se actualizará conservando su configuración.",
-                      foreground="#b45309").pack(anchor="w")
+            ttk.Label(self.marco, text="\nYa hay un agente instalado: se actualizará conservando su configuración "
+                                       "(empresa, puerto, clave de la nube y clave del panel). Solo se pide la clave "
+                                       "de MySQL para actualizar los permisos.",
+                      foreground="#b45309", wraplength=600, justify="left").pack(anchor="w")
             ttk.Button(barra, text="Desinstalar", command=self.desinstalar).pack(side="left")
 
     def desinstalar(self):
@@ -392,6 +440,8 @@ class Asistente(tk.Tk):
             self.bd_temp.set(temporales[0])
         if len(self.empresas) == 1:
             self.bd_empresa.set(self.empresas[0][0])
+        if self.bd_empresa.get() not in {bd for bd, _ in self.empresas}:
+            self.bd_empresa.set("")
         self.paso_bases()
 
     # ── 3. Bases de datos
@@ -431,15 +481,22 @@ class Asistente(tk.Tk):
                      "Clave del administrador: para entrar al panel del agente en este PC (errores, dispositivos…). "
                      "Guárdela; no se puede ver después.\n\nClave de la nube: la que asignó EasyPosWeb para este "
                      "negocio en \"Agentes Locales\" (opcional; sin ella el agente funciona igual en la red local).")
+        if self.actualizando:
+            ttk.Label(self.marco, text="Actualización: deje las casillas vacías para conservar las claves actuales.",
+                      foreground="#15803d").pack(anchor="w", pady=(0, 8))
         e = self.campo(self.marco, "Clave del administrador", self.clave_admin, oculto=True)
         self.campo(self.marco, "Repita la clave", self.clave_admin2, oculto=True)
         ttk.Separator(self.marco).pack(fill="x", pady=12)
         self.campo(self.marco, "Clave de la nube (opcional)", self.clave_nube)
+        if self.actualizando and self.actual.get("AG_NUBE_CLAVE"):
+            ttk.Label(self.marco, text="Este agente ya tiene clave de la nube: si la deja vacía se conserva.",
+                      style="Sub.TLabel").pack(anchor="w")
         e.focus_set()
         self.botones(self.validar_claves, "Instalar", atras=self.paso_bases)
 
     def validar_claves(self):
-        if len(self.clave_admin.get()) < 6:
+        conservar = self.actualizando and not self.clave_admin.get() and not self.clave_admin2.get()
+        if not conservar and len(self.clave_admin.get()) < 6:
             messagebox.showwarning(TITULO, "La clave del administrador debe tener mínimo 6 caracteres.")
             return
         if self.clave_admin.get() != self.clave_admin2.get():
@@ -474,8 +531,12 @@ class Asistente(tk.Tk):
             self.avance("Creando el usuario de base de datos…")
             clave_bd = crear_usuario_bd(d, self.bd_empresa.get(), self.bd_temp.get())
             self.avance("Guardando la configuración…")
-            escribir_env(d, clave_bd, self.bd_empresa.get(), self.bd_temp.get(), puerto, self.clave_nube.get().strip())
-            self.avance("Guardando la clave del administrador…"); fijar_clave_admin(self.clave_admin.get())
+            nube = self.clave_nube.get().strip() or (self.actual.get("AG_NUBE_CLAVE", "") if self.actualizando else "")
+            escribir_env(d, clave_bd, self.bd_empresa.get(), self.bd_temp.get(), puerto, nube)
+            if self.clave_admin.get():
+                self.avance("Guardando la clave del administrador…"); fijar_clave_admin(self.clave_admin.get())
+            else:
+                self.avance("Se conserva la clave del administrador.")
             self.avance("Abriendo el puerto en el firewall…"); regla_firewall(puerto)
             self.avance("Registrando el arranque con Windows…"); registrar_tarea()
             self.avance("Creando accesos directos…"); accesos_directos(puerto)
