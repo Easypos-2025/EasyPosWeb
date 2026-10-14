@@ -454,3 +454,117 @@ async def detalle(db: AsyncSession, bodega: Bodega, tid: int) -> dict:
     cab["destino"] = grupo.get(t["destino_id"], f"Empresa {t['destino_id']}")
     return {"traslado": cab,
             "items": [{**dict(i), **{k: (float(i[k]) if i[k] is not None else None) for k in num}} for i in items]}
+
+
+# ─── Agente Local (empresas con escritorio) ──────────────────────────────────
+# El agente de cada sede con escritorio consulta sus tareas y reporta el resultado:
+#   SALIDA  traslado con origen en su sede, PENDIENTE_SALIDA: descontar (verificando que tenga el stock).
+#   CARGUE  traslado con destino en su sede, PENDIENTE_CARGUE: crear o actualizar el producto y sumar.
+#   REVERSA traslado ANULADO con reversa_pendiente: devolver lo que su agente ya había descontado.
+# El escritorio usa la tipificación 9 REMISIÓN MANUAL (desde la bodega) o 7 TRASLADO ENTRE SEDES.
+TIPIF_REMISION, TIPIF_ENTRE_SEDES = 9, 7
+MAX_TAREAS = 20
+
+
+def _agente_como_bodega(bodega_id: int, nit: str, agente: dict) -> Bodega:
+    from types import SimpleNamespace
+    quien = f"Agente {agente.get('codigo') or ''} ({agente.get('empresa') or ''})".strip()[:150]
+    return Bodega(id=bodega_id, nit=nit, user=SimpleNamespace(id=None, email=f"agente:{agente.get('codigo')}",
+                                                              nombre=quien), ip="")
+
+
+async def tareas_agente(db: AsyncSession, cid: int) -> list[dict]:
+    filas = (await db.execute(text("""
+        SELECT t.*, ob.name AS origen_nombre, de.name AS destino_nombre,
+               CASE WHEN t.estado = 'PENDIENTE_SALIDA' AND t.origen_id = :c THEN 'SALIDA'
+                    WHEN t.estado = 'PENDIENTE_CARGUE' AND t.destino_id = :c THEN 'CARGUE'
+                    WHEN t.estado = 'ANULADO' AND t.reversa_pendiente = 1 AND t.origen_id = :c THEN 'REVERSA' END AS tarea
+        FROM bc_traslados t
+        JOIN companies ob ON ob.id_company = t.origen_id
+        JOIN companies de ON de.id_company = t.destino_id
+        WHERE (t.estado = 'PENDIENTE_SALIDA' AND t.origen_id = :c)
+           OR (t.estado = 'PENDIENTE_CARGUE' AND t.destino_id = :c)
+           OR (t.estado = 'ANULADO' AND t.reversa_pendiente = 1 AND t.origen_id = :c)
+        ORDER BY t.id LIMIT :n
+    """), {"c": cid, "n": MAX_TAREAS})).mappings().all()
+    out = []
+    for t in filas:
+        items = (await db.execute(text("SELECT * FROM bc_traslado_items WHERE traslado_id = :t ORDER BY item"),
+                                  {"t": t["id"]})).mappings().all()
+        desde_bodega = int(t["origen_id"]) == int(t["bodega_id"])
+        out.append({
+            "id": int(t["id"]), "numero": int(t["numero"]), "tarea": t["tarea"],
+            "tipificacion": TIPIF_REMISION if desde_bodega else TIPIF_ENTRE_SEDES,
+            "origen": t["origen_nombre"], "destino": t["destino_nombre"], "observacion": t["observacion"] or "",
+            "items": [{
+                "id": int(i["id"]), "item": int(i["item"]), "origen_dish_id": int(i["origen_dish_id"]),
+                "codigo": i["codigo"] or "", "nombre": i["nombre"], "categoria": i["categoria"] or "",
+                "proveedor": i["proveedor"] or "", "proveedor_nit": i["proveedor_nit"] or "",
+                "precio": float(i["precio"] or 0), "precio_minimo": float(i["precio_minimo"] or 0),
+                "costo": float(i["costo"] or 0), "iva": float(i["iva"] or 0), "stock_minimo": float(i["stock_minimo"] or 0),
+                "unitario": bool(i["desactivar_al_vender"]), "pedir_descripcion": bool(i["pedir_descripcion"]),
+                "cantidad": float(i["cantidad"])} for i in items]})
+    return out
+
+
+async def resultado_agente(db: AsyncSession, agente: dict, r: dict) -> dict:
+    """r: {id, tarea, ok, error, items: [{id, destino_dish_id, resultado, stock_antes, stock_despues}]}"""
+    cid = int(agente["company_id"])
+    t = (await db.execute(text("SELECT * FROM bc_traslados WHERE id = :t FOR UPDATE"), {"t": int(r["id"])})).mappings().first()
+    if not t:
+        return {"id": r["id"], "ok": False, "motivo": "no existe"}
+    tarea = r["tarea"]
+    esperado = {"SALIDA": (t["estado"] == "PENDIENTE_SALIDA" and int(t["origen_id"]) == cid),
+                "CARGUE": (t["estado"] == "PENDIENTE_CARGUE" and int(t["destino_id"]) == cid),
+                "REVERSA": (t["estado"] == "ANULADO" and int(t["reversa_pendiente"]) == 1 and int(t["origen_id"]) == cid)}
+    if not esperado.get(tarea):
+        return {"id": r["id"], "ok": True, "ignorado": True}        # repetido o ya no aplica: sin daño
+    quien = f"Agente {agente.get('codigo')}"
+    items = {int(i["id"]): i for i in r.get("items") or []}
+    if tarea == "REVERSA":
+        if r.get("ok"):
+            await db.execute(text("UPDATE bc_traslados SET reversa_pendiente = 0, error = NULL WHERE id = :t"), {"t": t["id"]})
+        else:                          # sigue pendiente: el agente reintenta
+            await db.execute(text("UPDATE bc_traslados SET error = :e WHERE id = :t"),
+                             {"e": (r.get("error") or "No se pudo devolver en el origen")[:255], "t": t["id"]})
+        return {"id": r["id"], "ok": True}
+    if not r.get("ok"):
+        if tarea == "SALIDA":         # el origen no pudo descontar (ej. ya vendió): el traslado no sigue
+            await db.execute(text("UPDATE bc_traslados SET estado = 'ERROR', error = :e WHERE id = :t"),
+                             {"e": (r.get("error") or "No se pudo descontar en el origen")[:255], "t": t["id"]})
+            await db.execute(text("UPDATE bc_traslado_items SET estado = 'ERROR' WHERE traslado_id = :t"), {"t": t["id"]})
+        else:                          # cargue: queda pendiente con el mensaje (el agente reintenta)
+            await db.execute(text("UPDATE bc_traslados SET error = :e WHERE id = :t"),
+                             {"e": (r.get("error") or "No se pudo cargar en el destino")[:255], "t": t["id"]})
+        return {"id": r["id"], "ok": True}
+    nit = (await db.execute(text("SELECT identification_number FROM companies WHERE id_company = :b"),
+                            {"b": t["bodega_id"]})).scalar() or ""
+    bod = _agente_como_bodega(int(t["bodega_id"]), str(nit), agente)
+    if tarea == "SALIDA":
+        for iid, it in items.items():
+            await db.execute(text("""
+                UPDATE bc_traslado_items SET stock_origen_antes = :a, stock_origen_despues = :d
+                WHERE id = :id AND traslado_id = :t
+            """), {"a": it.get("stock_antes"), "d": it.get("stock_despues"), "id": iid, "t": t["id"]})
+        await db.execute(text("""
+            UPDATE bc_traslados SET estado = 'PENDIENTE_CARGUE', salida_en = NOW(), salida_por = :p, error = NULL
+            WHERE id = :t
+        """), {"p": quien, "t": t["id"]})
+        if not await es_escritorio(db, int(t["destino_id"])):       # destino web: se carga ya
+            await cargar_en_web(db, bod, int(t["id"]))
+        return {"id": r["id"], "ok": True}
+    # CARGUE
+    for iid, it in items.items():
+        dd = int(it.get("destino_dish_id") or 0)
+        await db.execute(text("""
+            UPDATE bc_traslado_items SET destino_dish_id = :dd, resultado = :r, estado = 'CARGADO',
+                   stock_destino_antes = :a, stock_destino_despues = :d WHERE id = :id AND traslado_id = :t
+        """), {"dd": dd or None, "r": it.get("resultado") if it.get("resultado") in ("CREADO", "ACTUALIZADO") else None,
+               "a": it.get("stock_antes"), "d": it.get("stock_despues"), "id": iid, "t": t["id"]})
+        orig = (await db.execute(text("SELECT origen_dish_id FROM bc_traslado_items WHERE id = :id"), {"id": iid})).scalar()
+        if dd and orig:
+            await _vincular(db, bod, dict(t), int(orig), dd)
+    await db.execute(text("""
+        UPDATE bc_traslados SET estado = 'CARGADO', cargado_en = NOW(), cargado_por = :p, error = NULL WHERE id = :t
+    """), {"p": quien, "t": t["id"]})
+    return {"id": r["id"], "ok": True}

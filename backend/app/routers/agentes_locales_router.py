@@ -554,6 +554,47 @@ def url_publica(ruta: str) -> str:
 # Para el dashboard de la empresa: dirección local del agente y QR para los celulares.
 # La empresa es la efectiva del usuario (topbar validada en el servidor), nunca la del navegador.
 
+
+# ───────────────────────────── Traslados de la Bodega Central ─────────────────────────────
+# El agente consulta sus tareas (salidas, cargues y devoluciones de traslados en su sede) y reporta el
+# resultado. Todo automático (sin cajero). Ver app/services/bodega_traslados.py.
+
+@router_agente.get("/traslados/pendientes")
+async def traslados_pendientes(agente: dict = Depends(agente_actual), db: AsyncSession = Depends(get_db)):
+    from app.services import bodega_traslados
+    return {"tareas": await bodega_traslados.tareas_agente(db, int(agente["company_id"]))}
+
+
+class TrasladoItemResultadoIn(BaseModel):
+    id: int = Field(gt=0)
+    destino_dish_id: Optional[int] = Field(default=None, ge=0)
+    resultado: Optional[Literal["CREADO", "ACTUALIZADO"]] = None
+    stock_antes: Optional[float] = None
+    stock_despues: Optional[float] = None
+
+
+class TrasladoResultadoIn(BaseModel):
+    id: int = Field(gt=0)
+    tarea: Literal["SALIDA", "CARGUE", "REVERSA"]
+    ok: bool
+    error: Optional[str] = Field(default=None, max_length=255)
+    items: list[TrasladoItemResultadoIn] = Field(default_factory=list, max_length=300)
+
+
+class TrasladosResultadoIn(BaseModel):
+    resultados: list[TrasladoResultadoIn] = Field(max_length=20)
+
+
+@router_agente.post("/traslados/resultado")
+async def traslados_resultado(data: TrasladosResultadoIn, agente: dict = Depends(agente_actual),
+                              db: AsyncSession = Depends(get_db)):
+    from app.services import bodega_traslados
+    out = []
+    for r in data.resultados:
+        out.append(await bodega_traslados.resultado_agente(db, agente, r.model_dump()))
+        await db.commit()                       # uno por uno: un error no deshace los anteriores
+    return {"ok": True, "resultados": out}
+
 router_empresa = APIRouter(prefix="/api/mi-agente-local", tags=["agente-local"], dependencies=[Depends(tenant_guard)])
 
 

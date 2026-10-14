@@ -185,6 +185,17 @@ TABLAS = [
         PRIMARY KEY (entidad, id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # Traslados de la Bodega Central: cada artículo ya aplicado en el escritorio (sin doble aplicación)
+    """
+    CREATE TABLE IF NOT EXISTS ag_bc_item (
+        traslado_id  BIGINT       NOT NULL,
+        tarea        VARCHAR(10)  NOT NULL,
+        item_id      BIGINT       NOT NULL,
+        resultado    TEXT         NULL,
+        aplicado     DATETIME     NOT NULL,
+        PRIMARY KEY (traslado_id, tarea, item_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
     # Configuración del agente (clave de administrador cifrada, versión de su sesión…)
     """
     CREATE TABLE IF NOT EXISTS ag_config (

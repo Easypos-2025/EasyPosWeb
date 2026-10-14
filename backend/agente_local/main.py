@@ -17,7 +17,7 @@ from .db import motor_empresa, motor_temp
 from .esquema import crear_esquema
 from .seguridad import ip_cliente
 from .routers import admin, catalogo, dispositivos, mesas, pedidos
-from .servicios import pedidos_web
+from .servicios import pedidos_web, traslados_bodega
 
 _dir_logs = config.BASE / "logs"
 _dir_logs.mkdir(exist_ok=True)
@@ -38,9 +38,11 @@ async def _ciclo(app: FastAPI):
     actualizador.leer_resultado()                        # último resultado ya reportado (para el panel)
     tarea_nube = asyncio.create_task(nube.ciclo())      # latido, errores, fotos y actualizaciones
     tarea_pedidos = asyncio.create_task(pedidos_web.ciclo())   # pedidos web: aceptación en caja
+    tarea_traslados = asyncio.create_task(traslados_bodega.ciclo())   # traslados de la Bodega Central (automático)
     yield
     tarea_nube.cancel()
     tarea_pedidos.cancel()
+    tarea_traslados.cancel()
     await motor_empresa.dispose()
     await motor_temp.dispose()
 
