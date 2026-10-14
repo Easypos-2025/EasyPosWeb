@@ -1,795 +1,411 @@
-
 <template>
-  <div class="sysadmin-container">
+  <div class="smm-page">
+    <div class="smm-head">
+      <h4 class="smm-h"><i class="bi bi-layout-sidebar-inset me-2"></i>{{ moduleName || 'Menú del Cliente (Vista previa)' }}</h4>
+      <p class="smm-sub">
+        Así ve el menú cada empresa del perfil, en el mismo orden y con los mismos nombres. Lo que no está aquí, el cliente
+        no lo ve. Cada rol ve además solo lo que tenga permitido.
+      </p>
+    </div>
 
-    <!-- SELECCIONAR PERFIL -->
-    <div class="card smm-card p-3 mt-3">
-      <h5 class="smm-title">Seleccione Business Profile</h5>
-      <select v-model="selectedProfileId" class="form-select mt-2">
-        <option value="">-- Seleccione un perfil --</option>
-        <option v-for="profile in $ordenAlfa(businessProfiles, 'name')" :key="profile.id" :value="profile.id">
-          {{ profile.name }}
-        </option>
+    <!-- PERFIL -->
+    <div class="smm-card">
+      <label class="smm-label">Perfil (tipo de negocio)</label>
+      <select v-model="perfilId" class="form-select">
+        <option value="">— Seleccionar —</option>
+        <option v-for="p in $ordenAlfa(perfiles, 'name')" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
     </div>
 
-    <!-- AGREGAR MÓDULO EXISTENTE -->
-    <div v-if="selectedProfileId" class="card smm-card p-3 mt-3">
-      <h5 class="smm-title">
-        <i class="bi bi-plus-circle-fill" style="color:#3b82f6"></i>
-        Agregar módulo existente al perfil
-      </h5>
-
-      <div class="smm-add-form">
-        <div class="smm-add-field">
-          <label class="smm-label">
-            Módulo
-            <span v-if="availableModules.length" class="smm-count">({{ availableModules.length }} disponibles)</span>
-            <span v-else-if="selectedProfileId" class="smm-count smm-count--empty">sin módulos nuevos para agregar</span>
-          </label>
-          <select v-model="addForm.module_id" class="form-select smm-select" :disabled="!availableModules.length">
-            <option :value="null">— Selecciona un módulo —</option>
-            <option v-for="m in $ordenAlfa(availableModules, 'name')" :key="m.id" :value="m.id">
-              {{ m.name }}{{ m.route ? ` (${m.route})` : '' }}
-            </option>
-          </select>
-        </div>
-
-        <div class="smm-add-field">
-          <label class="smm-label">Nombre en este perfil <span class="smm-optional">(opcional — si difiere del nombre global)</span></label>
-          <input v-model="addForm.display_name" class="form-control smm-input" placeholder="Ej: Und. Medida Rest." />
-        </div>
-
-        <div class="smm-add-field">
-          <label class="smm-label">Colgar bajo</label>
-          <select v-model="addForm.parent_id" class="form-select smm-select">
-            <option :value="null">— Raíz (nivel superior) —</option>
-            <option v-for="m in $ordenAlfa(flatModules, 'name')" :key="m.id" :value="m.id">
-              {{ m.name }}
-            </option>
-          </select>
-        </div>
-
-        <!-- HIJOS POR DEFECTO: se muestra si el módulo seleccionado tiene defaults -->
-        <div v-if="defaultChildren.length" class="smm-defaults-box">
-          <label class="smm-defaults-check">
-            <input type="checkbox" v-model="addForm.includeDefaults" />
-            <span>
-              Incluir <strong>{{ defaultChildren.length }}</strong> hijo(s) por defecto:
-              <em>{{ defaultChildren.map(c => c.name).join(', ') }}</em>
-            </span>
-          </label>
-        </div>
-
-        <button class="btn smm-btn-add" :disabled="!addForm.module_id || adding" @click="addModule">
-          <i v-if="adding" class="bi bi-arrow-repeat spin"></i>
-          <i v-else class="bi bi-plus-lg"></i>
-          {{ adding ? 'Agregando...' : 'Agregar' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- GESTIÓN DE MENÚ -->
-    <div class="card smm-card p-3 mt-3">
-      <h5 class="smm-title">
-        Gestión de Menú
-        <span class="smm-hint">Arrastra por el ícono <i class="bi bi-grip-vertical"></i> para reordenar</span>
-      </h5>
-
-      <div v-if="!selectedProfileId" class="smm-empty">
-        <i class="bi bi-arrow-up-circle"></i> Selecciona un perfil para gestionar su menú
-      </div>
-
-      <div v-else-if="modules.length === 0" class="smm-empty">
-        <i class="bi bi-inbox"></i> No hay módulos en este perfil
-      </div>
-
-      <!-- PADRES -->
-      <draggable
-        v-else
-        v-model="modules"
-        item-key="id"
-        :group="{ name: 'root', pull: false, put: false }"
-        handle=".drag-handle"
-        @change="updateOrder"
-      >
-        <template #item="{ element }">
-          <div class="smm-item smm-parent">
-            <span class="drag-handle"><i class="bi bi-grip-vertical"></i></span>
-            <span class="smm-icon">
-              <i v-if="element.icon?.startsWith('bi-')" :class="`bi ${element.icon}`"></i>
-              <span v-else>{{ element.icon }}</span>
-            </span>
-            <span class="smm-name">{{ element.name }}</span>
-            <span class="smm-route">{{ element.route || '—' }}</span>
-            <button class="smm-btn-edit" title="Editar asignación" @click.stop="openEdit(element)">
-              <i class="bi bi-pencil-square"></i>
+    <template v-if="perfilId">
+      <div v-if="cargando" class="smm-empty"><div class="spinner-border text-primary"></div></div>
+      <template v-else>
+        <!-- PROBLEMAS -->
+        <div v-if="previa.problemas.length" class="smm-card smm-card--alerta">
+          <div class="smm-alerta-head">
+            <span><i class="bi bi-exclamation-triangle-fill"></i> {{ previa.problemas.length }} opción(es) que el cliente NO ve</span>
+            <button v-if="reparables" class="smm-btn smm-btn--sec" :disabled="trabajando" @click="reparar">
+              <i class="bi bi-tools"></i> Reparar {{ reparables }}
             </button>
-            <button class="smm-btn-remove" title="Quitar del perfil" @click.stop="confirmRemove(element)">
-              <i class="bi bi-trash3"></i>
-            </button>
+          </div>
+          <ul class="smm-problemas">
+            <li v-for="p in previa.problemas" :key="`${p.tipo}-${p.id}`">
+              <b>{{ p.name }}</b> <span v-if="p.route" class="smm-route">{{ p.route }}</span> — {{ p.texto }}
+            </li>
+          </ul>
+          <p class="smm-nota">Reparar sube a la raíz lo que está mal colgado (y lo del tercer nivel lo pasa a su grupo), así el
+            cliente lo vuelve a ver. Los módulos inactivos y los grupos vacíos no se tocan.</p>
+        </div>
 
-            <!-- HIJOS -->
-            <draggable
-              v-if="element.children?.length"
-              v-model="element.children"
-              item-key="id"
-              :group="{ name: 'children-' + element.id, pull: false, put: false }"
-              handle=".drag-handle"
-              class="smm-children"
-              @change="updateOrder"
-            >
-              <template #item="{ element: child }">
-                <div class="smm-item smm-child">
-                  <span class="drag-handle"><i class="bi bi-grip-vertical"></i></span>
-                  <span class="smm-icon">
-                    <i v-if="child.icon?.startsWith('bi-')" :class="`bi ${child.icon}`"></i>
-                    <span v-else>{{ child.icon }}</span>
-                  </span>
-                  <span class="smm-name">{{ child.name }}</span>
-                  <span class="smm-route">{{ child.route }}</span>
-                  <button class="smm-btn-edit" title="Editar asignación" @click.stop="openEdit(child)">
-                    <i class="bi bi-pencil-square"></i>
-                  </button>
-                  <button class="smm-btn-remove" title="Quitar del perfil" @click.stop="confirmRemove(child)">
-                    <i class="bi bi-trash3"></i>
-                  </button>
+        <!-- AGREGAR O MOVER -->
+        <div class="smm-card">
+          <div class="smm-titulo"><i class="bi bi-plus-circle-fill"></i> Agregar o mover una opción</div>
+          <div class="smm-form">
+            <div class="smm-field smm-field--2">
+              <label class="smm-label">Módulo</label>
+              <select v-model="form.module_id" class="form-select">
+                <option :value="null">— Seleccionar —</option>
+                <option v-for="m in $ordenAlfa(previa.catalogo, 'name')" :key="m.id" :value="m.id">
+                  {{ m.name }}{{ m.route ? ` · ${m.route}` : ' · (grupo)' }}{{ m.en_perfil ? ` — ya está en ${m.grupo}` : '' }}
+                </option>
+              </select>
+              <small v-if="seleccionado?.en_perfil" class="smm-ya">
+                <i class="bi bi-info-circle"></i> Ya está en este perfil, en «{{ seleccionado.grupo }}». Cada módulo va una sola
+                vez por perfil: se moverá al grupo y con el nombre que escoja aquí.
+              </small>
+            </div>
+            <div class="smm-field">
+              <label class="smm-label">Nombre que verá el cliente <span class="smm-opc">(opcional)</span></label>
+              <input v-model.trim="form.display_name" class="form-control" maxlength="100" placeholder="Vacío = nombre del catálogo" />
+            </div>
+            <div class="smm-field">
+              <label class="smm-label">Grupo</label>
+              <select v-model="form.parent_id" class="form-select" :disabled="form.includeDefaults && defaults.length > 0">
+                <option :value="null">— Raíz (primer nivel) —</option>
+                <option v-for="g in gruposPara(seleccionado?.bpm_id)" :key="g.id" :value="g.id">{{ etiquetaGrupo(g) }}</option>
+              </select>
+            </div>
+          </div>
+          <label v-if="defaults.length && !seleccionado?.en_perfil" class="smm-check">
+            <input v-model="form.includeDefaults" type="checkbox" />
+            Incluir {{ defaults.length }} opción(es) por defecto: <em>{{ defaults.map(c => c.name).join(', ') }}</em>
+            <small v-if="form.includeDefaults">(un grupo con opciones va en la raíz: el menú del cliente muestra dos niveles)</small>
+          </label>
+          <div class="smm-acc">
+            <button class="smm-btn" :disabled="!form.module_id || trabajando" @click="agregarOMover">
+              <span v-if="trabajando" class="spinner-border spinner-border-sm"></span>
+              <i v-else class="bi" :class="seleccionado?.en_perfil ? 'bi-arrow-left-right' : 'bi-plus-lg'"></i>
+              {{ seleccionado?.en_perfil ? 'Mover aquí' : 'Agregar' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- VISTA PREVIA -->
+        <div class="smm-card smm-card--menu">
+          <div class="smm-menu-head">
+            <div class="smm-titulo"><i class="bi bi-eye"></i> Menú que ve el cliente</div>
+            <div class="smm-buscar">
+              <i class="bi bi-search"></i>
+              <input v-model.trim="buscar" class="form-control" placeholder="Buscar opción..." />
+            </div>
+          </div>
+          <p class="smm-nota">Arrastre por <i class="bi bi-grip-vertical"></i> para cambiar el orden. Se abre un grupo a la vez.</p>
+
+          <div v-if="!previa.arbol.length" class="smm-empty"><i class="bi bi-inbox"></i> Este perfil no tiene opciones</div>
+          <draggable v-else v-model="previa.arbol" item-key="id" handle=".smm-drag" :disabled="!!buscar"
+                     @end="guardarOrden(previa.arbol, null)">
+            <template #item="{ element: g }">
+              <div v-show="visible(g)" class="smm-nodo" :class="{ 'smm-nodo--grupo': g.children.length }">
+                <div class="smm-fila" :class="{ 'smm-fila--abre': g.children.length }" @click="g.children.length && toggle(g.id)">
+                  <span class="smm-drag" @click.stop><i class="bi bi-grip-vertical"></i></span>
+                  <i class="smm-ico bi" :class="g.icon?.startsWith('bi-') ? g.icon : 'bi-dot'"></i>
+                  <div class="smm-txt">
+                    <span class="smm-nombre">{{ g.name }}</span>
+                    <small v-if="g.display_name && g.display_name !== g.nombre_catalogo" class="smm-cat">({{ g.nombre_catalogo }})</small>
+                    <span v-if="g.funcion" class="smm-badge">solo con {{ g.funcion }}</span>
+                    <small class="smm-route">{{ g.route || (g.children.length ? `${g.children.length} opción(es)` : 'grupo vacío') }}</small>
+                  </div>
+                  <button class="smm-ib" title="Editar" @click.stop="abrirEditar(g)"><i class="bi bi-pencil-square"></i></button>
+                  <button class="smm-ib smm-ib--rojo" title="Quitar del perfil" @click.stop="pedirQuitar(g)"><i class="bi bi-trash3"></i></button>
+                  <i v-if="g.children.length" class="bi smm-chev" :class="abierto(g) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                 </div>
-              </template>
-            </draggable>
+                <draggable v-if="g.children.length && abierto(g)" v-model="g.children" item-key="id" handle=".smm-drag"
+                           class="smm-hijos" :disabled="!!buscar" @end="guardarOrden(g.children, g.id)">
+                  <template #item="{ element: h }">
+                    <div v-show="visible(h)" class="smm-fila smm-fila--hijo">
+                      <span class="smm-drag"><i class="bi bi-grip-vertical"></i></span>
+                      <i class="smm-ico bi" :class="h.icon?.startsWith('bi-') ? h.icon : 'bi-dot'"></i>
+                      <div class="smm-txt">
+                        <span class="smm-nombre">{{ h.name }}</span>
+                        <small v-if="h.display_name && h.display_name !== h.nombre_catalogo" class="smm-cat">({{ h.nombre_catalogo }})</small>
+                        <span v-if="h.funcion" class="smm-badge">solo con {{ h.funcion }}</span>
+                        <small class="smm-route">{{ h.route }}</small>
+                      </div>
+                      <button class="smm-ib" title="Editar" @click="abrirEditar(h)"><i class="bi bi-pencil-square"></i></button>
+                      <button class="smm-ib smm-ib--rojo" title="Quitar del perfil" @click="pedirQuitar(h)"><i class="bi bi-trash3"></i></button>
+                    </div>
+                  </template>
+                </draggable>
+              </div>
+            </template>
+          </draggable>
+        </div>
+      </template>
+    </template>
 
+    <!-- QUITAR -->
+    <teleport to="body">
+      <div v-if="quitar.item" class="smm-overlay" @click.self="quitar.item = null">
+        <div class="smm-modal">
+          <div class="smm-modal-head"><b><i class="bi bi-trash3 text-danger"></i> Quitar del perfil</b>
+            <button class="smm-x" @click="quitar.item = null"><i class="bi bi-x-lg"></i></button></div>
+          <div class="smm-modal-body">
+            <p>¿Quitar <b>{{ quitar.item.name }}</b> del menú de este perfil? Ninguna empresa del perfil lo volverá a ver.</p>
+            <p v-if="quitar.item.children?.length" class="smm-nota">Sus {{ quitar.item.children.length }} opción(es) pasan a la raíz.</p>
           </div>
-        </template>
-      </draggable>
+          <div class="smm-modal-foot">
+            <button class="smm-btn smm-btn--sec" @click="quitar.item = null">Cancelar</button>
+            <button class="smm-btn smm-btn--rojo" :disabled="trabajando" @click="confirmarQuitar">Quitar</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
-    </div>
-
+    <!-- EDITAR -->
+    <teleport to="body">
+      <div v-if="edit.item" class="smm-overlay" @click.self="edit.item = null">
+        <div class="smm-modal">
+          <div class="smm-modal-head"><b><i class="bi bi-pencil-square"></i> {{ edit.item.nombre_catalogo }}</b>
+            <button class="smm-x" @click="edit.item = null"><i class="bi bi-x-lg"></i></button></div>
+          <div class="smm-modal-body">
+            <div class="smm-field">
+              <label class="smm-label">Nombre que verá el cliente <span class="smm-opc">(vacío = {{ edit.item.nombre_catalogo }})</span></label>
+              <input v-model.trim="edit.display_name" class="form-control" maxlength="100" />
+            </div>
+            <div class="smm-field">
+              <label class="smm-label">Grupo</label>
+              <select v-model="edit.parent_id" class="form-select" :disabled="edit.item.children?.length > 0">
+                <option :value="null">— Raíz (primer nivel) —</option>
+                <option v-for="g in gruposPara(edit.item.id)" :key="g.id" :value="g.id">{{ etiquetaGrupo(g) }}</option>
+              </select>
+              <small v-if="edit.item.children?.length" class="smm-nota">Es un grupo con opciones: va en la raíz.</small>
+            </div>
+          </div>
+          <div class="smm-modal-foot">
+            <button class="smm-btn smm-btn--sec" @click="edit.item = null">Cancelar</button>
+            <button class="smm-btn" :disabled="trabajando" @click="guardarEdicion">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
-
-  <!-- MODAL CONFIRMAR ELIMINACIÓN -->
-  <teleport to="body">
-    <div v-if="removeModal.open" class="smm-overlay" @click.self="removeModal.open = false">
-      <div class="smm-modal">
-        <div class="smm-modal-header">
-          <span><i class="bi bi-trash3 text-danger"></i> Quitar módulo del perfil</span>
-          <button class="smm-modal-close" @click="removeModal.open = false"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <div class="smm-modal-body">
-          <p style="color:#e2e8f0;font-size:14px;">
-            ¿Quitar <strong>{{ removeModal.name }}</strong> de este perfil?<br>
-            <span style="color:#94a3b8;font-size:12px;">Los módulos hijos quedarán bajo el mismo nivel que este módulo tenía.</span>
-          </p>
-        </div>
-        <div class="smm-modal-footer">
-          <button class="btn smm-btn-cancel" @click="removeModal.open = false">Cancelar</button>
-          <button class="btn smm-btn-danger" :disabled="removing" @click="removeModule">
-            <i v-if="removing" class="bi bi-arrow-repeat spin"></i>
-            <i v-else class="bi bi-trash3"></i>
-            {{ removing ? 'Quitando...' : 'Quitar' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </teleport>
-
-  <!-- MODAL EDITAR ASIGNACIÓN -->
-  <teleport to="body">
-    <div v-if="editModal.open" class="smm-overlay" @click.self="closeEdit">
-      <div class="smm-modal">
-        <div class="smm-modal-header">
-          <span><i class="bi bi-pencil-square"></i> Editar asignación</span>
-          <button class="smm-modal-close" @click="closeEdit"><i class="bi bi-x-lg"></i></button>
-        </div>
-
-        <div class="smm-modal-body">
-          <div class="smm-add-field">
-            <label class="smm-label">Módulo</label>
-            <div class="smm-module-info">{{ editModal.name }} <span class="smm-route" style="display:inline">{{ editModal.route }}</span></div>
-          </div>
-
-          <div class="smm-add-field">
-            <label class="smm-label">Colgar bajo</label>
-            <select v-model="editForm.parent_id" class="form-select smm-select">
-              <option :value="null">— Raíz (nivel superior) —</option>
-              <option
-                v-for="m in $ordenAlfa(editableParents, 'name')"
-                :key="m.id"
-                :value="m.id"
-              >{{ m.name }}</option>
-            </select>
-          </div>
-
-          <div class="smm-add-field">
-            <label class="smm-label">Nombre en este perfil <span class="smm-optional">(opcional)</span></label>
-            <input v-model="editForm.display_name" class="form-control smm-input" placeholder="Dejar vacío para usar el nombre global" />
-          </div>
-        </div>
-
-        <div class="smm-modal-footer">
-          <button class="btn smm-btn-cancel" @click="closeEdit">Cancelar</button>
-          <button class="btn smm-btn-add" :disabled="saving" @click="saveEdit">
-            <i v-if="saving" class="bi bi-arrow-repeat spin"></i>
-            <i v-else class="bi bi-check-lg"></i>
-            {{ saving ? 'Guardando...' : 'Guardar' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </teleport>
 </template>
 
 <script setup>
-import { ref, watch, computed } from "vue"
+// Menú del Cliente (Vista previa): el menú de cada perfil EXACTAMENTE como lo ve el cliente (backend /menu/preview).
+import { ref, computed, watch, onMounted } from "vue"
+import draggable from "vuedraggable"
 import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useMenuStore } from "@/stores/menuStore"
-import draggable from "vuedraggable"
+import { useModuleName } from "@/composables/useModuleName"
 
+const { moduleName } = useModuleName()
 const menuStore = useMenuStore()
-const modules = ref([])
-const businessProfiles = ref([])
-const selectedProfileId = ref("")
+const perfiles = ref([])
+const perfilId = ref("")
+const previa = ref({ arbol: [], problemas: [], grupos: [], catalogo: [] })
+const cargando = ref(false)
+const trabajando = ref(false)
+const buscar = ref("")
+const grupoAbierto = ref(null)
+const form = ref({ module_id: null, display_name: "", parent_id: null, includeDefaults: false })
+const defaults = ref([])
+const quitar = ref({ item: null })
+const edit = ref({ item: null, display_name: "", parent_id: null })
 
-// ── Agregar módulo existente ─────────────────────────────────────────────────
-const availableModules = ref([])   // system_modules aún no en el perfil
-const flatModules = ref([])        // módulos del perfil (para elegir padre)
-const adding = ref(false)
-const addForm = ref({ module_id: null, display_name: "", parent_id: null, includeDefaults: false })
-const defaultChildren = ref([])   // hijos default del módulo seleccionado
+const REPARABLES = ["padre_inexistente", "padre_inactivo", "ciclo", "hijo_sin_ruta", "tercer_nivel"]
+const reparables = computed(() => previa.value.problemas.filter(p => REPARABLES.includes(p.tipo)).length)
+const seleccionado = computed(() => previa.value.catalogo.find(m => m.id === form.value.module_id) || null)
+const error = (e, d) => e?.response?.data?.detail || d
 
-function flatList(nodes, result = []) {
-  nodes.forEach(n => {
-    result.push({ id: n.id, name: n.name })
-    if (n.children?.length) flatList(n.children, result)
-  })
-  return result
-}
+const norm = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+const coincide = (n) => !buscar.value || [n.name, n.nombre_catalogo, n.route].some(v => norm(v).includes(norm(buscar.value)))
+const visible = (n) => coincide(n) || (n.children || []).some(coincide)
+const abierto = (g) => (buscar.value ? (g.children || []).some(coincide) || coincide(g) : grupoAbierto.value === g.id)
+const toggle = (id) => { if (!buscar.value) grupoAbierto.value = grupoAbierto.value === id ? null : id }
+const etiquetaGrupo = (g) => (g.name !== g.nombre_catalogo ? `${g.name} (${g.nombre_catalogo})` : g.name)
+const gruposPara = (bpmId) => previa.value.grupos.filter(g => g.id !== bpmId)
 
-async function loadAvailable() {
-  if (!selectedProfileId.value) { availableModules.value = []; return }
+async function cargarPerfiles() {
   try {
-    const res = await api.get(`/business-profile-module/available-modules/${selectedProfileId.value}`)
-    availableModules.value = res.data
-  } catch { availableModules.value = [] }
+    const { data } = await api.get("/business-profiles/")
+    perfiles.value = data.data ?? data
+  } catch { perfiles.value = [] }
 }
 
-// Cuando cambia el módulo seleccionado en el form, busca sus hijos default
-watch(() => addForm.value.module_id, async (id) => {
-  defaultChildren.value = []
-  addForm.value.includeDefaults = false
+async function cargar(silencioso = false) {
+  if (!perfilId.value) return
+  if (!silencioso) cargando.value = true
+  try {
+    const { data } = await api.get(`/menu/preview/${perfilId.value}`)
+    previa.value = data
+  } catch (e) { showToast(error(e, "Error cargando el menú del perfil"), "error") }
+  cargando.value = false
+}
+
+async function refrescar() {
+  await cargar(true)
+  await menuStore.loadMenu()
+}
+
+watch(perfilId, () => {
+  grupoAbierto.value = null
+  buscar.value = ""
+  form.value = { module_id: null, display_name: "", parent_id: null, includeDefaults: false }
+  cargar()
+})
+
+watch(() => form.value.module_id, async (id) => {
+  defaults.value = []
+  form.value.includeDefaults = false
+  const m = seleccionado.value
+  if (m?.en_perfil) {
+    // se precarga su lugar y nombre actual para moverlo
+    const nodo = previa.value.arbol.flatMap(g => [g, ...g.children]).find(n => n.id === m.bpm_id)
+    form.value.parent_id = nodo?.parent_id ?? null
+    form.value.display_name = nodo?.display_name || ""
+    return
+  }
   if (!id) return
   try {
-    const res = await api.get(`/system-modules/${id}/defaults-preview/`)
-    defaultChildren.value = res.data
-    if (res.data.length) addForm.value.includeDefaults = true
-  } catch { defaultChildren.value = [] }
+    const { data } = await api.get(`/system-modules/${id}/defaults-preview/`)
+    defaults.value = data
+    form.value.includeDefaults = data.length > 0
+  } catch { defaults.value = [] }
 })
 
-async function addModule() {
-  if (!addForm.value.module_id) return
-  adding.value = true
+async function agregarOMover() {
+  const m = seleccionado.value
+  if (!m) return
+  trabajando.value = true
   try {
-    if (addForm.value.includeDefaults && defaultChildren.value.length) {
-      // Usar el endpoint que agrega padre + hijos default en un solo call
-      const res = await api.post("/business-profile-module/add-parent-with-defaults/", {
-        profile_id: selectedProfileId.value,
-        module_id: addForm.value.module_id,
-        display_name: addForm.value.display_name || null
-      })
-      showToast(res.data.message, "success")
+    if (m.en_perfil) {
+      await api.patch(`/business-profile-module/${m.bpm_id}`, { parent_id: form.value.parent_id, display_name: form.value.display_name || null })
+      showToast(`«${m.name}» movido`, "success")
+    } else if (form.value.includeDefaults && defaults.value.length) {
+      const { data } = await api.post("/business-profile-module/add-parent-with-defaults/", {
+        profile_id: perfilId.value, module_id: m.id, display_name: form.value.display_name || null })
+      showToast(data.message || "Agregado con sus opciones", "success")
     } else {
       await api.post("/business-profile-module/add-module/", {
-        profile_id: selectedProfileId.value,
-        module_id: addForm.value.module_id,
-        parent_id: addForm.value.parent_id || null,
-        display_name: addForm.value.display_name || null
-      })
-      showToast("Módulo agregado al perfil", "success")
+        profile_id: perfilId.value, module_id: m.id, parent_id: form.value.parent_id, display_name: form.value.display_name || null })
+      showToast(`«${m.name}» agregado`, "success")
     }
-    addForm.value = { module_id: null, display_name: "", parent_id: null, includeDefaults: false }
-    defaultChildren.value = []
-    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
-    modules.value = res.data
-    flatModules.value = flatList(modules.value)
-    await loadAvailable()
+    form.value = { module_id: null, display_name: "", parent_id: null, includeDefaults: false }
+    await refrescar()
+  } catch (e) { showToast(error(e, "No se pudo guardar"), "error") }
+  trabajando.value = false
+}
+
+// Solo se guarda el orden de la lista que se movió (nunca se borra nada al reordenar)
+async function guardarOrden(lista, parentId) {
+  try {
+    await api.put("/business-profile-module/reorder/", lista.map((n, i) => ({ id: n.id, parent_id: parentId, sort_order: i })))
     await menuStore.loadMenu()
-  } catch (error) {
-    showToast(error.response?.data?.detail || "Error al agregar módulo", "error")
-  } finally {
-    adding.value = false
+  } catch (e) {
+    showToast(error(e, "Error guardando el orden"), "error")
+    await cargar(true)
   }
 }
 
-function flattenTree(nodes, parentId = null) {
-  let result = []
-  nodes.forEach((node, index) => {
-    result.push({ id: node.id, parent_id: parentId, sort_order: index })
-    if (node.children?.length) {
-      result = result.concat(flattenTree(node.children, node.id))
-    }
-  })
-  return result
-}
+function pedirQuitar(item) { quitar.value.item = item }
 
-async function updateOrder() {
+async function confirmarQuitar() {
+  trabajando.value = true
   try {
-    const payload = flattenTree(modules.value)
-    await api.put("/business-profile-module/reorder/", payload)
-    showToast("Orden actualizado", "success")
-    await menuStore.loadMenu()
-  } catch (error) {
-    console.error(error)
-    showToast("Error guardando orden", "error")
-  }
+    await api.delete(`/business-profile-module/${quitar.value.item.id}`)
+    showToast(`«${quitar.value.item.name}» quitado del perfil`, "success")
+    quitar.value.item = null
+    await refrescar()
+  } catch (e) { showToast(error(e, "Error al quitar"), "error") }
+  trabajando.value = false
 }
 
-const loadProfiles = async () => {
+function abrirEditar(item) {
+  edit.value = { item, display_name: item.display_name || "", parent_id: item.parent_id ?? null }
+}
+
+async function guardarEdicion() {
+  trabajando.value = true
   try {
-    const res = await api.get("/business-profiles/")
-    businessProfiles.value = res.data.data ?? res.data
-  } catch (error) {
-    console.error(error)
-  }
+    await api.patch(`/business-profile-module/${edit.value.item.id}`, {
+      parent_id: edit.value.parent_id, display_name: edit.value.display_name || null })
+    showToast("Opción actualizada", "success")
+    edit.value.item = null
+    await refrescar()
+  } catch (e) { showToast(error(e, "Error al guardar"), "error") }
+  trabajando.value = false
 }
 
-watch(selectedProfileId, async () => {
-  addForm.value = { module_id: null, display_name: "", parent_id: null }
-  if (!selectedProfileId.value) { modules.value = []; availableModules.value = []; flatModules.value = []; return }
+async function reparar() {
+  trabajando.value = true
   try {
-    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
-    modules.value = res.data
-    flatModules.value = flatList(modules.value)
-    await Promise.all([loadAvailable(), menuStore.loadMenu()])
-  } catch (error) {
-    console.error("Error cargando menú por perfil:", error)
-    modules.value = []
-  }
-})
-
-loadProfiles()
-
-// ── Eliminar módulo del perfil ───────────────────────────────────────────────
-const removeModal = ref({ open: false, bpmId: null, name: '' })
-const removing = ref(false)
-
-function confirmRemove(item) {
-  removeModal.value = { open: true, bpmId: item.id, name: item.name }
+    const { data } = await api.post(`/menu/preview/${perfilId.value}/reparar`)
+    showToast(`${data.movidos} opción(es) reubicadas: el cliente ya las ve`, "success")
+    await refrescar()
+  } catch (e) { showToast(error(e, "Error al reparar"), "error") }
+  trabajando.value = false
 }
 
-async function removeModule() {
-  removing.value = true
-  try {
-    await api.delete(`/business-profile-module/${removeModal.value.bpmId}`)
-    showToast(`Módulo "${removeModal.value.name}" quitado del perfil`, "success")
-    removeModal.value.open = false
-    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
-    modules.value    = res.data
-    flatModules.value = flatList(modules.value)
-    await Promise.all([loadAvailable(), menuStore.loadMenu()])
-  } catch (error) {
-    showToast(error.response?.data?.detail || "Error al quitar módulo", "error")
-  } finally {
-    removing.value = false
-  }
-}
-
-// ── Editar asignación existente ──────────────────────────────────────────────
-const editModal = ref({ open: false, bpmId: null, name: '', route: '' })
-const editForm  = ref({ parent_id: null, display_name: '' })
-const saving    = ref(false)
-
-// Opciones de padre: todos los items del perfil excepto el propio bpmId
-const editableParents = computed(() =>
-  flatModules.value.filter(m => m.id !== editModal.value.bpmId)
-)
-
-function openEdit(item) {
-  editModal.value = { open: true, bpmId: item.id, name: item.name, route: item.route || '' }
-  editForm.value  = { parent_id: item.parent_id ?? null, display_name: item.display_name ?? '' }
-}
-
-function closeEdit() {
-  editModal.value.open = false
-}
-
-async function saveEdit() {
-  saving.value = true
-  try {
-    await api.patch(`/business-profile-module/${editModal.value.bpmId}`, {
-      parent_id:    editForm.value.parent_id,
-      display_name: editForm.value.display_name || null
-    })
-    showToast("Asignación actualizada", "success")
-    closeEdit()
-    const res = await api.get(`/menu/by-profile/${selectedProfileId.value}`)
-    modules.value    = res.data
-    flatModules.value = flatList(modules.value)
-    await menuStore.loadMenu()
-  } catch (error) {
-    showToast(error.response?.data?.detail || "Error al actualizar", "error")
-  } finally {
-    saving.value = false
-  }
-}
+onMounted(cargarPerfiles)
 </script>
 
 <style scoped>
-.sysadmin-container {
-  padding: 20px;
-  max-width: 800px;
-}
+.smm-page { padding: 20px; max-width: 860px; }
+.smm-head { margin-bottom: 10px; }
+.smm-h { font-weight: 800; color: #1e293b; margin: 0; }
+.smm-sub { font-size: 13px; color: #475569; margin: 4px 0 0; }
+.smm-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; color: #e2e8f0; padding: 14px; margin-top: 12px; }
+.smm-card--alerta { background: #451a03; border-color: #b45309; }
+.smm-alerta-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 700; color: #fde68a; }
+.smm-problemas { margin: 8px 0 4px; padding-left: 18px; font-size: 13px; color: #fef3c7; }
+.smm-problemas li { margin: 3px 0; }
+.smm-titulo { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: #e2e8f0; }
+.smm-titulo .bi { color: #60a5fa; }
+.smm-label { font-size: 11.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 4px; display: block; }
+.smm-opc { text-transform: none; font-weight: 400; color: #64748b; }
+.smm-nota { font-size: 12px; color: #94a3b8; margin: 6px 0 0; }
+.smm-ya { display: block; margin-top: 4px; font-size: 12px; color: #fbbf24; }
+.smm-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.smm-field { display: flex; flex-direction: column; min-width: 0; }
+.smm-field--2 { grid-column: 1 / -1; }
+.smm-check { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: #cbd5e1; margin-top: 10px; }
+.smm-check small { color: #94a3b8; width: 100%; }
+.smm-acc { display: flex; justify-content: flex-end; margin-top: 12px; }
+.smm-btn { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 9px; padding: 8px 16px; font-weight: 700; font-size: 14px; background: #2563eb; color: #fff; cursor: pointer; }
+.smm-btn:disabled { opacity: .5; cursor: not-allowed; }
+.smm-btn--sec { background: #334155; color: #e2e8f0; }
+.smm-btn--rojo { background: #dc2626; }
+.smm-menu-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.smm-buscar { position: relative; width: 260px; max-width: 100%; }
+.smm-buscar .bi { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #64748b; }
+.smm-buscar input { padding-left: 30px; }
+.smm-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #64748b; padding: 24px 0; }
+.smm-nodo { margin-top: 6px; border-radius: 9px; background: #0f172a; border: 1px solid #334155; }
+.smm-nodo--grupo { border-left: 3px solid #3b82f6; }
+.smm-fila { display: flex; align-items: center; gap: 8px; padding: 9px 10px; }
+.smm-fila--abre { cursor: pointer; }
+.smm-fila--hijo { background: #1e293b; border-radius: 8px; margin: 4px 0; border-left: 3px solid #64748b; }
+.smm-hijos { padding: 0 8px 8px 22px; }
+.smm-drag { color: #475569; font-size: 17px; cursor: grab; padding: 4px 2px; touch-action: none; }
+.smm-ico { color: #94a3b8; font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+.smm-txt { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.smm-nombre { font-weight: 600; font-size: 14px; color: #f1f5f9; }
+.smm-cat { color: #94a3b8; font-size: 12px; }
+.smm-route { color: #64748b; font-size: 11px; font-family: monospace; width: 100%; }
+.smm-badge { font-size: 10.5px; font-weight: 700; background: #422006; color: #fbbf24; border-radius: 999px; padding: 1px 7px; }
+.smm-ib { border: 1px solid #334155; background: transparent; color: #93c5fd; border-radius: 7px; width: 32px; height: 32px; flex-shrink: 0; }
+.smm-ib--rojo { color: #fca5a5; }
+.smm-chev { color: #64748b; flex-shrink: 0; }
+.smm-overlay { position: fixed; inset: 0; background: rgba(2,6,23,.6); display: flex; align-items: center; justify-content: center; z-index: 1060; padding: 16px; }
+.smm-modal { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 12px; width: 100%; max-width: 460px; }
+.smm-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid #334155; }
+.smm-modal-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.smm-modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 14px; border-top: 1px solid #334155; }
+.smm-x { border: none; background: none; color: #94a3b8; font-size: 16px; }
 
-.smm-card {
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 12px;
-  color: #e2e8f0;
-}
-
-.smm-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #e2e8f0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.smm-hint {
-  font-size: 11px;
-  font-weight: 400;
-  color: #64748b;
-}
-
-.smm-empty {
-  color: #64748b;
-  padding: 24px 0;
-  text-align: center;
-  font-size: 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.smm-empty .bi { font-size: 24px; }
-
-/* ── Item base ── */
-.smm-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 12px;
-  border-radius: 8px;
-  margin-top: 6px;
-  background: #0f172a;
-  border: 1px solid #334155;
-  cursor: default;
-  user-select: none;
-}
-
-.smm-parent {
-  flex-wrap: wrap;
-  background: #0f172a;
-  border-left: 3px solid #3b82f6;
-}
-
-.smm-child {
-  background: #1e293b;
-  border-left: 3px solid #64748b;
-}
-
-/* ── Drag handle ── */
-.drag-handle {
-  color: #475569;
-  font-size: 18px;
-  cursor: grab;
-  padding: 6px 4px;        /* área táctil generosa */
-  flex-shrink: 0;
-  touch-action: none;
-}
-.drag-handle:active { cursor: grabbing; color: #3b82f6; }
-
-/* ── Ícono del módulo ── */
-.smm-icon {
-  font-size: 16px;
-  color: #94a3b8;
-  min-width: 22px;
-  flex-shrink: 0;
-}
-
-/* ── Nombre ── */
-.smm-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #e2e8f0;
-  flex: 1;
-}
-
-/* ── Ruta ── */
-.smm-route {
-  font-size: 11px;
-  color: #475569;
-  font-family: monospace;
-}
-
-/* ── Hijos ── */
-.smm-children {
-  width: 100%;
-  margin-top: 6px;
-  padding-left: 28px;
-  border-left: 2px solid #1e3a5f;
-}
-
-/* ── Formulario agregar módulo ── */
-.smm-add-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.smm-add-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.smm-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: .4px;
-}
-
-.smm-optional {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: #475569;
-}
-
-.smm-count {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: #3b82f6;
-  font-size: 11px;
-}
-
-.smm-count--empty {
-  color: #64748b;
-}
-
-.smm-select, .smm-input {
-  background: #0f172a;
-  color: #e2e8f0;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  font-size: 13px;
-}
-
-.smm-select:focus, .smm-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59,130,246,.2);
-  outline: none;
-}
-
-.smm-btn-add {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 20px;
-  background: #1d4ed8;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s;
-}
-.smm-btn-add:hover:not(:disabled) { background: #2563eb; }
-.smm-btn-add:disabled { opacity: .5; cursor: not-allowed; }
-
-/* ── Botón editar por ítem ── */
-.smm-btn-edit {
-  background: transparent;
-  border: 1px solid #334155;
-  color: #64748b;
-  border-radius: 6px;
-  padding: 4px 7px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-.smm-btn-edit:hover { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
-
-/* ── Botón eliminar por ítem ── */
-.smm-btn-remove {
-  background: transparent;
-  border: 1px solid #334155;
-  color: #64748b;
-  border-radius: 6px;
-  padding: 4px 7px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-  flex-shrink: 0;
-}
-.smm-btn-remove:hover { background: #3b1c1c; color: #f87171; border-color: #ef4444; }
-
-/* ── Botón danger en modal ── */
-.smm-btn-danger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
-  background: #7f1d1d;
-  color: #fca5a5;
-  border: 1px solid #ef4444;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s;
-}
-.smm-btn-danger:hover:not(:disabled) { background: #991b1b; color: #fff; }
-.smm-btn-danger:disabled { opacity: .5; cursor: not-allowed; }
-
-/* ── Info módulo en modal ── */
-.smm-module-info {
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
-  color: #94a3b8;
-}
-
-/* ── Overlay + Modal ── */
-.smm-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  padding: 16px;
-}
-
-.smm-modal {
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 14px;
-  width: 100%;
-  max-width: 440px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.5);
-}
-
-.smm-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid #334155;
-  font-size: 15px;
-  font-weight: 700;
-  color: #e2e8f0;
-  gap: 10px;
-}
-
-.smm-modal-close {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-  transition: color .15s;
-}
-.smm-modal-close:hover { color: #f87171; }
-
-.smm-modal-body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.smm-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 20px 18px;
-  border-top: 1px solid #334155;
-}
-
-.smm-btn-cancel {
-  background: #0f172a;
-  color: #94a3b8;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  font-size: 13px;
-  padding: 8px 18px;
-}
-.smm-btn-cancel:hover { background: #1e293b; }
-
-/* =========================================
-   MÓVIL — más espacio para el dedo
-========================================= */
 @media (max-width: 768px) {
-  .smm-item {
-    padding: 18px 14px;   /* más alto para que no se toque accidentalmente */
-    gap: 12px;
-  }
-
-  .drag-handle {
-    font-size: 22px;
-    padding: 10px 8px;    /* zona táctil amplia */
-  }
-
-  .smm-name {
-    font-size: 15px;
-  }
-
-  .smm-route {
-    display: none;        /* evita apretado en pantalla chica */
-  }
-
-  .smm-children {
-    padding-left: 20px;
-  }
+  .smm-page { padding: 12px 10px 80px; }
+  .smm-form { grid-template-columns: 1fr; }
+  .smm-buscar { width: 100%; }
+  .smm-overlay { align-items: flex-end; padding: 0; }
+  .smm-modal { max-width: none; border-radius: 12px 12px 0 0; }
 }
-
 @media (max-width: 576px) {
-  .sysadmin-container {
-    padding: 12px;
-  }
-
-  .smm-item {
-    padding: 20px 12px;
-  }
+  .smm-h { font-size: 18px; }
+  .smm-hijos { padding-left: 10px; }
+  .smm-ib { width: 30px; height: 30px; }
+  .smm-route { display: none; }
 }
-
-/* ── Defaults box ── */
-.smm-defaults-box {
-  background: #052e16;
-  border: 1px solid #16a34a;
-  border-radius: 8px;
-  padding: 10px 14px;
-}
-
-.smm-defaults-check {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #86efac;
-  margin: 0;
-}
-
-.smm-defaults-check input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  flex-shrink: 0;
-  accent-color: #16a34a;
-  cursor: pointer;
-}
-
-.smm-defaults-check em {
-  color: #4ade80;
-  font-style: normal;
-}
-
-.spin { animation: spin .7s linear infinite; }
-@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 </style>

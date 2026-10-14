@@ -25,30 +25,50 @@ router = APIRouter(prefix="/business-profile-module", tags=["BusinessProfileModu
                    dependencies=[Depends(require_sysadmin)])
 
 
+async def _validar_padre(db: AsyncSession, profile_id: int, bpm_id, new_parent) -> None:
+    """El menú del cliente muestra DOS niveles: el padre debe ser una opción de la raíz del MISMO perfil, distinta
+    de sí misma, y quien tiene hijos no puede colgarse de otro (sus hijos quedarían en un tercer nivel, invisibles)."""
+    if new_parent is None:
+        return
+    parent = await db.get(BusinessProfileModule, int(new_parent))
+    if not parent or parent.business_profile_id != int(profile_id):
+        raise HTTPException(status_code=400, detail="El grupo escogido no pertenece a este perfil")
+    if bpm_id is not None and int(new_parent) == int(bpm_id):
+        raise HTTPException(status_code=400, detail="Una opción no puede ser su propio grupo")
+    if parent.parent_id is not None:
+        raise HTTPException(status_code=400, detail="Solo se puede colgar de un grupo de la raíz: el menú del cliente "
+                                                    "muestra dos niveles")
+    if bpm_id is not None:
+        tiene_hijos = (await db.execute(text(
+            "SELECT 1 FROM business_profile_modules WHERE parent_id = :b LIMIT 1"), {"b": int(bpm_id)})).scalar()
+        if tiene_hijos:
+            raise HTTPException(status_code=400, detail="Esta opción es un grupo con hijos: va en la raíz (sus hijos "
+                                                        "quedarían en un tercer nivel que el cliente no ve)")
+
+
 @router.put("/reorder/")
 async def reorder_modules(data: list[dict], db: AsyncSession = Depends(get_db)):
+    """Guarda el orden (y el grupo) de las filas recibidas. NUNCA borra: quitar una opción es solo con la papelera.
+    Todas las filas deben ser del mismo perfil."""
     if not data:
         return {"message": "Sin datos"}
-
-    result = await db.execute(select(BusinessProfileModule).where(BusinessProfileModule.id == data[0]["id"]))
-    first = result.scalar_one_or_none()
-
-    if first:
-        keep_ids = [item["id"] for item in data]
-        await db.execute(
-            delete(BusinessProfileModule).where(
-                BusinessProfileModule.business_profile_id == first.business_profile_id,
-                BusinessProfileModule.id.notin_(keep_ids)
-            )
-        )
-
+    filas = {}
     for item in data:
-        result = await db.execute(select(BusinessProfileModule).where(BusinessProfileModule.id == item["id"]))
-        module = result.scalar_one_or_none()
-        if module:
-            module.sort_order = item["sort_order"]
-            module.parent_id = int(item["parent_id"]) if item.get("parent_id") is not None else None
-
+        bpm = await db.get(BusinessProfileModule, int(item["id"]))
+        if not bpm:
+            raise HTTPException(status_code=404, detail="Una de las opciones ya no existe en el perfil; recargue")
+        filas[bpm.id] = bpm
+    perfiles = {b.business_profile_id for b in filas.values()}
+    if len(perfiles) != 1:
+        raise HTTPException(status_code=400, detail="Las opciones deben ser de un mismo perfil")
+    perfil = perfiles.pop()
+    for item in data:
+        bpm = filas[int(item["id"])]
+        nuevo = int(item["parent_id"]) if item.get("parent_id") is not None else None
+        if nuevo != bpm.parent_id:
+            await _validar_padre(db, perfil, bpm.id, nuevo)
+            bpm.parent_id = nuevo
+        bpm.sort_order = int(item.get("sort_order") or 0)
     await db.commit()
     return {"message": "Orden actualizado correctamente"}
 
@@ -108,19 +128,19 @@ async def update_module_assignment(
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
 
     if "parent_id" in data:
-        new_parent = data["parent_id"]
-        if new_parent is not None:
-            # Verificar que el padre pertenece al mismo perfil
-            parent = await db.get(BusinessProfileModule, new_parent)
-            if not parent or parent.business_profile_id != bpm.business_profile_id:
-                raise HTTPException(status_code=400, detail="El padre no pertenece al mismo perfil")
-            # Evitar ciclo: el nuevo padre no puede ser un descendiente del nodo
-            if new_parent == bpm_id:
-                raise HTTPException(status_code=400, detail="Un módulo no puede ser su propio padre")
+        new_parent = int(data["parent_id"]) if data["parent_id"] is not None else None
+        if new_parent != bpm.parent_id:
+            await _validar_padre(db, bpm.business_profile_id, bpm_id, new_parent)
+            # al cambiar de grupo queda de último en su nuevo grupo
+            so = await db.execute(text("""
+                SELECT COALESCE(MAX(sort_order), -1) + 1 FROM business_profile_modules
+                WHERE business_profile_id = :pf AND parent_id <=> :par
+            """), {"pf": bpm.business_profile_id, "par": new_parent})
+            bpm.sort_order = so.scalar()
         bpm.parent_id = new_parent
 
     if "display_name" in data:
-        bpm.display_name = data["display_name"] or None
+        bpm.display_name = (data["display_name"] or "").strip()[:100] or None
 
     await db.commit()
     return {"message": "Asignación actualizada"}
@@ -149,15 +169,16 @@ async def add_module_to_profile(
     if existing.scalar_one_or_none():
         sm = await db.get(SystemModule, module_id)
         label = sm.name if sm else f"#{module_id}"
-        raise HTTPException(status_code=400, detail=f"El módulo '{label}' ya está asignado a este perfil")
+        raise HTTPException(status_code=400, detail=f"El módulo '{label}' ya está asignado a este perfil: muévalo "
+                                                    "(cada módulo va una sola vez por perfil)")
+    await _validar_padre(db, int(profile_id), None, parent_id)
+    display_name = display_name.strip()[:100] if display_name else None
 
-    max_res = await db.execute(
-        select(func.max(BusinessProfileModule.sort_order)).where(
-            BusinessProfileModule.business_profile_id == profile_id,
-            BusinessProfileModule.parent_id == parent_id
-        )
-    )
-    next_order = (max_res.scalar() or 0) + 1
+    max_res = await db.execute(text("""
+        SELECT COALESCE(MAX(sort_order), -1) + 1 FROM business_profile_modules
+        WHERE business_profile_id = :pf AND parent_id <=> :par
+    """), {"pf": profile_id, "par": parent_id})
+    next_order = max_res.scalar()
 
     new_bpm = BusinessProfileModule(
         business_profile_id=profile_id,

@@ -63,12 +63,18 @@ async def delete_business_profile(profile_id: int, db: AsyncSession = Depends(ge
 
 @router.get("/{profile_id}/modules/")
 async def get_modules_by_profile(profile_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_sysadmin)):
+    """Módulos del perfil con su lugar en el MENÚ DEL PERFIL (el mismo que arma /menu para el cliente):
+    parent_module_id = módulo de su grupo en el perfil (bpm.parent_id; None = raíz). display_name = nombre visible."""
     result = await db.execute(text("""
-        SELECT sm.id, sm.name FROM system_modules sm
+        SELECT sm.id, sm.name, bpm.display_name, pb.module_id AS parent_module_id
+        FROM system_modules sm
         JOIN business_profile_modules bpm ON bpm.module_id = sm.id
+        LEFT JOIN business_profile_modules pb
+               ON pb.id = bpm.parent_id AND pb.business_profile_id = bpm.business_profile_id
         WHERE bpm.business_profile_id = :profile_id
     """), {"profile_id": profile_id})
-    return [{"id": r.id, "name": r.name} for r in result.fetchall()]
+    return [{"id": r.id, "name": r.name, "display_name": (r.display_name or "").strip() or None,
+             "parent_module_id": r.parent_module_id} for r in result.fetchall()]
 
 
 @router.post("/{profile_id}/modules/")

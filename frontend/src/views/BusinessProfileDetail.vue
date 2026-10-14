@@ -87,7 +87,7 @@
                     <div class="bpd-grupo-titulo">
                       <i class="bi bpd-chevron" :class="estaAbierto(g.key) ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                       <i v-if="g.icon" class="bi" :class="g.icon"></i>
-                      <span class="bpd-grupo-nombre">{{ g.nombre }}</span>
+                      <span class="bpd-grupo-nombre">{{ g.nombre }}<small v-if="g.catalogo" class="bpd-nota"> ({{ g.catalogo }})</small></span>
                     </div>
                     <div class="bpd-grupo-pie">
                       <span
@@ -132,7 +132,8 @@
                       <i v-if="r.m.icon" class="bi" :class="r.m.icon"></i>
                       <div class="bpd-fila-txt">
                         <div class="bpd-fila-nombre">
-                          {{ r.m.name }}
+                          {{ nombreDe(r.m) }}
+                          <small v-if="nombreDe(r.m) !== r.m.name" class="bpd-nota">({{ r.m.name }})</small>
                           <span v-if="r.contexto" class="bpd-nota">
                             {{ panel.key === 'sel' ? '(no agregado)' : '(ya agregado)' }}
                           </span>
@@ -249,31 +250,43 @@ const guardando = ref(false);
 
 const INDEPENDIENTES = "__independientes__";
 
+// Lugar de cada módulo en el MENÚ DEL PERFIL (el mismo que ve el usuario en su sidebar):
+// módulo → módulo padre en el perfil (null = raíz) y nombre visible que le dio el perfil.
+const perfilPadre = ref(new Map());
+const perfilNombre = ref(new Map());
+
 /* =================================================
-ÁRBOL DEL CATÁLOGO (system_modules.parent_id)
+ÁRBOL: el del perfil para lo que ya tiene; el del catálogo (system_modules.parent_id) para lo que no
 ================================================= */
 
 const porId = computed(() => new Map(modules.value.map(m => [m.id, m])));
 
+const padreDe = (m) => {
+  const p = perfilPadre.value.has(m.id) ? perfilPadre.value.get(m.id) : m.parent_id;
+  return p != null && p !== m.id && porId.value.has(p) ? p : null;
+};
+
+const nombreDe = (m) => perfilNombre.value.get(m.id) || m.name;
+
 const hijosDe = computed(() => {
   const mapa = new Map();
   for (const m of modules.value) {
-    if (m.parent_id == null || !porId.value.has(m.parent_id)) continue;
-    if (!mapa.has(m.parent_id)) mapa.set(m.parent_id, []);
-    mapa.get(m.parent_id).push(m);
+    const p = padreDe(m);
+    if (p == null) continue;
+    if (!mapa.has(p)) mapa.set(p, []);
+    mapa.get(p).push(m);
   }
-  for (const [k, lista] of mapa) mapa.set(k, ordenAlfa(lista, "name"));
+  for (const [k, lista] of mapa) mapa.set(k, ordenAlfa(lista, nombreDe));
   return mapa;
 });
 
-const raices = computed(() =>
-  ordenAlfa(modules.value.filter(m => m.parent_id == null || !porId.value.has(m.parent_id)), "name")
-);
+const raices = computed(() => ordenAlfa(modules.value.filter(m => padreDe(m) == null), nombreDe));
 
 const selSet = computed(() => new Set(selectedModules.value));
 
 // id + todos sus descendientes
 const subarbol = (id, acc = []) => {
+  if (acc.includes(id)) return acc;          // protección ante un ciclo en el menú del perfil
   acc.push(id);
   for (const h of hijosDe.value.get(id) || []) subarbol(h.id, acc);
   return acc;
@@ -283,10 +296,10 @@ const ancestros = (id) => {
   const res = [];
   let m = porId.value.get(id);
   const vistos = new Set();
-  while (m && m.parent_id != null && porId.value.has(m.parent_id) && !vistos.has(m.id)) {
+  while (m && padreDe(m) != null && !vistos.has(m.id)) {
     vistos.add(m.id);
-    res.push(m.parent_id);
-    m = porId.value.get(m.parent_id);
+    res.push(padreDe(m));
+    m = porId.value.get(padreDe(m));
   }
   return res;
 };
@@ -295,7 +308,7 @@ const normalizar = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "
 
 const coincide = (m) => {
   const q = normalizar(busqueda.value.trim());
-  return !q || normalizar(m.name).includes(q) || normalizar(m.route).includes(q);
+  return !q || normalizar(m.name).includes(q) || normalizar(nombreDe(m)).includes(q) || normalizar(m.route).includes(q);
 };
 
 /* =================================================
@@ -346,7 +359,8 @@ const gruposDe = (panel) => {
     grupos.push({
       key: r.id,
       id: r.id,
-      nombre: r.name,
+      nombre: nombreDe(r),
+      catalogo: nombreDe(r) !== r.name ? r.name : "",
       icon: r.icon,
       sel,
       total: ids.length,
@@ -443,7 +457,7 @@ const cambios = computed(() => {
 });
 
 function rutaNombre(m) {
-  return [...ancestros(m.id)].reverse().map(i => porId.value.get(i)?.name).concat(m.name).join(" › ");
+  return [...ancestros(m.id)].reverse().map(i => porId.value.get(i)).filter(Boolean).map(nombreDe).concat(nombreDe(m)).join(" › ");
 }
 
 const nombrePerfil = computed(() =>
@@ -478,6 +492,8 @@ const loadProfileModules = async () => {
   try {
     const res = await api.get(`/business-profiles/${selectedProfileId.value}/modules/`);
     selectedModules.value = res.data.map(m => m.id);
+    perfilPadre.value = new Map(res.data.map(m => [m.id, m.parent_module_id ?? null]));
+    perfilNombre.value = new Map(res.data.filter(m => m.display_name).map(m => [m.id, m.display_name]));
     originalModules.value = [...selectedModules.value];
   } catch (error) {
     console.error("Error loading profile modules:", error);
