@@ -191,6 +191,10 @@
               <div class="mesero-avatar">{{ m.name.charAt(0).toUpperCase() }}</div>
               <span class="mesero-name">{{ m.name }}</span>
             </button>
+            <button v-if="!miMesero && !conEscritorio" class="mesero-card mesero-card--yo" @click="showAgregarme = true" title="Quedar como mesero con mi usuario">
+              <div class="mesero-avatar mesero-avatar--yo"><i class="bi bi-person-check"></i></div>
+              <span class="mesero-name">Agregarme</span>
+            </button>
             <button class="mesero-card mesero-card--add" @click="wizard.showAddWaiter = !wizard.showAddWaiter">
               <div class="mesero-avatar mesero-avatar--add"><i class="bi bi-plus-lg"></i></div>
               <span class="mesero-name">Agregar</span>
@@ -198,8 +202,13 @@
           </div>
           <div v-if="wizard.showAddWaiter" class="add-waiter-form">
             <div class="aw-row">
-              <input v-model="newWaiter.name" class="campo-input" placeholder="Nombre del mesero" maxlength="80" />
-              <input v-model="newWaiter.pin" class="campo-input" placeholder="PIN (4 dígitos)" maxlength="4" type="password" />
+              <input v-model="newWaiter.name" class="campo-input" placeholder="Nombre del mesero" maxlength="50" />
+              <input v-model="newWaiter.phone" class="campo-input" placeholder="Teléfono" maxlength="50" inputmode="tel" />
+              <select v-model="newWaiter.employee_type" class="campo-input">
+                <option :value="null">Tipo de empleado</option>
+                <option v-for="t in $ordenAlfa(tiposEmpleado, 'name')" :key="t.cod_tipo" :value="t.cod_tipo">{{ t.name }}</option>
+              </select>
+              <input v-model="newWaiter.pin" class="campo-input" placeholder="PIN (4 a 8 números)" maxlength="8" type="password" inputmode="numeric" autocomplete="new-password" />
               <button class="btn-aw-save" @click="guardarNuevoMesero" :disabled="newWaiter.saving">
                 <span v-if="newWaiter.saving"><div class="spinner-border spinner-border-sm"></div></span>
                 <span v-else><i class="bi bi-check-lg"></i></span>
@@ -207,6 +216,7 @@
             </div>
             <p v-if="newWaiter.error" class="text-danger small mt-1">{{ newWaiter.error }}</p>
           </div>
+          <AgregarmeMeseroModal v-if="showAgregarme" @close="showAgregarme = false" @creado="onAgregado" />
           <div class="wizard-footer">
             <button class="btn-cancelar" @click="cerrarWizard">Cancelar</button>
           </div>
@@ -274,6 +284,7 @@ import { useCompanyStore } from '@/stores/companyStore.js'
 import ComandaOrderDetailModal from '@/components/comanda/ComandaOrderDetailModal.vue'
 import MesaTableCard from '@/components/comanda/MesaTableCard.vue'
 import { showToast } from '@/utils/toast'
+import AgregarmeMeseroModal from '@/components/pos/AgregarmeMeseroModal.vue'
 
 const companyStore = useCompanyStore()
 const router = useRouter()
@@ -295,7 +306,11 @@ const showStockModal = ref(false)
 const showTVModal    = ref(false)
 
 const wizard = ref({ visible: false, step: 1, waiterId: null, zonaAbierta: null, abriendo: false, showAddWaiter: false, takeout: false })
-const newWaiter = ref({ name: '', pin: '', saving: false, error: '' })
+const newWaiter = ref({ name: '', phone: '', employee_type: null, pin: '', saving: false, error: '' })
+const showAgregarme  = ref(false)
+const miMesero      = ref(null)   // registro de mesero ligado al usuario logueado
+const tiposEmpleado = ref([])
+const conEscritorio = ref(false)   // con escritorio los meseros se crean allá
 
 const fmtCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 })
 const fmt = (v) => fmtCOP.format(v || 0)
@@ -402,7 +417,24 @@ async function cargarMesas() {
   try { const { data } = await api.get('/api/pos-dashboard/mesas', { params: { company_id: selectedCid.value } }); mesas.value = data }
   catch { mesas.value = [] } finally { mesasLoading.value = false }
 }
-async function cargarMeseros() { try { const { data } = await api.get('/api/pos-dashboard/meseros', { params: { company_id: selectedCid.value } }); meseros.value = data } catch { meseros.value = [] } }
+async function cargarPersonal() {
+  try {
+    const [y, t] = await Promise.all([api.get('/api/personal/yo'), api.get('/api/personal/tipos')])
+    miMesero.value = y.data.registro
+    conEscritorio.value = y.data.con_escritorio
+    tiposEmpleado.value = t.data
+  } catch { /* sin datos: el formulario lo indica al guardar */ }
+}
+
+async function onAgregado(reg) {
+  showAgregarme.value = false
+  miMesero.value = reg
+  await cargarMeseros()
+  seleccionarMesero(reg.id)
+}
+
+async function cargarMeseros() {
+  cargarPersonal(); try { const { data } = await api.get('/api/pos-dashboard/meseros', { params: { company_id: selectedCid.value } }); meseros.value = data } catch { meseros.value = [] } }
 async function cargarStock() {
   cargandoStock.value = true
   try { const { data } = await api.get('/api/pos-dashboard/stock-alertas', { params: { company_id: selectedCid.value, _t: Date.now() } }); stockAlertas.value = data }
@@ -435,7 +467,7 @@ function onMesaCancelled() { detailMesa.value = null; _silentMesas() }
 
 function abrirWizard() {
   wizard.value = { visible: true, step: 1, waiterId: null, zonaAbierta: zonas.value[0]?.id ?? null, abriendo: false, showAddWaiter: false, takeout: false }
-  newWaiter.value = { name: '', pin: '', saving: false, error: '' }
+  newWaiter.value = { name: '', phone: '', employee_type: null, pin: '', saving: false, error: '' }
   cargarMesas(); cargarMeseros()
 }
 function seleccionarMesero(waiterId) { wizard.value.waiterId = waiterId; wizard.value.showAddWaiter = false; wizard.value.step = 2 }
@@ -468,11 +500,13 @@ async function eliminarOrden(mesa) {
 
 async function guardarNuevoMesero() {
   if (!newWaiter.value.name.trim()) { newWaiter.value.error = 'El nombre es obligatorio'; return }
-  if (newWaiter.value.pin.length < 4) { newWaiter.value.error = 'El PIN debe tener 4 dígitos'; return }
+  if (!newWaiter.value.phone.trim()) { newWaiter.value.error = 'El teléfono es obligatorio'; return }
+  if (newWaiter.value.employee_type === null) { newWaiter.value.error = 'Seleccione el tipo de empleado'; return }
+  if (!/^\d{4,8}$/.test(newWaiter.value.pin)) { newWaiter.value.error = 'El PIN debe tener de 4 a 8 números'; return }
   newWaiter.value.saving = true; newWaiter.value.error = ''
   try {
-    await api.post('/api/pos-dashboard/mesero', { name: newWaiter.value.name.trim(), pin: newWaiter.value.pin, company_id: selectedCid.value })
-    await cargarMeseros(); newWaiter.value = { name: '', pin: '', saving: false, error: '' }; wizard.value.showAddWaiter = false
+    await api.post('/api/pos-dashboard/mesero', { name: newWaiter.value.name.trim(), pin: newWaiter.value.pin, phone: newWaiter.value.phone.trim(), employee_type: newWaiter.value.employee_type, company_id: selectedCid.value })
+    await cargarMeseros(); newWaiter.value = { name: '', phone: '', employee_type: null, pin: '', saving: false, error: '' }; wizard.value.showAddWaiter = false
   } catch (e) { newWaiter.value.error = e?.response?.data?.detail || 'Error al guardar' }
   finally { newWaiter.value.saving = false }
 }
@@ -618,4 +652,9 @@ async function guardarNuevoMesero() {
 }
 .action-btn--dev { opacity: .6; position: relative; }
 .badge-dev { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 1px 6px; margin-top: 2px; }
+.mesero-card--yo { border-style: dashed; border-color: #86efac; }
+.mesero-avatar--yo { background: #dcfce7 !important; color: #15803d !important; }
+.add-waiter-form .aw-row { flex-wrap: wrap; }
+.add-waiter-form .aw-row .campo-input { min-width: 140px; }
+@media (max-width: 576px) { .add-waiter-form .aw-row .campo-input { flex: 1 1 100%; } }
 </style>

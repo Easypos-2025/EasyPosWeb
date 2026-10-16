@@ -334,6 +334,38 @@ async def recibir_errores(data: ErroresIn, request: Request, agente: dict = Depe
     return {"ok": True, "refs": [r for r in refs if r]}
 
 
+# ───────────────────────────── Tipos de empleado (escritorio → web) ─────────────────────────────
+# tipo_empleado del escritorio → pos_employee_types. El agente lo manda cuando cambia; la web queda igual
+# al escritorio (lo que ya no está allá se quita). Los meseros y empleados los sube el escritorio.
+
+class TipoEmpleadoIn(BaseModel):
+    cod_tipo: int = Field(ge=-1_000_000, le=1_000_000)
+    nombre: str = Field(min_length=1, max_length=50)
+    porcentaje: float = Field(default=0, ge=-1_000, le=1_000)
+
+
+class TiposEmpleadoIn(BaseModel):
+    tipos: list[TipoEmpleadoIn] = Field(max_length=200)
+
+
+@router_agente.post("/tipos-empleado")
+async def recibir_tipos_empleado(data: TiposEmpleadoIn, agente: dict = Depends(agente_actual),
+                                 db: AsyncSession = Depends(get_db)):
+    cid = agente["company_id"]
+    codigos = {t.cod_tipo for t in data.tipos}
+    for t in data.tipos:
+        await db.execute(text("""
+            INSERT INTO pos_employee_types (company_id, cod_tipo, name, porcentaje) VALUES (:c, :t, :n, :p)
+            ON DUPLICATE KEY UPDATE name = VALUES(name), porcentaje = VALUES(porcentaje)
+        """), {"c": cid, "t": t.cod_tipo, "n": t.nombre.strip()[:50], "p": t.porcentaje})
+    if codigos:
+        await db.execute(text(
+            "DELETE FROM pos_employee_types WHERE company_id = :c AND cod_tipo NOT IN ("
+            + ",".join(str(int(x)) for x in codigos) + ")"), {"c": cid})
+    await db.commit()
+    return {"ok": True, "tipos": len(codigos)}
+
+
 # ───────────────────────────── Pedidos web → escritorio ─────────────────────────────
 # Lotes pendientes de aceptar en caja (app/services/sede_pedidos.py). El agente los baja cada 10 s,
 # confirma que los recibió y reporta lo que hizo el cajero. La empresa es SIEMPRE la de la clave.

@@ -35,6 +35,7 @@
         <option value="low">Stock bajo</option>
         <option value="ok">Stock OK</option>
       </select>
+      <ExportToolbar :data="filtered" :columns="exportCols" filename="insumos" :title="moduleName" />
     </div>
 
     <!-- Tabla (tablet / PC) -->
@@ -290,6 +291,7 @@ import { useModuleName } from "@/composables/useModuleName"
 import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
 import ProveedorCampos, { proveedorVacio, validarProveedor } from "@/components/inventory/ProveedorCampos.vue"
 import { ordenAlfa } from "@/utils/orden"
+import ExportToolbar from "@/components/common/ExportToolbar.vue"
 
 const { moduleName } = useModuleName()
 const vFocus = { mounted: el => el.focus() }
@@ -326,6 +328,17 @@ const fmtMoney = v => _money.format(Number(v) || 0)
 function fmtNum(val, dec = 2) {
   return Number(val || 0).toLocaleString("es-CO", { minimumFractionDigits: 0, maximumFractionDigits: dec })
 }
+
+const exportCols = [
+  { key: "id_item", label: "Id Item" },
+  { key: "code", label: "Código", fmt: v => v || "" },
+  { key: "description", label: "Nombre" },
+  { key: "category_id", label: "Categoría", fmt: v => catName(v) },
+  { key: "unit_name", label: "Unidad uso", fmt: v => v || "" },
+  { key: "cost_price", label: "Costo", fmt: v => fmtMoney(v), align: "right" },
+  { key: "min_stock", label: "Mínimo", fmt: v => fmtNum(v, 4), align: "right" },
+  { key: "control_stock", label: "Control", fmt: v => (v ? "Sí" : "No") },
+]
 
 const catMap = computed(() => Object.fromEntries(categories.value.map(c => [c.id, c.name])))
 const catName = id => (id && catMap.value[id]) || "—"
@@ -524,7 +537,7 @@ onMounted(load)
 .kpi-label { font-size: 12px; color: #94a3b8; }
 .kpi-red .kpi-num   { color: #dc2626; }
 .kpi-green .kpi-num { color: #16a34a; }
-.filters-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.filters-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
 .f-search { max-width: 300px; }
 .f-sel    { max-width: 200px; }
 .table-card  { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow-x: auto; }

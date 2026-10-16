@@ -624,6 +624,13 @@ const routes = [
         meta: { title: "Formas de Medida" }
       },
       {
+        path: "/configuration/meseros",
+        name: "MeserosEmpleadosView",
+        component: () => import("@/views/MeserosEmpleadosView.vue"),
+        requiresAuth: true,
+        meta: { title: "Meseros y Empleados" }
+      },
+      {
         path: "/configuration/conceptos-gastos",
         name: "ConceptosGastosView",
         component: () => import("@/views/ConceptosGastosView.vue"),

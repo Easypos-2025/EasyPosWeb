@@ -11,6 +11,7 @@
 
     <div class="filters-row">
       <input v-model="search" class="form-control f-search" placeholder="Buscar por nombre, NIT o celular..." />
+      <ExportToolbar :data="filtered" :columns="exportCols" filename="proveedores" :title="moduleName" />
     </div>
 
     <!-- Tabla (tablet / PC) -->
@@ -153,6 +154,7 @@ import { showToast } from "@/utils/toast"
 import { ordenAlfa } from "@/utils/orden"
 import { useModuleName } from "@/composables/useModuleName"
 import AvisoBodega from "@/components/AvisoBodega.vue"
+import ExportToolbar from "@/components/common/ExportToolbar.vue"
 import ProveedorCampos, { proveedorVacio, validarProveedor } from "@/components/inventory/ProveedorCampos.vue"
 import { useAdministradoBodega } from "@/composables/useAdministradoBodega"
 
@@ -175,6 +177,17 @@ const filtered = computed(() => {
        || (s.telefono_celular || "").includes(q)
   ), "name")
 })
+
+const exportCols = [
+  { key: "id_proveedor", label: "#" },
+  { key: "name", label: "Nombre" },
+  { key: "nit", label: "NIT", fmt: v => v || "" },
+  { key: "telefono_celular", label: "Celular", fmt: v => v || "" },
+  { key: "phone", label: "Teléfono fijo", fmt: v => v || "" },
+  { key: "email", label: "Email", fmt: v => v || "" },
+  { key: "address", label: "Dirección", fmt: v => v || "" },
+  { key: "is_active", label: "Estado", fmt: v => (v ? "Activo" : "Inactivo") },
+]
 
 const ETIQUETAS = { entradas: "Entradas de inventario", salidas: "Salidas de inventario", facturas: "Facturas de proveedor",
                     lotes: "Lotes de inventario", ordenes: "Órdenes de compra", seriales: "Artículos con serial" }
@@ -254,7 +267,7 @@ onMounted(load)
 .page-header    { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
 .page-title     { font-size: 22px; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
 .page-subtitle  { font-size: 13px; color: #64748b; margin: 0; }
-.filters-row    { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.filters-row    { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
 .f-search       { max-width: 300px; }
 .table-card     { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,.08); overflow-x: auto; }
 .table-loading  { padding: 40px; text-align: center; color: #94a3b8; }

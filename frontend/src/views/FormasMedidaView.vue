@@ -17,6 +17,7 @@
       <div class="seg">
         <button v-for="o in ESTADOS" :key="o.v" :class="{ on: estado === o.v }" @click="estado = o.v">{{ o.l }}</button>
       </div>
+      <ExportToolbar :data="filtered" :columns="exportCols" filename="formas-medida" :title="moduleName" />
     </div>
 
     <div v-if="loading" class="empty-state"><i class="bi bi-arrow-repeat spin"></i><p>Cargando...</p></div>
@@ -73,12 +74,18 @@ import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { ordenAlfa } from "@/utils/orden"
 import { useModuleName } from "@/composables/useModuleName"
+import ExportToolbar from "@/components/common/ExportToolbar.vue"
 
 const { moduleName } = useModuleName()
 const vFocus = { mounted: el => el.focus() }
 
 const ESTADOS = [{ v: "", l: "Todas" }, { v: "1", l: "Activas" }, { v: "0", l: "Inactivas" }]
 const BASE = "/supply-items/catalogos/formas-medida"
+const exportCols = [
+  { key: "id", label: "Código" },
+  { key: "name", label: "Nombre" },
+  { key: "is_active", label: "Estado", fmt: v => (Number(v) ? "Activa" : "Inactiva") },
+]
 
 const items   = ref([])
 const loading = ref(true)

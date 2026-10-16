@@ -7,6 +7,7 @@ Comunicación del agente con la nube (EasyPosWeb), con la clave propia de la emp
   · fotos de los platos subidas en la web → carpeta de fotos del escritorio: SOLO con el botón del
     panel (decisión 2026-10-10: las tablas maestras se bajan con intervención humana)
   · pedidos web: ciclo aparte en servicios/pedidos_web.py (cada 10 s)
+  · tipos de empleado (tipo_empleado) → web, solo cuando cambian (los meseros y empleados los sube el escritorio)
   · versión vigente del agente → descarga y, al abrir turno, actualización (actualizador.py)
 
 Todo es de salida (el PC de caja no abre puertos a internet). Sin internet el agente sigue
@@ -24,7 +25,7 @@ from datetime import date, datetime
 from sqlalchemy import text
 
 from . import VERSION, config
-from .db import SesionTemp
+from .db import SesionEmpresa, SesionTemp
 
 log = logging.getLogger("agente_local")
 
@@ -151,6 +152,24 @@ async def turno_y_pedidos() -> tuple[str, int]:
     return fecha.isoformat(), int(abiertos)
 
 
+_huella_tipos: str | None = None      # lo último que se mandó (se reenvía al reiniciar el agente)
+
+
+async def subir_tipos_empleado() -> bool:
+    """tipo_empleado del escritorio → pos_employee_types de la web. Solo lectura en la BD de la empresa."""
+    global _huella_tipos
+    async with SesionEmpresa() as s:
+        filas = (await s.execute(text("SELECT Cod_Tipo, Nombre, Porcentaje FROM tipo_empleado ORDER BY Cod_Tipo"))).all()
+    tipos = [{"cod_tipo": int(c), "nombre": (n or "").strip()[:50] or f"Tipo {c}", "porcentaje": float(p or 0)}
+             for c, n, p in filas]
+    huella = json.dumps(tipos, sort_keys=True)
+    if not tipos or huella == _huella_tipos:
+        return False
+    await pedir("POST", "/api/agente/tipos-empleado", {"tipos": tipos})
+    _huella_tipos = huella
+    return True
+
+
 async def enviar_errores() -> int:
     async with SesionTemp() as s:
         filas = (await s.execute(text("""
@@ -185,6 +204,12 @@ async def ciclo() -> None:
             await actualizador.revisar_resultado()       # resultado de una actualización recién aplicada
             await latido()
             await enviar_errores()
+            try:                                         # tipos de empleado → web (solo si cambiaron)
+                await subir_tipos_empleado()
+            except ErrorNube:
+                raise
+            except Exception as e:                       # tabla ausente u otro detalle: no corta el ciclo
+                log.warning("No se pudieron subir los tipos de empleado: %s", e)
             try:                                         # aviso del escritorio: lo pendiente de bajar de la web
                 from .servicios import maestros_web
                 await maestros_web.refrescar_pendientes()
