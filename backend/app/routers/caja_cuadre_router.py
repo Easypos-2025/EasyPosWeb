@@ -26,7 +26,7 @@ from app.auth.tenant import tenant_guard
 from app.database import get_db
 from app.models.user_model import User
 from app.routers.pos_shift_router import (_BOG, _es_admin, _es_escritorio, _hoy, _id_caja_header,
-                                          _turno_abierto, cerrar_y_liberar)
+                                          _turno_abierto, cerrar_y_liberar, codigo_cajero)
 from app.services import cuadre_caja as svc
 from app.services.permisos import permisos_usuario
 from app.services import periodos as per
@@ -130,7 +130,7 @@ async def opciones(
         "es_admin": await _es_admin(db, current_user),
         "permisos": {"anteriores": "consultar_anteriores" in permisos, "periodos": "ver_periodos" in permisos,
                      "cierre": "hacer_cierre" in permisos},
-        "user_id": current_user.id,
+        "user_id": await codigo_cajero(db, cid, current_user.id),   # código de cajero (Venta_Clientes)
     }
 
 
@@ -185,7 +185,7 @@ async def cerrar(
         raise HTTPException(status_code=409, detail="Este Id_Caja ya está cerrado")
     if "hacer_cierre" not in await permisos_usuario(db, current_user):
         raise HTTPException(status_code=403, detail="No tiene permiso para hacer el cierre de caja")
-    if int(turno["user_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
+    if int(turno["user_id"] or 0) != await codigo_cajero(db, cid, current_user.id) and not await _es_admin(db, current_user):
         raise HTTPException(status_code=403, detail="Solo el usuario que abrió la caja o un administrador pueden cerrarla")
 
     # Foto del cuadre del Id_Caja con TODO el dinero (recibos y facturas)

@@ -68,7 +68,7 @@ async def _es_admin(db: AsyncSession, user: User) -> bool:
 #   Abiertos válidos: de los Cierre=0, solo el mayor Id_Caja de cada cajero (Venta_Clientes);
 #   los demás Cierre=0 son registros viejos que no se cerraron en la sincronización.
 #   `customer_sales` (Venta_Clientes) = código/cédula del cajero (pos_employees.id); en la
-#   web, el id del usuario (se le crea su registro en pos_employees al abrir caja).
+#   web, el código de empleado ligado al usuario (pos_employees.user_id, ver codigo_cajero).
 # ═══════════════════════════════════════════════════════════════════════════
 _VIGENTE = """c.closed = 0 AND c.id_registro = (
     SELECT MAX(c2.id_registro) FROM pos_cash_register_closings c2
@@ -129,7 +129,8 @@ async def _turno_abierto(db: AsyncSession, company_id: int, user_id: int,
             if elegida:
                 return elegida
         return abiertas[0] if abiertas else None
-    return next((a for a in abiertas if int(a["cajero_id"] or 0) == int(user_id)), None)
+    codigo = await codigo_cajero(db, company_id, user_id)
+    return next((a for a in abiertas if int(a["cajero_id"] or 0) == codigo), None)
 
 
 def _id_caja_header(request: Request) -> Optional[int]:
@@ -189,13 +190,14 @@ async def cajas_disponibles(
     if not cajas and not await _tiene_cajas(db, cid):
         cajas = [CAJA_PROVISIONAL]
     ocupada_por = {int(a["register_number"]): int(a["cajero_id"] or 0) for a in await _cajas_abiertas(db, cid)}
+    mi_codigo = await codigo_cajero(db, cid, current_user.id)
     result = []
     for c in cajas:
         ocupante = ocupada_por.get(c["id"])
         result.append({
             **dict(c),
             "ocupada": ocupante is not None,
-            "ocupada_por_mi": ocupante == current_user.id,
+            "ocupada_por_mi": ocupante == mi_codigo,
         })
     return result
 
@@ -225,14 +227,42 @@ async def _siguiente_id_caja(db: AsyncSession, cid: int) -> int:
     """), {"cid": cid})).scalar())
 
 
-async def _asegurar_empleado(db: AsyncSession, cid: int, user: User) -> None:
-    """El cajero web queda en pos_employees (empleados) con id = id del usuario."""
+async def codigo_cajero(db: AsyncSession, cid: int, user_id: int, user: Optional[User] = None) -> int:
+    """Código del cajero (cajas_cierres.Venta_Clientes) = código de empleado ligado al usuario web.
+
+    1. Registro ligado (pos_employees.user_id, el de Meseros y Empleados).
+    2. El empleado que creaba antes la caja: código = id del usuario y su correo como login → se liga
+       (sus turnos y su cuadre anteriores siguen siendo suyos).
+    3. Con `user` (al abrir turno) y sin registro: se le crea como empleado con el siguiente código libre.
+    Sin registro y sin `user` devuelve -1 (no coincide con ningún turno)."""
+    ligado = (await db.execute(text(
+        "SELECT id FROM pos_employees WHERE company_id = :c AND user_id = :u ORDER BY id LIMIT 1"
+    ), {"c": cid, "u": user_id})).scalar()
+    if ligado:
+        return int(ligado)
+    antiguo = (await db.execute(text("""
+        SELECT e.id FROM pos_employees e JOIN users u ON u.id = e.id
+        WHERE e.company_id = :c AND e.id = :u AND e.user_id IS NULL
+          AND e.login COLLATE utf8mb4_general_ci = LEFT(u.email, 25) COLLATE utf8mb4_general_ci
+    """), {"c": cid, "u": user_id})).scalar()
+    if antiguo:
+        await db.execute(text("UPDATE pos_employees SET user_id = :u WHERE company_id = :c AND id = :u"),
+                         {"c": cid, "u": user_id})
+        return int(antiguo)
+    if user is None:
+        return -1
+    from app.routers.personal_router import _siguiente_codigo, _login_auto
+    cod = await _siguiente_codigo(db, cid)
+    nombre = (user.nombre or "").strip()[:50] or f"Usuario {user.id}"
+    tipo = (await db.execute(text(
+        "SELECT cod_tipo FROM pos_employee_types WHERE company_id = :c AND cod_tipo = 5"), {"c": cid})).scalar()
     await db.execute(text("""
-        INSERT INTO pos_employees (id, company_id, name, login, password, status, employee_type, personal_skin, synced)
-        SELECT :uid, :cid, :name, :login, '', 1, 0, 0, 0 FROM DUAL
-        WHERE NOT EXISTS (SELECT 1 FROM pos_employees WHERE company_id = :cid AND id = :uid)
-    """), {"uid": user.id, "cid": cid, "name": (user.nombre or f"Usuario {user.id}")[:50],
-           "login": (user.email or str(user.id))[:25]})
+        INSERT INTO pos_employees (id, company_id, name, login, password, status, employee_type, personal_skin,
+                                   synced, user_id)
+        VALUES (:id, :c, :n, :l, '', 1, :t, 0, 0, :u)
+    """), {"id": cod, "c": cid, "n": nombre, "l": await _login_auto(db, cid, nombre, cod),
+           "t": 5 if tipo is not None else 0, "u": user.id})
+    return cod
 
 
 @router.post("/abrir")
@@ -273,7 +303,7 @@ async def abrir_turno(
     if any(int(a["register_number"]) == int(register_number) for a in await _cajas_abiertas(db, cid)):
         raise HTTPException(status_code=409, detail="Esta caja ya está abierta por otro usuario")
 
-    await _asegurar_empleado(db, cid, current_user)
+    codigo = await codigo_cajero(db, cid, uid, current_user)   # cajero = su código de empleado
     for _ in range(5):
         id_caja = await _siguiente_id_caja(db, cid)
         try:
@@ -284,13 +314,13 @@ async def abrir_turno(
                 VALUES
                     (:idreg, :rn, :hoy, :base, :uid, 0, :pc, :now, :cid, 0)
             """), {
-                "idreg": id_caja, "rn": register_number, "base": base_amount, "uid": uid, "pc": pc,
+                "idreg": id_caja, "rn": register_number, "base": base_amount, "uid": codigo, "pc": pc,
                 "now": _ahora().strftime("%Y-%m-%d %H:%M:%S"), "hoy": _hoy(), "cid": cid,
             })
             # cajas.Abierta: la caja queda bloqueada para otros usuarios
             await db.execute(text(
                 "UPDATE pos_cash_registers SET is_open = 1, employee_id = :uid WHERE company_id = :cid AND id = :rn"
-            ), {"uid": uid, "cid": cid, "rn": register_number})
+            ), {"uid": codigo, "cid": cid, "rn": register_number})
             await db.commit()
             break
         except IntegrityError:
@@ -325,7 +355,8 @@ async def cerrar_turno(
             raise HTTPException(status_code=404, detail="Id_Caja no encontrado o ya cerrado")
         if int(turno["synced"] or 0):
             raise HTTPException(status_code=409, detail="Este Id_Caja se cierra desde el programa de escritorio")
-        if int(turno["cajero_id"] or 0) != current_user.id and not await _es_admin(db, current_user):
+        if int(turno["cajero_id"] or 0) != await codigo_cajero(db, cid, current_user.id) \
+                and not await _es_admin(db, current_user):
             raise HTTPException(status_code=403, detail="Solo el usuario que abrió la caja o un administrador pueden cerrarla")
     else:
         turno = await _turno_abierto(db, cid, current_user.id, _id_caja_header(request))
