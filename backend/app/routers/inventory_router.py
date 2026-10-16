@@ -575,8 +575,8 @@ async def get_snapshot_job_status(
 async def get_movements_all(
     id_item:  Optional[int] = Query(None),
     mtype:    Optional[str] = Query(None),   # movement_type filter
-    desde:    Optional[str] = Query(None),
-    hasta:    Optional[str] = Query(None),
+    desde:    Optional[date_type] = Query(None),
+    hasta:    Optional[date_type] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -599,12 +599,8 @@ async def get_movements_all(
             where_parts.append("sm.movement_type = :mtype")
             params["mtype"] = mtype
 
-    if desde:
-        where_parts.append("sm.movement_date >= :desde")
-        params["desde"] = desde
-    if hasta:
-        where_parts.append("sm.movement_date <= :hasta")
-        params["hasta"] = hasta
+    params["desde"], params["hasta"] = _rango_fechas(desde, hasta)   # por defecto hoy
+    where_parts.append("sm.movement_date >= :desde AND sm.movement_date < :hasta")
 
     where_sql = " AND ".join(where_parts)
 
@@ -622,7 +618,7 @@ async def get_movements_all(
         LEFT JOIN users u ON u.id = sm.created_by
         WHERE {where_sql}
         ORDER BY sm.created_at DESC
-        LIMIT 500
+        LIMIT 5000
     """), params)).mappings().all()
     return [dict(r) for r in rows]
 
@@ -677,21 +673,25 @@ async def list_physical(
 
 @router.get("/physical/dates")
 async def list_physical_dates(
+    desde: Optional[date_type] = Query(None),
+    hasta: Optional[date_type] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Lista de fechas de cortes de inventario físico (para el historial).
-    No filtra por autorizada porque VB6 sincroniza con autorizada=0."""
+    No filtra por autorizada porque VB6 sincroniza con autorizada=0.
+    Filtra por el periodo desde–hasta (por defecto hoy)."""
+    d, h = _rango_fechas(desde, hasta)
     rows = (await db.execute(text("""
         SELECT fecha, COUNT(*) AS items_contados,
                MIN(created_at) AS hora_inicio, MAX(created_at) AS hora_fin,
                MAX(cod_usuario) AS usuario
         FROM inventory_physical
-        WHERE company_id = :cid
+        WHERE company_id = :cid AND fecha >= :desde AND fecha < :hasta
         GROUP BY fecha
         ORDER BY fecha DESC
-        LIMIT 100
-    """), {"cid": current_user.company_id})).mappings().all()
+        LIMIT 400
+    """), {"cid": current_user.company_id, "desde": d, "hasta": h})).mappings().all()
     return [dict(r) for r in rows]
 
 
@@ -1376,11 +1376,24 @@ for _kind in ("entries", "exits"):
 # ENTRADAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _rango_fechas(desde: Optional[date_type], hasta: Optional[date_type]) -> tuple[date_type, date_type]:
+    """Periodo de consulta (por defecto hoy). Máximo ~2 años para no traer historiales enormes."""
+    hoy = date_type.today()
+    d, h = desde or hasta or hoy, hasta or desde or hoy
+    if d > h:
+        d, h = h, d
+    if (h - d).days > 800:
+        raise HTTPException(status_code=400, detail="El periodo de consulta no puede superar 2 años")
+    return d, h + timedelta(days=1)          # hasta exclusivo: incluye todo el último día
+
 @router.get("/entries")
 async def list_entries(
+    desde: Optional[date_type] = Query(None),
+    hasta: Optional[date_type] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    d, h = _rango_fechas(desde, hasta)
     rows = (await db.execute(text("""
         SELECT ie.id, ie.id_entrada, ie.id_item, ie.id_proveedor,
                ie.fecha, ie.cantidad, ie.observacion, ie.cod_empleado,
@@ -1393,10 +1406,10 @@ async def list_entries(
         LEFT JOIN supply_items si ON si.id_item = ie.id_item AND si.company_id = ie.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ie.company_id
         LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = ie.company_id
-        WHERE ie.company_id = :cid
+        WHERE ie.company_id = :cid AND ie.fecha >= :desde AND ie.fecha < :hasta
         ORDER BY COALESCE(cat.name, 'zzz'), si.description, ie.fecha DESC
-        LIMIT 500
-    """), {"cid": current_user.company_id})).mappings().all()
+        LIMIT 5000
+    """), {"cid": current_user.company_id, "desde": d, "hasta": h})).mappings().all()
     return [dict(r) for r in rows]
 
 
@@ -1475,9 +1488,12 @@ async def delete_entry(
 
 @router.get("/exits")
 async def list_exits(
+    desde: Optional[date_type] = Query(None),
+    hasta: Optional[date_type] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    d, h = _rango_fechas(desde, hasta)
     rows = (await db.execute(text("""
         SELECT ix.id, ix.id_salida, ix.id_item, ix.id_proveedor,
                ix.fecha, ix.cantidad, ix.observacion, ix.cod_empleado,
@@ -1490,10 +1506,10 @@ async def list_exits(
         LEFT JOIN supply_items si ON si.id_item = ix.id_item AND si.company_id = ix.company_id
         LEFT JOIN pos_measure_forms mu ON mu.id = si.unit_id AND mu.company_id = ix.company_id
         LEFT JOIN pos_product_categories cat ON cat.id = si.agrupar AND cat.company_id = ix.company_id
-        WHERE ix.company_id = :cid
+        WHERE ix.company_id = :cid AND ix.fecha >= :desde AND ix.fecha < :hasta
         ORDER BY COALESCE(cat.name, 'zzz'), si.description, ix.fecha DESC
-        LIMIT 500
-    """), {"cid": current_user.company_id})).mappings().all()
+        LIMIT 5000
+    """), {"cid": current_user.company_id, "desde": d, "hasta": h})).mappings().all()
     return [dict(r) for r in rows]
 
 

@@ -291,9 +291,8 @@
               <label>Unidad</label>
               <select v-model="matForm.unit" class="form-select">
                 <option value="">—</option>
-                <option v-for="u in $ordenAlfa(unidadesMedida, 'name')" :key="u.id"
-                  :value="u.abreviatura || u.name">
-                  {{ u.name }}{{ u.abreviatura ? ' (' + u.abreviatura + ')' : '' }}
+                <option v-for="u in $ordenAlfa(unidadesMedida, 'name')" :key="u.id" :value="u.name">
+                  {{ u.name }}
                 </option>
               </select>
             </div>
@@ -773,7 +772,7 @@ async function load() {
         api.get(`/task-collaborators/${id}`),
         api.get(`/task-purchases/${id}`),
         api.get("/products/"),
-        api.get("/unidades-medida/"),
+        api.get("/supply-items/catalogos/formas-medida"),
         api.get("/conceptos-gastos/"),
         api.get("/conceptos-compras/"),
       ])
@@ -789,7 +788,7 @@ async function load() {
     collaborators.value  = collabRes.data
     purchases.value      = purchRes.data
     productos.value      = productosRes.data.filter(p => p.name?.trim())
-    unidadesMedida.value = unidadRes.data
+    unidadesMedida.value = unidadRes.data.filter(u => Number(u.is_active) === 1)   // formas de medida activas
     conceptosGastos.value  = cgastoRes.data
     conceptosCompras.value = ccompraRes.data
 

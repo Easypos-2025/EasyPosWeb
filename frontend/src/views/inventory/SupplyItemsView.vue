@@ -115,61 +115,23 @@
           <button class="btn-x" @click="closeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
-        <!-- Pestañas (solo móvil / tablet) -->
-        <div class="ptabs">
-          <button :class="['ptab', { active: tab === 'datos' }]" @click="tab = 'datos'"><i class="bi bi-card-text"></i> Datos</button>
-          <button :class="['ptab', { active: tab === 'prov' }]" @click="tab = 'prov'"><i class="bi bi-truck"></i> Proveedores <span v-if="provSel.length" class="cnt">{{ provSel.length }}</span></button>
-          <button :class="['ptab', { active: tab === 'fm' }]" @click="tab = 'fm'"><i class="bi bi-rulers"></i> Medidas <span v-if="fmSel.length" class="cnt">{{ fmSel.length }}</span></button>
-        </div>
-
-        <div class="grid3">
-          <!-- ── Panel 1: Proveedores ── -->
-          <section class="panel panel-prov" :class="{ 'p-hidden': tab !== 'prov' }">
-            <div class="panel-ttl">Asignar proveedores</div>
-            <input v-model="provSearch" class="form-control form-control-sm" placeholder="Buscar proveedor..." />
-            <div class="pick-list">
-              <button v-for="p in provDisponibles" :key="p.id_proveedor" class="pick-btn" @click="addProv(p)">{{ p.name }}</button>
-              <div v-if="!provDisponibles.length" class="mini-empty">Sin proveedores disponibles</div>
-            </div>
-            <div class="sel-list">
-              <div v-for="p in provSel" :key="p.id_proveedor" class="sel-row">
-                <span class="sel-name">{{ p.name }}</span>
-                <button class="btn-quitar" @click="provSel = provSel.filter(x => x.id_proveedor !== p.id_proveedor)">Quitar</button>
-              </div>
-            </div>
-            <button class="btn btn-outline-primary btn-block" @click="openQuick('prov')"><i class="bi bi-plus-lg"></i> Crear nuevo proveedor</button>
-          </section>
-
-          <!-- ── Panel 2: Formas de medida ── -->
-          <section class="panel panel-fm" :class="{ 'p-hidden': tab !== 'fm' }">
-            <div class="panel-ttl">Seleccionar forma de medida</div>
-            <input v-model="fmSearch" class="form-control form-control-sm" placeholder="Buscar forma de medida..." />
-            <div class="pick-grid">
-              <button v-for="m in fmDisponibles" :key="m.id" class="pick-btn" @click="addFm(m)">{{ m.name }}</button>
-            </div>
-            <div class="sel-list">
-              <div v-for="m in fmSel" :key="m.id_forma_medida" class="sel-row">
-                <span class="sel-name">{{ m.name }}</span>
-                <input v-model.number="m.cant_unidades_minimas" type="number" min="0.001" step="0.001" class="form-control form-control-sm sel-qty" title="Cantidad de unidades mínimas" />
-                <button class="btn-quitar" @click="fmSel = fmSel.filter(x => x.id_forma_medida !== m.id_forma_medida)">Quitar</button>
-              </div>
-            </div>
-            <button class="btn btn-outline-primary btn-block" @click="openQuick('fm')"><i class="bi bi-plus-lg"></i> Crear nueva forma de medida</button>
-          </section>
-
-          <!-- ── Panel 3: Datos del insumo ── -->
-          <section class="panel panel-datos" :class="{ 'p-hidden': tab !== 'datos' }">
+        <div class="grid2">
+          <!-- ── Columna 1: datos principales ── -->
+          <section class="panel">
             <div class="fg">
               <label>Nombre *</label>
               <input v-model="form.description" class="form-control inp-name" maxlength="255" />
             </div>
             <div class="form-row2">
               <div class="fg">
-                <label>Unidad uso</label>
-                <select v-model="form.unit_uso_id" class="form-select">
-                  <option :value="null">— Seleccione —</option>
-                  <option v-for="m in $ordenAlfa(formasUnidadUso, 'name')" :key="m.id" :value="m.id">{{ m.name }}</option>
-                </select>
+                <label>Unidad de uso *</label>
+                <div class="unit-row">
+                  <select v-model="form.unit_uso_id" class="form-select">
+                    <option :value="null">— Seleccione —</option>
+                    <option v-for="m in $ordenAlfa(formasUnidadUso, 'name')" :key="m.id" :value="m.id">{{ m.name }}</option>
+                  </select>
+                  <button type="button" class="btn-add-unit" title="Crear nueva forma de medida" @click="openQuick('fm')"><i class="bi bi-plus-lg"></i></button>
+                </div>
               </div>
               <div class="fg">
                 <label>Costo por und. de uso</label>
@@ -187,16 +149,44 @@
               </div>
             </div>
             <div class="fg">
-              <label>Categoría</label>
+              <label>Categoría *</label>
               <div class="unit-row">
                 <select v-model="form.category_id" class="form-select">
-                  <option :value="null">Sin categoría</option>
+                  <option :value="null">— Seleccione —</option>
                   <option v-for="c in $ordenAlfa(categories, 'name')" :key="c.id" :value="c.id">{{ c.name }}</option>
                 </select>
                 <button type="button" class="btn-add-unit" title="Crear nueva categoría" @click="openQuick('cat')"><i class="bi bi-plus-lg"></i></button>
               </div>
             </div>
 
+            <!-- Proveedores: selección múltiple -->
+            <div class="fg">
+              <label>Proveedores * <span v-if="provSel.length" class="cnt">{{ provSel.length }}</span></label>
+              <div class="ms" :class="{ 'ms-open': provAbierto }">
+                <div class="ms-box" @click="abrirProv">
+                  <span v-for="p in provSel" :key="p.id_proveedor" class="chip">
+                    {{ p.name }}
+                    <button type="button" class="chip-x" title="Quitar" @click.stop="quitarProv(p)"><i class="bi bi-x"></i></button>
+                  </span>
+                  <input ref="provInput" v-model="provSearch" class="ms-inp" :placeholder="provSel.length ? 'Agregar otro...' : 'Buscar y seleccionar proveedores...'"
+                         @focus="provAbierto = true" @keydown.enter.prevent="provDisponibles[0] && addProv(provDisponibles[0])"
+                         @keydown.esc="provAbierto = false" @blur="cerrarProvLuego" />
+                  <button type="button" class="btn-add-unit ms-add" title="Crear nuevo proveedor" @mousedown.prevent @click.stop="openQuick('prov')"><i class="bi bi-plus-lg"></i></button>
+                </div>
+                <div v-if="provAbierto" class="ms-drop" @mousedown.prevent>
+                  <button v-for="p in provDisponibles" :key="p.id_proveedor" type="button" class="ms-opt" @click="addProv(p)">
+                    {{ p.name }} <span v-if="p.nit" class="ms-nit">{{ p.nit }}</span>
+                  </button>
+                  <div v-if="!provDisponibles.length" class="mini-empty">
+                    {{ provSearch ? 'Sin coincidencias' : 'No hay más proveedores activos' }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ── Columna 2: opciones ── -->
+          <section class="panel">
             <div class="flags">
               <label class="flag"><input type="checkbox" v-model="form.control_stock" :true-value="1" :false-value="0" /> Este producto se controla</label>
               <label class="flag"><input type="checkbox" v-model="form.producto_preparado" :true-value="1" :false-value="0" /> Producto preparado</label>
@@ -239,20 +229,17 @@
 
     <!-- MODAL CREACIÓN RÁPIDA (proveedor / forma de medida / categoría) -->
     <div v-if="quick.show" class="modal-overlay modal-top" @click.self="quick.show = false">
-      <div class="modal-box modal-sm">
+      <div class="modal-box" :class="quick.kind === 'prov' ? 'modal-md' : 'modal-sm'">
         <div class="mh">
           <h3>{{ quickTitle }}</h3>
           <button class="btn-x" @click="quick.show = false"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="mb-area">
-          <div class="fg">
+          <ProveedorCampos v-if="quick.kind === 'prov'" v-model="quick.prov" />
+          <div v-else class="fg">
             <label>Nombre *</label>
             <input v-model="quick.name" class="form-control" maxlength="100" @keydown.enter="submitQuick" v-focus />
           </div>
-          <template v-if="quick.kind === 'prov'">
-            <div class="fg"><label>NIT</label><input v-model="quick.nit" class="form-control" maxlength="50" /></div>
-            <div class="fg"><label>Celular</label><input v-model="quick.cel" class="form-control" maxlength="50" /></div>
-          </template>
         </div>
         <div class="mf">
           <button class="btn btn-secondary btn-sm" @click="quick.show = false">Cancelar</button>
@@ -301,6 +288,8 @@ import api from "@/services/apis"
 import { showToast } from "@/utils/toast"
 import { useModuleName } from "@/composables/useModuleName"
 import CustomDatePicker from "@/components/common/CustomDatePicker.vue"
+import ProveedorCampos, { proveedorVacio, validarProveedor } from "@/components/inventory/ProveedorCampos.vue"
+import { ordenAlfa } from "@/utils/orden"
 
 const { moduleName } = useModuleName()
 const vFocus = { mounted: el => el.focus() }
@@ -318,18 +307,17 @@ const showModal = ref(false)
 const editing   = ref(null)
 const saving    = ref(false)
 const form      = ref({})
-const tab       = ref("datos")
 
-const provSel    = ref([])         // [{ id_proveedor, name }]
-const provSearch = ref("")
-const fmSel      = ref([])         // [{ id_forma_medida, name, cant_unidades_minimas }]
-const fmSearch   = ref("")
+const provSel     = ref([])        // [{ id_proveedor, name }] → insumos_proveedor
+const provSearch  = ref("")
+const provAbierto = ref(false)
+const provInput   = ref(null)
 
 const showAdjust = ref(false)
 const adjustItem = ref(null)
 const adjustForm = ref({})
 
-const quick = ref({ show: false, kind: "", name: "", nit: "", cel: "", saving: false })
+const quick = ref({ show: false, kind: "", name: "", prov: proveedorVacio(), saving: false })
 const quickTitle = computed(() => ({ prov: "Nuevo proveedor", fm: "Nueva forma de medida", cat: "Nueva categoría" }[quick.value.kind]))
 
 // Moneda: mismo formateo que el resto del POS (COP por defecto)
@@ -362,18 +350,13 @@ const filtered = computed(() => {
 const provDisponibles = computed(() => {
   const q = provSearch.value.toLowerCase()
   const taken = new Set(provSel.value.map(p => p.id_proveedor))
-  return proveedores.value.filter(p => !taken.has(p.id_proveedor) && (!q || p.name.toLowerCase().includes(q)))
+  return ordenAlfa(proveedores.value.filter(p => !taken.has(p.id_proveedor) &&
+    (!q || p.name.toLowerCase().includes(q) || (p.nit || "").toLowerCase().includes(q))), "name")
 })
 // Unidad uso: solo formas activas (forma_medida.Activa = 1); se conserva la ya asignada aunque esté inactiva
 const formasUnidadUso = computed(() =>
   formas.value.filter(m => Number(m.is_active) === 1 || m.id === form.value.unit_uso_id)
 )
-
-const fmDisponibles = computed(() => {
-  const q = fmSearch.value.toLowerCase()
-  const taken = new Set(fmSel.value.map(m => m.id_forma_medida))
-  return formas.value.filter(m => !taken.has(m.id) && (!q || m.name.toLowerCase().includes(q)))
-})
 
 async function load() {
   loading.value = true
@@ -401,34 +384,30 @@ function emptyForm() {
 function openCreate() {
   editing.value = null
   form.value = emptyForm()
-  provSel.value = []; fmSel.value = []
-  provSearch.value = ""; fmSearch.value = ""
-  tab.value = "datos"
+  provSel.value = []; provSearch.value = ""; provAbierto.value = false
   showModal.value = true
 }
 
 async function openEdit(i) {
   editing.value = i
   form.value = { ...emptyForm(), ...i, fecha_vence: i.fecha_vence || "" }
-  provSel.value = []; fmSel.value = []
-  provSearch.value = ""; fmSearch.value = ""
-  tab.value = "datos"
+  provSel.value = []; provSearch.value = ""; provAbierto.value = false
   showModal.value = true
   try {
-    const [pr, fr] = await Promise.all([
-      api.get(`/supply-items/${i.id}/proveedores`),
-      api.get(`/supply-items/${i.id}/formas-medida`),
-    ])
+    const pr = await api.get(`/supply-items/${i.id}/proveedores`)
     provSel.value = pr.data.map(p => ({ id_proveedor: p.id_proveedor, name: p.name || `Proveedor ${p.id_proveedor}` }))
-    fmSel.value   = fr.data.map(m => ({ id_forma_medida: m.id_forma_medida, name: m.name || `Medida ${m.id_forma_medida}`,
-                                        cant_unidades_minimas: Number(m.cant_unidades_minimas) || 1 }))
-  } catch { showToast("No se pudieron cargar proveedores / medidas", "warning") }
+  } catch { showToast("No se pudieron cargar los proveedores del insumo", "warning") }
 }
 
 function closeModal() { showModal.value = false }
 
-function addProv(p) { provSel.value.push({ id_proveedor: p.id_proveedor, name: p.name }) }
-function addFm(m)   { fmSel.value.push({ id_forma_medida: m.id, name: m.name, cant_unidades_minimas: 1 }) }
+function addProv(p) {
+  if (!provSel.value.some(x => x.id_proveedor === p.id_proveedor)) provSel.value.push({ id_proveedor: p.id_proveedor, name: p.name })
+  provSearch.value = ""
+}
+function quitarProv(p) { provSel.value = provSel.value.filter(x => x.id_proveedor !== p.id_proveedor) }
+function abrirProv() { provAbierto.value = true; provInput.value?.focus() }
+function cerrarProvLuego() { setTimeout(() => { provAbierto.value = false }, 150) }
 
 function payload() {
   const f = form.value
@@ -439,28 +418,25 @@ function payload() {
     control_stock: f.control_stock ? 1 : 0, producto_preparado: f.producto_preparado ? 1 : 0,
     opcion_cambios: f.opcion_cambios ? 1 : 0, armar_plato: f.armar_plato ? 1 : 0,
     centro_produccion: f.centro_produccion ? 1 : 0, fecha_vence: f.fecha_vence || null,
+    proveedor_ids: provSel.value.map(p => p.id_proveedor),   // la forma de medida = unidad de uso (servidor)
   }
   if (!editing.value) p.stock_qty = Number(f.stock_qty) || 0
   return p
 }
 
 async function submit() {
-  if (!form.value.description?.trim()) { showToast("El nombre es requerido", "warning"); tab.value = "datos"; return }
-  if (fmSel.value.some(m => !(Number(m.cant_unidades_minimas) > 0))) {
-    showToast("La cantidad de cada forma de medida debe ser mayor a 0", "warning"); tab.value = "fm"; return
-  }
+  const f = form.value
+  if (!f.description?.trim()) { showToast("El nombre es requerido", "warning"); return }
+  if (!f.unit_uso_id)          { showToast("Seleccione la unidad de uso", "warning"); return }
+  if (!f.category_id)          { showToast("Seleccione la categoría", "warning"); return }
+  if (!provSel.value.length)   { showToast("Asigne al menos un proveedor", "warning"); return }
   saving.value = true
   try {
+    // Insumo, proveedores y forma de medida se guardan juntos en el servidor
     const r = editing.value
       ? await api.put(`/supply-items/${editing.value.id}`, payload())
       : await api.post("/supply-items/", payload())
     const saved = r.data
-    await Promise.all([
-      api.put(`/supply-items/${saved.id}/proveedores`, { ids: provSel.value.map(p => p.id_proveedor) }),
-      api.put(`/supply-items/${saved.id}/formas-medida`, {
-        items: fmSel.value.map(m => ({ id_forma_medida: m.id_forma_medida, cant_unidades_minimas: Number(m.cant_unidades_minimas) })),
-      }),
-    ])
     const idx = items.value.findIndex(x => x.id === saved.id)
     if (idx !== -1) items.value[idx] = saved
     else items.value.unshift(saved)
@@ -505,24 +481,23 @@ async function submitAdjust() {
 }
 
 function openQuick(kind) {
-  quick.value = { show: true, kind, name: "", nit: "", cel: "", saving: false }
+  quick.value = { show: true, kind, name: "", prov: proveedorVacio(), saving: false }
 }
 
 async function submitQuick() {
   const q = quick.value
-  if (!q.name.trim()) { showToast("El nombre es requerido", "warning"); return }
+  const err = q.kind === "prov" ? validarProveedor(q.prov) : (q.name.trim() ? "" : "El nombre es requerido")
+  if (err) { showToast(err, "warning"); return }
   q.saving = true
   try {
     if (q.kind === "prov") {
-      const { data } = await api.post("/suppliers/", { name: q.name.trim(), nit: q.nit.trim(), telefono_celular: q.cel.trim() })
+      const { data } = await api.post("/suppliers/", q.prov)
       proveedores.value.push(data)
-      proveedores.value.sort((a, b) => a.name.localeCompare(b.name))
       addProv(data)
     } else if (q.kind === "fm") {
       const { data } = await api.post("/supply-items/catalogos/formas-medida", { name: q.name.trim() })
       formas.value.push(data)
-      formas.value.sort((a, b) => a.name.localeCompare(b.name))
-      addFm(data)
+      form.value.unit_uso_id = data.id
     } else {
       const { data } = await api.post("/supply-items/catalogos/categorias", { name: q.name.trim() })
       categories.value.push(data)
@@ -585,7 +560,7 @@ onMounted(load)
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
 .modal-top     { z-index: 2100; }
 .modal-box     { background: #fff; border-radius: 16px; width: 100%; max-width: 520px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal-xl      { max-width: 1120px; }
+.modal-xl      { max-width: 900px; }
 .modal-sm      { max-width: 400px; }
 .mh  { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid #f1f5f9; }
 .mh h3 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -593,34 +568,29 @@ onMounted(load)
 .mb-area { padding: 18px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
 .mf { padding: 12px 20px 16px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; flex-wrap: wrap; }
 
-.ptabs { display: none; border-bottom: 2px solid #e2e8f0; }
-.ptab  { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 6px; border: none; background: none; font-size: 12px; font-weight: 600; color: #64748b; border-bottom: 3px solid transparent; margin-bottom: -2px; cursor: pointer; }
-.ptab.active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
 .cnt { background: #1d4ed8; color: #fff; border-radius: 999px; font-size: 10px; padding: 0 6px; }
 
-.grid3 { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 14px; padding: 16px 20px; overflow-y: auto; }
+.grid2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; padding: 16px 20px; overflow-y: auto; }
+.modal-md { max-width: 560px; }
+.ms { position: relative; }
+.ms-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 40px; padding: 4px 4px 4px 8px;
+          border: 1.5px solid #e2e8f0; border-radius: 8px; background: #fff; cursor: text; }
+.ms-open .ms-box { border-color: #3b82f6; }
+.ms-inp { flex: 1; min-width: 120px; border: none; outline: none; font-size: 13px; padding: 4px 2px; background: transparent; }
+.ms-add { width: 30px; height: 30px; margin-left: auto; }
+.chip { display: inline-flex; align-items: center; gap: 2px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+        border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; font-weight: 600; max-width: 100%; }
+.chip-x { border: none; background: none; color: #1d4ed8; padding: 0 2px; cursor: pointer; line-height: 1; }
+.ms-drop { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; background: #fff; border: 1.5px solid #e2e8f0;
+           border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 220px; overflow-y: auto; padding: 4px; }
+.ms-opt { display: flex; justify-content: space-between; gap: 8px; width: 100%; border: none; background: none; text-align: left;
+          padding: 8px 10px; border-radius: 6px; font-size: 13px; color: #334155; cursor: pointer; }
+.ms-opt:hover { background: #eff6ff; color: #1d4ed8; }
+.ms-nit { font-size: 11px; color: #94a3b8; }
 .panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.panel-prov { background: #ecfeff; border-radius: 12px; padding: 12px; }
-.panel-fm   { background: #f0fdf4; border-radius: 12px; padding: 12px; }
-.panel-ttl  { font-size: 13px; font-weight: 700; color: #1e3a5f; text-align: center; }
-.pick-list  { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; flex-shrink: 0; }
-.pick-grid  { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(36px, auto); align-content: start;
-              gap: 6px; max-height: 240px; overflow-y: auto; flex-shrink: 0; }
-.pick-btn   { display: flex; align-items: center; justify-content: center; min-height: 36px; flex-shrink: 0;
-              background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; font-size: 12px;
-              line-height: 1.2; font-weight: 600; color: #334155; cursor: pointer; text-align: center;
-              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick-list .pick-btn { justify-content: flex-start; }
-.pick-btn:hover { border-color: #3b82f6; color: #1d4ed8; }
-.sel-list   { display: flex; flex-direction: column; gap: 6px; min-height: 40px; }
-.sel-row    { display: flex; align-items: center; gap: 6px; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 6px; }
-.sel-name   { flex: 1; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sel-qty    { width: 80px; text-align: right; }
-.btn-quitar { border: none; background: #fee2e2; color: #b91c1c; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
 .mini-empty { font-size: 12px; color: #94a3b8; text-align: center; padding: 10px; }
-.btn-block  { width: 100%; justify-content: center; margin-top: auto; }
 
-.panel-datos .inp-name { font-weight: 700; text-align: center; }
+.inp-name { font-weight: 700; text-align: center; }
 .flags { display: flex; flex-direction: column; gap: 6px; background: #f8fafc; border-radius: 10px; padding: 10px 12px; }
 .flag  { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #374151; cursor: pointer; }
 .flag input { width: 16px; height: 16px; }
@@ -644,12 +614,9 @@ onMounted(load)
 .unit-row .form-select { flex: 1; }
 .btn-add-unit { flex-shrink: 0; width: 36px; height: 36px; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #1d4ed8; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; }
 
-/* Tablet: pestañas en lugar de 3 columnas */
+/* Tablet: una sola columna */
 @media (max-width: 1024px) {
-  .ptabs { display: flex; }
-  .grid3 { grid-template-columns: 1fr; }
-  .p-hidden { display: none; }
-  .pick-list, .pick-grid { max-height: 300px; }
+  .grid2 { grid-template-columns: 1fr; }
 }
 /* Móvil */
 @media (max-width: 768px) {
@@ -659,15 +626,14 @@ onMounted(load)
   .f-search, .f-sel { max-width: none; flex: 1 1 100%; }
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal-box { max-height: 96vh; border-radius: 16px 16px 0 0; }
-  .grid3 { padding: 12px 14px; }
+  .grid2 { padding: 12px 14px; gap: 14px; }
 }
 @media (max-width: 576px) {
   .page-title { font-size: 18px; }
   .kpi-card { padding: 8px 12px; }
   .kpi-num  { font-size: 18px; }
   .form-row2 { grid-template-columns: 1fr; }
-  .pick-grid { grid-template-columns: 1fr 1fr; }
-  .ptab { font-size: 11px; }
+  .ms-inp { min-width: 90px; }
   .mf .btn { flex: 1; justify-content: center; }
 }
 </style>

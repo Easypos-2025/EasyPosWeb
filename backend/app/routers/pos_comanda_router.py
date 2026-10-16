@@ -415,6 +415,11 @@ async def abrir_mesa(
     ), {"tid": data.table_id, "cid": cid})).mappings().first()
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada")
+    # Ningún pedido sin mesero: debe ser un mesero activo de la empresa
+    if not waiter_id or not (await db.execute(text(
+        "SELECT 1 FROM pos_waiters WHERE id = :wid AND company_id = :cid AND status = 1"
+    ), {"wid": waiter_id, "cid": cid})).scalar():
+        raise HTTPException(status_code=422, detail="Seleccione un mesero activo para abrir la mesa")
     await _exigir_mesa(db_temp, cid, x_edit_token, table_id=data.table_id)
 
     # Verificar también en temp_comanda (sin filtro de fecha: órdenes que cruzan medianoche)

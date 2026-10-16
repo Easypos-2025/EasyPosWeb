@@ -21,6 +21,11 @@
       </div>
     </div>
 
+    <!-- Periodo: hoy por defecto; día, mes, año o rango -->
+    <div class="periodo-bar">
+      <PeriodoSelector v-model="per" anteriores periodos rango @change="load" />
+    </div>
+
     <!-- Filters + Export + Botón -->
     <div class="filters-bar">
       <div class="f-search-wrap">
@@ -137,6 +142,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import api from '@/services/apis'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import PeriodoSelector, { rangoPeriodo } from '@/components/common/PeriodoSelector.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import LimpiezaMovimientos from '@/components/inventory/LimpiezaMovimientos.vue'
 import { showToast } from '@/utils/toast'
@@ -150,7 +156,8 @@ const saving      = ref(false)
 const search      = ref('')
 const openCat     = ref(null)
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => new Date().toLocaleDateString('en-CA')   // fecha local (no UTC)
+const per   = ref({ periodo: 'dia', fecha: today() })
 const form  = ref({ id_item: '', fecha: today(), cantidad: 0, observacion: '' })
 
 const fmt     = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 })
@@ -218,9 +225,12 @@ const exportCols = [
 async function load() {
   loading.value = true
   try {
-    rows.value = (await api.get('/api/inventory/entries')).data
+    rows.value = (await api.get('/api/inventory/entries', { params: rangoPeriodo(per.value) })).data
     await nextTick()
     if (groupedByCategory.value.length) openCat.value = groupedByCategory.value[0].name
+  } catch (e) {
+    rows.value = []
+    showToast(e.response?.data?.detail || 'Error cargando registros', 'error')
   } finally { loading.value = false }
 }
 
@@ -282,6 +292,7 @@ onMounted(() => { load(); loadItems() })
 .kpi-teal .kpi-n  { color: #0d9488; }
 
 /* Filters */
+.periodo-bar { margin-bottom: 12px; }
 .filters-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
 .f-search-wrap { position: relative; flex: 1; min-width: 190px; }
 .f-ico { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: .83rem; }

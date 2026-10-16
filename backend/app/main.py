@@ -67,7 +67,6 @@ from app.routers.register_router import router as register_router
 from app.routers.payment_router import router as payment_router
 from app.routers.task_collaborators_router import router as task_collaborators_router
 from app.routers.user_notification_router import router as user_notification_router
-from app.routers.unidades_medida_router import router as unidades_medida_router
 from app.routers.conceptos_gastos_router import router as conceptos_gastos_router
 from app.routers.conceptos_compras_router import router as conceptos_compras_router
 from app.routers.task_purchases_router import router as task_purchases_router
@@ -2492,7 +2491,6 @@ routers = [
     payment_router,
     task_collaborators_router,
     user_notification_router,
-    unidades_medida_router,
     conceptos_gastos_router,
     conceptos_compras_router,
     task_purchases_router,

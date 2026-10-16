@@ -18,9 +18,7 @@
       </div>
 
       <div class="date-row">
-        <CustomDatePicker v-model="desde" @update:modelValue="load" placeholder="Desde" />
-        <span class="date-sep">→</span>
-        <CustomDatePicker v-model="hasta" @update:modelValue="load" placeholder="Hasta" />
+        <PeriodoSelector v-model="per" anteriores periodos rango @change="load" />
       </div>
 
       <button class="btn-clear" @click="clearFilters" title="Limpiar filtros">
@@ -107,7 +105,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '@/services/apis'
-import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import PeriodoSelector, { rangoPeriodo } from '@/components/common/PeriodoSelector.vue'
+import { showToast } from '@/utils/toast'
 import ExportToolbar    from '@/components/common/ExportToolbar.vue'
 
 const allMovements = ref([])
@@ -116,8 +115,7 @@ const loading      = ref(true)
 
 const searchItem  = ref('')
 const typeFilter  = ref('sale')
-const desde       = ref('')
-const hasta       = ref('')
+const per         = ref({ periodo: 'dia', fecha: '' })   // hoy por defecto
 
 const TYPES = [
   { val: '',         label: 'Todos',     color: 'gray'   },
@@ -177,12 +175,13 @@ async function load() {
   try {
     const p = {}
     if (typeFilter.value) p.mtype = typeFilter.value
-    if (desde.value)      p.desde = desde.value
-    if (hasta.value)      p.hasta = hasta.value
+    Object.assign(p, rangoPeriodo(per.value))
     allMovements.value = (await api.get('/api/inventory/movements', { params: p })).data
     filterClient()
-  } catch (e) { console.error(e) }
-  finally { loading.value = false }
+  } catch (e) {
+    allMovements.value = []; filterClient()
+    showToast(e.response?.data?.detail || 'Error cargando movimientos', 'error')
+  } finally { loading.value = false }
 }
 
 function filterClient() {
@@ -195,14 +194,12 @@ function filterClient() {
 function clearFilters() {
   searchItem.value = ''
   typeFilter.value = 'sale'
-  desde.value      = todayISO()
-  hasta.value      = todayISO()
+  per.value        = { periodo: 'dia', fecha: todayISO() }
   load()
 }
 
 onMounted(() => {
-  desde.value = todayISO()
-  hasta.value = todayISO()
+  per.value = { periodo: 'dia', fecha: todayISO() }
   load()
 })
 </script>

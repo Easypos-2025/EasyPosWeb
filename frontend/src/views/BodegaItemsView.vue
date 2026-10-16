@@ -87,8 +87,8 @@
               <label>Unidad</label>
               <select v-model="form.unidad_id" class="form-select">
                 <option :value="null">— Sin unidad —</option>
-                <option v-for="u in $ordenAlfa(unidades, 'name')" :key="u.id" :value="u.id">
-                  {{ u.name }}{{ u.abreviatura ? ' (' + u.abreviatura + ')' : '' }}
+                <option v-for="u in $ordenAlfa(unidadesSelector, 'name')" :key="u.id" :value="u.id">
+                  {{ u.name }}
                 </option>
               </select>
             </div>
@@ -119,7 +119,9 @@ const userInfo  = JSON.parse(localStorage.getItem("user") || "{}")
 const canManage = !['WORKER','AUDITOR'].some(r => (userInfo.role || '').toUpperCase().includes(r))
 
 const items   = ref([])
-const unidades = ref([])
+const unidades = ref([])   // formas de medida de la empresa (pos_measure_forms)
+// Solo activas; se conserva la ya asignada aunque esté inactiva
+const unidadesSelector = computed(() => unidades.value.filter(u => Number(u.is_active) === 1 || u.id === form.value.unidad_id))
 const search  = ref("")
 const modal   = ref(false)
 const saving  = ref(false)
@@ -135,7 +137,7 @@ const filtered = computed(() => {
 
 async function load() {
   try {
-    const [ir, ur] = await Promise.all([api.get("/bodega-items/"), api.get("/unidades-medida/")])
+    const [ir, ur] = await Promise.all([api.get("/bodega-items/"), api.get("/supply-items/catalogos/formas-medida")])
     items.value   = ir.data
     unidades.value = ur.data
   } catch { showToast("Error cargando datos", "error") }

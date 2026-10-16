@@ -614,12 +614,14 @@ const routes = [
       },
 
       // ── Catálogos de tareas ─────────────────────────────────────
+      // Unidades de Medida pasó a ser Formas de Medida (forma_medida del escritorio)
+      { path: "/configuration/unidades-medida", redirect: "/configuration/formas-medida" },
       {
-        path: "/configuration/unidades-medida",
-        name: "UnidadesMedidaView",
-        component: () => import("@/views/UnidadesMedidaView.vue"),
+        path: "/configuration/formas-medida",
+        name: "FormasMedidaView",
+        component: () => import("@/views/FormasMedidaView.vue"),
         requiresAuth: true,
-        meta: { title: "Unidades de Medida" }
+        meta: { title: "Formas de Medida" }
       },
       {
         path: "/configuration/conceptos-gastos",

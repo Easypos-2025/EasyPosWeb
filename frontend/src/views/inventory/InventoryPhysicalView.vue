@@ -4,6 +4,11 @@
     <!-- ══ VISTA PRINCIPAL: HISTORIAL CON SELECT ════════════════════════════════ -->
     <div v-if="tab==='history'" class="tab-content">
 
+      <!-- Periodo de los cortes: hoy por defecto; día, mes, año o rango -->
+      <div class="periodo-bar">
+        <PeriodoSelector v-model="perHist" anteriores periodos rango @change="cambiarPeriodo" />
+      </div>
+
       <!-- Header row: select + acciones + botón Tomar Inventario -->
       <div class="hist-header-row">
         <div class="hist-sel-row">
@@ -12,7 +17,7 @@
             <i class="bi bi-arrow-repeat spin"></i> Cargando...
           </div>
           <template v-else-if="!historyDates.length">
-            <span class="td-muted sm">Sin inventarios registrados</span>
+            <span class="td-muted sm">Sin inventarios en el periodo</span>
           </template>
           <template v-else>
             <select v-model="selectedDate" @change="loadReportFor(selectedDate)" class="hist-sel">
@@ -397,12 +402,14 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import CustomDatePicker from '@/components/common/CustomDatePicker.vue'
+import PeriodoSelector, { rangoPeriodo } from '@/components/common/PeriodoSelector.vue'
 import ExportToolbar from '@/components/common/ExportToolbar.vue'
 import api from '@/services/apis'
 import { showToast } from '@/utils/toast'
 import Swal from 'sweetalert2'
 
 const tab = ref('history')
+const perHist = ref({ periodo: 'dia', fecha: new Date().toLocaleDateString('en-CA') })
 
 // ── HISTORY ───────────────────────────────────────────────────────────────────
 const historyDates   = ref([])
@@ -593,15 +600,28 @@ async function saveAddItem() {
 async function loadHistory() {
   loadingHistory.value = true
   try {
-    historyDates.value = (await api.get('/api/inventory/physical/dates')).data
+    historyDates.value = (await api.get('/api/inventory/physical/dates', { params: rangoPeriodo(perHist.value) })).data
+    // El corte elegido debe estar dentro del periodo; si no, se toma el más reciente del periodo
+    if (selectedDate.value && !historyDates.value.some(h => h.fecha === selectedDate.value)) {
+      selectedDate.value = ''
+      reportData.value = []
+    }
     if (historyDates.value.length && !selectedDate.value) {
       selectedDate.value = historyDates.value[0].fecha
       await loadReportFor(selectedDate.value)
     } else if (selectedDate.value) {
       await loadReportFor(selectedDate.value)
     }
-  } catch { historyDates.value = [] }
-  finally { loadingHistory.value = false }
+  } catch (e) {
+    historyDates.value = []
+    showToast(e.response?.data?.detail || 'Error cargando inventarios', 'error')
+  } finally { loadingHistory.value = false }
+}
+
+function cambiarPeriodo() {
+  selectedDate.value = ''
+  reportData.value = []
+  loadHistory()
 }
 
 async function loadReportFor(fecha) {
@@ -819,6 +839,7 @@ onMounted(loadHistory)
 .btn-row-del:hover { background: #fef2f2; }
 
 /* ── Historial: header con select + botón ── */
+.periodo-bar { margin-bottom: 12px; }
 .hist-header-row {
   display: flex; align-items: flex-start; gap: 10px;
   margin-bottom: 14px; flex-wrap: wrap;

@@ -56,7 +56,6 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     from app.models.advertisement_model import Advertisement, AdPiece, AdPayment
     from app.models.concepto_compra_model import ConceptoCompra
     from app.models.concepto_gasto_model import ConceptoGasto
-    from app.models.unidad_medida_model import UnidadMedida
     from app.models.profession_model import Profession
 
     cid = company_id
@@ -137,10 +136,9 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
     await db.execute(delete(Worker).where(Worker.company_id == cid))
     await db.execute(delete(ExternalCollaborator).where(ExternalCollaborator.company_id == cid))
 
-    # 8. Conceptos, unidades y profesiones
+    # 8. Conceptos y profesiones (las formas de medida van con las tablas POS)
     await db.execute(delete(ConceptoCompra).where(ConceptoCompra.company_id == cid))
     await db.execute(delete(ConceptoGasto).where(ConceptoGasto.company_id == cid))
-    await db.execute(delete(UnidadMedida).where(UnidadMedida.company_id == cid))
     await db.execute(delete(Profession).where(Profession.company_id == cid))
 
     # 9. Anuncios publicitarios
@@ -170,7 +168,7 @@ async def _cascade_delete_company(company_id: int, db: AsyncSession):
         "pos_orders", "pos_tables_layout", "pos_tables",
         "pos_daily_menu", "pos_customer_price_list",
         "pos_dish_categories", "pos_dishes",
-        "pos_product_categories", "pos_categories",
+        "pos_product_categories", "pos_categories", "pos_measure_forms",
         "pos_zones", "pos_printers",
         "pos_waiters", "pos_employees",
         "supplies_quitar",

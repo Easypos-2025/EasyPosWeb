@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.database import get_db
 from app.models.bodega_item_model import BodegaItem
 from app.auth.dependencies import get_current_user
@@ -8,6 +8,21 @@ from app.models.user_model import User
 from app.services.plan_limits_service import check_limit
 
 router = APIRouter(prefix="/bodega-items", tags=["BodegaItems"])
+
+
+async def _unidad(db: AsyncSession, cid: int, valor) -> int | None:
+    """Unidad = forma de medida de la empresa (pos_measure_forms); nunca se acepta una de otra empresa."""
+    if not valor:
+        return None
+    try:
+        uid = int(valor)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Unidad no válida")
+    ok = (await db.execute(text("SELECT 1 FROM pos_measure_forms WHERE id = :id AND company_id = :cid"),
+                           {"id": uid, "cid": cid})).scalar()
+    if not ok:
+        raise HTTPException(status_code=400, detail="Unidad no válida para esta empresa")
+    return uid
 
 
 def _ser(b: BodegaItem):
@@ -53,7 +68,7 @@ async def create_item(
         codigo=(data.get("codigo") or "").strip() or None,
         cantidad_total=cantidad,
         cantidad_disponible=cantidad,
-        unidad_id=data.get("unidad_id") or None,
+        unidad_id=await _unidad(db, current_user.company_id, data.get("unidad_id")),
         ubicacion_bodega=(data.get("ubicacion_bodega") or "").strip() or None,
     )
     db.add(item)
@@ -94,7 +109,7 @@ async def update_item(
     item.codigo              = (data.get("codigo") or "").strip() or None
     item.cantidad_total      = nueva_cantidad
     item.cantidad_disponible = item.cantidad_disponible + diff
-    item.unidad_id           = data.get("unidad_id") or None
+    item.unidad_id           = await _unidad(db, current_user.company_id, data.get("unidad_id"))
     item.ubicacion_bodega    = (data.get("ubicacion_bodega") or "").strip() or None
     item.is_active           = int(data.get("is_active", item.is_active))
     await db.commit()

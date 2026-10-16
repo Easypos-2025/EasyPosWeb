@@ -39,9 +39,10 @@
         <i class="bi bi-plus-circle-fill"></i>
         <span>Nuevo Pedido</span>
       </button>
-      <button class="action-btn action-btn--llevar" @click="abrirWizardTakeout">
+      <button class="action-btn action-btn--llevar action-btn--dev" @click="abrirWizardTakeout" title="En desarrollo">
         <i class="bi bi-bag-check"></i>
         <span>Para Llevar</span>
+        <small class="badge-dev">En desarrollo</small>
       </button>
       <button
         class="action-btn action-btn--stock"
@@ -188,7 +189,7 @@
             <span class="wstep" :class="{ active: wizard.step === 1, done: wizard.step > 1 }">
               <i class="bi bi-person-fill"></i>
               <span v-if="wizard.step > 1 && wizard.waiterId !== null">
-                {{ meseros.find(m => m.id === wizard.waiterId)?.name || 'Sin asignar' }}
+                {{ meseros.find(m => m.id === wizard.waiterId)?.name || 'Mesero' }}
               </span>
               <span v-else>Mesero</span>
             </span>
@@ -206,14 +207,6 @@
           <h6 class="wizard-section-title">¿Quién atiende la mesa?</h6>
 
           <div class="meseros-grid">
-            <button
-              class="mesero-card"
-              :class="{ 'mesero-card--selected': wizard.waiterId === 0 }"
-              @click="seleccionarMesero(0)"
-            >
-              <div class="mesero-avatar mesero-avatar--none"><i class="bi bi-person-dash"></i></div>
-              <span class="mesero-name">Sin asignar</span>
-            </button>
 
             <button
               v-for="m in meseros"
@@ -703,16 +696,18 @@ function seleccionarMesero(waiterId) {
   wizard.value.step = 2
 }
 
+// Para Llevar desde el dashboard: pendiente de ajustar (todo pedido debe tener mesero)
 function abrirWizardTakeout() {
-  irAComanda(0, 'Para Llevar', 0)
+  showToast('Para Llevar: en desarrollo', 'info', 2500)
 }
 
 function cerrarWizard() { wizard.value.visible = false }
 
 async function irAComanda(tableId, tableName, waiterId) {
+  if (!waiterId) { showToast('Seleccione el mesero que atiende la mesa', 'warning', 2500); return }
   wizard.value.abriendo = true
   try {
-    const waiterName = meseros.value.find(m => m.id === waiterId)?.name || 'Sin asignar'
+    const waiterName = meseros.value.find(m => m.id === waiterId)?.name || ''
     localStorage.setItem('waiter_company_id', String(selectedCid.value))
     // Escribir contexto básico ANTES del await para que KioskLayout lo lea al montar
     localStorage.setItem('pedido_ctx', JSON.stringify({
@@ -1435,4 +1430,6 @@ async function guardarNuevoMesero() {
   .wizard-overlay { padding: 0; align-items: flex-end; }
   .wizard-modal { border-radius: 20px 20px 0 0; max-height: 92dvh; }
 }
+.action-btn--dev { opacity: .6; position: relative; }
+.badge-dev { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 1px 6px; margin-top: 2px; }
 </style>

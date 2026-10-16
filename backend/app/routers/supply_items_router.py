@@ -61,6 +61,9 @@ class SupplyIn(BaseModel):
     is_active:          Optional[Flag] = None
     fecha_vence:        Optional[date] = None
     adjustment_notes:   Optional[Annotated[str, StringConstraints(max_length=255)]] = None
+    # Ficha completa (pantalla Nuevo/Editar insumo): proveedores en insumos_proveedor. Si viene,
+    # se exigen nombre, unidad de uso, categoría y al menos un proveedor, y todo se guarda junto.
+    proveedor_ids:      Optional[Annotated[List[Annotated[int, Field(ge=1)]], Field(max_length=100)]] = None
 
 
 class ProveedoresIn(BaseModel):
@@ -95,11 +98,17 @@ async def _measure_name(db: AsyncSession, cid: int, mid: Optional[int]) -> Optio
     return row["name"] if row else None
 
 
-async def _valid_measure(db: AsyncSession, cid: int, mid: Optional[int]) -> Optional[int]:
+async def _valid_measure(db: AsyncSession, cid: int, mid: Optional[int], solo_activa: bool = False) -> Optional[int]:
     if not mid:
         return None
-    if not await _measure_name(db, cid, mid):
+    row = (await db.execute(
+        text("SELECT is_active FROM pos_measure_forms WHERE id = :id AND company_id = :cid"),
+        {"id": mid, "cid": cid}
+    )).first()
+    if not row:
         raise HTTPException(status_code=400, detail="Forma de medida no válida para esta empresa")
+    if solo_activa and not row[0]:
+        raise HTTPException(status_code=400, detail="La forma de medida está inactiva")
     return mid
 
 
@@ -146,6 +155,75 @@ async def _get_item(db: AsyncSession, cid: int, iid: int) -> SupplyItem:
     return item
 
 
+def _exigir_ficha(data: SupplyIn, item: Optional[SupplyItem] = None):
+    """Campos obligatorios del insumo (los no enviados se toman del insumo actual)."""
+    sent = data.model_fields_set
+
+    def val(campo, actual):
+        return getattr(data, campo) if campo in sent or item is None else actual
+    if not val("description", item.description if item else None):
+        raise HTTPException(status_code=400, detail="El nombre es requerido")
+    if not val("unit_uso_id", item.unit_uso_id if item else None):
+        raise HTTPException(status_code=400, detail="La unidad de uso es obligatoria")
+    if not val("category_id", item.agrupar if item else None):
+        raise HTTPException(status_code=400, detail="La categoría es obligatoria")
+    if not data.proveedor_ids:
+        raise HTTPException(status_code=400, detail="Debe asignar al menos un proveedor")
+
+
+async def _set_proveedores(db: AsyncSession, cid: int, item: SupplyItem, ids_in) -> None:
+    """insumos_proveedor: deja exactamente los proveedores indicados (sin commit)."""
+    ids = sorted(set(ids_in))
+    valid = {int(r[0]) for r in (await db.execute(text(
+        "SELECT id_proveedor FROM suppliers WHERE company_id = :cid AND id_proveedor IS NOT NULL"
+    ), {"cid": cid})).all()}
+    if any(i not in valid for i in ids):
+        raise HTTPException(status_code=400, detail="Proveedor no válido para esta empresa")
+
+    current = {int(r[0]) for r in (await db.execute(text(
+        "SELECT id_proveedor FROM insumos_proveedor WHERE company_id = :cid AND id_insumo = :ins"
+    ), {"cid": cid, "ins": item.id_item})).all()}
+    quitar = current - set(ids)
+    if quitar:
+        await db.execute(text(
+            "DELETE FROM insumos_proveedor WHERE company_id = :cid AND id_insumo = :ins "
+            "AND id_proveedor IN (" + ",".join(str(int(x)) for x in quitar) + ")"
+        ), {"cid": cid, "ins": item.id_item})
+    # Como el escritorio: fecha de hoy, precio 0, forma de medida = unidad de uso
+    mid = item.unit_uso_id or item.unit_id or 0
+    mname = ((await _measure_name(db, cid, mid)) or "")[:50]
+    # La forma de medida de lo ya asignado sigue a la unidad de uso del insumo
+    await db.execute(text("""
+        UPDATE insumos_proveedor SET id_forma_medida = :mid, nombre_forma_medida = :mname, enviada_mysql = 0
+        WHERE company_id = :cid AND id_insumo = :ins AND id_forma_medida <> :mid
+    """), {"cid": cid, "ins": item.id_item, "mid": mid, "mname": mname})
+    obs = "SE REGISTRO POR NUEVO INSUMO" if not current else "SE REGISTRO POR MODIFICACION INSUMO"
+    for pid in set(ids) - current:
+        await db.execute(text("""
+            INSERT INTO insumos_proveedor
+                (company_id, id_proveedor, id_insumo, fecha_inicial_negociacion, fecha_final_negociacion,
+                 precio_pactado, id_forma_medida, nombre_forma_medida, observacion, enviada_mysql)
+            VALUES (:cid, :pid, :ins, CURDATE(), CURDATE(), 0, :mid, :mname, :obs, 0)
+        """), {"cid": cid, "pid": pid, "ins": item.id_item, "mid": mid, "mname": mname, "obs": obs})
+
+
+async def _set_forma_unica(db: AsyncSession, cid: int, item: SupplyItem) -> None:
+    """insumos_forma_medida: un insumo tiene una sola forma de medida = su unidad de uso,
+    con Cant_Unidades_Minimas = 1 (las presentaciones se manejan en otra vista). Sin commit."""
+    mid = item.unit_uso_id or item.unit_id
+    if not mid:
+        return
+    await db.execute(text(
+        "DELETE FROM insumos_forma_medida WHERE company_id = :cid AND id_insumo = :ins AND id_forma_medida <> :mid"
+    ), {"cid": cid, "ins": item.id_item, "mid": mid})
+    await db.execute(text("""
+        INSERT INTO insumos_forma_medida
+            (company_id, id_insumo, id_forma_medida, cant_unidades_minimas, enviada_mysql)
+        VALUES (:cid, :ins, :mid, 1, 0)
+        ON DUPLICATE KEY UPDATE cant_unidades_minimas = 1, enviada_mysql = 0, updated_at = NOW()
+    """), {"cid": cid, "ins": item.id_item, "mid": mid})
+
+
 # ─── Catálogos de apoyo (formas de medida y categorías de insumo) ─────────────
 
 @router.get("/catalogos/formas-medida")
@@ -171,6 +249,33 @@ async def create_forma_medida(data: CatalogoIn, current_user: User = Depends(get
     ), {"id": nid, "cid": cid, "n": data.name})
     await db.commit()
     return {"id": nid, "name": data.name, "is_active": 1}
+
+
+class FormaMedidaUpd(BaseModel):
+    name:      Optional[Name] = None
+    is_active: Optional[Flag] = None        # forma_medida.Activa
+
+
+@router.put("/catalogos/formas-medida/{fid}")
+async def update_forma_medida(fid: int, data: FormaMedidaUpd, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    cid = current_user.company_id
+    row = (await db.execute(text(
+        "SELECT id, name, is_active FROM pos_measure_forms WHERE id = :id AND company_id = :cid"
+    ), {"id": fid, "cid": cid})).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Forma de medida no encontrada")
+    name = data.name if data.name is not None else row["name"]
+    activa = data.is_active if data.is_active is not None else row["is_active"]
+    dup = (await db.execute(text(
+        "SELECT id FROM pos_measure_forms WHERE company_id = :cid AND UPPER(name) = UPPER(:n) AND id <> :id"
+    ), {"cid": cid, "n": name, "id": fid})).scalar()
+    if dup:
+        raise HTTPException(status_code=409, detail="Ya existe una forma de medida con ese nombre")
+    await db.execute(text(
+        "UPDATE pos_measure_forms SET name = :n, is_active = :a, synced = 0 WHERE id = :id AND company_id = :cid"
+    ), {"n": name, "a": activa, "id": fid, "cid": cid})
+    await db.commit()
+    return {"id": fid, "name": name, "is_active": activa}
 
 
 @router.get("/catalogos/categorias")
@@ -213,9 +318,8 @@ async def list_supply_items(current_user: User = Depends(get_current_user), db: 
 @router.post("/")
 async def create_supply_item(data: SupplyIn, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     cid = current_user.company_id
-    if not data.description:
-        raise HTTPException(status_code=400, detail="El nombre es requerido")
-    unit_uso = await _valid_measure(db, cid, data.unit_uso_id)
+    _exigir_ficha(data)
+    unit_uso = await _valid_measure(db, cid, data.unit_uso_id, solo_activa=True)
     unit_id  = await _valid_measure(db, cid, data.unit_id) or unit_uso
     agrupar  = await _valid_category(db, cid, data.category_id)
     # Con escritorio (S3): Id_Item provisional; el escritorio le asigna el real al sincronizar
@@ -237,6 +341,9 @@ async def create_supply_item(data: SupplyIn, current_user: User = Depends(get_cu
     db.add(item)
     await db.flush()
     await upsert_stock_row(db, cid, item.id)      # mismo registro en stock actual (cantidad_actual = 0)
+    # Proveedores y forma de medida en la misma transacción: o se guarda todo o nada
+    await _set_proveedores(db, cid, item, data.proveedor_ids)
+    await _set_forma_unica(db, cid, item)
     await db.commit()
     await db.refresh(item)
     if item.control_stock and float(item.stock_qty) != 0:
@@ -250,6 +357,9 @@ async def update_supply_item(iid: int, data: SupplyIn, current_user: User = Depe
     cid = current_user.company_id
     item = await _get_item(db, cid, iid)
     sent = data.model_fields_set
+    ficha = "proveedor_ids" in sent          # guardado desde la pantalla del insumo
+    if ficha:
+        _exigir_ficha(data, item)
 
     if "description" in sent:
         if not data.description:
@@ -258,7 +368,9 @@ async def update_supply_item(iid: int, data: SupplyIn, current_user: User = Depe
     if "code" in sent:
         item.code = data.code or None
     if "unit_uso_id" in sent:
-        item.unit_uso_id = await _valid_measure(db, cid, data.unit_uso_id)
+        # Una forma inactiva solo se acepta si ya era la unidad de uso del insumo
+        item.unit_uso_id = await _valid_measure(db, cid, data.unit_uso_id,
+                                                solo_activa=data.unit_uso_id != item.unit_uso_id)
     if "unit_id" in sent:
         item.unit_id = await _valid_measure(db, cid, data.unit_id)
     if "category_id" in sent:
@@ -281,6 +393,9 @@ async def update_supply_item(iid: int, data: SupplyIn, current_user: User = Depe
     item.synced = 0
     await db.flush()
     await upsert_stock_row(db, cid, item.id)
+    if ficha:
+        await _set_proveedores(db, cid, item, data.proveedor_ids)
+        await _set_forma_unica(db, cid, item)
     await db.commit()
     await db.refresh(item)
     return _ser(item, await _measure_name(db, cid, item.unit_uso_id or item.unit_id))
@@ -317,34 +432,8 @@ async def set_proveedores_insumo(iid: int, data: ProveedoresIn, current_user: Us
     item = await _get_item(db, cid, iid)
     if not item.id_item:
         raise HTTPException(status_code=400, detail="Guarde el insumo antes de asignar proveedores")
-    ids = sorted(set(data.ids))
-    valid = {int(r[0]) for r in (await db.execute(text(
-        "SELECT id_proveedor FROM suppliers WHERE company_id = :cid AND id_proveedor IS NOT NULL"
-    ), {"cid": cid})).all()}
-    if any(i not in valid for i in ids):
-        raise HTTPException(status_code=400, detail="Proveedor no válido para esta empresa")
-
-    current = {int(r[0]) for r in (await db.execute(text(
-        "SELECT id_proveedor FROM insumos_proveedor WHERE company_id = :cid AND id_insumo = :ins"
-    ), {"cid": cid, "ins": item.id_item})).all()}
-    quitar = current - set(ids)
-    if quitar:
-        await db.execute(text(
-            "DELETE FROM insumos_proveedor WHERE company_id = :cid AND id_insumo = :ins "
-            "AND id_proveedor IN (" + ",".join(str(int(x)) for x in quitar) + ")"
-        ), {"cid": cid, "ins": item.id_item})
-    # Nuevos: como el escritorio — fecha de hoy, precio 0, forma de medida = unidad de uso
-    mid = item.unit_uso_id or item.unit_id or 0
-    mname = (await _measure_name(db, cid, mid)) or ""
-    obs = "SE REGISTRO POR NUEVO INSUMO" if not current else "SE REGISTRO POR MODIFICACION INSUMO"
-    for pid in set(ids) - current:
-        await db.execute(text("""
-            INSERT INTO insumos_proveedor
-                (company_id, id_proveedor, id_insumo, fecha_inicial_negociacion, fecha_final_negociacion,
-                 precio_pactado, id_forma_medida, nombre_forma_medida, observacion, enviada_mysql)
-            VALUES (:cid, :pid, :ins, CURDATE(), CURDATE(), 0, :mid, :mname, :obs, 0)
-        """), {"cid": cid, "pid": pid, "ins": item.id_item, "mid": mid, "mname": mname[:50], "obs": obs})
-    item.synced = 0                    # S3: viaja con el insumo al escritorio
+    await _set_proveedores(db, cid, item, data.ids)
+    item.synced = 0                    # viaja con el insumo al escritorio
     await db.commit()
     return {"ok": True}
 
